@@ -2153,6 +2153,19 @@ required-features = ["alloc-global", "bench-internals", "internals"]
 name = "r32_11_remote_ring_shadow_head_gate"
 required-features = ["alloc-global", "alloc-xthread", "internals"]
 
+# R34-12 (task #531) — CLEAN A/B re-gate of the shadow-head cross-thread win.
+# The original R32-11 gate was not a clean A/B (different feature sets + drain
+# paths between arms — see docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md
+# P1 finding). This harness uses IDENTICAL features (`alloc-global alloc-xthread`,
+# no `bench-internals`) and IDENTICAL drain mechanism (direct
+# `tls_heap::current_for_trim` + `HeapCore::dbg_drain_all_rings`) for BOTH arms.
+# Three regimes (favorable / near_full / overflow) measured separately.
+# See examples/r34_12_remote_ring_clean_regate.rs module doc +
+# docs/perf/R34_12_REMOTE_RING_CLEAN_REGATE.md.
+[[example]]
+name = "r34_12_remote_ring_clean_regate"
+required-features = ["alloc-global", "alloc-xthread", "internals"]
+
 # R32-13 (task #504, F11 step 2) — Windows-native segment-lifecycle
 # decomposition: ports R29-3's Linux methodology (reserve/commit/decommit/
 # release, timed separately, page-fault share isolated) to the Windows OS-

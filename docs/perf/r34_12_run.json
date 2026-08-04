@@ -1,0 +1,40 @@
+{
+  "_doc": "R34-12 (task #531) — CLEAN A/B re-gate of RemoteFreeRing shadow-head. Three regimes (favorable / near_full / overflow), before vs after. 'before' = git worktree at commit c9a3570bfa4393c4a8383be25c3654e1421c7671 (pre-shadow-head, parent of the F10 landing commit d38bf73), built into D:/dev/rust/sefer-r34-12-before with its own CARGO_TARGET_DIR (D:/dev/rust/.cargo-target-r34-12-before) so it never clobbers the main tree's binary. 'after' = current HEAD (includes F10 shadow-head + R34-6 ordering promotion), built in the main tree's target dir (D:/dev/rust/.cargo-target). BOTH arms use IDENTICAL feature sets ('alloc-global alloc-xthread internals') and IDENTICAL drain mechanism (direct tls_heap::current_for_trim + HeapCore::dbg_drain_all_rings, no bench-internals). The internals feature is a no-op visibility gate in the before tree (modules already pub) with zero runtime/codegen effect. See docs/perf/R34_12_REMOTE_RING_CLEAN_REGATE.md.",
+  "metric": "elapsed_ns",
+  "arms": {
+    "before_favorable": {
+      "command": "D:/dev/rust/.cargo-target-r34-12-before/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["favorable"]
+    },
+    "after_favorable": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["favorable"]
+    },
+    "before_near_full": {
+      "command": "D:/dev/rust/.cargo-target-r34-12-before/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["near_full"]
+    },
+    "after_near_full": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["near_full"]
+    },
+    "before_overflow": {
+      "command": "D:/dev/rust/.cargo-target-r34-12-before/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["overflow"]
+    },
+    "after_overflow": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r34_12_remote_ring_clean_regate.exe",
+      "args": ["overflow"]
+    }
+  },
+  "default_comparisons": [
+    ["before_favorable", "after_favorable"],
+    ["before_near_full", "after_near_full"],
+    ["before_overflow", "after_overflow"]
+  ],
+  "sanity": {
+    "key": "oracle_pass",
+    "_doc_sanity": "Every arm's own regime-fidelity oracle (overflow_pct-based) must report PASS (1).",
+    "nonzero_arms": ["before_favorable", "after_favorable", "before_near_full", "after_near_full", "before_overflow", "after_overflow"]
+  }
+}

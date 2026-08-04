@@ -1,0 +1,2431 @@
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] before_favorable vs after_favorable — 20 pairs, A/B/B/A protocol
+RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=30836700
+RESULT ns_per_push=154.1835
+RESULT ring_overflow_delta=1764
+RESULT overflow_pct=0.882
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=30836700 ns_per_push=154.18 overflow_delta=1764 overflow_pct=0.8820 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=27522800
+RESULT ns_per_push=137.614
+RESULT ring_overflow_delta=2224
+RESULT overflow_pct=1.1119999999999999
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=27522800 ns_per_push=137.61 overflow_delta=2224 overflow_pct=1.1120 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=22495900
+RESULT ns_per_push=112.4795
+RESULT ring_overflow_delta=2249
+RESULT overflow_pct=1.1245
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=22495900 ns_per_push=112.48 overflow_delta=2249 overflow_pct=1.1245 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=38441000
+RESULT ns_per_push=192.205
+RESULT ring_overflow_delta=165
+RESULT overflow_pct=0.0825
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=38441000 ns_per_push=192.21 overflow_delta=165 overflow_pct=0.0825 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=28596900
+RESULT ns_per_push=142.9845
+RESULT ring_overflow_delta=2057
+RESULT overflow_pct=1.0285
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=28596900 ns_per_push=142.98 overflow_delta=2057 overflow_pct=1.0285 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24023500
+RESULT ns_per_push=120.1175
+RESULT ring_overflow_delta=2190
+RESULT overflow_pct=1.095
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24023500 ns_per_push=120.12 overflow_delta=2190 overflow_pct=1.0950 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26011300
+RESULT ns_per_push=130.0565
+RESULT ring_overflow_delta=2134
+RESULT overflow_pct=1.0670000000000002
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26011300 ns_per_push=130.06 overflow_delta=2134 overflow_pct=1.0670 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=34313300
+RESULT ns_per_push=171.5665
+RESULT ring_overflow_delta=213
+RESULT overflow_pct=0.1065
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=34313300 ns_per_push=171.57 overflow_delta=213 overflow_pct=0.1065 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=37211800
+RESULT ns_per_push=186.059
+RESULT ring_overflow_delta=212
+RESULT overflow_pct=0.106
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=37211800 ns_per_push=186.06 overflow_delta=212 overflow_pct=0.1060 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=22083100
+RESULT ns_per_push=110.4155
+RESULT ring_overflow_delta=2141
+RESULT overflow_pct=1.0705
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=22083100 ns_per_push=110.42 overflow_delta=2141 overflow_pct=1.0705 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24677300
+RESULT ns_per_push=123.3865
+RESULT ring_overflow_delta=2249
+RESULT overflow_pct=1.1245
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24677300 ns_per_push=123.39 overflow_delta=2249 overflow_pct=1.1245 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=41775500
+RESULT ns_per_push=208.8775
+RESULT ring_overflow_delta=2118
+RESULT overflow_pct=1.059
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=41775500 ns_per_push=208.88 overflow_delta=2118 overflow_pct=1.0590 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=42361100
+RESULT ns_per_push=211.8055
+RESULT ring_overflow_delta=18
+RESULT overflow_pct=0.009000000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=42361100 ns_per_push=211.81 overflow_delta=18 overflow_pct=0.0090 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23056600
+RESULT ns_per_push=115.283
+RESULT ring_overflow_delta=2211
+RESULT overflow_pct=1.1055000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23056600 ns_per_push=115.28 overflow_delta=2211 overflow_pct=1.1055 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25472500
+RESULT ns_per_push=127.3625
+RESULT ring_overflow_delta=2151
+RESULT overflow_pct=1.0755000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25472500 ns_per_push=127.36 overflow_delta=2151 overflow_pct=1.0755 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=29907500
+RESULT ns_per_push=149.5375
+RESULT ring_overflow_delta=823
+RESULT overflow_pct=0.4115
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=29907500 ns_per_push=149.54 overflow_delta=823 overflow_pct=0.4115 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=33768500
+RESULT ns_per_push=168.8425
+RESULT ring_overflow_delta=1285
+RESULT overflow_pct=0.6425000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=33768500 ns_per_push=168.84 overflow_delta=1285 overflow_pct=0.6425 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23723700
+RESULT ns_per_push=118.6185
+RESULT ring_overflow_delta=2149
+RESULT overflow_pct=1.0745
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23723700 ns_per_push=118.62 overflow_delta=2149 overflow_pct=1.0745 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=31119500
+RESULT ns_per_push=155.5975
+RESULT ring_overflow_delta=206
+RESULT overflow_pct=0.10300000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=31119500 ns_per_push=155.60 overflow_delta=206 overflow_pct=0.1030 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=36544000
+RESULT ns_per_push=182.72
+RESULT ring_overflow_delta=408
+RESULT overflow_pct=0.20400000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=36544000 ns_per_push=182.72 overflow_delta=408 overflow_pct=0.2040 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=34598400
+RESULT ns_per_push=172.992
+RESULT ring_overflow_delta=327
+RESULT overflow_pct=0.1635
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=34598400 ns_per_push=172.99 overflow_delta=327 overflow_pct=0.1635 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23697900
+RESULT ns_per_push=118.4895
+RESULT ring_overflow_delta=2224
+RESULT overflow_pct=1.1119999999999999
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23697900 ns_per_push=118.49 overflow_delta=2224 overflow_pct=1.1120 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24971600
+RESULT ns_per_push=124.858
+RESULT ring_overflow_delta=2119
+RESULT overflow_pct=1.0595
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24971600 ns_per_push=124.86 overflow_delta=2119 overflow_pct=1.0595 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=44613200
+RESULT ns_per_push=223.066
+RESULT ring_overflow_delta=576
+RESULT overflow_pct=0.28800000000000003
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=44613200 ns_per_push=223.07 overflow_delta=576 overflow_pct=0.2880 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=37719200
+RESULT ns_per_push=188.596
+RESULT ring_overflow_delta=412
+RESULT overflow_pct=0.20600000000000002
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=37719200 ns_per_push=188.60 overflow_delta=412 overflow_pct=0.2060 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25766000
+RESULT ns_per_push=128.83
+RESULT ring_overflow_delta=2569
+RESULT overflow_pct=1.2845
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25766000 ns_per_push=128.83 overflow_delta=2569 overflow_pct=1.2845 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26172200
+RESULT ns_per_push=130.861
+RESULT ring_overflow_delta=2051
+RESULT overflow_pct=1.0255
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26172200 ns_per_push=130.86 overflow_delta=2051 overflow_pct=1.0255 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=38242800
+RESULT ns_per_push=191.214
+RESULT ring_overflow_delta=2143
+RESULT overflow_pct=1.0715000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=38242800 ns_per_push=191.21 overflow_delta=2143 overflow_pct=1.0715 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=39438700
+RESULT ns_per_push=197.1935
+RESULT ring_overflow_delta=2073
+RESULT overflow_pct=1.0365
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=39438700 ns_per_push=197.19 overflow_delta=2073 overflow_pct=1.0365 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23493400
+RESULT ns_per_push=117.467
+RESULT ring_overflow_delta=2291
+RESULT overflow_pct=1.1455
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23493400 ns_per_push=117.47 overflow_delta=2291 overflow_pct=1.1455 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25322800
+RESULT ns_per_push=126.614
+RESULT ring_overflow_delta=1391
+RESULT overflow_pct=0.6955
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25322800 ns_per_push=126.61 overflow_delta=1391 overflow_pct=0.6955 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=40996900
+RESULT ns_per_push=204.9845
+RESULT ring_overflow_delta=1882
+RESULT overflow_pct=0.941
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=40996900 ns_per_push=204.98 overflow_delta=1882 overflow_pct=0.9410 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=34863400
+RESULT ns_per_push=174.317
+RESULT ring_overflow_delta=2127
+RESULT overflow_pct=1.0635000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=34863400 ns_per_push=174.32 overflow_delta=2127 overflow_pct=1.0635 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25207000
+RESULT ns_per_push=126.035
+RESULT ring_overflow_delta=2285
+RESULT overflow_pct=1.1424999999999998
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25207000 ns_per_push=126.03 overflow_delta=2285 overflow_pct=1.1425 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=27579800
+RESULT ns_per_push=137.899
+RESULT ring_overflow_delta=34
+RESULT overflow_pct=0.017
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=27579800 ns_per_push=137.90 overflow_delta=34 overflow_pct=0.0170 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=40862200
+RESULT ns_per_push=204.311
+RESULT ring_overflow_delta=604
+RESULT overflow_pct=0.302
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=40862200 ns_per_push=204.31 overflow_delta=604 overflow_pct=0.3020 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=28342900
+RESULT ns_per_push=141.7145
+RESULT ring_overflow_delta=1434
+RESULT overflow_pct=0.717
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=28342900 ns_per_push=141.71 overflow_delta=1434 overflow_pct=0.7170 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26351300
+RESULT ns_per_push=131.7565
+RESULT ring_overflow_delta=2250
+RESULT overflow_pct=1.125
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26351300 ns_per_push=131.76 overflow_delta=2250 overflow_pct=1.1250 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=28697800
+RESULT ns_per_push=143.489
+RESULT ring_overflow_delta=829
+RESULT overflow_pct=0.41450000000000004
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=28697800 ns_per_push=143.49 overflow_delta=829 overflow_pct=0.4145 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=36641100
+RESULT ns_per_push=183.2055
+RESULT ring_overflow_delta=244
+RESULT overflow_pct=0.122
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=36641100 ns_per_push=183.21 overflow_delta=244 overflow_pct=0.1220 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=33113700
+RESULT ns_per_push=165.5685
+RESULT ring_overflow_delta=2522
+RESULT overflow_pct=1.261
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=33113700 ns_per_push=165.57 overflow_delta=2522 overflow_pct=1.2610 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23602600
+RESULT ns_per_push=118.013
+RESULT ring_overflow_delta=2390
+RESULT overflow_pct=1.195
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23602600 ns_per_push=118.01 overflow_delta=2390 overflow_pct=1.1950 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=17465900
+RESULT ns_per_push=87.3295
+RESULT ring_overflow_delta=2
+RESULT overflow_pct=0.001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=17465900 ns_per_push=87.33 overflow_delta=2 overflow_pct=0.0010 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=40230000
+RESULT ns_per_push=201.15
+RESULT ring_overflow_delta=641
+RESULT overflow_pct=0.3205
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=40230000 ns_per_push=201.15 overflow_delta=641 overflow_pct=0.3205 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=41527500
+RESULT ns_per_push=207.6375
+RESULT ring_overflow_delta=599
+RESULT overflow_pct=0.2995
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=41527500 ns_per_push=207.64 overflow_delta=599 overflow_pct=0.2995 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24848300
+RESULT ns_per_push=124.2415
+RESULT ring_overflow_delta=2235
+RESULT overflow_pct=1.1175
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24848300 ns_per_push=124.24 overflow_delta=2235 overflow_pct=1.1175 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26724600
+RESULT ns_per_push=133.623
+RESULT ring_overflow_delta=36
+RESULT overflow_pct=0.018000000000000002
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26724600 ns_per_push=133.62 overflow_delta=36 overflow_pct=0.0180 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=50110900
+RESULT ns_per_push=250.5545
+RESULT ring_overflow_delta=862
+RESULT overflow_pct=0.43099999999999994
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=50110900 ns_per_push=250.55 overflow_delta=862 overflow_pct=0.4310 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=38604000
+RESULT ns_per_push=193.02
+RESULT ring_overflow_delta=2264
+RESULT overflow_pct=1.1320000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=38604000 ns_per_push=193.02 overflow_delta=2264 overflow_pct=1.1320 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25807400
+RESULT ns_per_push=129.037
+RESULT ring_overflow_delta=2268
+RESULT overflow_pct=1.134
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25807400 ns_per_push=129.04 overflow_delta=2268 overflow_pct=1.1340 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24817800
+RESULT ns_per_push=124.089
+RESULT ring_overflow_delta=1
+RESULT overflow_pct=0.0005
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24817800 ns_per_push=124.09 overflow_delta=1 overflow_pct=0.0005 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=39735900
+RESULT ns_per_push=198.6795
+RESULT ring_overflow_delta=1216
+RESULT overflow_pct=0.608
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=39735900 ns_per_push=198.68 overflow_delta=1216 overflow_pct=0.6080 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=36422100
+RESULT ns_per_push=182.1105
+RESULT ring_overflow_delta=2053
+RESULT overflow_pct=1.0265
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=36422100 ns_per_push=182.11 overflow_delta=2053 overflow_pct=1.0265 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23251800
+RESULT ns_per_push=116.259
+RESULT ring_overflow_delta=2208
+RESULT overflow_pct=1.1039999999999999
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23251800 ns_per_push=116.26 overflow_delta=2208 overflow_pct=1.1040 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=30444200
+RESULT ns_per_push=152.221
+RESULT ring_overflow_delta=252
+RESULT overflow_pct=0.126
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=30444200 ns_per_push=152.22 overflow_delta=252 overflow_pct=0.1260 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=41411300
+RESULT ns_per_push=207.0565
+RESULT ring_overflow_delta=8
+RESULT overflow_pct=0.004
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=41411300 ns_per_push=207.06 overflow_delta=8 overflow_pct=0.0040 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=27479600
+RESULT ns_per_push=137.398
+RESULT ring_overflow_delta=2598
+RESULT overflow_pct=1.299
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=27479600 ns_per_push=137.40 overflow_delta=2598 overflow_pct=1.2990 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25521200
+RESULT ns_per_push=127.606
+RESULT ring_overflow_delta=2160
+RESULT overflow_pct=1.08
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25521200 ns_per_push=127.61 overflow_delta=2160 overflow_pct=1.0800 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=17940000
+RESULT ns_per_push=89.7
+RESULT ring_overflow_delta=1
+RESULT overflow_pct=0.0005
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=17940000 ns_per_push=89.70 overflow_delta=1 overflow_pct=0.0005 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=42126000
+RESULT ns_per_push=210.63
+RESULT ring_overflow_delta=707
+RESULT overflow_pct=0.3535
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=42126000 ns_per_push=210.63 overflow_delta=707 overflow_pct=0.3535 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=30136400
+RESULT ns_per_push=150.682
+RESULT ring_overflow_delta=2329
+RESULT overflow_pct=1.1645
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=30136400 ns_per_push=150.68 overflow_delta=2329 overflow_pct=1.1645 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=24490400
+RESULT ns_per_push=122.452
+RESULT ring_overflow_delta=2169
+RESULT overflow_pct=1.0845
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=24490400 ns_per_push=122.45 overflow_delta=2169 overflow_pct=1.0845 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23151000
+RESULT ns_per_push=115.755
+RESULT ring_overflow_delta=46
+RESULT overflow_pct=0.023
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23151000 ns_per_push=115.75 overflow_delta=46 overflow_pct=0.0230 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26054000
+RESULT ns_per_push=130.27
+RESULT ring_overflow_delta=429
+RESULT overflow_pct=0.21450000000000002
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26054000 ns_per_push=130.27 overflow_delta=429 overflow_pct=0.2145 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=39000100
+RESULT ns_per_push=195.0005
+RESULT ring_overflow_delta=2186
+RESULT overflow_pct=1.093
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=39000100 ns_per_push=195.00 overflow_delta=2186 overflow_pct=1.0930 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26475500
+RESULT ns_per_push=132.3775
+RESULT ring_overflow_delta=2159
+RESULT overflow_pct=1.0795000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26475500 ns_per_push=132.38 overflow_delta=2159 overflow_pct=1.0795 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=29127100
+RESULT ns_per_push=145.6355
+RESULT ring_overflow_delta=163
+RESULT overflow_pct=0.0815
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=29127100 ns_per_push=145.64 overflow_delta=163 overflow_pct=0.0815 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=44341800
+RESULT ns_per_push=221.709
+RESULT ring_overflow_delta=17
+RESULT overflow_pct=0.0085
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=44341800 ns_per_push=221.71 overflow_delta=17 overflow_pct=0.0085 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=25362600
+RESULT ns_per_push=126.813
+RESULT ring_overflow_delta=2472
+RESULT overflow_pct=1.236
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=25362600 ns_per_push=126.81 overflow_delta=2472 overflow_pct=1.2360 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=22569200
+RESULT ns_per_push=112.846
+RESULT ring_overflow_delta=2233
+RESULT overflow_pct=1.1165
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=22569200 ns_per_push=112.85 overflow_delta=2233 overflow_pct=1.1165 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=31804400
+RESULT ns_per_push=159.022
+RESULT ring_overflow_delta=6
+RESULT overflow_pct=0.003
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=31804400 ns_per_push=159.02 overflow_delta=6 overflow_pct=0.0030 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=31551500
+RESULT ns_per_push=157.7575
+RESULT ring_overflow_delta=3
+RESULT overflow_pct=0.0015
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=31551500 ns_per_push=157.76 overflow_delta=3 overflow_pct=0.0015 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=28655800
+RESULT ns_per_push=143.279
+RESULT ring_overflow_delta=2111
+RESULT overflow_pct=1.0555
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=28655800 ns_per_push=143.28 overflow_delta=2111 overflow_pct=1.0555 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=23083900
+RESULT ns_per_push=115.4195
+RESULT ring_overflow_delta=2312
+RESULT overflow_pct=1.1560000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=23083900 ns_per_push=115.42 overflow_delta=2312 overflow_pct=1.1560 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=17061500
+RESULT ns_per_push=85.3075
+RESULT ring_overflow_delta=52
+RESULT overflow_pct=0.026
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=17061500 ns_per_push=85.31 overflow_delta=52 overflow_pct=0.0260 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=41940100
+RESULT ns_per_push=209.7005
+RESULT ring_overflow_delta=2110
+RESULT overflow_pct=1.055
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=41940100 ns_per_push=209.70 overflow_delta=2110 overflow_pct=1.0550 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=31852200
+RESULT ns_per_push=159.261
+RESULT ring_overflow_delta=2534
+RESULT overflow_pct=1.2670000000000001
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=31852200 ns_per_push=159.26 overflow_delta=2534 overflow_pct=1.2670 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=26599900
+RESULT ns_per_push=132.9995
+RESULT ring_overflow_delta=2093
+RESULT overflow_pct=1.0465
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=26599900 ns_per_push=133.00 overflow_delta=2093 overflow_pct=1.0465 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=20076700
+RESULT ns_per_push=100.3835
+RESULT ring_overflow_delta=199
+RESULT overflow_pct=0.0995
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=20076700 ns_per_push=100.38 overflow_delta=199 overflow_pct=0.0995 oracle=PASS
+.RESULT arm=favorable
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=41043000
+RESULT ns_per_push=205.215
+RESULT ring_overflow_delta=334
+RESULT overflow_pct=0.167
+RESULT oracle_pass=1
+OK regime=favorable total_pushes=200000 elapsed_ns=41043000 ns_per_push=205.22 overflow_delta=334 overflow_pct=0.1670 oracle=PASS
+.
+
+[paired-ab] before_near_full vs after_near_full — 20 pairs, A/B/B/A protocol
+RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=437139400
+RESULT ns_per_push=2185.697
+RESULT ring_overflow_delta=3409
+RESULT overflow_pct=1.7045000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=437139400 ns_per_push=2185.70 overflow_delta=3409 overflow_pct=1.7045 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=464087300
+RESULT ns_per_push=2320.4365
+RESULT ring_overflow_delta=3751
+RESULT overflow_pct=1.8755000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=464087300 ns_per_push=2320.44 overflow_delta=3751 overflow_pct=1.8755 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=453889900
+RESULT ns_per_push=2269.4495
+RESULT ring_overflow_delta=3746
+RESULT overflow_pct=1.873
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=453889900 ns_per_push=2269.45 overflow_delta=3746 overflow_pct=1.8730 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=460797100
+RESULT ns_per_push=2303.9855
+RESULT ring_overflow_delta=3490
+RESULT overflow_pct=1.745
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=460797100 ns_per_push=2303.99 overflow_delta=3490 overflow_pct=1.7450 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=471755900
+RESULT ns_per_push=2358.7795
+RESULT ring_overflow_delta=3527
+RESULT overflow_pct=1.7635
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=471755900 ns_per_push=2358.78 overflow_delta=3527 overflow_pct=1.7635 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=428981200
+RESULT ns_per_push=2144.906
+RESULT ring_overflow_delta=3751
+RESULT overflow_pct=1.8755000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=428981200 ns_per_push=2144.91 overflow_delta=3751 overflow_pct=1.8755 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=460553000
+RESULT ns_per_push=2302.765
+RESULT ring_overflow_delta=3769
+RESULT overflow_pct=1.8845
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=460553000 ns_per_push=2302.76 overflow_delta=3769 overflow_pct=1.8845 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=470792100
+RESULT ns_per_push=2353.9605
+RESULT ring_overflow_delta=3523
+RESULT overflow_pct=1.7614999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=470792100 ns_per_push=2353.96 overflow_delta=3523 overflow_pct=1.7615 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=450459100
+RESULT ns_per_push=2252.2955
+RESULT ring_overflow_delta=3535
+RESULT overflow_pct=1.7675
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=450459100 ns_per_push=2252.30 overflow_delta=3535 overflow_pct=1.7675 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=437856600
+RESULT ns_per_push=2189.283
+RESULT ring_overflow_delta=3732
+RESULT overflow_pct=1.8659999999999999
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=437856600 ns_per_push=2189.28 overflow_delta=3732 overflow_pct=1.8660 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=438013700
+RESULT ns_per_push=2190.0685
+RESULT ring_overflow_delta=3749
+RESULT overflow_pct=1.8745
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=438013700 ns_per_push=2190.07 overflow_delta=3749 overflow_pct=1.8745 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=456974900
+RESULT ns_per_push=2284.8745
+RESULT ring_overflow_delta=3544
+RESULT overflow_pct=1.772
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=456974900 ns_per_push=2284.87 overflow_delta=3544 overflow_pct=1.7720 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=463012300
+RESULT ns_per_push=2315.0615
+RESULT ring_overflow_delta=3521
+RESULT overflow_pct=1.7605
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=463012300 ns_per_push=2315.06 overflow_delta=3521 overflow_pct=1.7605 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=443664600
+RESULT ns_per_push=2218.323
+RESULT ring_overflow_delta=3741
+RESULT overflow_pct=1.8704999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=443664600 ns_per_push=2218.32 overflow_delta=3741 overflow_pct=1.8705 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=395306000
+RESULT ns_per_push=1976.53
+RESULT ring_overflow_delta=3683
+RESULT overflow_pct=1.8415000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=395306000 ns_per_push=1976.53 overflow_delta=3683 overflow_pct=1.8415 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=453248600
+RESULT ns_per_push=2266.243
+RESULT ring_overflow_delta=3518
+RESULT overflow_pct=1.7590000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=453248600 ns_per_push=2266.24 overflow_delta=3518 overflow_pct=1.7590 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=461535300
+RESULT ns_per_push=2307.6765
+RESULT ring_overflow_delta=3503
+RESULT overflow_pct=1.7514999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=461535300 ns_per_push=2307.68 overflow_delta=3503 overflow_pct=1.7515 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=385001900
+RESULT ns_per_push=1925.0095
+RESULT ring_overflow_delta=3764
+RESULT overflow_pct=1.882
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=385001900 ns_per_push=1925.01 overflow_delta=3764 overflow_pct=1.8820 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=465364900
+RESULT ns_per_push=2326.8245
+RESULT ring_overflow_delta=3768
+RESULT overflow_pct=1.884
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=465364900 ns_per_push=2326.82 overflow_delta=3768 overflow_pct=1.8840 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=455103700
+RESULT ns_per_push=2275.5185
+RESULT ring_overflow_delta=3503
+RESULT overflow_pct=1.7514999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=455103700 ns_per_push=2275.52 overflow_delta=3503 overflow_pct=1.7515 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=459027500
+RESULT ns_per_push=2295.1375
+RESULT ring_overflow_delta=3537
+RESULT overflow_pct=1.7685
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=459027500 ns_per_push=2295.14 overflow_delta=3537 overflow_pct=1.7685 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=408886200
+RESULT ns_per_push=2044.431
+RESULT ring_overflow_delta=3764
+RESULT overflow_pct=1.882
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=408886200 ns_per_push=2044.43 overflow_delta=3764 overflow_pct=1.8820 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=396386100
+RESULT ns_per_push=1981.9305
+RESULT ring_overflow_delta=3719
+RESULT overflow_pct=1.8595000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=396386100 ns_per_push=1981.93 overflow_delta=3719 overflow_pct=1.8595 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=441926700
+RESULT ns_per_push=2209.6335
+RESULT ring_overflow_delta=3553
+RESULT overflow_pct=1.7765
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=441926700 ns_per_push=2209.63 overflow_delta=3553 overflow_pct=1.7765 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=455646800
+RESULT ns_per_push=2278.234
+RESULT ring_overflow_delta=3518
+RESULT overflow_pct=1.7590000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=455646800 ns_per_push=2278.23 overflow_delta=3518 overflow_pct=1.7590 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=411431900
+RESULT ns_per_push=2057.1595
+RESULT ring_overflow_delta=3669
+RESULT overflow_pct=1.8345
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=411431900 ns_per_push=2057.16 overflow_delta=3669 overflow_pct=1.8345 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=443492700
+RESULT ns_per_push=2217.4635
+RESULT ring_overflow_delta=3758
+RESULT overflow_pct=1.879
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=443492700 ns_per_push=2217.46 overflow_delta=3758 overflow_pct=1.8790 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=445168900
+RESULT ns_per_push=2225.8445
+RESULT ring_overflow_delta=3530
+RESULT overflow_pct=1.765
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=445168900 ns_per_push=2225.84 overflow_delta=3530 overflow_pct=1.7650 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=462253200
+RESULT ns_per_push=2311.266
+RESULT ring_overflow_delta=3523
+RESULT overflow_pct=1.7614999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=462253200 ns_per_push=2311.27 overflow_delta=3523 overflow_pct=1.7615 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=447286200
+RESULT ns_per_push=2236.431
+RESULT ring_overflow_delta=3760
+RESULT overflow_pct=1.8800000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=447286200 ns_per_push=2236.43 overflow_delta=3760 overflow_pct=1.8800 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=425423000
+RESULT ns_per_push=2127.115
+RESULT ring_overflow_delta=3731
+RESULT overflow_pct=1.8655000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=425423000 ns_per_push=2127.11 overflow_delta=3731 overflow_pct=1.8655 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=462151300
+RESULT ns_per_push=2310.7565
+RESULT ring_overflow_delta=3486
+RESULT overflow_pct=1.743
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=462151300 ns_per_push=2310.76 overflow_delta=3486 overflow_pct=1.7430 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=438129000
+RESULT ns_per_push=2190.645
+RESULT ring_overflow_delta=3539
+RESULT overflow_pct=1.7694999999999999
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=438129000 ns_per_push=2190.64 overflow_delta=3539 overflow_pct=1.7695 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=443082500
+RESULT ns_per_push=2215.4125
+RESULT ring_overflow_delta=3730
+RESULT overflow_pct=1.865
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=443082500 ns_per_push=2215.41 overflow_delta=3730 overflow_pct=1.8650 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=433503600
+RESULT ns_per_push=2167.518
+RESULT ring_overflow_delta=3691
+RESULT overflow_pct=1.8455
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=433503600 ns_per_push=2167.52 overflow_delta=3691 overflow_pct=1.8455 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=444460000
+RESULT ns_per_push=2222.3
+RESULT ring_overflow_delta=3580
+RESULT overflow_pct=1.79
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=444460000 ns_per_push=2222.30 overflow_delta=3580 overflow_pct=1.7900 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=459250400
+RESULT ns_per_push=2296.252
+RESULT ring_overflow_delta=3524
+RESULT overflow_pct=1.762
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=459250400 ns_per_push=2296.25 overflow_delta=3524 overflow_pct=1.7620 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=464951700
+RESULT ns_per_push=2324.7585
+RESULT ring_overflow_delta=3696
+RESULT overflow_pct=1.848
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=464951700 ns_per_push=2324.76 overflow_delta=3696 overflow_pct=1.8480 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=407925800
+RESULT ns_per_push=2039.629
+RESULT ring_overflow_delta=3735
+RESULT overflow_pct=1.8675000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=407925800 ns_per_push=2039.63 overflow_delta=3735 overflow_pct=1.8675 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=451035700
+RESULT ns_per_push=2255.1785
+RESULT ring_overflow_delta=3536
+RESULT overflow_pct=1.7680000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=451035700 ns_per_push=2255.18 overflow_delta=3536 overflow_pct=1.7680 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=464302700
+RESULT ns_per_push=2321.5135
+RESULT ring_overflow_delta=3514
+RESULT overflow_pct=1.757
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=464302700 ns_per_push=2321.51 overflow_delta=3514 overflow_pct=1.7570 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=381617300
+RESULT ns_per_push=1908.0865
+RESULT ring_overflow_delta=3756
+RESULT overflow_pct=1.8780000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=381617300 ns_per_push=1908.09 overflow_delta=3756 overflow_pct=1.8780 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=433360900
+RESULT ns_per_push=2166.8045
+RESULT ring_overflow_delta=3720
+RESULT overflow_pct=1.8599999999999999
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=433360900 ns_per_push=2166.80 overflow_delta=3720 overflow_pct=1.8600 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=460677800
+RESULT ns_per_push=2303.389
+RESULT ring_overflow_delta=3576
+RESULT overflow_pct=1.788
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=460677800 ns_per_push=2303.39 overflow_delta=3576 overflow_pct=1.7880 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=436027700
+RESULT ns_per_push=2180.1385
+RESULT ring_overflow_delta=3566
+RESULT overflow_pct=1.783
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=436027700 ns_per_push=2180.14 overflow_delta=3566 overflow_pct=1.7830 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=438006600
+RESULT ns_per_push=2190.033
+RESULT ring_overflow_delta=3750
+RESULT overflow_pct=1.875
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=438006600 ns_per_push=2190.03 overflow_delta=3750 overflow_pct=1.8750 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=435138400
+RESULT ns_per_push=2175.692
+RESULT ring_overflow_delta=3745
+RESULT overflow_pct=1.8724999999999998
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=435138400 ns_per_push=2175.69 overflow_delta=3745 overflow_pct=1.8725 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=419289100
+RESULT ns_per_push=2096.4455
+RESULT ring_overflow_delta=3576
+RESULT overflow_pct=1.788
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=419289100 ns_per_push=2096.45 overflow_delta=3576 overflow_pct=1.7880 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=443880600
+RESULT ns_per_push=2219.403
+RESULT ring_overflow_delta=3501
+RESULT overflow_pct=1.7505
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=443880600 ns_per_push=2219.40 overflow_delta=3501 overflow_pct=1.7505 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=444931600
+RESULT ns_per_push=2224.658
+RESULT ring_overflow_delta=3733
+RESULT overflow_pct=1.8665
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=444931600 ns_per_push=2224.66 overflow_delta=3733 overflow_pct=1.8665 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=471003100
+RESULT ns_per_push=2355.0155
+RESULT ring_overflow_delta=3734
+RESULT overflow_pct=1.867
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=471003100 ns_per_push=2355.02 overflow_delta=3734 overflow_pct=1.8670 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=447411400
+RESULT ns_per_push=2237.057
+RESULT ring_overflow_delta=3521
+RESULT overflow_pct=1.7605
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=447411400 ns_per_push=2237.06 overflow_delta=3521 overflow_pct=1.7605 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=457514200
+RESULT ns_per_push=2287.571
+RESULT ring_overflow_delta=3529
+RESULT overflow_pct=1.7645000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=457514200 ns_per_push=2287.57 overflow_delta=3529 overflow_pct=1.7645 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=459756200
+RESULT ns_per_push=2298.781
+RESULT ring_overflow_delta=3742
+RESULT overflow_pct=1.871
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=459756200 ns_per_push=2298.78 overflow_delta=3742 overflow_pct=1.8710 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=467495700
+RESULT ns_per_push=2337.4785
+RESULT ring_overflow_delta=3715
+RESULT overflow_pct=1.8575000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=467495700 ns_per_push=2337.48 overflow_delta=3715 overflow_pct=1.8575 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=462640200
+RESULT ns_per_push=2313.201
+RESULT ring_overflow_delta=3547
+RESULT overflow_pct=1.7735
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=462640200 ns_per_push=2313.20 overflow_delta=3547 overflow_pct=1.7735 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=421586800
+RESULT ns_per_push=2107.934
+RESULT ring_overflow_delta=3605
+RESULT overflow_pct=1.8025
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=421586800 ns_per_push=2107.93 overflow_delta=3605 overflow_pct=1.8025 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=429677600
+RESULT ns_per_push=2148.388
+RESULT ring_overflow_delta=3733
+RESULT overflow_pct=1.8665
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=429677600 ns_per_push=2148.39 overflow_delta=3733 overflow_pct=1.8665 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=454475200
+RESULT ns_per_push=2272.376
+RESULT ring_overflow_delta=3744
+RESULT overflow_pct=1.872
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=454475200 ns_per_push=2272.38 overflow_delta=3744 overflow_pct=1.8720 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=447147300
+RESULT ns_per_push=2235.7365
+RESULT ring_overflow_delta=3521
+RESULT overflow_pct=1.7605
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=447147300 ns_per_push=2235.74 overflow_delta=3521 overflow_pct=1.7605 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=472575800
+RESULT ns_per_push=2362.879
+RESULT ring_overflow_delta=3526
+RESULT overflow_pct=1.763
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=472575800 ns_per_push=2362.88 overflow_delta=3526 overflow_pct=1.7630 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=442174200
+RESULT ns_per_push=2210.871
+RESULT ring_overflow_delta=3737
+RESULT overflow_pct=1.8685
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=442174200 ns_per_push=2210.87 overflow_delta=3737 overflow_pct=1.8685 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=440994800
+RESULT ns_per_push=2204.974
+RESULT ring_overflow_delta=3711
+RESULT overflow_pct=1.8555
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=440994800 ns_per_push=2204.97 overflow_delta=3711 overflow_pct=1.8555 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=456269900
+RESULT ns_per_push=2281.3495
+RESULT ring_overflow_delta=3527
+RESULT overflow_pct=1.7635
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=456269900 ns_per_push=2281.35 overflow_delta=3527 overflow_pct=1.7635 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=441155100
+RESULT ns_per_push=2205.7755
+RESULT ring_overflow_delta=3518
+RESULT overflow_pct=1.7590000000000001
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=441155100 ns_per_push=2205.78 overflow_delta=3518 overflow_pct=1.7590 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=462278800
+RESULT ns_per_push=2311.394
+RESULT ring_overflow_delta=3712
+RESULT overflow_pct=1.856
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=462278800 ns_per_push=2311.39 overflow_delta=3712 overflow_pct=1.8560 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=446456600
+RESULT ns_per_push=2232.283
+RESULT ring_overflow_delta=3748
+RESULT overflow_pct=1.8739999999999999
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=446456600 ns_per_push=2232.28 overflow_delta=3748 overflow_pct=1.8740 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=441463700
+RESULT ns_per_push=2207.3185
+RESULT ring_overflow_delta=3549
+RESULT overflow_pct=1.7745
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=441463700 ns_per_push=2207.32 overflow_delta=3549 overflow_pct=1.7745 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=447302800
+RESULT ns_per_push=2236.514
+RESULT ring_overflow_delta=3561
+RESULT overflow_pct=1.7805000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=447302800 ns_per_push=2236.51 overflow_delta=3561 overflow_pct=1.7805 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=433663800
+RESULT ns_per_push=2168.319
+RESULT ring_overflow_delta=3753
+RESULT overflow_pct=1.8765
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=433663800 ns_per_push=2168.32 overflow_delta=3753 overflow_pct=1.8765 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=406920700
+RESULT ns_per_push=2034.6035
+RESULT ring_overflow_delta=3755
+RESULT overflow_pct=1.8775
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=406920700 ns_per_push=2034.60 overflow_delta=3755 overflow_pct=1.8775 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=419334200
+RESULT ns_per_push=2096.671
+RESULT ring_overflow_delta=3530
+RESULT overflow_pct=1.765
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=419334200 ns_per_push=2096.67 overflow_delta=3530 overflow_pct=1.7650 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=452713100
+RESULT ns_per_push=2263.5655
+RESULT ring_overflow_delta=3493
+RESULT overflow_pct=1.7465000000000002
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=452713100 ns_per_push=2263.57 overflow_delta=3493 overflow_pct=1.7465 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=449056800
+RESULT ns_per_push=2245.284
+RESULT ring_overflow_delta=3727
+RESULT overflow_pct=1.8635
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=449056800 ns_per_push=2245.28 overflow_delta=3727 overflow_pct=1.8635 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=431015200
+RESULT ns_per_push=2155.076
+RESULT ring_overflow_delta=3772
+RESULT overflow_pct=1.886
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=431015200 ns_per_push=2155.08 overflow_delta=3772 overflow_pct=1.8860 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=457064100
+RESULT ns_per_push=2285.3205
+RESULT ring_overflow_delta=3550
+RESULT overflow_pct=1.775
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=457064100 ns_per_push=2285.32 overflow_delta=3550 overflow_pct=1.7750 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=465878000
+RESULT ns_per_push=2329.39
+RESULT ring_overflow_delta=3512
+RESULT overflow_pct=1.756
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=465878000 ns_per_push=2329.39 overflow_delta=3512 overflow_pct=1.7560 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=429976300
+RESULT ns_per_push=2149.8815
+RESULT ring_overflow_delta=3772
+RESULT overflow_pct=1.886
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=429976300 ns_per_push=2149.88 overflow_delta=3772 overflow_pct=1.8860 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=474459300
+RESULT ns_per_push=2372.2965
+RESULT ring_overflow_delta=3641
+RESULT overflow_pct=1.8205
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=474459300 ns_per_push=2372.30 overflow_delta=3641 overflow_pct=1.8205 oracle=PASS
+.RESULT arm=near_full
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=463815500
+RESULT ns_per_push=2319.0775
+RESULT ring_overflow_delta=3476
+RESULT overflow_pct=1.738
+RESULT oracle_pass=1
+OK regime=near_full total_pushes=200000 elapsed_ns=463815500 ns_per_push=2319.08 overflow_delta=3476 overflow_pct=1.7380 oracle=PASS
+.
+
+[paired-ab] before_overflow vs after_overflow — 20 pairs, A/B/B/A protocol
+RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2635566200
+RESULT ns_per_push=13177.831
+RESULT ring_overflow_delta=3484
+RESULT overflow_pct=1.7420000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2635566200 ns_per_push=13177.83 overflow_delta=3484 overflow_pct=1.7420 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2619180200
+RESULT ns_per_push=13095.901
+RESULT ring_overflow_delta=3598
+RESULT overflow_pct=1.799
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2619180200 ns_per_push=13095.90 overflow_delta=3598 overflow_pct=1.7990 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2636442900
+RESULT ns_per_push=13182.2145
+RESULT ring_overflow_delta=3570
+RESULT overflow_pct=1.7850000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2636442900 ns_per_push=13182.21 overflow_delta=3570 overflow_pct=1.7850 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2615058100
+RESULT ns_per_push=13075.2905
+RESULT ring_overflow_delta=3543
+RESULT overflow_pct=1.7715
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2615058100 ns_per_push=13075.29 overflow_delta=3543 overflow_pct=1.7715 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2602678200
+RESULT ns_per_push=13013.391
+RESULT ring_overflow_delta=3563
+RESULT overflow_pct=1.7815
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2602678200 ns_per_push=13013.39 overflow_delta=3563 overflow_pct=1.7815 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2603370000
+RESULT ns_per_push=13016.85
+RESULT ring_overflow_delta=3626
+RESULT overflow_pct=1.813
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2603370000 ns_per_push=13016.85 overflow_delta=3626 overflow_pct=1.8130 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2621788300
+RESULT ns_per_push=13108.9415
+RESULT ring_overflow_delta=3579
+RESULT overflow_pct=1.7895
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2621788300 ns_per_push=13108.94 overflow_delta=3579 overflow_pct=1.7895 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2603843500
+RESULT ns_per_push=13019.2175
+RESULT ring_overflow_delta=3556
+RESULT overflow_pct=1.778
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2603843500 ns_per_push=13019.22 overflow_delta=3556 overflow_pct=1.7780 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2613083400
+RESULT ns_per_push=13065.417
+RESULT ring_overflow_delta=3545
+RESULT overflow_pct=1.7725000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2613083400 ns_per_push=13065.42 overflow_delta=3545 overflow_pct=1.7725 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2613523400
+RESULT ns_per_push=13067.617
+RESULT ring_overflow_delta=3634
+RESULT overflow_pct=1.817
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2613523400 ns_per_push=13067.62 overflow_delta=3634 overflow_pct=1.8170 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2620674900
+RESULT ns_per_push=13103.3745
+RESULT ring_overflow_delta=3608
+RESULT overflow_pct=1.804
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2620674900 ns_per_push=13103.37 overflow_delta=3608 overflow_pct=1.8040 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2609941200
+RESULT ns_per_push=13049.706
+RESULT ring_overflow_delta=3547
+RESULT overflow_pct=1.7735
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2609941200 ns_per_push=13049.71 overflow_delta=3547 overflow_pct=1.7735 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2604956400
+RESULT ns_per_push=13024.782
+RESULT ring_overflow_delta=3456
+RESULT overflow_pct=1.728
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2604956400 ns_per_push=13024.78 overflow_delta=3456 overflow_pct=1.7280 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2609368900
+RESULT ns_per_push=13046.8445
+RESULT ring_overflow_delta=3599
+RESULT overflow_pct=1.7995
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2609368900 ns_per_push=13046.84 overflow_delta=3599 overflow_pct=1.7995 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2602630500
+RESULT ns_per_push=13013.1525
+RESULT ring_overflow_delta=3618
+RESULT overflow_pct=1.809
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2602630500 ns_per_push=13013.15 overflow_delta=3618 overflow_pct=1.8090 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2625926200
+RESULT ns_per_push=13129.631
+RESULT ring_overflow_delta=3601
+RESULT overflow_pct=1.8005
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2625926200 ns_per_push=13129.63 overflow_delta=3601 overflow_pct=1.8005 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2625518700
+RESULT ns_per_push=13127.5935
+RESULT ring_overflow_delta=3600
+RESULT overflow_pct=1.7999999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2625518700 ns_per_push=13127.59 overflow_delta=3600 overflow_pct=1.8000 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2607491700
+RESULT ns_per_push=13037.4585
+RESULT ring_overflow_delta=3600
+RESULT overflow_pct=1.7999999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2607491700 ns_per_push=13037.46 overflow_delta=3600 overflow_pct=1.8000 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2634760900
+RESULT ns_per_push=13173.8045
+RESULT ring_overflow_delta=3635
+RESULT overflow_pct=1.8175000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2634760900 ns_per_push=13173.80 overflow_delta=3635 overflow_pct=1.8175 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2608228000
+RESULT ns_per_push=13041.14
+RESULT ring_overflow_delta=3559
+RESULT overflow_pct=1.7794999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2608228000 ns_per_push=13041.14 overflow_delta=3559 overflow_pct=1.7795 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2596202900
+RESULT ns_per_push=12981.0145
+RESULT ring_overflow_delta=3599
+RESULT overflow_pct=1.7995
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2596202900 ns_per_push=12981.01 overflow_delta=3599 overflow_pct=1.7995 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2619333000
+RESULT ns_per_push=13096.665
+RESULT ring_overflow_delta=3595
+RESULT overflow_pct=1.7975
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2619333000 ns_per_push=13096.67 overflow_delta=3595 overflow_pct=1.7975 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2605147600
+RESULT ns_per_push=13025.738
+RESULT ring_overflow_delta=3623
+RESULT overflow_pct=1.8114999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2605147600 ns_per_push=13025.74 overflow_delta=3623 overflow_pct=1.8115 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2597511700
+RESULT ns_per_push=12987.5585
+RESULT ring_overflow_delta=3499
+RESULT overflow_pct=1.7495
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2597511700 ns_per_push=12987.56 overflow_delta=3499 overflow_pct=1.7495 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2606874300
+RESULT ns_per_push=13034.3715
+RESULT ring_overflow_delta=3593
+RESULT overflow_pct=1.7964999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2606874300 ns_per_push=13034.37 overflow_delta=3593 overflow_pct=1.7965 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2609793800
+RESULT ns_per_push=13048.969
+RESULT ring_overflow_delta=3608
+RESULT overflow_pct=1.804
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2609793800 ns_per_push=13048.97 overflow_delta=3608 overflow_pct=1.8040 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2615415500
+RESULT ns_per_push=13077.0775
+RESULT ring_overflow_delta=3640
+RESULT overflow_pct=1.82
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2615415500 ns_per_push=13077.08 overflow_delta=3640 overflow_pct=1.8200 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2615813900
+RESULT ns_per_push=13079.0695
+RESULT ring_overflow_delta=3538
+RESULT overflow_pct=1.7690000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2615813900 ns_per_push=13079.07 overflow_delta=3538 overflow_pct=1.7690 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2605959100
+RESULT ns_per_push=13029.7955
+RESULT ring_overflow_delta=3581
+RESULT overflow_pct=1.7905
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2605959100 ns_per_push=13029.80 overflow_delta=3581 overflow_pct=1.7905 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2611873200
+RESULT ns_per_push=13059.366
+RESULT ring_overflow_delta=3612
+RESULT overflow_pct=1.806
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2611873200 ns_per_push=13059.37 overflow_delta=3612 overflow_pct=1.8060 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2606469500
+RESULT ns_per_push=13032.3475
+RESULT ring_overflow_delta=3638
+RESULT overflow_pct=1.8190000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2606469500 ns_per_push=13032.35 overflow_delta=3638 overflow_pct=1.8190 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2619121900
+RESULT ns_per_push=13095.6095
+RESULT ring_overflow_delta=3589
+RESULT overflow_pct=1.7945
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2619121900 ns_per_push=13095.61 overflow_delta=3589 overflow_pct=1.7945 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2673332000
+RESULT ns_per_push=13366.66
+RESULT ring_overflow_delta=3428
+RESULT overflow_pct=1.714
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2673332000 ns_per_push=13366.66 overflow_delta=3428 overflow_pct=1.7140 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2638572100
+RESULT ns_per_push=13192.8605
+RESULT ring_overflow_delta=3646
+RESULT overflow_pct=1.823
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2638572100 ns_per_push=13192.86 overflow_delta=3646 overflow_pct=1.8230 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2608353200
+RESULT ns_per_push=13041.766
+RESULT ring_overflow_delta=3653
+RESULT overflow_pct=1.8265
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2608353200 ns_per_push=13041.77 overflow_delta=3653 overflow_pct=1.8265 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2600997600
+RESULT ns_per_push=13004.988
+RESULT ring_overflow_delta=3605
+RESULT overflow_pct=1.8025
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2600997600 ns_per_push=13004.99 overflow_delta=3605 overflow_pct=1.8025 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2600560900
+RESULT ns_per_push=13002.8045
+RESULT ring_overflow_delta=3570
+RESULT overflow_pct=1.7850000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2600560900 ns_per_push=13002.80 overflow_delta=3570 overflow_pct=1.7850 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2606029000
+RESULT ns_per_push=13030.145
+RESULT ring_overflow_delta=3609
+RESULT overflow_pct=1.8044999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2606029000 ns_per_push=13030.15 overflow_delta=3609 overflow_pct=1.8045 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2602823500
+RESULT ns_per_push=13014.1175
+RESULT ring_overflow_delta=3618
+RESULT overflow_pct=1.809
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2602823500 ns_per_push=13014.12 overflow_delta=3618 overflow_pct=1.8090 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2776014200
+RESULT ns_per_push=13880.071
+RESULT ring_overflow_delta=3188
+RESULT overflow_pct=1.5939999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2776014200 ns_per_push=13880.07 overflow_delta=3188 overflow_pct=1.5940 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2740714400
+RESULT ns_per_push=13703.572
+RESULT ring_overflow_delta=3011
+RESULT overflow_pct=1.5055
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2740714400 ns_per_push=13703.57 overflow_delta=3011 overflow_pct=1.5055 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2618075600
+RESULT ns_per_push=13090.378
+RESULT ring_overflow_delta=3413
+RESULT overflow_pct=1.7065000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2618075600 ns_per_push=13090.38 overflow_delta=3413 overflow_pct=1.7065 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2628036500
+RESULT ns_per_push=13140.1825
+RESULT ring_overflow_delta=3390
+RESULT overflow_pct=1.695
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2628036500 ns_per_push=13140.18 overflow_delta=3390 overflow_pct=1.6950 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2708290400
+RESULT ns_per_push=13541.452
+RESULT ring_overflow_delta=3218
+RESULT overflow_pct=1.609
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2708290400 ns_per_push=13541.45 overflow_delta=3218 overflow_pct=1.6090 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2704128400
+RESULT ns_per_push=13520.642
+RESULT ring_overflow_delta=3212
+RESULT overflow_pct=1.606
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2704128400 ns_per_push=13520.64 overflow_delta=3212 overflow_pct=1.6060 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2642510700
+RESULT ns_per_push=13212.5535
+RESULT ring_overflow_delta=3321
+RESULT overflow_pct=1.6605
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2642510700 ns_per_push=13212.55 overflow_delta=3321 overflow_pct=1.6605 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2657418800
+RESULT ns_per_push=13287.094
+RESULT ring_overflow_delta=3315
+RESULT overflow_pct=1.6575
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2657418800 ns_per_push=13287.09 overflow_delta=3315 overflow_pct=1.6575 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2630845300
+RESULT ns_per_push=13154.2265
+RESULT ring_overflow_delta=3520
+RESULT overflow_pct=1.76
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2630845300 ns_per_push=13154.23 overflow_delta=3520 overflow_pct=1.7600 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2604875600
+RESULT ns_per_push=13024.378
+RESULT ring_overflow_delta=3640
+RESULT overflow_pct=1.82
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2604875600 ns_per_push=13024.38 overflow_delta=3640 overflow_pct=1.8200 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2607051200
+RESULT ns_per_push=13035.256
+RESULT ring_overflow_delta=3601
+RESULT overflow_pct=1.8005
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2607051200 ns_per_push=13035.26 overflow_delta=3601 overflow_pct=1.8005 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2600451000
+RESULT ns_per_push=13002.255
+RESULT ring_overflow_delta=3644
+RESULT overflow_pct=1.822
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2600451000 ns_per_push=13002.25 overflow_delta=3644 overflow_pct=1.8220 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2614346600
+RESULT ns_per_push=13071.733
+RESULT ring_overflow_delta=3521
+RESULT overflow_pct=1.7605
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2614346600 ns_per_push=13071.73 overflow_delta=3521 overflow_pct=1.7605 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2642099000
+RESULT ns_per_push=13210.495
+RESULT ring_overflow_delta=3523
+RESULT overflow_pct=1.7614999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2642099000 ns_per_push=13210.50 overflow_delta=3523 overflow_pct=1.7615 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2609581800
+RESULT ns_per_push=13047.909
+RESULT ring_overflow_delta=3637
+RESULT overflow_pct=1.8185
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2609581800 ns_per_push=13047.91 overflow_delta=3637 overflow_pct=1.8185 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2618385700
+RESULT ns_per_push=13091.9285
+RESULT ring_overflow_delta=3600
+RESULT overflow_pct=1.7999999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2618385700 ns_per_push=13091.93 overflow_delta=3600 overflow_pct=1.8000 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2638446600
+RESULT ns_per_push=13192.233
+RESULT ring_overflow_delta=3534
+RESULT overflow_pct=1.7670000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2638446600 ns_per_push=13192.23 overflow_delta=3534 overflow_pct=1.7670 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2653095400
+RESULT ns_per_push=13265.477
+RESULT ring_overflow_delta=3562
+RESULT overflow_pct=1.781
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2653095400 ns_per_push=13265.48 overflow_delta=3562 overflow_pct=1.7810 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2610322300
+RESULT ns_per_push=13051.6115
+RESULT ring_overflow_delta=3572
+RESULT overflow_pct=1.786
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2610322300 ns_per_push=13051.61 overflow_delta=3572 overflow_pct=1.7860 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2607599100
+RESULT ns_per_push=13037.9955
+RESULT ring_overflow_delta=3634
+RESULT overflow_pct=1.817
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2607599100 ns_per_push=13038.00 overflow_delta=3634 overflow_pct=1.8170 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2616609700
+RESULT ns_per_push=13083.0485
+RESULT ring_overflow_delta=3559
+RESULT overflow_pct=1.7794999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2616609700 ns_per_push=13083.05 overflow_delta=3559 overflow_pct=1.7795 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2629849000
+RESULT ns_per_push=13149.245
+RESULT ring_overflow_delta=3554
+RESULT overflow_pct=1.7770000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2629849000 ns_per_push=13149.25 overflow_delta=3554 overflow_pct=1.7770 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2614444300
+RESULT ns_per_push=13072.2215
+RESULT ring_overflow_delta=3605
+RESULT overflow_pct=1.8025
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2614444300 ns_per_push=13072.22 overflow_delta=3605 overflow_pct=1.8025 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2614281600
+RESULT ns_per_push=13071.408
+RESULT ring_overflow_delta=3617
+RESULT overflow_pct=1.8085
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2614281600 ns_per_push=13071.41 overflow_delta=3617 overflow_pct=1.8085 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2643358000
+RESULT ns_per_push=13216.79
+RESULT ring_overflow_delta=3538
+RESULT overflow_pct=1.7690000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2643358000 ns_per_push=13216.79 overflow_delta=3538 overflow_pct=1.7690 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2610417100
+RESULT ns_per_push=13052.0855
+RESULT ring_overflow_delta=3587
+RESULT overflow_pct=1.7934999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2610417100 ns_per_push=13052.09 overflow_delta=3587 overflow_pct=1.7935 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2604097300
+RESULT ns_per_push=13020.4865
+RESULT ring_overflow_delta=3606
+RESULT overflow_pct=1.8030000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2604097300 ns_per_push=13020.49 overflow_delta=3606 overflow_pct=1.8030 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2619704600
+RESULT ns_per_push=13098.523
+RESULT ring_overflow_delta=3627
+RESULT overflow_pct=1.8135
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2619704600 ns_per_push=13098.52 overflow_delta=3627 overflow_pct=1.8135 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2607464000
+RESULT ns_per_push=13037.32
+RESULT ring_overflow_delta=3564
+RESULT overflow_pct=1.7819999999999998
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2607464000 ns_per_push=13037.32 overflow_delta=3564 overflow_pct=1.7820 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2634496200
+RESULT ns_per_push=13172.481
+RESULT ring_overflow_delta=3478
+RESULT overflow_pct=1.7389999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2634496200 ns_per_push=13172.48 overflow_delta=3478 overflow_pct=1.7390 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2622766300
+RESULT ns_per_push=13113.8315
+RESULT ring_overflow_delta=3604
+RESULT overflow_pct=1.802
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2622766300 ns_per_push=13113.83 overflow_delta=3604 overflow_pct=1.8020 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2609422400
+RESULT ns_per_push=13047.112
+RESULT ring_overflow_delta=3606
+RESULT overflow_pct=1.8030000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2609422400 ns_per_push=13047.11 overflow_delta=3606 overflow_pct=1.8030 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2612285600
+RESULT ns_per_push=13061.428
+RESULT ring_overflow_delta=3538
+RESULT overflow_pct=1.7690000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2612285600 ns_per_push=13061.43 overflow_delta=3538 overflow_pct=1.7690 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2617104900
+RESULT ns_per_push=13085.5245
+RESULT ring_overflow_delta=3554
+RESULT overflow_pct=1.7770000000000001
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2617104900 ns_per_push=13085.52 overflow_delta=3554 overflow_pct=1.7770 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2605308500
+RESULT ns_per_push=13026.5425
+RESULT ring_overflow_delta=3621
+RESULT overflow_pct=1.8105
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2605308500 ns_per_push=13026.54 overflow_delta=3621 overflow_pct=1.8105 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2620238700
+RESULT ns_per_push=13101.1935
+RESULT ring_overflow_delta=3628
+RESULT overflow_pct=1.814
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2620238700 ns_per_push=13101.19 overflow_delta=3628 overflow_pct=1.8140 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2607279800
+RESULT ns_per_push=13036.399
+RESULT ring_overflow_delta=3528
+RESULT overflow_pct=1.764
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2607279800 ns_per_push=13036.40 overflow_delta=3528 overflow_pct=1.7640 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2599313600
+RESULT ns_per_push=12996.568
+RESULT ring_overflow_delta=3580
+RESULT overflow_pct=1.79
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2599313600 ns_per_push=12996.57 overflow_delta=3580 overflow_pct=1.7900 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2603034100
+RESULT ns_per_push=13015.1705
+RESULT ring_overflow_delta=3591
+RESULT overflow_pct=1.7954999999999999
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2603034100 ns_per_push=13015.17 overflow_delta=3591 overflow_pct=1.7955 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2615087800
+RESULT ns_per_push=13075.439
+RESULT ring_overflow_delta=3592
+RESULT overflow_pct=1.796
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2615087800 ns_per_push=13075.44 overflow_delta=3592 overflow_pct=1.7960 oracle=PASS
+.RESULT arm=overflow
+RESULT producers=4
+RESULT blocks_per_producer=50000
+RESULT total_pushes=200000
+RESULT elapsed_ns=2614367900
+RESULT ns_per_push=13071.8395
+RESULT ring_overflow_delta=3513
+RESULT overflow_pct=1.7565000000000002
+RESULT oracle_pass=1
+OK regime=overflow total_pushes=200000 elapsed_ns=2614367900 ns_per_push=13071.84 overflow_delta=3513 overflow_pct=1.7565 oracle=PASS
+.
+
+  === before_favorable vs after_favorable (A - B, ns) ===
+  n=20  mean Δ=11.712 ms  sd=4.708 ms  se=1.053 ms  t=11.125  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: before_favorable-faster=0/20  after_favorable-faster=20/20  ties=0
+
+  === before_near_full vs after_near_full (A - B, ns) ===
+  n=20  mean Δ=14.759 ms  sd=20.130 ms  se=4.501 ms  t=3.279  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: before_near_full-faster=6/20  after_near_full-faster=14/20  ties=0
+
+  === before_overflow vs after_overflow (A - B, ns) ===
+  n=20  mean Δ=13.643 ms  sd=29.500 ms  se=6.596 ms  t=2.068  df=19  crit(p<0.05)=2.101  => NOT statistically distinguishable from noise (fails to reject null)
+  sign test: before_overflow-faster=9/20  after_overflow-faster=11/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-08-04T16-40-55-214Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md's verdict criteria. A same-vs-same control run
+  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --
+  if it does not, that indicates a harness bug (non-reproducible workload, background load
+  bleeding into the timed region), not a real self-difference.
