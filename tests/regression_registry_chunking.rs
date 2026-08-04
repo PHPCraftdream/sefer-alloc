@@ -40,7 +40,7 @@
 //! later access, or if `RegistryChunk`'s slot array were re-indexed
 //! differently across calls.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

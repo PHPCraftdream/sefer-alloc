@@ -20,7 +20,7 @@
 //! only release-distinguishable because `debug_assert!` already panicked in
 //! debug).
 
-#![cfg(feature = "alloc-xthread")]
+#![cfg(all(feature = "alloc-xthread", feature = "internals"))]
 
 use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT};
 

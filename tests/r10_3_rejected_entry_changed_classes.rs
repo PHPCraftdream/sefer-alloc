@@ -42,6 +42,7 @@
 //! empty test binary (0 tests, pass by absence).
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-segment-directory",

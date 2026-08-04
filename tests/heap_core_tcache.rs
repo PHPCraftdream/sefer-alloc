@@ -29,7 +29,7 @@
 //! the stamp is present. Without the stamp the remote free silently drops
 //! (safe no-op) -- but the T7/soak conservation checks would catch the leak.
 
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

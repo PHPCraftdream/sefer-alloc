@@ -39,7 +39,7 @@
 //! pushing more than `RING_CAP` offsets total (the consumer drains
 //! concurrently, so the ring wraps multiple times).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;

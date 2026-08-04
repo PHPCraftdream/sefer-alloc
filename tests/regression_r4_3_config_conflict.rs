@@ -21,7 +21,7 @@
 //! Also verifies no false positive: re-claiming with a *matching* config does
 //! not trigger the conflict signal.
 
-#![cfg(feature = "alloc-decommit")]
+#![cfg(all(feature = "alloc-decommit", feature = "internals"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

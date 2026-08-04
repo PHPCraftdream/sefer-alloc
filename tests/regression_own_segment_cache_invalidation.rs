@@ -37,6 +37,7 @@
 //! clean pass. See the report for the pasted red output.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "alloc-decommit"

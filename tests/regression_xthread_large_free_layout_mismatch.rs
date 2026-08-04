@@ -41,7 +41,7 @@
 //! by hand during development (temporarily reverting the mitigation branch
 //! in both `heap_core.rs` and `heap.rs` back to an unconditional push).
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

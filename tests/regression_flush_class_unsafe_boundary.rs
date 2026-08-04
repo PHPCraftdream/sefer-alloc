@@ -31,7 +31,7 @@
 //! in both profiles because `dbg_freelist_head_for`'s release pre-check fires
 //! BEFORE reaching `BinTable::head`.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 

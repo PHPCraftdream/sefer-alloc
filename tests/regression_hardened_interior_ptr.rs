@@ -27,7 +27,7 @@
 //! Gated to `hardened` (which pulls `fastbin`): only that build compiles the
 //! guard, so the test is meaningful only there.
 
-#![cfg(feature = "hardened")]
+#![cfg(all(feature = "hardened", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

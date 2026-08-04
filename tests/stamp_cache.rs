@@ -24,7 +24,7 @@
 //!    cross-thread free; that leg was rewritten because `HeapCore` does not
 //!    expose a public cross-thread-free entry point.)
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

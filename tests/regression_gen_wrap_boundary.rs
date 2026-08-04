@@ -79,7 +79,7 @@
 //! standalone-buffer analogue of an OS segment), matching Ф1's miri-clean
 //! `SegmentBuffer` helper.
 
-#![cfg(feature = "hardened")]
+#![cfg(all(feature = "hardened", feature = "internals"))]
 
 use sefer_alloc::alloc_core::remote_free_ring::ENTRY_GEN_BITS;
 use sefer_alloc::alloc_core::segment_header::{bump_gen, gen_at};

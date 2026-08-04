@@ -46,7 +46,7 @@
 //! gated to `alloc-stats` — run with `--features "hardened medium-classes
 //! alloc-stats"` to exercise them.
 
-#![cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

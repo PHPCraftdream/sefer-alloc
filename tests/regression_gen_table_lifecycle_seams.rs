@@ -44,6 +44,7 @@
 //!   `init_gen_table_in_place`).
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "hardened"

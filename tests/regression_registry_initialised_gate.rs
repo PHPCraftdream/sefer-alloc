@@ -72,7 +72,7 @@
 //! relying on timing luck. See the task report for whether miri was run
 //! and what it found in this environment.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

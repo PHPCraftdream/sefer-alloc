@@ -47,7 +47,7 @@
 //! (behind `#[doc(hidden)]`) specifically so this test can reach them — see
 //! `src/lib.rs` and `src/global/mod.rs`.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::global::tls_heap;
 

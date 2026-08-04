@@ -98,6 +98,7 @@
 //! still consumed by value.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-decommit",
     feature = "bench-internals"

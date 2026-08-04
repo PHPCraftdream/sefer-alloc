@@ -22,7 +22,7 @@
 //! - **T-key-round-trip**: alloc -> free -> alloc returns the same ptr
 //!   (LIFO from magazine). The key in word1 does not break the round-trip.
 
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

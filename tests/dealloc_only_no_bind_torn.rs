@@ -46,7 +46,7 @@
 //!
 //! Per project convention: tests live in `tests/`, not inline.
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
 
 // Used only by the `bench-internals`-gated second test below; gated to avoid
 // unused-import warnings under plain `--features production` (the first test

@@ -47,6 +47,7 @@
 //! proves the LOGIC (guards fire, free list not corrupted) without checking RSS.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "alloc-decommit"

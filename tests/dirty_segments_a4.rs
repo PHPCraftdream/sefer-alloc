@@ -23,6 +23,7 @@
 //!    ring entry whose dirty bit was never set.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-segment-directory"

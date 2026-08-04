@@ -80,7 +80,7 @@
 //!   cargo test --release --features "production medium-classes" --test r14_4_promotion_free_correctness
 //!   cargo test --release --features "production medium-classes exact-span-large" --test r14_4_promotion_free_correctness
 
-#![cfg(all(feature = "alloc-global", feature = "medium-classes"))]
+#![cfg(all(all(feature = "alloc-global", feature = "medium-classes"), feature = "internals"))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::Mutex;

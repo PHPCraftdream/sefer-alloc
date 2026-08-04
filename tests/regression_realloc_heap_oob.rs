@@ -32,7 +32,7 @@
 //! non-null). GREEN (fix present): the membership/size check returns null
 //! before any copy.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use core::alloc::Layout;
 use core::sync::atomic::Ordering;

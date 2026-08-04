@@ -90,6 +90,7 @@
 //! chunks, not just when it panics outright.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
     feature = "batch-api",

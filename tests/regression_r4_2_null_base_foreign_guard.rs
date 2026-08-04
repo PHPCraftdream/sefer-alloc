@@ -47,7 +47,7 @@
 //!
 //! Per project convention: tests live in `tests/`, not inline.
 
-#![cfg(feature = "alloc-xthread")]
+#![cfg(all(feature = "alloc-xthread", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

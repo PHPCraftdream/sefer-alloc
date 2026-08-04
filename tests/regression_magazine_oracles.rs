@@ -18,7 +18,7 @@
 //! - (d) `legit_free_after_pop_is_not_swallowed` — perf-path sanity: a genuine
 //!   free is NOT a false-positive no-op.
 
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -45,6 +45,7 @@
 //! not a "did the skip actually fire" regression).
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
     feature = "virgin-zero-skip"

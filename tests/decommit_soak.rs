@@ -27,7 +27,7 @@
 //! accounting + the reset's soundness (no OOB write during reset, no UAF on
 //! reuse) even though it cannot observe RSS.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(all(feature = "alloc-core", feature = "alloc-decommit"), feature = "internals"))]
 
 use core::alloc::Layout;
 

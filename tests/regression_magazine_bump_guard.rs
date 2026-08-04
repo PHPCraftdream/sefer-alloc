@@ -32,6 +32,7 @@
 //! test is gated out there too.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
     feature = "alloc-decommit"

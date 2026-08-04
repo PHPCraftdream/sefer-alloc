@@ -29,7 +29,7 @@
 //!
 //! Per the short-scenario policy (`CLAUDE.md`): ~64 cases.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::collections::HashSet;
 

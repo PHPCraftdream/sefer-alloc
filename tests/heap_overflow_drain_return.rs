@@ -22,7 +22,7 @@
 //! free) manifests through the `is_likely_empty` cache — is model-checked
 //! across interleavings in `tests/loom_heap_overflow_drain_guard.rs`.
 
-#![cfg(feature = "alloc-xthread")]
+#![cfg(all(feature = "alloc-xthread", feature = "internals"))]
 
 use sefer_alloc::registry::heap_overflow::HeapOverflow;
 

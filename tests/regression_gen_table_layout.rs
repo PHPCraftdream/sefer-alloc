@@ -57,7 +57,7 @@
 //! (re-exported under `alloc-core`) in every test, so it is excluded from a
 //! bare `std`-only (default) build where the substrate does not exist.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 #[cfg(feature = "hardened")]
 use std::alloc::Layout;

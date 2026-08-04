@@ -17,6 +17,7 @@
 //! assertion fails.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
     feature = "alloc-decommit"

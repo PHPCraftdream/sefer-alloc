@@ -53,6 +53,7 @@
 
 // Gate: requires all four features used in the integration path.
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-global",
     feature = "alloc-xthread",

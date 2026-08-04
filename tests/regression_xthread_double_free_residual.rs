@@ -89,6 +89,7 @@
 //! on top of the `unsafe fn` contract.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "fastbin"

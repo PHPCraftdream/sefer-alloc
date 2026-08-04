@@ -31,6 +31,15 @@
 //! then alloc again; the allocator must succeed (recycled slot reused) and
 //! allocations must be valid and writable.
 
+#![cfg(feature = "internals")]
+// R34-3 (task #522, finding B1): every test below reaches
+// `sefer_alloc::alloc_core::AllocCore` directly, so this module-level gate
+// covers all of them; each test's own `#[cfg(feature = "alloc-core")]` (and
+// `alloc-decommit` where present) is unchanged and still independently
+// required — `internals` alone does not expose `alloc_core` (see
+// `internals`'s doc comment in `Cargo.toml`: it is additive over
+// `alloc-core`).
+
 // ============================================================
 // Test 1 — slot recycle lifts the 1024-segment cap
 // ============================================================

@@ -39,7 +39,7 @@
 //!   (0=Primordial, 1=Small, 2=Large, 3=Unknown) so a test can assert on the
 //!   decode's output without needing the `pub(crate)` enum itself.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 

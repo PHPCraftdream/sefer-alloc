@@ -32,7 +32,7 @@
 //!
 //! Per project convention: tests live in `tests/`, not inline.
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};

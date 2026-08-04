@@ -32,7 +32,7 @@
 //!    account for reuse would leave the old 0xEE pattern in place here and
 //!    this assertion would fail.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

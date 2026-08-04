@@ -87,6 +87,7 @@
 //! zero-retention.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "alloc-decommit"

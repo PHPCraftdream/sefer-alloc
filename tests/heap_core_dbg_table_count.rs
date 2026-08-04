@@ -18,7 +18,7 @@
 //! (e.g. one that always returned `0`, or read some other heap's table)
 //! would fail the growth assertion below.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use core::alloc::Layout;
 use sefer_alloc::registry::{bootstrap, HeapRegistry};

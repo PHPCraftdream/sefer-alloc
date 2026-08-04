@@ -33,7 +33,7 @@
 //! on the pre-fix release path; they share the identical `assert!` guard, so
 //! the readers are representative).
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 

@@ -19,7 +19,7 @@
 //! crate's real `TaggedIndex` packing. The registry's `free_slots` now consumes
 //! that crate, so the packing is proven there, not here.)
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 // ===========================================================================
 // HeapSlot::generation u64-width counterfactual.

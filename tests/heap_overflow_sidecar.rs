@@ -29,7 +29,7 @@
 //! replaced the four in-tree shadow models including the former
 //! `tests/loom_overflow_sidecar_cas.rs`.
 
-#![cfg(feature = "alloc-xthread")]
+#![cfg(all(feature = "alloc-xthread", feature = "internals"))]
 
 use sefer_alloc::registry::heap_overflow::HeapOverflow;
 

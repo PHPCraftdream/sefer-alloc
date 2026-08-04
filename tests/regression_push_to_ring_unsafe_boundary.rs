@@ -68,7 +68,7 @@
 //! is re-issued EXACTLY ONCE (single owner), proving the seam is still usable
 //! for legitimate cross-thread-free simulation after the boundary change.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
 
 use core::alloc::Layout;
 

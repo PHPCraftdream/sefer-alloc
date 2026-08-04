@@ -66,6 +66,7 @@
 //! observing `p_count=1`. Both outputs are quoted in the task R1 final report.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "fastbin"

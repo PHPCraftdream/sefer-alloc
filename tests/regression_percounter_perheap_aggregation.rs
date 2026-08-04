@@ -46,7 +46,7 @@
 // `tcache_hits` increment, which is gated behind `alloc-stats` (default OFF,
 // not in `production`). Without the feature the counters read 0 by design and
 // the aggregation cannot be exercised — the file is skipped.
-#![cfg(all(feature = "alloc-global", feature = "fastbin", feature = "alloc-stats"))]
+#![cfg(all(all(feature = "alloc-global", feature = "fastbin", feature = "alloc-stats"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

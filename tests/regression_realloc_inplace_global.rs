@@ -38,7 +38,7 @@
 //!    preserve all bytes (no copy needed, but let's prove nothing got
 //!    clobbered).
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

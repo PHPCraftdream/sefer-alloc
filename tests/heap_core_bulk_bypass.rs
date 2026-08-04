@@ -35,7 +35,7 @@
 //!   allocs in bulk volume, sends one ptr to thread B, B frees it
 //!   cross-thread. No panic, no leak.
 
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

@@ -28,6 +28,7 @@
 //! impossible (`debug_assert!` already panicked in debug); run with `--release`.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "hardened"

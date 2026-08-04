@@ -26,7 +26,7 @@
 //! (The abandoned-segments stack round-trip tests that previously lived here
 //! were removed with that substrate — task #97 / R4-5.)
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

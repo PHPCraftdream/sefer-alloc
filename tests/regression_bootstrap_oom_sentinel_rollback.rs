@@ -79,7 +79,7 @@
 //! identical (same CAS + store shape, narrowed to one `AtomicPtr` among
 //! many), so the same counterfactual applies unchanged.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::registry::bootstrap;
 

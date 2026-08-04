@@ -101,6 +101,7 @@
 //! alloc-xthread alloc-decommit` passed.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-decommit"

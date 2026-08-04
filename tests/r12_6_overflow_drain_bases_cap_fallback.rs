@@ -56,6 +56,7 @@
 //! by absence).
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "fastbin",

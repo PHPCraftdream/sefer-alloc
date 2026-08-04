@@ -4,7 +4,7 @@
 //! Run with:
 //!   cargo test --features "alloc-core numa-aware" --test numa_seam
 
-#![cfg(feature = "numa-aware")]
+#![cfg(all(feature = "numa-aware", feature = "internals"))]
 
 use sefer_alloc::alloc_core::numa;
 

@@ -21,6 +21,15 @@
 //! OBSERVABLE BEHAVIOUR is unchanged (registration/lookup/reuse semantics),
 //! plus a defensive-no-op regression test for a corrupted `segment_id`.
 
+#![cfg(feature = "internals")]
+// R34-3 (task #522, finding B1): every test below reaches
+// `sefer_alloc::alloc_core::AllocCore` directly, so this module-level gate
+// covers all of them; each test's own `#[cfg(feature = "alloc-core")]` (and
+// `alloc-decommit` where present) is unchanged and still independently
+// required — `internals` alone does not expose `alloc_core` (see
+// `internals`'s doc comment in `Cargo.toml`: it is additive over
+// `alloc-core`).
+
 // ===========================================================================
 // Part 1 — free-list invariant: no lost slots, no duplicate reuse.
 // ===========================================================================

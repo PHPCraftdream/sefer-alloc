@@ -38,7 +38,7 @@
 //! `tests/segment_table_recycle.rs`, `tests/kind_at_strict_decode.rs` — each
 //! now wrapped in `unsafe {}` with a per-site `// SAFETY:` comment.)
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 

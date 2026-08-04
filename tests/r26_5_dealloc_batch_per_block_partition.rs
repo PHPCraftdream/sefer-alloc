@@ -97,6 +97,7 @@
 //!    numbers are recorded in the task summary, not hardcoded here.
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "fastbin",
     feature = "batch-api",

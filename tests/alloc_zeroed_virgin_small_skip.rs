@@ -35,6 +35,7 @@
 //! doc — it requires `alloc-decommit`).
 
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-core",
     feature = "alloc-decommit",
     feature = "virgin-zero-skip"

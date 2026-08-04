@@ -75,6 +75,7 @@
 // `Cargo.toml`'s `bench-internals` doc) so it is not reachable from a plain
 // `--features production` build of the library.
 #![cfg(all(
+    feature = "internals",
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-segment-directory",

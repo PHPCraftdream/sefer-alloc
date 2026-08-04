@@ -10,6 +10,15 @@
 //! treats own pointers as foreign (no-op → memory leak → eventual OOM) or
 //! double-frees foreign pointers (corruption / crash).
 
+#![cfg(feature = "internals")]
+// R34-3 (task #522, finding B1): every test below reaches
+// `sefer_alloc::alloc_core::AllocCore` directly, so this module-level gate
+// covers all of them; each test's own `#[cfg(feature = "alloc-core")]` (and
+// `alloc-decommit` where present) is unchanged and still independently
+// required — `internals` alone does not expose `alloc_core` (see
+// `internals`'s doc comment in `Cargo.toml`: it is additive over
+// `alloc-core`).
+
 /// Allocate and free many blocks, spanning multiple segments. After dealloc,
 /// re-allocate the same count: if the hash broke (e.g. tombstone chain
 /// corrupted, or `contains_base` returned false on a live segment), segments

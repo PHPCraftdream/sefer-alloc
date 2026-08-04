@@ -33,6 +33,7 @@
 //! for the companion `--features "hardened batch-api"` step this gate needs.
 
 #![cfg(all(
+    feature = "internals",
     feature = "hardened",
     feature = "alloc-global",
     feature = "fastbin",

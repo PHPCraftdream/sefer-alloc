@@ -7,7 +7,7 @@
 //! pin the behavioural contract the bitmap must uphold (and that the prior O(N)
 //! walk also upheld — so they pass with both guards; only the cost changed).
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use std::collections::HashSet;

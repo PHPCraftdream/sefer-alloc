@@ -62,7 +62,7 @@
 //! `benches/perf_gate_iai.rs`'s `small_churn_16b`-family arms, which are the
 //! deterministic Ir-based judges for this same free-path cost.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use std::time::Instant;

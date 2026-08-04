@@ -72,7 +72,7 @@
 //! reachable again via `bump_count` minting an entirely NEW index) — this
 //! test's slot-index re-use assertion would fail.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -85,7 +85,7 @@
 //! that is off under `production`. The byte-identical Ir neutrality is pinned
 //! by the iai judge (run under plain `production`), not by a runtime test.
 
-#![cfg(feature = "hardened")]
+#![cfg(all(feature = "hardened", feature = "internals"))]
 
 use sefer_alloc::alloc_core::remote_free_ring::{
     pack_entry_hardened, unpack_entry_hardened, ENTRY_CLASS_BITS, ENTRY_GEN_BITS, ENTRY_OFF16_BITS,

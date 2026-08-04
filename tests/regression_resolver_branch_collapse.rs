@@ -37,7 +37,7 @@
 //! would let TORN through as "real") or `< usize::MAX` (which would let null's
 //! wrapped `MAX` through) — makes one of the two assertions below fail.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::global::tls_heap;
 

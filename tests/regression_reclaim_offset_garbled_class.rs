@@ -22,7 +22,7 @@
 //! the entry is a no-op: the drain returns normally and the allocator stays
 //! usable, which this test asserts by continuing to allocate afterwards.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-xthread"))]
+#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
 
 use core::alloc::Layout;
 

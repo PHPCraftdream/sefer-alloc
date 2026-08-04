@@ -32,7 +32,7 @@
 //! cache-hit EXCLUSION (without `alloc-decommit` every large alloc is trivially
 //! fresh and the skip always fires — test 2 would be impossible).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(all(feature = "alloc-core", feature = "alloc-decommit"), feature = "internals"))]
 
 use core::alloc::Layout;
 use std::sync::Mutex;

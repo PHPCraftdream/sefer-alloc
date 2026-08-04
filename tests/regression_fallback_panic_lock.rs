@@ -28,7 +28,7 @@
 //! second `with_heap` spins forever, the watchdog join times out and this test
 //! fails. With the guard, step 2 returns immediately and the test passes.
 
-#![cfg(all(feature = "alloc-global", feature = "std"))]
+#![cfg(all(all(feature = "alloc-global", feature = "std"), feature = "internals"))]
 
 use std::sync::mpsc;
 use std::thread;

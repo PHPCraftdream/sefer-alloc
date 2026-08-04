@@ -109,7 +109,7 @@
 //! `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured GO/NO-GO
 //! verdict on the bitmap this extension protects.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use std::collections::HashSet;

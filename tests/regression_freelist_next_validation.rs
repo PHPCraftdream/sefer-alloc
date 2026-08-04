@@ -46,7 +46,7 @@
 //! Gated to `hardened` (implies `fastbin`): only that build compiles the
 //! guard and the `dbg_corrupt_freelist_head_next` test hook.
 
-#![cfg(feature = "hardened")]
+#![cfg(all(feature = "hardened", feature = "internals"))]
 
 use core::alloc::Layout;
 

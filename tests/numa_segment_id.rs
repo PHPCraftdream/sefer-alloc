@@ -15,7 +15,7 @@
 //! This is the only claim we can make portably — we do not assert a specific
 //! node number (that would require a multi-NUMA-node machine or QEMU).
 
-#![cfg(all(feature = "alloc-core", feature = "numa-aware"))]
+#![cfg(all(all(feature = "alloc-core", feature = "numa-aware"), feature = "internals"))]
 
 use core::alloc::Layout;
 
