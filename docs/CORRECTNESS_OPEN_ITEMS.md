@@ -1929,3 +1929,51 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     - **Commit prefix:** `docs(global)` per the R30-12 taxonomy — module-doc
       accuracy fix, no shipping code changed (the only non-doc additions are
       the regression test and this index entry).
+
+14. **F-6 `HeapCore` by-value construction stack-pressure pin**
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-6
+    [low]) — **RESOLVED** by R34-18 (task #537). `HeapCore` is constructed BY
+    VALUE on the frame that triggers a thread's FIRST allocation
+    (`HeapRegistry::claim`'s `HeapCore::new(idx) → write(hc)` in both `claim`
+    and `claim_with_config`, and the process-global fallback's
+    `MaybeUninit<HeapCore>` path in `global/fallback.rs`). Rust does not
+    guarantee return-value/move elision, so a debug build (or any backend that
+    materialises the temporary) can place one ~7 KiB copy on a small-stack
+    thread's first-allocation frame — a realistic stack-overflow risk for
+    embedded-class 16–64 KiB stacks. The audit's ~7 KiB figure was INFERRED
+    from in-tree `-Zprint-type-sizes` field-offset notes, never measured
+    (`size_of::<HeapCore>()` existed nowhere in `src/` or `tests/`).
+
+    - **Resolution:** `size_of::<HeapCore>()` measured directly via a
+      compile-error array-length probe under `--features production` (the same
+      technique as the `SegmentHeader == 144` pin) = **7576 bytes** (breakdown:
+      `core: AllocCore` = 864 B, `tcache: Tcache` = 6664 B — the dominant
+      per-class magazine cache — plus `id`/handles ≈ 48 B). A compile-time
+      `const _: () = assert!(size_of::<HeapCore>() <= 8192)` pin added in
+      `src/registry/heap_core.rs` right after the struct definition, mirroring
+      the established `SegmentHeader` pin pattern. Budget = 8192 (8 KiB, half
+      of a 16 KiB embedded stack) leaves ~8 % headroom (616 B): minor field
+      additions don't trip it, material bloat (a new array/sub-struct, or
+      `Tcache` growing another class) fails the build and forces a deliberate
+      budget bump. The pin is an unconditional `<=` (not exact `==`): it must
+      hold across every feature composition (the struct has `#[cfg]`-gated
+      fields; `production` is the maximum at 7576 B, every smaller composition
+      is strictly below). A runtime `#[test]`
+      (`tests/r34_18_heap_core_stack_pressure_pin.rs`) mirrors the pin and adds
+      a non-vacuous lower bound (suspicious-shrink guard). This is the ONLY
+      unbounded-growth stack-pressure surface in the tree (no recursion, no
+      recursive drop glue, no larger stack buffer than `emptied_bases:
+      [*mut u8; 64]` = 512 B, cold path), so this single pin guards the whole
+      category.
+    - **Point 2 (in-place `HeapCore::new_in_place` initializer) — SKIPPED:**
+      evaluated and rejected as not-cheap. The dominant 6664 B component is
+      `Tcache::new()`, which itself returns by value; eliminating the 7576 B
+      temporary requires cascading in-place init into `Tcache` too (a
+      multi-struct refactor across the `registry` + `tcache` modules), changes
+      the fallible-`Option` error-handling shape at all three call sites, and
+      touches `UnsafeCell` write safety invariants. The compile-time pin is
+      the auditor's primary deliverable (F-6's own "Suggested direction") and
+      closes the category; the in-place rewrite is not warranted for a [low]
+      finding whose risk is already bounded by the pin.
+    - **Commit prefix:** `fix(perf)` per the R30-12 taxonomy — structural
+      layout pin, no runtime behavior change, no speedup claimed.

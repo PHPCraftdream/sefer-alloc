@@ -523,6 +523,46 @@ pub struct HeapCore {
     pub(super) overflow_tail_cache: usize,
 }
 
+// R34-18 (task #537, F-6 [low]) — compile-time stack-pressure budget pin.
+//
+// `HeapCore` is constructed BY VALUE on the stack of the frame that triggers a
+// thread's FIRST allocation: `HeapRegistry::claim` does
+// `HeapCore::new(idx) → heap_ptr.cast::<HeapCore>().write(hc)`
+// (`heap_registry.rs`, both `claim` and `claim_with_config`), and the
+// process-global fallback constructs it the same way inside a
+// `MaybeUninit<HeapCore>` (`global/fallback.rs`). Rust does NOT guarantee
+// return-value/move elision: on a debug build, or any toolchain/backend that
+// materialises the temporary, `HeapCore::new(..)` can place one ~7 KiB copy on
+// that first-allocation frame — frequently very early in a thread's life, or
+// inside another thread-local's initialiser. Threads with small stacks
+// (embedded-class 16–64 KiB, or a constrained thread pool) are a realistic
+// deployment, so a single such temporary must not approach the stack limit.
+//
+// **Measured size** (compile-error array-length probe under `--features
+// production`, the same technique used for the `SegmentHeader == 144` pin in
+// `alloc_core/segment_header.rs`): `size_of::<HeapCore>() == 7576`. Breakdown:
+// `core: AllocCore` = 864 B, `tcache: Tcache` = 6664 B (the dominant field —
+// the per-class magazine cache), plus `id`/`thread_free`/`overflow`/
+// `tcache_hits`/`last_stamped_segment`/`overflow_tail_cache` ≈ 48 B.
+//
+// **Budget = 8192 (8 KiB).** 7576 → 8192 leaves ~8 % headroom (616 B): minor
+// field additions (a new `usize`/pointer/handle) will not trip the build, but
+// any material bloat — a new array/buffer/sub-struct, or `Tcache` growing
+// another magazine class — fails the build here and forces a deliberate
+// decision (bump the budget with a comment recording the new stack-pressure
+// implication). 8 KiB is half of a 16 KiB embedded stack and is the natural
+// "one HeapCore temporary is tolerable, two back-to-back are not" boundary.
+//
+// This is the ONLY unbounded-growth stack-pressure surface in the tree (F-6
+// audit): there is no unbounded/data-dependent recursion, no recursive drop
+// glue, and no other stack buffer larger than `emptied_bases: [*mut u8; 64]`
+// (512 B, cold path) — so this single pin guards the entire category. It is an
+// unconditional `<=` bound (not an exact `==`): it must hold for EVERY feature
+// composition in which `HeapCore` is compiled (the struct has `#[cfg]`-gated
+// fields; the maximum is `production`/`--all-features` at 7576 B, every smaller
+// composition is strictly below), so a plain `<=` is sound across all of them.
+const _: () = assert!(size_of::<HeapCore>() <= 8192);
+
 impl HeapCore {
     /// Construct a fresh heap value bound to slot `id`. Bootstraps the
     /// segment substrate via [`AllocCore::new`] (which goes through the OS
