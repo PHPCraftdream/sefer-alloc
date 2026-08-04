@@ -31,28 +31,36 @@ const FEATURES = 'production';
 // Mirrors `benches/global_alloc.rs`'s own constants. OPS is the number of
 // alloc/dealloc (or free+alloc churn) round-trips criterion's `b.iter`
 // closure performs per measured iteration; dividing the per-iteration time
-// by OPS gives a stable "ns per allocator operation" figure that is
-// comparable across runs regardless of how many ops happen to be batched
-// into one closure call. Vec_push's closure does honest geometric Vec growth
-// (capacity doubles 4→8→…→512, i.e. 8 grow steps of alloc-new + copy-old +
-// dealloc-old) plus VEC_PUSHES stores per closure call; it is reported as-is
-// (one "op" = one whole closure call), not scaled by OPS.
+// by OPS gives a stable "ns per alloc+free pair" figure that is comparable
+// across runs regardless of how many ops happen to be batched into one
+// closure call. manual_realloc_sim's closure does a manual geometric growth
+// chain (capacity doubles 4→8→…→512, i.e. 8 grow steps of alloc-new +
+// copy-old + dealloc-old -- NOT real `Vec`, NOT `GlobalAlloc::realloc`) plus
+// VEC_PUSHES stores per closure call; it is reported as-is (one "closure" =
+// one whole growth-chain call), not scaled by OPS.
 const OPS = 1024;
 const SIZES = ['16B', '64B', '256B', '1024B'];
 const ARMS = ['SeferAlloc', 'mimalloc', 'System'];
 
 // The three benchmark_group()s in benches/global_alloc.rs, in the order
 // they're defined, each yielding a `group/{arm}/{size}` id plus (for
-// `global_alloc` only) a `group/Vec_push/{arm}` id.
+// `global_alloc` only) a `group/manual_realloc_sim/{arm}` id.
+// Each sized group's `unit` is printed in its table header so a reader
+// never confuses a per-PAIR figure (1 alloc + 1 free) with a per-CALL one.
+// The teardown group's figure is a DIAGNOSTIC COMPOSITE (a churn pair PLUS a
+// share of the working-set teardown frees baked into the same timed region),
+// not a clean per-pair number -- its header says so explicitly.
 const SIZED_GROUPS = [
-  { id: 'global_alloc', title: 'Cold-direct (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op)', scale: OPS },
-  { id: 'global_alloc_churn', title: 'Churn, non-writing (`bench_churn_alloc`, working-set reuse — 1 free + 1 alloc per op)', scale: OPS },
-  { id: 'global_alloc_churn_write', title: 'Churn + write (`bench_churn_alloc_write` — same as above, writes 16B after each alloc)', scale: OPS },
+  { id: 'global_alloc', title: 'Warm repeated bulk burst (`bench_direct_alloc` — alloc 1024 then free 1024 per iteration; NO reuse within one iteration\'s allocation half, but criterion reuses freed cache/freelist/pool blocks ACROSS iterations, so this is warm, not truly cold/first-touch; 1 alloc + 1 free per pair)', scale: OPS, unit: 'ns/pair' },
+  { id: 'global_alloc_churn', title: 'Churn, non-writing (`bench_churn_alloc`, working-set reuse — 1 free + 1 alloc per pair)', scale: OPS, unit: 'ns/pair' },
+  { id: 'global_alloc_churn_write', title: 'Churn + write (`bench_churn_alloc_write` — same as above, writes 16B after each alloc)', scale: OPS, unit: 'ns/pair' },
   // Appended last (not inserted in registration order) so the three original
   // sized tables keep their byte-for-byte position/format. DELIBERATE
   // diagnostic: teardown stays INSIDE the timed region (the pre-F7/F9
-  // behavior), unlike the three groups above.
-  { id: 'global_alloc_churn_with_teardown', title: 'Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:628-637`)', scale: OPS },
+  // behavior), unlike the three groups above. Its unit is a COMPOSITE, not a
+  // clean ns/pair: each figure is a churn pair plus a share of the
+  // CHURN_WORKING_SET (256) teardown frees in the same timed region.
+  { id: 'global_alloc_churn_with_teardown', title: 'Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:658-667`)', scale: OPS, unit: 'ns/pair (composite, DIAGNOSTIC)' },
 ];
 
 function unitToNs(value, unit) {
@@ -146,9 +154,9 @@ function ratio(seferNs, mimallocNs) {
   return r <= 1 ? `**${(1 / r).toFixed(2)}× faster**` : `${r.toFixed(2)}× slower`;
 }
 
-function printSizedTable(title, id, scale, byId) {
+function printSizedTable(title, id, scale, unit, byId) {
   console.log(`\n### ${title}\n`);
-  console.log('| Size | SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |');
+  console.log(`| Size | SeferAlloc (${unit}) | mimalloc (${unit}) | System (${unit}) | Sefer vs mimalloc |`);
   console.log('|---|---:|---:|---:|---:|');
   for (const size of SIZES) {
     const vals = {};
@@ -162,13 +170,20 @@ function printSizedTable(title, id, scale, byId) {
   }
 }
 
-function printVecPushTable(byId) {
-  console.log('\n### Vec_push (honest geometric `Vec<i64>` growth — 8 grow steps + stores per op, NOT scaled)\n');
-  console.log('| SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |');
+// `manual_realloc_sim` -- NOT real `Vec`, NOT `GlobalAlloc::realloc`. The
+// closure manually walks a geometric growth chain (capacity 4->8->...->512,
+// 8 grow steps) via `alloc(new)` + `copy_nonoverlapping` + `dealloc(old)` per
+// step, so it measures the NON-in-place realloc path only (no in-place grow
+// win such as R32-3 OPT-G, no `Vec` bookkeeping). Reported UNSCALED -- "ns per
+// closure" (one closure = the whole 8-step growth chain + stores) -- mirroring
+// how the sized groups document their own per-pair unit.
+function printManualReallocSimTable(byId) {
+  console.log('\n### manual_realloc_sim (manual `alloc`+`copy`+`dealloc` grow chain — NOT `GlobalAlloc::realloc`, NOT real `Vec`; 8 grow steps per closure, NOT scaled)\n');
+  console.log('| SeferAlloc (ns/closure) | mimalloc (ns/closure) | System (ns/closure) | Sefer vs mimalloc |');
   console.log('|---:|---:|---:|---:|');
   const vals = {};
   for (const arm of ARMS) {
-    vals[arm] = byId.get(`global_alloc/Vec_push/${arm}`)?.ns ?? null;
+    vals[arm] = byId.get(`global_alloc/manual_realloc_sim/${arm}`)?.ns ?? null;
   }
   console.log(
     `| ${fmtNs(vals.SeferAlloc)} | ${fmtNs(vals.mimalloc)} | ${fmtNs(vals.System)} | ${ratio(vals.SeferAlloc, vals.mimalloc)} |`,
@@ -375,17 +390,17 @@ try {
   const byId = parseBenchOutput(out);
 
   console.log('\n\n============================================================');
-  console.log(`  ${BENCH} — comparative wall-clock tables (ns per operation)`);
+  console.log(`  ${BENCH} — comparative wall-clock tables (units per table; sized groups are ns/pair unless their header notes a composite/diagnostic unit)`);
   console.log('============================================================');
 
   for (const g of SIZED_GROUPS) {
-    printSizedTable(g.title, g.id, g.scale, byId);
+    printSizedTable(g.title, g.id, g.scale, g.unit, byId);
   }
-  printVecPushTable(byId);
+  printManualReallocSimTable(byId);
 
   const expectedIds = [
     ...SIZED_GROUPS.flatMap((g) => SIZES.flatMap((s) => ARMS.map((a) => `${g.id}/${a}/${s}`))),
-    ...ARMS.map((a) => `global_alloc/Vec_push/${a}`),
+    ...ARMS.map((a) => `global_alloc/manual_realloc_sim/${a}`),
   ];
   const missing = expectedIds.filter((id) => !byId.has(id));
   ok = !compileErr && code === 0 && missing.length === 0;

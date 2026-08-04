@@ -1,22 +1,34 @@
-//! Phase 11 -- `SeferAlloc` as `#[global_allocator]` vs `mimalloc` and the
-//! system allocator. Quick criterion profile per the short-scenario policy:
-//! `sample_size(10)` and short warm/measurement times. Honest verdict in
-//! `docs/ALLOC_BENCH.md`.
+//! Comparative wall-clock bench: `SeferAlloc` vs `mimalloc` vs the system
+//! allocator, each called DIRECTLY through its `GlobalAlloc` impl inside ONE
+//! `cargo bench` binary. Quick criterion profile per the short-scenario
+//! policy: `sample_size(10)` and short warm/measurement times. Honest verdict
+//! in `docs/ALLOC_BENCH.md`.
 //!
-//! This bench exercises REAL Rust allocation patterns through the
-//! `#[global_allocator]` face: `Vec` push/grow churn (which calls
-//! `alloc`/`dealloc`/`realloc` under the hood), `Box` new/drop, and varied
-//! sizes. We compare three configurations:
+//! **None of the three arms is installed as this bench binary's
+//! `#[global_allocator]`.** Every arm is invoked by direct `GlobalAlloc`
+//! method calls (`alloc.alloc(layout)` / `alloc.dealloc(ptr, layout)`), so
+//! what is measured is each allocator's own alloc/dealloc hot path -- NOT the
+//! `#[global_allocator]` dispatch face and NOT real `Vec`/`Box`/`realloc`
+//! usage (the growth arm is a manual `alloc`+`copy`+`dealloc` chain, see
+//! `manual_realloc_sim` below). The three configurations:
 //!
-//! 1. **SeferAlloc** (installed as the process's `#[global_allocator]`).
-//! 2. **mimalloc** (via the `mimalloc` crate's `GlobalAlloc` impl, called
-//!    directly -- NOT installed globally, to allow a head-to-head in one binary).
+//! 1. **SeferAlloc** (`SeferAlloc::new()` + direct `GlobalAlloc` calls --
+//!    NOT installed globally).
+//! 2. **mimalloc** (`mimalloc::MiMalloc`'s `GlobalAlloc` impl, called
+//!    directly -- NOT installed globally).
 //! 3. **System** allocator (called directly).
 //!
-//! For (2) and (3) we call the `GlobalAlloc` methods directly to avoid
-//! replacing the global allocator mid-process (which SeferAlloc already
-//! occupies). This is an honest apples-to-apples comparison of the alloc/dealloc
-//! hot path.
+//! Calling all three directly (rather than installing one globally) is what
+//! makes a head-to-head comparison possible inside a single binary. The cost
+//! is that this is NOT a causal run-over-run judge: all three arms share one
+//! process, one thread, and one set of leftover allocator/TLS state across
+//! `criterion_main!`'s groups (see confound 1 below). For causal
+//! run-over-run attribution use the subprocess-isolated harness added in
+//! R34-7 (task #526) -- `examples/r34_7_causal_worker_*.rs` (each binary
+//! ACTUALLY installs its own `#[global_allocator]`) driven by
+//! `scripts/r34_7_causal_harness.mjs` (a fresh subprocess per
+//! `(allocator, repetition)`); this bench is the same-host comparative shape,
+//! that one is the causal alternative.
 //!
 //! ## Two confounds fixed here (performance review §4.1 items 2-3, §10 Stage B.2)
 //!
@@ -274,12 +286,14 @@ impl<'a, A: GlobalAlloc> Drop for ChurnTeardownGuard<'a, A> {
 /// and `_write`), teardown ALSO runs outside the timed region — the routine
 /// closure returns a [`ChurnTeardownGuard`] instead of calling
 /// `churn_teardown` inline, so `iter_batched` times only `ops` churn pairs,
-/// and the reported ns/op divides cleanly by `ops` with no teardown skew. The
-/// ONE exception is [`bench_global_alloc_churn_with_teardown`], which calls
-/// `churn_teardown` directly inside the timed routine as a DELIBERATE
-/// diagnostic (see its own doc comment and [`churn_teardown`]'s) — only that
-/// variant's timed region does `ops` churn pairs plus `CHURN_WORKING_SET`
-/// (256) teardown frees, so only ITS reported ns/op includes teardown cost.
+/// and the reported ns/pair (one free + one alloc) divides cleanly by `ops`
+/// with no teardown skew. The ONE exception is
+/// [`bench_global_alloc_churn_with_teardown`], which calls `churn_teardown`
+/// directly inside the timed routine as a DELIBERATE diagnostic (see its own
+/// doc comment and [`churn_teardown`]'s) — only that variant's timed region
+/// does `ops` churn pairs plus `CHURN_WORKING_SET` (256) teardown frees, so
+/// only ITS reported figure is a DIAGNOSTIC COMPOSITE (ns per churn pair plus
+/// a share of those 256 teardown frees), not a clean ns/pair.
 fn churn_step<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &mut [*mut u8], ops: usize) {
     let working_set = live.len();
     let mut rng = XorShift64::new(0xCAFE);
@@ -323,14 +337,28 @@ fn churn_prefill_write<A: GlobalAlloc>(
     live
 }
 
-/// Writing-churn bench: an EXACT clone of `churn_step` except that immediately
+/// Writing-churn bench: an EXACT clone of `churn_step` (each iteration frees a
+/// pseudo-random slot and allocates a replacement) except that immediately
 /// after every non-null `alloc` it writes the first 16 bytes (two u64 words at
-/// offset 0 and 8) of the freshly allocated block. This dirties word1 (bytes
-/// 8..16 — the magazine M2 double-free-guard key location) so the realistic
-/// write-to-what-you-allocate pattern is measured, instead of leaving a stale
-/// key that forces a slow-path scan on every free. Fixed PRNG seed = 0xCAFE
-/// (identical to the non-writing bench) for reproducibility. Only this loop is
-/// timed (F7).
+/// offset 0 and 8) of the freshly allocated replacement. Fixed PRNG seed =
+/// 0xCAFE (identical to the non-writing bench) for reproducibility. Only this
+/// loop is timed (F7).
+///
+/// **Why a separate writing arm exists (rationale corrected for the post-Э6
+/// free path).** The double-free guard no longer stamps or reads any
+/// per-heap key in the block body: Э6 (P6.1) removed `TCACHE_KEY` entirely,
+/// so `dealloc_own_thread` consults two EXACT oracles -- the in-magazine
+/// `slots` scan and the BinTable `is_free` bitmap, both hot segment metadata
+/// -- on every magazine free, unconditionally and regardless of block-body
+/// contents (see `src/registry/tcache.rs`'s "TCACHE_KEY -- REMOVED" note and
+/// `HeapCore::dealloc_own_thread`). The free path therefore never reads or
+/// writes the freed block's body, so dirtying word1 here has NO effect on the
+/// free hot path. The write is kept because it measures the REALISTIC
+/// write-what-you-allocate pattern real callers exhibit: writing the freshly
+/// allocated lines dirties their cache state (cold/exclusive toward modified),
+/// the cache footprint a real workload imposes and the non-writing arm does
+/// not. The pre-Э6 rationale ("a stale key forces a slow-path scan on every
+/// free") is obsolete and is NOT what this arm measures today.
 fn churn_step_write<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &mut [*mut u8], ops: usize) {
     let working_set = live.len();
     let mut rng = XorShift64::new(0xCAFE);
@@ -406,15 +434,18 @@ fn bench_global_alloc(c: &mut Criterion) {
         );
     }
 
-    // --- Real-world pattern: Vec<i64> push/grow churn ---
-    // Honest geometric growth: capacity doubles (4, 8, 16, … 512) exactly as
-    // `Vec` does, so this exercises realloc + many small allocs as the Vec
-    // grows — capacity sequence 4, 8, 16, 32, 64, 128, 256, 512 per closure
-    // call: 8 allocs total (the initial 4-element alloc, plus 7 growth
-    // reallocs — each an alloc-new + copy-old + dealloc-old), NOT a single
-    // jump straight to the final 4 KiB. `old_layout` is
-    // tracked honestly across steps (mirroring the System arm) so every
-    // dealloc matches the layout its block was allocated with.
+    // --- Manual realloc simulation (NOT real `Vec`, NOT `GlobalAlloc::realloc`) ---
+    // This arm manually walks a geometric growth chain -- capacity doubles
+    // (4, 8, 16, … 512) -- by doing `alloc(new)` + `copy_nonoverlapping` +
+    // `dealloc(old)` for each grow step (8 grows per closure call: the initial
+    // 4-element alloc plus 7 growth steps), NOT a single jump to the final
+    // capacity. It simulates the NON-in-place path a `Vec`/`realloc` would
+    // take when in-place growth is impossible, but it does NOT call
+    // `GlobalAlloc::realloc` (so it never measures an in-place grow win such
+    // as R32-3's OPT-G) and does NOT use `Vec` (so it measures no `Vec`
+    // bookkeeping). `old_layout` is tracked honestly across steps so every
+    // dealloc matches the layout its block was allocated with. A real
+    // `realloc`/`Vec` bench is a separate task (R34-23, task #542).
     const VEC_PUSHES: usize = 512;
     // Confound 2 fix: rotated registration order (see the module doc and
     // `bench_direct_alloc`'s call site above) — same three closures as
@@ -422,7 +453,7 @@ fn bench_global_alloc(c: &mut Criterion) {
     // System.
     bench_three_arms_rotated(
         &mut group,
-        "Vec_push/SeferAlloc".to_string(),
+        "manual_realloc_sim/SeferAlloc".to_string(),
         |b| {
             b.iter(|| {
                 // Manual Vec growth through SeferAlloc's GlobalAlloc directly, so
@@ -461,7 +492,7 @@ fn bench_global_alloc(c: &mut Criterion) {
                 }
             })
         },
-        "Vec_push/mimalloc".to_string(),
+        "manual_realloc_sim/mimalloc".to_string(),
         |b| {
             b.iter(|| {
                 // mimalloc is NOT the global allocator here (SeferAlloc is), so we
@@ -499,7 +530,7 @@ fn bench_global_alloc(c: &mut Criterion) {
                 }
             })
         },
-        "Vec_push/System".to_string(),
+        "manual_realloc_sim/System".to_string(),
         |b| {
             b.iter(|| {
                 let mut ptr: *mut i64 = core::ptr::null_mut();
@@ -552,9 +583,9 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     // Confound 1 fix: reset SeferAlloc's per-thread heap to a comparable
     // baseline before this group's measurements begin, so leftover
     // segment/tcache/pool/cache state from an EARLIER group in the same
-    // `criterion_main!` run (e.g. `global_alloc`'s Cold-direct arm, which
-    // runs before this group) does not bias "Churn, non-writing" — see the
-    // module doc's confound 1 writeup.
+    // `criterion_main!` run (e.g. `global_alloc`'s direct-alloc (warm
+    // bulk-burst) arm, which runs before this group) does not bias "Churn,
+    // non-writing" — see the module doc's confound 1 writeup.
     sefer.dbg_trim_current_thread();
     let sefer_ref = &sefer;
     let mi_ref = &mi;
@@ -568,7 +599,7 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
         // construction. Prefill (cold, first-touch) is the untimed setup and
         // teardown now runs in `ChurnTeardownGuard::drop`, which `iter_batched`
         // does NOT time (only the routine closure's own execution is timed) —
-        // so the reported ns/op divides by exactly `OPS`, with neither the
+        // so the reported ns/pair divides by exactly `OPS`, with neither the
         // ~25% cold-phase skew F7 fixed nor the ~85%-at-1024B teardown skew
         // this pass fixes. Confound 2 fix: rotated registration order (see
         // module doc) instead of fixed SeferAlloc -> mimalloc -> System.
@@ -635,7 +666,9 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
 /// (`bench_global_alloc_churn` and `bench_global_alloc_churn_write`) move
 /// teardown OUTSIDE the timed region via `ChurnTeardownGuard` (its `drop` runs
 /// `churn_teardown` untimed), so THIS is the only bench in the file whose
-/// reported ns/op includes teardown. If anyone breaks the small-segment
+/// reported figure is a DIAGNOSTIC COMPOSITE -- ns per churn pair plus a share
+/// of `CHURN_WORKING_SET` (256) teardown frees baked into the same timed
+/// region -- not a clean ns/pair. If anyone breaks the small-segment
 /// hysteresis pool — its cap, its decay tick, or accidentally dropping
 /// `alloc-decommit` from `production` — this is the only bench that would show
 /// it. Do not "fix" this bench to exclude teardown; that would delete the
@@ -643,7 +676,7 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
 ///
 /// **Current measured characterization (R24-11, task #389 — see
 /// `docs/perf/R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`).** The gap between this
-/// bench's ns/op and `global_alloc_churn`'s was ORIGINALLY the segment
+/// bench's composite figure and `global_alloc_churn`'s ns/pair was ORIGINALLY the segment
 /// decommit/release/re-reserve lifecycle cost the churn-reuse review measured
 /// (~183us of ~208us at 1024B under `alloc-decommit`, pre-Mechanism-2).
 /// Mechanism-2's pool eliminated that cost at 16/64/256B (0 decommits/run,
@@ -1216,10 +1249,10 @@ fn bench_pool_cap_sweep(c: &mut Criterion) {
 const BATCH_CEILING_SIZES: &[usize] = &[16, 64, 256];
 
 /// Number of blocks allocated-then-freed per iteration — matches [`OPS`]
-/// (`bench_direct_alloc`'s cold bulk pattern, module doc confound discussion
-/// / `global_alloc.rs:192`) so the scalar and batch arms measure literally
-/// the same amount of work (1024 blocks in, 1024 blocks out) and are
-/// directly comparable at 1:1 op count.
+/// (`bench_direct_alloc`'s alloc-N-then-free-N bulk pattern, module doc
+/// confound discussion / `global_alloc.rs:192`) so the scalar and batch arms
+/// measure literally the same amount of work (1024 blocks in, 1024 blocks
+/// out) and are directly comparable at 1:1 op count.
 const BATCH_CEILING_OPS: usize = OPS;
 
 /// R9-9 follow-up — batch sizes swept by [`bench_batch_ceiling_followup`].
@@ -1250,12 +1283,15 @@ const BATCH_CEILING_COUNTS: &[usize] = &[8, 16, 32, 64, BATCH_CEILING_OPS];
 ///
 /// - **(a) Scalar**: `AllocCore::alloc`/`AllocCore::dealloc` in a loop --
 ///   [`BATCH_CEILING_OPS`] separate calls to allocate, then
-///   [`BATCH_CEILING_OPS`] separate calls to free. This is the same cold
-///   bulk shape `bench_direct_alloc` measures for `SeferAlloc`/mimalloc/
-///   System (module doc confound discussion references `global_alloc.rs:192`
-///   for this exact pattern), just against `AllocCore` directly so it is
-///   apples-to-apples with arm (b) below (no TLS/registry overhead on either
-///   side).
+///   [`BATCH_CEILING_OPS`] separate calls to free. This is the same
+///   alloc-N-then-free-N bulk shape `bench_direct_alloc` measures for
+///   `SeferAlloc`/mimalloc/System (module doc confound discussion references
+///   `global_alloc.rs:192` for this exact pattern), just against `AllocCore`
+///   directly so it is apples-to-apples with arm (b) below (no TLS/registry
+///   overhead on either side). The warmth DIFFERS, though: this arm builds a
+///   fresh `AllocCore` per iteration (genuinely cold carve), whereas
+///   `bench_direct_alloc` reuses the shared `SeferAlloc` heap across
+///   criterion iterations (warm); the SHAPE matches, the warmth does not.
 /// - **(b) Batch**: ONE `refill_class_bump` call fills a
 ///   `[*mut u8; BATCH_CEILING_OPS]` buffer in a single call (vs.
 ///   [`BATCH_CEILING_OPS`] separate `alloc` calls), then ONE `flush_class`

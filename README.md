@@ -440,7 +440,7 @@ disclaimer):
   bump-direct carve removed the tautological round-trip; the current
   measurement shows a 2.4–2.7× cold gap at 16 B/256 B and **parity at 64 B**
   (16 B 2.37×, 256 B 2.71× slower, 64 B 1.00× faster — a noisy single-host
-  run, see the Cold direct table below); the residual is honest per-block
+  run, see the Warm bulk burst table below); the residual is honest per-block
   page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
@@ -926,14 +926,16 @@ whenever the new size fits the already-committed 4 MiB span — a header update
 returning the same pointer, zero copy. Deterministic proof: `realloc_grow`
 1,520,714 → 561,912 Ir / −47 % Estimated Cycles in the callgrind gate.)
 
-### Small-class churn vs cold direct (`benches/global_alloc.rs`)
+### Small-class churn vs warm bulk burst (`benches/global_alloc.rs`)
 
 Two patterns. **Churn** (steady-state over a live working set — each iteration
 frees a pseudo-random slot and allocates a replacement) is the common shape of
 real workloads and what the `fastbin` per-thread magazine
-([`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets. **Cold direct**
-(no reuse, "first touch") is the historically documented worst-case where
-mimalloc's cheaper first-touch path led at tiny sizes.
+([`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets. **Warm bulk
+burst** (alloc-1024-then-free-1024; no reuse within one iteration's allocation
+half, but warm across criterion iterations — labelled "Cold direct" in older
+runs) is the historically documented worst-case where mimalloc's cheaper
+first-touch carve led at tiny sizes.
 
 The **P0–P6 perf arc** (below) attacked exactly these two fronts. On cold tiny
 blocks the P3 bump-direct batched carve (Э1) removed the tautological
@@ -942,7 +944,7 @@ metadata-touch instructions: it roughly **halved the cold gap at P3 time**
 (16 B 2.6× → 1.60× slower, 64 B 2.0× → 1.15× slower) and brought **cold 256 B
 to parity at P3 time** — though the current re-measurement puts the cold
 tiny gap at 2.67× / 1.97× slower and cold 256 B at 1.52× slower on this
-noisy host (see the Cold direct column below and the iai gate for the
+noisy host (see the Warm bulk burst column below and the iai gate for the
 deterministic signal). On churn the one-branch resolver (Э2) + classify-once
 (Э4) + lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
 1.63× faster, 64 B 1.23× → 1.69× faster); then **Э6 (P6) eliminated the 256 B
@@ -957,11 +959,11 @@ new in P6.0 — each block is written after alloc; **the realistic pattern**,
 because real code writes to the memory it allocates). The writing row is the
 headline.
 
-All three patterns below now have fully re-measured absolute ns/op (every
+All three patterns below now have fully re-measured absolute ns/pair (every
 allocator column, every size) — no stale carried figures. Reproduce with
 `npm run bench:table` ([`scripts/bench-table.mjs`](scripts/bench-table.mjs)),
 the canonical wall-clock comparison script that always prints this exact shape
-(ns/op, fixed bench set, vs-mimalloc ratio). It exists precisely so this table
+(ns/pair for these three sized groups, fixed bench set, vs-mimalloc ratio). It exists precisely so this table
 is regenerated the same way each time instead of hand-assembled in different
 units — an earlier ad-hoc table once read as a 20 ns → 40 ns "regression" that
 was actually a µs-per-batch vs ns-per-op unit mixup.
@@ -978,7 +980,7 @@ allocates) — the headline:
 | 1024 B | **27.1 ns** | 232.4 ns | 184.9 ns | **8.59× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
-alloc per op; the artificial pattern where the old stale-key slow path bit
+alloc per pair; the artificial pattern where the old stale-key slow path bit
 hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
@@ -988,9 +990,11 @@ hardest, before Э6 removed it):
 |  256 B | **22.0 ns** |  37.5 ns | 174.2 ns | **1.71× faster** |
 | 1024 B | **22.6 ns** | 227.8 ns | 171.3 ns | **10.08× faster** |
 
-**Cold direct** (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op; the
-"first touch" path, historically the worst case where mimalloc's cheaper
-carve led at tiny sizes):
+**Warm bulk burst** (`bench_direct_alloc`, alloc 1024 then free 1024 — 1 alloc
++ 1 free per pair; no reuse WITHIN one iteration's allocation half, but
+criterion reuses freed cache/freelist/pool blocks ACROSS iterations, so this is
+warm, not truly cold/first-touch. Historically the worst case where mimalloc's
+cheaper carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
@@ -1103,17 +1107,19 @@ leads — see the verdict below.
 > different points in the 0.2.0 evolution, not different builds under
 > the current tree. Both are labelled with their origin run.
 
-### Cold first-touch (`benches/global_alloc.rs::global_alloc`)
+### Warm bulk burst (`benches/global_alloc.rs::global_alloc`)
 
-`alloc N → free N` — no working-set reuse, the "first touch" path (every
-block is a fresh carve). Historically the documented worst case for a
-per-thread magazine; the **P3 bump-direct batched carve (Э1)** removed the
-tautological `carve → BinTable → pop` round-trip that made every virgin
-block pay ~40 metadata-touch instructions. This is the same cold-direct
-measurement as the "Cold direct" column of the Performance table above
-(current `vs mimalloc` ratios reproduced here for the dedicated section;
-absolute ns/op for every allocator are now in the main Cold direct table
-above, re-measured 2026-07-14 via `npm run bench:table`):
+`alloc N → free N` per criterion iteration — no working-set reuse WITHIN one
+iteration's allocation half (every block in that half is a fresh carve), but
+criterion re-runs the closure many times so freed blocks are reused ACROSS
+iterations (warm). Historically the documented worst case for a per-thread
+magazine; the **P3 bump-direct batched carve (Э1)** removed the tautological
+`carve → BinTable → pop` round-trip that made every virgin block pay ~40
+metadata-touch instructions. This is the same measurement as the "Warm bulk
+burst" column of the Performance table above (current `vs mimalloc` ratios
+reproduced here for the dedicated section; absolute ns/pair for every
+allocator are now in the main Warm bulk burst table above, re-measured
+2026-07-14 via `npm run bench:table`):
 
 | Size | vs mimalloc (2026-07-23, post-Round13) | (pre-P3 was) |
 |---|---|---|
@@ -1122,7 +1128,7 @@ above, re-measured 2026-07-14 via `npm run bench:table`):
 |  256 B | 2.71× slower | 1.5× slower |
 | 1024 B | **1.26× faster** | 1.2× faster |
 
-(Cold-direct `vs mimalloc` ratios measured 2026-07-23, post-Round13 tree, same
+(Warm-bulk-burst `vs mimalloc` ratios measured 2026-07-23, post-Round13 tree, same
 R5-R3 methodology fix (TLS-state isolation + arm-order rotation), see
 [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md) and the main Performance table
 above — all absolute ns/op columns were re-recorded in this run; the
@@ -1174,7 +1180,7 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     Churn + write table above). The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
-  - **Cold first-touch after P3 (Э1 bump-direct carve):** the tautological
+  - **Warm bulk burst after P3 (Э1 bump-direct carve):** the tautological
     round-trip is gone; the 2026-07-23 post-Round13 re-measurement shows a
     2.37× cold gap at 16 B and 2.71× at 256 B (vs the 2.6× / 1.5× pre-P3
     baseline on this noisy host), while 64 B sits at **parity** (1.00×
@@ -1189,12 +1195,13 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
     on mstress" was the 0.2.0 historical run — mstress is the noisier workload
     and the mimalloc column swung run-to-run this re-run).
-- **Where it ties:** `Vec_push` honest geometric growth (1.07× faster than
-  mimalloc as of the 2026-07-23 post-Round13 re-measurement — this bench has
-  swung across parity in both directions across successive re-measurements
-  on this host and should be read as within-noise, not a stable lead or loss
-  in either direction); 16 B and 64 B churn (see above); MT mstress T = 2
-  within noise.
+- **Where it ties:** `manual_realloc_sim` (manual `alloc`+`copy`+`dealloc`
+  geometric grow chain — NOT real `Vec`, NOT `GlobalAlloc::realloc`; 1.07×
+  faster than mimalloc as of the 2026-07-23 post-Round13 re-measurement —
+  this bench has swung across parity in both directions across successive
+  re-measurements on this host and should be read as within-noise, not a stable
+  lead or loss in either direction); 16 B and 64 B churn (see above);
+  MT mstress T = 2 within noise.
 - **Where it now leads (was a loss through P5):**
   - **256 B churn: eliminated the loss in P6 (Э6).** Was ~1.16–1.25× behind
     mimalloc. The real cause was a stale per-heap key stamped in the block body
