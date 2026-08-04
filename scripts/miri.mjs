@@ -18,13 +18,20 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 
 const MATRIX = [
   ['experimental', 'region_invariants'],
-  ['alloc-core alloc-decommit', 'decommit_miri_cycle'],
-  ['alloc-global alloc-xthread', 'reclaim_offset_unit'],
+  // R34-5-followup (task #524): `internals` added — `decommit_miri_cycle`'s
+  // `#![cfg(...)]` gate (added by R34-3/task #522) requires it; without it
+  // this entry silently compiled to 0 tests (the "pass by absence" class
+  // R13-5 fixed elsewhere in this project — this script was simply never
+  // updated when R34-3 introduced the `internals` feature).
+  ['alloc-core alloc-decommit internals', 'decommit_miri_cycle'],
+  // R34-5-followup: `internals` added, same reason as above.
+  ['alloc-global alloc-xthread internals', 'reclaim_offset_unit'],
   // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard's
   // `SegmentHeader::ring_drain_head` field, exercised via a REAL
   // `find_segment_with_free` scan (not the unconditional `dbg_drain_all_rings`
   // force-drain `reclaim_offset_unit` uses).
-  ['alloc-global alloc-xthread', 'regression_ring_drain_guard_miri'],
+  // R34-5-followup: `internals` added, same reason as above.
+  ['alloc-global alloc-xthread internals', 'regression_ring_drain_guard_miri'],
   ['alloc-core', 'regression_large_align_no_segment_exhaustion'],
   ['alloc-core', 'regression_page_aligned_no_segment_exhaustion'],
   ['alloc-core', 'regression_realloc_cross_class_shrink'],
@@ -41,8 +48,10 @@ const MATRIX = [
   // strict-provenance claim (free path never touches the block body), the Э1
   // bump-direct carve pointer math (storm capped under cfg(miri)), and the Э3
   // own-segment cache invalidation on decommit.
+  // R34-5-followup: `internals` added — this test's `#![cfg(...)]` gate
+  // (added by R34-3/task #522) requires it.
   [
-    'alloc-global alloc-xthread alloc-decommit fastbin',
+    'alloc-global alloc-xthread alloc-decommit fastbin internals',
     'regression_magazine_oracles',
   ],
   [
@@ -66,7 +75,9 @@ const MATRIX = [
   // `Node::read_u8` in a loop over a caller-provided `out` slice) and T3's
   // M2 double-free-guard exercise on a freshly-reserved segment, for
   // strict-provenance UB.
-  ['alloc-core', 'regression_virgin_bitmap_skip'],
+  // R34-5-followup: `internals` added — this test's `#![cfg(...)]` gate
+  // (added by R34-3/task #522) requires it.
+  ['alloc-core internals', 'regression_virgin_bitmap_skip'],
   // W3: the stats-aggregator Stacked-Borrows counterfactual. The default
   // (non-ignored) test asserts the W3 shape — counter read off a shared
   // `&Slot`, never forming `&HeapCore` over the owner's protected `&mut` — is
@@ -114,7 +125,19 @@ const MATRIX = [
 // REAL threads under TSan (see scripts/tsan.mjs) instead.
 const PLAIN_MATRIX = [
   // A1 deferred-large stack over the `SeferAlloc`/`HeapCore` (global) face.
-  ['alloc-global alloc-xthread', 'regression_xthread_large_free_no_leak'],
+  // R34-5-followup (task #524): `internals` added — this test's
+  // `#![cfg(...)]` gate (added by R34-3/task #522) requires it; without it
+  // this entry (and the two below, before this fix) compiled its `--test`
+  // binary with the module `#[cfg]`d entirely out, so `cargo miri test` ran
+  // "0 tests" and exited 0 -- a silent PASS that validated nothing (the
+  // matrix-selection smoke-guard below only checks the row COUNT, not
+  // whether the resulting binary actually contained any tests). CI's own
+  // `ci.yml` miri-plain job was unaffected (it passes `internals` explicitly
+  // on the command line, independent of this script's MATRIX), but this
+  // LOCAL convenience script silently stopped validating anything for all
+  // three plain-matrix entries from R34-3 until this fix (caught during
+  // R34-5's zero-trust review).
+  ['alloc-global alloc-xthread internals', 'regression_xthread_large_free_no_leak'],
   // task H1: the `thread_free` aliasing guard. Runs an owner `&mut HeapCore`
   // alloc loop CONCURRENTLY (real overlap, not the phase-serialised shape of
   // the test above) with a remote thread CASing the owner's cross-thread
@@ -125,7 +148,7 @@ const PLAIN_MATRIX = [
   // preemption rate (see PLAIN_MIRIFLAGS) so the scheduler lands a remote CAS
   // inside a live owner alloc frame.
   [
-    'alloc-global alloc-xthread',
+    'alloc-global alloc-xthread internals',
     'regression_xthread_thread_free_alias_miri',
   ],
   // R34-5 (task #524, audit finding G1): the multi-producer SMALL-block
@@ -138,7 +161,7 @@ const PLAIN_MATRIX = [
   // interleaves a producer ring-push inside a live owner alloc frame.
   // Verified locally: 1 passed (~49s).
   [
-    'alloc-global alloc-xthread',
+    'alloc-global alloc-xthread internals',
     'regression_xthread_small_ring_miri',
   ],
 ];
