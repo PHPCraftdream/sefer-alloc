@@ -143,13 +143,13 @@ for completeness.
    > - **Evidence:** `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D2`.
 
-3. **R11-7 page-run layer (R12-13 deferred).**
+3. **R11-7 page-run layer (R12-13 deferred; R34-26 re-confirmed with in-place-grow angle).**
 
    > **Current state**
    > - **Status:** NO-GO now; kept as a reusable CONDITIONAL-GO starting point.
-   > - **Current number/verdict:** NO-GO — no demonstrated victim exists today.
-   > - **Next trigger:** a real workload allocating thousands of simultaneously-live 1.25–2.0 MiB (or larger uniform-size) objects that is `MAX_SEGMENTS`-bound or OS-reservation-syscall-bound (not RSS-bound — solved wherever `exact-span-large` is enabled).
-   > - **Evidence:** `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
+   > - **Current number/verdict:** NEED-MORE-DATA, lean NO-GO — no demonstrated victim exists today. R34-26 (task #545, 2026-08-05) re-confirmed R12-13's finding that no workload/bench/example exercises the 256 KiB–2 MiB range with realistic patterns (larson/mstress sizes are 16 B–8 KiB; R29-5 found promotion is 0.054% of allocations), AND added the in-place-adjacent-run-grow angle: the page-run layer with a buddy/run bitmap CAN be designed to support in-place grow (the LCM arithmetic that blocked OPT-H in a 4 MiB segment — R22-6's 15 MiB chain — is satisfiable in a 16 MiB arena), but building a prototype without a real consumer violates the project's measured-pain standard. The architectural thesis (the medium-classes failure was in the carve/grow architecture, not the absence of size classes) is confirmed by R10-2 §4.2 and R22-6's closed-form proof.
+   > - **Next trigger:** (1) a real profiling trace showing material alloc AND realloc volume in 256 KiB–2 MiB (the R29-5 0.054% bar this must clear), OR (2) a `MAX_SEGMENTS`-bound workload (thousands of simultaneously-live 1.25–2.0 MiB objects), OR (3) a change to the carve/grow model altering R22-6's LCM arithmetic. Any prototype must pass a realloc WIN gate (not merely parity) vs the Large baseline before `production` promotion is considered (R34-26 §8).
+   > - **Evidence:** `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237); `R11_7_PAGE_RUN_LAYER_DESIGN.md` (full design); `docs/design/R34_26_PAGE_RUN_LAYER_DESIGN_GATE.md` (the in-place-grow design-gate, task #545).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D3`.
 
 4. **R14-7 expandable / chained `SegmentTable`.**
