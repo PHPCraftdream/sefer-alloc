@@ -112,11 +112,26 @@ function bashCmd(features, testList, extraEnv = []) {
 // MT tests, so `npm run tsan` mirrors the CI `tsan` job's two steps.
 // Each pass is [features, testList, extraEnv]. The production pass carries the
 // S1 stress-budget env (STRESS_ENV); the cross-thread pass needs none.
+//
+// R34-5-followup (task #524): `internals` added to both default feature
+// strings — `regression_xthread_large_free_no_leak` (both passes),
+// `regression_realloc_xthread_stamp` and
+// `regression_percounter_perheap_aggregation` (production pass) all gate on
+// `#![cfg(..., feature = "internals")]` (added by R34-3/task #522), so
+// without it their `--test` binaries compiled with the whole module `#[cfg]`d
+// out — a silent "0 tests, PASS" that validated no TSan coverage for those
+// three tests since R34-3 landed (same class of bug fixed in
+// scripts/miri.mjs by this same follow-up; discovered auditing the sibling
+// sanitizer scripts for the identical omission). The custom-test-names
+// override branch (`process.argv.slice(2).length`) is left as-is — an
+// explicit test-name override is the caller's responsibility to pair with a
+// matching `--features` invocation; this script has no way to know which
+// features an arbitrary caller-supplied test name needs.
 const passes = process.argv.slice(2).length
   ? [['alloc-global alloc-xthread alloc-decommit', tests, []]]
   : [
-      ['alloc-global alloc-xthread alloc-decommit', tests, []],
-      ['production', PROD_TESTS, STRESS_ENV],
+      ['alloc-global alloc-xthread alloc-decommit internals', tests, []],
+      ['production internals', PROD_TESTS, STRESS_ENV],
     ];
 
 console.log(`[tsan] wsl: ${wslRoot}\n`);
