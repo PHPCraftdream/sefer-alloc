@@ -248,6 +248,7 @@ dependencies = [
  "racy-ptr-cell",
  "sefer-region",
  "size-classes",
+ "tagged-index-stack",
 ]
 
 [[package]]
@@ -310,6 +311,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tagged-index-stack"
+version = "0.1.0"
+dependencies = [
+ "loom",
 ]
 
 [[package]]
