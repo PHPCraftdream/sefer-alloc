@@ -40,10 +40,12 @@
 //! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
 //! is reachable from here.
 //!
-//! ## No-panic -- how it is upheld
+//! ## No-panic discipline -- how it is upheld
 //!
-//! A panic in `#[global_allocator]` aborts the process (§8 of `ALLOC_PLAN.md`).
-//! Every entry point here returns null on failure and NEVER panics:
+//! **Failure paths (the common case) never panic.** `alloc`/`realloc` return
+//! null on failure (OOM, a foreign pointer, a layout we refuse to serve);
+//! `dealloc` is a safe no-op on any failure (an unrecognised block is leaked
+//! rather than corrupting state); `alloc_zeroed` is `alloc` + zero-fill:
 //! - `alloc`: `current()` → `&mut HeapCore` → `HeapCore::alloc` (returns
 //!   null on OOM). If `current()` itself yields the fallback (TLS teardown),
 //!   the fallback's `with_heap` returns `None` only on true OOM → null.
@@ -56,6 +58,55 @@
 //!   when the block can stay put), falling back to `alloc` + copy + `dealloc`
 //!   otherwise — all null-returning.
 //! - `alloc_zeroed`: `alloc` + zero-fill.
+//!
+//! **Five release-surviving invariant tripwires (abort by design).** Beyond
+//! those failure paths a small number of "cannot happen" checks remain as
+//! *release* panics (not `debug_assert!`). Each is a precondition the
+//! immediate caller already proves on the same `&mut self` owner-only path,
+//! so under correct operation none is reachable; an independent audit
+//! (release-stabilization F-5) could not construct a violation of any of the
+//! five. They are deliberately kept as release panics rather than softened to
+//! silent no-ops (the contrasting `AllocCore::reclaim_offset` style —
+//! "bounds-check FIRST and no-op"): each guards allocator metadata whose
+//! silent corruption would be strictly worse than an immediate abort, so a
+//! future bug that broke one trips loudly at the point of corruption instead
+//! of continuing with inconsistent state (defence in depth). The five, all
+//! reachable from this file's `GlobalAlloc` impl under `production`:
+//!
+//!   1. `alloc_core/alloc_core.rs:2158` — `assert!(self.table
+//!      .contains_base_ro(base), "known-base realloc …")` in
+//!      `realloc_inplace_fast_path_known_base`; the caller
+//!      (`AllocCore::realloc` / `HeapCore::realloc`) already proved
+//!      `contains_base(base)` one call up.
+//!   2. `alloc_core/alloc_core_large_cache.rs:147` — `.expect("large_cache
+//!      _slot_take: empty base slot")` in `large_cache_slot_take`
+//!      (`alloc-decommit`, in `production`).
+//!   3. `alloc_core/alloc_core_large_cache.rs:160` — `.expect("large_cache
+//!      _slot_take: empty extension slot")` (`alloc-decommit`).
+//!   4. `alloc_core/alloc_core_large_cache.rs:166` — `unreachable!(…)` in
+//!      `large_cache_slot_take` (`alloc-decommit`).
+//!   5. `alloc_core/alloc_core_large_cache.rs:321` — `unreachable!(…)` in
+//!      `large_cache_slot_set` (`alloc-decommit`).
+//!
+//!   Sites 2–5 live in the large-cache slot take/set helpers. Their callers
+//!   only ever pass an index proven occupied by `large_cache_slot_get` /
+//!   `oldest_occupied_slot`, which read the `large_cache` array directly —
+//!   NOT the `large_cache_occupied` bitmask introduced by R32-12 (task #503).
+//!   A bitmask/array desync therefore cannot reach these `.expect()`/
+//!   `unreachable!()` arms: the worst a desync can do is
+//!   `large_cache_find_free_slot` handing back an index the array already
+//!   holds occupied (an overwrite on `set`, silent data loss — never a
+//!   take-side panic). `tests/no_panic_doc_accuracy.rs` pins the five by
+//!   their message strings.
+//!
+//! **Panic-in-`GlobalAlloc` is abort, not UB.** On current Rust the
+//! `__rust_alloc` / `__rust_dealloc` / `__rust_realloc` / `__rust_alloc_zeroed`
+//! shims are `#[rustc_nounwind]`, so a panic that escapes any `GlobalAlloc`
+//! method aborts the process — it is not undefined behaviour. Nothing in this
+//! crate relies on anything stronger, and nothing requires a downstream
+//! `panic = "abort"` profile: the nounwind shims guarantee the abort
+//! regardless of the consumer's panic strategy. Stated here explicitly
+//! rather than left implicit inside the failure-path bullets above.
 //!
 //! [`current`]: super::tls_heap::current
 

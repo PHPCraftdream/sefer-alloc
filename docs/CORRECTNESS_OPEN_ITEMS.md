@@ -1883,3 +1883,49 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    - **Commit prefix:** `fix(perf)` per the R30-12 taxonomy — shipping
      code changed to close a latent ordering/correctness defect, no
      speedup claimed, no observable behavior change on real hardware.
+
+13. **F-5 release-surviving panic sites vs. "NEVER panics" doc claim**
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-5
+    [low]) — **RESOLVED** by R34-16 (task #535). The module doc in
+    `src/global/sefer_alloc.rs` claimed "Every entry point here returns null
+    on failure and NEVER panics," but five release-surviving (not
+    `debug_assert!`) invariant checks are reachable from the `GlobalAlloc`
+    impl under `production`:
+    (1) `alloc_core/alloc_core.rs:2158` `assert!` in
+    `realloc_inplace_fast_path_known_base`;
+    (2) `alloc_core/alloc_core_large_cache.rs:147` `.expect` in
+    `large_cache_slot_take` (base);
+    (3) `:160` `.expect` (extension);
+    (4) `:166` `unreachable!` (take, extension disabled);
+    (5) `:321` `unreachable!` (set, extension disabled).
+
+    - **Resolution (variant b — doc accuracy, no behavior change):** the
+      audit could not construct a reachable violation of any of the five
+      ("cannot happen" invariant checks), and the codebase's own
+      `AllocCore::reclaim_offset` already documents the tradeoff between a
+      graceful no-op and a defence-in-depth abort. The five were left as
+      release panics deliberately: each guards allocator metadata whose
+      silent corruption would be strictly worse than an immediate abort, so
+      a future bug that broke one trips loudly at the point of corruption
+      instead of continuing with inconsistent state. Softening variants (a)
+      were rejected per-site — sites 4 cannot be softened at all
+      (`large_cache_slot_take` returns a value `CachedLarge`, no no-op
+      return possible; it is `#[cfg(not(large-cache-extended))]`-unreachable
+      by construction), and sites 2–3 are take-side `.expect`s whose callers
+      prove occupancy via an ARRAY read (`large_cache_slot_get` /
+      `oldest_occupied_slot`), NOT the R32-12 bitmask, so a bitmask/array
+      desync cannot reach them — softening them would only mask the very
+      desync they guard against.
+    - **Doc fix:** `sefer_alloc.rs`'s "No-panic" section rewritten to (1)
+      keep the accurate failure-path bullets, (2) enumerate the five
+      tripwires as "abort by design" defence-in-depth, and (3) state
+      explicitly that a panic escaping `GlobalAlloc` aborts via
+      `#[rustc_nounwind]` (not UB), independent of any downstream
+      `panic = "abort"` setting.
+    - **Pinning test:** `tests/no_panic_doc_accuracy.rs` pins the five by
+      their distinctive panic-message strings (exactly once each) AND pins
+      the doc's qualifying language (`rustc_nounwind`, `invariant tripwire`,
+      absence of the old overclaim).
+    - **Commit prefix:** `docs(global)` per the R30-12 taxonomy — module-doc
+      accuracy fix, no shipping code changed (the only non-doc additions are
+      the regression test and this index entry).
