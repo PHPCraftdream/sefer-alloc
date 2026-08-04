@@ -1066,21 +1066,16 @@ impl RingModelShadow2 {
     /// Mirrors the post-R34-6 `RemoteFreeRing::full_check`: shadow fast path
     /// (`Acquire` cached_head load), real `Acquire` head load + `Release`
     /// shadow refresh on the slow path.
-    fn full_check(&self, _t: u32) -> Result<(), ()> {
-        // R34-19 COUNTERFACTUAL PROBE: always admit, never check room.
-        return Ok(());
-        #[allow(unreachable_code)]
-        {
-            let ch = self.cached_head.load(Ordering::Acquire);
-            let t = _t;
-            if t.wrapping_sub(ch) < 2 {
-                return Ok(());
-            }
-            let h = self.head.load(Ordering::Acquire);
-            self.cached_head.store(h, Ordering::Release);
-            if t.wrapping_sub(h) >= 2 {
-                return Err(());
-            }
+    fn full_check(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head.load(Ordering::Acquire);
+        if t.wrapping_sub(ch) < 2 {
+            return Ok(());
+        }
+        let h = self.head.load(Ordering::Acquire);
+        self.cached_head.store(h, Ordering::Release);
+        if t.wrapping_sub(h) >= 2 {
+            return Err(());
+        }
         Ok(())
     }
 
