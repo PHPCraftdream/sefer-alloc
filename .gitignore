@@ -26,3 +26,7 @@
 # same "scratch by default, git add -f only when a report cites it" policy
 # as the _raw_*.log rule immediately above.
 /docs/perf/_raw_identity_*.patch
+# R34-7 (task #526): per-run raw provenance JSONs from
+# scripts/r34_7_causal_harness.mjs — same scratch-by-default policy as
+# paired_ab_runs above.
+/docs/perf/r34_7_runs/

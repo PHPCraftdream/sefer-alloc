@@ -2149,6 +2149,32 @@ required-features = ["alloc-global", "alloc-xthread", "internals"]
 name = "r32_13_windows_reserve_commit_decomposition_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
+# R34-7 (task #526): causal comparative harness — three worker binaries, each
+# ACTUALLY installing its own `#[global_allocator]` (SeferAlloc / mimalloc /
+# System), driven by `scripts/r34_7_causal_harness.mjs` as fresh subprocesses
+# per (allocator, repetition) with recorded alternation order and identity
+# context. This is the causal replacement for `benches/global_alloc.rs`'s
+# non-causal single-process direct-call comparison — see the R32/R33 review
+# (`docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md` §"P1").
+#
+# The shared workload body (`examples/_shared/r34_7_causal_workload.rs`) is
+# `include!`d verbatim into all three (byte-identical workload code; the ONLY
+# difference is the `#[global_allocator]` static). Each worker parses
+# `--size`/`--iterations` from CLI, runs the churn-write workload, and prints
+# `RESULT ns_per_op=<f64>`. The orchestrator builds all three, launches them in
+# alternation (A/B/C rotation per rep), collects ns/op, and prints a
+# median/min/max comparison table with identity context. See the worker files'
+# module docs and `scripts/r34_7_causal_harness.mjs`'s module doc for details.
+[[example]]
+name = "r34_7_causal_worker_sefer"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "r34_7_causal_worker_mimalloc"
+
+[[example]]
+name = "r34_7_causal_worker_system"
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
