@@ -74,7 +74,10 @@
 //! combination — so this test stays a genuine Large-path exercise
 //! regardless of whether `medium-classes` is enabled.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

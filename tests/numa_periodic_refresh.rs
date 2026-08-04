@@ -21,7 +21,10 @@
 //! Build/run:
 //!   cargo test --features "numa-aware-mock alloc-global" --test numa_periodic_refresh
 
-#![cfg(all(all(feature = "numa-aware-mock", feature = "alloc-global"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "numa-aware-mock", feature = "alloc-global"),
+    feature = "internals"
+))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

@@ -33,7 +33,10 @@
 //! (registry-level `HeapRegistry::claim`/`recycle`, a serialising guard since
 //! the registry is process-global).
 
-#![cfg(all(all(feature = "alloc-global", feature = "batch-api"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "batch-api"),
+    feature = "internals"
+))]
 
 extern crate sefer_alloc;
 

@@ -23,7 +23,10 @@
 //! - T-large-still-stamps: the large path falls through to `core.alloc` and
 //!   stamps afterward; this test confirms the stamp is present.
 
-#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "fastbin"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

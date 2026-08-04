@@ -32,7 +32,10 @@
 //!    advanced `head`) — the concrete instance of the module doc's
 //!    "consequence: missed overflow cannot happen" argument.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT, RING_CAP};
 

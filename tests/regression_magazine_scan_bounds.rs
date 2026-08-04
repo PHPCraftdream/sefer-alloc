@@ -25,7 +25,10 @@
 //! swallows the legit free below → this test goes RED (`re-alloc did not return
 //! the just-freed block`).
 
-#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "fastbin"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

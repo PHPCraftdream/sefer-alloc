@@ -22,7 +22,10 @@
 //! Reuses the production pattern from `tests/decommit_miri_cycle.rs` (pool
 //! disabled so decommit fires deterministically), sized for miri.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-decommit"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-decommit"),
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 

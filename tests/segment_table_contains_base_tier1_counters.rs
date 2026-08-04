@@ -18,7 +18,10 @@
 //! established "reads 0 unless the gating feature is on" convention for
 //! every other diagnostic counter, e.g. `dbg_maybe_decay_guard_passed_count`).
 
-#![cfg(all(all(feature = "alloc-core", feature = "bench-internals"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "bench-internals"),
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::alloc_core::AllocCore;

@@ -44,7 +44,10 @@
 //! schedule class is at least made VISIBLE and permanently guarded — the test
 //! is kept in-tree either way.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

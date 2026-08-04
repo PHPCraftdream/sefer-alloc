@@ -31,7 +31,10 @@
 //!    (readback still matches its own pattern after all allocations are
 //!    done) and every returned pointer satisfies its requested alignment.
 
-#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "fastbin"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

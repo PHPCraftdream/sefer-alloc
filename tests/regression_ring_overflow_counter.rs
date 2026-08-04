@@ -24,7 +24,10 @@
 //! the (RING_CAP+1)-th push — proving the assertion is not vacuously true
 //! merely because pushes fail, but specifically checks the counter wiring.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use sefer_alloc::alloc_core::remote_free_ring::{
     RemoteFreeRing, DBG_RING_OVERFLOW, FOOTPRINT, RING_CAP,

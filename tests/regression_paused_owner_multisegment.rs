@@ -58,7 +58,10 @@
 //! budget is already UB-covered by
 //! `tests/remote_fanin.rs::remote_fanin_miri_minimal_retry_ub_check`.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread", not(miri)), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread", not(miri)),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::collections::BTreeMap;

@@ -24,7 +24,10 @@
 //! behaviour) makes assertion (2) fail — the large class's magazine fills to
 //! the full `TCACHE_CAP`, parking megabytes.
 
-#![cfg(all(all(feature = "alloc-global", feature = "fastbin"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "fastbin"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -24,7 +24,10 @@
 //! - Set `RING_CAP = 200` (non-power-of-two): the crate FAILS TO COMPILE on the
 //!   `is_power_of_two` const-assert.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

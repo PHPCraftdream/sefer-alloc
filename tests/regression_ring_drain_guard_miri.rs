@@ -40,7 +40,10 @@
 //!   class of bug miri's strict-provenance pointer-arithmetic checker
 //!   catches on every `Node::read_u32`/`write_u32` call this test drives.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use std::collections::HashSet;

@@ -46,7 +46,10 @@
 //! Feature-map: needs `--features production` (which enables both
 //! `alloc-global` and `alloc-xthread`).
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

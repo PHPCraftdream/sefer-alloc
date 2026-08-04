@@ -57,7 +57,10 @@
 //!   cargo test --release --features "production bench-internals" \
 //!       --test r31_10_trim_current_thread_api
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-decommit"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-decommit"),
+    feature = "internals"
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -14,7 +14,10 @@
 //! so the miri target is fast. Block size is chosen so the primordial fills in
 //! a few thousand blocks rather than tens of thousands.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-decommit"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-decommit"),
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 

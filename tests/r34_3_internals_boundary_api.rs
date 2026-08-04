@@ -57,7 +57,11 @@
 //! --features production --test r34_3_internals_boundary_api` (or any
 //! feature string that turns on all three without `internals`).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-global", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-global",
+    feature = "alloc-decommit"
+))]
 
 use sefer_alloc::{
     AllocCore, AllocStats, Handle, LargeCacheConfig, LargeCacheMode, LargeCachePolicy, Profile,

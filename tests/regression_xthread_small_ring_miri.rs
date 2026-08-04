@@ -31,7 +31,10 @@
 //! mode as the other `miri-plain` tests), this validates that the concurrent
 //! multi-producer push and the owner drain are free of aliasing/provenance UB.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -114,7 +117,10 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     let prod_a = thread::spawn(move || {
         let _ = bootstrap::ensure();
         let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "producer A HeapRegistry::claim failed");
+        assert!(
+            !remote_heap.is_null(),
+            "producer A HeapRegistry::claim failed"
+        );
         while !start_a.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }
@@ -133,7 +139,10 @@ fn xthread_small_ring_two_producers_push_owner_drains() {
     let prod_b = thread::spawn(move || {
         let _ = bootstrap::ensure();
         let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "producer B HeapRegistry::claim failed");
+        assert!(
+            !remote_heap.is_null(),
+            "producer B HeapRegistry::claim failed"
+        );
         while !start_b.load(Ordering::Acquire) {
             std::hint::spin_loop();
         }

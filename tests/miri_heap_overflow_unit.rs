@@ -44,7 +44,10 @@
 //! so a synthetic non-null pointer is sound to push/drain without ever
 //! reading through it.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::sync::Arc;
 use std::thread;

@@ -124,7 +124,10 @@
 //! (see the task's final report for the exact numbers observed) before
 //! restoring the real mechanism and re-confirming GREEN.
 
-#![cfg(all(all(feature = "alloc-global", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

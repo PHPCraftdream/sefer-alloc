@@ -16,7 +16,10 @@
 //! GREEN here ⟹ the reclaim logic is sound single-threaded ⟹ the race_repro
 //! crash is a concurrency/ordering bug (not a logic bug), directing the fix.
 
-#![cfg(all(all(feature = "alloc-core", feature = "alloc-xthread"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-core", feature = "alloc-xthread"),
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use std::collections::HashSet;

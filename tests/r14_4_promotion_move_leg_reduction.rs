@@ -77,7 +77,10 @@
 //! — run with:
 //!   cargo test --release --features "production medium-classes" --test r14_4_promotion_move_leg_reduction
 
-#![cfg(all(all(feature = "alloc-global", feature = "medium-classes"), feature = "internals"))]
+#![cfg(all(
+    all(feature = "alloc-global", feature = "medium-classes"),
+    feature = "internals"
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 
