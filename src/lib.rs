@@ -292,29 +292,79 @@ compile_error!(
 mod concurrent;
 
 // `alloc_core` is the Phase 8+ segment substrate. Its public surface is
-// `AllocCore` / `SegmentLayout` (re-exported below). The module itself is also
-// `#[doc(hidden)] pub` so the isolated ring test (`tests/remote_ring_unit.rs`)
-// can reach `alloc_core::remote_free_ring::RemoteFreeRing`'s `#[doc(hidden)]`
-// test surface — this is the established test-only export pattern (see
+// `AllocCore` / `SegmentLayout` (re-exported below via `pub use
+// alloc_core::{...}`, which needs `mod alloc_core` in scope regardless of
+// `internals`). With `internals` ON, the module is also `#[doc(hidden)] pub`
+// so the isolated ring test (`tests/remote_ring_unit.rs`) can reach
+// `alloc_core::remote_free_ring::RemoteFreeRing`'s `#[doc(hidden)]` test
+// surface — this is the established test-only export pattern (see
 // `registry` below). Nothing in `alloc_core` is stable public API.
-#[cfg(feature = "alloc-core")]
+//
+// R34-3 (task #522, finding B1): `#[doc(hidden)]` alone hides this module
+// from rustdoc but does NOT remove it from the public semver/ABI surface —
+// see `SeferAlloc::alloc_batch`'s doc comment in `src/global/sefer_alloc.rs`
+// for the same principle already applied to two individual methods. Two
+// mutually-exclusive `mod alloc_core;` declarations below (one `pub`, one
+// `pub(crate)`, `cfg`-disjoint on `internals`) give the module body itself
+// unconditional visibility to the REST of this file (so the crate-root
+// `pub use alloc_core::{AllocCore, SegmentLayout, ...}` re-exports keep
+// working with `internals` OFF, unconditionally on `alloc-core`/
+// `alloc-decommit` as before) while making the EXTERNAL path
+// `sefer_alloc::alloc_core::*` — everything NOT re-exported at the crate
+// root, i.e. every `dbg_*` hook and internal type — reachable only when
+// `internals` is enabled. See `internals`'s own doc comment in `Cargo.toml`
+// for the full boundary/decision writeup.
+#[cfg(all(feature = "alloc-core", feature = "internals"))]
 #[doc(hidden)]
 pub mod alloc_core;
+// `allow(dead_code, unused_imports)`: without `internals` this module's
+// only external callers (integration tests reaching `dbg_*`/other
+// non-re-exported items directly) are unreachable, so a handful of items
+// (and the `mod.rs` `pub use` re-exports that surface them one level up)
+// that exist solely for that white-box test surface would otherwise
+// warn/error under `-D warnings`. This is a `pub(crate)`-visibility
+// artifact of the `internals` gate, not new dead code — every one of these
+// items is used by something outside `src/` (see `internals`'s doc comment
+// in `Cargo.toml`) once `internals` is enabled, which is a real, exercised
+// build
+// configuration (`cargo test --features "production internals"`).
+#[cfg(all(feature = "alloc-core", not(feature = "internals")))]
+#[allow(dead_code, unused_imports)]
+pub(crate) mod alloc_core;
 
-// `#[doc(hidden)] pub` (not private `mod`) so the task #129 teardown-ordering
-// tests (`tests/tls_heap_teardown_torn_sentinel.rs`,
+// `#[doc(hidden)] pub` (when `internals` is on; `pub(crate)` otherwise — not
+// private `mod`) so the task #129 teardown-ordering tests
+// (`tests/tls_heap_teardown_torn_sentinel.rs`,
 // `tests/tls_heap_teardown_ordering_stress.rs`) can reach `global::tls_heap`'s
 // `#[doc(hidden)]` test hook `dbg_teardown_then_resolve_is_fallback` — the
 // same established test-only export pattern as `alloc_core`/`registry`
 // above. Nothing in `global` beyond `SeferAlloc`/`AllocStats` (re-exported
-// below) is stable public API.
-#[cfg(feature = "alloc-global")]
+// below, unconditionally on `alloc-global`, independent of `internals`) is
+// stable public API.
+//
+// R34-3 (task #522, finding B1): additive `internals` gate on the EXTERNAL
+// path, same rationale and same two-declaration shape as `alloc_core` above
+// — see `internals`'s doc comment in `Cargo.toml`.
+#[cfg(all(feature = "alloc-global", feature = "internals"))]
 #[doc(hidden)]
 pub mod global;
+// `allow(dead_code)`: same `internals`-off white-box-surface artifact as
+// `alloc_core` above.
+#[cfg(all(feature = "alloc-global", not(feature = "internals")))]
+#[allow(dead_code, unused_imports)]
+pub(crate) mod global;
 
-#[cfg(feature = "alloc-global")]
+// R34-3 (task #522, finding B1): additive `internals` gate on the EXTERNAL
+// path, same two-declaration shape as `alloc_core` above — see
+// `internals`'s doc comment in `Cargo.toml`.
+#[cfg(all(feature = "alloc-global", feature = "internals"))]
 #[doc(hidden)]
 pub mod registry;
+// `allow(dead_code)`: same `internals`-off white-box-surface artifact as
+// `alloc_core` above.
+#[cfg(all(feature = "alloc-global", not(feature = "internals")))]
+#[allow(dead_code, unused_imports)]
+pub(crate) mod registry;
 
 pub use sefer_region::{Handle, Region};
 

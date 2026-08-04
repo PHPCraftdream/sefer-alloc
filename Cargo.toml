@@ -397,6 +397,63 @@ fastbin = ["alloc-global", "alloc-xthread"]
 # measured cost on non-remote/single-thread paths (iai: +0.00% to +0.02% Ir
 # across 12 non-remote benches), ~8 KiB RSS sidecar per materialised heap.
 production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "class-aware-dirty"]
+
+# R34-3 (task #522, release-stabilization audit finding B1): a REAL semver
+# boundary for the `alloc_core` / `global` / `registry` modules, replacing
+# `#[doc(hidden)]` alone. This crate's own `SeferAlloc::alloc_batch` doc
+# comment (`src/global/sefer_alloc.rs`) already states the principle this
+# feature applies one level up: "`#[doc(hidden)]` alone is NOT a real API
+# boundary ... it hides the item from rustdoc but leaves it on the public
+# semver/ABI surface." `alloc-core` and `alloc-global` (which gate the three
+# `pub mod` declarations in `src/lib.rs`) are BOTH inside `production` above,
+# so every `pub` item inside those three modules — including ~50 `pub unsafe
+# fn dbg_*` diagnostic hooks — is reachable, and therefore semver-load-bearing,
+# from a plain `--features production` build, despite `#[doc(hidden)]` hiding
+# them from rustdoc output.
+#
+# `internals` gates the THREE `pub mod` PATHS themselves (not the crate-root
+# re-exports): `sefer_alloc::alloc_core::*` / `sefer_alloc::global::*` /
+# `sefer_alloc::registry::*` become unreachable without it. This does NOT
+# remove any type from the actually-documented stable surface — every type a
+# downstream user is meant to name (`SeferAlloc`, `AllocStats`, `Profile`,
+# `LargeCacheConfig`, `LargeCacheMode`, `LargeCachePolicy`, `SmallPoolPolicy`,
+# `SmallSegmentPoolConfig`, `AllocCore`, `SegmentLayout`, plus `Region`/
+# `Handle`/`SyncRegion` from `sefer-region`) is re-exported at the CRATE ROOT
+# via the existing `pub use alloc_core::{...}` / `pub use global::{...}`
+# lines below, gated only on `alloc-core`/`alloc-global`/`alloc-decommit` as
+# today — `internals` does not touch those re-export gates at all. Only the
+# MODULE PATH — and everything reachable solely through it (every `dbg_*`
+# hook, every non-re-exported internal type, every submodule) — moves behind
+# `internals`.
+#
+# Decision: `production` does NOT include `internals`. A downstream
+# `Cargo.toml` of `sefer-alloc = { features = ["production"] }` gets the
+# intended stable surface only (`SeferAlloc`/`AllocStats`/`Profile`/
+# `LargeCacheConfig`/`Region`/`Handle`/`AllocCore`/`SegmentLayout` and
+# friends) — NOT three internal modules' worth of `dbg_*` hooks — simply
+# because it asked for the recommended production bundle. The alternative
+# (`production` auto-enabling `internals`) would silently defeat the whole
+# point of this feature for every consumer who follows the README's own
+# `production`-only install instructions.
+#
+# This repository's OWN tests/benches/examples are white-box: ~106 files
+# under `tests/` reference `alloc_core::`/`registry::`/`global::` paths
+# directly (they test the substrate, not just the public face), and a
+# smaller set of `benches/`/`examples/` targets do the same. Those are this
+# crate's own internal test/measurement suite, not "a downstream consumer" —
+# they opt in explicitly and locally via `cargo test --features "production
+# internals"` (mirrors the existing `--features "production bench-internals"`
+# idiom already used for `benches/perf_gate_iai.rs` etc.), and every
+# `[[bench]]`/`[[example]]` Cargo.toml target whose file touches internals
+# lists `internals` in its own `required-features` so a plain `--features
+# production` build does not even attempt to compile them. `tests/` files are
+# NOT declared as explicit `[[test]]` Cargo.toml targets (auto-discovered),
+# so the per-target `required-features` mechanism does not apply to them —
+# every CI/local `cargo test` invocation that exercises this internals-facing
+# test suite passes `internals` alongside `production` on the command line
+# instead (see `scripts/check-matrix.mjs` and `.github/workflows/ci.yml`).
+internals = []
+
 # R8-3 (task #216): `alloc-segment-directory` joined `production` once the two
 # regressions that had kept it opt-in were both landed — #214 (commit af7b039,
 # R8-1: the O(D×49) remote-dirty directory-sync regression) and #215 (commit
@@ -950,7 +1007,7 @@ required-features = ["alloc-global"]
 # ~192 B and the defect does not manifest. See the example's module docs.
 [[example]]
 name = "first_alloc_process"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "internals"]
 
 # R6-OPT-A5 / Stage A.5: process-per-sample judge for "a thread that only ever
 # FREES a foreign block, never allocates" — measures SeferAlloc::dealloc's
@@ -1348,7 +1405,7 @@ required-features = ["alloc-core", "alloc-decommit"]
 # Build/run: cargo run --release --example r13_9_class_aware_dirty_sidecar_rss --features "production class-aware-dirty alloc-stats"
 [[example]]
 name = "r13_9_class_aware_dirty_sidecar_rss"
-required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "class-aware-dirty"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "class-aware-dirty", "internals"]
 
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
@@ -1376,7 +1433,7 @@ required-features = ["alloc-global", "alloc-xthread"]
 # Tune via env: SEFER_RSS_PRODUCERS, SEFER_RSS_SECONDS, SEFER_RSS_LARGE_FRACTION.
 [[example]]
 name = "rss_probe"
-required-features = ["alloc-global", "alloc-xthread"]
+required-features = ["alloc-global", "alloc-xthread", "internals"]
 
 # Task #62 §A-1: cross-thread free micro-bench — direct push→drain of the
 # RemoteFreeRing via AllocCore test seams (dbg_push_to_ring +
@@ -1398,7 +1455,7 @@ required-features = ["alloc-core", "alloc-xthread"]
 [[bench]]
 name = "segment_table_delete_cluster"
 harness = false
-required-features = ["alloc-core"]
+required-features = ["alloc-core", "internals"]
 
 # R5-R1 (round5 performance review §4.3/§10 Stage A.2): PRODUCTION cross-thread
 # free path bench — real producer threads through HeapRegistry::claim /
@@ -1410,7 +1467,7 @@ required-features = ["alloc-core"]
 [[bench]]
 name = "heap_fanin_production"
 harness = false
-required-features = ["alloc-global", "alloc-xthread"]
+required-features = ["alloc-global", "alloc-xthread", "internals"]
 
 # R6-OPT-A2 (radical_optimization_review §4 P0-4 measurement plan / §5.5 item
 # 5 / §6 Stage A.4): persistent-thread fan-in throughput/latency JUDGE — a
@@ -1425,7 +1482,7 @@ required-features = ["alloc-global", "alloc-xthread"]
 [[bench]]
 name = "heap_fanin_persistent"
 harness = false
-required-features = ["alloc-global", "alloc-xthread"]
+required-features = ["alloc-global", "alloc-xthread", "internals"]
 
 # R6-OPT-A3 (radical_optimization_review §4 P0-3 measurement plan / §5.5 item
 # 8 / §6 Stage A.5): independent-alloc/free sweep JUDGE for the SMALL_MAX
@@ -1482,7 +1539,7 @@ required-features = ["alloc-core"]
 [[bench]]
 name = "segment_directory_sweep"
 harness = false
-required-features = ["alloc-core"]
+required-features = ["alloc-core", "internals"]
 
 # R7-A0: transition-zone probe for the P5 directory-materialization threshold.
 # Measures S = 32..63 at SMALL_MAX, holes = 0 — the gap between the main
@@ -1538,7 +1595,7 @@ required-features = ["alloc-global"]
 [[bench]]
 name = "perf_gate_iai"
 harness = false
-required-features = ["alloc-global", "bench-internals"]
+required-features = ["alloc-global", "bench-internals", "internals"]
 
 # R32-9 (task #500) — the missing >=64-live-segment macro-bench artifact
 # `docs/perf/OPEN_ITEMS.md` item 34 / survey finding F3 both name. NOT the
@@ -1555,7 +1612,7 @@ required-features = ["alloc-global", "bench-internals"]
 [[bench]]
 name = "macro_multiseg_steady_state"
 harness = false
-required-features = ["alloc-global", "bench-internals"]
+required-features = ["alloc-global", "bench-internals", "internals"]
 
 # R11-5: per-call cost of `numa::current_node()` (real OS syscall / Win32 API
 # call) vs the new cached accessor `AllocCore::current_node_cached()`. Reports
@@ -1569,7 +1626,7 @@ required-features = ["alloc-global", "bench-internals"]
 [[bench]]
 name = "numa_current_node_cache"
 harness = false
-required-features = ["numa-aware"]
+required-features = ["numa-aware", "internals"]
 
 # R12-7 stage 1 (follow-up to R9-6's docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md
 # §9 "next step before implementing"): wall-clock gate for class-aware dirty
@@ -1600,7 +1657,7 @@ required-features = ["numa-aware"]
 [[bench]]
 name = "r12_7_class_aware_dirty_wallclock"
 harness = false
-required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats", "internals"]
 
 # R13-3 (task #273): cold-virgin / warm-reuse / mixed wall-clock gate for the
 # `virgin-zero-skip` magazine fix (`benches/r13_3_virgin_zero_skip_wallclock.rs`).
@@ -1611,7 +1668,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory",
 [[bench]]
 name = "r13_3_virgin_zero_skip_wallclock"
 harness = false
-required-features = ["alloc-global", "fastbin"]
+required-features = ["alloc-global", "fastbin", "internals"]
 
 # R29-16 (task #447): calloc-shaped wall-clock gate for `virgin-zero-skip` at
 # 64 KiB -- large enough for the skipped `Node::zero` memset to dominate
@@ -1626,7 +1683,7 @@ required-features = ["alloc-global", "fastbin"]
 [[bench]]
 name = "r29_16_virgin_zero_skip_calloc_wallclock"
 harness = false
-required-features = ["alloc-global", "fastbin"]
+required-features = ["alloc-global", "fastbin", "internals"]
 
 # R30-3 (task #452): the activation-proven native wall-clock judge for
 # `virgin-zero-skip`, superseding `r29_16_virgin_zero_skip_calloc_wallclock`
@@ -1671,7 +1728,7 @@ required-features = ["alloc-global", "alloc-decommit", "alloc-stats"]
 [[bench]]
 name = "r31_0_virgin_zero_skip_production_layer_gate"
 harness = false
-required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats", "internals"]
 
 # R32-0 (task #490): the LOST-front (cost-side) companion to R31-0 above --
 # same `HeapCore` production layer, same sizes/REPS/BURST regime, but
@@ -1683,7 +1740,7 @@ required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
 [[bench]]
 name = "r32_0_virgin_zero_skip_cost_side_gate"
 harness = false
-required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats", "internals"]
 
 # R13-6 (task #276): production A/B wall-clock gate for the
 # `exact-span-large` (R12-3) + `large-reserved-capacity` (R12-4) opt-in pair
@@ -1729,11 +1786,11 @@ required-features = ["alloc-global", "fastbin", "alloc-stats"]
 
 [[example]]
 name = "r25_5_pool_cap_sweep_probe"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "internals"]
 
 [[example]]
 name = "r26_1_pool_cap_rss_subprocess_probe"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
 # R27-3 (task #421): the pool RETENTION gate. Subprocess-per-arm isolation +
 # R26-1's config self-verification, but at the pressure-producing batch 120,
@@ -1745,7 +1802,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # `--features production`).
 [[example]]
 name = "r27_3_pool_retention_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
 # R29-13 (task #444): the large-cache RETENTION gate. Mirrors R27-3's
 # subprocess-per-arm methodology but targets the per-shard large-segment
@@ -1765,7 +1822,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # `sefer_alloc::registry`).
 [[example]]
 name = "r29_13_large_cache_retention_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R31-3 (task #466, step 3): multi-heap RSS accounting for
 # `large-cache-extended` — mirrors `r29_13_large_cache_retention_gate.rs`'s
@@ -1781,7 +1838,7 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 #            (EXTENDED, 40 slots): cargo run --release --example r31_3_large_cache_extended_multi_heap_rss_gate --features "production alloc-stats bench-internals large-cache-extended"
 [[example]]
 name = "r31_3_large_cache_extended_multi_heap_rss_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R26-3 (task #412): process-level A/B/B/A judge arms for confirming R25-5/R26-1's
 # latency/decommit finding (cap 4->8 eliminates the decommit-driven slowdown)
@@ -1820,7 +1877,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # tier). Requires bench-internals for the decomposition hooks.
 [[example]]
 name = "r29_3_decomposition_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
 # R29-4 (task #435): segment-state reconciliation gate. Extends R27-3's
 # retention finding by attributing the ~+4 MiB/heap "committed-non-pooled"
@@ -1829,7 +1886,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # Same required-features as the r29_3/r27_3 siblings.
 [[example]]
 name = "r29_4_segment_state_reconciliation_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
 # R29-5 (task #436): medium→Large promotion frequency / copied-byte
 # distribution gate. Stage-1 measurement-only probe answering
@@ -1841,7 +1898,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # counter-increment gate).
 [[example]]
 name = "r29_5_promotion_frequency_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "medium-classes", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "medium-classes", "bench-internals", "internals"]
 
 # R30-6 (task #455): large-cache `headroom_bytes` BENEFIT-side gate — the
 # hit-rate/RSS/burst-idle-burst A/B companion to R29-13's retention-cost gate
@@ -1852,7 +1909,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "medium-
 # r29_13 sibling (registry-bypass via HeapRegistry::claim_with_config).
 [[example]]
 name = "r30_6_large_cache_headroom_ab_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R30-6 (task #455): the REAL-`#[global_allocator]` latency companions to the
 # gate above — one binary per headroom grid point (0/16/64/256 MiB), since
@@ -1929,7 +1986,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # activation-oracle methodology as r30_6.
 [[example]]
 name = "r31_1_large_cache_headroom_crossing_regime_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R31-10 (task #474): AC5 gate for SeferAlloc::trim_current_thread() —
 # subprocess-per-arm measurement of the burst → trim → idle → burst RSS win
@@ -1984,7 +2041,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin
 # path-activation-oracle methodology, same shape as r30_6/r31_1's siblings.
 [[example]]
 name = "r32_8_large_cache_decay_clock_read_ab_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R32-8 (task #499, F9): validates the stride-throttle FIX's benefit in the
 # regime it targets -- a workload where large_cache_used_bytes stays
@@ -1996,7 +2053,7 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 # never crosses.
 [[example]]
 name = "r32_8_large_cache_decay_stride_fix_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R33-6 (task #511): measures the RETENTION COST of R32-8's stride throttle
 # (DECAY_CLOCK_CHECK_STRIDE=64) in the low-throughput regime the original
@@ -2007,7 +2064,7 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 # (64 MiB) profiles.
 [[example]]
 name = "r33_6_decay_throttle_retention_cost_gate"
-required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
 # R32-9 (task #500, F3): the wall-clock companion to the new
 # `benches/macro_multiseg_steady_state.rs` iai-callgrind bench (that bench is
@@ -2021,7 +2078,7 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 # module doc and docs/perf/R32_9_MACRO_MULTISEG_STEADY_STATE_HARNESS.md.
 [[example]]
 name = "r32_9_macro_multiseg_steady_state_ab_gate"
-required-features = ["alloc-global"]
+required-features = ["alloc-global", "internals"]
 
 # R32-10 (task #501, F2): the Large-heavy workload that structurally forces
 # SegmentTable::contains_base's Tier-1 direct-mapped own_cache to thrash --
@@ -2035,7 +2092,7 @@ required-features = ["alloc-global"]
 # docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md.
 [[example]]
 name = "r32_10_own_cache_tier1_thrash_gate"
-required-features = ["alloc-global", "bench-internals"]
+required-features = ["alloc-global", "bench-internals", "internals"]
 
 # F10 (task #502) — real cross-thread `RemoteFreeRing::push` cost harness:
 # one owner thread + PRODUCERS threads freeing owner-allocated blocks, BOTH
@@ -2055,7 +2112,7 @@ required-features = ["alloc-global", "bench-internals"]
 # and docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md.
 [[example]]
 name = "r32_11_remote_ring_shadow_head_gate"
-required-features = ["alloc-global", "alloc-xthread"]
+required-features = ["alloc-global", "alloc-xthread", "internals"]
 
 # R32-13 (task #504, F11 step 2) — Windows-native segment-lifecycle
 # decomposition: ports R29-3's Linux methodology (reserve/commit/decommit/
@@ -2078,7 +2135,7 @@ required-features = ["alloc-global", "alloc-xthread"]
 # docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md.
 [[example]]
 name = "r32_13_windows_reserve_commit_decomposition_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
