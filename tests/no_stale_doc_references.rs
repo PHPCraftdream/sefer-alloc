@@ -22,6 +22,7 @@
 //! Doc-only guard: it reads source text, never links against the crate, so it
 //! runs in every feature configuration.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -383,6 +384,293 @@ fn readme_unsafe_inventory_counts_match_reality() {
          {} distinct files but the README does not contain the token \
          `{t2_files_needle}`. Update the tier-2 summary.",
         tier2_files.len(),
+    );
+}
+
+/// Collapse all runs of ASCII whitespace (including newlines) to a single
+/// space, so a token check is resilient to markdown line-wrapping. Shared by
+/// the production-bundle and seam-inventory doc-drift guards below (the
+/// `readme_unsafe_inventory_counts_match_reality` test above inlines the same
+/// transform; this factored copy keeps the two new guards concise).
+fn flatten_whitespace(s: &str) -> String {
+    s.split_ascii_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Parse the `production = ["a", "b", ...]` feature line out of Cargo.toml,
+/// returning the ordered list of feature names. String-only, no `toml`
+/// dependency — the existing doc-drift guards in this file all avoid linking
+/// the crate, and this keeps that property (so the test runs in every feature
+/// configuration).
+fn parse_production_feature_list(cargo: &str) -> Vec<String> {
+    let line = cargo
+        .lines()
+        .find(|l| l.trim_start().starts_with("production = ["))
+        .expect("Cargo.toml must define `production = [\"...\", ...]`");
+    let start = line.find('[').unwrap() + 1;
+    let end = line.rfind(']').unwrap();
+    line[start..end]
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Derive a Rust module path from a source file path relative to `src/`
+/// (e.g. `src/alloc_core/sidecar.rs` -> `alloc_core::sidecar`). Returns `None`
+/// for `mod.rs` / `lib.rs` (crate or parent-module roots, which have no own
+/// path segment and are never themselves a named seam submodule).
+fn file_to_module_path(src: &Path, file: &Path) -> Option<String> {
+    let rel = file.strip_prefix(src).ok()?;
+    let stem = rel.with_extension("");
+    let last = stem.file_name()?.to_str()?;
+    if last == "mod" || last == "lib" {
+        return None;
+    }
+    let path: String = stem
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("::");
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// True iff `token` is a pure `::`-separated module path (at least two
+/// segments, only `[a-zA-Z0-9_:]`). Rejects membrane-function paths that carry
+/// `{...}` / `(...)` or lack `::`, so the seam-bullet extractor does not
+/// confuse a function membrane (e.g. `alloc_core::node::{write_usize, ...}`)
+/// with a seam module.
+fn is_pure_module_path(token: &str) -> bool {
+    token.contains("::")
+        && !token.contains('{')
+        && !token.contains('}')
+        && !token.contains('(')
+        && !token.contains(')')
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':')
+}
+
+/// Extract the `` * `module::path` `` bullet entries from `src/lib.rs`'s
+/// INTERNAL seam inventory — the `* `-prefixed list between the anchor
+/// "confined modules lift this with" (the line that introduces the
+/// `#![allow(unsafe_code)]` module list) and the conclusion "is enforced by
+/// the compiler" (the line that closes it). Only pure `::`-separated module
+/// paths are collected; membrane-function bullets (which live in the WIDER
+/// soundness-boundary section below the conclusion) are rejected by
+/// `is_pure_module_path` and, in any case, fall outside the bounded region.
+fn extract_seam_bullets(lib_rs: &str) -> Vec<String> {
+    let start_anchor = "confined modules lift this with";
+    let end_anchor = "is enforced by the compiler";
+    let start = lib_rs
+        .find(start_anchor)
+        .expect("lib.rs seam-inventory start anchor `confined modules lift this with`");
+    let after_start = start + start_anchor.len();
+    let end = lib_rs[after_start..]
+        .find(end_anchor)
+        .expect("lib.rs seam-inventory end anchor `is enforced by the compiler`");
+    let region = &lib_rs[after_start..after_start + end];
+
+    let mut seams = Vec::new();
+    for line in region.lines() {
+        // Strip the leading `//` comment prefix, then look for `* ` bullets.
+        let stripped = line.trim_start_matches("//").trim_start();
+        let after_star = match stripped.strip_prefix("* ") {
+            Some(s) => s,
+            None => continue,
+        };
+        // The first backtick-enclosed token is the module path.
+        let open = match after_star.find('`') {
+            Some(i) => i,
+            None => continue,
+        };
+        let rest = &after_star[open + 1..];
+        let close = match rest.find('`') {
+            Some(i) => i,
+            None => continue,
+        };
+        let token = &rest[..close];
+        if is_pure_module_path(token) {
+            seams.push(token.to_string());
+        }
+    }
+    seams
+}
+
+/// Regression-guard against doc-drift in the textual `production` feature
+/// bundle. (R34-21/task #540, release-stabilization audit finding F-10.)
+///
+/// `Cargo.toml`'s `production = [...]` line is the single source of truth for
+/// which features the `production` bundle shorthand expands to. Several doc
+/// sites spell the bundle out in prose (rather than just saying
+/// "`production`") so a reader need not open Cargo.toml. Those prose
+/// expansions silently rot every time a feature joins `production`
+/// (R13-9/task #279 added `class-aware-dirty` and `primordial-lazy-commit` to
+/// `production`, but four doc sites kept listing only the pre-R13-9 set —
+/// unnoticed for over 20 rounds until the release-stabilization audit). This
+/// test parses `production = [...]` from Cargo.toml, renders the feature list
+/// in the `a + b + c` form the prose uses, and asserts every doc site that
+/// writes the bundle out as a `+`-separated list contains the FULL canonical
+/// list — catching both "bundle removed" and "stale partial list" drift.
+///
+/// Companion to `readme_unsafe_inventory_counts_match_reality` (which pins
+/// the README's aggregate unsafe-seam COUNTS the same way).
+///
+/// Doc-only guard: reads Cargo.toml + source/README text, never links the
+/// crate, so it runs in every feature configuration.
+#[test]
+fn production_feature_bundle_doc_sites_match_cargo_toml() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(manifest.join("Cargo.toml")).expect("read Cargo.toml");
+    let features = parse_production_feature_list(&cargo);
+    assert!(
+        features.len() >= 2,
+        "parsed an implausibly small `production` feature list: {features:?}"
+    );
+
+    // The rendered form used by every prose site: `feat1 + feat2 + ... + featN`.
+    let canonical = features.join(" + ");
+    // The longest prefix common to all stale forms seen at audit time (the
+    // first 4 features). Every textual bundle description starts with this
+    // prefix; a site is stale iff the prefix appears WITHOUT the full
+    // canonical continuation. Anchoring on 4 features (not the whole list)
+    // catches partial lists of any shorter length (4-, 5-, or 6-feature stale
+    // forms), not just the exact pre-R13-9 shape.
+    let anchor = if features.len() >= 4 {
+        features[..4].join(" + ")
+    } else {
+        canonical.clone()
+    };
+
+    // Every doc site that writes the `production` bundle out as a
+    // `+`-separated feature list (rather than just saying "`production`").
+    let sites: &[&str] = &["src/lib.rs", "src/global/sefer_alloc.rs", "README.md"];
+
+    let mut offenders = Vec::new();
+    for rel in sites {
+        let path = manifest.join(rel);
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let flat = flatten_whitespace(&text);
+
+        // Walk every occurrence of the `+`-separated bundle prefix; each must
+        // extend to the full canonical list. A prefix that stops short is a
+        // stale partial bundle.
+        let mut from = 0usize;
+        let mut canonical_hits = 0usize;
+        while let Some(rel_off) = flat[from..].find(&anchor) {
+            let pos = from + rel_off;
+            if flat[pos..].starts_with(&canonical) {
+                canonical_hits += 1;
+            } else {
+                let end_ctx = (pos + 80).min(flat.len());
+                let ctx = &flat[pos..end_ctx];
+                offenders.push(format!(
+                    "{rel}: stale/partial `production` bundle (does not list \
+                     all {n} features) near: `{ctx}`",
+                    n = features.len(),
+                ));
+            }
+            from = pos + anchor.len();
+        }
+        if canonical_hits == 0 {
+            offenders.push(format!(
+                "{rel}: the canonical `production` bundle `{canonical}` does \
+                 not appear at all — the doc site may have dropped the prose \
+                 expansion entirely",
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "the `production` feature bundle in Cargo.toml is `{canonical}` \
+         ({n} features), but these doc sites that spell the bundle out in \
+         prose do not match (stale/partial or missing). Cargo.toml's \
+         `production = [...]` is the single source of truth — update every \
+         prose site to the full list:\n{}",
+        offenders.join("\n"),
+        n = features.len(),
+    );
+}
+
+/// Regression-guard against doc-drift in `src/lib.rs`'s prose seam inventory.
+/// (R34-21/task #540, release-stabilization audit finding F-9.)
+///
+/// `src/lib.rs`'s header comment inventories the INTERNAL tier-1
+/// `#![allow(unsafe_code)]` seam modules, mirroring README §"Where unsafe
+/// lives". That prose list silently rots every time a seam module is added
+/// (R13-6 added `alloc_core::large_cache_extended` and R14-9/task #294 added
+/// `alloc_core::sidecar`, but neither was added to the lib.rs header — the
+/// crate root's "complete, verifiable picture" under-stated the seam set for
+/// over 20 rounds). The sibling `readme_unsafe_inventory_counts_match_reality`
+/// pins the README's AGGREGATE counts; this test pins the lib.rs prose LIST
+/// against the SAME canonical grep
+/// (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`), set-for-set,
+/// so a missing or phantom seam fails CI at the source.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn lib_rs_seam_inventory_matches_canonical_grep() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src = manifest.join("src");
+
+    // (1) Recompute the actual set of INTERNAL tier-1 seam modules from the
+    // canonical grep, src/ tree only (the lib.rs header inventories INTERNAL
+    // seams; the crates/ dependency seams are documented in a separate
+    // section above it).
+    let mut files = Vec::new();
+    rs_files(&src, &mut files);
+    assert!(!files.is_empty(), "no source files found under src/");
+
+    const TIER1_PREFIX: &str = "#![allow(unsafe_code)]";
+    let mut actual: BTreeSet<String> = BTreeSet::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("read source");
+        if text
+            .lines()
+            .any(|l| l.trim_start().starts_with(TIER1_PREFIX))
+        {
+            if let Some(module_path) = file_to_module_path(&src, file) {
+                actual.insert(module_path);
+            }
+        }
+    }
+    assert!(!actual.is_empty(), "no tier-1 seams found under src/");
+
+    // (2) Extract the documented set from lib.rs's prose seam inventory.
+    let lib_rs = fs::read_to_string(src.join("lib.rs")).expect("read lib.rs");
+    let documented: BTreeSet<String> = extract_seam_bullets(&lib_rs).into_iter().collect();
+    assert!(
+        !documented.is_empty(),
+        "no seam bullets found in src/lib.rs header — the inventory region \
+         anchors (`confined modules lift this with` / `is enforced by the \
+         compiler`) may have moved"
+    );
+
+    // (3) Bidirectional set comparison — no missing, no phantom.
+    let missing: Vec<&String> = actual.difference(&documented).collect();
+    let phantom: Vec<&String> = documented.difference(&actual).collect();
+    assert!(
+        missing.is_empty() && phantom.is_empty(),
+        "src/lib.rs's prose seam inventory drifted from the canonical grep \
+         `grep -rnE '^\\s*#!?\\[allow\\(unsafe_code\\)\\]' src/ crates/` \
+         (src/ tier-1 modules only):\n  actual tier-1 src/ seams ({}): \
+         {:#?}\n  documented in lib.rs ({}): {:#?}\n  MISSING from lib.rs (a \
+         real seam with no prose entry): {:#?}\n  PHANTOM in lib.rs \
+         (documented but no real seam file): {:#?}\n  Add the missing \
+         module(s) to lib.rs's INTERNAL-seam inventory (or remove a phantom), \
+         matching the existing `* `module::path` — ...` bullet style.",
+        actual.len(),
+        actual,
+        documented.len(),
+        documented,
+        missing,
+        phantom,
     );
 }
 

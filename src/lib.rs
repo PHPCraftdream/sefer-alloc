@@ -182,12 +182,17 @@
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
-//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory):
+//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty):
 //      * `alloc_core::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)
 //      * `alloc_core::node` — intrusive free-list node r/w through raw pointers;
 //                             the generalized `hand` discipline. (under `alloc-core`)
+//      * `alloc_core::sidecar` — the owner-only lazily-materialised sidecar
+//                             primitive (`reserve`/`deref`/`deref_mut`) shared
+//                             by `os`'s SegmentDirectory reservation and
+//                             `large_cache_extended`'s LargeCacheExtension
+//                             reservation. (under `alloc-core`)
 //      * `global::sefer_alloc` — the `unsafe impl GlobalAlloc` alloc-face seam
 //                             (trait obligation + pointer handoff). (under `alloc-global`)
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
@@ -215,6 +220,13 @@
 //      * `alloc_core::dirty_by_class` — dereferences the `RacyPtrCell`-
 //                             published per-(segment, class) dirty-bit
 //                             sidecar pointer. (under `class-aware-dirty`)
+//
+//    Optional `large-cache-extended` path (R13-6):
+//      * `alloc_core::large_cache_extended` — the lazily-materialised
+//                             large-cache extension sidecar (owner-only, no
+//                             `RacyPtrCell`); reserves via `sidecar::reserve`,
+//                             dereferences via `sidecar::deref[_mut]`.
+//                             (under `large-cache-extended`)
 //
 //    Research / older tiers (not in production build):
 //      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)

@@ -202,7 +202,7 @@ use super::AllocStats;
 ///
 /// For any real multi-threaded deployment, build with at least
 /// `["alloc-global", "alloc-xthread"]`, or use the `production` feature
-/// bundle (`alloc-global + alloc-xthread + alloc-decommit + fastbin`), which
+/// bundle (`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory + primordial-lazy-commit + class-aware-dirty`), which
 /// is the combination this crate is tested and tuned for. See
 /// `docs/INTEGRATION.md` for the full feature matrix.
 ///
