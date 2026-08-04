@@ -674,6 +674,156 @@ fn lib_rs_seam_inventory_matches_canonical_grep() {
     );
 }
 
+/// Parse the compile-time offset pinned by a `const _: () = assert!(
+/// core::mem::offset_of!(PerClass, <field>) == <n>, ...)` block in
+/// `registry/tcache.rs`. The `==` operand is the source of truth
+/// (compile-time checked), so this is the canonical value the prose must
+/// match. Returns `None` if the assert block is absent (e.g. a field was
+/// removed or the assert renamed) so the caller can fail with a clear message.
+fn parse_perclass_const_assert_offset(text: &str, field: &str) -> Option<u64> {
+    let needle = format!("offset_of!(PerClass, {field}) ==");
+    let pos = text.find(&needle)?;
+    let after = &text[pos + needle.len()..];
+    let digits: String = after
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+/// From `PerClass`'s F4 layout-prose region, extract the offset number the
+/// doc claims for `field`. For the given field, the claim is the number
+/// following the first "offset" token that appears after the field's
+/// backtick-quoted `` `<field>` `` mention and before the next field's token
+/// (so a later field's offset, or an incidental "offset" inside a rationale,
+/// cannot be misread as this field's claim). Returns `None` if the field or
+/// its offset claim is absent.
+fn parse_perclass_prose_offset(region: &str, field: &str, all_fields: &[&str]) -> Option<u64> {
+    let token = format!("`{field}`");
+    let pos = region.find(&token)?;
+    let after = &region[pos + token.len()..];
+    // Bound the search window at the earliest next `` `<other_field>` ``
+    // mention so this field's number is not confused with a sibling's.
+    let mut window_end = after.len();
+    for other in all_fields {
+        if *other == field {
+            continue;
+        }
+        let other_tok = format!("`{other}`");
+        if let Some(p) = after.find(&other_tok) {
+            window_end = window_end.min(p);
+        }
+    }
+    let window = &after[..window_end];
+    let off = window.find("offset")?;
+    let digits: String = window[off + "offset".len()..]
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+/// Regression-guard against doc-drift between `PerClass`'s documented field
+/// offsets and its compile-time `offset_of!` const-asserts.
+/// (R34-22/task #541, bench-review finding P3 item 6.)
+///
+/// `PerClass`'s struct doc comment spells out the `#[repr(C)]` field layout
+/// in prose ("`count` at offset 0, `virgin_mask` (when present) at offset 2,
+/// `slots` ... starting at offset 8"). Those prose numbers are load-bearing
+/// documentation of the magazine cache-line locality claim, but they are
+/// hand-typed and silently disagree with the const-asserts that actually pin
+/// the layout if someone edits one without the other. This was the exact
+/// R34-22 finding: the prose said `virgin_mask` "at offset 1" while the
+/// `offset_of!(PerClass, virgin_mask) == 2` const-assert (with its "1 pad
+/// byte after u8 count" rationale) said 2 — the assert is the source of
+/// truth (compile-time checked) and the prose was stale. This test parses
+/// each `offset_of!(PerClass, <field>) == N` const-assert and asserts the
+/// struct's doc prose mentions the SAME N for that field, so a future
+/// prose/assert drift fails CI at the source rather than being discovered by
+/// a human reviewer.
+///
+/// `virgin_mask` (the field that actually drifted) is the motivating case;
+/// `count`/`slots` are the sibling claims in the same prose sentence and
+/// fall under the same drift class, so they are pinned too at no extra cost.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration (the `#[cfg(feature = "virgin-zero-skip")]` on
+/// the `virgin_mask` assert is irrelevant — the assert TEXT is in the file
+/// regardless of features).
+#[test]
+fn perclass_doc_offsets_match_const_asserts() {
+    let path = src_dir().join("registry").join("tcache.rs");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+    // The three fields whose offsets are both prose-documented AND pinned by a
+    // const-assert in the same file.
+    let fields: &[&str] = &["count", "virgin_mask", "slots"];
+
+    // Extract the F4 prose region that lists the offsets as one sentence,
+    // bounded by the anchors that introduce and close it. If either anchor
+    // moved, the layout paragraph was rewritten and this test's anchors need
+    // updating — fail loudly rather than silently passing on an empty region.
+    let start_anchor = "fixes the field order to declaration order";
+    let end_anchor = "see the `offset_of!` const-asserts";
+    let region = text.find(start_anchor).and_then(|s| {
+        let after_s = s + start_anchor.len();
+        text[after_s..]
+            .find(end_anchor)
+            .map(|e| &text[after_s..after_s + e])
+    });
+    let region = match region {
+        Some(r) => r,
+        None => panic!(
+            "the F4 layout prose anchors (`{start_anchor}` ... `{end_anchor}`) \
+             were not found in registry/tcache.rs — has the layout paragraph \
+             been rewritten? Update this test's anchors to match."
+        ),
+    };
+
+    let mut offenders = Vec::new();
+    for field in fields {
+        let Some(assert_val) = parse_perclass_const_assert_offset(&text, field) else {
+            offenders.push(format!(
+                "no `offset_of!(PerClass, {field}) == N` const-assert found in \
+                 registry/tcache.rs — was the assert removed or renamed?"
+            ));
+            continue;
+        };
+        match parse_perclass_prose_offset(region, field, fields) {
+            Some(prose_val) if prose_val == assert_val => {}
+            Some(prose_val) => offenders.push(format!(
+                "field `{field}`: prose says offset {prose_val} but the \
+                 compile-time `offset_of!` const-assert says {assert_val}. The \
+                 assert is the source of truth (compile-checked); update the \
+                 prose to match."
+            )),
+            None => offenders.push(format!(
+                "field `{field}`: no `offset <n>` prose claim found in the F4 \
+                 layout paragraph — was `{field}`'s offset mention removed?"
+            )),
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "PerClass's documented field offsets in registry/tcache.rs disagree \
+         with its own `offset_of!` const-asserts (the compile-time source of \
+         truth). The const-asserts pin the #[repr(C)] magazine cache-line \
+         layout; the prose must state the SAME numbers. Drifts:\n{}",
+        offenders.join("\n"),
+    );
+}
+
 /// Regression-guard for the THIRD link in a chain
 /// `tests/dirty_by_class_sidecar_sizing_tripwire.rs`'s v4 tripwire (R19-9,
 /// task #345) only pins two of: (1) the REAL compiled constants

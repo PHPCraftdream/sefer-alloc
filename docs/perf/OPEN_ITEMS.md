@@ -1352,11 +1352,19 @@ for completeness.
    R31-7d1+R31-13/task #479).**
 
    > **Current state**
-   > - **Status:** [L] low-priority / structural blocker — no macro-bench
-   >   built; this entry does not build one (docs/index reorganization only).
-   >   Cross-referenced FROM items 9, 20, 22, 23 below, which each keep their
-   >   own full independent history untouched (append-only) and now point
-   >   HERE for the shared precondition instead of separately restating it.
+   > - **Status:** [L] low-priority — the shared macro-bench harness NOW
+   >   EXISTS (`benches/macro_multiseg_steady_state.rs` +
+   >   `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs`, R32-9/task
+   >   #500, 2026-08-02 — see the dated UPDATE below), so this item's own old
+   >   "does the missing artifact exist" blocking question is RESOLVED. The
+   >   harness does NOT yet model the fragmented/holey multi-class Small-
+   >   directory state X5/T10/R1/R15-1 actually need (R34-2/task #521 cross-
+   >   ref below), and none of the four mechanisms has been re-judged under
+   >   it — so the item stays open as "precondition met, re-judgment not yet
+   >   done", NOT as "structural blocker / no harness". Cross-referenced FROM
+   >   items 9, 20, 22, 23 below, which each keep its own full independent
+   >   history untouched (append-only) and points HERE for the shared
+   >   precondition instead of separately restating it.
    > - **Current number/verdict:** four independent NO-GO/deferred findings,
    >   spanning three separate scan/hint mechanisms plus one drain-scan
    >   design study, all bottomed out on the SAME structural wall: every

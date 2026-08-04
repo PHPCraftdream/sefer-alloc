@@ -173,7 +173,9 @@ pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
 /// the shallow-magazine top-of-stack accesses (`count` 1-3, the documented
 /// churn-workload common case) this struct's own doc comment above claims
 /// are colocated. `#[repr(C)]` fixes the field order to declaration order:
-/// `count` at offset 0, `virgin_mask` (when present) at offset 1, `slots`
+/// `count` at offset 0, `virgin_mask` (when present) at offset 2 (1 pad
+/// byte after the u8 `count` — `virgin_mask`'s `u16` needs 2-byte alignment,
+/// so the compiler inserts one padding byte at offset 1), `slots`
 /// padded up to its own 8-byte alignment and starting at offset 8 in both
 /// configurations — see the `offset_of!` const-asserts on [`PerClass`]
 /// immediately below, which pin this rather than leaving it aspirational.
