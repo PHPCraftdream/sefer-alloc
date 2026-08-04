@@ -738,15 +738,15 @@ impl HeapCore {
     /// `AllocCore::dbg_hash_contains_only`, exposed at the `HeapCore` level so
     /// `benches/perf_gate_iai.rs` can measure Tier-2's (the 8192-slot
     /// open-addressing probe) instruction cost IN ISOLATION, unconditionally
-    /// skipping the Tier-1 4-entry `own_cache` check that `dbg_contains_base`
+    /// skipping the Tier-1 `OWN_CACHE_SIZE`-entry `own_cache` check that `dbg_contains_base`
     /// above (mirroring the real `dealloc_routing` call) always tries first.
     ///
-    /// **Why this hook exists instead of just constructing a >4-segment
+    /// **Why this hook exists instead of just constructing a >`OWN_CACHE_SIZE`-segment
     /// workload for the existing `dbg_contains_base` hook:** `own_cache`'s
-    /// hit/miss behaviour is keyed by `(base >> SEGMENT_SHIFT) & 3` — a
+    /// hit/miss behaviour is keyed by `(base >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)` — a
     /// function of the segment's OS-assigned virtual address, which
     /// `mmap`/`VirtualAlloc` chooses, not this allocator. A workload that
-    /// allocates 5+ distinct segments does not portably guarantee a Tier-2
+    /// allocates more than `OWN_CACHE_SIZE` distinct segments does not portably guarantee a Tier-2
     /// hit: the OS could still lay the segments out so their cache indices
     /// never collide inside one deterministic-iai run. This hook sidesteps
     /// that non-determinism by calling the Tier-2 probe directly — see
