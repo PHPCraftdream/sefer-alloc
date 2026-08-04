@@ -412,6 +412,51 @@ pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
 pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 // ===========================================================================
+// R34-23 (task #542) — realloc in-place vs move-leg path-activation counters
+// ===========================================================================
+//
+// Three process-wide counters that let a realloc gate report (R34-23,
+// `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md`) PROVE which code path each
+// realloc took — the single shared detection function
+// [`AllocCore::realloc_inplace_fast_path_known_base`] is the ONLY place these
+// are bumped, so `inplace_large + inplace_small + decline` == the number of
+// reallocs that reached the fast-path detection (i.e. every non-null realloc
+// on a registered segment). This is the path-activation oracle CLAUDE.md's
+// R30-8 rule requires: a gate judging the in-place Large grow MUST report per-
+// arm evidence that the in-place path actually fired, not just that the config
+// resolved correctly.
+//
+// Same convention as [`OPT_H_ATTEMPTS`]: the statics are ALWAYS compiled (so
+// the `dbg_reloc_*` accessors have a stable definition), the per-event
+// INCREMENT is gated behind `alloc-stats` (zero cost in plain `production`),
+// and reads are Relaxed (diagnostic only). Reads 0 unless `alloc-stats` is on.
+
+/// R34-23 path-activation oracle: process-wide count of Large→Large in-place
+/// realloc grows that succeeded via OPT-G (committed-span path OR the
+/// `large-reserved-capacity` reserved-VA path). Bumped at BOTH `return
+/// Some(ptr)` sites in [`realloc_inplace_fast_path_known_base`]'s Large branch.
+/// Read via [`AllocCore::dbg_reloc_inplace_large_count`].
+pub(crate) static RELOC_INPLACE_LARGE_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R34-23 path-activation oracle: process-wide count of Small/Primordial
+/// same-class in-place reallocs that succeeded via OPT-F (the block stayed in
+/// its own size class, no copy). Bumped at the `return Some(ptr)` site in the
+/// Small branch. Read via [`AllocCore::dbg_reloc_inplace_small_count`].
+pub(crate) static RELOC_INPLACE_SMALL_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R34-23 path-activation oracle: process-wide count of reallocs where the
+/// in-place fast paths DECLINED (returned `None`), forcing the caller's
+/// move-leg (alloc-new + copy + dealloc-old). Bumped at every `None` return in
+/// [`realloc_inplace_fast_path_known_base`]: Large-grow-doesn't-fit,
+/// Small-cross-class, and other-kind. Read via
+/// [`AllocCore::dbg_reloc_fastpath_decline_count`]. By construction
+/// `inplace_large + inplace_small + decline == total_fast_path_calls`.
+pub(crate) static RELOC_FASTPATH_DECLINE_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+// ===========================================================================
 // R29-5 (task #436) — promotion-frequency / copied-byte distribution counters
 // ===========================================================================
 //
@@ -2170,6 +2215,9 @@ impl AllocCore {
                 if let Some(end) = payload_off.checked_add(new_eff) {
                     if end <= span_usable {
                         SegmentHeader::set_large_size_at(base, new_eff);
+                        #[cfg(feature = "alloc-stats")]
+                        RELOC_INPLACE_LARGE_CALLS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return Some(ptr);
                     }
                     // R12-4 (feature `large-reserved-capacity`): the grow no
@@ -2184,10 +2232,15 @@ impl AllocCore {
                     #[cfg(feature = "large-reserved-capacity")]
                     if self.try_grow_large_reserved_capacity(base, end) {
                         SegmentHeader::set_large_size_at(base, new_eff);
+                        #[cfg(feature = "alloc-stats")]
+                        RELOC_INPLACE_LARGE_CALLS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         return Some(ptr);
                     }
                 }
             }
+            #[cfg(feature = "alloc-stats")]
+            RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return None;
         }
         // OPT-F: Small→Small same-class in-place.
@@ -2200,6 +2253,8 @@ impl AllocCore {
                 super::size_classes::SizeClasses::class_for(clamped_new, align),
             ) {
                 if new_class == old_class {
+                    #[cfg(feature = "alloc-stats")]
+                    RELOC_INPLACE_SMALL_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     return Some(ptr);
                 }
                 // OPT-H STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351,
@@ -2306,6 +2361,8 @@ impl AllocCore {
                 }
             }
         }
+        #[cfg(feature = "alloc-stats")]
+        RELOC_FASTPATH_DECLINE_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         None
     }
 

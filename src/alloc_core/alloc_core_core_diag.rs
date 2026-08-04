@@ -726,6 +726,39 @@ impl AllocCore {
         super::alloc_core::OPT_H_HITS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// R34-23 (task #542) path-activation oracle: process-wide count of
+    /// Large→Large in-place realloc grows that succeeded via OPT-G
+    /// (committed-span OR `large-reserved-capacity` reserved-VA path). A
+    /// non-zero delta for a Large-growth workload proves the in-place path
+    /// actually fired — not just that the config resolved. Relaxed load —
+    /// diagnostic only. Reads 0 unless `alloc-stats` is on; the accessor is
+    /// always compiled so callers need no `#[cfg]`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_reloc_inplace_large_count() -> u64 {
+        super::alloc_core::RELOC_INPLACE_LARGE_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R34-23 (task #542) path-activation oracle: process-wide count of
+    /// Small/Primordial same-class in-place reallocs that succeeded via OPT-F.
+    /// Relaxed load — diagnostic only. Reads 0 unless `alloc-stats` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_reloc_inplace_small_count() -> u64 {
+        super::alloc_core::RELOC_INPLACE_SMALL_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R34-23 (task #542) path-activation oracle: process-wide count of
+    /// reallocs where the in-place fast paths DECLINED (forced the move leg:
+    /// alloc-new + copy + dealloc-old). By construction
+    /// `inplace_large + inplace_small + decline == total_fast_path_calls`.
+    /// Relaxed load — diagnostic only. Reads 0 unless `alloc-stats` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_reloc_fastpath_decline_count() -> u64 {
+        super::alloc_core::RELOC_FASTPATH_DECLINE_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// STAGE-1 DIAGNOSTIC ONLY (R29-5, task #436): process-wide count of
     /// successful medium→Large realloc promotions (`try_promote_to_large`
     /// returning `Some`) since process start — the numerator of the

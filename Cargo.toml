@@ -2215,6 +2215,36 @@ name = "r34_7_causal_worker_mimalloc"
 [[example]]
 name = "r34_7_causal_worker_system"
 
+# R34-23 (task #542): direct `GlobalAlloc::realloc` geometric-chain gate.
+# Calls each allocator's `GlobalAlloc` impl directly (NOT a process-level
+# `#[global_allocator]` — see the binary's module doc for why). Driven by
+# `scripts/r34_23_realloc_direct_harness.mjs` as one fresh subprocess per
+# allocator (causal isolation). `alloc-global` for `SeferAlloc::new()`; the
+# harness additionally builds with `alloc-stats` so the sefer arm's three
+# realloc path-activation counters are non-zero.
+[[example]]
+name = "r34_23_realloc_direct_gate"
+required-features = ["alloc-global"]
+
+# R34-23 (task #542): real-Vec subprocess-isolated workers. Three binaries,
+# each installing its OWN `#[global_allocator]` (SeferAlloc / mimalloc /
+# System), driven by `scripts/r34_23_vec_harness.mjs` as fresh subprocesses.
+# The shared workload (`examples/_shared/r34_23_vec_workload.rs`) is
+# `include!`d verbatim into all three — byte-identical workload code; the ONLY
+# difference is the `#[global_allocator]` static. The sefer worker reads the
+# realloc path-activation oracle (needs `alloc-stats`).
+[[example]]
+name = "r34_23_vec_worker_sefer"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "r34_23_vec_worker_mimalloc"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "r34_23_vec_worker_system"
+required-features = ["alloc-global"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
