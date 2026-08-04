@@ -1069,6 +1069,38 @@ for completeness.
     >   `doc_commit` (`f51ec37` → `96ae245`, via re-running
     >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
 
+42. **R32-8's `DECAY_CLOCK_CHECK_STRIDE = 64` retention bound does NOT hold
+    over consecutive sparse decay intervals — measured defect, fix direction =
+    adaptive stride (R34-11 / task #530).**
+
+    > **Current state**
+    > - **Status:** [A] active — defect measured and documented; fix is R34-11
+    >   (adaptive stride), which is BLOCKED by this task's verdict (R34-10
+    >   measured the defect; R34-11 designs and tests the fix).
+    > - **Current number/verdict (R34-10, task #529):** R33-6 §9.3 asserted
+    >   "the cost is bounded by one segment per missed decay interval … the
+    >   throttle delays the tick, it does not skip it entirely across multiple
+    >   intervals." This is REFUTED by measurement: over 40 consecutive sparse
+    >   intervals at 1 alloc+free event/interval, the throttled arm (stride=64)
+    >   accumulates a peak retention gap of **4 segments (16 MiB = 4 × the
+    >   one-segment bound)**, persisting at ≥ 3 segments for 38/40 = 95.0% of
+    >   the run. The throttled arm does NOT catch up after its single clock
+    >   read (at interval 30 of 40): `run_decay_step` fires ONE step per read
+    >   with no catch-up loop. At the shipped 1000 ms default interval, the
+    >   throttled arm goes ~33 s before its first decay tick at 1 event/interval.
+    >   At 8 events/interval the gap converges (throttled catches up), so the
+    >   defect is regime-dependent (sparse-only), not universal.
+    > - **Next trigger:** R34-11 (task #530) designs and measures an adaptive
+    >   stride ("read the clock more often when events are sparse") — this is
+    >   NOT a fixed-stride increase (a larger stride worsens the sparse case; a
+    >   smaller one erases R32-8's measured latency benefit). The allocfree
+    >   events=1 arm is the regression target: an adaptive scheme must close the
+    >   4-segment gap without reintroducing the ~61% per-call cost R32-8 removed.
+    > - **Evidence:** `docs/perf/R34_10_SPARSE_DECAY_GATE.md` (full time series,
+    >   3 profiles × 4 events × 2 arms); `docs/perf/R34_10_SPARSE_DECAY_GATE_summary.csv`;
+    >   `examples/r34_10_sparse_decay_gate.rs`; source-identity tree
+    >   `bb67abc538d5570e45fba42d8613470838934a2f`.
+
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a

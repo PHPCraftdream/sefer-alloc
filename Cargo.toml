@@ -2078,6 +2078,21 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals", "inter
 name = "r33_6_decay_throttle_retention_cost_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
+# R34-10 (task #529): measures whether DECAY_CLOCK_CHECK_STRIDE=64's retention
+# gap ACCUMULATES beyond one segment over many CONSECUTIVE sparse decay
+# intervals — the regime R33-6 only argued about qualitatively after measuring
+# a SINGLE sleep + dense cluster. Subprocess-per-(profile,events,arm), 40
+# consecutive intervals, 3 profiles (alloc+free / dealloc-only / alloc-only) ×
+# events {1,2,4,8} × 2 arms (throttled stride=64 vs unthrottled stride=1 via
+# FORCE_DECAY_CLOCK_READ). Emits a per-interval time series of cached_bytes /
+# release counts / RSS as raw per-sample data; the derive script
+# (scripts/r34_10_sparse_decay_summary.mjs) turns it into the summary CSV +
+# report tables. See the example file's own module doc and
+# docs/perf/R34_10_SPARSE_DECAY_GATE.md.
+[[example]]
+name = "r34_10_sparse_decay_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
+
 # R32-9 (task #500, F3): the wall-clock companion to the new
 # `benches/macro_multiseg_steady_state.rs` iai-callgrind bench (that bench is
 # Linux-only; this example is the portable arm, runs on any platform
