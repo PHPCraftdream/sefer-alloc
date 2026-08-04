@@ -241,6 +241,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/alloc_core_small_pool.rs::dbg_is_decommitted_for",
     "src/alloc_core/remote_free_ring.rs::dbg_cursors",
     "src/global/fallback.rs::dbg_fallback_lock_acquisitions",
+    "src/global/fallback.rs::dbg_init_state",
     "src/registry/bootstrap.rs::dbg_slot_state",
     "src/registry/bootstrap.rs::dbg_slot_generation",
     "src/registry/bootstrap.rs::dbg_chunk_is_materialised",
@@ -437,6 +438,14 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
         "src/registry/bootstrap.rs::dbg_set_inject_chunk_oom",
         "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes ensure_chunk_slow's closure return None early, simulating an already-handled production OOM path",
+    ),
+    (
+        "src/global/fallback.rs::dbg_set_inject_fallback_init_panic",
+        "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes heap_ptr panic before HeapCore::new, simulating an unwind out of the InitStateGuard'd region (R34-17/task #536)",
+    ),
+    (
+        "src/global/fallback.rs::dbg_panic_in_fallback_init_rolls_back",
+        "drives a real panic through the production heap_ptr/InitStateGuard RAII path then re-calls heap_ptr to prove the state rolled back; exercises, does not bypass, existing safe machinery (R34-17/task #536)",
     ),
 ];
 

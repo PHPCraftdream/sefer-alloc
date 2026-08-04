@@ -111,8 +111,11 @@
 //! fall out of sync with the code):
 //!
 //! 1. [`drain`](RemoteFreeRing::drain)'s `head.store(h, Release)` — the
-//!    ONLY production write. `h` is derived ONLY by
-//!    `h = h.wrapping_add(1)` starting from the PREVIOUS stored `head`
+//!    ONLY production write. Since R34-17/task #536 (finding F-7) this store
+//!    lives inside the `DrainHeadPublish` RAII guard's `Drop` (so a `reclaim`
+//!    closure that unwinds mid-drain still publishes partial progress), but it
+//!    is still the single logical write of the drain path: `h` is derived ONLY
+//!    by `h = h.wrapping_add(1)` starting from the PREVIOUS stored `head`
 //!    value (`self.head().load(Relaxed)` at the top of `drain`), so each
 //!    drain call's stored `head` is `>=` the value it read (wrapping
 //!    arithmetic is monotonic over one lap). This is the advance the
@@ -833,6 +836,36 @@ pub struct RemoteFreeRing {
 #[doc(hidden)]
 pub struct PushOverflow;
 
+/// F-7 (R34-17/task #536) — RAII guard that publishes [`RemoteFreeRing::drain`]'s
+/// `head` cursor on drop, so a `reclaim` closure that unwinds mid-drain still
+/// commits the progress made before the panic. Mirrors the `LockGuard`
+/// (`global::fallback`, task L4) / `ConflictRollback` (`registry::heap_registry`,
+/// R6-CQ-3) panic-safety pattern already in this crate. The guard is the SOLE
+/// writer of `head` on the drain path: the pre-F-7 explicit
+/// `head.store(h, Release)` after the loop was removed in favour of this `Drop`,
+/// so there is exactly one publish whether the drain completes normally or
+/// unwinds.
+#[cfg(feature = "alloc-xthread")]
+struct DrainHeadPublish {
+    head: &'static core::sync::atomic::AtomicU32,
+    h: u32,
+}
+
+#[cfg(feature = "alloc-xthread")]
+impl Drop for DrainHeadPublish {
+    fn drop(&mut self) {
+        // Publish the new head so producers' full-check sees the freed space.
+        // Release: pairs with their Acquire head load in `push`/`full_check`.
+        // `self.h` is the most-recently-advanced value (updated inside the loop
+        // after each successful reclaim+clear), so on the unwind path only the
+        // offsets that were FULLY processed (reclaimed + cleared + advanced) are
+        // committed — the panicking iteration's offset is NOT advanced past,
+        // matching the pre-F-7 invariant that `head` only marks fully-drained
+        // slots.
+        self.head.store(self.h, Ordering::Release);
+    }
+}
+
 impl RemoteFreeRing {
     /// Construct the view over ring metadata at `base + off`. The caller (the
     /// bootstrap / `SegmentMeta::remote_ring`) guarantees the byte range
@@ -1224,6 +1257,22 @@ impl RemoteFreeRing {
         // because there is never a concurrent writer to `head` — only a prior
         // one, already fenced by the ownership transfer (review B, Finding 4).
         let mut h = self.head().load(Ordering::Relaxed);
+        // F-7 (R34-17/task #536): RAII-publish the drain cursor so a `reclaim`
+        // closure that unwinds mid-drain still publishes the progress actually
+        // made. WITHOUT this guard, a panic propagating out of `reclaim(off)`
+        // would skip the `head.store(h, Release)` below entirely (it sits AFTER
+        // the loop) — so the next `drain` re-reads the stale `head` and, since
+        // the slots of any fully-processed offsets are now `EMPTY`, breaks
+        // immediately at the first cleared slot, leaking every offset from the
+        // panicking iteration onward (a stuck "false-empty" until the segment is
+        // recycled and the ring reset). The guard publishes EXACTLY ONCE: on the
+        // happy path its `Drop` runs at scope end; on the unwind path its `Drop`
+        // runs during unwind — either way `h` holds the most-recently-advanced
+        // value, so only real progress is published.
+        let mut publish = DrainHeadPublish {
+            head: self.head(),
+            h,
+        };
         // Wrap-correct drain: both cursors are monotonic wrapping counters
         // (incremented by `wrapping_add(1)`), so the undrained count is
         // `t.wrapping_sub(h)` — NOT `t - h`, which overflows on cursor wrap.
@@ -1254,10 +1303,11 @@ impl RemoteFreeRing {
             // Acquire. No cross-thread dependency on this clear's ordering.
             slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
             h = h.wrapping_add(1);
+            publish.h = h;
         }
-        // Publish the new head so producers' full-check sees the freed space.
-        // Release: pairs with their Acquire head load in `push`.
-        self.head().store(h, Ordering::Release);
+        // The guard's `Drop` publishes `h` with Release — the sole head store,
+        // covering both the happy path (scope-end drop) and the unwind path
+        // (drop during unwind). No explicit store is needed here.
         h
     }
 

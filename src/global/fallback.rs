@@ -100,10 +100,12 @@ use crate::registry::HeapCore;
 #[cfg(feature = "alloc-xthread")]
 static FALLBACK_TFS: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
-/// Bootstrap-state values (mirrors `registry::bootstrap`).
-const STATE_UNINIT: u8 = 0;
-const STATE_INITIALIZING: u8 = 1;
-const STATE_READY: u8 = 2;
+/// Bootstrap-state values (mirrors `registry::bootstrap`). `pub` so the F-8
+/// counterfactual test (`tests/regression_fallback_init_unwind_guard.rs`) can
+/// name them by intent rather than by raw `0`/`1`/`2` literals.
+pub const STATE_UNINIT: u8 = 0;
+pub const STATE_INITIALIZING: u8 = 1;
+pub const STATE_READY: u8 = 2;
 
 /// The fallback heap storage. `MaybeUninit` until [`ensure`] runs; once
 /// `READY`, holds a live `HeapCore` for the process lifetime (never
@@ -182,6 +184,32 @@ pub fn heap_ptr() -> *mut HeapCore {
             )
             .is_ok();
         if won {
+            // F-8 (R34-17/task #536): arm the init-state rollback guard BEFORE
+            // the fallible init. If anything between here and the READY publish
+            // unwinds (`HeapCore::new`, the in-place `write`, `bind_thread_free`,
+            // or the test-injection panic below), the guard's `Drop` rolls
+            // `INIT_STATE` back to `UNINIT` so loser threads stop spinning in
+            // the loop below and re-race the CAS themselves. WITHOUT this guard
+            // a single unwind leaves `INIT_STATE` stuck at `INITIALIZING`
+            // forever — every other thread that reaches `heap_ptr` spins
+            // unbounded in the `while ... == STATE_INITIALIZING` loop (process-
+            // wide livelock), the exact failure mode `LockGuard` already
+            // eliminated one function down (`with_heap`) for the spinlock. Same
+            // RAII form, one level up.
+            let mut init_guard = InitStateGuard::armed();
+            // R34-17/task #536: test-only panic injection. When the flag is set,
+            // panic BEFORE `HeapCore::new` — simulating an unwind out of the
+            // guarded region so a test can prove the guard rolls `INIT_STATE`
+            // back to `UNINIT`. A plain `AtomicBool` read: does NOT touch
+            // allocator metadata through a raw pointer, so it is a safe
+            // injection point (not an `unsafe fn`), `internals`-gated so it
+            // does not widen the surface of a `production` build.
+            #[cfg(feature = "internals")]
+            if DBG_INJECT_FALLBACK_INIT_PANIC.load(Ordering::Relaxed) {
+                panic!(
+                    "deliberate panic during fallback init (F-8 test injection, R34-17/task #536)"
+                );
+            }
             // We are the sole initialiser. Construct the HeapCore in place.
             // `HeapCore::new` uses the sentinel id `u32::MAX` ("not bound to
             // a registry slot") — the fallback is NOT a registry slot; it is
@@ -221,6 +249,9 @@ pub fn heap_ptr() -> *mut HeapCore {
                         heap_ref.bind_thread_free(&FALLBACK_TFS);
                     }
                     INIT_STATE.store(STATE_READY, Ordering::Release);
+                    // Happy path: READY just published — disarm the guard so
+                    // its Drop does NOT clobber READY back to UNINIT.
+                    init_guard.disarm();
                     // SAFETY: READY just published by us.
                     return addr_of_mut!(FALLBACK) as *mut HeapCore;
                 }
@@ -235,6 +266,11 @@ pub fn heap_ptr() -> *mut HeapCore {
                     // itself, instead of spinning forever waiting for a
                     // READY that this failed winner will never publish.
                     INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+                    // OOM path: already rolled back ourselves — disarm the
+                    // guard so its Drop does not store UNINIT a second time
+                    // (harmless under the single-writer invariant, but
+                    // needlessly redundant).
+                    init_guard.disarm();
                     return core::ptr::null_mut();
                 }
             }
@@ -314,6 +350,59 @@ impl Drop for LockGuard {
     }
 }
 
+/// F-8 (R34-17/task #536) — RAII guard over the fallback [`INIT_STATE`] bootstrap
+/// word. Arming it declares "I have won the UNINIT→INITIALIZING CAS and am about
+/// to do fallible init"; its [`Drop`] rolls `INIT_STATE` back to `UNINIT` IF it
+/// is still armed when the guard goes out of scope (the unwind path), so loser
+/// threads observing `INITIALIZING` stop spinning and re-race the CAS themselves
+/// instead of livelocking forever. On both normal exit paths (READY published, or
+/// primordial-OOM rollback to UNINIT) the winner calls [`disarm`](Self::disarm)
+/// so the guard's `Drop` is a no-op — it must NOT clobber a just-published READY.
+///
+/// Mirrors the panic-safety form of [`LockGuard`] (one function down, for the
+/// spinlock) and `ConflictRollback` (`registry::heap_registry`, for a slot's
+/// FREE→LIVE CAS): same shape, applied to the bootstrap state-machine one level
+/// above where `LockGuard` already guards the spinlock. Before this guard, an
+/// unwind out of `HeapCore::new` / the in-place `write` / `bind_thread_free`
+/// left `INIT_STATE` stuck at `INITIALIZING` permanently — every subsequent
+/// `heap_ptr` loser spun unbounded in the `while ... == STATE_INITIALIZING`
+/// loop (process-wide livelock). No-panic is a project invariant (`HeapCore`
+/// never panics in production), but the guard makes `heap_ptr` panic-safe at
+/// zero cost on the happy path (the `disarm` is a plain bool store; the armed
+/// `Drop` runs only on unwind).
+struct InitStateGuard {
+    armed: bool,
+}
+
+impl InitStateGuard {
+    /// Construct an armed guard. The caller MUST have just won the
+    /// `UNINIT → INITIALIZING` CAS on [`INIT_STATE`].
+    fn armed() -> Self {
+        InitStateGuard { armed: true }
+    }
+
+    /// Disarm the guard so its `Drop` does NOT roll `INIT_STATE` back. Called on
+    /// BOTH normal exit paths after the winner has itself published the final
+    /// state (READY on success, UNINIT on primordial OOM).
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for InitStateGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            // Unwind path: we never published READY (nor rolled back to UNINIT
+            // ourselves). Restore UNINIT so losers re-race the CAS instead of
+            // spinning forever on a READY that will never come. We are the sole
+            // INITIALIZING holder (single CAS winner), so this store cannot
+            // race another writer. Release mirrors the explicit OOM-rollback
+            // store's ordering.
+            INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+        }
+    }
+}
+
 /// `#[doc(hidden)]` test hook (task L4) — not part of the public API. Exercises
 /// the panic-safety of the fallback spinlock: it invokes [`with_heap`] with a
 /// closure that PANICS (caught here via `catch_unwind`), then reports whether a
@@ -359,4 +448,107 @@ pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
 #[must_use]
 pub fn dbg_fallback_lock_acquisitions() -> u64 {
     LOCK_ACQUISITIONS.load(Ordering::Relaxed)
+}
+
+// ===========================================================================
+// F-8 (R34-17/task #536) — test-only panic-injection + introspection for the
+// fallback init-state unwind guard (`InitStateGuard` above). These let a test
+// deterministically force an unwind out of the guarded region of `heap_ptr`
+// (between the UNINIT→INITIALIZING CAS and the READY publish) and prove the
+// guard rolls `INIT_STATE` back to `UNINIT`, so a subsequent `heap_ptr` re-races
+// the CAS instead of livelocking forever on a stuck `INITIALIZING`. Gated on
+// `internals` (the `AtomicBool`/`AtomicU8` reads here do NOT touch allocator
+// metadata through a raw pointer, so they are safe injection points, not
+// `unsafe fn` — same surface as R34-15's `DBG_INJECT_CHUNK_OOM`).
+// ===========================================================================
+
+/// R34-17/task #536: test-only panic injection for the fallback init path. When
+/// set, `heap_ptr` panics immediately after winning the UNINIT→INITIALIZING CAS
+/// and BEFORE `HeapCore::new` — simulating an unwind out of the guarded region
+/// so a test can exercise the `InitStateGuard` rollback. Process-global; a test
+/// that sets it MUST clear it before returning (use [`dbg_init_state`] to assert
+/// the post-panic state, and a Drop guard to clear the flag).
+#[cfg(feature = "internals")]
+static DBG_INJECT_FALLBACK_INIT_PANIC: AtomicBool = AtomicBool::new(false);
+
+/// `#[doc(hidden)]` test hook (R34-17/task #536) — not part of the public API.
+/// Sets/clears the fallback-init panic-injection flag. When set, the next
+/// `heap_ptr` call that wins the init CAS panics before constructing the
+/// `HeapCore`. The flag is process-global; a test that sets it MUST clear it
+/// before returning (use a Drop guard) so subsequent tests are unaffected.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub fn dbg_set_inject_fallback_init_panic(on: bool) {
+    DBG_INJECT_FALLBACK_INIT_PANIC.store(on, Ordering::SeqCst);
+}
+
+/// `#[doc(hidden)]` test hook (R34-17/task #536) — not part of the public API.
+/// Reads the current [`INIT_STATE`] value (`STATE_UNINIT` / `STATE_INITIALIZING`
+/// / `STATE_READY`). Lets a test assert the precondition (UNINIT, before any
+/// fallback init has run) and the post-panic/post-recovery state.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_init_state() -> u8 {
+    INIT_STATE.load(Ordering::Acquire)
+}
+
+/// `#[doc(hidden)]` test hook (R34-17/task #536) — not part of the public API.
+/// Exercises the panic-safety of the fallback init-state guard: it arms the
+/// injection flag, invokes [`heap_ptr`] (which panics inside the guarded
+/// region, caught here via `catch_unwind`), then — with the flag CLEARED —
+/// invokes [`heap_ptr`] a SECOND time and reports whether that second call
+/// completed. Before the `InitStateGuard`, the panicking first call left
+/// `INIT_STATE` stuck at `INITIALIZING` forever, so the second `heap_ptr` would
+/// spin in the loser loop indefinitely (process-wide livelock); the test
+/// verifies that instead it returns promptly (guard rolled the state back to
+/// `UNINIT` while unwinding). Returns `true` iff the second `heap_ptr` returned
+/// a non-null pointer — i.e. the init state was NOT wedged and re-init succeeded.
+///
+/// ## Precondition
+///
+/// The hook REQUIRES [`INIT_STATE`] to be `UNINIT` on entry (the fallback must
+/// not already be initialised — otherwise `heap_ptr`'s fast path returns before
+/// the guarded region and the injection is never reached, making the test
+/// vacuous). In a dedicated test binary that does NOT install `SeferAlloc` as
+/// the global allocator, the fallback is never hit by the harness, so this holds
+/// trivially. If it does not hold, the hook returns `true` vacuously (the test
+/// should additionally assert the precondition via [`dbg_init_state`] to catch a
+/// vacuous run).
+///
+/// The whole call runs on the current thread with no `sleep`/polling: if the
+/// state were wedged the second `heap_ptr` would hang here (the test wraps this
+/// in its own bounded watchdog thread, so a regression surfaces as a timeout
+/// rather than a literal forever-hang) — exactly mirroring
+/// [`dbg_panic_in_with_heap_releases_lock`]'s structure one function above.
+#[cfg(all(feature = "std", feature = "internals"))]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_panic_in_fallback_init_rolls_back() -> bool {
+    // Precondition: the fallback must not already be initialised, or the
+    // injection is unreachable (the fast path returns before the CAS).
+    if INIT_STATE.load(Ordering::Acquire) != STATE_UNINIT {
+        // Vacuously "ok" — the test should independently assert the
+        // precondition via `dbg_init_state()` so a vacuous run is caught.
+        return true;
+    }
+    // Arm the injection: the next `heap_ptr` winner panics inside the guard.
+    DBG_INJECT_FALLBACK_INIT_PANIC.store(true, Ordering::SeqCst);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Discard the pointer — we only care that the call panics (and that the
+        // guard rolls the state back). The pointer is never dereferenced.
+        let _ = heap_ptr();
+    }))
+    .is_err();
+    // Clear the injection BEFORE the second call so the re-init can succeed.
+    DBG_INJECT_FALLBACK_INIT_PANIC.store(false, Ordering::SeqCst);
+    if !panicked {
+        // The init was expected to panic; if it did not, the hook is broken.
+        return false;
+    }
+    // Second call: if the guard rolled `INIT_STATE` back to `UNINIT` (the fix),
+    // this re-races the CAS and completes (non-null). If the state is wedged at
+    // `INITIALIZING` (regression), this spins forever — the test's watchdog
+    // aborts the process after a timeout.
+    !heap_ptr().is_null()
 }

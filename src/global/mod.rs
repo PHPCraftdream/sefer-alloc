@@ -45,3 +45,13 @@ pub use fallback::dbg_panic_in_with_heap_releases_lock;
 // in `fallback.rs`. Same established test-only-export pattern.
 #[doc(hidden)]
 pub use fallback::dbg_fallback_lock_acquisitions;
+// `#[doc(hidden)]` test-only hooks + protocol constants (R34-17/task #536):
+// let `tests/regression_fallback_init_unwind_guard.rs` exercise the F-8
+// `InitStateGuard` panic-safety of the fallback init-state bootstrap.
+// Same established test-only-export pattern; not stable API.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub use fallback::{
+    dbg_init_state, dbg_panic_in_fallback_init_rolls_back, dbg_set_inject_fallback_init_panic,
+    STATE_INITIALIZING, STATE_READY, STATE_UNINIT,
+};
