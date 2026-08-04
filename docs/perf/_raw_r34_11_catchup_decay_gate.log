@@ -1,0 +1,383 @@
+=== R34-11 catch-up decay gate — stride=64 catchup_max=8 ===
+
+--- SPARSE REGIME: allocfree, events {1,2,4,8} × 40 intervals × 2 arms ---
+headroom=16777216 obj_bytes=2097152 decay_interval_ms=100 wait_ms=150 slots=8
+
+--- sparse events=1 arm=throttled ---
+RESULT sparse_ts=1 interval=0 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=1 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=2 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=3 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=4 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=5 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=6 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=7 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=8 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=9 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=10 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=11 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=12 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=13 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=14 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=15 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=16 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=17 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=18 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=19 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=20 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=21 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=22 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=23 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=24 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=25 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=26 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=27 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=28 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=29 events=1 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=30 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=31 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=32 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=33 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=34 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=35 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=36 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=37 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=38 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=39 events=1 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_config=1 events=1 arm=throttled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19576 guard_passed_delta=1 released_delta=3 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=1 arm=throttled oracle_pass=1
+--- sparse events=1 arm=unthrottled ---
+RESULT sparse_ts=1 interval=0 events=1 arm=unthrottled used_post=29360128 guard_passed_cum=3 released_cum=1 rss_kib=17544
+RESULT sparse_ts=1 interval=1 events=1 arm=unthrottled used_post=20971520 guard_passed_cum=5 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=2 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=7 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=3 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=9 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=4 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=11 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=5 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=13 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=6 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=15 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=7 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=17 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=8 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=19 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=9 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=21 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=10 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=23 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=11 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=25 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=12 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=27 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=13 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=29 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=14 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=31 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=15 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=33 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=16 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=35 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=17 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=37 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=18 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=39 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=19 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=41 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=20 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=43 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=21 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=45 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=22 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=47 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=23 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=49 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=24 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=51 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=25 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=53 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=26 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=55 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=27 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=57 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=28 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=59 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=29 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=61 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=30 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=63 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=31 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=65 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=32 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=67 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=33 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=69 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=34 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=71 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=35 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=73 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=36 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=75 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=37 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=77 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=38 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=79 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=39 events=1 arm=unthrottled used_post=16777216 guard_passed_cum=81 released_cum=4 rss_kib=11392
+RESULT sparse_config=1 events=1 arm=unthrottled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19580 guard_passed_delta=80 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=1 arm=unthrottled oracle_pass=1
+--- sparse events=2 arm=throttled ---
+RESULT sparse_ts=1 interval=0 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=1 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=2 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=3 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=4 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=5 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=6 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=7 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=8 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=9 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=10 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=11 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=12 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=13 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=14 events=2 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=15 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=16 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=17 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=18 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=19 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=20 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=21 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=22 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=23 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=24 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=25 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=26 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=27 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=28 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=29 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=30 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=31 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=32 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=33 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=34 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=35 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=36 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=37 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=38 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=39 events=2 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13440
+RESULT sparse_config=1 events=2 arm=throttled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19576 guard_passed_delta=1 released_delta=3 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=2 arm=throttled oracle_pass=1
+--- sparse events=2 arm=unthrottled ---
+RESULT sparse_ts=1 interval=0 events=2 arm=unthrottled used_post=29360128 guard_passed_cum=5 released_cum=1 rss_kib=17536
+RESULT sparse_ts=1 interval=1 events=2 arm=unthrottled used_post=20971520 guard_passed_cum=9 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=2 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=13 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=3 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=17 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=4 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=21 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=5 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=25 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=6 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=29 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=7 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=33 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=8 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=37 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=9 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=41 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=10 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=45 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=11 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=49 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=12 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=53 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=13 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=57 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=14 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=61 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=15 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=65 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=16 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=69 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=17 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=73 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=18 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=77 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=19 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=81 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=20 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=85 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=21 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=89 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=22 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=93 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=23 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=97 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=24 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=101 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=25 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=105 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=26 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=109 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=27 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=113 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=28 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=117 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=29 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=121 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=30 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=125 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=31 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=129 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=32 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=133 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=33 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=137 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=34 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=141 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=35 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=145 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=36 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=149 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=37 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=153 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=38 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=157 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=39 events=2 arm=unthrottled used_post=16777216 guard_passed_cum=161 released_cum=4 rss_kib=11384
+RESULT sparse_config=1 events=2 arm=unthrottled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19572 guard_passed_delta=160 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=2 arm=unthrottled oracle_pass=1
+--- sparse events=4 arm=throttled ---
+RESULT sparse_ts=1 interval=0 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19584
+RESULT sparse_ts=1 interval=1 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=2 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=3 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=4 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=5 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=6 events=4 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19588
+RESULT sparse_ts=1 interval=7 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=8 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=9 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=10 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=11 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=12 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=13 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=14 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=15 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=16 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=17 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=18 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=19 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=20 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=21 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=22 events=4 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13436
+RESULT sparse_ts=1 interval=23 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=24 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=25 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=26 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=27 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=28 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=29 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=30 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=31 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=32 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=33 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=34 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=35 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=36 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=37 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=38 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_ts=1 interval=39 events=4 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11384
+RESULT sparse_config=1 events=4 arm=throttled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19572 guard_passed_delta=2 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=4 arm=throttled oracle_pass=1
+--- sparse events=4 arm=unthrottled ---
+RESULT sparse_ts=1 interval=0 events=4 arm=unthrottled used_post=29360128 guard_passed_cum=9 released_cum=1 rss_kib=17540
+RESULT sparse_ts=1 interval=1 events=4 arm=unthrottled used_post=20971520 guard_passed_cum=17 released_cum=3 rss_kib=13440
+RESULT sparse_ts=1 interval=2 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=25 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=3 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=33 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=4 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=41 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=5 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=49 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=6 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=57 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=7 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=65 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=8 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=73 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=9 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=81 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=10 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=89 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=11 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=97 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=12 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=105 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=13 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=113 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=14 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=121 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=15 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=129 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=16 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=137 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=17 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=145 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=18 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=153 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=19 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=161 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=20 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=169 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=21 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=177 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=22 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=185 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=23 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=193 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=24 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=201 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=25 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=209 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=26 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=217 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=27 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=225 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=28 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=233 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=29 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=241 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=30 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=249 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=31 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=257 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=32 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=265 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=33 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=273 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=34 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=281 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=35 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=289 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=36 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=297 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=37 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=305 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=38 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=313 released_cum=4 rss_kib=11388
+RESULT sparse_ts=1 interval=39 events=4 arm=unthrottled used_post=16777216 guard_passed_cum=321 released_cum=4 rss_kib=11388
+RESULT sparse_config=1 events=4 arm=unthrottled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19576 guard_passed_delta=320 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=4 arm=unthrottled oracle_pass=1
+--- sparse events=8 arm=throttled ---
+RESULT sparse_ts=1 interval=0 events=8 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19592
+RESULT sparse_ts=1 interval=1 events=8 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19596
+RESULT sparse_ts=1 interval=2 events=8 arm=throttled used_post=33554432 guard_passed_cum=1 released_cum=0 rss_kib=19596
+RESULT sparse_ts=1 interval=3 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=4 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=5 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=6 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=7 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=8 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=9 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=10 events=8 arm=throttled used_post=20971520 guard_passed_cum=2 released_cum=3 rss_kib=13444
+RESULT sparse_ts=1 interval=11 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=12 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=13 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=14 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=15 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=16 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=17 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=18 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=19 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=20 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=21 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=22 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=23 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=24 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=25 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=26 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=27 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=28 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=29 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=30 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=31 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=32 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=33 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=34 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=35 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=36 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=37 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=38 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_ts=1 interval=39 events=8 arm=throttled used_post=16777216 guard_passed_cum=3 released_cum=4 rss_kib=11392
+RESULT sparse_config=1 events=8 arm=throttled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19580 guard_passed_delta=2 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=8 arm=throttled oracle_pass=1
+--- sparse events=8 arm=unthrottled ---
+RESULT sparse_ts=1 interval=0 events=8 arm=unthrottled used_post=29360128 guard_passed_cum=17 released_cum=1 rss_kib=17524
+RESULT sparse_ts=1 interval=1 events=8 arm=unthrottled used_post=20971520 guard_passed_cum=33 released_cum=3 rss_kib=13424
+RESULT sparse_ts=1 interval=2 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=49 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=3 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=65 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=4 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=81 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=5 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=97 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=6 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=113 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=7 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=129 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=8 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=145 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=9 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=161 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=10 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=177 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=11 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=193 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=12 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=209 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=13 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=225 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=14 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=241 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=15 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=257 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=16 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=273 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=17 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=289 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=18 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=305 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=19 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=321 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=20 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=337 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=21 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=353 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=22 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=369 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=23 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=385 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=24 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=401 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=25 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=417 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=26 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=433 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=27 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=449 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=28 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=465 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=29 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=481 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=30 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=497 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=31 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=513 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=32 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=529 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=33 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=545 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=34 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=561 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=35 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=577 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=36 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=593 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=37 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=609 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=38 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=625 released_cum=4 rss_kib=11372
+RESULT sparse_ts=1 interval=39 events=8 arm=unthrottled used_post=16777216 guard_passed_cum=641 released_cum=4 rss_kib=11372
+RESULT sparse_config=1 events=8 arm=unthrottled intervals=40 headroom_bytes=16777216 obj_bytes=2097152 decay_interval_ms=100 decay_rate_bp=1000 stride=64 catchup_max=8 slots=8 verified_headroom=16777216 verified_interval_ms=100 config_conflicts_delta=0 used_baseline=33554432 guard_passed_baseline=1 released_baseline=0 rss_baseline_kib=19560 guard_passed_delta=640 released_delta=4 headroom_crossed=1 unthrottled_read=1 catchup_active=1 process_identity=subprocess
+RESULT sparse_oracle=1 events=8 arm=unthrottled oracle_pass=1
+
+--- THROUGHPUT REGIME: 200000 cycles × 2 arms × 7 reps ---
+headroom=65536 large_obj_bytes=524288 warmup=64
+
+--- throughput forced=false rep=0/7 ---
+RESULT throughput_ts=1 forced=0 rep=0 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=14018100 ns_per_cycle=70.0905 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=1/7 ---
+RESULT throughput_ts=1 forced=0 rep=1 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=17477300 ns_per_cycle=87.3865 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=2/7 ---
+RESULT throughput_ts=1 forced=0 rep=2 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=13900400 ns_per_cycle=69.5020 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=3/7 ---
+RESULT throughput_ts=1 forced=0 rep=3 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=18285600 ns_per_cycle=91.4280 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=4/7 ---
+RESULT throughput_ts=1 forced=0 rep=4 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=16152700 ns_per_cycle=80.7635 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=5/7 ---
+RESULT throughput_ts=1 forced=0 rep=5 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=15168300 ns_per_cycle=75.8415 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=false rep=6/7 ---
+RESULT throughput_ts=1 forced=0 rep=6 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=3125 expected_calls=400000 elapsed_ns=17767400 ns_per_cycle=88.8370 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=0/7 ---
+RESULT throughput_ts=1 forced=1 rep=0 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=49265500 ns_per_cycle=246.3275 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=1/7 ---
+RESULT throughput_ts=1 forced=1 rep=1 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=48950100 ns_per_cycle=244.7505 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=2/7 ---
+RESULT throughput_ts=1 forced=1 rep=2 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=48193800 ns_per_cycle=240.9690 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=3/7 ---
+RESULT throughput_ts=1 forced=1 rep=3 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=49828800 ns_per_cycle=249.1440 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=4/7 ---
+RESULT throughput_ts=1 forced=1 rep=4 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=51263100 ns_per_cycle=256.3155 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=5/7 ---
+RESULT throughput_ts=1 forced=1 rep=5 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=51645200 ns_per_cycle=258.2260 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+--- throughput forced=true rep=6/7 ---
+RESULT throughput_ts=1 forced=1 rep=6 headroom_bytes=65536 verified_headroom=65536 config_conflicts_delta=0 large_obj_bytes=524288 cycles=200000 used_before_timed=4194304 used_after_timed=4194304 stayed_above_headroom=1 guard_passed_delta=400000 expected_calls=400000 elapsed_ns=49952500 ns_per_cycle=249.7625 stride=64 catchup_max=8 oracle_pass=1 process_identity=subprocess
+
+=== all children complete; raw per-sample data above is what the derive script (scripts/r34_11_catchup_decay_summary.mjs) turns into the summary CSV + report tables ===

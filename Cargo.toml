@@ -2093,6 +2093,18 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals", "inter
 name = "r34_10_sparse_decay_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
 
+# R34-11 (task #530): measures BOTH the cost fix (catch-up loop closes/reduces
+# the 4-segment sparse-gap R34-10 found) AND the benefit preservation (R32-8's
+# ~61% stride-clock-read win unchanged) in ONE report. Sparse regime reuses
+# R34-10's allocfree matrix (events {1,2,4,8} × 40 intervals × 2 arms);
+# throughput regime reuses R32-8's stride-fix methodology (200K cycles × 2
+# arms × 7 reps). The derive script (scripts/r34_11_catchup_decay_summary.mjs)
+# turns the raw log into the summary CSV + report tables. See the example
+# file's own module doc and docs/perf/R34_11_CATCHUP_DECAY_GATE.md.
+[[example]]
+name = "r34_11_catchup_decay_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals", "internals"]
+
 # R32-9 (task #500, F3): the wall-clock companion to the new
 # `benches/macro_multiseg_steady_state.rs` iai-callgrind bench (that bench is
 # Linux-only; this example is the portable arm, runs on any platform

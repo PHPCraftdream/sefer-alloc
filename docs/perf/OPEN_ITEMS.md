@@ -1070,34 +1070,35 @@ for completeness.
     >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
 
 42. **R32-8's `DECAY_CLOCK_CHECK_STRIDE = 64` retention bound does NOT hold
-    over consecutive sparse decay intervals — measured defect, fix direction =
-    adaptive stride (R34-11 / task #530).**
+    over consecutive sparse decay intervals — PARTIALLY RESOLVED by R34-11
+    catch-up loop; peak gap still stride-bound.**
 
     > **Current state**
-    > - **Status:** [A] active — defect measured and documented; fix is R34-11
-    >   (adaptive stride), which is BLOCKED by this task's verdict (R34-10
-    >   measured the defect; R34-11 designs and tests the fix).
-    > - **Current number/verdict (R34-10, task #529):** R33-6 §9.3 asserted
-    >   "the cost is bounded by one segment per missed decay interval … the
-    >   throttle delays the tick, it does not skip it entirely across multiple
-    >   intervals." This is REFUTED by measurement: over 40 consecutive sparse
-    >   intervals at 1 alloc+free event/interval, the throttled arm (stride=64)
-    >   accumulates a peak retention gap of **4 segments (16 MiB = 4 × the
-    >   one-segment bound)**, persisting at ≥ 3 segments for 38/40 = 95.0% of
-    >   the run. The throttled arm does NOT catch up after its single clock
-    >   read (at interval 30 of 40): `run_decay_step` fires ONE step per read
-    >   with no catch-up loop. At the shipped 1000 ms default interval, the
-    >   throttled arm goes ~33 s before its first decay tick at 1 event/interval.
-    >   At 8 events/interval the gap converges (throttled catches up), so the
-    >   defect is regime-dependent (sparse-only), not universal.
-    > - **Next trigger:** R34-11 (task #530) designs and measures an adaptive
-    >   stride ("read the clock more often when events are sparse") — this is
-    >   NOT a fixed-stride increase (a larger stride worsens the sparse case; a
-    >   smaller one erases R32-8's measured latency benefit). The allocfree
-    >   events=1 arm is the regression target: an adaptive scheme must close the
-    >   4-segment gap without reintroducing the ~61% per-call cost R32-8 removed.
-    > - **Evidence:** `docs/perf/R34_10_SPARSE_DECAY_GATE.md` (full time series,
-    >   3 profiles × 4 events × 2 arms); `docs/perf/R34_10_SPARSE_DECAY_GATE_summary.csv`;
+    > - **Status:** [P] partially resolved — R34-11 (task #530) added a bounded
+    >   catch-up loop (`DECAY_CATCHUP_MAX_STEPS = 8`) that substantially reduces
+    >   the gap persistence and final gap. The PEAK gap (4 segments at
+    >   events=1) remains stride-bound (the throttled arm cannot read the clock
+    >   until op 64 ≈ interval 30); closing the peak would require an adaptive
+    >   stride, which is a separate, more complex change.
+    > - **Current number/verdict (R34-11, task #530):** at events=1/interval
+    >   (the R34-10 primary case), the catch-up loop drops the FINAL gap from
+    >   3 → **1 segment** (67% reduction), persistence at ≥3 segments from
+    >   95.0% → **72.5%** of the run, and total released from 1 → **3
+    >   segments** (from 25% to 75% of the unthrottled arm's 4). R32-8's
+    >   throughput benefit is preserved (67.6%, consistent with the original
+    >   ~61% — the catch-up loop is never reached in high-throughput). See
+    >   `docs/perf/R34_11_CATCHUP_DECAY_GATE.md` for the full gate report.
+    > - **Remaining:** the peak gap of 4 segments (16 MiB) opens at interval 2
+    >   and persists through interval 29 because the throttled arm cannot read
+    >   the clock until op 64. An adaptive stride (read the clock more often
+    >   when events are sparse) would close the peak; the catch-up loop alone
+    >   cannot. Filed as a potential future task.
+    > - **Evidence:** `docs/perf/R34_11_CATCHUP_DECAY_GATE.md`;
+    >   `docs/perf/R34_11_CATCHUP_DECAY_GATE_summary.csv`;
+    >   `examples/r34_11_catchup_decay_gate.rs`; source-identity tree
+    >   `8b657703084f10aeadebe52f3302b63a965eac5a`.
+    >   Prior (R34-10): `docs/perf/R34_10_SPARSE_DECAY_GATE.md`;
+    >   `docs/perf/R34_10_SPARSE_DECAY_GATE_summary.csv`;
     >   `examples/r34_10_sparse_decay_gate.rs`; source-identity tree
     >   `bb67abc538d5570e45fba42d8613470838934a2f`.
 
