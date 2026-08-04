@@ -236,9 +236,67 @@ function printPoolCapSweepNote() {
   );
 }
 
+// A "control arm" is a benchmark id whose code CANNOT have changed between
+// this run and the saved criterion baseline: `mimalloc` (the mimalloc crate's
+// fixed GlobalAlloc impl) and `System` (the platform allocator fixed by the
+// toolchain/OS) are external to this repo's `src/`. `SeferAlloc` IS the code
+// under test, so it is NOT a control arm. If the control arms move
+// substantially run-over-run, that movement is host-state drift (thermal
+// throttling, background load, cache/scheduler state) — NOT a real code change.
+// Matched by path SEGMENT (split on '/'), not substring, so a future size or
+// group literally named `mimalloc`/`System` would not be misclassified; there
+// are no such ids today, but the segment check is robust against id-shape
+// drift. `working_set_cycle`/`pool_cap_sweep` are SeferAlloc-only (no control
+// arms exist for those groups), so they never contribute here.
+function isControlArmId(id) {
+  const segs = id.split('/');
+  return segs.includes('mimalloc') || segs.includes('System');
+}
+
+function median(nums) {
+  if (nums.length === 0) return null;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Threshold for the control-arm drift guard. ±10% is chosen because:
+//  - It sits well ABOVE criterion's normal measurement noise on a quiet host.
+//    This script runs sample_size(10) (fast profile), where genuine but small
+//    code-change deltas of a few percent are common; those must NOT trip a
+//    "baseline was captured under different conditions" warning.
+//  - It sits well BELOW the +50..+130% control-arm drift actually observed in
+//    the R32/R33 `npm run bench:table` run that motivated this guard: control
+//    arms mimalloc/System "regressed" +59%/+71% with unchanged code (and
+//    SeferAlloc itself "regressed" +53.6% — LESS than its own controls), while
+//    Round 33's `src/` diff was comment-only. See R34-8/task #527 and R34-7's
+//    causal subprocess harness (task #526), which shows the SAME workload is
+//    stable to ~0.5-4% under subprocess isolation. Any threshold in the 10-30%
+//    band would fire correctly on that run; 10% is the conservative edge that
+//    fires earliest while still clearing real measurement noise.
+const CONTROL_DRIFT_THRESHOLD_PCT = 10;
+
 // Run-over-run appendix: surface criterion's `change:` signal that the old
 // parser silently discarded. Empty on the first run against a clean
 // `target/` (criterion needs a saved baseline to compute a change).
+//
+// Control-arm drift guard (R34-8/task #527): before printing the verdict
+// table, compute the median change% across control arms (mimalloc/System —
+// ids whose code cannot have changed between runs). If |combined median|
+// exceeds CONTROL_DRIFT_THRESHOLD_PCT, this run's baseline was captured under
+// different host conditions and EVERY per-id verdict (SeferAlloc's included)
+// is suspect as regression evidence. In that case we print a warning banner
+// AND replace each verdict CELL with "n/a — control drift" (banner-only was
+// rejected: the documented failure mode this guard exists to prevent is a
+// hasty reader copy-pasting a literal "Performance has regressed." verdict
+// into a report/changelog as if it were real — neutralizing the verdict TEXT
+// structurally prevents that, where a banner alone relies on the reader
+// noticing it). The change% COLUMN is kept visible (NOT suppressed) so a human
+// can confirm the guard fired for good reason: the control arms should visibly
+// move by roughly the same amount as SeferAlloc. If the run has NO control
+// arms carrying a change% (e.g. a config that ran only SeferAlloc-only groups
+// like `working_set_cycle`), the guard is SKIPPED silently — there is no
+// control signal to compute and the appendix falls back to plain verdicts.
 function printChangeAppendix(byId) {
   console.log(
     "\n---\n## Run-over-run change (vs `target/criterion`'s saved baseline, when one exists)\n",
@@ -255,13 +313,44 @@ function printChangeAppendix(byId) {
     );
     return;
   }
+
+  // --- Control-arm drift guard ---
+  const controlEntries = changed.filter((e) => isControlArmId(e.id));
+  const mimallocChanges = controlEntries
+    .filter((e) => e.id.split('/').includes('mimalloc'))
+    .map((e) => e.changePct);
+  const systemChanges = controlEntries
+    .filter((e) => e.id.split('/').includes('System'))
+    .map((e) => e.changePct);
+  const mimallocMed = median(mimallocChanges);
+  const systemMed = median(systemChanges);
+  const controlMed = median([...mimallocChanges, ...systemChanges]);
+  // No control arms (or none carrying a change%) → no drift signal; skip the
+  // guard silently. Also note the no-baseline path is already handled by the
+  // early return above, so this branch is specifically the "control arms
+  // absent from this run's parsed ids" case.
+  const driftFired = controlMed != null && Math.abs(controlMed) > CONTROL_DRIFT_THRESHOLD_PCT;
+
+  if (driftFired) {
+    const fmtPct = (v) => (v == null ? 'n/a' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
+    console.log(
+      `⚠ control-arm drift guard: mimalloc median ${fmtPct(mimallocMed)}, ` +
+        `System median ${fmtPct(systemMed)}, combined median ${fmtPct(controlMed)}.\n` +
+        '  These arms\' code did NOT change between runs, so a combined median |change%| above\n' +
+        `  ±${CONTROL_DRIFT_THRESHOLD_PCT}% means this run's criterion baseline was captured under\n` +
+        '  different host conditions (thermal/load/cache/scheduler state). Per-id verdicts below are\n' +
+        '  NOT usable as regression evidence; verdict cells have been replaced with "n/a — control drift"\n' +
+        '  (change% numbers are left visible so you can confirm the control arms moved similarly).\n',
+    );
+  }
+
   changed.sort((a, b) => a.id.localeCompare(b.id));
   console.log('| id | ns (point estimate) | change % (point estimate) | verdict |');
   console.log('|---|---:|---:|---|');
   for (const e of changed) {
     const sign = e.changePct > 0 ? '+' : '';
     const pct = `${sign}${e.changePct.toFixed(2)}%`;
-    const verdict = e.verdict ?? '-';
+    const verdict = driftFired ? 'n/a — control drift' : (e.verdict ?? '-');
     console.log(`| ${e.id} | ${fmtNs(e.ns)} | ${pct} | ${verdict} |`);
   }
 }
