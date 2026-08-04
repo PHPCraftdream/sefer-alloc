@@ -849,10 +849,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Elevated preemption rate: the task H1 aliasing guard
-      # (`regression_xthread_thread_free_alias_miri`) needs the scheduler to
-      # interleave a remote cross-thread-free CAS INSIDE a live owner
-      # `alloc(&mut self)` frame. The other plain test is phase-serialised and
-      # indifferent to the rate.
+      # (`regression_xthread_thread_free_alias_miri`) and the R34-5 multi-
+      # producer small-ring test (`regression_xthread_small_ring_miri`) both
+      # need the scheduler to interleave a remote cross-thread-free CAS INSIDE
+      # a live owner `alloc(&mut self)` frame. The remaining plain test is
+      # phase-serialised and indifferent to the rate.
       MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
     steps:
       - uses: actions/checkout@v5
@@ -884,10 +885,20 @@ jobs:
       # first test, which is phase-serialised and indifferent to the rate).
       # `internals` added (R34-3/task #522): both test files reach
       # `sefer_alloc::registry::{bootstrap, HeapRegistry, ...}` directly.
+      #
+      # R34-5 (task #524, audit finding G1): adds
+      # `regression_xthread_small_ring_miri` — the multi-producer SMALL-block
+      # `RemoteFreeRing` push/drain path (2 producer threads + owner-consumer),
+      # the one `unsafe` seam that had ZERO concurrent miri coverage (the two
+      # tests above cover only the LARGE cross-thread path). Same features,
+      # same MIRIFLAGS (the elevated preemption rate creates the real overlap
+      # between producer ring-pushes and owner `&mut HeapCore` alloc frames).
+      # Verified locally: 1 passed (~49s).
       - run: >-
           cargo miri test --features "alloc-global alloc-xthread internals"
           --test regression_xthread_large_free_no_leak
           --test regression_xthread_thread_free_alias_miri
+          --test regression_xthread_small_ring_miri
 
   # Loom model-checking of every concurrency protocol in the crate: the
   # bootstrap-CAS state-machine (Registry lazy init), the adopt protocol

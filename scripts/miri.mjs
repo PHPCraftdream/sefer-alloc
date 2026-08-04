@@ -128,6 +128,19 @@ const PLAIN_MATRIX = [
     'alloc-global alloc-xthread',
     'regression_xthread_thread_free_alias_miri',
   ],
+  // R34-5 (task #524, audit finding G1): the multi-producer SMALL-block
+  // `RemoteFreeRing` push/drain path. The two entries above cover only the
+  // LARGE cross-thread path (deferred_large AtomicPtr stack / thread_free
+  // aliasing). This entry exercises 2 producer threads concurrently pushing
+  // small-block offsets into the SAME per-segment ring (`Node::atomic_u32_at`
+  // CAS-reserve) while the owner allocates (real `&mut HeapCore` overlap),
+  // then force-drains. Needs the elevated preemption rate so the scheduler
+  // interleaves a producer ring-push inside a live owner alloc frame.
+  // Verified locally: 1 passed (~49s).
+  [
+    'alloc-global alloc-xthread',
+    'regression_xthread_small_ring_miri',
+  ],
 ];
 
 const args = process.argv.slice(2);
@@ -182,9 +195,10 @@ if (entries.length === 0) {
 // The plain job adds an elevated `-Zmiri-preemption-rate` so the scheduler
 // interleaves a remote cross-thread-free CAS INSIDE a live owner `alloc(&mut
 // self)` frame — the schedule the task H1 aliasing guard
-// (`regression_xthread_thread_free_alias_miri`) needs to exercise. The other
-// plain test (`regression_xthread_large_free_no_leak`) is phase-serialised and
-// indifferent to the rate.
+// (`regression_xthread_thread_free_alias_miri`) and the R34-5 multi-producer
+// small-ring test (`regression_xthread_small_ring_miri`) need to exercise.
+// The remaining plain test (`regression_xthread_large_free_no_leak`) is
+// phase-serialised and indifferent to the rate.
 const env = {
   ...process.env,
   MIRIFLAGS: plain
