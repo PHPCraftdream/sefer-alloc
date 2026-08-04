@@ -88,8 +88,8 @@ for completeness.
 
 ### [A] Active / high-value
 
-1. **`contains_base`'s share of a real free's `Ir` — measured MATERIAL
-   (18.6%).**
+1. **`contains_base`'s share of a real free's `Ir` — region judged likely
+   exhausted (current share 8.8%, supersedes the original 18.6%).**
 
    > **Current state**
    > - **Status:** `flush_class` isolation measured (R28-1) — the "Next trigger" question below is ANSWERED; region judged likely exhausted for further micro-optimization at the per-block-cost scope (no 5th attempt opened).
@@ -996,6 +996,78 @@ for completeness.
    >   API would exist to soften, since a partial trim could avoid paying
    >   the full re-materialisation cost when only partial headroom is
    >   actually needed).
+   > - **BENCH-REVIEW CROSS-REF (2026-08-04, R34-2/task #521):** the
+   >   `docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md` §7
+   >   names this item's exact API shape — `trim_current_thread_to_headroom(bytes)`
+   >   — and quantifies the cliff it would soften: full `trim_current_thread`
+   >   ≈ 24.2 ms pause for 4×32 MiB, next burst ≈ 65.2 ms vs ~0.8 ms without
+   >   trim (R31-10's ~83× cold-penalty). Evidence needed to turn this into a
+   >   real task: a design-first pass with a time/segment budget, oldest/largest-
+   >   first release policy, explicit "released bytes / pause / refill penalty"
+   >   telemetry, and a gate showing substantially less than the 24 ms / 65 ms
+   >   cliff at controlled RSS — NOT another synthetic ceiling.
+
+40. **R30_7 CSV-naming mismatch — `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`
+    cites `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv` (missing the
+    `_GATE` suffix); same defect class as R32-4/R32-5 (F8), left unfixed when
+    R33-11's check (h) surfaced it.**
+
+    > **Current state**
+    > - **Status:** [A] active — trivially fixable; filed because R33-11's
+    >   `verify-gate-report.mjs` check (h) surfaced this third instance of the
+    >   same-base-name defect class but R33-11 (task #516) declined to rename it
+    >   unasked (it was pre-existing, not introduced by R32). The Round-33
+    >   review's G4 [P3] notes the CHANGELOG rounded all three check (h) warnings
+    >   off as "legitimate cross-references" when one of the three is not.
+    > - **Current number/verdict:** `ls docs/perf/ | grep R30_7` shows exactly one
+    >   report and one CSV whose basenames differ only by the missing `_GATE` —
+    >   i.e. this is the report's OWN companion, misnamed (not a legitimate
+    >   cross-reference to another report's CSV).
+    > - **Next trigger:** rename `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv`
+    >   → `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE_summary.csv` and update
+    >   its two citations — a one-commit fix. The lowest-effort task in this index.
+    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §6 G4;
+    >   `docs/reviews/2026-08-04-release-stabilization-audit.md` (confirms the
+    >   mismatch persists at audit time).
+
+41. **R33-8's live-`git rev-parse HEAD` fallback silently emits the PARENT
+    commit for a new report generated inside its own landing commit — a
+    convention gap, not yet codified.**
+
+    > **Current state**
+    > - **Status:** [A] active — convention needs documenting; the one observed
+    >   instance (R33-12's CSV `doc_commit` = parent `f51ec37`, corrected to
+    >   landing `96ae245` in R34-2/task #521) is fixed, but the underlying
+    >   mechanism will recur silently on every future same-commit report.
+    > - **Current number/verdict:** R33-8 (task #513, commit `b537770`) replaced
+    >   the loud `'UNFILLED_PLACEHOLDER_40_HEX'` sentinel with
+    >   `process.argv[2] || execSync('git rev-parse HEAD')`. For HISTORICAL CSVs
+    >   this is strictly better (15/15 re-derive CLEAN, Round-33 review §5). But
+    >   for a NEW report generated inside its own landing commit, `git rev-parse
+    >   HEAD` returns the pre-commit parent — a plausible 40-hex SHA that passes
+    >   check (b) (40-hexness) and check (g) (sentinel-scan), so nothing detects
+    >   the off-by-one. R33-12 was the first new report after the change and
+    >   exhibited exactly this (`doc_commit` = `f51ec37` = parent of `96ae245`).
+    > - **Convention (decided R34-2/task #521):** for a NEW report, the
+    >   recommended sequence is R33-6's pattern — commit the harness/example
+    >   FIRST (`5bd7c04`), measure at that HEAD, then commit the report — so
+    >   `git rev-parse HEAD` at derive time is already the correct (harness)
+    >   commit, not a pre-report parent. If a same-commit report is unavoidable,
+    >   pass the eventual landing SHA explicitly as `argv[2]` in a follow-up
+    >   correction commit (the old workflow, now without the sentinel). The one
+    >   combination to avoid is a `landing_commit`/`doc_commit` column populated
+    >   by the `git rev-parse HEAD` fallback inside a report's own landing commit
+    >   — that is the off-by-one state.
+    > - **Next trigger:** a future round either (a) codifies this convention in
+    >   CLAUDE.md's R14-10 summary-CSV section (one sentence: "for a new report,
+    >   commit the harness first or pass the SHA explicitly"), or (b) adds a
+    >   check to `verify-gate-report.mjs` that flags a `doc_commit`/`landing_commit`
+    >   equal to `HEAD^` (the parent) — cheap to compute, catches the exact
+    >   off-by-one class.
+    > - **Evidence:** `docs/reviews/2026-08-03-round33-readonly-review.md` §5 G3;
+    >   R34-2/task #521's correction of `R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE_summary.csv`'s
+    >   `doc_commit` (`f51ec37` → `96ae245`, via re-running
+    >   `scripts/r32_3_realloc_redundant_contains_base_summary.mjs 96ae245…`).
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
@@ -1237,12 +1309,14 @@ for completeness.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes); `docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md` (task #504, the cross-reference above).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L24`.
 
-34. **The missing artifact: a realistic ≥64-live-segment / long-lived-process
-    macro-bench — ONE canonical precondition for FOUR independently-filed
-    items (X5/item 20, T10/item 22, R1/item 23, R15-1/item 9), consolidated
-    here per the R30-post-response review's own observation that they all
-    wait on the identical nonexistent thing (filed 2026-07-31,
-    R31-7d1+R31-13/task #479).**
+34. **The ≥64-live-segment macro-bench precondition — harness NOW EXISTS
+   (R32-9/task #500, 2026-08-02) but does not yet model the fragmented/holey
+   multi-class Small-directory state the four items actually need
+   (R34-2/task #521 cross-ref, 2026-08-04). ONE canonical precondition for
+   FOUR independently-filed items (X5/item 20, T10/item 22, R1/item 23,
+   R15-1/item 9), consolidated here per the R30-post-response review's own
+   observation that they all wait on the identical thing (filed 2026-07-31,
+   R31-7d1+R31-13/task #479).**
 
    > **Current state**
    > - **Status:** [L] low-priority / structural blocker — no macro-bench
@@ -1357,6 +1431,19 @@ for completeness.
    >   it structurally incapable of showing any `OWN_CACHE_SIZE` effect).
    >   This item's X5/T10/R1/R15-1 family remains the correct target for
    >   `macro_multiseg_steady_state`; F2 was never actually in its scope.
+   > - **BENCH-REVIEW CROSS-REF (2026-08-04, R34-2/task #521):** the
+   >   `docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md` §8
+   >   independently confirms the harness does not yet satisfy the SPECIFIC
+   >   state requirement — the R32-9 harness models 80 dedicated **Large**
+   >   segments + one Small churn class, not the "64+ live **Small** segments
+   >   with holes, multiple classes, controlled directory misses / remote frees /
+   >   pool transitions" shape X5/T10/R1/R15-1 actually need. So the harness
+   >   EXISTS (resolving this item's own old "does the missing artifact exist"
+   >   question) but has not yet re-judged any of the four mechanisms. Evidence
+   >   needed to turn this into a real re-judgment task: a variant of the harness
+   >   that establishes ≥64 simultaneously-live SMALL segments across several
+   >   classes with inter-class holes, under `production` features, profile-first
+   >   then A/B.
 
 35. **`batch-api` real-downstream-consumer scouting pass #2 — R23-7's
     NO-CONSUMER decision RECONFIRMED (2026-07-31, R31-7d1+R31-13/task #479);
@@ -1454,6 +1541,17 @@ for completeness.
    >   `src/registry/heap_core_dealloc_batch.rs`, `crates/region/src/region.rs`,
    >   `crates/ring-mpsc/src/lib.rs`, `crates/tagged-index-stack/src/lib.rs`
    >   (the files read for this reconfirmation).
+   > - **BENCH-REVIEW CROSS-REF (2026-08-04, R34-2/task #521):** the
+   >   `docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md` §6
+   >   reiterates this item's own verdict — the batch mechanism gives 1.5–2.1×
+   >   on warm AllocCore but only 1.1–1.6× through the production surface, and
+   >   "Большой практический выигрыш появится только при реальном потребителе."
+   >   Evidence needed to turn this into a real task (the bench review's
+   >   framing, not a new trigger): ONE end-to-end consumer pilot — integration
+   >   into an arena/slab/object-pool, batch 8–64 with mixed lifetimes and
+   >   partial failure, measured end-to-end latency/throughput AND RSS — not
+   >   another allocator-only micro-timing arm. The API stays `#[doc(hidden)]`
+   >   until a proven consumer exists.
 
 27. **R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS
     floor measured for the first time; confirmed-by-design, no action taken.
@@ -1822,6 +1920,16 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F8 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — every large-cache scan walks a 56-byte-per-slot array-of-structs to read one 8-byte field; the survey splits its fix into a low-risk occupancy bitmask (sub-change (2)) and higher-risk `usable_size`/`seq` sidecars (sub-changes (1)/(3)) and explicitly recommends measuring the bitmask alone first.** Opened and resolved same-round by R32-12 (task #503), 2026-08-02 — **shipped the bitmask ALONE, per the survey's own "may be the whole shippable subset" framing; did NOT build the sidecars.** `AllocCore::large_cache_occupied: u64` replaces `large_cache_find_free_slot`'s linear `.position(|s| s.is_none())` scan with `trailing_ones()`; correctness argument is a complete two-site enumeration (`large_cache_slot_set`/`large_cache_slot_take` are the ONLY two functions in the crate that ever write a slot, verified by grep — every other mutation path funnels through one of these two) plus a falsification-first invariant test (`tests/large_cache_occupancy_bitmask_invariant.rs`, 4 tests, green under both `alloc-decommit` alone and with `large-cache-extended`) that caught two of its OWN false assumptions about admission-loop/budget-default behavior before either was mistaken for a bitmask bug. **Measured separately, same-regime discipline (cache genuinely near-full, 7/8 base slots permanently occupied, worst-case scan position):** native wall-clock A/B at `scan_bound=8` (production's actual base cache size) is a **confirmed noise-band NULL** (t=0.492 vs crit=2.101, 20-pair paired A/B/B/A) — exactly the survey's own honest prediction that an 8-element scan is already cheap enough to sit below a process-level timer's noise floor; same-vs-same control confirms harness sanity (t=-0.394). The Ir axis (much lower noise floor, via WSL/Valgrind, a new dedicated `large_cache_free_slot_search_{prefill,cycle}_only` iai-callgrind bench pair using R23-3's shared-prefix-subtraction pattern) shows the REAL, small, correctly-signed win the wall-clock probe couldn't resolve: **−5.0 Ir per admission** (−40 Ir over 8 rounds, prefill arm byte-identical before/after confirming the shared-prefix isolation). Standing ±10 raw-Ir churn kill gate stays flat (+1 to −6 Ir across the 5 small-object benches, well within bound). **Sidecars (1)/(3) deliberately NOT built**: the measured win at production's actual N=8 is real but small (Ir-only, invisible in wall-clock), while the sidecars would introduce a genuine REPLICATED-field hazard (`usable_size`/`seq` duplicated between `CachedLarge` and new parallel arrays) needing the SAME lockstep-maintenance discipline the survey names as the exact failure mode that killed X5 (`[L]` item 20 above: "at n=3 the maintenance RMW on every transition is a net cost") — not justified by a win this small at this scan width, and no current production workload regime drives N large enough to plausibly change that calculus. `perf(runtime)` — `alloc-decommit` is in `production`'s default feature set. See `docs/perf/R32_12_LARGE_CACHE_OCCUPANCY_BITMASK_GATE.md` for the full correctness enumeration, both false-start test fixes, and the complete Ir/wall-clock evidence tables.
 - **F5 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — the 16 KiB `SIZE2CLASS` LUT is not the cache problem item 19 (X6)'s original revisit trigger implied; re-assessment only, no code change.** Opened and resolved same-round by task #505, 2026-08-03 — docs-only re-assessment of item 19 (X6) above: confirmed REJECT still holds ("confirmed dead, and deader"), and narrowed item 19's own revisit trigger from "a real-application cache profile showing SIZE2CLASS lines contending" to "a real application whose size distribution is dominated by scattered ≥16 KiB small-class sizes" — see item 19's own current-state card for the full density argument (the LUT's index is dense from zero, so its hot region is exactly as small-size-dominated as the workload). No `src/`/`benches/`/`examples/`/`tests/` change; `docs(perf)`.
 - **F13 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — three areas checked and found thin/already-minimal/out-of-scope (over-alignment classification, TLS/registry binding, NUMA); negative result recorded so a future round does not re-derive it.** Opened and resolved same-round by task #505, 2026-08-03 — recorded as new item 39 `[L]` above with all three sub-verdicts and the reasoning needed to avoid re-deriving them; the one loose end (a Windows-MSVC `cargo asm` check of `LOCAL.try_with`'s lowering) flagged as a cheap optional future check, not a backlog task. No `src/`/`benches/`/`examples/`/`tests/` change; `docs(perf)`.
+
+**Round-32 independent review (`docs/reviews/2026-08-03-round32-readonly-review.md`) — perf-scope findings F4/F5/F6/F8/F9/F10/F11, all closed by Round 33 (tasks #510–#517). Filed 2026-08-04 (R34-2/task #521) — Round 33 never touched this index (Round-33 review finding G5 [P2]), so these closures were recorded nowhere durable until now.**
+
+- **F4 [P2] — R32-10 ships a `production` default change (`OWN_CACHE_SIZE` 4→16) on the weakest latency evidence in the round (null asserted, not demonstrated; no dispersion statistic, no same-vs-same control).** Closed by R33-5 (task #510, commits `81d24f9` + `b3b18bb`) — re-ran the latency axis through 20-pair A/B/B/A at all 7 K values with same-vs-same controls: max `|t|` = 1.729 vs crit = 2.101, no K significant, no sign test more lopsided than 13/7, all 14 same-vs-same controls non-significant. Honest null confirmed (the K=4 direction even reversed relative to §4.1's original single-run +8.8%, proving that was noise). See `docs/perf/R32_10_LATENCY_NULL_PAIRED_AB_GATE.md` + its summary CSV + derive script.
+- **F5 [P3] — R32-10 §5.2's `isolate` arm provenance cross-reference points at §8's note about a DIFFERENT arm (the `OWN_CACHE_SIZE=4` "before" scratch edit, not the counter-disable scratch edit).** Closed by R33-9 (task #514, commit `454149e`) — appended a dedicated R29-6 exemption note for the isolate arm's unrecoverable scratch edit into §8, so the §5.2 cross-reference now lands on a note about the correct arm.
+- **F6 [P3] — derive scripts are not idempotent against their own committed artifacts (`landing_commit = 'UNFILLED_PLACEHOLDER_40_HEX'`, filled by hand in a follow-up commit, so re-running the checked script destroys the column).** Closed by R33-8 (task #513, commit `b537770`) — derive scripts now take the landing SHA as `argv[2]` or fall back to `git rev-parse HEAD`; all 15 round-trippable (Round-33 review §5 re-verified 19/19 scripts CLEAN against committed raw data). The smaller residual — `git rev-parse HEAD` silently emits the PARENT for a new report generated inside its own landing commit — is filed as item 41 below.
+- **F8 [P3] — two Round-32 reports break the same-base-name summary-CSV rule (`R495_STAMP_REMOVAL_GATE_summary.csv` and `R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv` named by task-number, not report basename).** Closed by R33-11 (task #516, commits `998d373` + `f51ec37`) — renamed both to match their report's own basename; added `verify-gate-report.mjs` check (h) to catch the class going forward. (A third pre-existing instance — `R30_7_…_AB_summary.csv` missing the `_GATE` suffix — was surfaced by check (h) but left unfixed; filed as item 40 below.)
+- **F9 [P2] — R32-8's decay-clock-throttle measures the BENEFIT (ns/call saved in a high-throughput regime) but argues the COST (retention in a low-throughput regime) qualitatively, violating CLAUDE.md's same-regime cost/benefit rule.** Closed by R33-6 (task #511, commits `5bd7c04` + `8a04452`) — built a subprocess-per-arm retention-cost harness with hard-asserted config evidence + path-activation oracle; measured the retention cost is bounded at ≤1 segment per missed interval in the low-throughput regime. See `docs/perf/R33_6_DECAY_THROTTLE_RETENTION_COST_summary.csv`.
+- **F10 [P3] — R32-3 is the round's only `perf(runtime)` shipping change with no gate report, no CSV, no raw log (verdict-resting numbers existed only in the commit message).** Closed by R33-12 (task #517, commit `96ae245`) — backfilled `docs/perf/R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE.md` + `_summary.csv` + two `_raw_*.log` files + checked derive script; reproduces the original commit message's numbers exactly (−120 Ir `realloc_grow`, four kill-gates byte-exact at 0 delta). NOTE: the CSV's `doc_commit` column was initially the PARENT of the landing commit (R33-8's `git rev-parse HEAD` fallback, see item 41); corrected to `96ae245` in R34-2.
+- **F11 [P2] — Round 32 has no `### Round 32` heading in CHANGELOG.md; a bolded "Runtime improvements this round: 0" sits directly above eight runtime improvements.** Closed (PARTIALLY) by R33-7 (task #512, commit `182b222`) — split Round 32's runtime improvements into their own `#### Runtime improvements` subsection with an accurate "Runtime improvements this round: 7" line. RESIDUAL (Round-33 review G6 [P3]): Round 31's section still carries the same collision shape ("Runtime improvements this round: 0" two lines above a heading listing R31-10's promoted runtime improvement), and Rounds 31/32 are out of section order (`grep -n "^### Round"` gives 33, 31, 32, 30…). The residual is filed in `docs/CORRECTNESS_OPEN_ITEMS.md` (reporting-honesty/process scope).
 
 ### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
 

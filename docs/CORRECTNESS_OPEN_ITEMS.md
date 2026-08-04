@@ -1116,6 +1116,99 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     pre-existing, isolated-run-clean" instead of re-diagnosing from
     scratch.
 
+15. **[T, filed 2026-08-04, R34-2/task #521] Provenance asymmetry hypothesis —
+    the task-#142 exposed-provenance fix was applied to `Node::atomic_ptr_ref`
+    only, not to the ring's `atomic_u32_at`/`atomic_u64_at`/`atomic_u8_at`
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md` F-2 [low]).**
+    `atomic_ptr_ref`'s own comment (`src/alloc_core/node.rs:564-578`) states
+    the reason for its `expose_provenance`/`with_exposed_provenance_mut` form
+    as a remote-vs-remote aliasing argument — but `atomic_u32_at` backs
+    `RemoteFreeRing`'s `head`/`tail`/`cached_head`/`slots`, written concurrently
+    by an arbitrary number of remote producer threads (the identical
+    remote-vs-remote shape), and `atomic_u64_at` backs `SegmentHeader::owner_state`.
+    Neither the code nor the docs give a reason for the split. No repro was
+    constructed; under Tree Borrows an `&AtomicU32` derived from a raw pointer
+    gets `Cell` permission (immune to foreign accesses), so the concern is
+    Stacked-Borrows-specific at most. What makes it worth listing is that the
+    question is **currently unanswerable by this repo's own tooling**: there is
+    no miri test that drives ≥2 concurrent remote small-block ring pushes (audit
+    G1). **BLOCKED on #524/R34-5** (the concurrent small-block ring miri test);
+    only if that test flags under Stacked Borrows should the `atomic_ptr_ref`
+    treatment be applied to `atomic_u32_at`.
+
+16. **[T, filed 2026-08-04, R34-2/task #521] Cross-thread routing's documented
+    residual (caller-contract-violation surface) needs to reach the release
+    notes (`docs/reviews/2026-08-04-release-stabilization-audit.md` F-3 [low]).**
+    `dealloc_foreign_routing` (`src/registry/heap_core_xthread.rs:858-1007`)
+    reads and writes foreign segment memory under a "magic != 0" guard only;
+    the code documents honestly (`:864-885`) that a live-foreign vs
+    already-released segment is O(1)-indistinguishable, so a double free of a
+    released segment is "fundamentally UB … not fixed by this change" — the
+    standard caller-contract residual every allocator has. The action item is
+    NOT a code fix (none is needed — for a single legitimate cross-thread free,
+    `live_count ≥ 1` until the owner's drain reclaims, so the segment cannot be
+    released underneath the freer); the action is to **state this residual in
+    the release notes** so a downstream reader knows the documented limitation.
+    Filed because no Round-34 task owns release-notes writing.
+
+17. **[T, filed 2026-08-04, R34-2/task #521] Five tier-1 `unsafe` seams have
+    no miri, no loom, and no kani harness — covered by ordinary integration
+    tests only (`docs/reviews/2026-08-04-release-stabilization-audit.md` G3
+    [medium]).** The five: `global::sefer_alloc` (the `unsafe impl GlobalAlloc`
+    itself), `global::fallback` (the `static mut MaybeUninit<HeapCore>` +
+    spinlock), `registry::heap_slot` (the single load-bearing `unsafe impl
+    Sync` in the crate), `alloc_core::sidecar` (the shared lazily-materialised
+    sidecar deref boundary, on the `production` path via
+    `alloc-segment-directory` + `class-aware-dirty`), and
+    `alloc_core::large_cache_extended`. Additionally, `alloc_core::dirty_by_class`
+    has `loom_class_aware_dirty` but per ci.yml's own note that model uses
+    hand-rolled `loom::sync` atomics, not the real `PerClassDirty`/`RacyPtrCell`
+    types — so the real sidecar deref is unmodelled there too. For a
+    stabilization release, adding at least a miri or loom harness to each
+    (especially `sidecar`, which is on the `production` path) closes the
+    largest remaining verification-coverage gaps.
+
+18. **[T, filed 2026-08-04, R34-2/task #521] kani proves only the smallest
+    seam and a deprecated tier — two highest-value CBMC-reachable properties
+    are unproven (`docs/reviews/2026-08-04-release-stabilization-audit.md` G4
+    [low]).** `src/kani_proofs.rs` covers `alloc_core::node` primitives and
+    `concurrent::hand` (the research tier). The two unproven high-value
+    properties are: (a) the ring's wrap arithmetic — that
+    `t.wrapping_sub(h) < RING_CAP` is an invariant of the push/drain pair
+    across the `u32::MAX → 0` boundary; and (b) `pack_entry`/`unpack_entry`
+    (both hardened and non-hardened packings) round-trip and never produce
+    `RING_SLOT_EMPTY` over the full real input ranges. Both are pure
+    arithmetic with no pointers — ideal kani targets — and both are currently
+    protected only by unit tests plus `const _: () = assert!` on the *bounds*,
+    not on the *round trip*.
+
+19. **[T, filed 2026-08-04, R34-2/task #521] MSRV caveat — the `msrv` CI job
+    runs `cargo check --all-features`, never `cargo test`, so an
+    MSRV-incompatible construct reachable only from a `#[cfg(test)]`-only or
+    dev-dependency path would not be caught
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md` §5).** The audit
+    calls this "acceptable, but worth stating in the release notes." Filed
+    because no Round-34 task owns release-notes writing; the action is a
+    one-line release-notes caveat ("MSRV is enforced as `cargo check`, not
+    `cargo test` — a `#[cfg(test)]`-only or dev-dep construct incompatible
+    with rustc 1.88 would not be caught by CI"), not a CI change.
+
+20. **[T, filed 2026-08-04, R34-2/task #521] F11 residual — Round 31's
+    CHANGELOG section still carries the "Runtime improvements this round: 0"
+    collision shape, and Rounds 31/32 are out of section order
+    (`docs/reviews/2026-08-03-round33-readonly-review.md` G6 [P3]).** R33-7
+    (task #512) closed F11 for Round 32 (split its runtime improvements into
+    their own subsection with an accurate count), but Round 31's section at
+    `CHANGELOG.md:36` still reads "**Runtime improvements this round: 0.**"
+    two lines above a `#### Runtime improvements` heading whose bullets
+    include R31-10's promoted trim API — the exact shape F11 described. Section
+    ordering is also wrong: `grep -n "^### Round"` gives 33, 31, **32**, 30 —
+    newest-first everywhere except 31/32 are swapped (pre-existing, but R33-7
+    restructured both sections without fixing it). Both are one-commit
+    structural fixes to `CHANGELOG.md`; filed here (reporting-honesty/process
+    scope) so a future round inherits the residual rather than re-discovering
+    it.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
