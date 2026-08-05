@@ -25,6 +25,28 @@
 
 use core::alloc::Layout;
 use sefer_alloc::alloc_core::AllocCore;
+use std::sync::Mutex;
+
+// `CONTAINS_BASE_TIER1_HITS`/`CONTAINS_BASE_TIER1_MISSES` are PROCESS-WIDE
+// static atomics shared across every `AllocCore` in the process. `cargo test`
+// runs the two tests in this file in parallel by default, and both read a
+// before/after delta on these same counters — a parallel sibling test's
+// `contains_base` traffic mid-sequence would pollute the other's delta,
+// exactly the pre-existing flaky-test class already documented in
+// `docs/CORRECTNESS_OPEN_ITEMS.md`'s "Recently resolved" item 1. Found here
+// via `npm run check`'s own `--all-features` step: one flaky repro,
+// `hits_delta=31 misses_delta=2` against an expected `N=32`; confirmed as a
+// parallelism artifact (passed clean under `--test-threads=1`), then fixed
+// with this serialization and reverified with 5 full multi-threaded reruns
+// (default `cargo test` scheduling), all clean. Serializes with the SAME
+// established `static TEST_LOCK: Mutex<()>` + guard pattern already used in
+// `tests/directory_authoritative_miss.rs`,
+// `tests/alloc_zeroed_fresh_large_skip.rs`,
+// `tests/r13_3_magazine_virgin_hit_skips_zero.rs`,
+// `tests/r21_2_opt_h_stage1_precondition_probe.rs`, and
+// `tests/r14_4_promotion_free_correctness.rs` for tests reading process-wide
+// diagnostic counters.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Repeated own-thread frees of blocks from the SAME segment must be
 /// observed as Tier-1 HITS after the first touch establishes the cache
@@ -38,6 +60,7 @@ use sefer_alloc::alloc_core::AllocCore;
 /// cached must hit).
 #[test]
 fn repeated_same_segment_frees_are_observed_as_tier1_hits() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let mut ac = AllocCore::new().expect("primordial");
     AllocCore::dbg_reset_contains_base_tier1_counters();
 
@@ -107,6 +130,7 @@ fn repeated_same_segment_frees_are_observed_as_tier1_hits() {
 /// report honestly).
 #[test]
 fn hash_contains_only_bypass_hook_does_not_move_the_new_counters() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let mut ac = AllocCore::new().expect("primordial");
     let layout = Layout::from_size_align(16, 8).unwrap();
     let p = ac.alloc(layout);

@@ -2292,3 +2292,43 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       once this session for a higher-severity (P2) case.
     - **Files changed:** none (this index entry only) — a documented
       decision, not a rebase or a reword.
+
+18. **Flaky test — `repeated_same_segment_frees_are_observed_as_tier1_hits`**
+    (`tests/segment_table_contains_base_tier1_counters.rs`) — **RESOLVED**
+    by wave 3's own `npm run check --all-features` gate run (2026-08-05,
+    same session as H1-H8, tasks #571-578).
+
+    - **Root cause, confirmed:** `CONTAINS_BASE_TIER1_HITS`/
+      `CONTAINS_BASE_TIER1_MISSES` (`src/alloc_core/alloc_core.rs`) are
+      process-wide `static AtomicU64`s. Both `#[test]` functions in this
+      file read them via a before/after delta; `cargo test` runs the two
+      tests in this file in parallel by default, so the OTHER test's
+      `contains_base`/`dbg_hash_contains_only` traffic could land inside
+      one test's own delta window — exactly the SAME failure class as item
+      1 above (`canary_survives_promotion_and_free_leaves_no_leak`), a
+      different process-wide counter pair, same root cause. Observed
+      failure: `hits_delta=31 misses_delta=2` against an expected `N=32`
+      for `repeated_same_segment_frees_are_observed_as_tier1_hits`.
+      Confirmed as a parallelism artifact, not a real regression: passed
+      clean under `cargo test --test
+      segment_table_contains_base_tier1_counters --all-features --
+      --test-threads=1`; confirmed the file predates this session
+      (`git log -- tests/segment_table_contains_base_tier1_counters.rs`
+      last touched by Round 34's `7aeee2d`, an unrelated rustfmt-drift
+      commit) — this is a pre-existing flake this wave's own full-matrix
+      run happened to surface, not something wave 1/2/3's own changes
+      introduced.
+    - **Fix:** added the SAME established `static TEST_LOCK: Mutex<()>` +
+      per-test `let _guard = TEST_LOCK.lock().unwrap();` pattern item 1
+      above already used (also matching
+      `tests/directory_authoritative_miss.rs`,
+      `tests/alloc_zeroed_fresh_large_skip.rs`,
+      `tests/r13_3_magazine_virgin_hit_skips_zero.rs`,
+      `tests/r21_2_opt_h_stage1_precondition_probe.rs`). No assertion logic
+      changed.
+    - **Verification:** 5 full `cargo test --test
+      segment_table_contains_base_tier1_counters --all-features` reruns
+      (default multi-threaded scheduling) after the fix — all clean, 0
+      failures. `cargo fmt --all -- --check` clean.
+    - **Files changed:** `tests/segment_table_contains_base_tier1_counters.rs`
+      (serialization only); this index entry.
