@@ -29,10 +29,10 @@ project holds every change to a higher verification bar than `cargo test` alone:
 | Unit + integration | `cargo test` | Always |
 | Property-based | `proptest` via `alloc_core_differential` | Changes to core data structures |
 | Sanitizers | ThreadSanitizer (`--features production`) | Any cross-thread path |
-| Memory model | `loom` (`tests/loom_*.rs`) | New atomics or lock-free structures |
+| Memory model | `loom` (`tests/loom_*.rs` — currently 14 files, e.g. `tests/loom_epoch.rs`, `tests/loom_xthread_protocol.rs`, `tests/loom_remote_ring.rs`) | New atomics or lock-free structures |
 | Formal memory | `miri` | New `unsafe` blocks |
 | Cross-arch | `aarch64-unknown-linux-gnu` (weak memory model) | Atomic/concurrent changes |
-| Fuzzing | `cargo fuzz` targets in `fuzz/` | New allocator entry points |
+| Fuzzing | `cargo fuzz` targets in `fuzz/fuzz_targets/` (currently `region_ops.rs`, `global_alloc_ops.rs`, `heap_core_ops.rs`) | New allocator entry points |
 | Valgrind | `valgrind --tool=memcheck` | `unsafe impl GlobalAlloc` paths |
 
 A PR that skips a relevant layer without justification will not be merged.  This
@@ -46,16 +46,30 @@ Work through the checklist below before opening or marking a PR ready for
 review. All steps must pass locally; the CI will re-run them, but CI time is a
 shared resource.
 
-### Mandatory for every PR
+### Mandatory for every PR: `npm run check`
 
-```sh
-# Full feature matrix — must be green
-cargo test --features production
+The single source of truth for the required pre-push commands is
+`npm run check` (`scripts/check-all.mjs`) — **run it before every push**. It
+runs, in order: `cargo fmt --check`, `clippy -D warnings` across every CI
+clippy row (generated from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — not
+hand-written, and kept byte-identical to `ci.yml`'s `clippy` job by
+`tests/ci_clippy_matrix_consistency.rs`), `cargo test` across the main
+feature combinations (including plain `--features production`), then
+`npm run iai` (the deterministic judge). See that script's own header
+comment for the full, current step list — it is intentionally not
+duplicated here by hand, because a hand-duplicated list is exactly the kind
+of second source that drifts out of sync (this file itself used to be one
+such stale copy).
 
-# No warnings anywhere
-cargo build --all-targets --all-features
-cargo clippy --features production -- -D warnings
-```
+This repo's own white-box `tests/` suite reaches internal module paths
+directly and requires the `internals` feature to compile
+(`cargo test --features "production internals"`); `npm run check` already
+covers this.
+
+`npm run check` does **not** replace CI — CI additionally runs miri, loom,
+ThreadSanitizer, multi-arch, `no_std`, and MSRV checks (see `.github/workflows/ci.yml`).
+The layers below are the ones `npm run check` does not cover; run them
+directly when your change touches the area each layer targets.
 
 ### Mandatory when touching core data structures
 
@@ -67,9 +81,11 @@ cargo test --features alloc-core --test alloc_core_differential
 ### Mandatory when touching concurrent paths
 
 ```sh
-# Loom model checking (may be slow — run with LOOM_MAX_PREEMPTIONS=2 for quick check)
+# Loom model checking (may be slow — run with LOOM_MAX_PREEMPTIONS=2 for quick check).
+# Pick the loom_*.rs test(s) relevant to your change — see `tests/loom_*.rs`
+# for the current set (e.g. loom_epoch, loom_xthread_protocol, loom_remote_ring,
+# loom_thread_free, loom_sharded — currently 14 files total).
 LOOM_MAX_PREEMPTIONS=2 cargo test --test loom_epoch --features experimental
-LOOM_MAX_PREEMPTIONS=2 cargo test --test loom_reclaim --features experimental
 
 # ThreadSanitizer (Linux or macOS only)
 RUSTFLAGS="-Z sanitizer=thread" cargo +nightly test \
@@ -93,8 +109,9 @@ cargo build --features production \
 ### Recommended for allocator entry-point changes
 
 ```sh
-# Fuzz targets (short run to check for immediate crashes)
-cargo fuzz run fuzz_alloc_dealloc -- -max_total_time=60
+# Fuzz targets (short run to check for immediate crashes). Current targets
+# live in fuzz/fuzz_targets/: region_ops, global_alloc_ops, heap_core_ops.
+cargo fuzz run heap_core_ops -- -max_total_time=60
 ```
 
 
@@ -125,10 +142,19 @@ These conventions are enforced at review time and by CI.
 - The crate top-level carries `#![forbid(unsafe_code)]` in the default
   configuration and `#![deny(unsafe_code)]` with the `experimental` or
   `alloc-core` features enabled (see `src/lib.rs`'s top-level attributes).
-- `unsafe` is permitted **only** inside these two modules:
-  - `src/concurrent/hand.rs` (gated on `experimental`)
-  - `src/byte/byte_region.rs` and `src/byte/byte_allocator.rs` (gated on
-    `byte`)
+- `unsafe` is permitted **only** inside named seam modules, split into two
+  tiers — tier 1 (`#![allow(unsafe_code)]` at the module level: `unsafe` is
+  permitted anywhere in the file) and tier 2 (`#[allow(unsafe_code)]` on an
+  individual `unsafe fn`/`unsafe {}` site in an otherwise-safe file). The
+  full, current inventory is **not** hand-duplicated here — it changes as
+  the crate grows and a hand-copied list is exactly the kind of second
+  source that goes stale (this file's old two-module claim, including two
+  files that do not exist in this tree, was itself an instance of that).
+  Get the authoritative, current list from either:
+  - README.md's [Where unsafe lives — the complete
+    list](README.md#where-unsafe-lives-the-complete-list) section, or
+  - the self-verifying grep both this repo's `CLAUDE.md` and README use:
+    `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
 - Every `unsafe` block must carry a `// SAFETY:` comment that names the
   invariants being upheld. A block with no `// SAFETY:` comment will be
   rejected.
@@ -173,15 +199,20 @@ Wrap at 72 characters.
 Common types: `feat`, `fix`, `perf`, `refactor`, `test`, `bench`, `docs`, `ci`,
 `chore`.
 
-Common scopes: `core`, `concurrent`, `byte`, `fuzz`, `bench`, `ci`, `docs`.
+Common scopes: `core`, `concurrent`, `fuzz`, `bench`, `ci`, `docs`.
 
 Examples from the project history:
 
 ```
 feat(concurrent): epoch reclaim — drain stale slots on grace period
-fix(byte): off-by-one in segment boundary check (closes #42)
+fix(core): off-by-one in segment boundary check (closes #42)
 bench(core): add larson workload to macro-benchmark suite
 ```
+
+`perf`-prefixed commits additionally follow a `perf(runtime)` /
+`perf(opt-in)` / `bench` / `docs(config)` / `fix(perf)` taxonomy — see
+`CLAUDE.md`'s "Active rules" section (search for "commit subject line's
+conventional-commit prefix") for the current, canonical definition of each.
 
 Breaking changes must include `!` after the scope (`feat(core)!:`) and a
 `BREAKING CHANGE:` footer.
