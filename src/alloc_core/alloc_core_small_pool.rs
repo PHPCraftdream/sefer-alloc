@@ -655,11 +655,22 @@ impl AllocCore {
         self.table.recycle(base);
     }
 
-    /// TEST-ONLY (Phase 35): the process-wide count of M6 decommit invocations
+    /// The process-wide count of M6 decommit invocations
     /// (`decommit_empty_segment` calls). The soak test reads this to assert the
     /// decommit hook actually fires when segments empty (the counterfactual: with
     /// the live-count proviso miswired it stays zero and the test goes red). A
     /// plain relaxed atomic — diagnostic only, no ordering obligation.
+    ///
+    /// H2 (task #572): NOT `internals`-gated, unlike its `dbg_*` siblings in
+    /// this file — [`SeferAlloc::stats`](crate::SeferAlloc::stats) reads this
+    /// directly (`src/global/sefer_alloc.rs`'s `decommit_calls` field) to
+    /// populate the public, production-reachable [`AllocStats`](crate::AllocStats)
+    /// struct, so this is a real production caller, not test-only despite its
+    /// name — the same exemption already applied to its three siblings
+    /// `dbg_foreign_or_unroutable_frees`/`dbg_segments_reserved_total`/
+    /// `dbg_segments_released_total` in `alloc_core_core_diag.rs` (Sol-F1/task
+    /// #563's module doc). See
+    /// `scripts/verify-alloc-core-dbg-internals-exhaustive.mjs`'s `ALLOWLIST`.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_decommit_count() -> u64 {
@@ -669,6 +680,7 @@ impl AllocCore {
     /// TEST-ONLY (Phase 35): the owner-only `live_count` of `ptr`'s segment, or
     /// `None` if `ptr` is foreign / not small/primordial. Lets the soak test
     /// assert a segment reaches `live_count == 0` before decommit.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
@@ -690,6 +702,7 @@ impl AllocCore {
     /// `regression_c3_unbounded_recycle` test prove the retention is BOUNDED
     /// (`<= pool_cap`), and the `small_segment_pool` tests assert pool
     /// occupancy across admit/pop/evict transitions.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
@@ -702,6 +715,7 @@ impl AllocCore {
     /// pool disabled). NO compile-time upper bound since RAD-3 — the value
     /// returned here is always the HONEST cap the caller configured, never
     /// silently clamped. Lets tests assert the config resolution.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
@@ -719,6 +733,7 @@ impl AllocCore {
     /// to full recycling. A production analogue (decay-tick draining) is wired
     /// into `maybe_decay_small_pool`; this seam gives tests a deterministic,
     /// sleep-free trigger.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_drain_small_pool(&mut self) -> usize {
@@ -750,6 +765,7 @@ impl AllocCore {
 
     /// TEST-ONLY (Phase 35): whether `ptr`'s segment is currently decommitted, or
     /// `None` if `ptr` is foreign / not small/primordial.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
@@ -821,6 +837,7 @@ impl AllocCore {
     // `heap_core_diag.rs`. The body forwards to the SAFE
     // `decommit_empty_segment_impl`; the `unsafe fn` signature exists solely
     // to enforce the `live_count == 0` precondition at the call site.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-8: `unsafe fn` boundary (live_count==0 precondition).
@@ -1039,6 +1056,7 @@ impl AllocCore {
     /// metadata work this hook measures, but never touches `small_cur` —
     /// so this hook cannot disturb any other in-flight allocation on the
     /// heap, however many times it is called.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_full_cycle(&mut self) -> bool {
@@ -1055,6 +1073,7 @@ impl AllocCore {
     /// `os::release_segment`) with NO table bookkeeping and NO metadata
     /// initialization. Isolates component (1): the OS-level VMA setup/teardown
     /// alone.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_os_roundtrip() -> bool {
@@ -1118,6 +1137,7 @@ impl AllocCore {
     /// `(base, reservation_ptr, reservation_len)` — the caller MUST later
     /// release via [`dbg_decomp_win_release_only`], passing back the SAME
     /// `(reservation_ptr, reservation_len)` pair.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_win_reserve_only() -> Option<(*mut u8, *mut u8, usize)> {
@@ -1151,6 +1171,7 @@ impl AllocCore {
     /// call whose `[PAGE, SEGMENT)` range is still uncommitted (not yet
     /// committed by a prior call to this same hook), and must not have been
     /// released yet.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]
@@ -1172,6 +1193,7 @@ impl AllocCore {
     ///
     /// `(reservation_ptr, reservation_len)` MUST be the pair returned by a
     /// [`dbg_decomp_win_reserve_only`] call not yet released.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
@@ -1204,6 +1226,7 @@ impl AllocCore {
     /// [`dbg_decomp_release`](Self::dbg_decomp_release) can reject a
     /// cross-core release. See `reserved_small_segment.rs`'s module doc,
     /// "Owner-binding" section, for the full rationale.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<ReservedSmallSegment> {
@@ -1251,6 +1274,7 @@ impl AllocCore {
     /// and the reserved segment must still be live/unreleased (not already
     /// released, unregistered, or otherwise invalidated by another `dbg_*`
     /// hook in the interim).
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R31-15: unsafe fn boundary, mirrors dbg_decomp_decommit_payload.
@@ -1312,6 +1336,7 @@ impl AllocCore {
     ///
     /// `base` MUST be a live segment base whose payload is fully committed.
     /// The payload pages are returned to the OS; any live data is discarded.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
@@ -1345,6 +1370,7 @@ impl AllocCore {
     /// decommitted via [`dbg_decomp_decommit_payload`](Self::dbg_decomp_decommit_payload)
     /// (or was never committed at all — recommit is idempotent on an
     /// already-committed range on every backend this crate supports).
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]
@@ -1356,6 +1382,7 @@ impl AllocCore {
 
     /// R29-3: the `[payload_start, payload_end)` byte range of a small
     /// segment's payload (`[small_meta_end(), SEGMENT)`).
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_payload_range() -> (usize, usize) {
@@ -1363,6 +1390,7 @@ impl AllocCore {
     }
 
     /// R29-3: the OS page size.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_page_size() -> usize {
@@ -1396,6 +1424,7 @@ impl AllocCore {
     /// `bench-internals`-gated (rule 2: no production caller). The
     /// `alloc-decommit` gate is inherited from this file's module-level gate
     /// (every method here is decommit-specific).
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]

@@ -1462,7 +1462,7 @@ impl AllocCore {
     /// (CLAUDE.md "File and module structure" sanctioned exception 1): a
     /// test hook reaching an otherwise-internal field, not stable public
     /// API.
-    #[cfg(feature = "numa-aware")]
+    #[cfg(all(feature = "numa-aware", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_cached_numa_node(&self) -> Option<u32> {
         self.cached_numa_node
@@ -1477,7 +1477,7 @@ impl AllocCore {
     /// `#[doc(hidden)] pub` per the established test/bench-only-export
     /// pattern (CLAUDE.md "File and module structure" sanctioned exception
     /// 1). Not stable public API.
-    #[cfg(feature = "numa-aware")]
+    #[cfg(all(feature = "numa-aware", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_current_node_cached(&mut self) -> u32 {
         self.current_node_cached()
@@ -1492,7 +1492,7 @@ impl AllocCore {
     /// `#[doc(hidden)] pub` per the established test-only-export pattern
     /// (CLAUDE.md "File and module structure" sanctioned exception 1). Not
     /// stable public API.
-    #[cfg(feature = "numa-aware")]
+    #[cfg(all(feature = "numa-aware", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_invalidate_numa_node_cache(&mut self) {
         self.invalidate_numa_node_cache();

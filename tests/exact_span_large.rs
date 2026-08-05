@@ -24,7 +24,7 @@
 //!       pre-existing 4-MiB-rounded path (`span_usable` is always an exact
 //!       multiple of `SEGMENT`).
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, SegmentLayout};

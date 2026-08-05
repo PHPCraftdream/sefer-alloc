@@ -17,7 +17,11 @@
 //! policy (i.e. `pool_byte_cap` is large enough that `pool_segments`
 //! actually binds).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use sefer_alloc::{AllocCore, LargeCacheConfig, LargeCachePolicy, Profile, SmallPoolPolicy};
 

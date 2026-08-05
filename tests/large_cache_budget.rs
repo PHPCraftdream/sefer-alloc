@@ -10,7 +10,11 @@
 //! All tests use `dbg_set_large_cache_budget` for dynamic overrides or
 //! `AllocCore::new_with_config` to set the budget at construction time.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::AllocCore;

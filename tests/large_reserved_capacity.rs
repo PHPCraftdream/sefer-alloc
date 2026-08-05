@@ -58,7 +58,7 @@
 //!   catch as a mismatch against the value captured right after the ORIGINAL
 //!   reservation.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, SegmentLayout};

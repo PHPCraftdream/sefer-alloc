@@ -7,7 +7,11 @@
 //!
 //! Gated on `alloc-core` + `alloc-decommit` (the same gate as the cache itself).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::AllocCore;

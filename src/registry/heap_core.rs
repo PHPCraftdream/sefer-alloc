@@ -737,7 +737,11 @@ impl HeapCore {
     ///
     /// `#[doc(hidden)] pub` per the established test-only-export pattern
     /// (CLAUDE.md "File and module structure" sanctioned exception 1).
-    #[cfg(feature = "numa-aware")]
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_cached_numa_node`] moved behind `internals`
+    /// (`alloc_core.rs`'s module doc).
+    #[cfg(all(feature = "numa-aware", feature = "internals"))]
     #[doc(hidden)]
     pub fn dbg_cached_numa_node(&self) -> Option<u32> {
         self.core.dbg_cached_numa_node()

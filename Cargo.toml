@@ -429,10 +429,17 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "all
 # `Handle`/`SyncRegion` from `sefer-region`) is re-exported at the CRATE ROOT
 # via the existing `pub use alloc_core::{...}` / `pub use global::{...}`
 # lines below, gated only on `alloc-core`/`alloc-global`/`alloc-decommit` as
-# today — `internals` does not touch those re-export gates at all. Only the
-# MODULE PATH — and everything reachable solely through it (every `dbg_*`
-# hook, every non-re-exported internal type, every submodule) — moves behind
-# `internals`.
+# today — `internals` does not touch those re-export gates at all. Two
+# mechanisms combine to gate every `dbg_*` hook behind `internals`: (1) the
+# MODULE PATH — and everything reachable solely through it (every
+# non-re-exported internal type, every submodule) — moves behind
+# `internals`; and (2) for types that ARE crate-root re-exported (like
+# `AllocCore`), their `dbg_*` INHERENT methods are additionally gated
+# directly with `#[cfg(feature = "internals")]` on the method/impl block
+# itself (Sol-F1/task #563 + H2/task #572, release-readiness review
+# findings) — module-path privacy alone does not hide a re-exported type's
+# own already-`pub` inherent methods, so (1) is necessary but not
+# sufficient for re-exported types.
 #
 # Decision: `production` does NOT include `internals`. A downstream
 # `Cargo.toml` of `sefer-alloc = { features = ["production"] }` gets the

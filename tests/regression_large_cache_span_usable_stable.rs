@@ -50,7 +50,11 @@
 //! stay correct under both configurations while still exercising the exact
 //! same bug #134 code path.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::AllocCore;

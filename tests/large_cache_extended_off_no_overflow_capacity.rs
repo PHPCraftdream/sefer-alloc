@@ -21,7 +21,8 @@
 #![cfg(all(
     feature = "alloc-core",
     feature = "alloc-decommit",
-    not(feature = "large-cache-extended")
+    not(feature = "large-cache-extended"),
+    feature = "internals"
 ))]
 
 use core::alloc::Layout;

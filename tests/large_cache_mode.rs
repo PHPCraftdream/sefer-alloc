@@ -19,7 +19,11 @@
 //!
 //! Gated on `alloc-core` + `alloc-decommit` (same gate as the cache itself).
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use sefer_alloc::{AllocCore, LargeCacheConfig, LargeCacheMode};
 

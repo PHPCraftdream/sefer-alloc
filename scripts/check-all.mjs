@@ -35,6 +35,11 @@
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
+//   12b. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
+//      structural complement to 12a — 12a only proves ONE method is gated;
+//      this enumerates and checks EVERY `AllocCore::dbg_*` method across
+//      `src/alloc_core/*.rs`; see that script's own header)
 //   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
 //   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
@@ -159,6 +164,21 @@ const steps = [
     args: ['scripts/verify-internals-negative-boundary.mjs'],
   },
   {
+    // H2 (task #572, Sol-remediation review finding H2): the single-method
+    // oracle immediately above (`verify-internals-negative-boundary.mjs`)
+    // proved exactly ONE `AllocCore::dbg_*` method is `internals`-gated; it
+    // does not prove the other 127. This step is the exhaustive structural
+    // complement — enumerates EVERY `AllocCore::dbg_*` method across
+    // `src/alloc_core/*.rs` and asserts each is gated or explicitly
+    // allowlisted. See scripts/verify-alloc-core-dbg-internals-exhaustive.mjs's
+    // own header for the full rationale (this is the exact gap that let 31
+    // methods across 3 files stay reachable without `internals` for a full
+    // remediation wave, undetected).
+    name: 'verify-alloc-core-dbg-internals-exhaustive (H2 exhaustive gating check)',
+    cmd: 'node',
+    args: ['scripts/verify-alloc-core-dbg-internals-exhaustive.mjs'],
+  },
+  {
     // R30-5: generated "feature ABSENT" compile-check enumeration for every
     // conditionally-registered iai arm in benches/perf_gate_iai.rs — the
     // mechanical, automatic form of the stub rule R29-16 violated by
@@ -201,7 +221,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

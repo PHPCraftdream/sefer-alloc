@@ -7,7 +7,8 @@
 #![cfg(all(
     feature = "alloc-core",
     feature = "alloc-decommit",
-    feature = "large-cache-extended"
+    feature = "large-cache-extended",
+    feature = "internals"
 ))]
 
 use core::alloc::Layout;

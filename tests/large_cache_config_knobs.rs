@@ -3,7 +3,11 @@
 //! Each test constructs an `AllocCore` with a specific config knob and verifies
 //! the resolved value through the `dbg_*` test seams.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, LargeCacheConfig};

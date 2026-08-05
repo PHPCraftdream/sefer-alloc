@@ -334,8 +334,12 @@ impl HeapCore {
     /// integration tests can assert that a segment emptied via an overflow-ring
     /// reclaim was actually pooled (not left as an ordinary registered
     /// segment by the pre-R11-2 bug that dropped the pool/release signal).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_pooled_count`] moved behind `internals`
+    /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
+    #[cfg(all(feature = "alloc-decommit", feature = "internals"))]
     #[must_use]
     pub fn dbg_pooled_count(&self) -> usize {
         self.core.dbg_pooled_count()
@@ -353,8 +357,16 @@ impl HeapCore {
     /// (same category as `dbg_pooled_count`), NOT an `unsafe fn`.
     /// `bench-internals`-gated (R27-7/task #425: no production caller → R25-10
     /// sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_pool_cap`] moved behind `internals`
+    /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_pool_cap(&self) -> usize {
         self.core.dbg_pool_cap()
@@ -369,8 +381,16 @@ impl HeapCore {
     /// registered segment into exactly one state. Read-only `&self`;
     /// does NOT mutate allocator state. `bench-internals`-gated
     /// (no production caller → R25-10 sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_segment_state_reconciliation`] moved behind
+    /// `internals` (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_segment_state_reconciliation(
         &self,
@@ -385,8 +405,16 @@ impl HeapCore {
     /// read the current running sum of cached large-span bytes for a claimed
     /// heap. Read-only `&self`; does NOT mutate allocator state.
     /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_used`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_large_cache_used(&self) -> usize {
         self.core.dbg_large_cache_used()
@@ -403,8 +431,16 @@ impl HeapCore {
     /// diagnostic surface, not assumed). Read-only `&self`; does NOT mutate
     /// allocator state. `bench-internals`-gated (no production caller →
     /// R25-10 sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_budget`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_large_cache_budget(&self) -> Option<usize> {
         self.core.dbg_large_cache_budget()
@@ -439,8 +475,16 @@ impl HeapCore {
     /// `examples/r31_1_large_cache_headroom_crossing_regime_gate.rs`) already
     /// require `bench-internals` in their `required-features`
     /// (`Cargo.toml`), so this tightening breaks neither.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_hits`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_large_cache_hits(&self) -> u64 {
         self.core.dbg_large_cache_hits()
@@ -459,8 +503,16 @@ impl HeapCore {
     /// not nameable from `registry`); hardcoded here rather than re-exported,
     /// matching [`AllocCore::dbg_large_cache_slot_sizes`]'s own public
     /// signature verbatim.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_slot_sizes`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_large_cache_slot_sizes(&self) -> [Option<usize>; 8] {
         self.core.dbg_large_cache_slot_sizes()
@@ -481,11 +533,16 @@ impl HeapCore {
     /// `registry`; hardcoded here rather than re-exported, matching
     /// [`AllocCore::dbg_large_cache_extended_slot_sizes`]'s own public
     /// signature verbatim.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`] moved behind
+    /// `internals` (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-decommit",
         feature = "bench-internals",
-        feature = "large-cache-extended"
+        feature = "large-cache-extended",
+        feature = "internals"
     ))]
     #[must_use]
     pub fn dbg_large_cache_extended_slot_sizes(&self) -> [Option<usize>; 32] {
@@ -503,11 +560,16 @@ impl HeapCore {
     /// production caller → R25-10 sub-rule 2), additionally gated on
     /// `large-cache-extended` (matching the delegated `AllocCore` method's
     /// own gate).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_extension_materialised`] moved behind
+    /// `internals` (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-decommit",
         feature = "bench-internals",
-        feature = "large-cache-extended"
+        feature = "large-cache-extended",
+        feature = "internals"
     ))]
     #[must_use]
     pub fn dbg_large_cache_extension_materialised(&self) -> bool {
@@ -531,8 +593,16 @@ impl HeapCore {
     /// (it reads 8 when the extension feature/sidecar is absent), so it is
     /// NOT additionally gated on `large-cache-extended` — matching
     /// [`AllocCore::dbg_large_cache_total_slots`]'s own gate exactly.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_large_cache_total_slots`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_large_cache_total_slots(&self) -> usize {
         self.core.dbg_large_cache_total_slots()
@@ -548,8 +618,16 @@ impl HeapCore {
     /// rule, CLAUDE.md's R26-4 entry). Read-only `&self`; does NOT mutate
     /// allocator state. `bench-internals`-gated (no production caller →
     /// R25-10 sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_decay_config`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_decay_config(&self) -> (u32, u64, usize) {
         self.core.dbg_decay_config()
@@ -564,8 +642,16 @@ impl HeapCore {
     /// `&mut self` (mutates decay-tick bookkeeping and, when a tick fires,
     /// evicts cached spans). `bench-internals`-gated (no production caller →
     /// R25-10 sub-rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_force_decay_tick`] moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_force_decay_tick(&mut self) {
         self.core.dbg_force_decay_tick();
     }
@@ -590,8 +676,12 @@ impl HeapCore {
     /// integration test can drive a segment down to EXACTLY zero live blocks
     /// (reading the exact remaining count at each step) without guessing how
     /// many blocks a given segment holds.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_live_count_for`] moved behind `internals`
+    /// (`alloc_core_small_pool.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
+    #[cfg(all(feature = "alloc-decommit", feature = "internals"))]
     #[must_use]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
         self.core.dbg_live_count_for(ptr)
@@ -1077,15 +1167,31 @@ impl HeapCore {
     // discipline as every other `dbg_*` in this file).
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_full_cycle`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_full_cycle(&mut self) -> bool {
         self.core.dbg_decomp_full_cycle()
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_os_roundtrip`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_os_roundtrip() -> bool {
         crate::alloc_core::AllocCore::dbg_decomp_os_roundtrip()
     }
@@ -1094,8 +1200,16 @@ impl HeapCore {
     ///
     /// R31-4 (task #467): forwards [`crate::alloc_core::ReservedSmallSegment`]
     /// instead of a bare `*mut u8` — see that type's module doc.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_reserve_and_keep(
         &mut self,
     ) -> Option<crate::alloc_core::ReservedSmallSegment> {
@@ -1117,8 +1231,16 @@ impl HeapCore {
     /// have been produced by a paired `dbg_decomp_reserve_and_keep` call on
     /// THIS SAME `HeapCore`'s underlying `AllocCore`, and the segment must
     /// still be live/unreleased.
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[allow(unsafe_code)] // R31-15: unsafe fn boundary, forwarded contract.
     pub unsafe fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {
         // SAFETY: forwarded from this caller's identical `# Safety` contract.
@@ -1130,8 +1252,16 @@ impl HeapCore {
     /// # Safety
     ///
     /// Same contract as [`AllocCore::dbg_decomp_decommit_payload`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[allow(unsafe_code)] // R29-3: unsafe fn boundary, forwarded contract.
     pub unsafe fn dbg_decomp_decommit_payload(base: *mut u8) {
         // SAFETY: forwarded from this caller's identical `# Safety` contract.
@@ -1143,8 +1273,16 @@ impl HeapCore {
     /// # Safety
     ///
     /// Same contract as [`AllocCore::dbg_decomp_recommit_payload`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[allow(unsafe_code)] // R31-6: unsafe fn boundary, forwarded contract.
     pub unsafe fn dbg_decomp_recommit_payload(base: *mut u8) -> bool {
         // SAFETY: forwarded from this caller's identical `# Safety` contract.
@@ -1152,15 +1290,31 @@ impl HeapCore {
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_payload_range`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_payload_range() -> (usize, usize) {
         crate::alloc_core::AllocCore::dbg_decomp_payload_range()
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_page_size`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_page_size() -> usize {
         crate::alloc_core::AllocCore::dbg_decomp_page_size()
     }
@@ -1221,8 +1375,16 @@ impl HeapCore {
     // ── task #504 (F11 step 2) — Windows reserve-vs-commit split delegation ─
 
     /// task #504 delegation — see [`AllocCore::dbg_decomp_win_reserve_only`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_decomp_win_reserve_only() -> Option<(*mut u8, *mut u8, usize)> {
         crate::alloc_core::AllocCore::dbg_decomp_win_reserve_only()
     }
@@ -1232,8 +1394,16 @@ impl HeapCore {
     /// # Safety
     ///
     /// Same contract as [`AllocCore::dbg_decomp_win_commit_only`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
     pub unsafe fn dbg_decomp_win_commit_only(base: *mut u8) -> bool {
@@ -1246,8 +1416,16 @@ impl HeapCore {
     /// # Safety
     ///
     /// Same contract as [`AllocCore::dbg_decomp_win_release_only`].
+    ///
+    /// H2 (task #572): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_small_pool.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
     pub unsafe fn dbg_decomp_win_release_only(reservation_ptr: *mut u8, reservation_len: usize) {
         // SAFETY: forwarded from this caller's identical `# Safety` contract.

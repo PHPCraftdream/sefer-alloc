@@ -327,6 +327,7 @@ impl AllocCore {
     /// [`dbg_large_cache_slot_sizes`](Self::dbg_large_cache_slot_sizes)).
     /// Returns all-`None` if the extension has never been materialised
     /// (never overflowed the base 8 slots, or the feature is off).
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "large-cache-extended")]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
@@ -357,6 +358,7 @@ impl AllocCore {
     /// TEST-ONLY (R13-7, task #277): whether the large-cache extension
     /// sidecar has been materialised for this `AllocCore`. Always `false`
     /// when `large-cache-extended` is off.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "large-cache-extended")]
     pub fn dbg_large_cache_extension_materialised(&self) -> bool {
@@ -367,6 +369,7 @@ impl AllocCore {
     /// combined base+extension space right now (8 if the extension has not
     /// materialised, 40 once it has). Always 8 when `large-cache-extended`
     /// is off.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_total_slots(&self) -> usize {
@@ -635,6 +638,7 @@ impl AllocCore {
     /// (`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §1.6) both depend on
     /// every single call reliably firing a real decay tick, never on
     /// whichever call happens to land on a stride boundary by chance.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_force_decay_tick(&mut self) {
@@ -663,6 +667,7 @@ impl AllocCore {
     /// - `rate_bp`: decay rate in basis points (100 = 1%, 1000 = 10%).
     /// - `interval_ms`: minimum ms between ticks (0 = fire on every call).
     /// - `headroom`: target cache size in bytes.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_decay_config(&mut self, rate_bp: u32, interval_ms: u64, headroom: usize) {
@@ -683,6 +688,7 @@ impl AllocCore {
     /// R30-8 rule). `bench-internals`-gated: always 0 without it. See
     /// `MAYBE_DECAY_GUARD_PASSED`'s own doc in `alloc_core.rs`.
     #[doc(hidden)]
+    #[cfg(feature = "internals")]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_maybe_decay_guard_passed_count() -> u64 {
@@ -694,6 +700,7 @@ impl AllocCore {
     /// probe. See `FORCE_DECAY_CLOCK_READ`'s own doc in `alloc_core.rs` for
     /// exactly what this does and why it isolates the clock-read cost from
     /// any headroom-driven hit-rate confound. `bench-internals`-gated.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_set_force_decay_clock_read(forced: bool) {
@@ -702,6 +709,7 @@ impl AllocCore {
 
     /// TEST-ONLY (Phase 2): return the current decay configuration as
     /// `(decay_rate_bp, decay_interval_ms, headroom_bytes)`.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_decay_config(&self) -> (u32, u64, usize) {
@@ -757,6 +765,7 @@ impl AllocCore {
     /// of `usable_size` across all occupied large-cache slots. The test
     /// `large_cache_used_bytes_invariant` compares this against the manual sum
     /// to verify the invariant is maintained.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_used(&self) -> usize {
@@ -768,6 +777,7 @@ impl AllocCore {
     /// first invariant "bit `i` set ⟺ combined slot `i` is `Some`" directly,
     /// independent of `large_cache_slot_set`/`large_cache_slot_take`'s own
     /// internals — see `tests/large_cache_occupancy_bitmask_invariant.rs`.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
@@ -806,6 +816,7 @@ impl AllocCore {
     /// read-only shape as its `large_cache_used`/`large_cache_budget`/
     /// `large_cache_mode` siblings in this same file, none of which are
     /// `bench-internals`-gated either.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
@@ -839,6 +850,7 @@ impl AllocCore {
     /// Some(sz) = occupied with that many bytes). Lets tests verify the
     /// invariant `sum(Some values) == dbg_large_cache_used()` without exposing
     /// the private `CachedLarge` type.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_slot_sizes(&self) -> [Option<usize>; LARGE_CACHE_SLOTS] {
@@ -853,6 +865,7 @@ impl AllocCore {
     /// runtime. Allows a test to set a different budget after calling
     /// `AllocCore::new_with_config`, without constructing a new instance.
     /// Pass `None` for unbounded.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
@@ -866,6 +879,7 @@ impl AllocCore {
     /// default (`DEFAULT_EXTENDED_BUDGET_BYTES`,
     /// `large_cache_config.rs`) — without needing to reconstruct the
     /// resolution logic in the test itself.
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_budget(&self) -> Option<usize> {
@@ -882,6 +896,7 @@ impl AllocCore {
     /// used (or no `.mode()` call was made on the config).
     ///
     /// [`LargeCacheConfig::mode`]: super::large_cache_config::LargeCacheConfig::mode
+    #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_mode(&self) -> LargeCacheMode {

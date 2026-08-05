@@ -693,11 +693,17 @@ impl SeferAlloc {
     /// → CLAUDE.md's benchmark-hook rule 2), additionally gated on
     /// `large-cache-extended` (matching the delegated `HeapCore`/`AllocCore`
     /// methods' own gate — the sidecar does not exist otherwise).
+    ///
+    /// H2 (task #572): additionally gated `internals` — a hard transitive
+    /// compile dependency, since this delegates to
+    /// `HeapCore::dbg_large_cache_extension_materialised`, moved behind
+    /// `internals` (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-decommit",
         feature = "bench-internals",
-        feature = "large-cache-extended"
+        feature = "large-cache-extended",
+        feature = "internals"
     ))]
     #[must_use]
     pub fn dbg_current_large_cache_extension_materialised(&self) -> bool {
@@ -729,8 +735,17 @@ impl SeferAlloc {
     /// [`HeapCore::dbg_large_cache_total_slots`](crate::registry::HeapCore::dbg_large_cache_total_slots)'s
     /// own gate exactly (it reads `8` when the extension feature/sidecar is
     /// absent).
+    ///
+    /// H2 (task #572): additionally gated `internals` — a hard transitive
+    /// compile dependency, since this delegates to
+    /// `HeapCore::dbg_large_cache_total_slots`, moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_current_large_cache_total_slots(&self) -> usize {
         if let CurrentHeap::Own(heap) = self.current_heap() {
@@ -757,8 +772,17 @@ impl SeferAlloc {
     /// per-thread slot, not the fallback). `#[doc(hidden)]` — not part of the
     /// public API. `bench-internals`-gated (no production caller →
     /// CLAUDE.md's benchmark-hook rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — a hard transitive
+    /// compile dependency, since this delegates to
+    /// `HeapCore::dbg_large_cache_budget`, moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_current_large_cache_budget(&self) -> Option<usize> {
         if let CurrentHeap::Own(heap) = self.current_heap() {
@@ -788,8 +812,17 @@ impl SeferAlloc {
     /// total immediately before the timed region is trusted. `#[doc(hidden)]`
     /// — not part of the public API. `bench-internals`-gated (no production
     /// caller → CLAUDE.md's benchmark-hook rule 2).
+    ///
+    /// H2 (task #572): additionally gated `internals` — a hard transitive
+    /// compile dependency, since this delegates to
+    /// `HeapCore::dbg_large_cache_used`, moved behind `internals`
+    /// (`alloc_core_large_cache.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_current_large_cache_used_bytes(&self) -> usize {
         if let CurrentHeap::Own(heap) = self.current_heap() {

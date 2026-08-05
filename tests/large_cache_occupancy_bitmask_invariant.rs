@@ -21,7 +21,11 @@
 //! that drives deposit, cache-hit reuse, and FIFO eviction, so a lockstep
 //! bug in either site would show up as a mismatch here.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::AllocCore;
