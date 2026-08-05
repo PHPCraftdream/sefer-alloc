@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **[process, P0] R34-2 (task #521) — indexed every finding from both reviews into `docs/perf/OPEN_ITEMS.md` and `docs/CORRECTNESS_OPEN_ITEMS.md` per CLAUDE.md's own "round start: check both open-items indexes" convention, before any of the round's 24 work tasks began.** A follow-up self-correction (`00a1c59`) found the task's own crush run had committed the two review-report files themselves out of scope, violating this project's established convention that readonly review reports stay uncommitted local artifacts — untracked with `git rm --cached` (content preserved on disk), the same convention this round's own closing task (R34-27) re-applies to the reports it excludes from "commit all markdown." Commits `b45b824` (indexing) + `00a1c59` (self-correction).
 - **[process, P0] R34-3 (task #522) — drew a real public-API boundary, gating `alloc_core`/`global`/`registry`'s module PATHS (not the crate-root re-exports) behind a new opt-in `internals` Cargo feature.** The release audit found this crate's public surface silently included every internal module even without any opt-in feature — a real semver-boundary gap, since `production` never auto-enables `internals`. Verified externally in a standalone test crate: `E0603 module 'alloc_core' is private` without the feature, successful compilation with it. All tests/benches/examples reaching internal modules directly now require `--features "... internals"` in addition to whatever else they needed — a mechanical, 107-file `tests/*.rs` cfg-gate update plus CI/check-matrix/release-workflow sync. Build-gating/visibility reorganization only; no `src/` runtime behavior changed. Commits `27879af`+`b47cc6a`+`0762772` (the module/test cfg-gate + CI sync — the actual substance of the task), plus untagged follow-up `f9ae91f` (a stale test-file-count doc fix after the gate landed).
+
+### BREAKING CHANGE — `AllocCore`'s `dbg_*` diagnostic surface narrowed behind `internals`
+
+R34-3 (task #522) gated the `alloc_core`/`global`/`registry` module PATHS
+behind the new opt-in `internals` Cargo feature, but `AllocCore` itself is
+re-exported at the crate root unconditionally (gated only on `alloc-core`)
+— module-path privacy does not hide a type's own already-`pub` inherent
+methods when that type is reachable another way. Sol-F1 (task #563) and
+its follow-up H2 (task #572) closed that gap directly: every `AllocCore::
+dbg_*` diagnostic/test-only hook (~125 methods across `src/alloc_core/*.rs`
+— carve/reclaim internals, small-pool/decommit accounting, large-cache
+budget/decay/slot introspection, NUMA-node caching, segment-directory
+bits, and more) is now gated `#[cfg(feature = "internals")]` directly on
+the method, in addition to whatever module-path gating already applied.
+
+**Why.** These are `#[doc(hidden)]`, `TEST-ONLY`/`MEASUREMENT-ONLY` hooks,
+never intended as stable public API — several derive allocator metadata
+from a caller-supplied raw pointer with a prose-only safety contract (the
+exact class of gap CLAUDE.md's benchmark-hook rule, R25-1, already
+requires confined behind a feature gate). Before this fix, every one of
+them was reachable from a plain `--features production` build with zero
+opt-in, despite `#[doc(hidden)]` hiding them from rustdoc — `#[doc(hidden)]`
+alone was never a real semver boundary (see R34-3's own rationale above,
+one level up the type hierarchy).
+
+**What changed:** ~125 `AllocCore::dbg_*` inherent methods across 9 files
+now require `internals` to compile-reach, verified by an exhaustive
+structural check (`scripts/verify-alloc-core-dbg-internals-exhaustive.mjs`,
+wired into `npm run check`) that enumerates every such method and fails
+the build if a new one is added ungated. Four methods are deliberately
+exempt (`dbg_foreign_or_unroutable_frees`, `dbg_segments_reserved_total`,
+`dbg_segments_released_total`, `dbg_decommit_count`) because they back
+`SeferAlloc::stats()`'s public, always-on `AllocStats` return value — a
+real production caller, not test-only despite the `dbg_` name; these stay
+reachable under plain `production` with no `internals` needed. Transitive
+`HeapCore`/`SeferAlloc`-level delegation wrappers that call into the
+now-gated methods were updated to require `internals` too (45 call sites
+total across `src/registry/heap_core_diag.rs`, `src/registry/heap_core.rs`,
+and `src/global/sefer_alloc.rs`, combined across Sol-F1 and H2).
+
+**Migration.** No supported, documented API is affected — `SeferAlloc`,
+`AllocStats`, `Profile`, `LargeCacheConfig`, `LargeCacheMode`,
+`LargeCachePolicy`, `SmallPoolPolicy`, and every other type a downstream
+user is meant to name are unchanged and still reachable under plain
+`production`. Code that was calling `AllocCore::dbg_*` directly (an
+unsupported use of a `#[doc(hidden)]` surface — the crate's own docs never
+listed these as public API) needs `--features internals` added to compile
+against the current crate version; there is no supported use case this
+narrowing removes.
 - **[security] R34-4 (task #523) — closed RUSTSEC-2026-0204 by bumping `crossbeam-epoch` 0.9.18 → 0.9.20 (explicit user-authorized dependency bump, 2026-08-04 session), and removed the advisory's now-stale `deny.toml` ignore entry.** RUSTSEC-2026-0204: `crossbeam-epoch`'s pre-0.9.20 `fmt::Display` impl dereferenced a raw pointer that could be a `Shared::null()`/`Atomic::null()` sentinel (fixed upstream in 0.9.20). The advisory reached this workspace via two paths (`cargo tree -i crossbeam-epoch`, verified when the ignore was first added in `e1ff1e9`): a dev-only chain (`criterion → rayon → rayon-core → crossbeam-deque → crossbeam-epoch`, bench-only) AND a direct optional dependency via `Cargo.toml`'s `experimental` feature (`dep:crossbeam-epoch`, line 117, backing `src/concurrent/hand.rs`'s epoch-reclaimed `Atomic<T>`/`Shared`/`Guard` slot) — the latter is opt-in-only and NOT part of `production`'s default bundle (line 399 lists no `experimental`), so no shipping `production` build ever linked the affected crate. Re-verified this task that this crate's own code still does not trigger the vulnerable path (grepped `src/` for any `fmt::Display`/`format!`/`{}`-style formatting of a `crossbeam_epoch::Shared`/`Atomic` value — none), so the prior `e1ff1e9` ignore was sound for actual usage; the bump closes the advisory properly rather than leaving a perpetual suppression. `cargo update -p crossbeam-epoch --precise 0.9.20` (Cargo.lock: 0.9.18 → 0.9.20, checksum updated); `deny.toml`'s `RUSTSEC-2026-0204` ignore entry replaced with a short comment recording the bump and its task of origin. Verification: `cargo deny check advisories` prints "advisories ok" (RUSTSEC-2026-0204 no longer listed); `cargo build --features experimental` green; `cargo test --features production --no-fail-fast` green. No `src/` change, no `production` feature-composition change, no runtime behavior change — the bump is a dependency-version decision per project convention, authorized explicitly in the 2026-08-04 session (the standing CLAUDE.md prohibition on version bumps without an explicit request is satisfied by that authorization).
 - **[verification, P0] R34-5 (task #524) — added the largest missing miri coverage hole: concurrent multi-producer SMALL-block `RemoteFreeRing` push/drain.** Every existing miri regression test drove at most one producer at a time; this adds a genuinely concurrent multi-thread push/drain scenario under strict-provenance checking. Zero-trust review of this task's own delivery caught a real silent-regression bug it did NOT introduce but exposed: `scripts/miri.mjs` and `scripts/tsan.mjs` (local convenience wrappers, NOT the CI workflow definitions, which were already correct) had never been updated when R34-3's `internals` feature landed, so several `--test` binaries silently compiled with their whole module `#[cfg]`'d out and reported "0 tests, PASS" since R34-3 — the exact "pass by absence" class this project has fought before. Fixed with two dedicated follow-up commits. Commits `fd54ddc` (miri test) + `b47a261` (miri.mjs fix) + `91ff1dd` (tsan.mjs fix).
 - **[correctness fix, P0] R34-6 (task #525) — promoted `RemoteFreeRing`'s `cached_head` shadow from `Relaxed` to `Acquire`/`Release` in `full_check`, closing R32-11's F-1 ordering-proof gap.** The shadow-head optimization (R32-11) used `Relaxed` orderings for its fast-path check; the audit found this left the "stale-shadow can only ever be more conservative" soundness argument resting on value-domain reasoning alone, without the happens-before edge the pre-shadow design's `Acquire` load supplied. Promoting both accesses to `Acquire`/`Release` restores that edge; on x86-TSO this is assembly-identical (no measurable cost), independently confirmed via the full test suite and all 9 loom tests. A separate rustfmt-drift cleanup (44 hunks across 42 test files, left uncaught since R34-3's mechanical cfg-gate edit) was caught during this task's own `cargo fmt --check` verification step and fixed in the same pass — the exact drift CLAUDE.md's "before every push" rule exists to catch. Commits `a9edc87` (ordering fix) + `7aeee2d` (rustfmt drift).
