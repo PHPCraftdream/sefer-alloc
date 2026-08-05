@@ -240,19 +240,66 @@ if (violations.length > 0) {
 // --tests --features production`), including 2 newly broken by H2's own
 // `alloc_core_small_pool.rs` gating. Fixed in the same commit that added
 // this check — see that commit's own message for the file list.
+//
+// gatedMethodNames intentionally excludes ALLOWLISTed methods (finding F2 of
+// `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`): an
+// allowlisted method is, by definition, a stable stats()-backed accessor
+// callable WITHOUT `internals` — a test file calling ONLY allowlisted
+// methods must NOT be flagged as a violation requiring `internals`.
 const gatedMethodNames = new Set();
 for (const file of files) {
   for (const f of scanFile(file)) {
-    if (f.gated || ALLOWLIST.has(`${f.file}::${f.method}`)) gatedMethodNames.add(f.method);
+    if (f.gated) gatedMethodNames.add(f.method);
   }
+}
+
+/** Extract every crate-level `#![cfg(...)]` attribute's inner text (spanning
+ * multiple lines if the attribute itself does), recognising ONLY lines that,
+ * after trimming, literally start with `#![cfg(` — never text inside a `//`,
+ * `///`, or `//!` comment merely MENTIONING the attribute. Fixes finding F1
+ * of `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`: the
+ * previous version matched `/#!\[cfg\(([\s\S]*?)\)\]/` against the whole raw
+ * file text, so a doc comment like `//! ... #![cfg(all(..., feature =
+ * "internals"))] ...` (accidentally introduced by this file's own mechanical
+ * edit, commit `b1a9b7b`) produced a false PASS while the REAL attribute
+ * below it never gained `internals` — a confirmed, reproducible E0599 under
+ * `cargo check --features "production medium-classes"` on
+ * `tests/medium_classes_correctness.rs` /
+ * `tests/medium_classes_wide_correctness.rs`. Paren-balance tracking (not a
+ * single-line regex) is required because a real attribute can itself span
+ * multiple lines, as both of those two files' fixed `#![cfg(all(...))]` now
+ * do. */
+function extractCrateLevelCfgBlocks(text) {
+  const lines = text.split('\n');
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].trim().startsWith('#![cfg(')) {
+      let depth = 0;
+      let buf = '';
+      let j = i;
+      for (; j < lines.length; j++) {
+        buf += `${lines[j]}\n`;
+        for (const ch of lines[j]) {
+          if (ch === '(') depth++;
+          else if (ch === ')') depth--;
+        }
+        if (depth === 0) break;
+      }
+      blocks.push(buf);
+      i = j + 1;
+    } else {
+      i++;
+    }
+  }
+  return blocks;
 }
 
 const testFiles = readdirSync(TESTS_DIR).filter((f) => f.endsWith('.rs'));
 const testViolations = [];
 for (const f of testFiles) {
   const text = readFileSync(join(TESTS_DIR, f), 'utf8');
-  const cfgMatch = text.match(/#!\[cfg\(([\s\S]*?)\)\]/);
-  const hasInternals = cfgMatch && cfgMatch[1].includes('feature = "internals"');
+  const hasInternals = extractCrateLevelCfgBlocks(text).some((b) => b.includes('feature = "internals"'));
   if (hasInternals) continue;
 
   const calledGated = new Set();

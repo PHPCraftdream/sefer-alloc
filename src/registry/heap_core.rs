@@ -552,17 +552,27 @@ pub struct HeapCore {
 // NOT covered by the exclusion list, so two live `ci.yml` commands were
 // silently red. Enumerating "which features are experimental" by name is
 // inherently fragile — the fix missed exactly one shipping feature and broke
-// CI. Fixed structurally instead: raised the budget to cover the TRUE global
-// maximum (`--all-features`, the union of every feature this crate has,
-// 8840 B, confirmed the largest of every composition tried: plain
-// `production`=7576 B, `production medium-classes`=8408 B, `production
-// medium-classes numa-aware`=8416 B, `production medium-classes-wide
-// numa-aware`=8832 B, `--all-features`=8840 B) plus real headroom, and
-// REMOVED the exclusion `#[cfg]` entirely — the assert below is now
-// unconditional, so no future feature (shipping or experimental) can ever
-// silently evade it again. The runtime test in
-// `tests/r34_18_heap_core_stack_pressure_pin.rs` mirrors this: its own
-// upper-bound assertion is likewise unconditional now.
+// CI. Fixed structurally instead: raised the budget to cover the measured
+// maximum of every composition this crate can currently build
+// (`--all-features`, the union of every feature this crate has, 8840 B,
+// confirmed the largest of every composition tried: plain `production`=7576
+// B, `production medium-classes`=8408 B, `production medium-classes
+// numa-aware`=8416 B, `production medium-classes-wide numa-aware`=8832 B,
+// `--all-features`=8840 B) plus real headroom, and REMOVED the exclusion
+// `#[cfg]` entirely — the assert below is now unconditional. Precision note
+// (F6 of `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`):
+// "`--all-features` is the largest possible `HeapCore`" holds for the
+// CURRENT `HeapCore` field layout, whose per-feature fields are all added
+// via purely ADDITIVE `#[cfg(feature = "...")]` (never `cfg(not(...))`,
+// never a mutually-exclusive representation) — see the field list above —
+// measured on the current target/toolchain; it is not a standing theorem
+// about every possible future field layout, target, or toolchain. The
+// UNCONDITIONAL assert below is what actually enforces the budget across
+// ANY future change: if a future field addition (additive or not) or a
+// different target/ABI ever pushes any composition past 9216 B, the build
+// fails honestly rather than silently exceeding an un-checked assumption.
+// The runtime test in `tests/r34_18_heap_core_stack_pressure_pin.rs` mirrors
+// this: its own upper-bound assertion is likewise unconditional now.
 //
 // 9216 → 8840 (the measured `--all-features` maximum) leaves 376 B headroom
 // (~4%): enough for minor field growth without immediately retripping the

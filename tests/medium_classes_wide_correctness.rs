@@ -5,9 +5,10 @@
 //! prototype (`§3` of the task — verify the review's rough 3x/2x/2x
 //! objects-per-segment guess against the REAL per-segment metadata overhead).
 //!
-//! Whole file is a no-op without `medium-classes-wide` (see the `#![cfg(all(..., feature = "internals"))]`
-//! below) — run with:
-//!   cargo test --features "production medium-classes-wide" --test medium_classes_wide_correctness
+//! Whole file is a no-op without `medium-classes-wide` (see the `#![cfg]`
+//! below) and calls `internals`-gated `AllocCore::dbg_*` diagnostics, so
+//! also requires `internals` — run with:
+//!   cargo test --features "production medium-classes-wide internals" --test medium_classes_wide_correctness
 //!
 //! Sibling file `tests/medium_classes_correctness.rs` covers the six-class
 //! `medium-classes` substrate this prototype layers on top of; this file does
@@ -16,7 +17,11 @@
 //! asserts the 15 entries that PRECEDE the wide append are byte-identical to
 //! the plain-`medium-classes` list).
 
-#![cfg(all(feature = "alloc-core", feature = "medium-classes-wide"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "medium-classes-wide",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 

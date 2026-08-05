@@ -13,45 +13,50 @@
 //   node scripts/check-all.mjs
 //   npm run check
 //
-// What it runs, in order (fails fast — stops at the first red step):
+// What it runs, in order (fails fast — stops at the first red step). Step
+// numbers below are kept in sync with the actual runtime step list by hand;
+// a numbering drift here (a doubled "7" between the last clippy row and the
+// first `cargo test` row) was finding F5 of
+// `docs/reviews/2026-08-05-hs-new-waves-release-readonly-review.md`, fixed
+// in the same pass that made the runtime banner derive its row count from
+// `clippyRows.length` (task #587/F9, commit `650b818`):
 //   0. node scripts/argv-roundtrip-test.mjs   (shell:false argv regression; R27-9)
 //   1. cargo fmt --all -- --check           (rustfmt gate)
 //   2-7. the 6 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
 //      (R30-5: GENERATED, not hand-written — default / experimental /
-//      --all-features / hardened medium-classes / production / production
-//      internals; the last two
-//      are NEW as of R30-5, see that manifest's header for why)
-//   7. cargo test --features production                          (default prod suite)
-//   8-10. cargo test x3 more feature combos (alloc-stats+bench-internals,
+//      --all-features / hardened medium-classes internals / production /
+//      production internals)
+//   8. cargo test --features production                          (default prod suite)
+//   9-11. cargo test x3 more feature combos (alloc-stats+bench-internals,
 //      pinning, --all-features)
-//   11-12. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   12-13. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   12a. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   14. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   12b. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   15. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
-//      structural complement to 12a — 12a only proves ONE method is gated;
+//      structural complement to 14 — 14 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   16. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   17. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   14. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   18. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   15. npm run iai                                                (deterministic judge,
+//   19. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)

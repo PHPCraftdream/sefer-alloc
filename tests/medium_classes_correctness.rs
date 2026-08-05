@@ -4,11 +4,16 @@
 //! item by item, plus the "table vs brute force" cross-check the task's
 //! test-requirements section calls for.
 //!
-//! Whole file is a no-op without `medium-classes` (see the `#![cfg(all(..., feature = "internals"))]`
-//! below) — run with:
-//!   cargo test --features "production medium-classes" --test medium_classes_correctness
+//! Whole file is a no-op without `medium-classes` (see the `#![cfg]` below)
+//! and calls `internals`-gated `AllocCore::dbg_*` diagnostics, so also
+//! requires `internals` — run with:
+//!   cargo test --features "production medium-classes internals" --test medium_classes_correctness
 
-#![cfg(all(feature = "alloc-core", feature = "medium-classes"))]
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "medium-classes",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 
