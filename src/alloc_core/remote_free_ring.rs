@@ -226,6 +226,18 @@
 //! `RemoteFreeRing::cached_head` section). No code change is warranted for
 //! a hazard this remote.
 //!
+//! **In one sentence, for anyone citing this module's proof status:** the
+//! F10 shadow-head design's soundness rests on the Rust memory model
+//! (§"F10 ordering supplement" above, closed by R34-6's Acquire/Release
+//! promotion) **PLUS** this one bounded-staleness scheduler/time
+//! assumption — it is NOT a proof that holds under the abstract memory
+//! model alone, and any claim that this design is "formally verified"
+//! without naming this residual assumption is incomplete. (Round-32/33
+//! independent review, finding F7, and the Sol release readonly review,
+//! finding F7, both raised exactly this precision point — see
+//! `docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md` §11 for the closure
+//! trail across both reviews.)
+//!
 //! **Worst case cost of a stale shadow:** at most ONE extra real
 //! `head.load(Acquire)` per push that the shadow's fast path declines to
 //! shortcut — never a correctness cost, only a fallback to the exact

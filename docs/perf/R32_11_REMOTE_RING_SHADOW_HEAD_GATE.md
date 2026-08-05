@@ -565,3 +565,65 @@ out of sync with the code again.
 `drain`, and all non-doc-hidden functions are unmodified. This is purely
 a doc/comment fix plus one structural-drift test, per the review's own
 explicit finding that the shipped code is sound.
+
+## 11. CORRECTED 2026-08-05 — "formally verified" needs its residual scheduler/time assumption named alongside it (round32-review F7, restated as Sol release readonly review F7)
+
+This section is appended, not a rewrite — §0's and §1's "formally
+verified" language (lines 22, 38 above) stays exactly as originally
+published (per this project's append-only correction convention; see §9
+and §10 above for the same convention applied to this same report). The
+round-32 independent readonly review
+(`docs/reviews/2026-08-03-round32-readonly-review.md` §3, finding F7
+[P3]) found that §1's "Wrap correctness" paragraph proved
+`cached_head <= head` only modulo `2^32`, and only while the shadow's
+staleness lag stays below `2^32` real `head` advances — a precondition
+the report's "formally verified" framing did not state. A second,
+independent review
+(`docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md`,
+`RemoteFreeRing::cached_head` section) reconfirmed the same gap after
+R34-6 promoted `cached_head`'s ordering from `Relaxed` to
+`Acquire`/`Release`: closing the *ordering* proof gap did not by itself
+close this separate *staleness-bound* assumption. A third, independent
+release-readiness review
+(`docs/reviews/2026-08-05-sol-release-readonly-review.md`, finding F7
+[P3]) raised the identical point once more against the shipped module
+doc, explicitly asking that the assumption not be left implicit and that
+no site claim "formally verified" without disclosing it.
+
+**Fix (this task, Sol-F7, task #569).** `src/alloc_core/remote_free_ring.rs`'s
+module doc already carried the staleness-bound paragraph (added in an
+earlier pass responding to the second review above, "Wrap argument
+precondition — the staleness bound (ASSUMPTION, not a theorem"), but the
+compound nature of the claim — memory-model proof **plus** a
+scheduler/time assumption, not memory-model proof alone — was stated only
+implicitly (as "not a theorem of the abstract memory model"). Added one
+explicit summary sentence directly after that paragraph naming both
+halves of the compound claim in the reviewer's own suggested framing:
+soundness rests on the Rust memory model (closed by R34-6's
+Acquire/Release promotion) **plus** the bounded-staleness scheduler/time
+assumption — never the memory model alone — and states plainly that any
+"formally verified" claim omitting this residual is incomplete. The two
+`docs/perf/OPEN_ITEMS.md` sites that used the bare phrase "formally
+verified" for this same F10 item (the long-form entry and its summary
+table row) were also given the same caveat inline, so a reader scanning
+either the module doc, the OPEN_ITEMS index, or this gate report sees the
+identical disclosed assumption.
+
+**Practical weight (unchanged from both prior reviews).** This requires a
+producer to be descheduled between the shadow refresh's `Acquire` load of
+`head` and its immediately-following `Release` store of that same value —
+two adjacent instructions — while ~4.29 × 10⁹ real drain advances
+complete on that one segment's ring. Judged not practically reachable,
+consistent with how this module treats its other genuinely-reachable-but-
+astronomically-rare wrap hazard (the power-of-two `RING_CAP` compile-time
+pin). The worst-case effect of the assumption failing is a lost
+remote-free entry / bounded leak from premature slot reuse, not a proven
+UAF or double-free — the same class of "sound but leaky" outcome the
+module's existing overflow policy already documents and accepts.
+
+**Scope.** No shipped runtime behavior changed and no new code was added
+— this is purely a documentation-precision correction (`docs:` prefix,
+not `fix(perf)`): the wrap/preemption assumption itself is pre-existing
+(since R32-11, unchanged by R34-6's ordering fix), the underlying
+soundness argument is unchanged, and no test, benchmark, or production
+code path was touched.
