@@ -532,68 +532,53 @@ pub struct HeapCore {
 // process-global fallback constructs it the same way inside a
 // `MaybeUninit<HeapCore>` (`global/fallback.rs`). Rust does NOT guarantee
 // return-value/move elision: on a debug build, or any toolchain/backend that
-// materialises the temporary, `HeapCore::new(..)` can place one ~7 KiB copy on
-// that first-allocation frame — frequently very early in a thread's life, or
-// inside another thread-local's initialiser. Threads with small stacks
+// materialises the temporary, `HeapCore::new(..)` can place one multi-KiB copy
+// on that first-allocation frame — frequently very early in a thread's life,
+// or inside another thread-local's initialiser. Threads with small stacks
 // (embedded-class 16–64 KiB, or a constrained thread pool) are a realistic
 // deployment, so a single such temporary must not approach the stack limit.
 //
-// **Measured size** (compile-error array-length probe under `--features
-// production`, the same technique used for the `SegmentHeader == 144` pin in
-// `alloc_core/segment_header.rs`): `size_of::<HeapCore>() == 7576`. Breakdown:
-// `core: AllocCore` = 864 B, `tcache: Tcache` = 6664 B (the dominant field —
-// the per-class magazine cache), plus `id`/`thread_free`/`overflow`/
-// `tcache_hits`/`last_stamped_segment`/`overflow_tail_cache` ≈ 48 B.
+// **Budget = 9216 (9 KiB), unconditional across EVERY feature composition.**
 //
-// **Budget = 8192 (8 KiB).** 7576 → 8192 leaves ~8 % headroom (616 B): minor
-// field additions (a new `usize`/pointer/handle) will not trip the build, but
-// any material bloat — a new array/buffer/sub-struct, or `Tcache` growing
-// another magazine class — fails the build here and forces a deliberate
-// decision (bump the budget with a comment recording the new stack-pressure
-// implication). 8 KiB is half of a 16 KiB embedded stack and is the natural
-// "one HeapCore temporary is tolerable, two back-to-back are not" boundary.
+// Correction (task #572/H2's own follow-up wave — an independent readonly
+// review, `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`
+// finding F1, caught this): the ORIGINAL R34-18/#537 pin used a fixed 8192 B
+// budget plus a `#[cfg(not(any(experimental, pinning, bench-internals,
+// batch-api)))]` exclusion (added by #571/H1) to dodge `--all-features`'s
+// 8840 B size. That exclusion's premise — "8192 covers every SHIPPING
+// composition" — was false: `medium-classes` is a genuine shipping opt-in
+// (four dedicated CI rows, not experimental/test-only) and reaches 8408 B
+// under plain `production medium-classes`, still over the 8192 budget and
+// NOT covered by the exclusion list, so two live `ci.yml` commands were
+// silently red. Enumerating "which features are experimental" by name is
+// inherently fragile — the fix missed exactly one shipping feature and broke
+// CI. Fixed structurally instead: raised the budget to cover the TRUE global
+// maximum (`--all-features`, the union of every feature this crate has,
+// 8840 B, confirmed the largest of every composition tried: plain
+// `production`=7576 B, `production medium-classes`=8408 B, `production
+// medium-classes numa-aware`=8416 B, `production medium-classes-wide
+// numa-aware`=8832 B, `--all-features`=8840 B) plus real headroom, and
+// REMOVED the exclusion `#[cfg]` entirely — the assert below is now
+// unconditional, so no future feature (shipping or experimental) can ever
+// silently evade it again. The runtime test in
+// `tests/r34_18_heap_core_stack_pressure_pin.rs` mirrors this: its own
+// upper-bound assertion is likewise unconditional now.
+//
+// 9216 → 8840 (the measured `--all-features` maximum) leaves 376 B headroom
+// (~4%): enough for minor field growth without immediately retripping the
+// build, tight enough that material bloat (a new array/sub-struct, or
+// `Tcache` growing another magazine class) still fails the build and forces
+// a deliberate budget-bump decision recording the new stack-pressure
+// implication. 9 KiB is still a bit over half of a 16 KiB embedded stack —
+// the "one HeapCore temporary is tolerable, two back-to-back are not"
+// boundary this pin exists to guard, now honestly measured against the
+// crate's real maximum size rather than an enumerated subset of it.
 //
 // This is the ONLY unbounded-growth stack-pressure surface in the tree (F-6
 // audit): there is no unbounded/data-dependent recursion, no recursive drop
 // glue, and no other stack buffer larger than `emptied_bases: [*mut u8; 64]`
-// (512 B, cold path) — so this single pin guards the entire category. It is an
-// unconditional `<=` bound (not an exact `==`): it must hold for EVERY feature
-// composition the assert below actually runs under (the struct has
-// `#[cfg]`-gated fields; among those, the maximum is `production` +
-// `internals` + `numa-aware` at 7592 B, every smaller composition strictly
-// below), so a plain `<=` is sound across all of them. `--all-features`
-// (which additionally pulls in `experimental`/`pinning`/`bench-internals`/
-// `batch-api`) reaches 8840 B and is excluded from the assert's own `#[cfg]`
-// below — see that cfg's own comment for why (task #571).
-// Compile-time layout pin: HeapCore must fit within the 8 KiB stack-pressure
-// budget under production (the maximum SHIPPING composition). This guard is
-// cfg-gated to NOT fire when experimental/test-only features are enabled,
-// since those are not part of any shipping configuration. The runtime test in
-// `tests/r34_18_heap_core_stack_pressure_pin.rs` mirrors this same exclusion
-// for its own upper-bound assertion (corrected in the same wave as task
-// #572/H2 — an earlier version of this comment claimed the runtime test
-// "still enforces the budget under ALL configurations", which was not
-// actually true under `--all-features`); its LOWER-bound assertion still
-// runs under every configuration, providing non-vacuous shrink-detection
-// coverage.
-//
-// R34-18 (task #537): budget set at 8192 based on production=7576 (616 B
-// headroom, ~8%). R34-24/fix #571: this assert is cfg-gated to skip
-// experimental/test-only features because `--all-features` includes them and
-// grows HeapCore beyond the production maximum (8840 B vs 7576 B), which is
-// legitimate — those features are not part of any shipping configuration.
-// Correction (found by `npm run check`'s own `--all-features` step, same
-// wave as task #572/H2): the runtime test's own upper-bound assertion now
-// carries this SAME exclusion — fix #571's original doc comment claimed the
-// runtime test "still enforces the budget under ALL configurations", which
-// was never actually true under `--all-features` specifically.
-#[cfg(not(any(
-    feature = "experimental",
-    feature = "pinning",
-    feature = "bench-internals",
-    feature = "batch-api",
-)))]
-const _: () = assert!(size_of::<HeapCore>() <= 8192);
+// (512 B, cold path) — so this single pin guards the entire category.
+const _: () = assert!(size_of::<HeapCore>() <= 9216);
 
 impl HeapCore {
     /// Construct a fresh heap value bound to slot `id`. Bootstraps the

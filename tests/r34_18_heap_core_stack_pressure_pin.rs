@@ -1,5 +1,6 @@
 //! Layout pin (R34-18/task #537, release-stabilization finding F-6 [low]):
-//! `size_of::<HeapCore>()` must stay within an 8 KiB stack-pressure budget.
+//! `size_of::<HeapCore>()` must stay within a 9 KiB stack-pressure budget,
+//! unconditionally across every feature composition.
 //!
 //! ## The risk this guards
 //!
@@ -10,17 +11,17 @@
 //! and the process-global fallback does the same inside a
 //! `MaybeUninit<HeapCore>` (`src/global/fallback.rs`). Rust does NOT guarantee
 //! return-value/move elision: on a debug build, or any toolchain/backend that
-//! materialises the temporary, that `HeapCore::new(..)` can place one ~7 KiB
-//! copy on a first-allocation frame — often very early in a thread's life.
-//! Threads with small stacks (embedded-class 16–64 KiB, or a constrained
-//! thread pool) are a realistic deployment, so a single such temporary must
-//! not approach the stack limit.
+//! materialises the temporary, that `HeapCore::new(..)` can place one
+//! multi-KiB copy on a first-allocation frame — often very early in a
+//! thread's life. Threads with small stacks (embedded-class 16–64 KiB, or a
+//! constrained thread pool) are a realistic deployment, so a single such
+//! temporary must not approach the stack limit.
 //!
 //! ## The two-layer guard
 //!
-//! 1. A **compile-time** `const _: () = assert!(size_of::<HeapCore>() <= 8192)`
+//! 1. A **compile-time** `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
 //!    in `src/registry/heap_core.rs` (right after the struct definition) — a
-//!    future field addition that grows `HeapCore` past 8 KiB fails the BUILD,
+//!    future field addition that grows `HeapCore` past 9 KiB fails the BUILD,
 //!    not a downstream deployment. This mirrors the established
 //!    `SegmentHeader` pin pattern (`src/alloc_core/segment_header.rs`).
 //! 2. This **runtime** `#[test]` — reads `size_of::<HeapCore>()` for the
@@ -29,32 +30,34 @@
 //!    suspicious shrink that would silently weaken the magazine/cache) is
 //!    caught here too, and it prints the measured size for the record.
 //!
-//! ## Measured baseline (as of R34-18)
+//! ## Measured sizes (as of this correction) and why the budget is 9216
 //!
-//! `size_of::<HeapCore>() == 7576` under `production` (the maximum feature
-//! composition; the struct has `#[cfg]`-gated fields, so smaller compositions
-//! are strictly below). Breakdown: `core: AllocCore` = 864 B, `tcache: Tcache`
-//! = 6664 B (the dominant per-class magazine cache), plus `id`/handles ≈ 48 B.
-//! Budget 8192 leaves ~8 % headroom (616 B): minor field additions don't trip
-//! it; material bloat (a new array/sub-struct, or `Tcache` growing another
-//! class) does, forcing a deliberate budget bump with a recorded stack-pressure
-//! note.
+//! **Correction (task #572/H2's own follow-up wave — an independent readonly
+//! review, `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`
+//! finding F1, caught this):** the ORIGINAL R34-18/#537 pin used a fixed
+//! 8192 B budget; fix #571/H1 added a `#[cfg(not(any(experimental, pinning,
+//! bench-internals, batch-api)))]` exclusion to dodge `--all-features`'s
+//! 8840 B size, on the premise "8192 covers every SHIPPING composition".
+//! That premise was false: `medium-classes` is a genuine shipping opt-in
+//! (four dedicated CI rows) reaching 8408 B under plain `production
+//! medium-classes` — over budget and NOT covered by the exclusion list, so
+//! two live `ci.yml` commands were silently red. Enumerating "which features
+//! are experimental" by name is inherently fragile; it missed one shipping
+//! feature and broke CI.
+//!
+//! Fixed structurally: raised the budget to cover the TRUE global maximum
+//! (`--all-features`, the union of every feature this crate has) plus real
+//! headroom, and made both the compile-time assert AND this runtime test's
+//! upper-bound assertion unconditional — no future feature, shipping or
+//! experimental, can silently evade either one again. Measured sizes across
+//! every composition tried: plain `production` = 7576 B, `production
+//! medium-classes` = 8408 B, `production medium-classes numa-aware` =
+//! 8416 B, `production medium-classes-wide numa-aware` = 8832 B,
+//! `--all-features` = 8840 B (the confirmed maximum). Budget 9216 leaves
+//! 376 B (~4%) headroom above that maximum.
 //!
 //! R34-24/fix #571: This test requires `internals` to reach `HeapCore`,
-//! which was gated behind that feature in R34-3/Sol-F1. The test exercises
-//! the production feature set (the maximum shipping configuration).
-//!
-//! **Correction (found by `npm run check`'s own `--all-features` step,
-//! same wave as task #572/H2):** fix #571's own doc comment claimed this
-//! runtime test "still enforces the budget under ALL configurations,
-//! providing non-vacuous coverage" — false under `--all-features`
-//! specifically, which additionally pulls in `experimental`/`pinning`/
-//! `bench-internals`/`batch-api` and genuinely grows `HeapCore` to 8840 B
-//! (`src/registry/heap_core.rs`'s own compile-time assert's comment
-//! documents this same number, and is ALREADY correctly excluded from
-//! firing under that combination). This test's upper-bound assertion below
-//! now carries the identical exclusion, mirroring the compile-time guard
-//! exactly rather than claiming broader coverage than it actually had.
+//! which was gated behind that feature in R34-3/Sol-F1.
 
 #![cfg(all(feature = "production", feature = "internals"))]
 
@@ -62,45 +65,35 @@ use core::mem::size_of;
 
 use sefer_alloc::registry::HeapCore;
 
-/// `HeapCore` must fit within the 8 KiB stack-pressure budget. This mirrors the
-/// compile-time `const _: () = assert!(size_of::<HeapCore>() <= 8192)` pin in
-/// `src/registry/heap_core.rs` at runtime, for the feature set actually under
-/// test. Non-vacuous: the measured size is positive and meaningfully close to
-/// the budget (within ~8 %), and a lower bound catches a suspicious shrink.
+/// `HeapCore` must fit within the 9 KiB stack-pressure budget. This mirrors
+/// the compile-time `const _: () = assert!(size_of::<HeapCore>() <= 9216)`
+/// pin in `src/registry/heap_core.rs` at runtime, for the feature set
+/// actually under test — both are unconditional across every composition.
+/// Non-vacuous: the measured size is positive and meaningfully close to the
+/// budget, and a lower bound catches a suspicious shrink.
 #[test]
 fn heap_core_size_within_stack_pressure_budget() {
     let size = size_of::<HeapCore>();
 
-    // Upper bound — the stack-pressure budget. Matches the compile-time pin's
-    // own exclusion (`src/registry/heap_core.rs`'s `const _: () = assert!(...)`
-    // right above `#[cfg(not(any(experimental, pinning, bench-internals,
-    // batch-api)))]`): under those non-shipping feature combinations
-    // (`--all-features` pulls in all four at once) `HeapCore` genuinely grows
-    // to 8840 B, legitimately above budget since none of the four are part of
-    // any shipping configuration. A HeapCore temporary is constructed by-value
-    // on a thread's first-allocation frame; 8 KiB is half of a 16 KiB embedded
-    // stack — the risk this pin guards, for the SHIPPING feature set.
-    #[cfg(not(any(
-        feature = "experimental",
-        feature = "pinning",
-        feature = "bench-internals",
-        feature = "batch-api",
-    )))]
+    // Upper bound — the stack-pressure budget. Unconditional: covers every
+    // feature composition, including `--all-features` (the confirmed global
+    // maximum, 8840 B). A HeapCore temporary is constructed by-value on a
+    // thread's first-allocation frame; 9 KiB is still just over half of a
+    // 16 KiB embedded stack — the risk this pin guards.
     assert!(
-        size <= 8192,
-        "HeapCore grew to {size} bytes — exceeds the 8 KiB (8192) stack-pressure \
-         budget (R34-18/F-6). A ~7 KiB-by-value construction on a small-stack \
-         thread's first-allocation frame is the stack-overflow risk this pin \
-         guards; bump the budget ONLY with a comment recording the new \
-         stack-pressure implication."
+        size <= 9216,
+        "HeapCore grew to {size} bytes — exceeds the 9 KiB (9216) stack-pressure \
+         budget (R34-18/F-6, corrected by the F1 fix in the wave-3 follow-up \
+         review). A multi-KiB-by-value construction on a small-stack thread's \
+         first-allocation frame is the stack-overflow risk this pin guards; \
+         bump the budget ONLY with a comment recording the new stack-pressure \
+         implication."
     );
 
     // Lower bound — non-vacuousness / suspicious-shrink guard. The measured
-    // maximum (production) is 7576; a configuration materially below 4 KiB
-    // would mean the magazine cache (`tcache`, 6664 B under production) or
-    // another core field silently disappeared. `production` is the canonical
-    // size; under a leaner feature set the struct is smaller, hence the floor
-    // sits well under the production baseline rather than at it.
+    // minimum (plain `production`) is 7576; a configuration materially below
+    // 4 KiB would mean the magazine cache (`tcache`, 6664 B under production)
+    // or another core field silently disappeared.
     assert!(
         size >= 4096,
         "HeapCore shrank to {size} bytes — below the 4 KiB floor. Under \
@@ -110,12 +103,9 @@ fn heap_core_size_within_stack_pressure_budget() {
          treating this as an improvement."
     );
 
-    // Record the measured size for the feature set under test. `headroom` can
-    // be negative under `--all-features` (8840 B, above the 8192 B budget but
-    // legitimately excluded from the upper-bound assert above) — signed
-    // arithmetic avoids the unconditional subtraction overflowing there.
+    // Record the measured size for the feature set under test.
     eprintln!(
-        "size_of::<HeapCore>() = {size} bytes (budget 8192, headroom {} B)",
-        8192_i64 - size as i64
+        "size_of::<HeapCore>() = {size} bytes (budget 9216, headroom {} B)",
+        9216_i64 - size as i64
     );
 }
