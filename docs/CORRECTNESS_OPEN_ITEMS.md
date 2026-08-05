@@ -1401,6 +1401,49 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       finding F6; `docs/reviews/2026-08-05-sol-remediation-readonly-review.md`
       finding H5.
 
+24. **[T, filed 2026-08-06, task #627/S4, `docs/reviews/2026-08-06-sprint-closing-readonly-review.md` finding S4] `README.md:515` claims all 11 workspace members are "a real crates.io crate someone can `cargo add` on its own" — at least 3 are not published.**
+
+    - **Status:** OPEN — not fixed. Documentation-only issue; no code
+      change needed, only a README correction or a publish action.
+    - **Current-number-or-verdict:** confirmed via crates.io API
+      (`docs/plans/2026-08-05-release-execution-map.md`'s own
+      [П]-verified table, independently re-confirmed by
+      `docs/reviews/2026-08-05-fh-release-readiness-verification-review.md`):
+      `racy-ptr-cell`, `size-classes`, and `tagged-index-stack` are NOT
+      published on crates.io. Four more (`ring-mpsc`, `globalalloc-model`,
+      `proc-memstat`, `proc-probe`) were never checked and have no tag
+      pattern or `workflow_dispatch` dropdown option in
+      `.github/workflows/release.yml` either (that file lists exactly 5
+      crates: `aligned-vmem`, `sefer-region`, `malloc-bench-rs`,
+      `numa-shim`, `sefer-alloc`). `README.md:545-555` displays crates.io
+      badges for all 11 regardless.
+    - **Why filed instead of fixed here:** the fix depends on the same
+      publish-DAG decision already deferred this sprint by explicit user
+      instruction (tasks K3/K4/K9/L2/L3/L5, "path dependencies stay local
+      for now, publish before release") — publishing the missing crates
+      resolves it one way, rewriting the README claim resolves it the
+      other way, and which one happens is a release-planning decision, not
+      a code fix to make preemptively.
+    - **Why this needed its own item:** the finding was already recorded in
+      `docs/plans/2026-08-05-release-execution-map.md` (§"Не мои решения")
+      and `docs/checkpoints/2026-08-06-0015.md`, but NEITHER file is
+      consulted by CLAUDE.md's own "Round start: check BOTH open-items
+      indexes" convention — only `docs/CORRECTNESS_OPEN_ITEMS.md` and
+      `docs/perf/OPEN_ITEMS.md` are. Without this entry the finding would
+      have been invisible to a future round despite being fully
+      documented elsewhere — exactly the failure mode that convention
+      exists to prevent (R18-8/R22-3 precedent, cited in this file's own
+      "Round start" rule).
+    - **Next trigger:** resolve as part of the deferred publish-DAG pass
+      (K3/#598) — either publish the missing crates before 0.3.0 ships, or
+      rewrite `README.md:515` to something like "eleven
+      independently-publishable building blocks; N of them are published
+      on crates.io today" and remove badges for unpublished ones.
+    - **Evidence:** `README.md:515`, `:545-555`;
+      `docs/plans/2026-08-05-release-execution-map.md` §"Ход B" table and
+      §"Не мои решения" item 4;
+      `docs/reviews/2026-08-06-sprint-closing-readonly-review.md` finding S4.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
