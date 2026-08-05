@@ -23,11 +23,13 @@
 //   7. cargo test --features production                          (default prod suite)
 //   8-10. cargo test x3 more feature combos (alloc-stats+bench-internals,
 //      pinning, --all-features)
-//   11. the 1 remaining (non-clippy) PER_PR_ROWS row — `cargo check --bench
+//   11-12. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
-//      independent standalone check of its own)
+//      independent standalone check of its own), plus the internals-boundary
+//      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
+//      `internals` so the guard is non-vacuous)
 //   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
 //   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
@@ -132,10 +134,12 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--all-features'],
   },
-  // R30-5: the remaining (non-clippy) PER_PR_ROWS row — currently just
+  // R30-5: the remaining (non-clippy) PER_PR_ROWS rows — currently
   // `check-perf-gate-iai-default` (`cargo check --bench perf_gate_iai
   // --features "production bench-internals"`, scripts/iai.mjs's own
-  // DEFAULT_FEATURES and the exact command R29-16's 4x E0433 broke).
+  // DEFAULT_FEATURES and the exact command R29-16's 4x E0433 broke), plus
+  // `test-internals-boundary-no-internals` (R34 review F1: the `internals`
+  // boundary guard must run WITHOUT `internals` to be non-vacuous).
   ...otherRows,
   {
     // R30-5: generated "feature ABSENT" compile-check enumeration for every
@@ -180,7 +184,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

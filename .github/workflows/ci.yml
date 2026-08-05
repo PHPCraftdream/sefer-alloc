@@ -163,11 +163,14 @@ jobs:
     # coverage (R31-11/task #475: that hand-transcription is checked instead
     # by `tests/ci_clippy_matrix_consistency.rs`, not by this job — see the
     # `clippy` job's own header comment). This job is therefore currently
-    # just the ONE row that has no other per-PR CI home: `cargo check --bench
-    # perf_gate_iai --features "production bench-internals"`
-    # (scripts/iai.mjs's own DEFAULT_FEATURES, and `npm run check`'s LAST
-    # step — was never its own CI row before this task; its absence is
-    # exactly how R29-16's 4x E0433 shipped undetected for a full round). If
+    # the rows that have no other per-PR CI home: `cargo check --bench
+    # perf_gate_iai --features "production bench-internals"` (R30-5;
+    # scripts/iai.mjs's own DEFAULT_FEATURES and `npm run check`'s LAST step
+    # — was never its own CI row before this task; its absence is exactly
+    # how R29-16's 4x E0433 shipped undetected for a full round), and
+    # `cargo test --test r34_3_internals_boundary_api --features "alloc-core
+    # alloc-global alloc-decommit"` (R34 review F1: the `internals` boundary
+    # guard must run WITHOUT `internals` to be non-vacuous). If
     # a future round adds a non-clippy `PER_PR_ROWS` entry, it lands here
     # automatically with no ci.yml edit needed — that is the whole point of
     # the `--kind check --kind test` filter (see `scripts/run-check-matrix.mjs

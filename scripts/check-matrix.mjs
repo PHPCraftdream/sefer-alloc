@@ -153,6 +153,21 @@ export const PER_PR_ROWS = [
       '`internals` added (R34-3/task #522): `perf_gate_iai.rs` reaches ' +
       'sefer_alloc::registry::bootstrap / HeapCore / HeapRegistry directly.',
   },
+  {
+    id: 'test-internals-boundary-no-internals',
+    kind: 'test',
+    features: 'alloc-core alloc-global alloc-decommit',
+    target: { flag: '--test', name: 'r34_3_internals_boundary_api' },
+    note:
+      'R34 review finding F1 (P2, docs/reviews/2026-08-05-round34-readonly-review.md §5): ' +
+      '`tests/r34_3_internals_boundary_api.rs` exists to prove the stable ' +
+      'crate-root re-exports resolve WITHOUT `internals`, but every other ' +
+      'row that satisfies its `#![cfg(all(alloc-core, alloc-global, ' +
+      'alloc-decommit))]` also turns `internals` on (where every name ' +
+      'resolves regardless). This row runs the file under PLAIN `alloc-core ' +
+      'alloc-global alloc-decommit` (NO `internals`) — the exact ' +
+      'configuration the guard exists to test.',
+  },
 ];
 
 /** Sentinel used in `features` to mean "--all-features" rather than a literal
