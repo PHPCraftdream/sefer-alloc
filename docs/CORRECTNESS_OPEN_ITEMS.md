@@ -2374,3 +2374,38 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       changed file.
     - **Files changed:** `tests/r31_10_trim_current_thread_api.rs`
       (serialization only); this index entry.
+
+27. **Flaky test — `oom_injection_flag_is_clean_after_test`**
+    (`tests/regression_free_path_chunk_oom_graceful.rs`) — **RESOLVED**
+    by the first full remote CI run over the pushed backlog (2026-08-05,
+    CI run `31045983765` on landing SHA `42d4206`, task #621, found during
+    the map-verification pass of this session's release-readiness work).
+
+    - **Root cause, confirmed:** `DBG_INJECT_CHUNK_OOM` is a process-wide
+      `internals`-gated `AtomicBool`. This file has two `#[test]` fns whose
+      correctness relies on sequential execution — the module doc says so
+      explicitly (`oom_injection_flag_is_clean_after_test` is designed to
+      run AFTER `chunk_oom_on_free_path_returns_gracefully_not_abort`,
+      verifying its `OomInjectionGuard` cleared the flag on drop) — but
+      `cargo test` runs the two in parallel by default with nothing
+      serializing them. A race window between
+      `dbg_set_inject_chunk_oom(true)` in the main test and the guard's
+      `Drop` clearing it back to `false` let the second test observe the
+      flag stuck `true`. Same failure class as items 1/25/26 above
+      (process-wide diagnostic flag/counter, multiple tests in one file,
+      no serialization), a different flag, third recurrence this session.
+    - **Fix:** added the SAME established `static TEST_LOCK: Mutex<()>` +
+      per-test `let _lock_guard = TEST_LOCK.lock().unwrap();` pattern
+      items 1/25/26 already used (renamed to `_lock_guard` in this file
+      specifically to avoid shadowing the pre-existing `let _guard =
+      OomInjectionGuard;` binding in the main test — both guards are held
+      simultaneously for correctness, shadowing would only have been
+      confusing, not incorrect, since Rust drops shadowed bindings at
+      scope end in reverse declaration order). No assertion logic changed.
+    - **Verification:** 5 full `cargo test --features "production
+      alloc-stats bench-internals internals" --test
+      regression_free_path_chunk_oom_graceful` reruns (default
+      multi-threaded scheduling) after the fix — all clean, 0 failures.
+      `cargo fmt --check` clean.
+    - **Files changed:** `tests/regression_free_path_chunk_oom_graceful.rs`
+      (serialization only); this index entry.

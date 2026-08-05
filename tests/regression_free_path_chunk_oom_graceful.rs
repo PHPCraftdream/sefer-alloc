@@ -60,7 +60,26 @@
 
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
+use std::sync::Mutex;
+
 use sefer_alloc::registry::bootstrap;
+
+// `DBG_INJECT_CHUNK_OOM` is a PROCESS-WIDE `internals`-gated `AtomicBool`.
+// `cargo test` runs the two `#[test]` fns below in parallel by default, but
+// their correctness relies on sequential execution (this file's own module
+// doc: `oom_injection_flag_is_clean_after_test` is designed to run AFTER
+// `chunk_oom_on_free_path_returns_gracefully_not_abort`, verifying its
+// `OomInjectionGuard` cleared the flag). Found via CI run 31045983765 on
+// landing SHA `42d4206` (task #621): a race window between
+// `dbg_set_inject_chunk_oom(true)` and the guard's `Drop` clearing it back
+// to `false` let the second test observe the flag stuck `true` — the SAME
+// process-wide-diagnostic parallelism-artifact class already fixed twice
+// this session (`docs/CORRECTNESS_OPEN_ITEMS.md` items 1/25/26). Serializes
+// with the SAME established `static TEST_LOCK: Mutex<()>` + per-test
+// `let _guard = TEST_LOCK.lock().unwrap();` pattern used in
+// `tests/segment_table_contains_base_tier1_counters.rs` and
+// `tests/r31_10_trim_current_thread_api.rs`.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// RAII guard that clears the OOM-injection flag on drop (even on panic),
 /// so a test failure cannot leave the flag set for subsequent tests.
@@ -75,6 +94,7 @@ impl Drop for OomInjectionGuard {
 /// not abort the process (R34-15/task #534).
 #[test]
 fn chunk_oom_on_free_path_returns_gracefully_not_abort() {
+    let _lock_guard = TEST_LOCK.lock().unwrap();
     // Pick a slot index in the LAST chunk — guaranteed unmaterialised by
     // ordinary test traffic (see module doc "Race safety").
     let last_chunk = bootstrap::dbg_num_chunks() - 1;
@@ -141,6 +161,7 @@ fn chunk_oom_on_free_path_returns_gracefully_not_abort() {
 /// test (by name, `chunk_oom_...` sorts before `oom_injection_flag_...`).
 #[test]
 fn oom_injection_flag_is_clean_after_test() {
+    let _lock_guard = TEST_LOCK.lock().unwrap();
     // The main test's OomInjectionGuard cleared the flag on drop. This
     // assertion verifies that: if the flag were still `true`, calling
     // slot_or_none on an unmaterialised chunk would return false (the
