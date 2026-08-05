@@ -197,7 +197,7 @@ Breaking changes must include `!` after the scope (`feat(core)!:`) and a
    proptest.
 5. Add a benchmark in `benches/` if the feature is performance-sensitive.
 6. Update `README.md` (feature matrix table) and `CHANGELOG.md` (under
-   `[Unreleased]`).
+   `[0.3.0] (unreleased)`).
 7. Run the full checklist above.
 
 

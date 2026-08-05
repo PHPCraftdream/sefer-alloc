@@ -30,7 +30,7 @@
 - [ ] `cargo build --all-targets --all-features` — zero warnings
 - [ ] `cargo clippy --features production -- -D warnings` — clean
 - [ ] `cargo test --features production` — all tests green
-- [ ] `CHANGELOG.md` updated under `[Unreleased]`
+- [ ] `CHANGELOG.md` updated under `[0.3.0] (unreleased)`
 - [ ] New public items have doc-comments (`///`)
 
 ### Required when touching core data structures
