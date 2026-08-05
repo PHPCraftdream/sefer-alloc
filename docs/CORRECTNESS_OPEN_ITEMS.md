@@ -1134,6 +1134,14 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     the release notes** so a downstream reader knows the documented limitation.
     Filed because no Round-34 task owns release-notes writing.
 
+    **Status: RESOLVED (2026-08-05, task #597/K2, commit `f43600d`).** The
+    exact action this item requested — a release-notes statement of the
+    residual — landed in `CHANGELOG.md`'s new "Known limitations (as of
+    this release)" subsection. Left in place rather than moved to "Recently
+    resolved" / renumbered (that structural cleanup, spanning several
+    pre-existing item-numbering gaps in this file, is task M2/#623's
+    broader scope, not duplicated here item-by-item).
+
 17. **[T, filed 2026-08-04, R34-2/task #521] Five tier-1 `unsafe` seams have
     no miri, no loom, and no kani harness — covered by ordinary integration
     tests only (`docs/reviews/2026-08-04-release-stabilization-audit.md` G3
@@ -1175,6 +1183,12 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     one-line release-notes caveat ("MSRV is enforced as `cargo check`, not
     `cargo test` — a `#[cfg(test)]`-only or dev-dep construct incompatible
     with rustc 1.88 would not be caught by CI"), not a CI change.
+
+    **Status: RESOLVED (2026-08-05, task #597/K2, commit `f43600d`).** The
+    exact caveat this item requested landed verbatim in `CHANGELOG.md`'s
+    new "Known limitations (as of this release)" subsection. Left in
+    place rather than moved/renumbered — see item 16's identical note
+    above; both fall under task M2/#623's broader numbering-cleanup scope.
 
 20. **[T, filed 2026-08-04, R34-2/task #521] F11 residual — Round 31's
     CHANGELOG section still carries the "Runtime improvements this round: 0"
