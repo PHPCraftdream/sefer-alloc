@@ -413,11 +413,12 @@ Core instructions, mandatory for all code in this repository. They
 ## Before every push: `npm run check`
 
 - **Run `npm run check` before pushing, every time.** It runs the fast subset
-  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all five
+  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all six
   CI clippy rows (default / `experimental` / `--all-features` / `hardened
-  medium-classes` / `production` — GENERATED from `scripts/check-matrix.mjs`'s
-  `PER_PR_ROWS` since R30-5/task #454, not hand-written; byte-identical to
-  ci.yml's clippy job, pinned by `tests/ci_clippy_matrix_consistency.rs`),
+  medium-classes internals` / `production` / `production internals` —
+  GENERATED from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` since R30-5/task
+  #454, not hand-written; byte-identical to ci.yml's clippy job, pinned by
+  `tests/ci_clippy_matrix_consistency.rs`),
   `cargo test` under `production`, then
   `npm run iai` (the deterministic judge) — and fails fast at the first red
   step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
