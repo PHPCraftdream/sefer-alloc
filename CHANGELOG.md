@@ -5,8 +5,6 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ### Round 34 — 26 tasks addressing findings from three independent readonly reviews (`docs/reviews/2026-08-04-release-stabilization-audit.md`, a UB/soundness/panic-safety/coverage audit; `docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md`, a Round 32/33 benchmark-methodology review; and `docs/reviews/2026-08-03-round33-readonly-review.md`, whose finding G1 (P2) is R34-1's own source per that commit's body), delegating every task to `/crush` (external CLI, model glm-5.2) with full personal zero-trust re-verification after each one (every diff read in full, every claimed test/clippy/fmt result independently re-run, several measurements independently re-derived from raw data or re-run from scratch, and in the highest-stakes cases a genuine counterfactual check performed personally — temporarily reverting a fix and confirming the associated test fails, then restoring it). "26 tasks" is not a strict 1:1 with "26 review findings": R34-25 and R34-26 are research/design-gate studies (feasibility analyses commissioned this round, not remediations of a specific reviewer-flagged defect), and R34-27 is the round's own closing/CHANGELOG-completion task — both categories sit alongside, not purely inside, the three reviews' finding lists. See `docs/perf/round-manifests/R34_MANIFEST.md` for the round's full commit-by-commit classification against the R30-12 taxonomy (extended 2026-08-05 to cover the full 43-commit round span, task #550) — the mechanical self-check this round's own R34-24 task added specifically so a reader need not open every commit body to confirm no opt-in or measurement-only result is framed as a default speedup.
 
 **Runtime improvements this round: 0.** No shipping algorithm or production default's OBSERVABLE behavior changed; `production`'s feature composition is unchanged (re-verified explicitly by R34-21). The round's `fix(perf)` commits (R34-6, R34-11, R34-14, R34-15, R34-17, R34-18) are all correctness/consistency hardening on production-reachable code paths — memory-ordering promotion, a bounded catch-up loop, field-reset correctness, OOM-handling widening, panic-safety RAII guards, and a compile-time struct-size pin — none claims or measures a speedup. R34-3's `internals` feature is a build-gating/visibility reorganization (no `src/` behavior change), not a runtime change.
@@ -4963,7 +4961,9 @@ real but narrow: benefits only genuinely-first-touch,
 never-reused `alloc_zeroed` calls, zero benefit on the steady-state churn
 patterns the rest of this round's work targets.
 
-## [0.3.0] - 2026-07-04
+
+## [0.3.0] (unreleased)
+
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
 `0.2.1`; see the yank notes below). It bundles four workstreams, each
