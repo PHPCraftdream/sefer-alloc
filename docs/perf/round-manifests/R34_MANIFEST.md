@@ -200,6 +200,76 @@ bench-only or correctness-verification:
 round, so no kill-gate run was required. The 6 production-source commits
 carry `fix(perf)` (correctness/consistency) and do not claim speedups.
 
+### §3.1. Raw-log census (CLAUDE.md R34-24 mandated element)
+
+CLAUDE.md's round-manifest rule states: "The manifest also records the
+count and total size of raw-log files committed that round, making
+aggregate `docs/perf/` growth visible per-round." Added 2026-08-05 (task
+#557, independent review `docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`
+finding G3) — this element was missing from both the original and the
+F5-extended version of this manifest.
+
+**Round-scoped count (the 5 `_raw_*.log` files this round's commits
+actually added):**
+
+```bash
+git log --name-only --format="COMMIT:%H" 40241b0..c5db553 -- 'docs/perf/_raw_*.log' \
+  | grep -E '^docs/perf/_raw_.*\.log$' | sort -u
+```
+
+→ 5 files: `_raw_r34_10_sparse_decay_gate.log` (145,348 B),
+`_raw_r34_11_catchup_decay_gate.log` (49,999 B),
+`_raw_r34_12_paired_ab_full.log` (91,281 B),
+`_raw_r34_23_criterion_reverification.log` (1,076 B),
+`_raw_r34_23_lrc_hypothesis_ab.log` (1,297 B) — **total 289,001 bytes
+(≈282.2 KiB)**, individual sizes from `du -b <file>` for each of the 5
+paths above, summed.
+
+**Repo-wide count (all `_raw_*.log` files committed to date, any round —
+the artifact-storage-policy rule's own reference command):**
+
+```bash
+find docs/perf -name '_raw_*.log' -type f | wc -l
+```
+
+→ **256** files, **5,428,319 bytes (≈5,301.1 KiB ≈ 5.18 MiB)** total
+(`find docs/perf -name '_raw_*.log' -type f -exec du -b {} + | awk
+'{sum+=$1} END {print sum}'`). All 256 are individually under the 200 KiB
+tier-1 ceiling (the largest, `_raw_r34_10_sparse_decay_gate.log`, is
+145,348 B ≈ 142 KiB) — consistent with the artifact-storage-policy rule's
+own tier-1 census as of R34-24.
+
+**Scope note.** The round-scoped figure (5 files / 289,001 B) is the one
+this manifest's own R30-12 taxonomy applies to (i.e. what THIS round
+added); the repo-wide figure (256 files / 5,428,319 B) is cited alongside
+it because CLAUDE.md's artifact-storage-policy tier boundaries are defined
+against individual file size, not a round-scoped aggregate, so the
+repo-wide count is the more directly comparable number against that
+rule's own "as of R34-24, ALL 256 committed `_raw_*.log` files fall under
+this ceiling" statement. Both counts are independently re-derivable from
+the two commands above; neither number is hand-transcribed.
+
+**A different artifact class, explicitly excluded from both counts above
+(the same naming-based blind spot this finding's review flagged as the
+theme of finding G3):** `docs/perf/r34_23_runs/` holds two files —
+`2026-08-04T22-03-44-381Z_direct_raw.json.gz` (8,674 B, tier-2
+gzip-compressed per task #551/`5710a6e`) and
+`2026-08-04T22-03-52-053Z_vec_raw.json` (69,045 B, under the tier-1
+ceiling uncompressed). Neither matches the `_raw_*.log` glob (they are
+`.json`/`.json.gz`, not `.log`, and live under a differently-named
+subdirectory) — this is precisely the naming-based gap the artifact-storage-
+policy rule's tier system did not originally anticipate: a citable raw
+artifact that is a raw JSON dump rather than a `_raw_*.log` text file.
+task #551 already resolved this specific file's tier-2 sizing question
+(258 KiB uncompressed → 8,674 B gzip-compressed, under the 200 KiB tier-1
+ceiling for the compressed form), and `docs/perf/OPEN_ITEMS.md` carries the
+still-open general gap (a THIRD tier-2/tier-3-sized raw artifact outside
+the `_raw_*.log` convention would reopen it) as its own tracked item — this
+census does not duplicate that item, only cross-references it so a reader
+scanning this manifest's raw-log numbers does not mistake the
+`_raw_*.log`-scoped 256/5 counts above for a total inclusive of
+`r34_23_runs/`.
+
 ---
 
 ## §4. Reproduction
