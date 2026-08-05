@@ -1191,6 +1191,38 @@ don't rewrite" convention.
     `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 (the single-hot-buffer
     victim pattern, which applies equally to the geometric ladder).
 
+    **⚠ CORRECTION (2026-08-05, R34-23 gate; filed as task #558, finding G4
+    of `docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`)
+    — the "~40× faster than `mimalloc`" figure above is wrong, not merely
+    superseded, and the two README line-number pointers are dead.**
+    `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` found the 9.7 µs/~40× figure
+    physically impossible — the 64 B→4 MiB ×2 chain's final grow step (2
+    MiB→4 MiB) exceeds the Large segment's committed `span_usable` and forces
+    a real 2 MiB copy, which alone costs tens of µs at modern memory
+    bandwidth. A path-activation-oracle re-verification found the real ratio
+    is **~1.8× faster than `mimalloc`** (criterion: ~238 µs vs ~431 µs) to
+    **~2.1× faster** (R34-23 direct gate: ~210 µs vs ~444 µs) — see
+    `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §0 and §5. Separately, the two
+    README pointers this entry cited (`README.md:244-245`/`:639`) no longer
+    point at related content as of this same session's edits: `:244-245` is
+    now small-pool-latency prose and `:639` is a row of the `unsafe`-seam
+    inventory table, neither about realloc. The corrected, live
+    `realloc_grow_geometric` figures are at `README.md:918`, `:921-930`
+    (the re-measurement note), and `:1203-1207`. This item's decision (low
+    marginal payoff of a sub-16 KiB OPT-H fast path) is UNCHANGED by this
+    correction — the corrected ~1.8–2.1× ratio is still the cheapest
+    move-leg cost in this size range, so the "small marginal payoff even at
+    a favorable hit rate" conclusion still holds; only the cited magnitude
+    and the README pointers were wrong. Per this project's
+    append-only-correction convention, the original text above is NOT
+    rewritten — this note stands beside it as the current-truth pointer,
+    matching the precedent set by `docs/ALLOC_BENCH.md`'s dated correction
+    block for the same underlying figure (task #552, commit `d46c349`). The
+    live current-state card at `docs/perf/OPEN_ITEMS.md` item 12 (fixed by
+    task #548, commit `73817ee`) already cites the corrected ratio; this
+    note brings the archived history this file's own back-link points readers
+    to into agreement with it.
+
 
 ---
 
