@@ -1217,11 +1217,14 @@ don't rewrite" convention.
     append-only-correction convention, the original text above is NOT
     rewritten — this note stands beside it as the current-truth pointer,
     matching the precedent set by `docs/ALLOC_BENCH.md`'s dated correction
-    block for the same underlying figure (task #552, commit `d46c349`). The
-    live current-state card at `docs/perf/OPEN_ITEMS.md` item 12 (fixed by
-    task #548, commit `73817ee`) already cites the corrected ratio; this
-    note brings the archived history this file's own back-link points readers
-    to into agreement with it.
+    block for the same underlying figure (task #552, commit `d46c349` —
+    reworded by the later G1/task #555 rebase to `a7d7395`; cited here by
+    its original SHA since this note describes the state at time of
+    writing, before that rebase ran). The live current-state card at
+    `docs/perf/OPEN_ITEMS.md` item 12 (fixed by task #548, commit `73817ee`
+    — likewise reworded by G1/task #555 to `5e75032`) already cites the
+    corrected ratio; this note brings the archived history this file's own
+    back-link points readers to into agreement with it.
 
 
 ---
