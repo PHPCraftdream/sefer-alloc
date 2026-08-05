@@ -1218,11 +1218,23 @@ required-features = ["alloc-global", "internals"]
 # which is `bench-internals`-gated.
 [[example]]
 name = "r31_3_large_cache_extended_narrow_off"
-required-features = ["alloc-global"]
+# H2 (task #572) fallout: the shared workload's
+# `dbg_current_large_cache_total_slots` moved behind `internals`
+# (`alloc_core_large_cache.rs`'s module doc, via `HeapCore`/`SeferAlloc`
+# transitive delegation).
+required-features = ["alloc-global", "internals"]
 
 [[example]]
 name = "r31_3_large_cache_extended_narrow_on"
-required-features = ["alloc-global", "alloc-decommit"]
+# H2 (task #572) fallout: same reason as `_narrow_off` immediately above,
+# plus `dbg_current_large_cache_extension_materialised`, which is ALSO
+# gated on `large-cache-extended` (`src/global/sefer_alloc.rs`'s own cfg) —
+# a requirement the doc comment above already documented in this target's
+# invocation string ("--features ... large-cache-extended") but that was
+# never actually encoded in `required-features` until now; found by
+# `npm run check`'s own `production alloc-stats bench-internals internals`
+# test row attempting (and failing) to compile this target.
+required-features = ["alloc-global", "alloc-decommit", "large-cache-extended", "internals"]
 
 # R31-8 (task #488): deterministic, native (cross-platform) scan-cost
 # isolation microjudge — a decomposed complement to the real-process narrow
@@ -1240,11 +1252,16 @@ required-features = ["alloc-global", "alloc-decommit"]
 #     binary)
 [[example]]
 name = "r31_8_large_cache_scan_isolation_off"
-required-features = ["alloc-core", "alloc-decommit"]
+# H2 (task #572) fallout: calls `AllocCore::dbg_large_cache_hits`/
+# `dbg_large_cache_slot_sizes`, both moved behind `internals`
+# (`alloc_core_large_cache.rs`'s module doc).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 [[example]]
 name = "r31_8_large_cache_scan_isolation_on"
-required-features = ["alloc-core", "large-cache-extended", "alloc-decommit"]
+# H2 (task #572) fallout: same reason as `_off` immediately above, plus
+# `dbg_large_cache_extension_materialised`/`dbg_large_cache_total_slots`.
+required-features = ["alloc-core", "large-cache-extended", "alloc-decommit", "internals"]
 
 # R32-12 (task #503, F8 sub-change (2)): free-slot-search isolation
 # microjudge — a decomposed complement to R31-8's best-fit-scan microjudge
@@ -1262,7 +1279,9 @@ required-features = ["alloc-core", "large-cache-extended", "alloc-decommit"]
 # by two required-features variants.
 [[example]]
 name = "r32_12_large_cache_free_slot_search_isolation"
-required-features = ["alloc-core", "alloc-decommit", "alloc-stats"]
+# H2 (task #572) fallout: calls `AllocCore::dbg_large_cache_hits`, moved
+# behind `internals` (`alloc_core_large_cache.rs`'s module doc).
+required-features = ["alloc-core", "alloc-decommit", "alloc-stats", "internals"]
 
 # R32-0 (task #490): the `paired-ab-runner.mjs` wall-clock companion probes
 # to the deterministic `benches/r32_0_virgin_zero_skip_cost_side_gate.rs`
@@ -1381,7 +1400,11 @@ required-features = ["alloc-core"]
 #            cargo run --release --example r13_6_large_cache_hit_rate_measure --features "production alloc-stats exact-span-large large-reserved-capacity"
 [[example]]
 name = "r13_6_large_cache_hit_rate_measure"
-required-features = ["alloc-core", "alloc-decommit"]
+# H2 (task #572) fallout: calls `AllocCore::dbg_large_cache_hits`/
+# `dbg_large_cache_slot_sizes`/`dbg_large_cache_used`/
+# `dbg_set_large_cache_budget`, all moved behind `internals`
+# (`alloc_core_large_cache.rs`'s module doc).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # R13-7 (task #277): THROWAWAY exact-count judge for the `large-cache-extended`
 # sidecar — mirrors `r13_6_large_cache_hit_rate_measure.rs`'s methodology (a
@@ -1805,7 +1828,10 @@ required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats",
 [[bench]]
 name = "r13_6_exact_span_reserved_capacity_wallclock"
 harness = false
-required-features = ["alloc-core", "alloc-decommit"]
+# H2 (task #572) fallout: calls `AllocCore::dbg_large_cache_hits`/
+# `dbg_set_large_cache_budget`, both moved behind `internals`
+# (`alloc_core_large_cache.rs`'s module doc).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # R34-6 (task #525): cost gate for promoting `cached_head`'s ordering in
 # `RemoteFreeRing::full_check` from Relaxed to Acquire/Release (finding F-1,
