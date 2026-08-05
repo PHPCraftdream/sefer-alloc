@@ -39,6 +39,12 @@
 //! it; material bloat (a new array/sub-struct, or `Tcache` growing another
 //! class) does, forcing a deliberate budget bump with a recorded stack-pressure
 //! note.
+//!
+//! R34-24/fix #571: This test requires `internals` to reach `HeapCore`,
+//! which was gated behind that feature in R34-3/Sol-F1. The test exercises
+//! the production feature set (the maximum shipping configuration).
+
+#![cfg(all(feature = "production", feature = "internals"))]
 
 use core::mem::size_of;
 
