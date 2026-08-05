@@ -396,7 +396,7 @@ impl Drop for LockGuard {
 /// structurally (making the guard aware of whether `HeapCore` was written, so
 /// an armed unwind after that point drops the stale value or poisons the
 /// slot instead of just rolling back) is tracked as a follow-up, not done
-/// here.
+/// here — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 23 (task #575/H5).
 struct InitStateGuard {
     armed: bool,
 }

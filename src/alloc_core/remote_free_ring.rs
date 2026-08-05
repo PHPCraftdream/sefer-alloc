@@ -897,7 +897,7 @@ pub struct PushOverflow;
 /// escapes through the `GlobalAlloc` entry points still aborts the process
 /// (see `src/global/sefer_alloc.rs`'s panic-tripwire docs), so the replay
 /// window described here cannot be observed through ordinary allocator
-/// usage.
+/// usage. Tracked as `docs/CORRECTNESS_OPEN_ITEMS.md` item 22 (task #575/H5).
 #[cfg(feature = "alloc-xthread")]
 struct DrainHeadPublish {
     head: &'static core::sync::atomic::AtomicU32,

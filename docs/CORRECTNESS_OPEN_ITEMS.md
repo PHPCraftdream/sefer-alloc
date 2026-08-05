@@ -1288,6 +1288,83 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       §2 (G1) and §10 point 1; `docs/reviews/2026-08-05-round34-readonly-review.md`
       §7.
 
+22. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `RemoteFreeRing::DrainHeadPublish`'s panic-safety guard is unwind-safe for already-fully-processed elements but NOT exactly-once for the element in flight when a panic occurs — a documented residual (Sol-F5, task #567) never cross-filed into this index.**
+
+    - **Status:** OPEN, residual — not a proven bug, no known reachable
+      trigger, filed for tracking per this index's own convention (a
+      doc-comment naming a follow-up must also be cross-filed here so a
+      future round inherits it without re-deriving from the source).
+    - **Current-number-or-verdict:** by inspection, the current production
+      `reclaim` closures (`AllocCore::reclaim_offset` /
+      `AllocCore::reclaim_offset_checked`,
+      `src/alloc_core/alloc_core_small_reclaim.rs`) do not panic after
+      mutating state on their current code paths — no `unwrap`/`expect`/
+      `panic!`/unchecked indexing on the mutation-bearing paths. This is an
+      observation about the code AS WRITTEN, not a structural guarantee: the
+      type system does not prevent a future `reclaim` closure from
+      panicking after a mutation. `RemoteFreeRing::drain`'s loop body calls
+      `reclaim(off)` BEFORE clearing the slot and BEFORE
+      advancing/publishing `h` — so a reclaim that mutates state and then
+      panics leaves the slot non-empty and `h` one short; a
+      `catch_unwind`-resuming caller would re-pass that same `off` to
+      `reclaim`, i.e. `reclaim` could run twice for the in-flight element.
+    - **Why not currently exploitable:** any unwind that escapes through the
+      `GlobalAlloc` entry points still aborts the process
+      (`src/global/sefer_alloc.rs`'s panic-tripwire docs), so this replay
+      window is reachable only through a direct/internal `catch_unwind`
+      around `drain` — not through ordinary allocator usage.
+    - **What would close it structurally:** a two-phase/idempotent reclaim
+      protocol (clear-then-reclaim, or a reclaim that can be safely retried
+      against an already-cleared slot), or an explicit poison/skip policy
+      for the in-flight element on unwind — out of scope for the
+      `DrainHeadPublish` guard itself, which only ever publishes `h` values
+      fully advanced past a cleared slot.
+    - **Next trigger:** reopen and design the two-phase protocol if a future
+      `reclaim` closure gains fallible/panicking code on a mutation-bearing
+      path, or if a direct/internal `catch_unwind` caller around `drain` is
+      ever added to production code (currently none exists).
+    - **Evidence:** `src/alloc_core/remote_free_ring.rs`'s
+      `DrainHeadPublish` doc comment (the "Exact contract (Sol-F5, task
+      #567 ...)" section, ~lines 861-900);
+      `docs/reviews/2026-08-05-sol-release-readonly-review.md` finding F5;
+      `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding
+      H5.
+
+23. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `InitStateGuard`'s unwind rollback does not distinguish a pre-write unwind (nothing to clean up) from a post-write unwind (a live `HeapCore` already sits in `FALLBACK`) — a documented residual (Sol-F6, task #568) never cross-filed into this index.**
+
+    - **Status:** OPEN, residual — not a proven bug, no currently-reachable
+      trigger, filed for tracking per this index's own convention.
+    - **Current-number-or-verdict:** the guard's `Drop` unconditionally
+      rolls `INIT_STATE` back to `UNINIT` on an armed unwind, regardless of
+      whether the unwind happened before or after the in-place `write(hc)`.
+      A post-write unwind lets the next CAS winner `write` a fresh
+      `HeapCore` on top of the old one WITHOUT running the old value's
+      `Drop` (`AllocCore::Drop`, `src/alloc_core/alloc_core.rs`, releases
+      the heap's segment reservations) — so skipping it leaks them. The
+      guard therefore guarantees "no permanent `INITIALIZING` livelock", NOT
+      "`Drop` always runs for an already-written `HeapCore`".
+    - **Why not currently exploitable:** as of this writing, the only unwind
+      source in the guarded region between `write(hc)` and the `READY`
+      publish is the `internals`-gated test-injection panic, deliberately
+      placed BEFORE `HeapCore::new`; `bind_thread_free`
+      (`src/registry/heap_core_ownership.rs`) is a plain field assignment
+      and cannot panic. So the post-write window is not currently reachable
+      by any known panic source in the initialization path — but it is NOT
+      structurally closed: a future change adding fallible code between
+      `write(hc)` and the `READY` store would silently reopen it.
+    - **What would close it structurally:** making the guard aware of
+      whether `HeapCore` was written, so an armed unwind after that point
+      drops the stale value or poisons the slot instead of just rolling
+      back to `UNINIT`.
+    - **Next trigger:** reopen and implement the write-aware guard if a
+      future change adds fallible/panicking code between `write(hc)` and
+      the `READY` store in the guarded region (currently none exists).
+    - **Evidence:** `src/global/fallback.rs`'s `InitStateGuard` doc comment
+      (the "What this guard does NOT guarantee (Sol-F6, task #568)" section,
+      ~lines 375-399); `docs/reviews/2026-08-05-sol-release-readonly-review.md`
+      finding F6; `docs/reviews/2026-08-05-sol-remediation-readonly-review.md`
+      finding H5.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
