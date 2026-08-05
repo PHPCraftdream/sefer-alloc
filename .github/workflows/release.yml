@@ -172,6 +172,42 @@ jobs:
             exit 1
           fi
 
+      - name: Guard — CHANGELOG must be consolidated before publish
+        # Before publishing a version, verify that CHANGELOG.md has a proper
+        # dated section for that version (not just "(unreleased)"). This prevents
+        # releasing a version whose CHANGELOG entry is still in the [Unreleased]
+        # section, which would indicate incomplete release notes or a missed
+        # merge step. Skipped for manual dispatch (no tag to check against there).
+        # See: https://github.com/PHPCraftdream/sefer-alloc/issues/564
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.version.outputs.version }}'
+          CHANGELOG_SECTIONS=$(grep -E "^## \[${VERSION}\]" CHANGELOG.md || true)
+
+          # Count matching sections
+          MATCH_COUNT=$(echo "$CHANGELOG_SECTIONS" | grep -c "${VERSION}" || true)
+
+          echo "Checking CHANGELOG.md for version $VERSION..."
+          echo "Found $MATCH_COUNT section(s) matching [${VERSION}]"
+
+          # Require exactly ONE matching section
+          if [[ "$MATCH_COUNT" -ne 1 ]]; then
+            echo "::error::Expected exactly one CHANGELOG section for version $VERSION, found $MATCH_COUNT" >&2
+            echo "::error::Ensure CHANGELOG.md has been consolidated from [Unreleased] into a dated [${VERSION}] section before publishing" >&2
+            exit 1
+          fi
+
+          # Verify that the matching section is NOT marked as "(unreleased)"
+          if echo "$CHANGELOG_SECTIONS" | grep -q "(unreleased)"; then
+            echo "::error::CHANGELOG section for version $VERSION is marked as (unreleased)" >&2
+            echo "::error::Consolidate CHANGELOG.md by moving [Unreleased] content into [${VERSION}] and remove the '(unreleased)' marker" >&2
+            exit 1
+          fi
+
+          echo "✓ CHANGELOG.md has proper dated section for version $VERSION"
+
       - name: Test gate — do not publish a red tree
         # A tag must never publish an untested tree. Run the default suite and
         # the flagship `production` bundle for the target crate before the
