@@ -178,7 +178,10 @@ jobs:
         # releasing a version whose CHANGELOG entry is still in the [Unreleased]
         # section, which would indicate incomplete release notes or a missed
         # merge step. Skipped for manual dispatch (no tag to check against there).
-        # See: https://github.com/PHPCraftdream/sefer-alloc/issues/564
+        # (Sol-F2, release-readiness review finding F2: CHANGELOG.md's
+        # `## [0.3.0] - 2026-07-04` section falsely implied a release that
+        # never happened -- no `sefer-alloc-v0.3.0` git tag existed and
+        # crates.io was still on 0.2.1.)
         if: ${{ github.event_name == 'push' }}
         shell: bash
         run: |
