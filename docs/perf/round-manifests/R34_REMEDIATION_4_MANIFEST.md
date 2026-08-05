@@ -12,6 +12,19 @@ and an independent readonly review of wave 4 itself
 F1-F6) surfaced — the same "run the FULL gate, review the wave that closed,
 fix what it finds" pattern established by wave 3's own §2 below.
 
+**Correction note (K1, standalone release-readiness gap audit,
+`docs/reviews/2026-08-05-release-readiness-gap-audit.md` finding R1):** an
+intermediate state of this file (at landing commit `7c8628a`, the audit's
+own reviewed HEAD) cited a stale self-referential SHA `9d62bf6` for row 13
+— an orphaned pre-amend sibling commit, not an ancestor of the eventual
+HEAD (the classic self-referential-hash problem: a commit cannot literally
+embed its own hash without a further amend invalidating it). This was
+already corrected in the SAME finalizing commit's second amend
+(`6550d68`, landed BEFORE the gap-audit report was written) by replacing
+the literal SHA with a non-circular self-reference — see row 13 and the §1
+note below. No further action needed; recorded here so the audit's R1
+citation doesn't read as still-open against this file.
+
 **FINAL — closed 2026-08-05.** Extended once past the original 7-row table
 (task #585/I7's own commit, `782b92e`) to absorb: the flaky-test fix `npm
 run check` surfaced post-landing (`60ad847`), the wave-4 CHANGELOG entry
