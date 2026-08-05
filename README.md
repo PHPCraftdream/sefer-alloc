@@ -1593,9 +1593,8 @@ discipline; the rest is convention.
 
 Memory-safety bugs, soundness holes, and `unsafe`-contract violations
 qualify as security issues. **Please do not open public issues for these.**
-Use GitHub Security Advisories (private) or email the maintainer per
-[`SECURITY.md`](SECURITY.md). Acknowledgement within 72 hours; coordinated
-disclosure standard.
+Use GitHub Security Advisories (private) per [`SECURITY.md`](SECURITY.md).
+Acknowledgement within 72 hours; coordinated disclosure standard.
 
 ---
 

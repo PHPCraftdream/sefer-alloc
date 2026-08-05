@@ -29,8 +29,10 @@ Include in the report:
 - The `sefer-alloc` version(s) affected.
 - Minimal reproduction steps or proof-of-concept code.
 - The `rustc` / OS / target triple of the environment where you reproduced it.
-- Whether the bug is triggered by the default feature set or requires
-  `experimental`/`byte` features.
+- Whether the bug is triggered by the default feature set or requires a
+  non-default feature (e.g. `experimental`, `alloc-core`, `alloc-global`,
+  `production`) — see `[features]` in `Cargo.toml` for the current feature
+  list.
 - (If known) which invariant from [`docs/INVARIANTS.md`](docs/INVARIANTS.md)
   is violated.
 
