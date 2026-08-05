@@ -1301,6 +1301,28 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       `git show 5c1142f --stat`; `docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`
       §2 (G1) and §10 point 1; `docs/reviews/2026-08-05-round34-readonly-review.md`
       §7.
+    - **Update (2026-08-05, task #601/K6, release-readiness map): the "Next
+      trigger" premise above has changed — do NOT rebase.** A push later
+      the same day (20:50:33Z) moved `origin/main` to include both
+      `43115cf` and `5c1142f` as ancestors (verified: `git merge-base
+      --is-ancestor <sha> origin/main` succeeds for both). The default lint
+      range (`@{u}..HEAD`) no longer contains either commit, so `node
+      scripts/verify-commit-prefixes.mjs` with no explicit range now
+      **PASSES** — independently re-run and confirmed. CI's own
+      `commit-prefix-lint` job is PR-scoped only
+      (`.github/workflows/ci.yml`, `if: github.event_name ==
+      'pull_request'`), so it was never blocking a direct push either. The
+      practical consequence this card previously documented ("red whenever
+      a range including them is linted, e.g. the default range") no longer
+      holds day-to-day. This does NOT close the underlying taxonomy defect
+      (both commits still literally have the wrong prefix) — it changes
+      the cost/benefit of the "Next trigger" fix: rewriting `43115cf`/
+      `5c1142f` now means rewriting PUBLISHED history on `origin/main`, not
+      unpushed local commits. Recommendation revised: leave both commits
+      as accepted historical debt (this card is the durable record) rather
+      than rebase published history for a cosmetic prefix issue; only
+      revisit if a future rebase touching this era of history happens for
+      an unrelated, independently-justified reason.
 
 22. **[T, filed 2026-08-05, task #575/H5, `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H5] `RemoteFreeRing::DrainHeadPublish`'s panic-safety guard is unwind-safe for already-fully-processed elements but NOT exactly-once for the element in flight when a panic occurs — a documented residual (Sol-F5, task #567) never cross-filed into this index.**
 
