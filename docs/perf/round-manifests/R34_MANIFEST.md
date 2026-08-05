@@ -1,5 +1,21 @@
 # Round 34 manifest — commit classification & per-item verdict
 
+**Scope FROZEN 2026-08-05 (task #576/H6) — see below.** This file covers
+**Round 34 proper only** (`40241b0..c5db553`, 43 commits, R34-1 through
+R34-27). The three independent review-and-remediate waves that followed
+Round 34's close (each triggered by an `@oh`-style readonly review of the
+prior wave's own work) each have their OWN manifest file —
+`R34_REMEDIATION_1_MANIFEST.md` / `R34_REMEDIATION_2_MANIFEST.md` /
+`R34_REMEDIATION_3_MANIFEST.md` — rather than being folded into this one.
+This file had already been extended once (task #550, 38→43 commits,
+correcting an original under-count) and was about to need a THIRD
+extension to absorb 31 more post-closing commits — the same staleness
+pattern recurring a third time. Redefining scope here, once, closes that
+recurring gap for good: this file's own commit table below never needs to
+change again, and each wave's manifest is independently derivable and
+independently bounded. See `R34_REMEDIATION_1_MANIFEST.md`'s header for
+the full reasoning.
+
 **Generated (extended 2026-08-05 — task #550, review findings F5+F6 from
 `docs/reviews/2026-08-05-round34-readonly-review.md`).** The commit table in
 §1 is reproduced verbatim from
