@@ -2254,7 +2254,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       here reproduces #524's own already-published result, it does not
       establish a new one).
 
-17. **H8 — `dbb4016`'s `fix(perf):` prefix considered for a reword to
+24. **H8 — `dbb4016`'s `fix(perf):` prefix considered for a reword to
     `feat(api):`, DECIDED against a rebase, prefix left as-is** (task #578,
     `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H8)
     — **RESOLVED, no code change.** Sol-F1's commit (`9296adb`, post-G1-
@@ -2293,7 +2293,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     - **Files changed:** none (this index entry only) — a documented
       decision, not a rebase or a reword.
 
-18. **Flaky test — `repeated_same_segment_frees_are_observed_as_tier1_hits`**
+25. **Flaky test — `repeated_same_segment_frees_are_observed_as_tier1_hits`**
     (`tests/segment_table_contains_base_tier1_counters.rs`) — **RESOLVED**
     by wave 3's own `npm run check --all-features` gate run (2026-08-05,
     same session as H1-H8, tasks #571-578).
