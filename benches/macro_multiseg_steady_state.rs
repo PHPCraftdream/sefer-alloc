@@ -220,13 +220,21 @@ fn setup_single_thread_floor() -> (*mut HeapCore, Vec<*mut u8>) {
 // Single-thread steady-state churn on top of the >=64-segment floor.
 // ---------------------------------------------------------------------------
 
-/// Timed region: mixed Small+Large churn on top of an already-established
-/// (and oracle-verified) >=64-segment floor. The floor itself is torn down
-/// at the end of this SAME timed function — `iai-callgrind` times the whole
-/// annotated body (no separate untimed measurement window), so this bench's
-/// `Estimated Cycles`/RAM-hit numbers include one steady-state churn run
-/// PLUS its own teardown, exactly mirroring a long-lived process that
-/// eventually exits.
+// Timed region: mixed Small+Large churn on top of an already-established
+// (and oracle-verified) >=64-segment floor. The floor itself is torn down
+// at the end of this SAME timed function — `iai-callgrind` times the whole
+// annotated body (no separate untimed measurement window), so this bench's
+// `Estimated Cycles`/RAM-hit numbers include one steady-state churn run
+// PLUS its own teardown, exactly mirroring a long-lived process that
+// eventually exits.
+//
+// NOTE: this MUST be a `//` line comment, not a `///` doc comment — a doc
+// comment lowers to a `#[doc]` attribute, and iai-callgrind 0.14.2's
+// `#[library_benchmark]` proc-macro rejects any attribute other than
+// `bench`/`benches` on the annotated function (CI failure on
+// `--all-features` clippy: "Invalid attribute: 'doc'"), which silently
+// drops the function and breaks `library_benchmark_group!`'s name lookup
+// below.
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn multiseg_steady_state_1t() {
@@ -319,13 +327,17 @@ fn per_thread_work() {
     unsafe { HeapRegistry::recycle(heap_ptr) };
 }
 
-/// Multi-thread variant: `MT_THREAD_COUNT` (4) threads, each running the
-/// IDENTICAL per-thread workload `multiseg_steady_state_1t` runs alone —
-/// own `HeapCore`, own >=64-segment floor (oracle-verified per thread),
-/// own churn loop. Combined resident working set: `MT_THREAD_COUNT *
-/// FLOOR_LARGE_OBJECTS * SEGMENT` = `4 * 80 * 4 MiB` = 1.28 GiB. Exercises
-/// genuine cross-thread contention on the shared segment-table/registry
-/// substrate that the single-thread variant cannot.
+// Multi-thread variant: `MT_THREAD_COUNT` (4) threads, each running the
+// IDENTICAL per-thread workload `multiseg_steady_state_1t` runs alone —
+// own `HeapCore`, own >=64-segment floor (oracle-verified per thread),
+// own churn loop. Combined resident working set: `MT_THREAD_COUNT *
+// FLOOR_LARGE_OBJECTS * SEGMENT` = `4 * 80 * 4 MiB` = 1.28 GiB. Exercises
+// genuine cross-thread contention on the shared segment-table/registry
+// substrate that the single-thread variant cannot.
+//
+// NOTE: `//` line comment, not `///` doc comment — same iai-callgrind
+// `#[library_benchmark]` attribute restriction as `multiseg_steady_state_1t`
+// above (see its comment for the full explanation).
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn multiseg_steady_state_mt4() {
