@@ -612,7 +612,19 @@ impl SeferAlloc {
     /// supports (see [`trim_current_thread`](Self::trim_current_thread)'s
     /// own body for the identical logic the public method uses when
     /// `alloc-decommit` is enabled).
+    ///
+    /// I5 (task #583, `docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`
+    /// finding F5): gated `bench-internals` + `internals` — this hook has no
+    /// production caller (CLAUDE.md's benchmark-hook rule 2), and was found
+    /// reachable from a plain `--features production` downstream build with
+    /// neither gate present, the same class of gap Sol-F1/H2 close for
+    /// `AllocCore::dbg_*`. This gate is orthogonal to the "deliberately
+    /// UNCONDITIONAL" note above: that note is about NOT gating the BODY on a
+    /// mechanism feature like `alloc-decommit` (which previously caused a
+    /// real regression by silently skipping trim work); it says nothing
+    /// about ACCESS to the method itself, which this `#[cfg]` controls.
     #[doc(hidden)]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub fn dbg_trim_current_thread(&self) {
         if let CurrentHeap::Own(heap) = self.current_heap() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a

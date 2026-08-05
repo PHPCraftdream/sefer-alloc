@@ -71,7 +71,12 @@
 //!   cargo test --release --features "production alloc-decommit" \
 //!       --test r17_8_deterministic_trim_releases_cached_large_span
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
+    feature = "internals"
+))]
 
 use std::alloc::{GlobalAlloc, Layout};
 

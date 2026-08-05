@@ -326,7 +326,11 @@ fn canary_survives_promotion_and_free_no_double_release() {
 /// full `production`) and do not (`hardened medium-classes`, the CI-tested
 /// row lacking `alloc-decommit`) compile it.
 #[test]
-#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+#[cfg(all(
+    feature = "alloc-decommit",
+    feature = "alloc-xthread",
+    feature = "bench-internals"
+))]
 fn canary_survives_promotion_and_free_leaves_no_leak_per_base() {
     let _guard = serial();
     let a = SeferAlloc::new();

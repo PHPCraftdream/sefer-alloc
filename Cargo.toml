@@ -996,7 +996,10 @@ harness = false
 # Sol-F1 (task #563): `internals` added — this file calls
 # `AllocCore::dbg_layout_class_for`, moved behind `internals` in
 # `alloc_core_core_diag.rs` (release-readiness review finding F1).
-required-features = ["alloc-global", "internals"]
+# I5 (task #583): `bench-internals` added — this file calls
+# `SeferAlloc::dbg_trim_current_thread`, moved behind `bench-internals` +
+# `internals` (release-readiness review finding F5).
+required-features = ["alloc-global", "internals", "bench-internals"]
 
 # Task #54: large-block and realloc-heavy profiling — SeferAlloc vs mimalloc
 # vs System across three groups: single-shot alloc+free of multi-MiB blocks,
@@ -1632,7 +1635,10 @@ required-features = ["alloc-core", "internals"]
 [[bench]]
 name = "heap_lifecycle_teardown"
 harness = false
-required-features = ["alloc-global"]
+# I5 (task #583): `bench-internals` + `internals` added — this file calls
+# `SeferAlloc::dbg_trim_current_thread`, moved behind both gates
+# (release-readiness review finding F5).
+required-features = ["alloc-global", "bench-internals", "internals"]
 
 # Task #62 §A-2: synthetic async-like allocation pattern — mixed-size
 # alloc/dealloc/realloc (row buffers, accumulators, medium blobs) via

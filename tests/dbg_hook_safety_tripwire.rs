@@ -387,10 +387,6 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "drives a real panic through the production with_heap/LockGuard RAII path; exercises, does not bypass, existing safe machinery",
     ),
     (
-        "src/global/sefer_alloc.rs::dbg_trim_current_thread",
-        "calls the real production trim_for_recycle on the current thread's own heap (also called from AbandonGuard::drop)",
-    ),
-    (
         "src/global/tls_heap.rs::dbg_teardown_then_resolve_is_fallback",
         "poisons then restores TLS LOCAL via the real mark_local_torn fn, bracketed within the call; net-zero from caller's perspective",
     ),
