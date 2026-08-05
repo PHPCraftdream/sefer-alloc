@@ -1116,25 +1116,8 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     pre-existing, isolated-run-clean" instead of re-diagnosing from
     scratch.
 
-15. **[T, filed 2026-08-04, R34-2/task #521] Provenance asymmetry hypothesis —
-    the task-#142 exposed-provenance fix was applied to `Node::atomic_ptr_ref`
-    only, not to the ring's `atomic_u32_at`/`atomic_u64_at`/`atomic_u8_at`
-    (`docs/reviews/2026-08-04-release-stabilization-audit.md` F-2 [low]).**
-    `atomic_ptr_ref`'s own comment (`src/alloc_core/node.rs:564-578`) states
-    the reason for its `expose_provenance`/`with_exposed_provenance_mut` form
-    as a remote-vs-remote aliasing argument — but `atomic_u32_at` backs
-    `RemoteFreeRing`'s `head`/`tail`/`cached_head`/`slots`, written concurrently
-    by an arbitrary number of remote producer threads (the identical
-    remote-vs-remote shape), and `atomic_u64_at` backs `SegmentHeader::owner_state`.
-    Neither the code nor the docs give a reason for the split. No repro was
-    constructed; under Tree Borrows an `&AtomicU32` derived from a raw pointer
-    gets `Cell` permission (immune to foreign accesses), so the concern is
-    Stacked-Borrows-specific at most. What makes it worth listing is that the
-    question is **currently unanswerable by this repo's own tooling**: there is
-    no miri test that drives ≥2 concurrent remote small-block ring pushes (audit
-    G1). **BLOCKED on #524/R34-5** (the concurrent small-block ring miri test);
-    only if that test flags under Stacked Borrows should the `atomic_ptr_ref`
-    treatment be applied to `atomic_u32_at`.
+_(item 15, the F-2 provenance-asymmetry hypothesis, was resolved-negative by
+R34-5 (task #524) — see "Recently resolved" below.)_
 
 16. **[T, filed 2026-08-04, R34-2/task #521] Cross-thread routing's documented
     residual (caller-contract-violation surface) needs to reach the release
@@ -2017,3 +2000,83 @@ assertion proving no double-release but not no leak, was resolved by R28-2
       five-slot taxonomy, which governs runtime/opt-in/measurement/docs
       code changes; this is pure verification-coverage addition with zero
       shipping code changed.
+
+16. **F-2 provenance-asymmetry hypothesis — RESOLVED-NEGATIVE**
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-2
+    [low]; open item 15) — **RESOLVED** by R34-5 (task #524), following the
+    item's own decision rule. The item's blocking question was: does the
+    concurrent multi-producer SMALL-block `RemoteFreeRing` push/drain path
+    (`Node::atomic_u32_at`, backing `head`/`tail`/`cached_head`/`slots`) flag
+    under Stacked Borrows the way `Node::atomic_ptr_ref` was fixed for in
+    task #142 — the one piece of evidence the repo's tooling could not
+    supply until a concurrent small-ring miri test existed (audit G1).
+
+    - **Trigger test added:** R34-5 (task #524, commit `fd54ddc`, plus
+      `b47a261`/`91ff1dd` fixing two local miri/tsan wrapper scripts that had
+      silently omitted the `internals` feature) added
+      `tests/regression_xthread_small_ring_miri.rs`
+      (`xthread_small_ring_two_producers_push_owner_drains`): 2 spawned
+      producer threads concurrently free small blocks from the SAME segment
+      (both CAS-reserving into the same per-segment `RemoteFreeRing`) while
+      the owner concurrently allocates, then force-drains via
+      `dbg_drain_all_rings` — the exact "≥2 concurrent remote small-block
+      ring pushes" shape audit finding G1 said was missing.
+    - **Wired into `miri-plain` under plain (Stacked Borrows) miri, not Tree
+      Borrows — confirmed by reading, not assumed:** `grep -n MIRIFLAGS
+      .github/workflows/ci.yml` shows the `miri-plain` job's `env` block
+      (`.github/workflows/ci.yml:860`) sets
+      `MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"` —
+      no `-Zmiri-tree-borrows` anywhere in that value or job, so this job
+      runs under miri's default provenance/aliasing model, Stacked Borrows,
+      exactly the model the item's decision rule names as its trigger
+      condition. The job's `run:` step (`:900-903`) lists
+      `--test regression_xthread_small_ring_miri` alongside the two
+      pre-existing large-block plain-miri tests, confirmed via `git show
+      fd54ddc --stat` (touches `.github/workflows/ci.yml`,
+      `scripts/miri.mjs`, `docs/ARCHITECTURE.md`, and the new test file).
+    - **Trigger condition checked independently, not taken on the commit
+      message's word:** re-ran the exact test locally —
+      `MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5" cargo
+      +nightly miri test --features "alloc-global alloc-xthread internals"
+      --test regression_xthread_small_ring_miri` — result: `test result: ok.
+      1 passed; 0 failed` (~67s locally), with only the expected/documented
+      integer-to-pointer-cast warnings (the same exposed-provenance
+      re-derivation warnings the other `miri-plain` tests already produce,
+      not errors). This matches task #524's own commit message verification
+      log ("1 passed (~49s), only the expected integer-to-pointer-cast
+      warnings") and independently confirms it under a fresh local run
+      rather than trusting the commit's self-report.
+    - **Verdict:** the trigger did NOT fire — the concurrent small-block ring
+      test does not flag under Stacked Borrows. Per the item's own decision
+      rule ("only if that test flags under Stacked Borrows should the
+      `atomic_ptr_ref` treatment be applied to `atomic_u32_at`"), the
+      `expose_provenance`/`with_exposed_provenance_mut` treatment is **NOT
+      required** for `atomic_u32_at`/`atomic_u64_at`/`atomic_u8_at`. The
+      original provenance-asymmetry hypothesis (task-#142's fix applied to
+      `atomic_ptr_ref` only, not the ring's other atomic accessors) is
+      closed **resolved-negative**: this repo's tooling can now answer the
+      question audit finding G1 said was unanswerable, and the answer is
+      "no asymmetry-driven miri failure is reachable" — not "asymmetry
+      confirmed harmless by inspection alone," a materially stronger claim
+      than the item started with.
+    - **Scope of what this resolution does and does not prove:** miri's
+      Stacked Borrows model not flagging a 2-producer/1-consumer
+      interleaving over ~49-67s of runtime is evidence the asymmetry is not
+      an easily-triggered UB source under that model and that workload
+      shape — it is not an exhaustive proof over all interleavings/thread
+      counts (miri explores the interleavings its scheduler happens to
+      generate, not all of them) and says nothing about Tree Borrows (which
+      the item's own text already argued is structurally immune here via
+      `Cell` permission on raw-pointer-derived `&AtomicU32`, a separate,
+      independent argument this resolution does not depend on).
+    - **Files changed (doc-only):** this index entry (item 15 above replaced
+      with a one-line "Recently resolved" pointer per CLAUDE.md's R34-24
+      current-state-card structural rule; this closure narrative added
+      here). No source, test, or CI file changed by this task — #524
+      already landed the test and CI wiring in a prior commit.
+    - **Commit prefix:** `docs` — pure documentation update (closing a
+      stale open-item card to reflect an already-landed, already-verified
+      resolution); no shipping or opt-in code changed, no measurement run
+      newly performed that a report's verdict rests on (the miri re-run
+      here reproduces #524's own already-published result, it does not
+      establish a new one).
