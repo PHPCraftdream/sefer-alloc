@@ -51,8 +51,9 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    # R30-5 (task #454): this job's 5 clippy rows (default / experimental /
-    # --all-features / hardened medium-classes / production) are transcribed
+    # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
+    # --all-features / hardened medium-classes / production / production
+    # internals, the last added by R34-3/task #522) are transcribed
     # BY HAND from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — the single
     # source of truth also consumed by `scripts/run-check-matrix.mjs` (which
     # `scripts/check-all.mjs`'s local `npm run check` runs as one of its
@@ -156,10 +157,11 @@ jobs:
     # runner (the SAME script `scripts/check-all.mjs`'s local `npm run check`
     # invokes as one of its steps, so local and CI execute byte-identical
     # argv from the same manifest). Deliberately `--kind check --kind test`
-    # here, not the full manifest — the `clippy` job above already runs all 5
+    # here, not the full manifest — the `clippy` job above already runs all 6
     # clippy rows as named per-step Actions-UI entries (including the new
-    # `production` row this task added), so running them AGAIN here would
-    # double CI minutes on the same 5 combinations for zero additional
+    # `production` row this task added, plus the later `production internals`
+    # row from R34-3/task #522), so running them AGAIN here would
+    # double CI minutes on the same 6 combinations for zero additional
     # coverage (R31-11/task #475: that hand-transcription is checked instead
     # by `tests/ci_clippy_matrix_consistency.rs`, not by this job — see the
     # `clippy` job's own header comment). This job is therefore currently
