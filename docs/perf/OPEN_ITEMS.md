@@ -1944,7 +1944,7 @@ for completeness.
     >   (b)'s cited Windows wall-clock context; this file's "Recently
     >   resolved" trail (R10-6/R11-6, re-verified by R25-9) for (c).
 
-40. **F7 (2026-08-05, task #551) — `docs/perf/r34_23_runs/` was a tier-2
+43. **F7 (2026-08-05, task #551) — `docs/perf/r34_23_runs/` was a tier-2
     artifact-storage-policy violator; the more general glob-based-policy gap
     it exposed is not yet closed — RESOLVED for the specific file, open for
     the general gap.**
