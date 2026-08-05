@@ -9,21 +9,21 @@ H1-H8), tasks #571-578 — sequenced strictly in priority order per this
 session's explicit governing instruction ("fix all red/broken things
 first, then review findings, then a new review"): H1→H2→H3→H4→H5→H7→H8→H6.
 
-**This manifest is NOT the final word on wave 3's commit count.** Per this
-task's own instructions (H6 is deliberately sequenced near the end but
-still needs to commit itself, and the wave's closing checkpoint +
-CHANGELOG-entry + markdown commit + `@oh` review have not landed yet at
-the time this file is written), at least 2 more commits will land after
-this one: this task's own commit, and the wave-closing
-checkpoint/CHANGELOG commit the `/babygoal` ritual requires. Rather than
-risk a fourth silent under-count, this file states that explicitly instead
-of pretending to be final — the reader should re-run the derivation
-command below against current `HEAD` if an exact final count matters.
+**Extended once past H6's own original commit** (`db63aed`, row 8 below)
+to absorb 3 more real fallout-fix commits `npm run check`'s own full run
+surfaced AFTER H6 landed — see rows 9-11. This is the bounded,
+single-wave extension §2's original text anticipated, not a repeat of the
+cross-wave under-count pattern that motivated this file's own existence.
+One more commit (this wave's closing checkpoint/CHANGELOG commit) will
+still land after this file's own edit — re-run the derivation command
+below against final `HEAD` if an exact terminal count matters; this is
+the expected, single, small residual, not a hidden backlog.
 
 ## §1. Commit classification (verbatim from `git log`, as of this commit)
 
 Reproduce: `git log --reverse --format="%H %s" 2a7f1e6..HEAD` (upper bound
-`HEAD` will include more commits after this one lands — see caveat above).
+`HEAD` will include the closing commit after this one lands — see note
+above).
 
 | # | SHA (full) | Commit prefix | Subject (truncated) | Task | Category |
 |---|------------|---------------|---------------------|------|----------|
@@ -34,33 +34,50 @@ Reproduce: `git log --reverse --format="%H %s" 2a7f1e6..HEAD` (upper bound
 | 5 | `d48d7bafac0911af69ada200ecc53a54fadcdf43` | `docs` | close H5 — cross-file Sol-F5/Sol-F6's residuals into the correctness index | #575 | **docs-only** (2 one-line `src/` doc-comment cross-references, no behavior change) |
 | 6 | `5c17cc37872eaa44cf4732251063435743c1cf86` | `docs` | close H7 — add a BREAKING CHANGE entry for the internals surface narrowing | #577 | **docs-only** |
 | 7 | `800ee8668b2971a81d6f707ef525373ddcf82c0f` | `docs` | close H8 — record the decision to leave dbb4016's fix(perf) prefix as-is | #578 | **docs-only** |
+| 8 | `db63aed887012c589ea327e947b7d850fadefd35` | `docs` | close H6 — redefine R34_MANIFEST.md's scope instead of a 3rd extension | #576 | **docs-only** (this file's own creation) |
+| 9 | `e886ea42a46ef7d6a614c25504a6c173125825fe` | `fix(perf)` | close H2's remaining fallout — 6 examples + 1 bench need internals | — | **fix(perf) — visibility/cfg-gating** (same class as row 2; found by `npm run check`'s own `--all-features` matrix step, not caught by H2's own `src/`-only sweep) |
+| 10 | `0d23e7fa95dd355ad1e891f872ad7c4866900ad6` | `fix` | correct H1's stack-pressure runtime test — was vacuous under --all-features | — | **fix — test-only** (mirrors the compile-time guard's own `#[cfg]` exclusion; no shipping/opt-in code changed) |
+| 11 | `2f16ba658e618e5b5501fe167a803cb5342925a6` | `fix` | serialize a pre-existing flaky test on process-wide tier1 counters | — | **fix — test-only** (pre-existing flake, unrelated to this wave's own changes, found by the same full-matrix run) |
 
-*(H6/task #576's own commit — the one creating this file — is not listed
-in its own table; it will appear as row 8 in a future re-derivation if one
-is ever performed.)*
+*Row 9's SHA is the FINAL, amended SHA (`git commit --amend` folded a
+second required-features gap found immediately after the first fix into
+the same logical commit, since nothing had stacked on it yet at amend
+time) — verified via `git rev-parse e886ea4` against this table.*
 
-### Aggregate counts (as of this commit, incomplete — see caveat above)
+### Aggregate counts (as of this commit — 1 closing commit still to land)
 
 | Category | Count | Commits |
 |----------|-------|---------|
 | **fix — production-source** (compile-fix, no algorithm/behavior change) | 1 | 8b9ed10 |
-| **fix(perf) — visibility/cfg-gating** | 1 | 25d6ac4 |
-| **docs-only** | 5 | baa91cc, 6e5c067, d48d7ba, 5c17cc3, 800ee86 |
+| **fix(perf) — visibility/cfg-gating** | 2 | 25d6ac4, e886ea4 |
+| **fix — test-only** | 2 | 0d23e7f, 2f16ba6 |
+| **docs-only** | 6 | baa91cc, 6e5c067, d48d7ba, 5c17cc3, 800ee86, db63aed |
 
 **Net default-feature impact:** `production`'s feature composition is
-**UNCHANGED**. H2's `internals`-gating extension (25d6ac4), like wave 2's
-`dbb4016`, narrows what compiles WITHOUT the opt-in `internals` feature —
-it does not add or change any `production`-default behavior. H1's compile
-fix (8b9ed10) restores buildability under feature combinations that were
-red before it (a stack-pressure test gate + a compile-time size assert's
-own `#[cfg]` scope) — no shipping algorithm changed.
+**UNCHANGED**. H2's `internals`-gating extension (25d6ac4 + its fallout
+fix), like wave 2's `dbb4016`, narrows what compiles WITHOUT the opt-in
+`internals` feature — it does not add or change any `production`-default
+behavior. H1's compile fix (8b9ed10 + its own follow-up 0d23e7f) restores
+buildability under feature combinations that were red before it — no
+shipping algorithm changed. `2f16ba6`'s flake fix serializes two
+pre-existing tests reading process-wide diagnostic counters, unrelated to
+any shipping behavior.
 
-## §2. Known follow-up
+## §2. Zero-trust discovery: `npm run check`'s own full-matrix run caught
+real gaps H2/H1's own per-task verification missed
 
-Once the wave's closing checkpoint/CHANGELOG/`@oh`-review sequence lands,
-re-run `git log --reverse --format="%H %s" 2a7f1e6..<final-HEAD>` and
-extend this table with the remaining rows (this task's own commit, the
-closing commit(s), and anything a follow-up review finds) — a bounded,
-single-wave extension, not a repeat of the cross-wave under-count pattern
-`R34_MANIFEST.md` accumulated three times before this file's scope
-redefinition.
+Both `e886ea4`/row 9 and `0d23e7f`/row 10 exist because running the FULL
+`npm run check` pipeline (all 5 clippy rows, all 4 test-feature combos,
+including `--all-features`) AFTER H1-H8 individually landed surfaced two
+real compile/test failures that each task's OWN narrower verification
+(scoped to `production internals` or similar) did not exercise:
+`examples`/`benches` are separate Cargo targets with independent
+`required-features`, invisible to a library-only `cargo check`; and
+`--all-features` uniquely combines `experimental`/`pinning`/
+`bench-internals`/`batch-api`, a combination no single H-task's own
+verification step happened to reach. `2f16ba6`/row 11 is a third,
+unrelated discovery from the same full-matrix run: a pre-existing flaky
+test this session did not cause but that the run surfaced regardless.
+This is the concrete value of running the FULL gate before closing a
+wave, not just each task's own scoped verification — consistent with
+CLAUDE.md's own "npm run check before every push" rule.
