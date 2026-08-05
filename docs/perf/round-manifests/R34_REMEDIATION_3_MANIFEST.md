@@ -9,21 +9,30 @@ H1-H8), tasks #571-578 — sequenced strictly in priority order per this
 session's explicit governing instruction ("fix all red/broken things
 first, then review findings, then a new review"): H1→H2→H3→H4→H5→H7→H8→H6.
 
-**Extended once past H6's own original commit** (`db63aed`, row 8 below)
-to absorb 3 more real fallout-fix commits `npm run check`'s own full run
-surfaced AFTER H6 landed — see rows 9-11. This is the bounded,
-single-wave extension §2's original text anticipated, not a repeat of the
-cross-wave under-count pattern that motivated this file's own existence.
-One more commit (this wave's closing checkpoint/CHANGELOG commit) will
-still land after this file's own edit — re-run the derivation command
-below against final `HEAD` if an exact terminal count matters; this is
-the expected, single, small residual, not a hidden backlog.
+**FINAL — closed 2026-08-05.** Extended twice past H6's own original
+commit (`db63aed`, row 8): once to absorb 3 real fallout-fix commits
+`npm run check`'s own full run surfaced AFTER H6 landed (rows 9-11), and
+once more (task #576/H6's own follow-up, filed as finding F7 of
+`docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`) to add
+the manifest's own extension commit and the wave's closing
+checkpoint/CHANGELOG commits (rows 12-14) — completing the manifest to the
+exact 14-commit span that review itself independently cited as wave 3's
+scope (`2a7f1e6..85dacfc`, verified via `git log --oneline 2a7f1e6..85dacfc
+| wc -l` = 14). This is the bounded, single-wave extension pattern §2's
+original text anticipated; no further extension is expected — wave 3 ends
+at `85dacfc`, and any commit after it belongs to the NEXT wave's own
+manifest (`R34_REMEDIATION_4_MANIFEST.md`, covering the fixes for this
+same review's F1-F10 findings).
 
-## §1. Commit classification (verbatim from `git log`, as of this commit)
+**Convention for future waves** (per F7's own suggested fix): the wave's
+LAST commit should update its own manifest file, listing itself, in the
+SAME commit — this avoids the "one more commit still to land" residual
+this file carried through two rounds of extension.
 
-Reproduce: `git log --reverse --format="%H %s" 2a7f1e6..HEAD` (upper bound
-`HEAD` will include the closing commit after this one lands — see note
-above).
+## §1. Commit classification (verbatim from `git log`, FINAL)
+
+Reproduce: `git log --reverse --format="%H %s" 2a7f1e6..85dacfc` (14
+commits, the closed, final wave-3 span).
 
 | # | SHA (full) | Commit prefix | Subject (truncated) | Task | Category |
 |---|------------|---------------|---------------------|------|----------|
@@ -38,20 +47,23 @@ above).
 | 9 | `e886ea42a46ef7d6a614c25504a6c173125825fe` | `fix(perf)` | close H2's remaining fallout — 6 examples + 1 bench need internals | — | **fix(perf) — visibility/cfg-gating** (same class as row 2; found by `npm run check`'s own `--all-features` matrix step, not caught by H2's own `src/`-only sweep) |
 | 10 | `0d23e7fa95dd355ad1e891f872ad7c4866900ad6` | `fix` | correct H1's stack-pressure runtime test — was vacuous under --all-features | — | **fix — test-only** (mirrors the compile-time guard's own `#[cfg]` exclusion; no shipping/opt-in code changed) |
 | 11 | `2f16ba658e618e5b5501fe167a803cb5342925a6` | `fix` | serialize a pre-existing flaky test on process-wide tier1 counters | — | **fix — test-only** (pre-existing flake, unrelated to this wave's own changes, found by the same full-matrix run) |
+| 12 | `28663e43f4dc1a6b9ed9680ac4512c42dd7dd591` | `docs` | extend R34_REMEDIATION_3_MANIFEST.md with H6's own commit + 3 fallout fixes | #576 | **docs-only** (this file's own first extension) |
+| 13 | `b57f988ec049229aab89fe421e30bc328f954216` | `docs` | CHANGELOG entry for wave 3 release-readiness remediation (tasks #571-578) | — | **docs-only** (wave-closing CHANGELOG entry) |
+| 14 | `85dacfc300784cb45ce61c9cfba76dd1a0820870` | `docs` | commit session checkpoints (wave 3 mid-work + wave 3 closing) | — | **docs-only** (wave-closing checkpoints) |
 
 *Row 9's SHA is the FINAL, amended SHA (`git commit --amend` folded a
 second required-features gap found immediately after the first fix into
 the same logical commit, since nothing had stacked on it yet at amend
 time) — verified via `git rev-parse e886ea4` against this table.*
 
-### Aggregate counts (as of this commit — 1 closing commit still to land)
+### Aggregate counts (FINAL — 14 of 14 commits)
 
 | Category | Count | Commits |
 |----------|-------|---------|
 | **fix — production-source** (compile-fix, no algorithm/behavior change) | 1 | 8b9ed10 |
 | **fix(perf) — visibility/cfg-gating** | 2 | 25d6ac4, e886ea4 |
 | **fix — test-only** | 2 | 0d23e7f, 2f16ba6 |
-| **docs-only** | 6 | baa91cc, 6e5c067, d48d7ba, 5c17cc3, 800ee86, db63aed |
+| **docs-only** | 9 | baa91cc, 6e5c067, d48d7ba, 5c17cc3, 800ee86, db63aed, 28663e4, b57f988, 85dacfc |
 
 **Net default-feature impact:** `production`'s feature composition is
 **UNCHANGED**. H2's `internals`-gating extension (25d6ac4 + its fallout
@@ -67,7 +79,7 @@ any shipping behavior.
 real gaps H2/H1's own per-task verification missed
 
 Both `e886ea4`/row 9 and `0d23e7f`/row 10 exist because running the FULL
-`npm run check` pipeline (all 5 clippy rows, all 4 test-feature combos,
+`npm run check` pipeline (all 6 clippy rows, all 4 test-feature combos,
 including `--all-features`) AFTER H1-H8 individually landed surfaced two
 real compile/test failures that each task's OWN narrower verification
 (scoped to `production internals` or similar) did not exercise:
