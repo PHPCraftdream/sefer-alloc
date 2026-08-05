@@ -5,7 +5,7 @@
 //!
 //! Per project convention: tests live in `tests/`, not inline.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

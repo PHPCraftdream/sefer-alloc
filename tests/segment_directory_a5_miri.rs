@@ -36,7 +36,7 @@
 //! The above-threshold path is covered by native tests (`segment_directory_
 //! a1.rs`, `_a2.rs`, `_a3.rs`, `_a5.rs`, `_a5_proptest.rs`).
 
-#![cfg(feature = "alloc-segment-directory")]
+#![cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
 
 use std::alloc::Layout;
 

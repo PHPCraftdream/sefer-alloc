@@ -18,7 +18,7 @@
 //!     not miri, `alloc-lazy-commit` ON, `numa-aware` OFF) actually exercises
 //!     the grow path — every test below early-returns on every other leg.
 
-#![cfg(feature = "alloc-lazy-commit")]
+#![cfg(all(feature = "alloc-lazy-commit", feature = "internals"))]
 // Every test in this file has an eager early-return leg
 // (`any(numa-aware, not(windows), miri)`) and a lazy-exercise leg
 // (`all(not(numa-aware), windows, not(miri))`). On the eager leg the

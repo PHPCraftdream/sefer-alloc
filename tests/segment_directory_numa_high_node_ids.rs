@@ -35,7 +35,11 @@
 //!   cargo test --features "numa-aware-mock alloc-segment-directory" \
 //!       --test segment_directory_numa_high_node_ids
 
-#![cfg(all(feature = "numa-aware-mock", feature = "alloc-segment-directory"))]
+#![cfg(all(
+    feature = "numa-aware-mock",
+    feature = "alloc-segment-directory",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 

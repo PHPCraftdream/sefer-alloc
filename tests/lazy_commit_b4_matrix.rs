@@ -31,7 +31,11 @@
 //! The B4 "fail the k-th commit" hook (`dbg_arm_commit_fail_at`) is ADDITIVE
 //! to B2's `dbg_arm_commit_fail`; B2/B3 tests remain green.
 
-#![cfg(all(feature = "alloc-lazy-commit", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-lazy-commit",
+    feature = "alloc-decommit",
+    feature = "internals"
+))]
 // Every test in this file has an eager early-return leg
 // (`any(numa-aware, not(windows), miri)`) and a lazy-exercise leg
 // (`all(not(numa-aware), windows, not(miri))`). On the eager leg the

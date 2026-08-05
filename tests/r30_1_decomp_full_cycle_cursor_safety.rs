@@ -48,7 +48,8 @@
     feature = "alloc-core",
     feature = "alloc-xthread",
     feature = "alloc-decommit",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "internals"
 ))]
 
 use core::alloc::Layout;

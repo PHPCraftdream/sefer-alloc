@@ -24,7 +24,8 @@
 #![cfg(all(
     feature = "alloc-core",
     feature = "alloc-xthread",
-    feature = "alloc-decommit"
+    feature = "alloc-decommit",
+    feature = "internals"
 ))]
 
 use core::alloc::Layout;

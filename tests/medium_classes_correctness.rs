@@ -4,7 +4,7 @@
 //! item by item, plus the "table vs brute force" cross-check the task's
 //! test-requirements section calls for.
 //!
-//! Whole file is a no-op without `medium-classes` (see the `#![cfg(...)]`
+//! Whole file is a no-op without `medium-classes` (see the `#![cfg(all(..., feature = "internals"))]`
 //! below) — run with:
 //!   cargo test --features "production medium-classes" --test medium_classes_correctness
 

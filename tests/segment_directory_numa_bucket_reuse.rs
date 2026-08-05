@@ -79,7 +79,11 @@
 //!   cargo test --features "numa-aware-mock alloc-segment-directory" \
 //!       --test segment_directory_numa_bucket_reuse
 
-#![cfg(all(feature = "numa-aware-mock", feature = "alloc-segment-directory"))]
+#![cfg(all(
+    feature = "numa-aware-mock",
+    feature = "alloc-segment-directory",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

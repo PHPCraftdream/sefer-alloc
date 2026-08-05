@@ -36,15 +36,18 @@
 //! `#[cfg_attr]` below silences the resulting unused-binding lints on those
 //! legs, mirroring `lazy_commit_frontier.rs`'s identical discipline.
 
-#![cfg(any(
-    all(
-        feature = "primordial-lazy-commit",
-        not(feature = "small-segment-lazy-commit")
+#![cfg(all(
+    any(
+        all(
+            feature = "primordial-lazy-commit",
+            not(feature = "small-segment-lazy-commit")
+        ),
+        all(
+            feature = "small-segment-lazy-commit",
+            not(feature = "primordial-lazy-commit")
+        )
     ),
-    all(
-        feature = "small-segment-lazy-commit",
-        not(feature = "primordial-lazy-commit")
-    )
+    feature = "internals"
 ))]
 #![cfg_attr(
     any(not(windows), miri, feature = "numa-aware"),

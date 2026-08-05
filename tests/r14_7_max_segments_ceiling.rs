@@ -42,7 +42,7 @@
 //! `tests/segment_table_recycle.rs` and other lighter-weight tests that DO
 //! run under miri.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 

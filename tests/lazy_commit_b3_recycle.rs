@@ -40,7 +40,7 @@
 //!   - The eager path (feature-OFF, Unix, miri) is unchanged: it already paid
 //!     zero syscalls on this cycle and still does.
 
-#![cfg(feature = "alloc-lazy-commit")]
+#![cfg(all(feature = "alloc-lazy-commit", feature = "internals"))]
 // R8-5 (task #218): on every leg EXCEPT genuine Windows-lazy, the lazy-arm
 // cfg branches in the tests below compile out and leave their bindings
 // unused. Silence the lint family on the eager legs.

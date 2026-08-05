@@ -43,7 +43,11 @@
 // (the doc-hidden diagnostic reader of the now-gated `PageMap`) to construct
 // its counterfactual, so the whole file additionally requires `page-map-diag`.
 // Run with: cargo test --features "production alloc-xthread page-map-diag" --test phase13_drain_reclaim_layout_class
-#![cfg(all(feature = "alloc-xthread", feature = "page-map-diag"))]
+#![cfg(all(
+    feature = "alloc-xthread",
+    feature = "page-map-diag",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 use std::ptr;

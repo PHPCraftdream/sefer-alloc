@@ -163,7 +163,8 @@
 #![cfg(all(
     feature = "alloc-core",
     feature = "medium-classes",
-    feature = "alloc-stats"
+    feature = "alloc-stats",
+    feature = "internals"
 ))]
 
 use std::alloc::Layout;

@@ -5,7 +5,7 @@
 //!
 //! Feature-gated behind `alloc-segment-directory`.
 
-#![cfg(feature = "alloc-segment-directory")]
+#![cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
 
 use std::alloc::Layout;
 

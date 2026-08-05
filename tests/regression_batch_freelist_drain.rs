@@ -19,7 +19,7 @@
 //! task report): skip a block's `mark_alloc` → (a) RED; wrong final `set_head`
 //! → (b) RED; a stray extra `inc_live` in the batch → (c) RED.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

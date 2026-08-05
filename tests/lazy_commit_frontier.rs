@@ -24,7 +24,7 @@
 //!       removed (every carve past the artificial frontier used to run a
 //!       no-op `commit_pages` + bump an atomic counter for zero benefit).
 
-#![cfg(feature = "alloc-lazy-commit")]
+#![cfg(all(feature = "alloc-lazy-commit", feature = "internals"))]
 // Under `numa-aware`, OR on Unix/miri (where R8-5 made the frontier eager —
 // `SEGMENT`), the lazy-arm cfg branches in the tests below compile out and
 // leave their bindings (`prim_payload_start`, `payload_start`, etc.) unused.

@@ -49,7 +49,8 @@
 #![cfg(all(
     feature = "alloc-segment-directory",
     feature = "alloc-stats",
-    not(feature = "numa-aware")
+    not(feature = "numa-aware"),
+    feature = "internals"
 ))]
 
 use std::alloc::Layout;

@@ -71,7 +71,7 @@
 //! on `feature = "alloc-decommit"` (additively — it compiles whenever that
 //! feature is present, e.g. under `--features production`).
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 

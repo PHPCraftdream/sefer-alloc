@@ -27,7 +27,7 @@
 //! `dbg_*` hooks, giving deterministic control over segments, rings and decommit
 //! without real cross-thread races.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

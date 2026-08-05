@@ -64,7 +64,11 @@
 //! Feature-gated behind `alloc-xthread` (ring/drain path) PLUS
 //! `alloc-segment-directory` (the directory scan under test).
 
-#![cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+#![cfg(all(
+    feature = "alloc-xthread",
+    feature = "alloc-segment-directory",
+    feature = "internals"
+))]
 
 use std::alloc::Layout;
 

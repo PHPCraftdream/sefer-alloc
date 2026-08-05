@@ -27,7 +27,7 @@
 //!     → same assertion fails; and the re-alloc would re-issue it → the
 //!     distinct-pointer assertion fails.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

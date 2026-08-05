@@ -78,7 +78,8 @@
 #![cfg(all(
     feature = "alloc-core",
     feature = "alloc-decommit",
-    feature = "bench-internals"
+    feature = "bench-internals",
+    feature = "internals"
 ))]
 
 use sefer_alloc::AllocCore;

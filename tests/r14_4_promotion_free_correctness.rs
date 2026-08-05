@@ -75,7 +75,7 @@
 //! `alloc-decommit`'s release/retention bookkeeping entirely, so there is no
 //! segment-release event for a per-base check to observe there.
 //!
-//! Whole file is a no-op without `medium-classes` (see `#![cfg(...)]` below)
+//! Whole file is a no-op without `medium-classes` (see `#![cfg(all(..., feature = "internals"))]` below)
 //! — run with:
 //!   cargo test --release --features "production medium-classes" --test r14_4_promotion_free_correctness
 //!   cargo test --release --features "production medium-classes exact-span-large" --test r14_4_promotion_free_correctness

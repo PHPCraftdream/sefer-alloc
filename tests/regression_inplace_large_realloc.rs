@@ -47,7 +47,7 @@
 //! data-preservation (the property that actually matters) is still checked
 //! unconditionally in both.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use core::alloc::Layout;
 use sefer_alloc::{AllocCore, SegmentLayout};

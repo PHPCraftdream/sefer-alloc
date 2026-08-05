@@ -15,7 +15,7 @@
 //! start, double-counted `live`, or marked the wrong page class), the distinct
 //! / strided / page-class / round-trip assertions below fail.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;

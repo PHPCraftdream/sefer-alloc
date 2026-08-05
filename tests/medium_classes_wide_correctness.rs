@@ -5,7 +5,7 @@
 //! prototype (`§3` of the task — verify the review's rough 3x/2x/2x
 //! objects-per-segment guess against the REAL per-segment metadata overhead).
 //!
-//! Whole file is a no-op without `medium-classes-wide` (see the `#![cfg(...)]`
+//! Whole file is a no-op without `medium-classes-wide` (see the `#![cfg(all(..., feature = "internals"))]`
 //! below) — run with:
 //!   cargo test --features "production medium-classes-wide" --test medium_classes_wide_correctness
 //!

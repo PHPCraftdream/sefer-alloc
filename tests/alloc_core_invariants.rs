@@ -4,7 +4,7 @@
 //! of M1–M5 and the substrate's structural properties. Kept FAST per the
 //! short-scenario policy: small sizes, small counts, miri-friendly.
 
-#![cfg(feature = "alloc-core")]
+#![cfg(all(feature = "alloc-core", feature = "internals"))]
 
 use std::alloc::Layout;
 use std::ptr;

@@ -23,7 +23,7 @@
 //! [`AllocCore::dbg_words_per_class`] itself carries (the sidecar is
 //! meaningless without the segment-directory feature compiled in).
 
-#![cfg(feature = "alloc-segment-directory")]
+#![cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
 
 use sefer_alloc::AllocCore;
 
