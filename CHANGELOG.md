@@ -39,73 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[research, docs] R34-25 (task #544) — a design-only feasibility study of a small-magazine provenance scheme for the 16/64 B bulk-burst gap concluded NEED-MORE-RESEARCH, leaning NO-GO.** The candidate's headline lever (caching the segment base to avoid `segment_base_of_ptr` re-derivation) is very likely net-negative on first principles: the function is a single `#[inline(always)]` AND (~1 Ir), and a prior report's "9.03 Ir" attribution was independently re-derived to be a measurement-probe artifact (measured through a non-inlined `dbg_` hook + `black_box` + call-boundary overhead production never pays), not the real inlined cost. The one sound lever (skip the magazine-bitmap clear for never-issued fresh-carve blocks) only helps the COLD first refill of a repeated-bulk-burst workload — every hit from the second burst onward is on a recycled block whose clear is correctness-required (R3) and irreducible under the current architecture. All three prior rejected forms in this exact region (delayed clear, dual bitmap, run-encoded freelist) were read and confirmed not to be re-skinned by the new candidate. No prototype built — the honest, cheaper next step (a disassembly-level instruction count, code-free) is named instead. `docs/design/R34_25_SMALL_MAGAZINE_PROVENANCE_DESIGN.md`. Commit `7758f7a`.
 - **[research, docs] R34-26 (task #545) — a design-gate study of a page-run layer for the 256 KiB-2 MiB range (a prior review's most-likely-remaining architectural multiplier) concluded NEED-MORE-DATA, leaning NO-GO: no real consumer of this size range exists anywhere in the project's own workloads.** Confirmed the prior `medium-classes` NO-GO's failure mode was architectural (the carve/grow model, proven by a closed-form LCM argument that a 4 MiB segment cannot support in-place grow for the medium ladder), not "missing size classes" as such — and confirmed a page-run layer with a buddy/run bitmap in a larger (8-16 MiB) arena COULD satisfy the same LCM arithmetic and support in-place grow from the start. But an exhaustive search of every workload/bench/example in the project found none exercising 256 KiB-2 MiB realistically (larson/mstress top out at 8 KiB; R29-5's realistic Vec-growth trace found only 0.054% of allocations ever promote to Large). `docs/perf/OPEN_ITEMS.md` item 3 updated with the in-place-grow angle and an explicit realloc-WIN-not-parity criterion for any future promotion. `docs/design/R34_26_PAGE_RUN_LAYER_DESIGN_GATE.md`. Commit `8cb89ea`.
 
-### BREAKING CHANGE — `AllocCore`'s `dbg_*` diagnostic surface narrowed behind `internals`
-
-R34-3 (task #522) gated the `alloc_core`/`global`/`registry` module PATHS
-behind the new opt-in `internals` Cargo feature, but `AllocCore` itself is
-re-exported at the crate root unconditionally (gated only on `alloc-core`)
-— module-path privacy does not hide a type's own already-`pub` inherent
-methods when that type is reachable another way. Sol-F1 (task #563) and
-its follow-up H2 (task #572) closed that gap directly: every `AllocCore::
-dbg_*` diagnostic/test-only hook (~125 methods across `src/alloc_core/*.rs`
-— carve/reclaim internals, small-pool/decommit accounting, large-cache
-budget/decay/slot introspection, NUMA-node caching, segment-directory
-bits, and more) is now gated `#[cfg(feature = "internals")]` directly on
-the method, in addition to whatever module-path gating already applied.
-
-**Why.** These are `#[doc(hidden)]`, `TEST-ONLY`/`MEASUREMENT-ONLY` hooks,
-never intended as stable public API — several derive allocator metadata
-from a caller-supplied raw pointer with a prose-only safety contract (the
-exact class of gap CLAUDE.md's benchmark-hook rule, R25-1, already
-requires confined behind a feature gate). Before this fix, every one of
-them was reachable from a plain `--features production` build with zero
-opt-in, despite `#[doc(hidden)]` hiding them from rustdoc — `#[doc(hidden)]`
-alone was never a real semver boundary (see R34-3's own rationale above,
-one level up the type hierarchy).
-
-**What changed:** ~125 `AllocCore::dbg_*` inherent methods across 6 files
-(`alloc_core.rs`, `alloc_core_core_diag.rs`, `alloc_core_large_cache.rs`,
-`alloc_core_small_diag.rs`, `alloc_core_small_pool.rs`,
-`alloc_core_small_reclaim.rs`) now require `internals` to compile-reach,
-verified by an exhaustive structural check
-(`scripts/verify-alloc-core-dbg-internals-exhaustive.mjs`, wired into
-`npm run check`) that enumerates every such method and fails the build if
-a new one is added ungated. Four methods are deliberately exempt
-(`dbg_foreign_or_unroutable_frees`, `dbg_segments_reserved_total`,
-`dbg_segments_released_total`, `dbg_decommit_count`) because they back
-`SeferAlloc::stats()`'s public, always-on `AllocStats` return value — a
-real production caller, not test-only despite the `dbg_` name; these stay
-reachable under plain `production` with no `internals` needed. Transitive
-`HeapCore`/`SeferAlloc`-level delegation wrappers that call into the
-now-gated methods were updated to require `internals` too (45 call sites
-total across `src/registry/heap_core_diag.rs`, `src/registry/heap_core.rs`,
-and `src/global/sefer_alloc.rs`, combined across Sol-F1 and H2).
-
-**Migration.** No supported, documented API is affected — `SeferAlloc`,
-`AllocStats`, `Profile`, `LargeCacheConfig`, `LargeCacheMode`,
-`LargeCachePolicy`, `SmallPoolPolicy`, and every other type a downstream
-user is meant to name are unchanged and still reachable under plain
-`production`. Code that was calling `AllocCore::dbg_*` directly (an
-unsupported use of a `#[doc(hidden)]` surface — the crate's own docs never
-listed these as public API) needs `--features internals` added to compile
-against the current crate version; there is no supported use case this
-narrowing removes.
-
-**Correction (found by an independent readonly review of the wave that
-added this entry,
-`docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`,
-findings F3+F8): this section was originally spliced immediately after
-R34-3's own bullet, INSIDE the `#### Measurement, correctness & tooling`
-list — since `###` outranks `####`, that placement terminated both that
-subsection and the whole `### Round 34` section early, orphaning every
-remaining Round-34 bullet (R34-4 through R34-26 above) and all three
-remediation-wave subsections out of `### Round 34` and into this heading's
-own content. Moved here, after the complete Round-34 bullet list, matching
-where all 9 pre-existing `### BREAKING CHANGE` precedents in this file
-sit — a contiguous block after a completed body of content, never spliced
-into a live list. Also corrected "9 files" to the accurate "6 files" in
-the same pass (H2's own commit message repeated the same miscount).**
-
 #### Post-closing independent review remediation (2026-08-05, tasks #547-552)
 
 R34-27's own closing task launched an independent `@oh` readonly review of the entire round (`docs/reviews/2026-08-05-round34-readonly-review.md`), which found 8 findings (F1-F8; 2×P2, 5×P3, 1×P4), none a correctness or soundness defect in shipping code — the dominant theme was stale cross-references produced within the round itself (a later task invalidating an earlier task's cited number or line, with no sweep). All eight were filed as six leaf tasks and fixed in this follow-up wave, delegated sequentially (`/crush` for the first task; a peak-hours provider refusal on the second task triggered a pre-armed `sh` sub-agent fallback for the remainder), each personally zero-trust re-verified. **Runtime improvements: 0** — every fix in this wave is doc-only or test/CI-infrastructure-only; no `src/` runtime behavior or `production` composition changed.
@@ -184,6 +117,89 @@ After wave 4 landed and pushed (`origin/main` moved from `42d8d22` to `42d4206`,
 - **[process note] Independent verification (`docs/reviews/2026-08-05-fh-release-readiness-verification-review.md`) caught two of the prior two reviews' own diagnostic errors before they became misdirected work.** Both reviews recommended "add serialization" for `docs/CORRECTNESS_OPEN_ITEMS.md`'s open concurrency-flake items 12/14 (`xthread_large_double_free_no_double_reclaim`, `xthread_large_free_tiny_size_huge_align_is_reclaimed`) — verification found BOTH affected test files already fully serialize every test via a `SerialGuard`/`AtomicBool` spin-lock (3/3 and 5/5 tests respectively), refuting the "missing lock" hypothesis; the real, still-open question is why a fully-serialized run once observed 42 of an expected 50 reclaims (task #605/K10, rescoped from a mechanical fix to an investigation, deferred as non-release-blocking — not reproducible on demand). Separately, the same two reviews' recommended R6/commit-prefix "rebase decision" was already moot by the time of writing (see the K6 bullet above) — verification caught the premise change before a rebase was attempted. Both corrections folded directly into the task descriptions rather than left as review-only findings.
 
 Deferred, by explicit owner decision, to a dedicated pass immediately before tagging (not part of this sprint): the crates.io publish DAG (three path dependencies — `racy-ptr-cell`, `size-classes`, `tagged-index-stack` — are not yet published and have no release-workflow targets; `aligned-vmem`'s local `0.2` requirement exceeds its published `0.1.0`; `numa-shim`'s published version has drifted from the local tree) — tasks K3/K4/K9/L2/L3/L5, tracked and unchanged. Deferred to post-release hardening (does not block 0.3.0): the reclaim-shortfall investigation above (K10), tier-1 unsafe-seam miri/loom coverage (K11), panic/unwind guard completeness (K15), two Kani arithmetic proofs (K16), a deeper MSRV gate (K17), crates.io trusted publishing (K18), and a remaining item-numbering cleanup in `docs/CORRECTNESS_OPEN_ITEMS.md` (M2).
+
+### BREAKING CHANGE — `AllocCore`'s `dbg_*` diagnostic surface narrowed behind `internals`
+
+R34-3 (task #522) gated the `alloc_core`/`global`/`registry` module PATHS
+behind the new opt-in `internals` Cargo feature, but `AllocCore` itself is
+re-exported at the crate root unconditionally (gated only on `alloc-core`)
+— module-path privacy does not hide a type's own already-`pub` inherent
+methods when that type is reachable another way. Sol-F1 (task #563) and
+its follow-up H2 (task #572) closed that gap directly: every `AllocCore::
+dbg_*` diagnostic/test-only hook (~125 methods across `src/alloc_core/*.rs`
+— carve/reclaim internals, small-pool/decommit accounting, large-cache
+budget/decay/slot introspection, NUMA-node caching, segment-directory
+bits, and more) is now gated `#[cfg(feature = "internals")]` directly on
+the method, in addition to whatever module-path gating already applied.
+
+**Why.** These are `#[doc(hidden)]`, `TEST-ONLY`/`MEASUREMENT-ONLY` hooks,
+never intended as stable public API — several derive allocator metadata
+from a caller-supplied raw pointer with a prose-only safety contract (the
+exact class of gap CLAUDE.md's benchmark-hook rule, R25-1, already
+requires confined behind a feature gate). Before this fix, every one of
+them was reachable from a plain `--features production` build with zero
+opt-in, despite `#[doc(hidden)]` hiding them from rustdoc — `#[doc(hidden)]`
+alone was never a real semver boundary (see R34-3's own rationale above,
+one level up the type hierarchy).
+
+**What changed:** ~125 `AllocCore::dbg_*` inherent methods across 6 files
+(`alloc_core.rs`, `alloc_core_core_diag.rs`, `alloc_core_large_cache.rs`,
+`alloc_core_small_diag.rs`, `alloc_core_small_pool.rs`,
+`alloc_core_small_reclaim.rs`) now require `internals` to compile-reach,
+verified by an exhaustive structural check
+(`scripts/verify-alloc-core-dbg-internals-exhaustive.mjs`, wired into
+`npm run check`) that enumerates every such method and fails the build if
+a new one is added ungated. Four methods are deliberately exempt
+(`dbg_foreign_or_unroutable_frees`, `dbg_segments_reserved_total`,
+`dbg_segments_released_total`, `dbg_decommit_count`) because they back
+`SeferAlloc::stats()`'s public, always-on `AllocStats` return value — a
+real production caller, not test-only despite the `dbg_` name; these stay
+reachable under plain `production` with no `internals` needed. Transitive
+`HeapCore`/`SeferAlloc`-level delegation wrappers that call into the
+now-gated methods were updated to require `internals` too (45 call sites
+total across `src/registry/heap_core_diag.rs`, `src/registry/heap_core.rs`,
+and `src/global/sefer_alloc.rs`, combined across Sol-F1 and H2).
+
+**Migration.** No supported, documented API is affected — `SeferAlloc`,
+`AllocStats`, `Profile`, `LargeCacheConfig`, `LargeCacheMode`,
+`LargeCachePolicy`, `SmallPoolPolicy`, and every other type a downstream
+user is meant to name are unchanged and still reachable under plain
+`production`. Code that was calling `AllocCore::dbg_*` directly (an
+unsupported use of a `#[doc(hidden)]` surface — the crate's own docs never
+listed these as public API) needs `--features internals` added to compile
+against the current crate version; there is no supported use case this
+narrowing removes.
+
+**Correction (found by an independent readonly review of the wave that
+added this entry,
+`docs/reviews/2026-08-05-wave3-h1h8-remediation-readonly-review.md`,
+findings F3+F8): this section was originally spliced immediately after
+R34-3's own bullet, INSIDE the `#### Measurement, correctness & tooling`
+list — since `###` outranks `####`, that placement terminated both that
+subsection and the whole `### Round 34` section early, orphaning every
+remaining Round-34 bullet (R34-4 through R34-26 above) and all three
+remediation-wave subsections out of `### Round 34` and into this heading's
+own content. Moved here, after the complete Round-34 bullet list, matching
+where all 9 pre-existing `### BREAKING CHANGE` precedents in this file
+sit — a contiguous block after a completed body of content, never spliced
+into a live list. Also corrected "9 files" to the accurate "6 files" in
+the same pass (H2's own commit message repeated the same miscount).**
+
+**Correction #2 (found by `docs/reviews/2026-08-06-sprint-closing-readonly-review.md`
+finding S5): the first correction above moved this heading to "after the
+complete Round-34 bullet list" as it existed on 2026-08-05, but three MORE
+`####` remediation-wave subsections (wave 4, "Known limitations", and the
+"Release-readiness sprint" entry itself) were added by later commits the
+same day and landed BEFORE this heading again — recreating the identical
+orphaning bug one heading-hop upstream: those three subsections were
+syntactically nested under this `### BREAKING CHANGE` heading instead of
+under `### Round 34`, for the same reason (`###` outranks `####`) the
+original bug existed. Moved a second time, now genuinely after ALL of
+Round 34's continuation content (every remediation-wave subsection through
+the release-readiness sprint above), immediately before `### Round 33`.
+No further remediation-wave subsections are expected to land after this
+point in `### Round 34`'s own timeline, but if one does, it must land
+BEFORE this heading, not after.**
 
 ### Round 33 — closed all 13 findings from an independent `@oh` readonly review of Round 32's own work (`docs/reviews/2026-08-03-round32-readonly-review.md`), delegating implementation to `/crush` (an external CLI sub-agent, model glm-5.2) for the first time in this project's history instead of the Agent tool's `sh` type, every result personally zero-trust re-verified (diffs read in full, tests/clippy/fmt/loom re-run independently, derive scripts re-run and diffed against committed CSVs, every cited SHA resolved via `git rev-parse`) before being marked complete — fixed a red CI that had persisted across 5 latent clippy/compile failures despite the local `npm run check` gate already covering every one of them since R30-5 (the real cause was procedural: the offending pushes never ran the gate, and the async CI red signal then went unwatched for up to 70 commits, not a coverage gap), and hardened CLAUDE.md's own pre-push section with the genuinely-missing post-push CI-confirmation step (R33-1/task #506, commit `e526517`; R33-2/task #507, commit `888e9fc`); rewrote a `#[should_panic]` loom "counterfactual" test that panicked identically in every interleaving loom could schedule regardless of whether the property under test held — a tautology, not a counterfactual — adding a genuine non-vacuity companion test proving the "always re-derive on the slow path" design is actually load-bearing (R33-3/task #508, commit `3edce28`); corrected a formally-stated soundness proof's `head` write-site enumeration that its own landing commit had silently falsified (claimed 2 sites, there were 4, one added by that same commit), and pinned the corrected count with a new source-text drift-detection test so it cannot silently regress again (R33-4/task #509, commit `7d55209`); demonstrated, not merely asserted, R32-10's honest-latency-null claim with real paired-A/B evidence across all 7 K values (`t` vs `crit=2.101`, same-vs-same controls, 1,680 process launches, max |t|=1.729) — while catching and self-correcting an accidental commit of 5.1 MiB of `.gitignore`d scratch tool-output (`docs/perf/paired_ab_runs/`) along the way — though, contrary to that task's own commit-message framing, that path was not unprecedented: `git log --all --oneline -- docs/perf/paired_ab_runs/` lists 12 commits before `81d24f9`, and 33 paired_ab_runs JSON files remain force-tracked in the repo today across rounds 14–32, including 2 force-added by R32-12's own landing commit `e88390b` (R33-5/task #510, commits `81d24f9`+`b3b18bb`; framing corrected in R34-1/task #520); measured, not argued, R32-8's decay-clock-throttle retention cost in the low-large-op-throughput regime it was never tested in, finding a real but bounded, transient 36 MiB-per-missed-decay-interval cost (vanishing once ≥29 ops accumulate) that does not overturn the original GO (R33-6/task #511, commits `5bd7c04`+`8a04452`); split Round 32's own seven runtime-improvement bullets out of Round 31's CHANGELOG section into this round's own dedicated heading with an honest, accurate `Runtime improvements this round: 7` line for Round 32 (R33-7/task #512, commit `182b222`); made 15 derive scripts round-trippable by deriving their landing-commit SHA live via `git rev-parse HEAD` instead of a hardcoded placeholder that re-running the "checked" script would silently regenerate and destroy, and taught the corpus verifier to fail on any future regression of this pattern (R33-8/task #513, commit `b537770`); closed a dangling provenance cross-reference for an `isolate` measurement arm's unrecoverable scratch edit with an honest exemption note (four recoverability channels checked and confirmed empty) rather than manufacturing a hash after the fact (R33-9/task #514, commit `454149e`); stated explicitly, rather than leaving silently assumed, the `RemoteFreeRing` shadow-head soundness proof's staleness-bound precondition, after judging an alternative structural fix (`fetch_max`) not worth its unmeasured RMW cost on a hot cross-thread path for a P3, astronomically-remote hazard (R33-10/task #515, commit `b928cfe`); renamed two Round-32 summary CSVs to match their report's own basename (the naming convention CLAUDE.md has required since R14-10) and added a corpus-wide verifier check that found 3 further pre-existing (legitimate) naming drift instances (R33-11/task #516, commits `998d373`+`f51ec37`); backfilled the round's only shipping change that had shipped with no gate report at all, reproducing its already-published commit-message numbers EXACTLY from a fresh worktree-isolated re-measurement (`realloc_grow` −120 Ir, four kill-gates byte-exact), and documenting a real cargo-worktree-binary-reuse reproduction trap encountered along the way (R33-12/task #517, commit `96ae245`); and closed a commit-prefix taxonomy gap by giving `fix(perf)` a formal fifth slot alongside `perf(runtime)`/`perf(opt-in)`/`bench`/`docs(config)`, citing the Round-32 commit that had already needed it without one (R33-13/task #518, commit `0ec15e1`).
 
