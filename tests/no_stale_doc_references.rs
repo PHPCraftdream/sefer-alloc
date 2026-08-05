@@ -246,6 +246,101 @@ fn no_stale_abandon_adopt_substrate_references() {
     );
 }
 
+/// Regression-guard against `Cargo.toml`'s `alloc-global` feature comment
+/// reverting to the blanket "never panic/abort" overclaim (Sol-F3, task
+/// #565, `docs/reviews/2026-08-05-sol-release-readonly-review.md` finding
+/// F3, P1 release blocker).
+///
+/// Before this task, `Cargo.toml`'s `alloc-global` comment stated "Every
+/// entry point is no-panic (a panic in a global allocator aborts the
+/// process): checked branches return null on OOM, never panic/abort." This
+/// is contradicted by two REAL, intentional, release-surviving termination
+/// paths reachable from `SeferAlloc`'s `GlobalAlloc` impl:
+///
+///   1. Five invariant tripwires documented in `src/global/sefer_alloc.rs`'s
+///      module doc (R34-16, task #535, pinned separately by
+///      `tests/no_panic_doc_accuracy.rs`) — release `assert!`/`.expect()`/
+///      `unreachable!()` sites kept as deliberate defence-in-depth, which
+///      abort the process via the `#[rustc_nounwind]` `GlobalAlloc` shims.
+///   2. `Registry::ensure_chunk` in `src/registry/bootstrap.rs` calls
+///      `std::process::abort()` directly and unconditionally on
+///      chunk-materialisation OOM on the ALLOC path (the free path is
+///      fallible instead, via `slot_or_none`/`try_ensure_chunk`, R34-15).
+///
+/// This test pins three things so the Cargo.toml wording cannot silently
+/// drift back to the false blanket claim without a conscious update:
+///
+///   * Cargo.toml's `alloc-global` comment block does NOT contain the old
+///     unqualified overclaim ("never panic/abort" as a blanket guarantee).
+///   * Cargo.toml's `alloc-global` comment block DOES point a reader at
+///     `sefer_alloc.rs` (the tripwires doc) and at the direct
+///     `std::process::abort()` call, so the corrected wording itself cannot
+///     silently regress into vague prose that re-introduces the same gap.
+///   * `src/registry/bootstrap.rs` still actually contains the
+///     `std::process::abort()` call the corrected wording cites — if that
+///     call is ever removed/softened, this test forces a conscious
+///     Cargo.toml wording update rather than leaving a now-stale citation.
+///
+/// Doc-only guard: reads Cargo.toml + source text, never links the crate, so
+/// it runs in every feature configuration.
+#[test]
+fn cargo_toml_alloc_global_panic_contract_is_accurate() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cargo = fs::read_to_string(manifest.join("Cargo.toml")).expect("read Cargo.toml");
+
+    // Isolate the `alloc-global` feature's comment block (the lines
+    // immediately above the `alloc-global = [...]` feature line) rather than
+    // scanning the whole file, so this guard cannot be satisfied by
+    // unrelated text elsewhere in Cargo.toml.
+    let feature_line_idx = cargo
+        .lines()
+        .position(|l| l.trim_start().starts_with("alloc-global = ["))
+        .expect("Cargo.toml must define `alloc-global = [\"...\", ...]`");
+    let lines: Vec<&str> = cargo.lines().collect();
+    let mut block_start = feature_line_idx;
+    while block_start > 0 && lines[block_start - 1].trim_start().starts_with('#') {
+        block_start -= 1;
+    }
+    let block = lines[block_start..feature_line_idx].join("\n");
+
+    assert!(
+        !block.contains("never panic/abort") || block.contains("NOT a blanket"),
+        "Cargo.toml's `alloc-global` comment reintroduced the blanket \
+         'never panic/abort' overclaim without the qualifying caveat (Sol-F3 \
+         regression). Ordinary failure paths are no-op/null, but five \
+         release-surviving invariant tripwires (src/global/sefer_alloc.rs) \
+         and registry-chunk alloc-path OOM (src/registry/bootstrap.rs) \
+         terminate the process by design. See \
+         docs/reviews/2026-08-05-sol-release-readonly-review.md finding F3."
+    );
+    assert!(
+        block.contains("sefer_alloc.rs"),
+        "Cargo.toml's `alloc-global` comment must point readers at \
+         `src/global/sefer_alloc.rs`'s module doc (the five release-surviving \
+         invariant tripwires) — Sol-F3 regression guard."
+    );
+    assert!(
+        block.contains("std::process::abort()"),
+        "Cargo.toml's `alloc-global` comment must cite the direct \
+         `std::process::abort()` call on the alloc path (registry chunk OOM, \
+         `src/registry/bootstrap.rs`) — Sol-F3 regression guard."
+    );
+
+    // The corrected wording cites a REAL abort() call — if bootstrap.rs's
+    // abort is ever removed/softened without updating Cargo.toml, fail here
+    // instead of leaving a stale citation.
+    let bootstrap = fs::read_to_string(manifest.join("src").join("registry").join("bootstrap.rs"))
+        .expect("read src/registry/bootstrap.rs");
+    assert!(
+        bootstrap.contains("std::process::abort()"),
+        "src/registry/bootstrap.rs no longer calls `std::process::abort()` \
+         directly — Cargo.toml's `alloc-global` comment cites this call as \
+         part of the accurate panic/abort contract (Sol-F3); if the abort \
+         was removed or made fallible, update Cargo.toml's wording \
+         accordingly rather than leaving a stale citation."
+    );
+}
+
 /// Regression-guard for a checkable NUMERIC claim in the overview docs.
 ///
 /// `docs/ARCHITECTURE.md` states the count of integration-test files as

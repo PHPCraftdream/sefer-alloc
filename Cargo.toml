@@ -161,9 +161,17 @@ alloc-xthread = ["alloc-core"]
 # binding (allocation-free lazy init). The `unsafe impl GlobalAlloc` is the
 # single new `unsafe` surface of this phase -- it is the documented malloc-face
 # seam (the trait is `unsafe`; the body delegates to the already-proven safe
-# `HeapCore` entry points). Every entry point is no-panic (a panic in a global
-# allocator aborts the process): checked branches return null on OOM, never
-# panic/abort. Reentrancy-free (M5) is upheld structurally: no
+# `HeapCore` entry points). Ordinary failure paths are no-op, not abort:
+# checked branches (OOM, a foreign pointer, a layout we refuse to serve)
+# return null / are a safe no-op, never panic. This is NOT a blanket
+# never-panic/never-abort guarantee for the whole entry-point surface --
+# see `src/global/sefer_alloc.rs`'s module doc for the five release-surviving
+# invariant tripwires deliberately kept as release panics (which abort the
+# process via the `#[rustc_nounwind]` `GlobalAlloc` shims, defence-in-depth,
+# not UB) and `src/registry/bootstrap.rs`'s `Registry::ensure_chunk` for the
+# direct `std::process::abort()` on alloc-path chunk-materialisation OOM
+# (the free path is fallible instead, via `slot_or_none`/`try_ensure_chunk`,
+# R34-15). Reentrancy-free (M5) is upheld structurally: no
 # `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path -- the TLS init is
 # the lazy allocation-free discipline. Requires `alloc-core`. Add `alloc-xthread`
 # alongside it for the multi-thread face (cross-thread `dealloc` via
