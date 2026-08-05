@@ -30,3 +30,14 @@
 # scripts/r34_7_causal_harness.mjs — same scratch-by-default policy as
 # paired_ab_runs above.
 /docs/perf/r34_7_runs/
+# task #551 (R34-review F7): per-run raw provenance JSONs from
+# scripts/r34_23_realloc_direct_harness.mjs / r34_23_vec_harness.mjs — same
+# scratch-by-default policy as paired_ab_runs / r34_7_runs above. This rule
+# was missing when `ba716a0` (R34-23/task #542) first created the directory,
+# which let its 258 KiB direct_raw.json land as an ordinary tracked file
+# instead of through the deliberate git-add-f-when-cited gate (see
+# docs/perf/OPEN_ITEMS.md for the tracked deviation record). Already-tracked
+# files in this directory stay tracked despite the ignore rule (git does not
+# untrack on a later .gitignore addition) — this only prevents FUTURE files
+# in the directory from being added without a deliberate `git add -f`.
+/docs/perf/r34_23_runs/

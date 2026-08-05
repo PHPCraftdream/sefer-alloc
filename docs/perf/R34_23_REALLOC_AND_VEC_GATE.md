@@ -276,7 +276,7 @@ independent methodologies.
 | Vec-gate summary CSV | `docs/perf/R34_23_REAL_VEC_summary.csv` |
 | Criterion re-verification raw log | `docs/perf/_raw_r34_23_criterion_reverification.log` |
 | LRC hypothesis A/B raw log | `docs/perf/_raw_r34_23_lrc_hypothesis_ab.log` |
-| Direct-gate raw per-sample JSON (30 samples) | `docs/perf/r34_23_runs/2026-08-04T22-03-44-381Z_direct_raw.json` |
+| Direct-gate raw per-sample JSON (30 samples, gzip-compressed) | `docs/perf/r34_23_runs/2026-08-04T22-03-44-381Z_direct_raw.json.gz` |
 | Vec-gate raw per-sample JSON (8 reps) | `docs/perf/r34_23_runs/2026-08-04T22-03-52-053Z_vec_raw.json` |
 
 The summary CSVs and this report's tables are DERIVED from the raw JSON by the
@@ -284,3 +284,15 @@ harness scripts (`scripts/r34_23_realloc_direct_harness.mjs` /
 `r34_23_vec_harness.mjs`), not hand-transcribed (CLAUDE.md "tables derived by
 one checked script" rule). The harness scripts compute median/min/max/mean/
 stdev/cv from the per-sample data and write the CSV directly.
+
+**Task #551 (R34-review F7) note:** the direct-gate raw JSON was originally
+committed uncompressed at 258 KiB, exceeding the tier-2 force-add ceiling
+CLAUDE.md's artifact-storage-policy sets at 200 KiB (that policy landed later
+the same round, in `4ba188a`/R34-24). It is gzip-compressed here per that
+policy's tier-2 point 2(b) — chosen over truncation because the file is
+1,080 uniform per-sample records that the summary CSV derives from in full,
+so truncating to a cited excerpt would lose reproducibility of the derivation,
+not just trim boilerplate. `gunzip -k
+docs/perf/r34_23_runs/2026-08-04T22-03-44-381Z_direct_raw.json.gz` (or
+`zcat`) recovers the original byte-identical JSON. See
+`docs/perf/OPEN_ITEMS.md` for the tracked deviation record.

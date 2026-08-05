@@ -1944,6 +1944,78 @@ for completeness.
     >   (b)'s cited Windows wall-clock context; this file's "Recently
     >   resolved" trail (R10-6/R11-6, re-verified by R25-9) for (c).
 
+40. **F7 (2026-08-05, task #551) — `docs/perf/r34_23_runs/` was a tier-2
+    artifact-storage-policy violator; the more general glob-based-policy gap
+    it exposed is not yet closed — RESOLVED for the specific file, open for
+    the general gap.**
+
+    > **Current state**
+    > - **Status:** the specific violation is CLOSED (this task); the
+    >   general policy gap it exposed is a documented, low-priority,
+    >   trigger-bearing residual, not an open task.
+    > - **Current number/verdict:** `ba716a0` (R34-23/task #542) created
+    >   `docs/perf/r34_23_runs/` with no matching `.gitignore` rule (unlike
+    >   the sibling `docs/perf/paired_ab_runs/` and `docs/perf/r34_7_runs/`
+    >   directories, both of which ARE ignored under the same
+    >   scratch-by-default policy) — so its two JSON files landed as
+    >   ordinary tracked files rather than through the deliberate
+    >   `git add -f`-when-cited gate. One of the two,
+    >   `2026-08-04T22-03-44-381Z_direct_raw.json` (263,907 bytes ≈ 258
+    >   KiB), exceeded the 200 KiB tier-2 force-add ceiling that R34-24
+    >   (`4ba188a`, same round) set a few commits later. `9b06b56` found and
+    >   honestly named this as "the first real tier-2 case" in CLAUDE.md's
+    >   artifact-storage-policy text, but did not apply tier-2's required
+    >   remedy (truncate or gzip) and did not index the deviation here —
+    >   flagged as finding F7 (P3) by the Round-34 independent readonly
+    >   review (`docs/reviews/2026-08-05-round34-readonly-review.md` §6).
+    >   **Remediated in this task (#551):** the 258 KiB file is
+    >   gzip-compressed to `docs/perf/r34_23_runs/2026-08-04T22-03-44-381Z_direct_raw.json.gz`
+    >   (8,674 bytes, ~30× smaller, well under the 200 KiB ceiling;
+    >   byte-identical roundtrip verified via `gunzip`/`diff` before the
+    >   uncompressed original was removed from the tree). Gzip was chosen
+    >   over truncation per CLAUDE.md's own tier-2 guidance ("choose (b)
+    >   when the full log is genuinely needed") because the file is 1,080
+    >   uniform per-sample records (30 samples × cells) that the report's
+    >   own summary CSV derives from IN FULL — truncating to a cited excerpt
+    >   would lose the derivation's reproducibility, not just trim
+    >   boilerplate. `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §6's
+    >   artifact table is updated to cite the `.gz` path with a
+    >   decompression note. The sibling `2026-08-04T22-03-52-053Z_vec_raw.json`
+    >   (69,045 bytes ≈ 67 KiB) was already under the 200 KiB ceiling and
+    >   needed no change. A `.gitignore` rule for `/docs/perf/r34_23_runs/`
+    >   was added for consistency with `paired_ab_runs`/`r34_7_runs` (does
+    >   not untrack the already-committed files; only prevents future files
+    >   in that directory from bypassing the force-add gate).
+    > - **Residual, general gap — NOT closed by this task, filed here as the
+    >   reopening trigger:** CLAUDE.md's artifact-storage-policy tiers are
+    >   keyed on the `_raw_*.log` **filename glob**, which is exactly why the
+    >   R34-24 compliance census ("256/256, all under the ceiling") could not
+    >   see `r34_23_runs/*.json` — it does not match that glob, and the
+    >   census script never scanned for it. This is a naming-based blind
+    >   spot in the policy itself, not just in one directory's missing
+    >   `.gitignore` entry: any future report that writes a large raw
+    >   artifact under a directory/filename convention other than
+    >   `_raw_*.log` (as R34-23's harness scripts did) will again be
+    >   invisible to the census by construction. Re-keying the policy on
+    >   file size/role rather than filename was explicitly weighed as part
+    >   of this task and deliberately deferred — a single-file remediation
+    >   task is the wrong scope for a policy rewrite in CLAUDE.md, and the
+    >   two concrete instances so far (`r34_7_runs`, `r34_23_runs`) were both
+    >   closed by adding a `.gitignore` rule + fixing the one file, which is
+    >   cheaper than a policy generalization with only two data points.
+    > - **Next trigger:** if a THIRD tier-2/tier-3-sized raw artifact turns up
+    >   outside the `_raw_*.log` naming convention (i.e., another
+    >   `docs/perf/<task>_runs/`-shaped directory, or any other
+    >   non-`_raw_*.log` large committed artifact), treat that as the signal
+    >   to stop patching one directory at a time and instead re-key
+    >   CLAUDE.md's artifact-storage-policy compliance census onto file
+    >   size/role (e.g. `find docs/perf -type f -size +200k`, independent of
+    >   filename) rather than the `_raw_*.log` glob.
+    > - **Evidence:** `docs/reviews/2026-08-05-round34-readonly-review.md` §6
+    >   (finding F7); `ba716a0` (creates the directory, task #542); `9b06b56`
+    >   (names the tier-2 case, task #543); this task's commit (gzip fix +
+    >   `.gitignore` rule + this entry, task #551).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
