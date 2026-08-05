@@ -2253,3 +2253,42 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       newly performed that a report's verdict rests on (the miri re-run
       here reproduces #524's own already-published result, it does not
       establish a new one).
+
+17. **H8 — `dbb4016`'s `fix(perf):` prefix considered for a reword to
+    `feat(api):`, DECIDED against a rebase, prefix left as-is** (task #578,
+    `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H8)
+    — **RESOLVED, no code change.** Sol-F1's commit (`9296adb`, post-G1-
+    rebase SHA `dbb4016`, "AllocCore::dbg_* inherent methods now genuinely
+    require `internals`") used `fix(perf):`. The review flagged this as
+    inapt for a pure visibility/cfg-gating change (no algorithm changed,
+    only which callers can reach existing code) and pointed to the
+    identical-class predecessor `27879af` (R34-3, gating the module PATHS
+    behind `internals`), which used `feat(api):` — arguably the closer
+    match, since CLAUDE.md's R30-12 taxonomy has no dedicated slot for
+    "API-surface visibility change."
+    - **Decision:** left `dbb4016` as-is — an accepted historical
+      imprecision, not reworded. Two considered options were (a) a small
+      rebase to reword just `dbb4016`, or (b) accept the existing prefix
+      and use correct judgment for any NEW commits in the same class. (b)
+      was chosen per the task's own explicit default guidance ("default to
+      (b) unless a rebase is already happening anyway for some other
+      reason in this batch") — no other rebase was in flight this round,
+      and this is the exact non-retroactive posture CLAUDE.md's own R30-12
+      section already states for this rule ("no historical commit message
+      is retagged or amended by this rule; it governs new commits going
+      forward only" — the same posture the raw-log-truncation and
+      immutable-source-identity rules elsewhere in CLAUDE.md also take).
+      H2 (task #572), the directly-analogous follow-up commit extending
+      this exact same gating work to 6 more files, independently used
+      `fix(perf):` as well (`25d6ac4d23b4859b726724424e5912dc54fe0bf0`) and
+      passed `verify-commit-prefixes.mjs` — establishing `fix(perf):` as
+      the now-repeated, lint-accepted precedent for "narrow an existing
+      diagnostic hook's reachability without changing its behavior,"
+      rather than treating `dbb4016` as an isolated one-off mistake to
+      correct. A rebase deep enough to reword `dbb4016` would also need to
+      touch every commit stacked on top of it since (including H2, H3, H4,
+      H5, H7 above) — disproportionate risk for a P4 wording nit, per the
+      same cost/benefit reasoning G1's rebase (task #555) already weighed
+      once this session for a higher-severity (P2) case.
+    - **Files changed:** none (this index entry only) — a documented
+      decision, not a rebase or a reword.
