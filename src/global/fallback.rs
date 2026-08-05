@@ -367,9 +367,36 @@ impl Drop for LockGuard {
 /// left `INIT_STATE` stuck at `INITIALIZING` permanently — every subsequent
 /// `heap_ptr` loser spun unbounded in the `while ... == STATE_INITIALIZING`
 /// loop (process-wide livelock). No-panic is a project invariant (`HeapCore`
-/// never panics in production), but the guard makes `heap_ptr` panic-safe at
-/// zero cost on the happy path (the `disarm` is a plain bool store; the armed
-/// `Drop` runs only on unwind).
+/// never panics in production), but the guard's zero-cost happy path
+/// (`disarm` is a plain bool store; the armed `Drop` runs only on unwind)
+/// prevents that PERMANENT `INITIALIZING` deadlock on any unwind out of the
+/// guarded region.
+///
+/// ## What this guard does NOT guarantee (Sol-F6, independent release review,
+/// task #568)
+///
+/// The guard's `Drop` unconditionally rolls `INIT_STATE` back to `UNINIT` on
+/// an armed unwind — it does not distinguish an unwind BEFORE the in-place
+/// `write(hc)` (nothing to clean up) from one AFTER it (a live `HeapCore` is
+/// already sitting in `FALLBACK`). In the latter case, rolling back to
+/// `UNINIT` lets the next CAS winner `write` a fresh `HeapCore` on top of the
+/// old one WITHOUT running the old value's `Drop` — `AllocCore::Drop`
+/// (`src/alloc_core/alloc_core.rs`) releases the heap's segment reservations,
+/// so skipping it would leak them. This guard therefore guarantees "no
+/// permanent `INITIALIZING` livelock", NOT "`Drop` always runs for an
+/// already-written `HeapCore`". As of this writing, the only unwind source in
+/// the guarded region between `write(hc)` and the `READY` publish is the
+/// `internals`-gated test-injection panic below, which is deliberately placed
+/// BEFORE `HeapCore::new` — `bind_thread_free` is a plain field assignment
+/// (`HeapCore::bind_thread_free`, `src/registry/heap_core_ownership.rs`) and
+/// cannot panic, so this post-write window is not currently reachable by any
+/// known panic source in the initialization path. It is, however, not
+/// structurally closed: a future change that adds fallible code between
+/// `write(hc)` and the `READY` store would silently reopen it. Closing it
+/// structurally (making the guard aware of whether `HeapCore` was written, so
+/// an armed unwind after that point drops the stale value or poisons the
+/// slot instead of just rolling back) is tracked as a follow-up, not done
+/// here.
 struct InitStateGuard {
     armed: bool,
 }
