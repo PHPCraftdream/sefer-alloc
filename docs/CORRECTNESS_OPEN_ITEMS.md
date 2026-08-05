@@ -2332,3 +2332,45 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       failures. `cargo fmt --all -- --check` clean.
     - **Files changed:** `tests/segment_table_contains_base_tier1_counters.rs`
       (serialization only); this index entry.
+
+26. **Flaky test — `ac1_trim_empties_pool_and_evicts_large_cache`**
+    (`tests/r31_10_trim_current_thread_api.rs`) — **RESOLVED** by wave 4's
+    own post-landing `npm run check --all-features` gate run (2026-08-05,
+    same session as I1-I10, tasks #579-588; found in a background rerun
+    launched after `782b92e` landed, task #589).
+
+    - **Root cause, confirmed:** `segments_released_total`
+      (`SeferAlloc::stats()`) is a process-wide counter shared across every
+      `SeferAlloc`/thread in the process. `cargo test` runs the six
+      `#[test]` functions in this file in parallel by default; every one of
+      them calls `trim_current_thread()` at least once (which can release a
+      cached span and bump this counter), while
+      `ac1_trim_empties_pool_and_evicts_large_cache` and
+      `ac3_trim_does_not_affect_other_thread_heap` each read a before/after
+      delta on it — the SAME failure class as items 1 and 25 above, a
+      different process-wide counter, same root cause. Observed failure:
+      `released_before=1, released_after_cache=2` — a sibling test's
+      `trim_current_thread()` call landed in the narrow window between
+      `ac1`'s two counter reads. Confirmed the file predates this session
+      (`git log -- tests/r31_10_trim_current_thread_api.rs` last touched by
+      Round 34's `7aeee2d`, an unrelated rustfmt-drift commit; the test
+      itself dates to Round 31, task #474) — a pre-existing flake this
+      wave's own full-matrix rerun happened to surface, not a regression
+      from I1/F1 (the `HeapCore` stack-pressure budget change) or I5/F5
+      (gating `SeferAlloc::dbg_trim_current_thread`), neither of which
+      touches `segments_released_total` accounting or this test's own
+      logic.
+    - **Fix:** added the SAME established `static TEST_LOCK: Mutex<()>` +
+      per-test `let _guard = TEST_LOCK.lock().unwrap();` pattern items 1
+      and 25 above already used. Applied to ALL SIX tests in the file, not
+      just the two that read the delta — every other test's
+      `trim_current_thread()` call is itself a source of interference for
+      those two. No assertion logic changed.
+    - **Verification:** 5 full `cargo test --all-features --test
+      r31_10_trim_current_thread_api` reruns (default multi-threaded
+      scheduling) after the fix — all clean, 0 failures. Also verified
+      clean under `cargo test --features "production internals" --test
+      r31_10_trim_current_thread_api`. `cargo fmt --check` clean on the
+      changed file.
+    - **Files changed:** `tests/r31_10_trim_current_thread_api.rs`
+      (serialization only); this index entry.

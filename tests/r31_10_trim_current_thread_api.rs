@@ -64,12 +64,33 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use sefer_alloc::global::tls_heap;
 use sefer_alloc::SeferAlloc;
+
+// `segments_released_total` (`SeferAlloc::stats()`) is a PROCESS-WIDE
+// counter shared across every `SeferAlloc`/thread in the process. `cargo
+// test` runs the `#[test]` functions in this file in parallel by default,
+// and every test here calls `trim_current_thread()` at least once (which can
+// release cached spans and bump this counter) while `ac1`/`ac3` read a
+// before/after delta on it — the SAME parallelism-artifact class already
+// documented in `docs/CORRECTNESS_OPEN_ITEMS.md` item 18
+// (`tests/segment_table_contains_base_tier1_counters.rs`, commit `2f16ba6`):
+// found here via `npm run check`'s own `--all-features` step
+// (`ac1_trim_empties_pool_and_evicts_large_cache` failed with
+// `released_before=1, released_after_cache=2`, meaning a sibling test's
+// `trim_current_thread()` call landed in the narrow window between the two
+// counter reads). Serializes ALL tests in this file with the SAME
+// established `static TEST_LOCK: Mutex<()>` + per-test
+// `let _guard = TEST_LOCK.lock().unwrap();` pattern used in
+// `tests/segment_table_contains_base_tier1_counters.rs` and the other
+// precedent files it cites — not just the two tests that read the delta,
+// because every OTHER test's `trim_current_thread()` call is a source of
+// interference for those two, not just each other.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 // ---------------------------------------------------------------------------
 // AC1 — behavioral equivalence with trim_for_recycle
@@ -77,6 +98,7 @@ use sefer_alloc::SeferAlloc;
 
 #[test]
 fn ac1_trim_empties_pool_and_evicts_large_cache() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = SeferAlloc::new();
 
     // 2 MiB: comfortably Large under every feature combination this crate
@@ -160,6 +182,7 @@ fn ac1_trim_empties_pool_and_evicts_large_cache() {
 
 #[test]
 fn ac2_thread_continues_working_after_trim() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = SeferAlloc::new();
     let layout = Layout::from_size_align(1024, 8).unwrap();
 
@@ -208,6 +231,7 @@ fn ac2_thread_continues_working_after_trim() {
 /// If A's trim had evicted B's cache, B's delta would be zero.
 #[test]
 fn ac3_trim_does_not_affect_other_thread_heap() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = Arc::new(SeferAlloc::new());
     let large = Layout::from_size_align(2 << 20, 8).unwrap();
 
@@ -299,6 +323,7 @@ fn ac3_trim_does_not_affect_other_thread_heap() {
 /// does.
 #[test]
 fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = Arc::new(SeferAlloc::new());
 
     // Spawn a FRESH thread that has NEVER allocated. Its `LOCAL` is null.
@@ -353,6 +378,7 @@ fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
 /// is asserted to be zero, not the absolute value.
 #[test]
 fn ac4c_trim_on_never_allocated_thread_claims_no_slot() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = Arc::new(SeferAlloc::new());
     let a_for_child = Arc::clone(&a);
     let handle = thread::spawn(move || {
@@ -417,6 +443,7 @@ fn ac4c_trim_on_never_allocated_thread_claims_no_slot() {
 #[cfg(feature = "bench-internals")]
 #[test]
 fn ac4b_trim_on_genuinely_torn_tls_is_safe_noop() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let a = Arc::new(SeferAlloc::new());
     let a_for_child = Arc::clone(&a);
     let handle = thread::spawn(move || {
