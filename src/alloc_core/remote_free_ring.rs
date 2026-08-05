@@ -845,6 +845,47 @@ pub struct PushOverflow;
 /// `head.store(h, Release)` after the loop was removed in favour of this `Drop`,
 /// so there is exactly one publish whether the drain completes normally or
 /// unwinds.
+///
+/// **Exact contract (Sol-F5, task #567 — release-readiness review finding
+/// F5, `docs/reviews/2026-08-05-sol-release-readonly-review.md`).** This
+/// guard is unwind-safe against **losing already-fully-processed prior
+/// elements**: every offset whose `reclaim` call returned normally, and
+/// whose slot was cleared, before the panicking iteration is still
+/// published (not re-drained, not silently dropped). It does **NOT**
+/// provide exactly-once semantics for the **specific element being
+/// processed when the panic occurs**. `drain`'s loop body
+/// (`RemoteFreeRing::drain`, below) calls `reclaim(off)` BEFORE clearing
+/// the slot and BEFORE advancing/publishing `h` — so if `reclaim(off)`
+/// mutates allocator/external state and THEN panics, the slot is left
+/// non-empty and `h` is left one short: a `catch_unwind`ing caller that
+/// resumes draining will re-pass that SAME `off` to `reclaim` on the next
+/// call, i.e. `reclaim` may run twice (once mutating state, then again
+/// after resume) for the element that was in flight at panic time. This is
+/// a property of the drain loop's `reclaim → clear → advance` ORDER
+/// (`RemoteFreeRing::drain`'s loop body), not something this guard's
+/// publish-on-drop can fix by itself — the guard only ever publishes `h`
+/// values that were fully advanced past a cleared slot.
+///
+/// Production `reclaim` closures (`AllocCore::reclaim_offset` /
+/// `AllocCore::reclaim_offset_checked`, `src/alloc_core/alloc_core_small_reclaim.rs`,
+/// called from the three drain sites in `src/alloc_core/alloc_core_small.rs`)
+/// are, by inspection of their current bodies, not currently known to panic
+/// after mutating state — the reclaim functions themselves are ordinary
+/// `pub(crate) fn`s returning `bool` with no `unwrap`/`expect`/`panic!`/
+/// unchecked indexing on their mutation-bearing paths, and the calling
+/// closures only perform a decrement/OR-accumulate afterward. But this is
+/// an observation about the code AS WRITTEN, not a structural guarantee —
+/// nothing in the type system prevents a future `reclaim` closure (or a
+/// direct/internal `catch_unwind` caller of `drain`) from panicking after a
+/// mutation. Achieving true exactly-once-under-unwind would need a
+/// two-phase/idempotent reclaim protocol (or an explicit poison/skip
+/// policy), which is out of scope for this guard — see the review finding
+/// for the fuller discussion. In practice this residual is reachable only
+/// through a direct/internal `catch_unwind` around `drain`: an unwind that
+/// escapes through the `GlobalAlloc` entry points still aborts the process
+/// (see `src/global/sefer_alloc.rs`'s panic-tripwire docs), so the replay
+/// window described here cannot be observed through ordinary allocator
+/// usage.
 #[cfg(feature = "alloc-xthread")]
 struct DrainHeadPublish {
     head: &'static core::sync::atomic::AtomicU32,
@@ -1240,6 +1281,15 @@ impl RemoteFreeRing {
     /// [`RemoteFreeRing::is_likely_empty`]) use this to refresh their cache
     /// without a second atomic load; callers that don't care simply ignore it
     /// (existing call sites are source- and behaviour-compatible).
+    ///
+    /// **Unwind contract if `reclaim` panics:** see [`DrainHeadPublish`]'s
+    /// doc comment for the exact guarantee (no loss of already-fully-processed
+    /// prior elements) and the exact non-guarantee (no exactly-once for the
+    /// element `reclaim` was processing when it panicked — that offset may be
+    /// re-passed to `reclaim` on a subsequent `drain` call after a
+    /// `catch_unwind`). The loop body below calls `reclaim(off)` BEFORE
+    /// clearing the slot and BEFORE advancing `h`, which is the reason the
+    /// non-guarantee exists.
     #[cfg(feature = "alloc-xthread")]
     pub fn drain<F: FnMut(u32)>(&self, mut reclaim: F) -> u32 {
         // Acquire: see every producer's Release reservation (tail CAS) and
