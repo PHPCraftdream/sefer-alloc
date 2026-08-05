@@ -156,12 +156,24 @@ jobs:
         # The Cargo.toml version is NOT auto-bumped by this workflow, so a stale
         # Cargo.toml would silently publish the wrong version (the comment at the
         # top of this file flags this as a "manual mistake" risk). Fail loudly if
-        # the tag version and the resolved crate version disagree. Skipped for
-        # manual dispatch (no version-encoding tag exists there).
-        if: ${{ github.event_name == 'push' }}
+        # the tag version and the resolved crate version disagree.
+        #
+        # Keyed on `dry_run`, NOT `github.event_name` (K5, task #600): a manual
+        # `workflow_dispatch` with dry-run=false reaches the exact same
+        # irreversible `cargo publish` as a tag push (see the Test gate below,
+        # which already uses this same condition), so it must clear the same
+        # guards. Only genuine dry-runs (packaging exercises, not real
+        # publishes) skip this — there the tag-shaped input this guard checks
+        # (`github.ref_name`) may not even exist as a real version-encoding tag.
+        if: ${{ steps.target.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${{ github.event_name }}" != "push" ]]; then
+            echo "Guard skipped: manual dispatch has no version-encoding tag to check the resolved crate version against." >> "$GITHUB_STEP_SUMMARY"
+            echo "Guard skipped (workflow_dispatch, non-dry-run): no tag to compare against."
+            exit 0
+          fi
           REF='${{ github.ref_name }}'
           TAG_VERSION="${REF##*-v}"        # `<crate>-v<version>` -> `<version>`
           CRATE_VERSION='${{ steps.version.outputs.version }}'
@@ -177,15 +189,42 @@ jobs:
         # dated section for that version (not just "(unreleased)"). This prevents
         # releasing a version whose CHANGELOG entry is still in the [Unreleased]
         # section, which would indicate incomplete release notes or a missed
-        # merge step. Skipped for manual dispatch (no tag to check against there).
+        # merge step.
         # (Sol-F2, release-readiness review finding F2: CHANGELOG.md's
         # `## [0.3.0] - 2026-07-04` section falsely implied a release that
         # never happened -- no `sefer-alloc-v0.3.0` git tag existed and
         # crates.io was still on 0.2.1.)
-        if: ${{ github.event_name == 'push' }}
+        #
+        # Keyed on `dry_run`, NOT `github.event_name` (K5, task #600): see the
+        # comment on the guard above -- a non-dry-run manual dispatch is just
+        # as irreversible as a tag push and must clear the same guards.
+        #
+        # Crate-scoped (L4, task #617): CHANGELOG.md is the ROOT crate's
+        # changelog only -- its `## [X.Y.Z]` sections describe sefer-alloc
+        # releases, not member-crate releases. Checking it for any other
+        # crate is wrong in both directions: a root-crate section can
+        # coincidentally share a version number with an unrelated member-crate
+        # tag (false pass), or a member crate can have no matching root
+        # section even though its own release is fine (false fail). None of
+        # the member crates (aligned-vmem, sefer-region, malloc-bench-rs,
+        # numa-shim) has a per-crate changelog yet, so for them this guard is
+        # skipped with an explicit reason rather than inventing a per-crate
+        # changelog scheme here.
+        if: ${{ steps.target.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          NAME='${{ steps.target.outputs.name }}'
+          if [[ "$NAME" != "sefer-alloc" ]]; then
+            {
+              echo "## CHANGELOG guard skipped"
+              echo ""
+              echo "CHANGELOG guard only applies to the root \`sefer-alloc\` crate;"
+              echo "member crate \`$NAME\` has no per-crate changelog yet -- see task L4/#617."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Guard skipped: CHANGELOG.md is sefer-alloc's changelog only; $NAME has no per-crate changelog yet (task L4/#617)."
+            exit 0
+          fi
           VERSION='${{ steps.version.outputs.version }}'
           CHANGELOG_SECTIONS=$(grep -E "^## \[${VERSION}\]" CHANGELOG.md || true)
 
