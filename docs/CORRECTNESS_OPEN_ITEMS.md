@@ -1192,6 +1192,93 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     scope) so a future round inherits the residual rather than re-discovering
     it.
 
+21. **[T, filed 2026-08-05, task #562, G1-bonus/`docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`] Two pre-existing Round-34 commits fail the repo's own `verify-commit-prefixes.mjs` R30-12 taxonomy lint — `43115cf` and `5c1142f` — and the Round-34 closing review's claim that the taxonomy was "correctly applied throughout" was inaccurate.**
+
+    - **Status:** OPEN — not fixed. Fixing requires rewriting two commit
+      messages that already have descendants (a rebase-scoped operation),
+      which this task deliberately did not perform — see "Next trigger"
+      below.
+    - **Current-number-or-verdict:** confirmed FAILURE (not a warning) for
+      both SHAs, independently re-run over the full Round-34 span
+      (`40241b0..c5db553`, the R34 base boundary through the R34 closing
+      commit, deliberately excluding the review-remediation-wave commits
+      that came after `c5db553`):
+
+      ```
+      [verify-commit-prefixes] range: 40241b0..c5db553  (43 commit(s) total)
+      [verify-commit-prefixes] linted 43 commit(s)
+
+      [verify-commit-prefixes] 8 WARNING(s) (direction 2 — hidden runtime change?):
+        ... (8 warnings, all pre-existing bench:/docs:-prefixed commits touching
+        Cargo.toml/.gitignore/package.json or a bench-internals-gated diagnostic
+        accessor in src/ — not this item's subject)
+
+      [verify-commit-prefixes] 2 FAILURE(s) (direction 1 — R30-12 taxonomy violation):
+        - 43115cf "fix(perf): correct R34-11 CSV's base_commit off-by-one (parent -> landing SHA)" — prefix claims a shipping/opt-in code fix in perf-sensitive code, but every changed path is under docs/examples/benches/tests/scripts/ (1 path(s): docs/perf/R34_11_CATCHUP_DECAY_GATE_summary.csv); use bench: or docs(config): instead if no shipping/opt-in code actually changed.
+        - 5c1142f "fix(perf): correct R34-10 CSV's base_commit off-by-one (parent -> landing SHA)" — prefix claims a shipping/opt-in code fix in perf-sensitive code, but every changed path is under docs/examples/benches/tests/scripts/ (1 path(s): docs/perf/R34_10_SPARSE_DECAY_GATE_summary.csv); use bench: or docs(config): instead if no shipping/opt-in code actually changed.
+
+      [verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).
+      ```
+
+      Independently re-confirmed via `git show <sha> --stat` for both, not
+      taken on the script's word alone: `43115cf` changes exactly
+      `docs/perf/R34_11_CATCHUP_DECAY_GATE_summary.csv` (1 file, 1
+      insertion, 1 deletion — a single metadata column,
+      `base_commit`); `5c1142f` changes exactly
+      `docs/perf/R34_10_SPARSE_DECAY_GATE_summary.csv` (1 file, 24 changed
+      lines — the same `base_commit` column across all 24 data rows). Both
+      commit bodies confirm in their own words that only the provenance
+      column changed and "every peak_gap/segment/RSS/ops-late number in the
+      committed CSV was already correct." Neither touches any path under
+      `src/`, `crates/`, or any shipping/opt-in feature-gated code — the
+      correct prefix per CLAUDE.md's R30-12 five-slot taxonomy for each is
+      **`docs(config):`** (an existing report/config artifact corrected, no
+      code changed at all — not `bench:`, since no judge/harness/probe code
+      itself changed either, only a derived CSV's metadata field) or,
+      failing that, `fix(perf)` would only be correct if the taxonomy's own
+      wording ("shipping or opt-in code changed... but NO speedup is
+      measured or claimed") were met, which it is not here: no code at all
+      changed in either commit.
+    - **What was inaccurate:** `docs/reviews/2026-08-05-round34-readonly-review.md`
+      §7 stated "Commit-prefix taxonomy (R30-12): correctly applied
+      throughout" for Round 34. That statement is contradicted by the repo's
+      own lint for these two commits, which predate that review (`43115cf`
+      and `5c1142f` both land inside the `40241b0..c5db553` Round-34 span
+      the review itself was scoped to). This was surfaced as a "bonus
+      finding" by a LATER independent review
+      (`docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`,
+      finding G1, its closing §2 paragraph beginning "Additionally — a
+      finding the prior review missed") while auditing the unrelated
+      review-remediation wave that followed Round 34 — that wave's own
+      `73817ee` (task #548) independently introduced a THIRD `fix(perf):`
+      taxonomy failure of the identical shape (CSV-only doc-report edit),
+      which is tracked separately (see task #555 / the still-open G1
+      disposition for `73817ee`, not duplicated here since it postdates the
+      `40241b0..c5db553` Round-34 span this item is scoped to).
+    - **Why not fixed here:** rewriting `43115cf` or `5c1142f`'s commit
+      message requires a rebase that touches history deeper than, and with
+      more descendant commits on top of, the review-remediation wave's own
+      already-risky `73817ee` rebase scope (task #555, itself still
+      deliberately deferred as a rebase-free decision). Per this task's
+      explicit scope, the fix here is documentation-only: record the
+      finding accurately so it is not lost, not perform the rebase.
+    - **Next trigger:** reopen and actually rewrite both commit messages
+      (to `docs(config):`) when a rebase touching this era of history
+      happens for another reason (e.g. task #555/G1's own `73817ee` rebase,
+      if it is ever extended this far back to cover all three SHAs in one
+      pass), or when explicitly requested by the maintainer. Until then this
+      card is the durable record that `npm run check`'s
+      `verify-commit-prefixes` step is red on these two SHAs whenever a
+      range including them is linted (e.g. the default `@{u}..HEAD` range,
+      once these commits are within it), and that the Round-34 closing
+      review's taxonomy claim needs this correction appended wherever it is
+      read.
+    - **Evidence:** `node scripts/verify-commit-prefixes.mjs 40241b0..c5db553`
+      (quoted verbatim above, run 2026-08-05); `git show 43115cf --stat`;
+      `git show 5c1142f --stat`; `docs/reviews/2026-08-05-r34-review-remediation-readonly-review.md`
+      §2 (G1) and §10 point 1; `docs/reviews/2026-08-05-round34-readonly-review.md`
+      §7.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
