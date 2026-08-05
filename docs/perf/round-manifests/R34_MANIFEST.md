@@ -52,8 +52,10 @@ widening, panic-safety RAII guards, struct-size compile-time pin) — all are
 correctness/consistency fixes per R30-12's `fix(perf)` definition: no measured
 speedup is claimed, and no production default's observable *algorithm*
 changed (only its internal correctness/consistency did; R34-11's bounded
-catch-up loop is the closest to a behavioral change — it prevents an unbounded
-spin — but adds no new allocation path and claims no speedup).
+catch-up loop is the closest to a behavioral change — it is a hard-capped
+8-iteration loop, never a spin-loop, that changes observable large-cache
+retention: final gap 3→1 segment in the measured sparse arm, peak unchanged
+at 4 segments — but adds no new allocation path and claims no new speedup).
 
 ---
 
@@ -174,10 +176,18 @@ bench-only or correctness-verification:
   accumulation — confirmed the stride-retention bound does NOT hold (finding,
   not a speedup). No production code changed in response to this finding
   alone; R34-11's bounded catch-up loop is the structural response.
-- **R34-11** (`_raw_r34_11_catch_up_decay_gate.log`): catch-up decay gate —
-  confirmed sparse gap reduced + R32-8 benefit preserved (GO for the
-  production-source fix `73dceca`). No speedup claimed; the fix prevents an
-  unbounded spin and preserves R32-8's existing decay-throttle benefit.
+- **R34-11** (`_raw_r34_11_catchup_decay_gate.log`): catch-up decay gate —
+  observable retention policy changed (production-source fix `73dceca`):
+  final gap reduced 3→1 segment in the measured sparse arm (events=1/interval);
+  peak gap unchanged at 4 segments (stride-bound); ≥3-segment persistence
+  29/40 = 72.5% (down from 95.0%, still the majority of the run). The catch-up
+  loop is a hard-capped 8-iteration `for` loop, not a spin-loop of any kind —
+  "prevents an unbounded spin" mischaracterized the mechanism and is retracted.
+  R32-8's existing stride=64 throughput speedup is preserved (re-confirmed at
+  ~67.6% vs. R32-8's original ~61%) but is UNCHANGED code, not a new result of
+  this task; no new throughput speedup is measured or claimed — the gate's own
+  §4 states the catch-up loop's body is never reached in the throughput
+  regime. See `docs/perf/R34_11_CATCHUP_DECAY_GATE.md` §3-5.
 - **R34-12** (`_raw_r34_12_paired_ab_full.log`, 91 KiB): shadow-head A/B
   clean re-gate — re-verifies R32-11's favorable-regime result (not a new
   speedup; a re-confirmation).
