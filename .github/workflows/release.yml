@@ -85,6 +85,12 @@ concurrency:
 # workflow is read-only with respect to repo contents.
 permissions:
   contents: read
+  # K8 (task #603): the CI-status guard below reads workflow-run state for
+  # this same commit via `gh api` (GitHub Actions API), to confirm the `CI`
+  # workflow (.github/workflows/ci.yml) is green for `github.sha` before
+  # publishing. That is a read of Actions run metadata, not of repo
+  # contents, so it needs its own scope alongside `contents: read` above.
+  actions: read
 
 jobs:
   publish:
@@ -249,6 +255,114 @@ jobs:
           fi
 
           echo "✓ CHANGELOG.md has proper dated section for version $VERSION"
+
+      - name: Guard — main CI workflow must be green for this commit
+        # K8 (task #603): `publish` has no `needs:` on the main `CI` workflow
+        # (.github/workflows/ci.yml, ~30 jobs — fmt, 6 clippy rows,
+        # all-features test, feature isolation, workspace members, docs,
+        # cargo-deny, MSRV, no_std, miri, loom, TSan, ASan, multi-arch, ...).
+        # A tag push or workflow_dispatch on a commit whose `CI` run is red
+        # (or hasn't run/finished yet) would sail straight through to
+        # `cargo publish` unblocked -- this happened for real: a push to
+        # `42d4206` triggered `CI` and it came back red on two jobs (fixed
+        # separately as tasks L1/L8), and nothing in `release.yml` would
+        # have stopped a release tag on that same SHA at the time.
+        #
+        # Variant chosen: an API poll (`gh api`) inside this job, not a
+        # `workflow_run` retrigger. A `workflow_run`-triggered `publish`
+        # would only be reachable as a continuation of a `CI` run, which
+        # conflicts with this workflow's two existing entry points (tag
+        # push, manual dispatch with a crate dropdown + dry-run checkbox)
+        # -- `workflow_run` carries neither of those inputs, so preserving
+        # them would need a second workflow file plus a handoff mechanism
+        # (artifacts or `repository_dispatch`) to pass `crate`/`dry-run`
+        # across the boundary. The poll approach is a same-file, additive
+        # step: no existing trigger, input, or job structure changes.
+        #
+        # Looks up the run FOR THIS COMMIT specifically (`head_sha=
+        # ${{ github.sha }}`), not "the latest CI run on main" -- a tag can
+        # (and often does) point at a commit that is not the tip of `main`,
+        # so "latest on main" would silently check the wrong commit's
+        # result. Only enforced when NOT a dry-run, same condition already
+        # used by the guards above (K5, task #600) -- a dry-run is a
+        # packaging exercise, not a real publish, and does not need to wait
+        # on CI.
+        #
+        # Behavior:
+        #   - no `CI` run found for this SHA yet            -> fail, clear message
+        #   - run found but still queued/in_progress          -> fail, clear message
+        #     (no long poll/timeout here deliberately: CI takes much longer
+        #     than this job's own 15-minute timeout budget allows to sit
+        #     idle waiting, and a hard fail with "re-run once CI finishes"
+        #     is a clearer operator signal than a job that times out itself
+        #     partway through a poll loop)
+        #   - run found, completed, conclusion != 'success'   -> fail, clear message
+        #   - run found, completed, conclusion == 'success'   -> pass
+        if: ${{ steps.target.outputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO='${{ github.repository }}'
+          SHA='${{ github.sha }}'
+
+          RUNS_JSON=$(gh api \
+            "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=10" \
+            --jq '.workflow_runs')
+
+          RUN_COUNT=$(echo "$RUNS_JSON" | jq 'length')
+          if [[ "$RUN_COUNT" -eq 0 ]]; then
+            {
+              echo "## CI-status guard: FAILED"
+              echo ""
+              echo "No \`CI\` workflow run found for commit \`${SHA}\`."
+              echo "Push/land this commit on a branch \`ci.yml\` runs on and wait for it to complete before publishing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::No CI workflow run found for commit $SHA. Wait for CI to run and go green before publishing." >&2
+            exit 1
+          fi
+
+          # Most recent run for this SHA (API returns newest first).
+          STATUS=$(echo "$RUNS_JSON" | jq -r '.[0].status')
+          CONCLUSION=$(echo "$RUNS_JSON" | jq -r '.[0].conclusion')
+          RUN_URL=$(echo "$RUNS_JSON" | jq -r '.[0].html_url')
+
+          echo "CI run for $SHA: status=$STATUS conclusion=$CONCLUSION ($RUN_URL)"
+
+          if [[ "$STATUS" != "completed" ]]; then
+            {
+              echo "## CI-status guard: FAILED"
+              echo ""
+              echo "\`CI\` workflow run for \`${SHA}\` has not finished yet (status: \`${STATUS}\`)."
+              echo "Run: ${RUN_URL}"
+              echo ""
+              echo "Wait for CI to finish, then re-run this release job -- do not publish mid-run."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::CI workflow run for $SHA is not completed yet (status: $STATUS). Wait for CI to finish before publishing. Run: $RUN_URL" >&2
+            exit 1
+          fi
+
+          if [[ "$CONCLUSION" != "success" ]]; then
+            {
+              echo "## CI-status guard: FAILED"
+              echo ""
+              echo "\`CI\` workflow run for \`${SHA}\` completed with conclusion \`${CONCLUSION}\` (not \`success\`)."
+              echo "Run: ${RUN_URL}"
+              echo ""
+              echo "Fix CI and get it green on this commit before publishing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::CI workflow run for $SHA concluded '$CONCLUSION', not 'success'. Fix CI before publishing. Run: $RUN_URL" >&2
+            exit 1
+          fi
+
+          {
+            echo "## CI-status guard: passed"
+            echo ""
+            echo "\`CI\` workflow run for \`${SHA}\` completed successfully."
+            echo "Run: ${RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ CI workflow run for $SHA completed successfully."
 
       - name: Test gate — do not publish a red tree
         # A tag must never publish an untested tree. Run the default suite and
