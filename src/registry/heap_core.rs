@@ -569,14 +569,24 @@ pub struct HeapCore {
 // budget under production (the maximum SHIPPING composition). This guard is
 // cfg-gated to NOT fire when experimental/test-only features are enabled,
 // since those are not part of any shipping configuration. The runtime test in
-// `tests/r34_18_heap_core_stack_pressure_pin.rs` still enforces the budget
-// under ALL configurations, providing non-vacuous coverage.
+// `tests/r34_18_heap_core_stack_pressure_pin.rs` mirrors this same exclusion
+// for its own upper-bound assertion (corrected in the same wave as task
+// #572/H2 — an earlier version of this comment claimed the runtime test
+// "still enforces the budget under ALL configurations", which was not
+// actually true under `--all-features`); its LOWER-bound assertion still
+// runs under every configuration, providing non-vacuous shrink-detection
+// coverage.
 //
 // R34-18 (task #537): budget set at 8192 based on production=7576 (616 B
 // headroom, ~8%). R34-24/fix #571: this assert is cfg-gated to skip
 // experimental/test-only features because `--all-features` includes them and
 // grows HeapCore beyond the production maximum (8840 B vs 7576 B), which is
 // legitimate — those features are not part of any shipping configuration.
+// Correction (found by `npm run check`'s own `--all-features` step, same
+// wave as task #572/H2): the runtime test's own upper-bound assertion now
+// carries this SAME exclusion — fix #571's original doc comment claimed the
+// runtime test "still enforces the budget under ALL configurations", which
+// was never actually true under `--all-features` specifically.
 #[cfg(not(any(
     feature = "experimental",
     feature = "pinning",

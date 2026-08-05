@@ -43,6 +43,18 @@
 //! R34-24/fix #571: This test requires `internals` to reach `HeapCore`,
 //! which was gated behind that feature in R34-3/Sol-F1. The test exercises
 //! the production feature set (the maximum shipping configuration).
+//!
+//! **Correction (found by `npm run check`'s own `--all-features` step,
+//! same wave as task #572/H2):** fix #571's own doc comment claimed this
+//! runtime test "still enforces the budget under ALL configurations,
+//! providing non-vacuous coverage" — false under `--all-features`
+//! specifically, which additionally pulls in `experimental`/`pinning`/
+//! `bench-internals`/`batch-api` and genuinely grows `HeapCore` to 8840 B
+//! (`src/registry/heap_core.rs`'s own compile-time assert's comment
+//! documents this same number, and is ALREADY correctly excluded from
+//! firing under that combination). This test's upper-bound assertion below
+//! now carries the identical exclusion, mirroring the compile-time guard
+//! exactly rather than claiming broader coverage than it actually had.
 
 #![cfg(all(feature = "production", feature = "internals"))]
 
@@ -59,9 +71,21 @@ use sefer_alloc::registry::HeapCore;
 fn heap_core_size_within_stack_pressure_budget() {
     let size = size_of::<HeapCore>();
 
-    // Upper bound — the stack-pressure budget. Matches the compile-time pin.
-    // A HeapCore temporary is constructed by-value on a thread's
-    // first-allocation frame; 8 KiB is half of a 16 KiB embedded stack.
+    // Upper bound — the stack-pressure budget. Matches the compile-time pin's
+    // own exclusion (`src/registry/heap_core.rs`'s `const _: () = assert!(...)`
+    // right above `#[cfg(not(any(experimental, pinning, bench-internals,
+    // batch-api)))]`): under those non-shipping feature combinations
+    // (`--all-features` pulls in all four at once) `HeapCore` genuinely grows
+    // to 8840 B, legitimately above budget since none of the four are part of
+    // any shipping configuration. A HeapCore temporary is constructed by-value
+    // on a thread's first-allocation frame; 8 KiB is half of a 16 KiB embedded
+    // stack — the risk this pin guards, for the SHIPPING feature set.
+    #[cfg(not(any(
+        feature = "experimental",
+        feature = "pinning",
+        feature = "bench-internals",
+        feature = "batch-api",
+    )))]
     assert!(
         size <= 8192,
         "HeapCore grew to {size} bytes — exceeds the 8 KiB (8192) stack-pressure \
@@ -86,9 +110,12 @@ fn heap_core_size_within_stack_pressure_budget() {
          treating this as an improvement."
     );
 
-    // Record the measured size for the feature set under test.
+    // Record the measured size for the feature set under test. `headroom` can
+    // be negative under `--all-features` (8840 B, above the 8192 B budget but
+    // legitimately excluded from the upper-bound assert above) — signed
+    // arithmetic avoids the unconditional subtraction overflowing there.
     eprintln!(
         "size_of::<HeapCore>() = {size} bytes (budget 8192, headroom {} B)",
-        8192 - size
+        8192_i64 - size as i64
     );
 }
