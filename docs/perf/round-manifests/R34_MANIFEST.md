@@ -253,7 +253,8 @@ the two commands above; neither number is hand-transcribed.
 (the same naming-based blind spot this finding's review flagged as the
 theme of finding G3):** `docs/perf/r34_23_runs/` holds two files —
 `2026-08-04T22-03-44-381Z_direct_raw.json.gz` (8,674 B, tier-2
-gzip-compressed per task #551/`5710a6e`) and
+gzip-compressed per task #551/`358be4e`, reworded from `5710a6e` by the
+later G1 rebase, task #555) and
 `2026-08-04T22-03-52-053Z_vec_raw.json` (69,045 B, under the tier-1
 ceiling uncompressed). Neither matches the `_raw_*.log` glob (they are
 `.json`/`.json.gz`, not `.log`, and live under a differently-named

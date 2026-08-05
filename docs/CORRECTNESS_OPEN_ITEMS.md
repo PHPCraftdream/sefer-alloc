@@ -1250,23 +1250,32 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       finding G1, its closing §2 paragraph beginning "Additionally — a
       finding the prior review missed") while auditing the unrelated
       review-remediation wave that followed Round 34 — that wave's own
-      `73817ee` (task #548) independently introduced a THIRD `fix(perf):`
-      taxonomy failure of the identical shape (CSV-only doc-report edit),
-      which is tracked separately (see task #555 / the still-open G1
-      disposition for `73817ee`, not duplicated here since it postdates the
-      `40241b0..c5db553` Round-34 span this item is scoped to).
+      `73817ee` (task #548; reworded by the later G1 rebase, task #555, to
+      its current SHA `5e75032` — cited here by its ORIGINAL SHA since this
+      paragraph describes the state at time of writing, before that rebase
+      ran) independently introduced a THIRD `fix(perf):` taxonomy failure of
+      the identical shape (CSV-only doc-report edit), which is tracked
+      separately (see task #555's disposition, now completed — it reworded
+      `73817ee`/`a4dc38e`/`d46c349` but did NOT extend back to `43115cf`/
+      `5c1142f`, so this item's own "Next trigger" below remains open; not
+      duplicated here since it postdates the `40241b0..c5db553` Round-34
+      span this item is scoped to).
     - **Why not fixed here:** rewriting `43115cf` or `5c1142f`'s commit
       message requires a rebase that touches history deeper than, and with
       more descendant commits on top of, the review-remediation wave's own
-      already-risky `73817ee` rebase scope (task #555, itself still
-      deliberately deferred as a rebase-free decision). Per this task's
-      explicit scope, the fix here is documentation-only: record the
-      finding accurately so it is not lost, not perform the rebase.
+      already-risky `73817ee` rebase scope (task #555; at time of writing
+      that rebase was itself still deliberately deferred as a rebase-free
+      decision — it has since run, task #555 is now completed, and its
+      3-commit scope did NOT extend back to `43115cf`/`5c1142f`, so the
+      analysis below is unchanged). Per this task's explicit scope, the fix
+      here is documentation-only: record the finding accurately so it is
+      not lost, not perform the rebase.
     - **Next trigger:** reopen and actually rewrite both commit messages
       (to `docs(config):`) when a rebase touching this era of history
-      happens for another reason (e.g. task #555/G1's own `73817ee` rebase,
-      if it is ever extended this far back to cover all three SHAs in one
-      pass), or when explicitly requested by the maintainer. Until then this
+      happens for another reason (task #555/G1's rebase already ran —
+      commit `73817ee` reworded to `5e75032` — but did not reach back this
+      far; this item stays open until a FUTURE rebase covers `43115cf`/
+      `5c1142f` too), or when explicitly requested by the maintainer. Until then this
       card is the durable record that `npm run check`'s
       `verify-commit-prefixes` step is red on these two SHAs whenever a
       range including them is linted (e.g. the default `@{u}..HEAD` range,
