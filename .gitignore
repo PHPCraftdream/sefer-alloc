@@ -41,3 +41,10 @@
 # untrack on a later .gitignore addition) — this only prevents FUTURE files
 # in the directory from being added without a deliberate `git add -f`.
 /docs/perf/r34_23_runs/
+# L6 (task #619, N6 of docs/reviews/2026-08-05-fh-release-readiness-verification-review.md):
+# .claude/ holds local tool state (scheduled_tasks.json, settings.json —
+# the latter contains this machine's local paths, see N5) — not project
+# source, never meant to be tracked. Untracked .claude/ was also blocking
+# `cargo package` from running without --allow-dirty during release-gap
+# verification this session.
+/.claude/
