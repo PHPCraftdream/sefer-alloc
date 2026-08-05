@@ -51,7 +51,7 @@ don't rewrite" convention.
 - [[L] Low-priority — honest reject — item 10: ~~R9-9 — warm-batch-on-`SeferAlloc`-heap arm.~~ DONE (task R10-7,](#l10)
 - [[L] Low-priority — honest reject — item 11: R11-3 — joint threshold×pad-target sweep.](#l11)
 - [[L] Low-priority — honest reject — item 12: R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).](#l12)
-- [[L] Low-priority — honest reject — item 13: R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.](#l13)
+- [[L] Low-priority — honest reject — item 44: R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.](#l44)
 - [[L] Low-priority — honest reject — item 16: R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;](#l16)
 - [[L] Low-priority — honest reject — item 17: R29-10 — alloc-hit `clear_magazine` block's per-pop cost (R3's](#l17)
 - [[L] Low-priority — honest reject — item 18: X4 (2026-07-05) — two recycle experiments (`TCACHE_CAP` 16→32 and a 64-bit](#l18)
@@ -1226,9 +1226,9 @@ don't rewrite" convention.
 
 ---
 
-### L13
+### L44
 
-*Back-link: `docs/perf/OPEN_ITEMS.md`, item 13 (`[L] Low-priority — honest reject` tier) — "**R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**"*
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 44 (`[L] Low-priority — honest reject` tier) — "**R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**"*
 
 
     Task #397, 2026-07-28. Swept the magazine-overflow half-flush constant

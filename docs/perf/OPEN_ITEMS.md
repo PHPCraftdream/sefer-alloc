@@ -1190,7 +1190,7 @@ for completeness.
     > - **Evidence:** `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 + this file's item-1 closure entry (the LCM argument distinguishing the two ladders) + `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §5 (the ~40×→~1.8-2.1× correction that prompted this re-derivation).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L12`.
 
-13. **R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**
+44. **R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**
 
     > **Current state**
     > - **Status:** NO-GO, fully explored — all 4 swept values measured against all 5 required gates; none beats the current baseline (`FLUSH_N=8`).
@@ -1286,7 +1286,7 @@ for completeness.
     > - **Cross-reference (added 2026-08-02, task #497):** the non-semantics-
     >   changing sibling this item's own "next trigger" implicitly ruled out
     >   as sufficient (a shared-storage form that keeps both oracles'
-    >   semantics independent) WAS attempted — see item 38 below (F1b,
+    >   semantics independent) WAS attempted — see item 45 below (F1b,
     >   `docs/perf/R32_6_DUAL_BITMAP_GATE.md`). It confirmed the correctness
     >   distinction from G1 is real (no semantics inversion, all four named
     >   call sites unaffected in meaning) but was independently rejected on
@@ -1815,7 +1815,7 @@ for completeness.
    >   entries for `R10_7_BATCH_WARM_ARM`, `R8_9_MEDIUM_CLASSES_VERDICT`,
    >   `R9_3_MEDIUM_CLASSES_PRODUCTION_GATES`.
 
-38. **F1b (2026-08-02, task #497) — merge `AllocBitmap`/`MagazineBitmap` into
+45. **F1b (2026-08-02, task #497) — merge `AllocBitmap`/`MagazineBitmap` into
     one 2-bit-per-granule `DualBitmap` (honest reject, correctness-sound,
     cost-rejected).**
 
