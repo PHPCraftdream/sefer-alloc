@@ -26,9 +26,16 @@
 //      (R30-5: GENERATED, not hand-written — default / experimental /
 //      --all-features / hardened medium-classes internals / production /
 //      production internals)
-//   8. cargo test --features production                          (default prod suite)
-//   9-11. cargo test x3 more feature combos (alloc-stats+bench-internals,
-//      pinning, --all-features)
+//   8. cargo test --features "production internals"                (default prod suite;
+//      `internals` required — this repo's own tests/ suite reaches
+//      alloc_core/global/registry directly, R34-3/task #522. There is no
+//      bare `--features production` test step anywhere in this file —
+//      `production` alone appears only as a clippy row above. Finding S9,
+//      docs/reviews/2026-08-06-sprint-closing-readonly-review.md: this
+//      line previously said "cargo test --features production", which
+//      does not exist as a step here.)
+//   9-11. cargo test x3 more feature combos (production alloc-stats
+//      bench-internals internals, pinning, --all-features)
 //   12-13. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final

@@ -419,7 +419,10 @@ Core instructions, mandatory for all code in this repository. They
   GENERATED from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` since R30-5/task
   #454, not hand-written; byte-identical to ci.yml's clippy job, pinned by
   `tests/ci_clippy_matrix_consistency.rs`),
-  `cargo test` under `production`, then
+  `cargo test` across the main feature combinations (`production internals`,
+  `production alloc-stats bench-internals internals`, `pinning`,
+  `--all-features` — there is no bare `--features production` test step;
+  `production` alone appears only as a clippy row above), then
   `npm run iai` (the deterministic judge) — and fails fast at the first red
   step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
   miri, loom, TSan, multi-arch, no_std, MSRV) but it catches the most common

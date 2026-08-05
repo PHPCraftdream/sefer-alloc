@@ -54,12 +54,14 @@ runs, in order: `cargo fmt --check`, `clippy -D warnings` across every CI
 clippy row (generated from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — not
 hand-written, and kept byte-identical to `ci.yml`'s `clippy` job by
 `tests/ci_clippy_matrix_consistency.rs`), `cargo test` across the main
-feature combinations (including plain `--features production`), then
-`npm run iai` (the deterministic judge). See that script's own header
-comment for the full, current step list — it is intentionally not
-duplicated here by hand, because a hand-duplicated list is exactly the kind
-of second source that drifts out of sync (this file itself used to be one
-such stale copy).
+feature combinations (`production internals`, `production alloc-stats
+bench-internals internals`, `pinning`, `--all-features` — note there is no
+bare `--features production` test step; `production` alone appears only as
+a clippy row), then `npm run iai` (the deterministic judge). See that
+script's own header comment for the full, current step list — it is
+intentionally not duplicated here by hand, because a hand-duplicated list
+is exactly the kind of second source that drifts out of sync (this file
+itself used to be one such stale copy).
 
 This repo's own white-box `tests/` suite reaches internal module paths
 directly and requires the `internals` feature to compile
@@ -82,10 +84,14 @@ cargo test --features alloc-core --test alloc_core_differential
 
 ```sh
 # Loom model checking (may be slow — run with LOOM_MAX_PREEMPTIONS=2 for quick check).
+# `RUSTFLAGS="--cfg loom"` is required — every tests/loom_*.rs file is
+# `#![cfg(loom)]`; without it the binary builds empty and "passes" vacuously
+# (0 tests run, exit 0) instead of failing loudly (found via
+# docs/reviews/2026-08-06-sprint-closing-readonly-review.md finding S3).
 # Pick the loom_*.rs test(s) relevant to your change — see `tests/loom_*.rs`
 # for the current set (e.g. loom_epoch, loom_xthread_protocol, loom_remote_ring,
 # loom_thread_free, loom_sharded — currently 14 files total).
-LOOM_MAX_PREEMPTIONS=2 cargo test --test loom_epoch --features experimental
+RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS=2 cargo test --release --test loom_epoch --features experimental
 
 # ThreadSanitizer (Linux or macOS only)
 RUSTFLAGS="-Z sanitizer=thread" cargo +nightly test \
@@ -95,8 +101,13 @@ RUSTFLAGS="-Z sanitizer=thread" cargo +nightly test \
 ### Mandatory when adding or modifying `unsafe`
 
 ```sh
-# Miri — run on invariant tests and a bounded proptest, not the full suite
-cargo +nightly miri test --features alloc-core -- region_invariants
+# Miri — run on invariant tests and a bounded proptest, not the full suite.
+# `--test region_invariants` selects the BINARY (all 5 tests inside it run);
+# a bare positional filter (`-- region_invariants`) is a substring match
+# over TEST FUNCTION NAMES, none of which contain that substring, so it
+# silently runs ZERO tests while still reporting green (see ci.yml's
+# `miri-core` job comment for the exact same bug once found there).
+cargo +nightly miri test --features alloc-core --test region_invariants
 ```
 
 Cross-architecture build (weak memory model smoke-check):
