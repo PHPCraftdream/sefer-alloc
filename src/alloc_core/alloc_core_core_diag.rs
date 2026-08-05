@@ -8,6 +8,34 @@
 //! introspection, segment-id/kind-byte read+corrupt hooks, and the
 //! table/registry teardown test seams (`dbg_unregister`/`dbg_recycle`).
 //! Pure code-movement sibling of `alloc_core.rs`; no behavior changed.
+//!
+//! Sol-F1 (task #563, release-readiness review finding F1): `internals`
+//! (see its own doc comment in `Cargo.toml`) gates the `alloc_core` /
+//! `global` / `registry` MODULE PATHS, but `AllocCore` itself is
+//! additionally re-exported at the crate root unconditionally (`pub use
+//! alloc_core::AllocCore` in `src/lib.rs`, gated only on `alloc-core`).
+//! Gating the module path alone does NOT hide `AllocCore`'s own INHERENT
+//! `dbg_*` methods — those stay reachable as `sefer_alloc::AllocCore::dbg_*`
+//! regardless of `internals`, since Rust's module-privacy rules only affect
+//! how a TYPE is NAMED/reached, not the visibility of already-`pub` inherent
+//! methods on a type that is itself reachable another way. This file
+//! therefore gates its own `impl AllocCore` blocks directly with
+//! `#[cfg(feature = "internals")]`, split into two blocks:
+//!
+//! 1. An UNGATED block holding exactly the three `dbg_*` accessors
+//!    [`AllocCore::dbg_foreign_or_unroutable_frees`],
+//!    [`AllocCore::dbg_segments_reserved_total`],
+//!    [`AllocCore::dbg_segments_released_total`] — these back
+//!    `AllocStats::stats()` (`src/global/sefer_alloc.rs`), a stable,
+//!    always-available public API method that is NOT `internals`-gated;
+//!    gating these three would break `stats()` under plain `production`.
+//! 2. An `internals`-gated block holding every other `dbg_*` hook in this
+//!    file — none of the rest has a caller outside `tests/`/`benches/`/
+//!    `examples/`, all of which already require `internals` (either via
+//!    `required-features` on the target, or — for the ~106 `tests/` files,
+//!    which cannot carry `required-features` since they are not `[[test]]`
+//!    Cargo.toml targets — via the `internals`-feature command line CI/local
+//!    convention `internals`'s own Cargo.toml doc comment documents).
 
 use core::alloc::Layout;
 
@@ -25,6 +53,10 @@ use super::size_classes::{AllocKind, SizeClasses};
 use super::alloc_core::{AllocCore, FOREIGN_OR_UNROUTABLE_FREES};
 use super::directory_stats;
 
+/// Sol-F1 (task #563): NOT `internals`-gated — these three back the stable,
+/// always-available `AllocStats::stats()` (`src/global/sefer_alloc.rs`),
+/// which calls them unconditionally under plain `--features production`.
+/// See this file's module doc for the full rationale.
 impl AllocCore {
     /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls
     /// that hit the foreign-or-unroutable no-op branch (a `ptr` not in any of
@@ -60,7 +92,12 @@ impl AllocCore {
     pub fn dbg_segments_released_total() -> u64 {
         super::os::segments_released_total()
     }
+}
 
+/// Sol-F1 (task #563): `internals`-gated — every other `dbg_*` diagnostic
+/// hook in this file. See this file's module doc for the full rationale.
+#[cfg(feature = "internals")]
+impl AllocCore {
     /// MEASUREMENT-ONLY (task #504, F11 step 1): process-wide count of
     /// `aligned_vmem::try_reserve_aligned_exact` attempts (Unix only — always
     /// 0 on Windows/miri). Denominator over

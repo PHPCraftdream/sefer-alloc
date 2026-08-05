@@ -4,6 +4,19 @@
 //! This file holds the `impl AllocCore { .. }` block for the inspection and
 //! corruption test hooks (`dbg_carve_batch`, `dbg_freelist_head_for`, etc.).
 //! Pure code-movement sibling of `alloc_core_small.rs`; no behavior changed.
+//!
+//! Sol-F1 (task #563, release-readiness review finding F1): every method in
+//! this file is a `dbg_*` diagnostic/test-only hook with no caller outside
+//! `tests/`/`benches/`/`examples/` (verified — no production call site
+//! exists). `AllocCore` is re-exported at the crate root unconditionally
+//! (`pub use alloc_core::AllocCore` in `src/lib.rs`, gated only on
+//! `alloc-core`), so gating the `alloc_core` MODULE PATH behind `internals`
+//! (R34-3/task #522) does NOT hide these inherent methods — they stay
+//! reachable as `sefer_alloc::AllocCore::dbg_*` regardless. The whole `impl`
+//! block is gated `#[cfg(feature = "internals")]` directly; see
+//! `alloc_core_core_diag.rs`'s module doc for the fuller rationale (that
+//! sibling file needed a split because three of its methods DO have a
+//! stable-API caller — none of this file's methods do).
 
 #[cfg(feature = "hardened")]
 use core::ptr::NonNull;
@@ -17,6 +30,7 @@ use super::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 use super::alloc_core::AllocCore;
 
+#[cfg(feature = "internals")]
 impl AllocCore {
     /// TEST-ONLY (E1, task W4): drive [`carve_batch`](Self::carve_batch)
     /// directly (it is a private internal), so the equivalence regression test

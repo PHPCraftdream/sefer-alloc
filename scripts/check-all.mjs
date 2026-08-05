@@ -30,6 +30,11 @@
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
+//   12a. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//      task #563, release-readiness review finding F1: the REAL compile-fail
+//      oracle for the negative half of the `internals` boundary —
+//      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
+//      MUST compile with it; see that script's own header)
 //   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
 //   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
@@ -142,6 +147,18 @@ const steps = [
   // boundary guard must run WITHOUT `internals` to be non-vacuous).
   ...otherRows,
   {
+    // Sol-F1 (task #563, release-readiness review finding F1): the REAL
+    // compile-fail oracle for the NEGATIVE half of the `internals` boundary
+    // — `test-internals-boundary-no-internals` above only proves the
+    // POSITIVE half (stable re-exports resolve without `internals`); this
+    // step proves `AllocCore::dbg_carve_batch` genuinely does NOT compile
+    // without `internals` (and DOES compile with it). See
+    // scripts/verify-internals-negative-boundary.mjs's own header.
+    name: 'verify-internals-negative-boundary (Sol-F1 compile-fail oracle)',
+    cmd: 'node',
+    args: ['scripts/verify-internals-negative-boundary.mjs'],
+  },
+  {
     // R30-5: generated "feature ABSENT" compile-check enumeration for every
     // conditionally-registered iai arm in benches/perf_gate_iai.rs — the
     // mechanical, automatic form of the stub rule R29-16 violated by
@@ -184,7 +201,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

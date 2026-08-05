@@ -5,6 +5,30 @@
 //! cross-thread reclaim path (`reclaim_offset` / `reclaim_offset_checked`) and
 //! the ring-related test hooks (`dbg_push_to_ring`, `dbg_drain_all_rings*`).
 //! Pure code-movement sibling of `alloc_core_small.rs`; no behavior changed.
+//!
+//! Sol-F1 (task #563, release-readiness review finding F1): this file mixes
+//! two categories that must be gated DIFFERENTLY, so it is split into two
+//! `impl AllocCore` blocks (see `alloc_core_core_diag.rs`'s module doc for
+//! the fuller rationale on why gating the `alloc_core` module path alone —
+//! R34-3/task #522 — does not hide `AllocCore`'s own inherent methods):
+//!
+//! 1. An UNGATED block holding [`AllocCore::reclaim_offset`] and
+//!    [`AllocCore::reclaim_offset_checked`] — both `pub(crate) fn`, the
+//!    production cross-thread-free reclaim hot path called from
+//!    `alloc_core_small.rs`'s drain sites and from
+//!    `registry::heap_core_xthread`. `pub(crate)` items are never reachable
+//!    outside this crate regardless of module-path visibility, so they were
+//!    never part of the `internals` semver boundary — gating them would only
+//!    break the always-on production build for no boundary benefit.
+//! 2. An `internals`-gated block holding every `dbg_*` hook in this file
+//!    (`dbg_push_to_ring`, `dbg_force_coarse_dirty_bit_for`,
+//!    `dbg_drain_all_rings`, `dbg_drain_all_rings_checked`,
+//!    `dbg_drain_all_rings_impl`) — none has a caller outside
+//!    `tests/`/`benches/`/`examples/` or the already-`internals`-gated
+//!    `registry` module (`HeapCore::dbg_push_to_ring`/
+//!    `HeapCore::dbg_drain_all_rings` in `registry::heap_core_diag`
+//!    delegate to these; `HeapCore` itself is unreachable outside this crate
+//!    without `internals`, since it is not crate-root re-exported).
 
 use core::ptr::NonNull;
 
@@ -17,6 +41,9 @@ use super::size_classes::SizeClasses;
 
 use super::alloc_core::AllocCore;
 
+/// Sol-F1 (task #563): NOT `internals`-gated — production cross-thread
+/// reclaim hot path (`pub(crate) fn`, never externally reachable). See this
+/// file's module doc.
 impl AllocCore {
     /// Reclaim a cross-thread-freed block identified by its **segment-relative
     /// offset** back into its owning segment's `BinTable`. This is the
@@ -315,7 +342,12 @@ impl AllocCore {
         // making the return value useless for tracking BinTable changes.
         true
     }
+}
 
+/// Sol-F1 (task #563): `internals`-gated — every `dbg_*` diagnostic hook in
+/// this file. See this file's module doc for the full rationale.
+#[cfg(feature = "internals")]
+impl AllocCore {
     /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
     /// `class_idx` in the high bits — into its segment's `RemoteFreeRing`,
     /// exactly as a cross-thread freer would. Lets a single-threaded test

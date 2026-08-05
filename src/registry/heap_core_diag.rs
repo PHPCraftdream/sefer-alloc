@@ -53,8 +53,12 @@ impl HeapCore {
     /// so a test constructing many distinct `Small` target segments must be
     /// able to positively exclude it, not merely infer it from allocation
     /// order.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_kind_at_tag`] moved behind `internals` (see that
+    /// method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-global")]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
     #[must_use]
     pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
         self.core.dbg_kind_at_tag(ptr)
@@ -80,8 +84,12 @@ impl HeapCore {
     /// other ungated-beyond-`alloc-global` accessors), because
     /// `AllocCore::dbg_table_count` itself carries no additional feature
     /// gate.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_table_count`] moved behind `internals` (see that
+    /// method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-global")]
+    #[cfg(all(feature = "alloc-global", feature = "internals"))]
     #[must_use]
     pub fn dbg_table_count(&self) -> u32 {
         self.core.dbg_table_count()
@@ -156,8 +164,12 @@ impl HeapCore {
     /// Delegates to [`AllocCore::dbg_layout_class_for`]; exposed at the
     /// `HeapCore` level because `core` is `pub(crate)` and external
     /// integration tests only see `HeapCore`/`HeapRegistry`.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_layout_class_for`] moved behind `internals` (see
+    /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin", feature = "internals"))]
     pub fn dbg_class_for(&self, layout: Layout) -> Option<usize> {
         self.core.dbg_layout_class_for(layout)
     }
@@ -212,8 +224,16 @@ impl HeapCore {
     /// README.md's "Where unsafe lives" R24-6 note for the full rationale.
     /// It remains, like its siblings, `#[doc(hidden)]`, test/measurement-only,
     /// and excluded from any "changes production behavior" claim.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — this is now a
+    /// HARD compile dependency, not a discretionary re-gate: the delegated
+    /// [`AllocCore::dbg_push_to_ring`] moved behind `internals`
+    /// (`alloc_core_small_reclaim.rs`'s module doc), so this wrapper cannot
+    /// compile without it regardless of the R24-6 `bench-internals`
+    /// decision above (which remains in force — this hook is still NOT
+    /// additionally gated on `bench-internals`).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-xthread")]
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
     #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (delegation to the unsafe producer).
     pub unsafe fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
         // SAFETY (R6-MS-4): this method carries the identical `# Safety`
@@ -227,8 +247,12 @@ impl HeapCore {
     /// but unconditionally. Task #164: routes through the same magazine
     /// predicate as the production drain, so tests exercise the real
     /// decision path.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — delegates to
+    /// [`AllocCore::dbg_drain_all_rings`]/[`AllocCore::dbg_drain_all_rings_checked`],
+    /// both moved behind `internals` (`alloc_core_small_reclaim.rs`'s module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-xthread")]
+    #[cfg(all(feature = "alloc-xthread", feature = "internals"))]
     pub fn dbg_drain_all_rings(&mut self) {
         // Task #164: split borrow — `&self.tcache` (read) + `&mut self.core`
         // (write) are disjoint fields of HeapCore.
@@ -278,8 +302,12 @@ impl HeapCore {
     /// `HeapCore` level so integration tests driving cross-thread frees through
     /// `HeapCore::dealloc` can observe whether `drain_heap_overflow` synced the
     /// directory after reclaiming an overflow entry.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_directory_get_bit`] moved behind `internals` (see
+    /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-segment-directory")]
+    #[cfg(all(feature = "alloc-segment-directory", feature = "internals"))]
     #[must_use]
     pub fn dbg_directory_bit_for_ptr(&self, ptr: *mut u8, class_idx: usize) -> Option<bool> {
         use crate::alloc_core::segment_header::SegmentHeader;
@@ -588,8 +616,16 @@ impl HeapCore {
     /// `unsafe fn`.
     /// `bench-internals`-gated (R27-7/task #425: no production caller → R25-10
     /// sub-rule 2).
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_is_free_for`] moved behind `internals` (see that
+    /// method's file, `alloc_core_small_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
         self.core.dbg_is_free_for(ptr)
@@ -603,8 +639,12 @@ impl HeapCore {
     /// tests in `tests/` only see `HeapCore`/`HeapRegistry`. Returns `true`
     /// if the latch handle was bound (this heap has been claimed through the
     /// registry and `class-aware-dirty` is on), `false` otherwise.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_force_sidecar_oom_latch`] moved behind `internals`
+    /// (see that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(feature = "class-aware-dirty")]
+    #[cfg(all(feature = "class-aware-dirty", feature = "internals"))]
     pub fn dbg_force_sidecar_oom_latch(&mut self) -> bool {
         self.core.dbg_force_sidecar_oom_latch()
     }
@@ -613,8 +653,12 @@ impl HeapCore {
     /// Thin delegation to `AllocCore::dbg_sidecar_oom_latch` — see that
     /// function's doc comment. Returns `None` if the latch handle is not
     /// bound.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_sidecar_oom_latch`] moved behind `internals` (see
+    /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(feature = "class-aware-dirty")]
+    #[cfg(all(feature = "class-aware-dirty", feature = "internals"))]
     #[must_use]
     pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {
         self.core.dbg_sidecar_oom_latch()
@@ -650,12 +694,18 @@ impl HeapCore {
     // too. See the `bench-internals` feature doc in `Cargo.toml` for the full
     // rationale and why the sibling `dbg_push_to_ring` (R6-MS-4) was NOT
     // moved here.
+    //
+    // Sol-F1 (task #563): additionally gated `internals` — delegates to
+    // `AllocCore::dbg_push_to_ring`/`AllocCore::dbg_force_coarse_dirty_bit_for`,
+    // both moved behind `internals` (`alloc_core_small_reclaim.rs` /
+    // `alloc_core_core_diag.rs` module docs).
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-xthread",
         feature = "alloc-segment-directory",
         feature = "class-aware-dirty",
-        feature = "bench-internals"
+        feature = "bench-internals",
+        feature = "internals"
     ))]
     #[allow(unsafe_code)] // R13-1: `unsafe fn` boundary, mirrors `dbg_push_to_ring`.
     pub unsafe fn dbg_push_coarse_only_entry(&self, ptr: *mut u8, class_idx: usize) -> bool {
@@ -754,8 +804,16 @@ impl HeapCore {
     /// argument. Still the SAME production `hash_contains` routine
     /// `contains_base` itself falls through to on every real Tier-1 miss —
     /// not an alternate/bypass implementation.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_hash_contains_only`] moved behind `internals` (see
+    /// that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "alloc-xthread",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
         self.core.dbg_hash_contains_only(base)
@@ -771,8 +829,16 @@ impl HeapCore {
     /// `&self`), matching `dbg_maybe_decay_guard_passed_count`'s existing
     /// convention for other process-wide diagnostic counters in this crate.
     /// Reads 0 unless `bench-internals` is on.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_contains_base_tier1_hits`] moved behind `internals`
+    /// (see that method's file, `alloc_core_core_diag.rs`, module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_contains_base_tier1_hits() -> u64 {
         crate::alloc_core::AllocCore::dbg_contains_base_tier1_hits()
@@ -781,8 +847,17 @@ impl HeapCore {
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): the Tier-2-fallback
     /// complement of [`HeapCore::dbg_contains_base_tier1_hits`]. See
     /// [`AllocCore::dbg_contains_base_tier1_misses`].
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_contains_base_tier1_misses`] moved behind
+    /// `internals` (see that method's file, `alloc_core_core_diag.rs`,
+    /// module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     #[must_use]
     pub fn dbg_contains_base_tier1_misses() -> u64 {
         crate::alloc_core::AllocCore::dbg_contains_base_tier1_misses()
@@ -791,8 +866,17 @@ impl HeapCore {
     /// MEASUREMENT-ONLY (R32-10, task #501, F2): thin delegation to
     /// [`AllocCore::dbg_reset_contains_base_tier1_counters`], exposed at the
     /// `HeapCore` level for the same reason as the two accessors above.
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`] moved behind
+    /// `internals` (see that method's file, `alloc_core_core_diag.rs`,
+    /// module doc).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_reset_contains_base_tier1_counters() {
         crate::alloc_core::AllocCore::dbg_reset_contains_base_tier1_counters();
     }
@@ -1091,29 +1175,45 @@ impl HeapCore {
     // segment reservation, not just the decommit/recommit cycle.
 
     /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_attempts`].
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub fn dbg_unix_exact_reserve_attempts() -> u64 {
         crate::alloc_core::AllocCore::dbg_unix_exact_reserve_attempts()
     }
 
     /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_hits`].
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub fn dbg_unix_exact_reserve_hits() -> u64 {
         crate::alloc_core::AllocCore::dbg_unix_exact_reserve_hits()
     }
 
     /// task #504 delegation — see [`AllocCore::dbg_windows_reserve_commit_calls`].
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub fn dbg_windows_reserve_commit_calls() -> u64 {
         crate::alloc_core::AllocCore::dbg_windows_reserve_commit_calls()
     }
 
     /// task #504 delegation — see [`AllocCore::dbg_reset_vmem_bench_internals_counters`].
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// method moved behind `internals` (`alloc_core_core_diag.rs`'s module
+    /// doc).
     #[doc(hidden)]
-    #[cfg(feature = "bench-internals")]
+    #[cfg(all(feature = "bench-internals", feature = "internals"))]
     pub fn dbg_reset_vmem_bench_internals_counters() {
         crate::alloc_core::AllocCore::dbg_reset_vmem_bench_internals_counters();
     }

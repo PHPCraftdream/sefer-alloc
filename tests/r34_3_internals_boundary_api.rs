@@ -56,6 +56,34 @@
 //! the configuration this file exists to check under. Run via `cargo test
 //! --features production --test r34_3_internals_boundary_api` (or any
 //! feature string that turns on all three without `internals`).
+//!
+//! ## Update — Sol-F1 (task #563): a REAL negative-half oracle now exists,
+//! for a narrower but real property
+//!
+//! Sol-F1 (release-readiness review finding F1) found that the module-path
+//! gate above did NOT hide `AllocCore`'s own INHERENT `dbg_*` methods:
+//! `AllocCore` is re-exported at the crate root unconditionally (`pub use
+//! alloc_core::{AllocCore, SegmentLayout}` in `src/lib.rs`, gated only on
+//! `alloc-core`), so `sefer_alloc::AllocCore::dbg_carve_batch` compiled and
+//! ran with `internals` OFF — module-privacy hides how a TYPE is reached,
+//! not the visibility of already-`pub` inherent methods on a type reachable
+//! another way. Fixed by gating the `dbg_*`-only `impl AllocCore` blocks in
+//! `alloc_core_core_diag.rs`/`alloc_core_small_diag.rs`/
+//! `alloc_core_small_reclaim.rs` directly with `#[cfg(feature =
+//! "internals")]`. `scripts/verify-internals-negative-boundary.mjs` +
+//! `examples/sol_f1_dbg_carve_batch_negative_probe.rs` are the accompanying
+//! REAL compile-fail oracle this file's own comment above says a normal
+//! `#[test]` cannot provide: they build the probe example BOTH without
+//! `internals` (asserting the build FAILS, specifically with the expected
+//! `dbg_carve_batch` E0599) and with it (asserting the build SUCCEEDS),
+//! automated and reproducible via `node
+//! scripts/verify-internals-negative-boundary.mjs` (wired into `npm run
+//! check`). This does NOT close the broader `sefer_alloc::alloc_core::*`/
+//! `registry::*`/`global::*` MODULE-PATH negative-half gap this file's own
+//! comment above describes (that remains verified only by the zero-trust
+//! clippy/build/doc pass, not a dedicated compile-fail oracle) — it proves
+//! the narrower, concretely-exploited `AllocCore::dbg_*` inherent-method
+//! case the F1 finding actually reported.
 
 #![cfg(all(
     feature = "alloc-core",

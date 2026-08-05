@@ -986,7 +986,10 @@ required-features = ["pinning"]
 [[bench]]
 name = "global_alloc"
 harness = false
-required-features = ["alloc-global"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_layout_class_for`, moved behind `internals` in
+# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+required-features = ["alloc-global", "internals"]
 
 # Task #54: large-block and realloc-heavy profiling — SeferAlloc vs mimalloc
 # vs System across three groups: single-shot alloc+free of multi-MiB blocks,
@@ -1172,11 +1175,19 @@ required-features = ["alloc-global"]
 # `docs/perf/R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` for the verdict.
 [[example]]
 name = "paired_ab_large_cache_extended_off"
-required-features = ["alloc-global"]
+# Sol-F1 (task #563): `internals` added — the shared workload
+# (`examples/_shared/paired_ab_large_cache_extended_turnover_workload.rs`)
+# calls `AllocCore::dbg_small_class_count`/`dbg_block_size`, both moved
+# behind `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# finding F1: gating the `alloc_core` module PATH alone, R34-3/task #522,
+# did not hide `AllocCore`'s crate-root-reachable inherent `dbg_*` methods).
+required-features = ["alloc-global", "internals"]
 
 [[example]]
 name = "paired_ab_large_cache_extended_on"
-required-features = ["alloc-global"]
+# Sol-F1 (task #563): `internals` added — same reason as the sibling
+# `_off` arm immediately above (shared workload file).
+required-features = ["alloc-global", "internals"]
 
 # R31-3 (task #466, step 3): N=1/2/4 narrow-working-set-after-materialisation-
 # burst TIMING regression judge — the follow-up
@@ -1330,7 +1341,10 @@ required-features = ["alloc-global"]
 # Build/run experimental: cargo run --release --example r12_3_exact_span_measure --features "production,exact-span-large"
 [[example]]
 name = "r12_3_exact_span_measure"
-required-features = ["alloc-core"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_span_usable_of`, moved behind `internals` in
+# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+required-features = ["alloc-core", "internals"]
 
 # R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): THROWAWAY
 # measurement harness for the `large-reserved-capacity` feature. Runs a
@@ -1374,7 +1388,11 @@ required-features = ["alloc-core", "alloc-decommit"]
 #            (AFTER, 40 slots): cargo run --release --example r13_7_large_cache_extended_hit_rate_measure --features "alloc-core alloc-decommit alloc-stats large-cache-extended"
 [[example]]
 name = "r13_7_large_cache_extended_hit_rate_measure"
-required-features = ["alloc-core", "alloc-decommit"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_small_class_count`/`dbg_block_size`, both moved behind
+# `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# finding F1).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # R14-5 (task #290, item 3): THROWAWAY RSS/commit RETENTION judge for the
 # `large-cache-extended` sidecar — companion to
@@ -1390,7 +1408,10 @@ required-features = ["alloc-core", "alloc-decommit"]
 #            (EXTENDED, 40 slots): cargo run --release --example r14_5_large_cache_extended_rss_measure --features "alloc-core alloc-decommit alloc-stats large-cache-extended" -- unbounded
 [[example]]
 name = "r14_5_large_cache_extended_rss_measure"
-required-features = ["alloc-core", "alloc-decommit"]
+# Sol-F1 (task #563): `internals` added — same reason as the sibling
+# `r13_7_large_cache_extended_hit_rate_measure` immediately above
+# (`AllocCore::dbg_small_class_count`/`dbg_block_size`).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # R13-8 (task #278): THROWAWAY judge for 256-2048 SIMULTANEOUSLY LIVE
 # 260 KiB - 2 MiB objects -- does the large-cache-extended sidecar matter for
@@ -1401,7 +1422,11 @@ required-features = ["alloc-core", "alloc-decommit"]
 #            cargo run --release --example r13_8_medium_working_set_judge --features "production alloc-stats exact-span-large large-cache-extended"
 [[example]]
 name = "r13_8_medium_working_set_judge"
-required-features = ["alloc-core", "alloc-decommit"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_small_class_count`/`dbg_block_size`/`dbg_max_segments`/
+# `dbg_table_count`, all moved behind `internals` in
+# `alloc_core_core_diag.rs` (release-readiness review finding F1).
+required-features = ["alloc-core", "alloc-decommit", "internals"]
 
 # R13-9 (task #279): THROWAWAY measurement harness for the `class-aware-dirty`
 # production promotion gate -- confirms the ACTUAL page-rounded RSS footprint
@@ -1515,7 +1540,11 @@ required-features = ["alloc-global", "alloc-xthread", "internals"]
 [[bench]]
 name = "medium_size_sweep"
 harness = false
-required-features = ["alloc-core"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_table_count`/`dbg_layout_class_for`, both moved behind
+# `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# finding F1).
+required-features = ["alloc-core", "internals"]
 
 # R6-OPT-A4 (radical_optimization_review §4 P1-6 measurement plan / §5.5 item
 # 7 / §6 Stage A.5): deterministic multi-segment directory-scan JUDGE for
@@ -1555,7 +1584,11 @@ required-features = ["alloc-core", "internals"]
 [[bench]]
 name = "directory_threshold_probe"
 harness = false
-required-features = ["alloc-core"]
+# Sol-F1 (task #563): `internals` added — this file calls
+# `AllocCore::dbg_block_size`/`dbg_small_class_count`, both moved behind
+# `internals` in `alloc_core_core_diag.rs` (release-readiness review
+# finding F1).
+required-features = ["alloc-core", "internals"]
 
 # R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
 # isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
@@ -2252,6 +2285,21 @@ required-features = ["alloc-global"]
 [[example]]
 name = "r34_23_vec_worker_system"
 required-features = ["alloc-global"]
+
+# Sol-F1 (task #563, release-readiness review finding F1): the NEGATIVE-half
+# compile-fail probe for the `internals` boundary. Deliberately does NOT list
+# `internals` here — `internals`-off is exactly the configuration this file
+# exists to prove FAILS to compile (`AllocCore::dbg_carve_batch` must not
+# resolve). See the file's own module doc and
+# `scripts/verify-internals-negative-boundary.mjs` (which builds this target
+# BOTH with and without `internals` and asserts the expected outcome each
+# way) for the full oracle. `alloc-decommit` is not required by the probe
+# itself but is listed so the verification script's two invocations share
+# the exact same feature baseline as `tests/r34_3_internals_boundary_api.rs`'s
+# own `#![cfg(...)]` gate, for an apples-to-apples comparison.
+[[example]]
+name = "sol_f1_dbg_carve_batch_negative_probe"
+required-features = ["alloc-core"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #

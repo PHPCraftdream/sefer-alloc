@@ -649,8 +649,18 @@ impl SeferAlloc {
     /// (no production caller) — additionally gated on `alloc-xthread` (rings
     /// do not exist otherwise; matches `HeapCore::dbg_drain_all_rings`'s own
     /// gate).
+    ///
+    /// Sol-F1 (task #563): additionally gated `internals` — the delegated
+    /// `HeapCore::dbg_drain_all_rings` (`registry::heap_core_diag`) is now
+    /// `internals`-gated too (a hard transitive compile dependency, since it
+    /// in turn delegates to `AllocCore::dbg_drain_all_rings[_checked]`,
+    /// moved behind `internals` in `alloc_core_small_reclaim.rs`).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "bench-internals",
+        feature = "internals"
+    ))]
     pub fn dbg_drain_current_thread_rings(&self) {
         if let CurrentHeap::Own(heap) = self.current_heap() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
