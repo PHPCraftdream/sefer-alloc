@@ -1,13 +1,26 @@
 # Round 34 manifest — commit classification & per-item verdict
 
-**Generated.** The commit table in §1 is reproduced verbatim from
-`git log --reverse --format="%H|%cI|%s" 40241b0..827a57a` (the exclusive
+**Generated (extended 2026-08-05 — task #550, review findings F5+F6 from
+`docs/reviews/2026-08-05-round34-readonly-review.md`).** The commit table in
+§1 is reproduced verbatim from
+`git log --reverse --format="%H|%cI|%s" 40241b0..c5db553` (the exclusive
 lower bound is Round 33's closing checkpoint `40241b0`; the inclusive upper
-bound is Round 34's HEAD-at-manifest-time `827a57a`). No commit SHA was
-hand-transcribed — every 40-hex SHA below is byte-identical to `git log`
-output. This manifest is the FIRST real instance of the per-round manifest
-artifact required by CLAUDE.md's "Round manifest" rule (added R34-24/task
-#543); it doubles as the reference example future rounds should match.
+bound is Round 34's actual closing commit `c5db553`, R34-27/task #546). No
+commit SHA was hand-transcribed — every 40-hex SHA below is byte-identical
+to `git log` output. This manifest is the FIRST real instance of the
+per-round manifest artifact required by CLAUDE.md's "Round manifest" rule
+(added R34-24/task #543); it doubles as the reference example future rounds
+should match. **This revision corrects an under-count in the original
+version**: the manifest as first written (commit `4ba188a`) stopped at
+`827a57a` (38 commits) because that was HEAD at the time R34-24 wrote it —
+but the round continued for 5 more commits after that (`4ba188a`, `9b06b56`,
+`7758f7a`, `8cb89ea`, `c5db553`), which were never folded back in. The full
+round span is **42 commits** in `40241b0..8cb89ea` (the last work commit) or
+**43 commits** including the closing checkpoint commit `c5db553` — both
+counts independently re-verified via
+`git log --oneline 40241b0..8cb89ea | wc -l` (→ 42) and
+`git log --oneline 40241b0..c5db553 | wc -l` (→ 43) before this revision was
+written.
 
 **Purpose.** A single per-round artifact that records, in one
 machine-checkable place: (1) every commit in the round, classified by its
@@ -21,8 +34,10 @@ opening every commit body or cross-referencing the CHANGELOG header. This is
 exactly the failure mode an independent bench review flagged: "opt-in results
 must not be presented as acceleration of ordinary `--features production`."
 
-**Round span.** 2026-08-04T11:43+02:00 (first commit) → 2026-08-05T00:37+02:00
-(last commit). 38 commits, 1 calendar day.
+**Round span.** 2026-08-04T11:43+02:00 (first commit) → 2026-08-05T01:50+02:00
+(last commit, closing checkpoint `c5db553`). 43 commits (42 work/process
+commits + 1 closing checkpoint), 1 calendar day (2026-08-04 into
+2026-08-05).
 
 **Net default-feature impact.** `production`'s feature composition is
 **UNCHANGED** — confirmed by R34-21/task #540 (`ae9c9c3`,
@@ -44,7 +59,7 @@ spin — but adds no new allocation path and claims no speedup).
 
 ## §1. Commit classification (verbatim from `git log`)
 
-Reproduce: `git log --reverse --format="%H %s" 40241b0..827a57a`
+Reproduce: `git log --reverse --format="%H %s" 40241b0..c5db553`
 
 | # | SHA (full) | Commit prefix | Subject (truncated) | R34 task | Category |
 |---|------------|---------------|---------------------|----------|----------|
@@ -60,7 +75,7 @@ Reproduce: `git log --reverse --format="%H %s" 40241b0..827a57a`
 | 10 | `b47a2611dd626523ea27ff39e3cef801c2cf6c55` | `fix(test)` | scripts/miri.mjs's local matrix silently omitted the `internals` feature | — | **test-tooling-fix** |
 | 11 | `91ff1ddc67103b91bce2a8ffbc8b44fe0a4cba6a` | `fix(test)` | scripts/tsan.mjs's local passes silently omitted the `internals` feature | — | **test-tooling-fix** |
 | 12 | `d4c4f8b042c84e1058306c3ba589090060c43778` | `docs` | commit Round-33-closing session checkpoint | — | **docs-only** (checkpoint) |
-| 13 | `a9edc87300ca540f5fe7f5318268ca290b5ce81f` | `fix(perf)` | promote RemoteFreeRing cached_head from Relaxed to Acquire/Release | (untagged) | **fix(perf) — production-source** (`src/alloc_core/remote_free_ring.rs`; `alloc-xthread` in `production`) |
+| 13 | `a9edc87300ca540f5fe7f5318268ca290b5ce81f` | `fix(perf)` | promote RemoteFreeRing cached_head from Relaxed to Acquire/Release | R34-6 #525 | **fix(perf) — production-source** (`src/alloc_core/remote_free_ring.rs`; `alloc-xthread` in `production`) |
 | 14 | `7aeee2d3f626f767668a2720ead83cf5d7c04b24` | `fix(test)` | rustfmt drift left by R34-3's internals cfg-gate mechanical edit | — | **test-formatting-fix** |
 | 15 | `a3831e5116cca281f3a447c882539539066dca35` | `bench` | R34-7 causal subprocess comparative harness (MVP) | R34-7 | **bench-only** |
 | 16 | `b23d7c5aad784c12867c224e6cad3c453480b0ca` | `bench` | R34-8 control-arm drift guard for bench-table run-over-run appendix | R34-8 | **bench-only** |
@@ -86,6 +101,11 @@ Reproduce: `git log --reverse --format="%H %s" 40241b0..827a57a`
 | 36 | `19b191878e0fb5959acac26a8c553eb58536bd6d` | `bench` | build R34-23 direct-realloc + real-Vec gate harnesses with path-activation oracle | R34-23 #542 | **bench-only** |
 | 37 | `ba716a0d3a1092b400514c059fe157dd99c61836` | `bench` | R34-23 gate report — correct README realloc_grow_geometric (~40×→~2×), confirm neighbour_pressure (~3350×), NO-GO | R34-23 #542 | **bench-only** |
 | 38 | `827a57abdb24ab5bef205d3897b801c41eab2f60` | `docs` | complete the R34-23 realloc README correction — two more stale ~40×/~1,500× sites | R34-23 #542 | **docs-only** |
+| 39 | `4ba188a960e87e072e5f06ea8e9988f90cfd874d` | `docs(process)` | artifact storage policy + round-manifest artifact + OPEN_ITEMS structural rule + landing-SHA wording | R34-24 #543 | **docs-only** (CLAUDE.md process amendments; first version of this manifest) |
+| 40 | `9b06b566ff114ef301d6b753dd9670036c96fd86` | `docs` | fix a false-precision count in R34-24's own artifact-storage-policy amendment | R34-24 #543 | **docs-only** (self-correction) |
+| 41 | `7758f7ad9f53b4445980516f4a2568148f13bdfe` | `docs(process)` | R34-25 small-magazine provenance design — feasibility study, NEED-MORE-RESEARCH lean NO-GO | R34-25 #544 | **docs-only** (design-only research; no `src/`/`Cargo.toml`/tests/benches change) |
+| 42 | `8cb89eadde54829220f5ed48859faee916914f0a` | `docs(process)` | R34-26 page-run layer design gate — in-place-grow angle, NEED-MORE-DATA lean NO-GO, no real consumer found | R34-26 #545 | **docs-only** (design-only research; no `src/`/`Cargo.toml` change; `docs/perf/OPEN_ITEMS.md` item 3 updated) |
+| 43 | `c5db55330a84789fcbfb2b041aaff65f397844c5` | `docs` | extend Round 34 CHANGELOG with all 26 tasks + commit session checkpoints | R34-27 #546 | **docs-only** (round-closing CHANGELOG completion; not itself a numbered R34-N work item) |
 
 ### Aggregate counts
 
@@ -94,13 +114,13 @@ Reproduce: `git log --reverse --format="%H %s" 40241b0..827a57a`
 | **fix(perf) — production-source** (touches production-reachable `src/`) | 6 | a9edc87, 73dceca, 7ef5a46, 49929d0, c270b0c, 3281ebc |
 | **opt-in-source** (non-default feature code changed) | 0 | — |
 | **bench-only** (judge/probe/gate-report/harness; no shipping code) | 8 | a3831e5, b23d7c5, 0e29fc2, 94e133a, a100647, 9e70266, 19b1918, ba716a0 |
-| **docs-only** (no runtime code; includes comment-only `src/` edits) | 10 | f9ae91f, 4aaca52, b45b824, 00a1c59, d4c4f8b, 1c686f8, e550006, ae9c9c3, b229187, 827a57a |
+| **docs-only** (no runtime code; includes comment-only `src/` edits) | 15 | f9ae91f, 4aaca52, b45b824, 00a1c59, d4c4f8b, 1c686f8, e550006, ae9c9c3, b229187, 827a57a, 4ba188a, 9b06b56, 7758f7a, 8cb89ea, c5db553 |
 | **feat(api) — build-gating** (visibility reorg, no behavior change) | 3 | 27879af, b47cc6a, 0762772 |
 | **test-only / test-fix** (new tests or test infrastructure) | 6 | fd54ddc, b47a261, 91ff1dd, 7aeee2d, 0047cf2, ae11073 |
 | **fix(data) — CSV correction** | 2 | 5c1142f, 43115cf |
 | **dependency-security** | 1 | 353cc05 |
 | **ci/build tooling** | 2 | db7b30f, 36b4b3e |
-| **Total** | **38** | |
+| **Total** | **43** | |
 
 **Self-check (R30-12 taxonomy).** The CHANGELOG header says "Runtime
 improvements this round: 0" — this manifest confirms it: zero `perf(runtime)`
@@ -119,7 +139,7 @@ opt-in or measurement-only result is framed as a default speedup.
 | **R34-3** (#522) | `27879af`, `b47cc6a`, `0762772` | feat(api) | **SHIPPED** — new `internals` Cargo feature gates the crate's internals-reaching `src/` surface (visibility reorg, no behavior change); CI/check-matrix/release gates synced |
 | **R34-4** (#523) | `353cc05` | fix(security) | **CLOSED** — RUSTSEC-2026-0204 closed by bumping crossbeam-epoch 0.9.18→0.9.20; `deny.toml` ignore entry removed |
 | **R34-5** (#524) | `fd54ddc` | test(miri) | **ADDED** — concurrent multi-producer SMALL-block RemoteFreeRing push/drain miri coverage |
-| **(untagged)** | `a9edc87` | fix(perf) | **SHIPPED** — RemoteFreeRing `cached_head` promoted from Relaxed to Acquire/Release (memory-ordering correctness hardening in production-reachable `alloc-xthread` path) |
+| **R34-6** (#525) | `a9edc87`, `7aeee2d` | fix(perf) + fix(test) | **SHIPPED** — RemoteFreeRing `cached_head` promoted from Relaxed to Acquire/Release, closing R32-11's F-1 ordering-proof gap (memory-ordering correctness hardening in production-reachable `alloc-xthread` path); a separate rustfmt-drift cleanup left by R34-3's mechanical cfg-gate edit caught and fixed in the same task (`7aeee2d`) |
 | **R34-7** | `a3831e5` | bench | **INFRASTRUCTURE** — causal subprocess comparative harness MVP (no verdict; tool deliverable for future rounds) |
 | **R34-8** | `b23d7c5` | bench | **INFRASTRUCTURE** — control-arm drift guard for bench-table run-over-run appendix |
 | **R34-9** | `0e29fc2` | bench | **CORRECTION** — corrected `global_alloc` bench labels/units to match what they measure |
@@ -137,7 +157,10 @@ opt-in or measurement-only result is framed as a default speedup.
 | **R34-21** (#540) | `ae9c9c3` | docs(config) | **VERIFIED** — `production` bundle + lib.rs seam inventory synced with reality; confirms `production` composition unchanged |
 | **R34-22** (#541) | `b229187` | fix(perf) → docs/test | **CORRECTION** — PerClass magazine layout prose pinned to its const-asserts; bench-review doc-drift swept; new drift-detection test pin |
 | **R34-23** (#542) | `19b1918`, `ba716a0`, `827a57a` | bench + bench + docs | **NO-GO** — NO-GO for `large-reserved-capacity` on geometric realloc; corrected README `realloc_grow_geometric` (~40×→~2×); confirmed `neighbour_pressure` (~3350×) |
-| **R34-24** (#543) | (this commit) | docs(process) | **RULES** — CLAUDE.md amendments: artifact storage policy (hybrid), round-manifest rule, OPEN_ITEMS structural rule, landing-SHA wording |
+| **R34-24** (#543) | `4ba188a`, `9b06b56` | docs(process) | **RULES** — CLAUDE.md amendments: artifact storage policy (hybrid), round-manifest rule, OPEN_ITEMS structural rule, landing-SHA wording; introduced this manifest's first version (`4ba188a`); self-corrected a false-precision raw-log count in the same amendment's own text (`9b06b56`) |
+| **R34-25** (#544) | `7758f7a` | docs(process) | **NEED-MORE-RESEARCH, lean NO-GO** — design-only feasibility study of a small-magazine provenance scheme for the 16/64 B bulk-burst gap; the headline lever (caching the segment base) is very likely net-negative on first principles (the prior "9.03 Ir" attribution to `segment_base_of_ptr` was a measurement-probe artifact, not the real inlined ~1 Ir cost); the one sound lever (skip-clear for fresh-carve blocks) is cold-path-only and does not touch the steady-state recycled-hit gap; no prototype built; recommends a code-free disassembly check as the next step. No `src/`/`Cargo.toml`/tests/benches change. |
+| **R34-26** (#545) | `8cb89ea` | docs(process) | **NEED-MORE-DATA, lean NO-GO** — design-gate study of a page-run layer (8-16 MiB arena, buddy/run bitmap) with in-place adjacent-run grow for the 256 KiB-2 MiB range; confirms the architecture COULD support in-place grow and would address the prior `medium-classes` NO-GO's root cause, but the mandatory precondition — a real consumer in that size range — is NOT met (every workload touching it is a synthetic adversarial harness; R29-5 found promotion is 0.054% of allocations); no prototype built. `docs/perf/OPEN_ITEMS.md` item 3 updated with the in-place-grow angle and a realloc-WIN (not merely parity) promotion criterion. No `src/`/`Cargo.toml` change. |
+| **R34-27** (#546) | `c5db553` | docs | **CLOSING** — not a numbered review-remediation or research task; extends the Round 34 CHANGELOG section with dense per-task bullets for all 26 work items (R34-1 through R34-26) and commits the round's closing session checkpoints, per the established babygoal closing-sequence pattern (mirrors R33-14). Found and closed a framing gap while writing it: R34-2 had never actually been mentioned in `CHANGELOG.md` at all, despite the heading's original text claiming it was "already inline-referenced under Round 33's R33-5 entry" (true only for R34-1, not R34-2). |
 
 ---
 
@@ -173,12 +196,29 @@ carry `fix(perf)` (correctness/consistency) and do not claim speedups.
 
 ```bash
 # Regenerate the §1 commit table (byte-identical SHAs):
-git log --reverse --format="%H %s" 40241b0..827a57a
+git log --reverse --format="%H %s" 40241b0..c5db553
 
 # Verify the round boundary:
 git log --oneline -1 40241b0   # → "docs: commit Round 33 session checkpoint"
-git log --oneline -1 827a57a   # → "docs: complete the R34-23 realloc README correction…"
+git log --oneline -1 c5db553   # → "docs: extend Round 34 CHANGELOG with all 26 tasks + commit session checkpoints…"
 
-# Count commits in the round:
-git log --oneline 40241b0..827a57a | wc -l   # → 38
+# Count commits in the round (last WORK commit, excludes the closing checkpoint):
+git log --oneline 40241b0..8cb89ea | wc -l   # → 42
+
+# Count commits in the round (full span, includes the closing checkpoint c5db553):
+git log --oneline 40241b0..c5db553 | wc -l   # → 43
 ```
+
+**Note on the original 38-commit undercount.** This manifest's first version
+(commit `4ba188a`, R34-24/task #543) reproduced its own commit table as of
+its own HEAD at write-time — but a per-round manifest is, by construction,
+written *during* the round it describes, before the round's last commits
+exist. `4ba188a` itself, its self-correction `9b06b56`, and the round's two
+closing research tasks `7758f7a`/`8cb89ea` plus the closing checkpoint
+`c5db553` all postdate the original table's own upper bound (`827a57a`) and
+were therefore structurally unable to appear in it. This is not a
+transcription error to avoid next time so much as a boundary-condition this
+convention should flag explicitly going forward: a round manifest MAY need a
+follow-up extension pass once the round's true closing commit is known (task
+#550, independent readonly review finding F5,
+`docs/reviews/2026-08-05-round34-readonly-review.md`).
