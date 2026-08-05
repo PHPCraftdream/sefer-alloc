@@ -73,19 +73,26 @@
 //! of continuing with inconsistent state (defence in depth). The five, all
 //! reachable from this file's `GlobalAlloc` impl under `production`:
 //!
-//!   1. `alloc_core/alloc_core.rs:2158` — `assert!(self.table
+//!   (Line numbers are deliberately omitted here — they drift as unrelated
+//!   edits shift surrounding code; `tests/no_panic_doc_accuracy.rs` pins the
+//!   five by message string + occurrence count instead, which is the
+//!   drift-proof identifier. File + function name is unambiguous without a
+//!   line number.)
+//!
+//!   1. `alloc_core/alloc_core.rs` — `assert!(self.table
 //!      .contains_base_ro(base), "known-base realloc …")` in
 //!      `realloc_inplace_fast_path_known_base`; the caller
 //!      (`AllocCore::realloc` / `HeapCore::realloc`) already proved
 //!      `contains_base(base)` one call up.
-//!   2. `alloc_core/alloc_core_large_cache.rs:147` — `.expect("large_cache
+//!   2. `alloc_core/alloc_core_large_cache.rs` — `.expect("large_cache
 //!      _slot_take: empty base slot")` in `large_cache_slot_take`
 //!      (`alloc-decommit`, in `production`).
-//!   3. `alloc_core/alloc_core_large_cache.rs:160` — `.expect("large_cache
-//!      _slot_take: empty extension slot")` (`alloc-decommit`).
-//!   4. `alloc_core/alloc_core_large_cache.rs:166` — `unreachable!(…)` in
+//!   3. `alloc_core/alloc_core_large_cache.rs` — `.expect("large_cache
+//!      _slot_take: empty extension slot")` in `large_cache_slot_take`
+//!      (`alloc-decommit`).
+//!   4. `alloc_core/alloc_core_large_cache.rs` — `unreachable!(…)` in
 //!      `large_cache_slot_take` (`alloc-decommit`).
-//!   5. `alloc_core/alloc_core_large_cache.rs:321` — `unreachable!(…)` in
+//!   5. `alloc_core/alloc_core_large_cache.rs` — `unreachable!(…)` in
 //!      `large_cache_slot_set` (`alloc-decommit`).
 //!
 //!   Sites 2–5 live in the large-cache slot take/set helpers. Their callers

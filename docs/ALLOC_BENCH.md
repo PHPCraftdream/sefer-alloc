@@ -247,6 +247,22 @@
 > | `realloc_grow_geometric` (64 B→4 MiB) | **9.67 µs** | 382.7 µs | 2.78 ms | **39.6× faster** | **288× faster** | ~323 µs (1.1× faster) |
 > | `realloc_grow_neighbour_pressure` [^rgnp] | **906 ns** | 1.355 ms | 7.26 ms | **~1,500× faster** | **~8,000× faster** | ~1.68 ms (1.1× SLOWER) |
 >
+> **⚠ CORRECTION (2026-08-05, R34-23 gate) — the `realloc_grow_geometric`
+> row above is wrong, not merely superseded.** The **9.67 µs / 39.6× faster**
+> figure is physically impossible: the chain's final grow step exceeds the
+> already-committed 4 MiB span and forces a real 2 MiB→4 MiB copy, which alone
+> costs tens of µs at modern memory bandwidth — 9.67 µs cannot include that
+> copy. A path-activation-oracle re-verification found the real ratio is
+> **~1.8–2.1× faster than mimalloc** (criterion: ~238 µs vs ~431 µs; direct
+> gate: ~210 µs vs ~444 µs), not ~40×. The `realloc_grow_neighbour_pressure`
+> row's **~1,500× faster** is directionally correct but UNDERSTATED — R34-23
+> re-measured it at **~3,350× faster** (~400 ns vs ~1.34 ms). Full derivation:
+> [`docs/perf/R34_23_REALLOC_AND_VEC_GATE.md`](perf/R34_23_REALLOC_AND_VEC_GATE.md)
+> (§0 "README re-verification results" table); the corrected figures are
+> already live in `README.md`'s benchmark tables. Per this project's
+> append-only-correction convention, the two figures above are NOT rewritten
+> — this note stands beside them as the current-truth pointer.
+>
 > [^rgnp]: Renamed from `realloc_in_place_unfavorable` in the 2026-07-09 review:
 >     after OPT-G the live neighbours no longer block sefer's in-place Large
 >     growth, so the bench is no longer adversarial for sefer (it measures
