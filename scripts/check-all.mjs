@@ -16,9 +16,10 @@
 // What it runs, in order (fails fast — stops at the first red step):
 //   0. node scripts/argv-roundtrip-test.mjs   (shell:false argv regression; R27-9)
 //   1. cargo fmt --all -- --check           (rustfmt gate)
-//   2-6. the 5 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
+//   2-7. the 6 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
 //      (R30-5: GENERATED, not hand-written — default / experimental /
-//      --all-features / hardened medium-classes / production; the last two
+//      --all-features / hardened medium-classes / production / production
+//      internals; the last two
 //      are NEW as of R30-5, see that manifest's header for why)
 //   7. cargo test --features production                          (default prod suite)
 //   8-10. cargo test x3 more feature combos (alloc-stats+bench-internals,
@@ -103,12 +104,14 @@ const steps = [
     cmd: 'cargo',
     args: ['fmt', '--all', '--', '--check'],
   },
-  // R30-5: the 5 PER_PR_ROWS clippy rows (default / experimental /
-  // --all-features / hardened medium-classes / production), generated —
-  // see the comment above `clippyRows`. Byte-identical argv to the
-  // pre-R30-5 hand-written steps for the first 3; `hardened medium-classes`
-  // and plain `production` are NEW here (they previously ran only in CI's
-  // `clippy` job / not at all, respectively).
+  // R30-5: the 6 PER_PR_ROWS clippy rows (default / experimental /
+  // --all-features / hardened medium-classes internals / production /
+  // production internals), generated — see the comment above `clippyRows`.
+  // Byte-identical argv to the pre-R30-5 hand-written steps for the first
+  // 3; `hardened medium-classes internals` and plain `production` were NEW
+  // as of R30-5 (they previously ran only in CI's `clippy` job / not at
+  // all, respectively); `production internals` was added later still
+  // (R34-3's `internals` feature).
   ...clippyRows,
   {
     // R34-3 (task #522, finding B1): `internals` added — this repo's own
@@ -221,7 +224,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
