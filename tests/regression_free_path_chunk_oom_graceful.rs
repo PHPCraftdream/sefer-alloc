@@ -60,26 +60,37 @@
 
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use sefer_alloc::registry::bootstrap;
 
 // `DBG_INJECT_CHUNK_OOM` is a PROCESS-WIDE `internals`-gated `AtomicBool`.
-// `cargo test` runs the two `#[test]` fns below in parallel by default, but
-// their correctness relies on sequential execution (this file's own module
-// doc: `oom_injection_flag_is_clean_after_test` is designed to run AFTER
-// `chunk_oom_on_free_path_returns_gracefully_not_abort`, verifying its
-// `OomInjectionGuard` cleared the flag). Found via CI run 31045983765 on
-// landing SHA `42d4206` (task #621): a race window between
-// `dbg_set_inject_chunk_oom(true)` and the guard's `Drop` clearing it back
-// to `false` let the second test observe the flag stuck `true` — the SAME
-// process-wide-diagnostic parallelism-artifact class already fixed twice
-// this session (`docs/CORRECTNESS_OPEN_ITEMS.md` items 1/25/26). Serializes
-// with the SAME established `static TEST_LOCK: Mutex<()>` + per-test
-// `let _guard = TEST_LOCK.lock().unwrap();` pattern used in
+// `cargo test` runs the two `#[test]` fns below in parallel by default, and
+// serialization here is a MUTUAL-EXCLUSION guarantee only — `TEST_LOCK` stops
+// them running CONCURRENTLY, it does not say which one acquires the lock
+// FIRST. `libtest` gives no ordering guarantee between `#[test]` fns (not
+// even a stable alphabetical one in general); `MAIN_TEST_RAN` below is what
+// actually lets `oom_injection_flag_is_clean_after_test` tell whether it is
+// running before or after the main test, rather than assuming an order that
+// isn't guaranteed (release-stabilization review finding S8, task #631).
+// Found via CI run 31045983765 on landing SHA `42d4206` (task #621): a race
+// window between `dbg_set_inject_chunk_oom(true)` and the guard's `Drop`
+// clearing it back to `false` let the second test observe the flag stuck
+// `true` — the SAME process-wide-diagnostic parallelism-artifact class
+// already fixed twice this session (`docs/CORRECTNESS_OPEN_ITEMS.md` items
+// 1/25/26 pre-M2-renumbering; see that file for the current numbers).
+// Serializes with the SAME established `static TEST_LOCK: Mutex<()>` +
+// per-test `let _guard = TEST_LOCK.lock().unwrap();` pattern used in
 // `tests/segment_table_contains_base_tier1_counters.rs` and
 // `tests/r31_10_trim_current_thread_api.rs`.
 static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Set by `chunk_oom_on_free_path_returns_gracefully_not_abort` once it has
+/// exercised `OomInjectionGuard`. `oom_injection_flag_is_clean_after_test`
+/// checks this instead of assuming it always runs second — `libtest` does
+/// not guarantee that ordering (task #631/S8).
+static MAIN_TEST_RAN: AtomicBool = AtomicBool::new(false);
 
 /// RAII guard that clears the OOM-injection flag on drop (even on panic),
 /// so a test failure cannot leave the flag set for subsequent tests.
@@ -150,18 +161,40 @@ fn chunk_oom_on_free_path_returns_gracefully_not_abort() {
         reg.dbg_chunk_is_materialised(last_chunk),
         "chunk must be materialised after a successful (non-OOM) resolution"
     );
+
+    // Signal completion so the sibling test can tell it ran after this one
+    // (see `MAIN_TEST_RAN`'s doc comment — `libtest` does not guarantee
+    // execution order between `#[test]` fns).
+    MAIN_TEST_RAN.store(true, Ordering::SeqCst);
 }
 
-/// The OOM-injection flag must be clean (false) on entry and after the test —
-/// a leaked `true` would break every subsequent test that touches an
-/// unmaterialised chunk. This test runs FIRST (alphabetical ordering) and
-/// asserts the flag is clean, then the main test runs, then this test's
-/// Drop-equivalent is the OomInjectionGuard inside the main test. This
-/// separate test provides a second layer of confidence: run after the main
-/// test (by name, `chunk_oom_...` sorts before `oom_injection_flag_...`).
+/// The OOM-injection flag must be clean (false) after the main test's
+/// `OomInjectionGuard` runs its `Drop` — a leaked `true` would break every
+/// subsequent test that touches an unmaterialised chunk. This is a SECOND
+/// layer of confidence on top of the guard's own `Drop`, but only if it
+/// actually runs after the main test: `libtest` gives NO ordering guarantee
+/// between `#[test]` fns (not even a stable alphabetical one in general), so
+/// this checks `MAIN_TEST_RAN` rather than assuming it (task #631/S8 — the
+/// previous version of this comment claimed the alphabetical-order
+/// assumption as fact, which was never guaranteed). If this test happens to
+/// run first, checking the flag here would only prove it's clean at process
+/// start (trivially true) and would prove nothing about the guard, so that
+/// case is skipped explicitly instead of silently passing a vacuous check.
 #[test]
 fn oom_injection_flag_is_clean_after_test() {
     let _lock_guard = TEST_LOCK.lock().unwrap();
+
+    if !MAIN_TEST_RAN.load(Ordering::SeqCst) {
+        eprintln!(
+            "oom_injection_flag_is_clean_after_test: ran before \
+             chunk_oom_on_free_path_returns_gracefully_not_abort (libtest \
+             gives no ordering guarantee) — skipping the post-guard check, \
+             which would otherwise only prove the flag is clean at process \
+             start and prove nothing about OomInjectionGuard"
+        );
+        return;
+    }
+
     // The main test's OomInjectionGuard cleared the flag on drop. This
     // assertion verifies that: if the flag were still `true`, calling
     // slot_or_none on an unmaterialised chunk would return false (the
