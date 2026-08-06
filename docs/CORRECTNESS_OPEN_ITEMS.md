@@ -1298,6 +1298,28 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     protected only by unit tests plus `const _: () = assert!` on the *bounds*,
     not on the *round trip*.
 
+    **Status: RESOLVED (2026-08-06, task #611/K16, commit `772b36d`).** Both
+    (a) and (b) now have real, verified Kani proofs in `src/kani_proofs.rs`:
+    `ring_wrap_proofs` (2 harnesses, generalising
+    `tests/regression_ring_cursor_wrap.rs`'s hand-picked wrap-boundary values
+    into an exhaustive proof over every `u32` head and every occupancy
+    `0..=RING_CAP`) and `ring_entry_pack_proofs` (4 harnesses: round-trip +
+    `RING_SLOT_EMPTY`-never-collides, for both the non-hardened and
+    `hardened`-only packings). All 6 verified via a real `cargo kani` run
+    (kani-verifier 0.67.0 under WSL2 — Kani does not support Windows at all,
+    confirmed: `kani-verifier` fails to even compile under
+    `x86_64-pc-windows-msvc`) and one counterfactually confirmed non-vacuous
+    (a deliberately injected off-by-one bug was caught as `FAILURE`, then
+    reverted and reverified `SUCCESS`).
+
+    **Also discovered and fixed in the same task**: Kani had NEVER been
+    wired into any CI job before this — the 13 pre-existing proof harnesses
+    in `src/kani_proofs.rs` (`node_proofs`, `hand_proofs`, `pack_proofs`)
+    were never continuously re-verified either, only run by hand at
+    authoring time. Added a new `kani` CI job running all 19 harnesses
+    (13 pre-existing + 6 new) per-PR — measured at ~30s total, comparable to
+    this workflow's existing miri jobs.
+
 19. **[T, filed 2026-08-04, R34-2/task #521] MSRV caveat — the `msrv` CI job
     runs `cargo check --all-features`, never `cargo test`, so an
     MSRV-incompatible construct reachable only from a `#[cfg(test)]`-only or
