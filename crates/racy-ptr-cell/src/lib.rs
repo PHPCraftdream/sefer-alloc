@@ -85,6 +85,7 @@
 // types and those confined sites. Every `unsafe fn` / `unsafe impl` carries a
 // `# Safety` / `// SAFETY:` justification.
 #![allow(unsafe_code)]
+#![deny(missing_docs)]
 #![cfg_attr(not(test), no_std)]
 
 use core::marker::PhantomData;
@@ -170,6 +171,18 @@ impl<T> RacyPtrCell<T> {
     /// Under `--cfg loom` this cannot be `const` (loom's atomics have no
     /// const constructor); on normal builds it is `const` so the cell can live
     /// in a `static`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `align_of::<T>() == 1`. The `INITIALIZING` sentinel is encoded
+    /// as the address `1` (see the crate-level "Sentinel encoding" docs); that
+    /// encoding needs a spare low bit, which requires every valid aligned
+    /// address of `T` to be even — i.e. `align_of::<T>() >= 2`. In the
+    /// documented `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` usage
+    /// this `assert!` is evaluated at compile time (a const-eval failure, not
+    /// a runtime panic); called from a non-const context (e.g. inside a
+    /// function, or via `RacyPtrCell::<T>::default()`) with a `T` whose
+    /// alignment is 1, it panics at runtime instead.
     #[cfg(not(loom))]
     #[must_use]
     pub const fn new() -> Self {
@@ -188,6 +201,12 @@ impl<T> RacyPtrCell<T> {
     }
 
     /// Construct a fresh `UNINIT` cell (loom build — non-`const`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `align_of::<T>() == 1` — see the non-loom [`RacyPtrCell::new`]
+    /// doc above for why (identical condition; this build cannot be `const` so
+    /// the check always runs at runtime here).
     #[cfg(loom)]
     #[must_use]
     pub fn new() -> Self {
@@ -273,6 +292,9 @@ impl<T> RacyPtrCell<T> {
             // Fast path: already READY.
             let p = self.ptr.load(Ordering::Acquire);
             if Self::is_ready(p) {
+                // SAFETY: `is_ready(p)` just proved `p` is non-null (neither
+                // the `null` UNINIT value nor the `SENTINEL_INITIALIZING`
+                // marker), so `p` is a real published pointer.
                 return Some(unsafe { NonNull::new_unchecked(p) });
             }
 
@@ -338,6 +360,11 @@ impl<T> RacyPtrCell<T> {
                         }
                         if a != 0 {
                             // READY: the winner published a real pointer.
+                            // SAFETY: `a != 0` (checked above) and `a !=
+                            // SENTINEL_INITIALIZING` (the `if` above this one
+                            // already returned/continued on that value), so
+                            // `p` is neither null nor the sentinel — a real
+                            // published pointer.
                             return Some(unsafe { NonNull::new_unchecked(p) });
                         }
                         // null: the winner rolled back after OOM. Break out of
