@@ -682,12 +682,22 @@ jobs:
 
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
-    # member crates' own test suites (aligned-vmem — the most unsafe-critical
-    # crate — plus sefer-region and malloc-bench-rs) never ran in CI. Run each
-    # member's tests explicitly. Default features only: the feature flags are
-    # root-crate-scoped, so `--workspace` with `--features` would not apply
-    # cleanly to the members; the root feature matrix is covered by the `test`
-    # job above.
+    # member crates' own test suites never ran in CI otherwise. Run each
+    # member's tests explicitly. Six steps below, not all default-features-only
+    # (task #639/P5 added steps 3-6 on top of the original step 1; see each
+    # step's own inline comment for the gap it closes):
+    #   1. `aligned-vmem` + `sefer-region` + `malloc-bench-rs` — default
+    #      features only. The feature flags are root-crate-scoped, so
+    #      `--workspace` with `--features` would not apply cleanly to the
+    #      members; the root feature matrix is covered by the `test` job above.
+    #   2. `tagged-index-stack` — default features only (its non-loom test
+    #      files had never run in CI at all before task #639).
+    #   3. `aligned-vmem` — `--all-features` (deliberately NOT default-only:
+    #      exercises `huge-pages`/`lazy-commit`/`fault-injection`/`mock`/
+    #      `bench-internals` together, previously never compiled in CI).
+    #   4-5. `size-classes` / `racy-ptr-cell` — `--no-default-features` cross-
+    #      built for `thumbv7em-none-eabi` (bare-metal no_std proof for their
+    #      published `no-std::no-alloc` category claim).
     name: test workspace members
     runs-on: ubuntu-latest
     steps:

@@ -1410,13 +1410,19 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       [П]-verified table, independently re-confirmed by
       `docs/reviews/2026-08-05-fh-release-readiness-verification-review.md`):
       `racy-ptr-cell`, `size-classes`, and `tagged-index-stack` are NOT
-      published on crates.io. Four more (`ring-mpsc`, `globalalloc-model`,
-      `proc-memstat`, `proc-probe`) were never checked and have no tag
-      pattern or `workflow_dispatch` dropdown option in
-      `.github/workflows/release.yml` either (that file lists exactly 5
-      crates: `aligned-vmem`, `sefer-region`, `malloc-bench-rs`,
-      `numa-shim`, `sefer-alloc`). `README.md:545-555` displays crates.io
-      badges for all 11 regardless.
+      published on crates.io. As of commit `2a75d91` (task #648/P14),
+      `.github/workflows/release.yml` gained tag patterns and
+      `workflow_dispatch` dropdown options for all three, so the file now
+      lists 8 crates: `aligned-vmem`, `sefer-region`, `malloc-bench-rs`,
+      `numa-shim`, `racy-ptr-cell`, `size-classes`, `tagged-index-stack`,
+      `sefer-alloc` — release-workflow plumbing exists for every crate this
+      item originally flagged as missing it. This does NOT close the item:
+      none of the three has actually been published to crates.io yet (the
+      headline claim below is unchanged), and 4 more workspace members
+      (`ring-mpsc`, `globalalloc-model`, `proc-memstat`, `proc-probe` — never
+      checked against crates.io) still have no release-workflow entry at
+      all. `README.md:545-555` displays crates.io badges for all 11
+      regardless.
     - **Why filed instead of fixed here:** the fix depends on the same
       publish-DAG decision already deferred this sprint by explicit user
       instruction (tasks K3/K4/K9/L2/L3/L5, "path dependencies stay local
@@ -1443,6 +1449,138 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       `docs/plans/2026-08-05-release-execution-map.md` §"Ход B" table and
       §"Не мои решения" item 4;
       `docs/reviews/2026-08-06-sprint-closing-readonly-review.md` finding S4.
+
+25. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 1] `TaggedIndex<INDEX_BITS>` rejecting `INDEX_BITS > 32` at compile time (F1, task #638) has no automated compile-fail test — CI coverage gap, honestly recorded but unfiled until now.**
+
+    - **Status:** OPEN — not fixed. CI-coverage gap only; the underlying
+      compile-time guard itself (`_CHECK_BITS`) is already correct and
+      shipped (task #638, commit `d78625b`).
+    - **Current-number-or-verdict:** `crates/tagged-index-stack/src/lib.rs`
+      (the `_CHECK_BITS` const, ~lines 179-195) enforces `INDEX_BITS in
+      1..=32` via a `const` `assert!`, so `TaggedIndex::<33>` (or any width
+      above 32) fails `cargo build`. No `trybuild`-style (or equivalent)
+      automated test pins this failure — it was manually verified once and
+      the gap explicitly recorded as a code comment:
+      `crates/tagged-index-stack/tests/stack_unit.rs` (~lines 137-144) says
+      "this crate has no trybuild (or similar compile-fail) test
+      infrastructure wired up, so `INDEX_BITS > 32` failing to compile is
+      NOT pinned by an automated test. ... This is a known, honestly-recorded
+      coverage gap, not a silent omission."
+    - **Why filed instead of fixed here:** adding `trybuild` (or an
+      equivalent compile-fail harness) is new test infrastructure for one
+      crate, not a bookkeeping fix — out of scope for a bookkeeping-only
+      task; a real coverage-closing task should own it.
+    - **Next trigger:** add a `trybuild`-style compile-fail test asserting
+      `TaggedIndex::<33>` (or `TaggedIndexStack<33, _>`, whichever the
+      crate's public generic surface exposes) fails to compile with the
+      `_CHECK_BITS` assertion message, OR document an explicit accepted-risk
+      rationale if compile-fail infra is judged not worth adding for a
+      single-crate, single-assertion case.
+    - **Evidence:** `crates/tagged-index-stack/src/lib.rs` ~lines 179-195
+      (`_CHECK_BITS`); `crates/tagged-index-stack/tests/stack_unit.rs`
+      ~lines 137-144 (the recorded-gap comment, from task #638, commit
+      `d78625b`); `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
+      finding P3-4 item 1.
+
+26. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 2] The numa-shim macOS+miri `mod platform` duplicate-definition fix (dc003c9) is structurally sound but empirically unconfirmed until the new `numa-shim-macos-miri` CI job actually runs on real macOS.**
+
+    - **Status:** OPEN — pending empirical confirmation. The fix itself
+      (adding `not(miri)` to the macOS platform-stub `cfg`, matching the
+      three sibling platform blocks) is landed and reasoned-through-correct.
+    - **Current-number-or-verdict:** commit `dc003c957b40baacaa147ff35e81884e27b0b1b4`'s
+      own body states its local verification was done on Windows (no macOS
+      box available) and explicitly does NOT exercise the macOS
+      `not(miri)` arm or the macOS+miri crossing itself — "that
+      verification depends on the new `numa-shim-macos-miri` CI job
+      actually running on `macos-latest`." The closing review
+      (`docs/reviews/2026-08-06-numa-shim-publish-readiness-review.md` /
+      the sweep-closing review's own re-check) independently verified the
+      fix is structurally correct via cfg-disjointness analysis (the macOS
+      stub and the `cfg(miri)` any-OS stub can no longer both satisfy their
+      `cfg` simultaneously), but static analysis is not the same as a real
+      `cargo miri test` run on `macos-latest` actually going green.
+    - **Why filed instead of fixed here:** there is nothing to "fix" — this
+      is a pending-confirmation trigger, not a defect. It only needed
+      filing so a future round doesn't have to re-derive from the commit
+      body that confirmation is still outstanding.
+    - **Next trigger:** confirm the `numa-shim-macos-miri` job
+      (`.github/workflows/ci.yml`) runs green on its first real GitHub
+      Actions execution (it is a per-PR job, so this should happen on the
+      next PR/push that touches a path triggering it, or can be confirmed
+      via `workflow_dispatch`/inspecting the Actions run history directly).
+    - **Evidence:** commit `dc003c957b40baacaa147ff35e81884e27b0b1b4`'s
+      full commit body (verification section); `.github/workflows/ci.yml`
+      `numa-shim-macos-miri` job; `crates/numa/src/lib.rs` (the `not(miri)`
+      guard on the macOS platform-stub `cfg`, ~line 763);
+      `docs/reviews/2026-08-06-numa-shim-publish-readiness-review.md`;
+      `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
+      finding P3-4 item 2.
+
+27. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 3] tagged-index-stack's `compile_error!` guard for unsupported `target_has_atomic` widths doesn't suppress the cascading `E0432` unresolved-import error on the same build — a deliberate, unrecorded tradeoff.**
+
+    - **Status:** OPEN — low-priority polish, deliberately deferred, not an
+      oversight. Purely cosmetic (the build already fails either way on an
+      unsupported target; the only difference is whether the FIRST error a
+      user sees is the clear named-reason `compile_error!` or that error
+      followed by a cascade of confusing `E0432`s).
+    - **Current-number-or-verdict:** commit
+      `300b41f97a0e7c85310e5ed53dcbf289414e779f`'s own body: adding the
+      `#[cfg(not(target_has_atomic = "64"))] compile_error!` guard (F2) does
+      fire first and gives a clear, named-reason error on an unsupported
+      target — a real (if small) behavior improvement. But it does not
+      suppress the subsequent cascading `E0432` unresolved-import error
+      that still follows on the same build, because `compile_error!` does
+      not halt the rest of module compilation. Fully suppressing the
+      cascade would require `#[cfg(target_has_atomic = "64")]`-gating every
+      downstream item in the file — "judged too intrusive for the benefit
+      on an already-broken build," per the commit body.
+    - **Why filed instead of fixed here:** it is a conscious, defensible,
+      already-reasoned-through tradeoff, not a bug — filing it only so the
+      decision is recorded somewhere indexed instead of living solely in
+      one commit message.
+    - **Next trigger:** none required; revisit only if a future contributor
+      finds the cascading `E0432` output genuinely confusing enough in
+      practice to justify the `cfg`-gating cost across the file. Low
+      priority, no forcing deadline.
+    - **Evidence:** commit `300b41f97a0e7c85310e5ed53dcbf289414e779f`'s
+      full commit body; `crates/tagged-index-stack/src/lib.rs` (the
+      `compile_error!` guard);
+      `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
+      finding P3-4 item 3.
+
+28. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 4] Two one-way-door publish decisions for `racy-ptr-cell` — its name and its 383-character `description` — were surfaced in commit `9ecada3`'s body but never recorded anywhere indexed, and become permanent the moment the crate first publishes.**
+
+    - **Status:** OPEN — needs a maintainer decision before `racy-ptr-cell`'s
+      first publish to crates.io. No code change; a naming/metadata call.
+    - **Current-number-or-verdict:** commit
+      `9ecada3d25bcbdf33e9b184c4233685e5b6a243f`'s body, §"Not addressed
+      here": (a) the crate name `racy-ptr-cell` reads to a newcomer as "has
+      data races" — the OPPOSITE of the guarantee the crate actually
+      provides (a lock-free, race-safe exactly-once cell) — and was
+      confirmed free on crates.io as of the original review date (subject
+      to re-confirmation closer to actual publish time, since crates.io
+      names can be claimed by others in the interim); (b) `Cargo.toml`'s
+      `description` field is 383 characters, long for a crates.io listing
+      (crates.io does not hard-limit description length, but long
+      descriptions truncate awkwardly in search-result UI). Neither is
+      recorded anywhere indexed prior to this filing, nor in K3/#598's own
+      task description.
+    - **Why filed instead of fixed here:** both are one-way-door naming/
+      metadata decisions requiring maintainer judgment (a rename affects
+      every existing reference across the workspace and any external
+      consumer once published; a description rewrite is a content call) —
+      not something to resolve unilaterally in a bookkeeping-only task.
+    - **Next trigger:** resolve as part of the deferred publish-DAG pass
+      (K3/#598), before `racy-ptr-cell`'s first `cargo publish` — decide
+      whether to rename the crate (and if so, to what) and whether to
+      shorten `description`, then re-verify crates.io name availability
+      immediately before the actual publish action (names can be claimed
+      by others between now and then).
+    - **Evidence:** commit `9ecada3d25bcbdf33e9b184c4233685e5b6a243f`'s full
+      commit body, §"Not addressed here"; `crates/racy-ptr-cell/Cargo.toml`
+      (`name`, `description` fields);
+      `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
+      finding P3-4 item 4.
 
 ---
 
