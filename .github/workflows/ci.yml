@@ -828,6 +828,34 @@ jobs:
       # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
       - name: reclaim_offset_unit
         run: cargo miri test --features "alloc-global alloc-xthread internals" --test reclaim_offset_unit
+      # `remote_fanin_miri_minimal_retry_ub_check` (task #606/K11): a
+      # purpose-built minimal miri UB-detection harness for
+      # `push_with_overflow_retry`'s retry path (see remote_fanin.rs's own
+      # "Harness 3" doc comment). Existed and already passed; was never
+      # wired into any CI job before this. Deliberately its OWN step, not
+      # combined with reclaim_offset_unit above: `remote_fanin.rs`'s other
+      # 3 harnesses are `#[cfg(not(miri))]` so nothing else in that binary
+      # compiles here, but `cargo test`'s positional filter argument (if one
+      # were added to disambiguate) applies GLOBALLY across every `--test`
+      # target in the SAME invocation, not per-binary — a prior incident in
+      # this exact job (`miri-core`'s own header comment above) already
+      # documents a bare positional filter silently matching zero tests
+      # while still reporting green; combining these two steps and adding a
+      # name filter here would have silently zeroed reclaim_offset_unit's
+      # own test out of its run (verified locally: it did, before this was
+      # split into two separate steps — "0 passed ... 1 filtered out").
+      - name: remote_fanin_miri
+        run: cargo miri test --features "alloc-global alloc-xthread internals" --test remote_fanin
+      # R7-A5's own miri target (task #606/K11 — item 17: alloc_core::sidecar
+      # had NO miri coverage at all; this file exists and passes but was never
+      # wired into any CI job). Below-threshold only (the directory sidecar's
+      # own module doc explains why the full 32-segment materialised path
+      # is impractically slow under miri) — see the test file's own header
+      # comment for the exact scope: the null-pointer guard path in
+      # `try_materialise_directory` + the A2 publish helpers, both reachable
+      # even when the directory sidecar is never actually reserved.
+      - name: segment_directory_a5_miri
+        run: cargo miri test --features "alloc-segment-directory internals" --test segment_directory_a5_miri
 
   miri-alloc-core:
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
