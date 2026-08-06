@@ -150,6 +150,79 @@ fn sefer_jump_skips_non_divisible_run_for_align_128() {
     assert!(!SEFER_TABLE[seed].is_multiple_of(128));
 }
 
+// ---------------------------------------------------------------------------
+// `Params::extras` precondition violations — both must now be `const`-eval
+// panics (compile errors when the params are truly `const`), not silent
+// wrong answers. Exercised here via runtime (non-const) invocations of the
+// same `const fn`s so the panic can be caught by `#[should_panic]`, matching
+// this crate's existing precondition-testing shape (`min_block` power-of-two,
+// `geo_count > 0`, `N == geo_count + extras.len()` are likewise asserted in
+// `build_table`/`build_size2class` with no separate compile-fail harness).
+//
+// docs/reviews/2026-08-06-size-classes-publish-readiness-review.md §5.1 (S1)
+// reproduced both as silent-corruption bugs before this fix.
+
+#[test]
+#[should_panic(expected = "multiple of min_block")]
+fn extras_not_multiple_of_min_block_panics() {
+    // min_block=16, extras=[100, 200], geo_count=8 — the exact §5.1(a)
+    // reproduction: 100 is not a multiple of 16, and (pre-fix) silently
+    // merged into the table at index 5, breaking `class_for`'s fast-path
+    // alignment invariant with no diagnostic.
+    const MIN_BLOCK: usize = 16;
+    const EXTRAS: &[usize] = &[100, 200];
+    const GEO_COUNT: usize = 8;
+    const N: usize = GEO_COUNT + EXTRAS.len();
+    let params = Params {
+        min_block: MIN_BLOCK,
+        growth: (5, 4),
+        geo_count: GEO_COUNT,
+        extras: EXTRAS,
+        huge_threshold: 1 << 20,
+    };
+    let _ = build_table::<N>(&params);
+}
+
+#[test]
+#[should_panic(expected = "strictly increasing")]
+fn extras_overlapping_geometric_run_panics() {
+    // min_block=16, extras=[16, 32], geo_count=8 — the exact §5.1(b)
+    // reproduction: both extras already appear in the geometric run
+    // (pre-fix: table = [16, 16, 32, 32, 48, 64, 80, 112, 144, 192], indices
+    // 1 and 3 permanently unreachable, no diagnostic). The overlap collapses
+    // adjacent slots to equal values, so it surfaces as a strict-increase
+    // violation in `build_size2class` (the monotonicity chokepoint), which
+    // is what `SizeClasses::build` reaches on a non-const call.
+    const MIN_BLOCK: usize = 16;
+    const EXTRAS: &[usize] = &[16, 32];
+    const GEO_COUNT: usize = 8;
+    const N: usize = GEO_COUNT + EXTRAS.len();
+    let params = Params {
+        min_block: MIN_BLOCK,
+        growth: (5, 4),
+        geo_count: GEO_COUNT,
+        extras: EXTRAS,
+        huge_threshold: 1 << 20,
+    };
+    // `extras` here IS strictly increasing and IS min_block-aligned, so
+    // `build_table` alone accepts it (case (b) is purely an overlap with the
+    // geometric run, not an `extras`-internal-shape defect) — the violation
+    // only becomes visible once merged into the full table.
+    let table = build_table::<N>(&params);
+    let max_class = table[N - 1];
+    let l = size2class_len(max_class, MIN_BLOCK);
+    assert_eq!(
+        l,
+        size2class_len(200, MIN_BLOCK),
+        "sanity: expected max 200"
+    );
+    // Route through `SizeClasses::build` (the real chokepoint,
+    // `build_size2class` internally) rather than calling `build_size2class`
+    // directly, since `L` must be a const generic matching `l` above.
+    const L: usize = size2class_len(200, MIN_BLOCK);
+    let _ = SizeClasses::<N, L>::build(params);
+}
+
 #[test]
 fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // huge_threshold is a pure Params policy value; the crate never references

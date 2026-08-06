@@ -62,11 +62,14 @@ pub struct Params<'a> {
     /// `min_block`).
     pub geo_count: usize,
     /// Explicit extra classes to merge into the geometric run — a **strictly
-    /// increasing** list, each entry a multiple of `min_block`, and each
-    /// disjoint from the geometric run (the builder sorted-merges them; the
-    /// disjointness/increasing preconditions are the caller's, matched by a
-    /// consumer-side test). Typical uses: page-aligned classes, an exact size
-    /// the geometric run skips, a feature-gated medium tier.
+    /// increasing** list, each entry a multiple of `min_block` (the builder
+    /// sorted-merges them). Both preconditions are **machine-checked**: a
+    /// non-`min_block`-multiple entry, or a non-strictly-increasing entry, is
+    /// a `const`-evaluation panic (compile error) in [`build_table`], and
+    /// disjointness from the geometric run — together with global table
+    /// monotonicity — is separately machine-checked in
+    /// [`build_size2class`]. Typical uses: page-aligned classes, an exact
+    /// size the geometric run skips, a feature-gated medium tier.
     pub extras: &'a [usize],
     /// The "huge" policy threshold: [`SizeClasses::is_huge`] reports `true` for
     /// a size `>=` this. Pure bookkeeping for the crate — the consumer decides
@@ -97,7 +100,9 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// # Panics
 ///
 /// Panics in `const` evaluation if `N != geo_count + extras.len()`, if
-/// `min_block` is not a power of two, or if `geo_count == 0`.
+/// `min_block` is not a power of two, if `geo_count == 0`, if any
+/// `extras` entry is not a multiple of `min_block`, or if `extras` is not
+/// strictly increasing.
 #[must_use]
 pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -112,9 +117,38 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
         N == geo_count + extras.len(),
         "N must equal geo_count + extras.len()"
     );
-    let (num, den) = params.growth;
 
     let mask = min_block - 1;
+
+    // `extras` preconditions (documented on `Params::extras`): each entry a
+    // multiple of `min_block` (so the fast path in `SizeClasses::class_for`,
+    // which skips the divisibility check entirely, stays sound), and the
+    // list strictly increasing (so the sorted-merge below actually produces
+    // a sorted table instead of silently reordering). Checked here — not
+    // just at the merged-table level in `build_size2class` — because a
+    // non-multiple-of-`min_block` extra can still land in strictly
+    // increasing position relative to the geometric run (misalignment alone
+    // does not always break monotonicity), so global monotonicity is not
+    // sufficient to catch it.
+    {
+        let mut i = 0;
+        while i < extras.len() {
+            assert!(
+                extras[i] & mask == 0,
+                "Params::extras: every entry must be a multiple of min_block"
+            );
+            if i > 0 {
+                assert!(
+                    extras[i] > extras[i - 1],
+                    "Params::extras: must be strictly increasing"
+                );
+            }
+            i += 1;
+        }
+    }
+
+    let (num, den) = params.growth;
+
     let mut out = [0usize; N];
 
     // Merge the geometric run (generated lazily) with `extras` (already sorted)
@@ -166,8 +200,9 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// # Panics
 ///
 /// Panics in `const` evaluation if the table is empty, if `L` is wrong, if
-/// `min_block` is not a power of two, or if `table.len() >= 256` (the entry
-/// type is `u8`; a table beyond 255 classes would silently truncate).
+/// `min_block` is not a power of two, if `table.len() >= 256` (the entry
+/// type is `u8`; a table beyond 255 classes would silently truncate), or if
+/// `table` is not strictly increasing.
 #[must_use]
 pub const fn build_size2class<const N: usize, const L: usize>(
     table: &[usize; N],
@@ -183,6 +218,24 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         N < 256,
         "size2class entries are u8; the class count must stay below 256"
     );
+    // Global monotonicity of `table` — the natural chokepoint for this check:
+    // the monotone-pointer algorithm below *depends* on it, and it is also
+    // exactly what catches `Params::extras` entries that overlap (or are
+    // otherwise misplaced relative to) the geometric run — an overlap
+    // collapses two table slots to equal values, which is a duplicate, not a
+    // strict increase, and would otherwise leave the colliding slot silently
+    // unreachable.
+    {
+        let mut i = 1;
+        while i < N {
+            assert!(
+                table[i] > table[i - 1],
+                "table must be strictly increasing (check Params::extras for overlap \
+                 with the geometric run)"
+            );
+            i += 1;
+        }
+    }
     let shift = min_block.trailing_zeros();
     let small_max = table[N - 1];
     assert!(
