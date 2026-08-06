@@ -10,7 +10,7 @@ repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa"
 documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
-categories = ["os", "memory-management", "no-std::no-alloc"]
+categories = ["os", "memory-management"]
 
 # docs.rs: render with `vmem-integration` on so `reserve_on_node` — one of
 # this crate's two headline capabilities, and the thing the README documents

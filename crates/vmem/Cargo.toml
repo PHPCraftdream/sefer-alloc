@@ -10,7 +10,7 @@ repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/vmem"
 documentation = "https://docs.rs/aligned-vmem"
 keywords = ["mmap", "virtualalloc", "memory", "decommit", "aligned"]
-categories = ["memory-management", "os", "no-std::no-alloc"]
+categories = ["memory-management", "os"]
 
 # docs.rs: render with the real, publication-facing optional features so the
 # API this crate's own README advertises (lazy-commit / huge-pages /
