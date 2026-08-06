@@ -51,6 +51,17 @@ pushes on one slot: at an unrealistic 100k pushes/sec that is **~89 years** —
 a structural non-hazard. A 32-bit tag, by contrast, gives only ~43 s of
 frozen-victim churn (probabilistic). Wider indices shrink this budget.
 
+## Portability limit — requires 64-bit atomics
+
+The stack head is a single `AtomicU64` (the packed `(index | tag)` word), so
+this crate needs `target_has_atomic = "64"` and will **not compile** on a
+target without native 64-bit atomic support — notably `thumbv6m-none-eabi`,
+`thumbv7em-none-eabi`, `riscv32imc-unknown-none-elf`, and
+`armv5te-unknown-linux-gnueabi`. `no_std`-compatible does not imply
+64-bit-atomic support: several Cortex-M and RISC-V-without-A-extension
+targets are `no_std` yet lack `AtomicU64` entirely. An unsupported-target
+build fails fast with an explicit `compile_error!` naming the requirement.
+
 ## loom — real-type proofs
 
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite

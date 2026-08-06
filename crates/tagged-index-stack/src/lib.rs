@@ -50,8 +50,8 @@
 //! spuriously RECUR once the stack drains (→ tag 0) and is immediately refilled
 //! by a push of the SAME index (→ tag `0 + 1 = 1`); if the parked snapshot's tag
 //! was `1`, the head word recurs EXACTLY and the stale CAS succeeds — a genuine
-//! ABA collision that corrupts the free-list. The fix ([`pop`] here) packs the
-//! empty sentinel's index half with the RUNNING tag the draining pop just
+//! ABA collision that corrupts the free-list. The fix ([`pop`](TaggedIndexStack::pop)
+//! here) packs the empty sentinel's index half with the RUNNING tag the draining pop just
 //! observed, so the tag keeps climbing across the empty transition exactly as it
 //! would across any other pop. [`is_empty`](TaggedIndex::is_empty) inspects only
 //! the index half, so a non-zero tag on the empty word is still unambiguously
@@ -103,9 +103,42 @@
 //! [`TaggedIndexStack`] / [`TaggedIndex`] code, not a transcription — with
 //! `#[should_panic]` counterfactuals (untagged corruption + the H-2
 //! empty-transition tag-reset ABA) proving the harness is non-vacuous.
+//!
+//! # Portability limit — requires 64-bit atomics
+//!
+//! The stack head is a single `AtomicU64` (the packed `(index | tag)` word — see
+//! above); packing both halves into ONE atomic word is the entire mechanism that
+//! makes the CAS in [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop)
+//! atomic across index-and-tag together, so this is not an incidental
+//! implementation choice. That means this crate needs `target_has_atomic = "64"`
+//! and will **not compile** on a target without native 64-bit atomic support —
+//! notably `thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-unknown-none-elf`,
+//! and `armv5te-unknown-linux-gnueabi`. This crate is `no_std`-compatible, but
+//! `no_std` alone does not imply 64-bit-atomic support: many Cortex-M and
+//! RISC-V-without-A-extension targets are `no_std` yet lack `AtomicU64` entirely.
+//! A build on an unsupported target fails fast with an explicit
+//! [`compile_error!`] naming the requirement, rather than the more cryptic
+//! "cannot find function/no `AtomicU64` in `core::sync::atomic`" error a bare
+//! unresolved import would otherwise produce.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
+
+// The stack head is one AtomicU64 (see the crate-doc "Portability limit"
+// section above) — that requires native 64-bit atomic support from the target.
+// Fail fast with an explicit, named reason instead of the cryptic "no
+// `AtomicU64` in `core::sync::atomic`" unresolved-import error a naive use
+// would otherwise produce on e.g. thumbv6m/thumbv7em/riscv32imc/armv5te.
+#[cfg(not(target_has_atomic = "64"))]
+compile_error!(
+    "tagged-index-stack requires a target with native 64-bit atomics \
+     (target_has_atomic = \"64\") because its head is a single AtomicU64 \
+     packing the (index | tag) word atomically. This target does not have \
+     them (e.g. thumbv6m-none-eabi, thumbv7em-none-eabi, \
+     riscv32imc-unknown-none-elf, and armv5te-unknown-linux-gnueabi are all \
+     known-unsupported) — see the crate-root doc comment's \"Portability \
+     limit\" section."
+);
 
 // The atomics are aliased so loom can shadow the REAL stack type: under
 // `--cfg loom` they are built on `loom::sync::atomic`, so the shipped loom tests
