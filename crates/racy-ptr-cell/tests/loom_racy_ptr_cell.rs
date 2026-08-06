@@ -25,6 +25,13 @@
 //!    every thread still terminates and one eventually publishes READY (no
 //!    thread spins forever waiting on a rolled-back sentinel).
 //!
+//! 6. **`dbg_rollback_reenterable` does not clobber a concurrent real winner**
+//!    — a `dbg_rollback_reenterable` probe racing against a real
+//!    `get_or_try_init` caller on the SAME cell must never cause a second
+//!    `init` execution or two different published pointers, even though the
+//!    probe's entry CAS only proves `UNINIT` at one instant, not for its
+//!    whole duration.
+//!
 //! # The two counterfactuals (non-vacuousness proofs)
 //!
 //! Loom cannot rebuild the crate with a deliberately-broken ordering, so the
@@ -300,6 +307,129 @@ fn real_survives_oom_rollback_two_threads() {
             .expect("cell must be READY after the survivor succeeds");
         assert_eq!(ready, winner, "the READY pointer is the survivor's");
         unsafe { reclaim_payload(winner) };
+    });
+}
+
+// ============================================================================
+// Real-type property 6: dbg_rollback_reenterable vs. a concurrent real winner.
+// ============================================================================
+
+/// Reproduces the clobber this test exists to rule out: `dbg_rollback_reenterable`
+/// (thread **P**, the probe) races against a real `get_or_try_init` caller
+/// (thread **A**) on the SAME `UNINIT` cell.
+///
+/// The bad interleaving the pre-fix probe allowed:
+/// 1. P's entry CAS wins (cell = sentinel).
+/// 2. A's CAS fails (cell is P's sentinel); A enters the loser spin.
+/// 3. P's step-2 rollback store (cell = null) fires; A observes null, falls
+///    out of its spin, loops to the top, and its OWN CAS succeeds (cell = A's
+///    sentinel). A starts running its `init` closure.
+/// 4. P's step-3 postcondition CAS fails (cell is A's sentinel, not null).
+/// 5. Pre-fix: P's step-4 store(null) fires UNCONDITIONALLY — clobbering A's
+///    sentinel while A is still inside `init`. A second `get_or_try_init`
+///    caller (or a re-race) can now win the CAS and run `init` a SECOND time,
+///    breaking exactly-once init and publishing a second, different pointer.
+///
+/// Post-fix, P's step 4 is gated on P's own step-3 CAS having re-won the
+/// cell; since step 3 failed here, P performs NO further store and returns
+/// `None` ("not applicable"). A's sentinel survives untouched, A completes
+/// its init and publishes exactly once.
+///
+/// This test asserts the two invariants the bug broke: exactly-once init,
+/// and every successful caller observes the SAME published pointer. On the
+/// pre-fix source (step 4 unconditional) loom finds the interleaving above
+/// and this test fails; on the fixed source it passes.
+#[test]
+fn real_probe_rollback_does_not_clobber_concurrent_winner() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(1);
+    builder.check(|| {
+        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let init_count = Arc::new(AtomicU32::new(0));
+        let published: Arc<loom::sync::Mutex<Vec<usize>>> =
+            Arc::new(loom::sync::Mutex::new(Vec::new()));
+
+        // Thread P: the probe under test.
+        let cp = Arc::clone(&cell);
+        let probe = thread::spawn(move || {
+            let _ = cp.dbg_rollback_reenterable();
+        });
+
+        // Thread A: a real caller racing the probe on the same cell.
+        let (ca, ia, pa) = (
+            Arc::clone(&cell),
+            Arc::clone(&init_count),
+            Arc::clone(&published),
+        );
+        let a = thread::spawn(move || {
+            let r = ca.get_or_try_init(|| {
+                ia.fetch_add(1, Ordering::Relaxed);
+                Some(make_payload())
+            });
+            if let Some(p) = r {
+                pa.lock().unwrap().push(p.as_ptr().addr());
+            }
+        });
+
+        // Thread B: a second real caller, so a clobbered sentinel has a
+        // concrete second winner available to race in and double-init.
+        let (cb, ib, pb) = (
+            Arc::clone(&cell),
+            Arc::clone(&init_count),
+            Arc::clone(&published),
+        );
+        let b = thread::spawn(move || {
+            let r = cb.get_or_try_init(|| {
+                ib.fetch_add(1, Ordering::Relaxed);
+                Some(make_payload())
+            });
+            if let Some(p) = r {
+                pb.lock().unwrap().push(p.as_ptr().addr());
+            }
+        });
+
+        probe.join().unwrap();
+        a.join().unwrap();
+        b.join().unwrap();
+
+        // Exactly-once init: the probe's rollback must never let a second
+        // `get_or_try_init` winner emerge alongside an already-running one.
+        let count = init_count.load(Ordering::Relaxed);
+        assert_eq!(
+            count, 1,
+            "exactly ONE real caller must run init despite the concurrent probe (got {count})"
+        );
+
+        // Same pointer for all successful observers.
+        let seen = published.lock().unwrap();
+        for addr in seen.iter() {
+            assert_ne!(*addr, 0, "must never publish null as success");
+            assert_ne!(
+                *addr, SENTINEL,
+                "must never publish the sentinel as success"
+            );
+        }
+        if seen.len() == 2 {
+            assert_eq!(
+                seen[0], seen[1],
+                "both real callers must observe the SAME published pointer"
+            );
+        }
+
+        // Reclaim whatever was actually published (dedup — both callers may
+        // report the same address).
+        let mut unique = seen.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        drop(seen);
+        for addr in unique {
+            // SAFETY: `addr` came from a successful `get_or_try_init` return,
+            // i.e. a leaked `make_payload()` box; reclaimed exactly once here
+            // (dedup'd) after all threads joined.
+            unsafe {
+                reclaim_payload(core::ptr::NonNull::new(addr as *mut Payload).unwrap());
+            }
+        }
     });
 }
 

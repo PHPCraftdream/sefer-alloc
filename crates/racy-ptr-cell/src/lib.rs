@@ -369,20 +369,36 @@ impl<T> RacyPtrCell<T> {
     /// sentinel was genuinely cleared, so no future winner or spinning loser is
     /// wedged).
     ///
-    /// Returns `Some(true)` if the rollback provably cleared the sentinel,
-    /// `Some(false)` if the postcondition CAS unexpectedly failed (rollback
-    /// broken — the counterfactual this probe catches), or `None` if the cell
-    /// was not observed `UNINIT` on entry (already READY, or contended) and the
-    /// probe could not run — callers treat that as "not applicable", never as
-    /// failure. On success the cell is left exactly as found (`UNINIT`).
+    /// Returns `Some(true)` if the rollback provably cleared the sentinel
+    /// (the postcondition CAS re-won the cell; it is restored to `UNINIT`
+    /// before returning). `None` covers TWO distinct "could not test"
+    /// cases, deliberately conflated because neither is evidence rollback is
+    /// broken: (a) the cell was not observed `UNINIT` on the entry CAS
+    /// (already `READY`, or another thread owned it at that instant), or
+    /// (b) the postcondition CAS in step 3 failed because a real
+    /// `get_or_try_init` caller raced in and re-won the cell during the
+    /// probe's own rollback-then-reCAS window — in that case the probe
+    /// leaves the cell alone (does NOT touch the new owner's state) and
+    /// reports "not applicable". `Some(false)` is intentionally
+    /// unreachable: this probe cannot distinguish "rollback is broken" from
+    /// "someone else legitimately owns the cell now" by construction (both
+    /// look identical from here — the postcondition CAS just fails either
+    /// way), so it never claims rollback failure, only "clean" or
+    /// "inconclusive".
     ///
     /// Exists so a consumer's test can drive the rollback on a REAL, LIVE cell
     /// (e.g. a process-global registry chunk) — proving the shipped code path,
     /// not a copy — without a process-terminating OOM. The whole probe is a
     /// bounded, single-threaded sequence of atomic ops; callers MUST pick a
-    /// cell no other thread is concurrently initialising (the entry CAS is the
-    /// guard: if the cell is not `UNINIT`, the probe returns `None` and touches
-    /// nothing).
+    /// cell no other thread is concurrently initialising. The entry CAS is
+    /// only a POINT-IN-TIME check, not mutual exclusion across the whole
+    /// probe: if the cell is not observed `UNINIT` at that instant, the probe
+    /// returns `None` and touches nothing, but a concurrent
+    /// [`RacyPtrCell::get_or_try_init`] racing in AFTER the entry CAS (during
+    /// the probe's own rollback-then-reCAS window) is not excluded by it — the
+    /// probe's final restore step accounts for that by only touching the cell
+    /// when its own postcondition CAS actually re-won ownership (see the
+    /// step-by-step comments in the body).
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_rollback_reenterable(&self) -> Option<bool> {
@@ -413,7 +429,21 @@ impl<T> RacyPtrCell<T> {
             )
             .is_ok();
 
-        // Step 4: restore to null, exactly as observed on entry.
+        // Step 4: restore to null, exactly as observed on entry — but ONLY if
+        // step 3's CAS actually re-won ownership of the cell (postcondition
+        // held). If it failed, the cell is not ours any more: a real
+        // `get_or_try_init` caller raced in during the window between step 2's
+        // rollback and step 3's CAS, won the CAS itself, and may already be
+        // running (or have finished) the caller's init closure. Storing null
+        // unconditionally here would clobber that other owner's sentinel (or
+        // its published pointer) out from under it — the exact clobber this
+        // probe must not cause. When we did not re-win, leave the cell alone
+        // and report "not applicable" rather than a false rollback failure: a
+        // concurrent owner racing in is not evidence that rollback itself is
+        // broken.
+        if !postcondition_holds {
+            return None;
+        }
         self.ptr.store(core::ptr::null_mut(), Ordering::Release);
 
         Some(postcondition_holds)

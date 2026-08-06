@@ -284,7 +284,7 @@ const PURE_OBSERVERS: &[&str] = &[
 const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
         "crates/racy-ptr-cell/src/lib.rs::dbg_rollback_reenterable",
-        "entry CAS proves the cell UNINIT before touching it; restores original state before returning",
+        "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered",
     ),
     (
         "crates/ring-mpsc/src/lib.rs::dbg_reserve_unpublished",
