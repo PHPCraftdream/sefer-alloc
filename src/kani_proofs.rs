@@ -220,3 +220,174 @@ mod pack_proofs {
         assert_eq!(Packed::pack(value, tag), word);
     }
 }
+
+// R15 (gap-audit item 18, task #611/K16): bounded proof of `RemoteFreeRing`'s
+// `u32` cursor wrap-safety — that `t.wrapping_sub(h)` correctly reports the
+// number of pushes separating `head` from `tail` for EVERY possible `head`
+// (not just the handful of hand-picked near-`u32::MAX` values
+// `tests/regression_ring_cursor_wrap.rs`'s native tests already pin), across
+// the `u32::MAX -> 0` boundary. Pure `u32` arithmetic, no pointers, no
+// concurrency, no caller contract beyond "tail was produced from head by
+// `n <= RING_CAP` `wrapping_add(1)` steps" (the ring's own invariant,
+// `RemoteFreeRing::push`'s doc comment) — an ideal Kani target. This module
+// does NOT touch `RemoteFreeRing` itself (Kani cannot model the atomics the
+// real type's `push`/`drain` use); it proves the underlying modular-
+// arithmetic identity those methods rely on, generalised to every `head` and
+// every occupancy in `0..=RING_CAP`, which the existing native tests check
+// only pointwise.
+#[cfg(all(kani, feature = "alloc-core"))]
+mod ring_wrap_proofs {
+    use crate::alloc_core::remote_free_ring::RING_CAP;
+
+    // ── 1. wrapping_sub recovers the exact advance count, for ANY head ────
+    //
+    // For any `head` (including values within `RING_CAP` of `u32::MAX`, so
+    // the wrap is exercised) and any advance count `n` in `0..=RING_CAP`,
+    // `tail = head.wrapping_add(n)` followed by `tail.wrapping_sub(head)`
+    // recovers `n` exactly — the occupancy count survives the wrap.
+    #[kani::proof]
+    fn wrapping_sub_recovers_advance_count() {
+        let head: u32 = kani::any();
+        let n: u32 = kani::any();
+        kani::assume(n <= RING_CAP as u32);
+
+        let tail = head.wrapping_add(n);
+        assert_eq!(tail.wrapping_sub(head), n);
+    }
+
+    // ── 2. the `< RING_CAP` / `>= RING_CAP` full-ring check is exact ──────
+    //
+    // The production "is the ring full" check (`remote_free_ring.rs`,
+    // `push`'s admission test) is `t.wrapping_sub(h) >= RING_CAP` — proves
+    // that check agrees EXACTLY with the real occupancy `n` at both sides of
+    // the boundary: not-full (`n < RING_CAP`) reads `< RING_CAP`, and
+    // exactly-full (`n == RING_CAP`) reads `>= RING_CAP`, for every `head`.
+    #[kani::proof]
+    fn full_check_matches_true_occupancy_at_the_boundary() {
+        let head: u32 = kani::any();
+        let n: u32 = kani::any();
+        kani::assume(n <= RING_CAP as u32);
+
+        let tail = head.wrapping_add(n);
+        let occupancy = tail.wrapping_sub(head);
+        if n < RING_CAP as u32 {
+            assert!(
+                occupancy < RING_CAP as u32,
+                "under-full must read < RING_CAP"
+            );
+        } else {
+            // n == RING_CAP here (the only value `assume` still allows).
+            assert!(
+                occupancy >= RING_CAP as u32,
+                "exactly-full must read >= RING_CAP"
+            );
+        }
+    }
+}
+
+// R15 (gap-audit item 18, task #611/K16): bounded round-trip proofs for
+// `RemoteFreeRing`'s packed-entry encodings — the non-hardened
+// `pack_entry`/`unpack_entry` pair (always compiled whenever `alloc-core`
+// is, the production format under `alloc-xthread`) and, separately, the
+// `hardened`-only `pack_entry_hardened`/`unpack_entry_hardened` pair. Pure
+// `u32` bit arithmetic, no pointers, no concurrency — proves, over every
+// symbolic input the real caller contract allows, that (a) pack then unpack
+// recovers every field exactly, and (b) the packed word never collides with
+// [`RING_SLOT_EMPTY`] (`u32::MAX`) — the property the two `const _: ()
+// assert!`s next to `pack_entry`/`pack_entry_hardened` in
+// `remote_free_ring.rs` already pin at the TYPE-BOUND level (does
+// `SMALL_CLASS_COUNT` fit); this proof additionally exercises the actual
+// bit-shifting round trip Kani can check exhaustively where a compile-time
+// assert cannot.
+#[cfg(all(kani, feature = "alloc-core"))]
+mod ring_entry_pack_proofs {
+    use crate::alloc_core::remote_free_ring::{
+        pack_entry, unpack_entry, ENTRY_OFF_BITS, RING_SLOT_EMPTY,
+    };
+    use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+
+    // ── 1. non-hardened pack/unpack round trip, for every real (off, class) ─
+    #[kani::proof]
+    fn pack_unpack_roundtrip() {
+        let off_mask: u32 = (1u32 << ENTRY_OFF_BITS) - 1;
+        let off: u32 = kani::any();
+        let class_idx: u32 = kani::any();
+        // The caller's documented contract (pack_entry's own doc comment):
+        // `off` is a segment offset (< 2^22, i.e. fits ENTRY_OFF_BITS);
+        // `class_idx < SMALL_CLASS_COUNT`.
+        kani::assume(off <= off_mask);
+        kani::assume(class_idx < SMALL_CLASS_COUNT as u32);
+
+        let packed = pack_entry(off, class_idx);
+        let (got_off, got_class) = unpack_entry(packed);
+        assert_eq!(got_off, off);
+        assert_eq!(got_class, class_idx);
+    }
+
+    // ── 2. non-hardened pack never produces the ring-slot sentinel ────────
+    #[kani::proof]
+    fn pack_never_collides_with_ring_slot_empty() {
+        let off_mask: u32 = (1u32 << ENTRY_OFF_BITS) - 1;
+        let off: u32 = kani::any();
+        let class_idx: u32 = kani::any();
+        kani::assume(off <= off_mask);
+        kani::assume(class_idx < SMALL_CLASS_COUNT as u32);
+
+        let packed = pack_entry(off, class_idx);
+        assert_ne!(packed, RING_SLOT_EMPTY);
+    }
+
+    #[cfg(feature = "hardened")]
+    mod hardened {
+        use super::*;
+        use crate::alloc_core::remote_free_ring::{
+            pack_entry_hardened, unpack_entry_hardened, ENTRY_OFF16_MASK,
+        };
+        use crate::alloc_core::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
+
+        // A real `off` is a MIN_BLOCK-aligned, segment-relative byte offset
+        // (`< SEGMENT = 1 << 22`); `off >> MIN_BLOCK_SHIFT` must then fit
+        // `ENTRY_OFF16_MASK` (18 bits) — see `pack_entry_hardened`'s own
+        // `debug_assert`s, which this proof exercises symbolically instead
+        // of pointwise.
+        fn any_valid_off() -> u32 {
+            let off16: u32 = kani::any();
+            kani::assume(off16 <= ENTRY_OFF16_MASK);
+            off16 << MIN_BLOCK_SHIFT
+        }
+
+        // ── 3. hardened pack/unpack round trip, for every real (gen, class, off) ─
+        #[kani::proof]
+        fn pack_unpack_hardened_roundtrip() {
+            let gen: u8 = kani::any();
+            let class_idx: u32 = kani::any();
+            kani::assume(class_idx < SMALL_CLASS_COUNT as u32);
+            let off = any_valid_off();
+
+            let packed = pack_entry_hardened(gen, class_idx, off);
+            let (got_gen, got_class, got_off) = unpack_entry_hardened(packed);
+            assert_eq!(got_gen, gen);
+            assert_eq!(got_class, class_idx);
+            assert_eq!(got_off, off);
+        }
+
+        // ── 4. hardened pack never produces the ring-slot sentinel ────────
+        //
+        // Mirrors the non-hardened proof above (#2), for the tighter
+        // `gen:8|class:6|off16:18` layout — the module's own comment above
+        // `pack_entry_hardened` names `class == 0x3F` (63) as the one field
+        // that can never reach its all-ones value for a real
+        // `SMALL_CLASS_COUNT <= 62`; this proof checks the FULL packed word,
+        // not just that one field's bound.
+        #[kani::proof]
+        fn pack_hardened_never_collides_with_ring_slot_empty() {
+            let gen: u8 = kani::any();
+            let class_idx: u32 = kani::any();
+            kani::assume(class_idx < SMALL_CLASS_COUNT as u32);
+            let off = any_valid_off();
+
+            let packed = pack_entry_hardened(gen, class_idx, off);
+            assert_ne!(packed, RING_SLOT_EMPTY);
+        }
+    }
+}

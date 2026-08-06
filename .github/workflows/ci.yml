@@ -1009,6 +1009,44 @@ jobs:
   # test --test A --test B ...` invocation (one compile); the one job below
   # with two genuinely different feature strings runs them as two
   # sequential steps instead.
+  kani:
+    # R15 (gap-audit item 18, task #611/K16): `src/kani_proofs.rs`'s bounded
+    # proof harnesses (`node_proofs`, `hand_proofs`, `pack_proofs`,
+    # `ring_wrap_proofs`, `ring_entry_pack_proofs` — 19 harnesses total as of
+    # this job's addition) had NEVER been wired into CI — verified by `grep
+    # -n kani .github/workflows/ci.yml` returning nothing before this job.
+    # They existed, and (re-verified locally via WSL before adding this job,
+    # since Kani does not support Windows — `kani-verifier` fails to even
+    # COMPILE under `x86_64-pc-windows-msvc`, `std::os::unix` does not
+    # exist there) all 19 pass, but nothing had re-checked them since
+    # whenever each was last run by hand at authoring time.
+    #
+    # Kani requires its own toolchain + CBMC backend, installed via
+    # `cargo install kani-verifier` + `cargo kani setup` (no dedicated
+    # first-party GitHub Action is referenced here — the manual two-step
+    # install is what was directly verified end-to-end this session, kept
+    # deliberately explicit rather than trusting an unverified third-party
+    # Action reference). Measured locally: the full 19-harness suite
+    # verifies in ~30s once installed — comparable to this workflow's
+    # existing miri jobs — so this runs per-PR, not scheduled-only.
+    #
+    # `--features` covers every cfg gate the existing + new proof modules
+    # use: `alloc-core` (node_proofs, ring_wrap_proofs, ring_entry_pack_proofs),
+    # `experimental` (hand_proofs), `alloc-global` (pack_proofs), `hardened`
+    # (ring_entry_pack_proofs::hardened) — one invocation covers all of them
+    # since Kani only compiles harnesses whose `#[cfg]` is satisfied.
+    name: kani proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install kani-verifier
+        run: cargo install --locked kani-verifier
+      - name: cargo kani setup
+        run: cargo kani setup
+      - name: cargo kani (all harnesses)
+        run: cargo kani --features "alloc-core experimental alloc-global hardened"
+
   loom-alloc-global:
     name: loom (alloc-global)
     runs-on: ubuntu-latest
