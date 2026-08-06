@@ -1582,6 +1582,47 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
       finding P3-4 item 4.
 
+29. **[T, filed 2026-08-06, task #654/P20, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P4-12] `#![deny(missing_docs)]` on 4 about-to-be-published crates is a one-way-door tradeoff versus the more common `warn` + CI `-D warnings` convention — no conscious publish-time decision recorded.**
+
+    - **Status:** OPEN — low severity, pre-publish-decision item. No code
+      defect: all four crates compile clean today at 100% doc coverage.
+    - **Current-number-or-verdict:** `#![deny(missing_docs)]` was added to
+      `racy-ptr-cell` (commit `9ecada3`, task #642) and to `sefer-region`,
+      `size-classes`, `tagged-index-stack` (commit `7c8621f`, task #651).
+      All four verified at 100% doc coverage as of the commits above, and
+      all four compile clean today. The tradeoff: `deny` (vs. the more
+      common ecosystem convention of a lib-level `warn` plus CI-level `-D
+      warnings`) means that once a crate is PUBLISHED, a future rustc
+      release that widens what counts as `missing_docs` would turn a
+      downstream consumer's `cargo build` of that already-published,
+      pinned version red — with no recourse for the consumer, since they
+      cannot edit a crate they don't own. `warn` would not have this
+      failure mode (a widened lint would show as a new warning on
+      recompilation of the crate's own source, not retroactively break an
+      already-published, unmodified version's build for downstream
+      consumers). None of these four crates has been published yet, so
+      the tradeoff is still avoidable.
+    - **Why filed instead of fixed here:** this is a deliberate policy
+      choice between two defensible conventions (`deny` vs. `warn` + CI
+      gate), not a bug — it needs a conscious maintainer decision before
+      first/next publish, not a unilateral edit in a bookkeeping-only task.
+    - **Next trigger:** before any of `racy-ptr-cell` / `sefer-region` /
+      `size-classes` / `tagged-index-stack`'s first (or next) `cargo
+      publish`, decide whether to keep `#![deny(missing_docs)]` as-is
+      (accepting the one-way-door risk) or downgrade to `#![warn(missing_docs)]`
+      plus an equivalent CI-level `-D warnings` gate (matching the more
+      common ecosystem convention, avoiding the retroactive-break failure
+      mode). Natural to fold into the deferred publish-DAG pass (K3/#598).
+    - **Evidence:** commit `9ecada3d25bcbdf33e9b184c4233685e5b6a243f`
+      (`racy-ptr-cell`); commit `7c8621f` (`sefer-region`, `size-classes`,
+      `tagged-index-stack`); `crates/racy-ptr-cell/src/lib.rs`,
+      `crates/region/src/lib.rs` (the `sefer-region` package),
+      `crates/size-classes/src/lib.rs`,
+      `crates/tagged-index-stack/src/lib.rs` (each crate's
+      `#![deny(missing_docs)]` attribute);
+      `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
+      finding P4-12.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

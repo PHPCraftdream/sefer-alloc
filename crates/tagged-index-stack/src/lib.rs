@@ -187,6 +187,15 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// silently pass the old `< INDEX_MASK` runtime guard and corrupt a chain.
     /// Capping at compile time closes that class of bug structurally instead of
     /// requiring every caller to separately exclude `TAIL` at runtime.
+    ///
+    /// This `const` is only forced to evaluate by the `let () = Self::_CHECK_BITS;`
+    /// reference inside [`pack`](Self::pack) — it is not a universal guard fired by
+    /// every associated item of `TaggedIndex<INDEX_BITS>`. Calling
+    /// [`unpack`](Self::unpack)/[`INDEX_MASK`](Self::INDEX_MASK)/other associated
+    /// items in isolation, without ever calling `pack`, does not trigger this check.
+    /// In practice every real [`TaggedIndexStack`] construction routes through
+    /// `pack`, so the guard fires before any out-of-range width is reachable in
+    /// normal use.
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 32,
         "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \

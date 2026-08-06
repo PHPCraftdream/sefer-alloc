@@ -215,10 +215,15 @@ fn extras_overlapping_geometric_run_panics() {
     let table = build_table::<N>(&params);
     let max_class = table[N - 1];
     let l = size2class_len(max_class, MIN_BLOCK);
+    // The table's real max is 192 (the geometric run 16,32,48,64,80,112,144,192
+    // merged with extras=[16,32], per the comment above). `size2class_len(200,
+    // MIN_BLOCK)` is used here only because `size2class_len` floor-divides
+    // identically for both inputs (192/16+1 == 200/16+1 == 13) — this asserts
+    // the equivalence, not that 200 is the table's actual maximum.
     assert_eq!(
         l,
-        size2class_len(200, MIN_BLOCK),
-        "sanity: expected max 200"
+        size2class_len(192, MIN_BLOCK),
+        "sanity: expected max 192 (floor-division-equivalent to size2class_len(200, ..))"
     );
     // Route through `SizeClasses::build` (the real chokepoint,
     // `build_size2class` internally) rather than calling `build_size2class`
