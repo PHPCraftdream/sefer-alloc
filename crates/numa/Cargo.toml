@@ -12,6 +12,19 @@ documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management", "no-std::no-alloc"]
 
+# docs.rs: render with `vmem-integration` on so `reserve_on_node` — one of
+# this crate's two headline capabilities, and the thing the README documents
+# at length — actually appears on the published docs page; the default
+# feature set is empty (see `[features]` below), so a plain `cargo doc`
+# render omits it entirely (task #644). Deliberately an explicit list, NOT
+# `all-features = true`: `all-features` would also turn on `mock`, which
+# REPLACES the real platform backend (not merely additive) and would surface
+# the test-only recording module as if it were ordinary reference API — same
+# reasoning applied consistently to `aligned-vmem`'s own `mock` feature
+# (`../vmem/Cargo.toml`).
+[package.metadata.docs.rs]
+features = ["vmem-integration"]
+
 [features]
 default = []
 vmem-integration = ["dep:aligned-vmem"]

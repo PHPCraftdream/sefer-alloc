@@ -12,6 +12,20 @@ documentation = "https://docs.rs/aligned-vmem"
 keywords = ["mmap", "virtualalloc", "memory", "decommit", "aligned"]
 categories = ["memory-management", "os", "no-std::no-alloc"]
 
+# docs.rs: render with the real, publication-facing optional features so the
+# API this crate's own README advertises (lazy-commit / huge-pages /
+# fault-injection) actually appears on the published docs page — the default
+# feature set is intentionally empty (see `[features]` below), so a plain
+# `cargo doc` render would omit all of it (task #644). Deliberately an
+# explicit list, NOT `all-features = true`: `all-features` would also turn on
+# `mock`, which REPLACES the real syscall backend (not merely additive) and
+# would surface the test-only recording module (`src/mock.rs`) as if it were
+# ordinary reference API. `bench-internals` is likewise excluded — it is a
+# diagnostic counter surface with no consumer-facing purpose. Mirrors the
+# same decision made for `numa-shim` (`crates/numa/Cargo.toml`).
+[package.metadata.docs.rs]
+features = ["lazy-commit", "huge-pages", "fault-injection"]
+
 [features]
 # Incremental-commit primitives: `reserve_aligned_lazy` (reserve VA + commit
 # only an initial sub-range) and `commit_range` (commit additional pages within
