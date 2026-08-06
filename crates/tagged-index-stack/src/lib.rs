@@ -142,12 +142,22 @@ pub const TAIL: u32 = u32::MAX;
 pub struct TaggedIndex<const INDEX_BITS: u32>;
 
 impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
-    /// Compile-time guard: `INDEX_BITS` must be in `1..64` so both halves are
-    /// non-empty and the shifts are well-defined.
+    /// Compile-time guard: `INDEX_BITS` must be in `1..=32` so both halves are
+    /// non-empty, the shifts are well-defined, AND every representable index fits
+    /// in the `u32` that [`push`](TaggedIndexStack::push) actually takes.
+    ///
+    /// Widths above 32 are rejected rather than merely discouraged: `push` takes
+    /// a `u32` index, so `INDEX_BITS > 32` can never buy reachable index range —
+    /// it only shrinks the tag budget — and worse, it makes `INDEX_MASK` exceed
+    /// `u32::MAX`, which let `index == u32::MAX` (the internal [`TAIL`] sentinel)
+    /// silently pass the old `< INDEX_MASK` runtime guard and corrupt a chain.
+    /// Capping at compile time closes that class of bug structurally instead of
+    /// requiring every caller to separately exclude `TAIL` at runtime.
     const _CHECK_BITS: () = assert!(
-        INDEX_BITS >= 1 && INDEX_BITS < 64,
-        "INDEX_BITS must be in 1..64 (both the index half and the tag half must \
-         be non-empty)"
+        INDEX_BITS >= 1 && INDEX_BITS <= 32,
+        "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \
+         be non-empty, and every valid index must fit in push's u32 parameter — \
+         widths above 32 buy no reachable index range and are rejected)"
     );
 
     /// Bit-mask for the low [`INDEX_BITS`](Self) (the index half), e.g. `0xFFFF`
@@ -316,7 +326,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// stack is empty) under `Release`, bumps the tag (the ABA defence), then
     /// CASes the head to `(index, tag + 1)`. `index` MUST be a valid index
     /// (`< TaggedIndex::INDEX_MASK`) — the caller guarantees this; passing the
-    /// empty sentinel or a wider value corrupts the head word.
+    /// empty sentinel or a wider value corrupts the head word. The real bound is
+    /// also `index != TAIL`: since `INDEX_BITS` is compile-time capped at `32`
+    /// (see [`TaggedIndex`]'s `_CHECK_BITS`), `INDEX_MASK` can never exceed
+    /// `u32::MAX` (`TAIL`), so `index < INDEX_MASK` already implies `index !=
+    /// TAIL` for every representable width — the two conditions coincide instead
+    /// of needing to be asserted separately.
     ///
     /// # Panics
     ///

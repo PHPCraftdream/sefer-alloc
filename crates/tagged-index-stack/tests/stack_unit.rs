@@ -94,6 +94,54 @@ fn width_20_partitions() {
     assert_ne!(T::empty_index() as u32, TAIL);
 }
 
+/// Regression for the F1 finding (2026-08-06 publish-readiness review): at the
+/// maximum allowed width `INDEX_BITS = 32`, `INDEX_MASK` numerically equals
+/// `TAIL` (`u32::MAX`), so the empty sentinel and `TAIL` coincide — and
+/// `push`'s `index < INDEX_MASK` runtime guard therefore already rejects
+/// `index == TAIL` (formerly, before `_CHECK_BITS` was narrowed to `1..=32`,
+/// this same coincidence did NOT hold for `INDEX_BITS` in `33..=63`, where
+/// `INDEX_MASK` exceeds `u32::MAX` and `index == TAIL` silently passed the
+/// guard, corrupting a chain — see the crate's F1 write-up). This test pins
+/// the width-32 boundary behaves correctly now that it is the crate's hard
+/// maximum, not an arbitrary midpoint.
+#[test]
+fn width_32_index_mask_equals_tail_and_is_rejected() {
+    type T = TaggedIndex<32>;
+    assert_eq!(
+        T::INDEX_MASK,
+        TAIL as u64,
+        "empty_index coincides with TAIL at the max width"
+    );
+    assert_eq!(T::TAG_BITS, 32);
+
+    let links = ArrayLinks::<4>::new();
+    let stack = TaggedIndexStack::<32>::new();
+    // A valid, non-TAIL index still works normally.
+    stack.push(&links, 3);
+    assert_eq!(stack.pop(&links), Some(3));
+
+    // `index == TAIL` (== INDEX_MASK at this width) must panic under the
+    // debug_assert — it is indistinguishable from the empty sentinel/end-of-chain
+    // otherwise. This is compiled with debug assertions on (the default `cargo
+    // test` profile), matching how this guard is meant to be exercised.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        stack.push(&links, TAIL);
+    }));
+    assert!(
+        result.is_err(),
+        "pushing index == TAIL must panic (debug_assert) rather than silently \
+         corrupt the chain — this is the F1 regression"
+    );
+}
+
+// Compile-fail coverage note (F1, `_CHECK_BITS` narrowed to `1..=32`): this
+// crate has no trybuild (or similar compile-fail) test infrastructure wired up,
+// so `INDEX_BITS > 32` failing to compile is NOT pinned by an automated test.
+// Manually verified instead: instantiating `TaggedIndex::<33>` (or any
+// `TaggedIndexStack<N>` with `N > 32`) fails `cargo build` with the
+// `_CHECK_BITS` assertion message ("INDEX_BITS must be in 1..=32 ..."). This is
+// a known, honestly-recorded coverage gap, not a silent omission.
+
 // ---------------------------------------------------------------------------
 // TaggedIndexStack over ArrayLinks — LIFO order + H-2 single-threaded.
 // ---------------------------------------------------------------------------
