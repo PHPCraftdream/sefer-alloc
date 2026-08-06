@@ -200,6 +200,7 @@ const PERF_BARE_RE = /^perf:/;
 const PERF_SCOPED_RE = /^perf\(([^)]*)\)!?:/;
 const BENCH_OR_DOCS_RE = /^(bench|docs)\(([^)]*)\)!?:/;
 const BENCH_BARE_RE = /^bench:/;
+const DOCS_BARE_RE = /^docs:/;
 const FIX_PERF_RE = /^fix\(perf\)!?:/;
 
 /** Classify one commit's subject prefix. Returns one of:
@@ -225,6 +226,12 @@ function classifySubject(subject) {
     return bd[2].trim().toLowerCase() === 'config' ? 'docs-config' : 'docs-other';
   }
   if (BENCH_BARE_RE.test(subject)) return 'bench';
+  // A bare `docs:` (no parenthesized scope) is symmetric with `bench:` above
+  // and with the scoped `docs(x):` non-"config" case — classified the same
+  // as 'docs-other' so it hits the exact same direction-2 path-check branch
+  // below instead of silently falling through to 'other' (which direction-2
+  // never examines).
+  if (DOCS_BARE_RE.test(subject)) return 'docs-other';
   return 'other';
 }
 
