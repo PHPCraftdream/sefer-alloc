@@ -37,7 +37,7 @@ unsafe { release(raw, raw_len, raw_align) };
 
 | API | Purpose |
 |---|---|
-| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (over-reserve + trim). |
+| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (exact-size mmap fast path on Unix, over-reserve on Windows). |
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the underlying OS reservation. |
 | `Reservation::into_parts() -> (ptr, len, align)` | Take the raw reservation, suppress `Drop`, for self-hosted release. |
 | `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once. |

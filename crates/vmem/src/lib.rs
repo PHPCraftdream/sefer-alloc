@@ -445,7 +445,8 @@ unsafe impl Send for Reservation {}
 // ---------------------------------------------------------------------------
 
 /// Reserve `size` bytes of anonymous virtual memory whose base is aligned to
-/// `align`, via the over-reserve + trim technique.
+/// `align` (exact-size mmap fast path on Unix, over-reserve + trim fallback
+/// on an alignment miss; Windows always over-reserves and never trims).
 ///
 /// - `align` must be a power of two `>=` [`PAGE`].
 /// - `size` must be a non-zero multiple of [`PAGE`].

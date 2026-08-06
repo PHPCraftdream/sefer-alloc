@@ -29,7 +29,7 @@
 //!
 //! | Flag | Effect |
 //! |------|--------|
-//! | `vmem-integration` | Enables [`reserve_on_node`], which uses [`aligned-vmem`] for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
+//! | `vmem-integration` | Enables [`reserve_on_node`], which uses the `aligned-vmem` crate for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
 //!
 //! ## Platform matrix
 //!
