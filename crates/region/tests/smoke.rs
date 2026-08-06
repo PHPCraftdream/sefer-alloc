@@ -46,6 +46,42 @@ fn region_stale_handle_returns_none() {
 }
 
 #[test]
+fn region_handle_crosses_instance_of_same_type() {
+    // Documents the REAL (weaker-than-it-sounds) semantics of Handle<T>'s
+    // PhantomData<fn() -> T> branding: it separates handles by value type T
+    // (a Handle<Foo> cannot be passed where a Handle<Bar> is expected — that
+    // part IS a compile error), but it does NOT separate handles by Region
+    // INSTANCE. A Handle<T> minted by one Region<T> is silently accepted by
+    // an unrelated Region<T> of the same T, and can resolve to (or remove)
+    // whatever value happens to occupy the same slot in that other Region.
+    // See crates/region/src/lib.rs and README.md "Why?" for the disclosure
+    // this test exists to keep honest.
+    let mut region_a: Region<u32> = Region::new();
+    let mut region_b: Region<u32> = Region::new();
+
+    let h_a = region_a.insert(1u32);
+    let h_b = region_b.insert(2u32);
+
+    // Same slot index/generation on both sides (both are the first insert
+    // into a fresh Region), so h_a and h_b are interchangeable in practice —
+    // but even without that coincidence, nothing at the type level stops
+    // h_a from being handed to region_b: this compiles today and always will.
+    assert_eq!(region_b.get(h_a).copied(), Some(2u32));
+    assert_eq!(region_a.get(h_b).copied(), Some(1u32));
+
+    // The hazard is not just read confusion — remove() against the WRONG
+    // region silently removes the other region's value.
+    let removed = region_b
+        .remove(h_a)
+        .expect("wrong-region remove still succeeds");
+    assert_eq!(removed, 2u32);
+    assert!(
+        region_b.is_empty(),
+        "region_b's own value was removed via region_a's handle"
+    );
+}
+
+#[test]
 fn region_len_is_empty_track_live() {
     // I4: len / is_empty reflect exactly the live count.
     let mut r: Region<i32> = Region::new();

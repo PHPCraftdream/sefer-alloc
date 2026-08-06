@@ -13,7 +13,12 @@
 //! Slotmap's `DefaultKey` is untyped: a `DefaultKey` from one map can be passed
 //! to another of a different value type without a compile error. `sefer-region`
 //! wraps it in `Handle<T>` — a `PhantomData<fn() -> T>`-branded key — so the
-//! compiler rejects cross-region handle confusion at the type level.
+//! compiler rejects cross-**type** handle confusion at the type level (a
+//! `Handle<Foo>` cannot be used where a `Handle<Bar>` is expected). Note:
+//! branding is by value type `T`, not by `Region` instance — a `Handle<T>`
+//! from one `Region<T>` is accepted by a *different* `Region<T>` of the same
+//! type and could silently access or remove a value keyed by the same
+//! `DefaultKey` in that other instance.
 //!
 //! ## Invariants upheld (I1–I5)
 //!
