@@ -516,6 +516,16 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
 /// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation,
 /// and `[base+start, base+end)` must contain no data the caller still needs —
 /// its contents are discarded.
+///
+/// **Platform divergence, not just a data-loss concern:** on Windows,
+/// `MEM_DECOMMIT` genuinely unmaps the pages, so a **write to `[base+start,
+/// base+end)` before [`recommit`] is a hard `STATUS_ACCESS_VIOLATION`
+/// crash**, not a soft re-fault. On Linux, `MADV_DONTNEED` keeps the mapping
+/// resident and transparently re-faults a fresh zero page on next write, so
+/// the same code that is safe on Linux can crash on Windows. This exact
+/// divergence already crashed an in-repo consumer that assumed the Linux
+/// semantics — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 (filed 2026-07-30)
+/// for the incident record and status.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
         return;
@@ -777,8 +787,9 @@ pub fn try_reserve_aligned_lazy(
 // ---------------------------------------------------------------------------
 
 /// Reserve `size` bytes aligned to `align`, requesting OS **large / huge
-/// pages** (Linux `MAP_HUGETLB`, macOS best-effort `MADV_HUGEPAGE`, Windows
-/// `MEM_LARGE_PAGES`).
+/// pages** (Linux `MAP_HUGETLB` + `MADV_HUGEPAGE`, Windows `MEM_LARGE_PAGES`).
+/// Currently a **no-op on macOS and other non-Linux Unix** — it falls back to
+/// an ordinary reservation, identical to [`reserve_aligned`].
 ///
 /// Large pages reduce TLB pressure for big allocator segments. The request is
 /// **best-effort**: if the OS refuses large pages (none configured, no

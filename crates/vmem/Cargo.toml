@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "Cross-platform aligned anonymous virtual memory: reserve a power-of-two-aligned span (over-reserve + trim), commit/decommit pages, release — mmap/madvise on Unix, VirtualAlloc/MEM_DECOMMIT on Windows. 100% Rust, zero crate deps, no C/C++ libraries pulled in, miri-friendly."
+description = "Cross-platform aligned anonymous virtual memory: reserve a power-of-two-aligned span (exact-size mmap fast path on Unix, over-reserve on Windows), commit/decommit pages, release — mmap/madvise on Unix, VirtualAlloc/MEM_DECOMMIT on Windows. 100% Rust, zero crate deps, no C/C++ libraries pulled in, miri-friendly."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/vmem"
@@ -28,11 +28,12 @@ lazy-commit = []
 alloc-lazy-commit = ["lazy-commit"]
 
 # Optional huge/large pages: `reserve_aligned_huge` requesting OS large pages
-# (Linux `MAP_HUGETLB`, macOS `VM_FLAGS_SUPERPAGE` best-effort via `MADV_HUGEPAGE`,
-# Windows `MEM_LARGE_PAGES`). Off by default so the zero-deps core stays tiny.
-# The reservation transparently falls back to ordinary pages when the OS refuses
-# the large-page request, so the API never fails purely because huge pages are
-# unavailable.
+# (Linux `MAP_HUGETLB` + `MADV_HUGEPAGE`, Windows `MEM_LARGE_PAGES`). Currently
+# a no-op on macOS and other non-Linux Unix (falls back to an ordinary
+# reservation) — there is no `VM_FLAGS_SUPERPAGE` implementation yet. Off by
+# default so the zero-deps core stays tiny. The reservation transparently
+# falls back to ordinary pages when the OS refuses the large-page request, so
+# the API never fails purely because huge pages are unavailable.
 huge-pages = []
 
 # Recording mock + fault injection: replaces the real OS syscalls with a
