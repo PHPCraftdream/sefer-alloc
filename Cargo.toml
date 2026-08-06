@@ -767,7 +767,7 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 # `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
 primordial-lazy-commit = [
     "alloc-core",
-    "aligned-vmem/alloc-lazy-commit",
+    "aligned-vmem/lazy-commit",
     "aligned-vmem/fault-injection",
 ]
 # R12-9 (task #260, P1): lazily commit ordinary (non-primordial) small
@@ -787,7 +787,7 @@ primordial-lazy-commit = [
 # plain eager `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
 small-segment-lazy-commit = [
     "alloc-core",
-    "aligned-vmem/alloc-lazy-commit",
+    "aligned-vmem/lazy-commit",
     "aligned-vmem/fault-injection",
 ]
 # R12-10 (task #261, P1, Stage 1+2 of the design docs below): Small-path

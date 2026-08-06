@@ -1,12 +1,13 @@
 //! Real-path commit fault injection (feature `fault-injection`).
 //!
-//! Distinct from [`crate::mock`]: `mock` replaces the *entire* backend for
+//! Distinct from `crate::mock` (feature `mock`, not necessarily enabled
+//! alongside `fault-injection`): `mock` replaces the *entire* backend for
 //! commit/decommit/recommit (and short-circuits reservations only for the
 //! scripted-failure case) with a thread-local recording stub — a consumer
 //! that needs the REAL OS backend under test (real segment reservations, real
 //! commit accounting, real page-fault behaviour) cannot use it. This module
-//! changes nothing about which backend runs: [`try_commit_range`] always
-//! calls the real per-OS `commit_range_impl`. It only splices two armed
+//! changes nothing about which backend runs: [`crate::try_commit_range`]
+//! always calls the real per-OS `commit_range_impl`. It only splices two armed
 //! checks in front of that call so a test can deterministically force a
 //! specific call to report `VmemError::last_os_error()` instead of touching
 //! the OS — simulating commit-charge exhaustion at an exact point in a real
@@ -72,6 +73,10 @@ pub fn arm_fail_at(k: u32) {
 /// Internal: consult both hooks for the current real commit call. Returns
 /// `true` if this call should be forced to fail. Called once per real commit
 /// attempt, immediately before the OS syscall.
+// mock (task #646/F8): `try_commit_range`'s `#[cfg(not(feature = "mock"))]`
+// branch — the only call site — is compiled out under `mock`, so this goes
+// unused whenever `mock` is enabled alongside `fault-injection`.
+#[cfg_attr(feature = "mock", allow(dead_code))]
 pub(crate) fn should_fail_commit() -> bool {
     let next = FAIL_NEXT.load(Ordering::Relaxed);
     if next > 0 {
