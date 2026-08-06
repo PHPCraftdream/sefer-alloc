@@ -693,7 +693,55 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
       - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
+      # Publish-readiness task #639 (P5, gap 1 of 4 — 2026-08-06 consolidated
+      # summary §8 cross-cutting theme #4): `tests/stack_unit.rs` and
+      # `tests/regression_counter_wrap.rs` in `crates/tagged-index-stack/` are
+      # both `#![cfg(not(loom))]` — the ONLY existing CI invocation of this
+      # crate anywhere in this workflow is `loom-alloc-global`'s `cargo test
+      # --release -p tagged-index-stack --test loom_aba` under `RUSTFLAGS:
+      # "--cfg loom"`, which excludes both files by cfg (and by `--test`
+      # target selection regardless). 12 of the crate's 16 tests — packing
+      # round-trip, the empty sentinel, the 2^48 tag-wrap boundary, LIFO
+      # order, H-2 single-threaded observation, RAD-1 laziness, and the F1
+      # regression test added by task #638 — had never run in CI. Plain
+      # `cargo test` (no `--cfg loom`) exercises all of them; `loom_aba.rs`
+      # itself still compiles to 0 tests here (correctly excluded by its own
+      # `#![cfg(loom)]` gate), which is fine — its real coverage stays the
+      # `loom-alloc-global` job above.
+      - run: cargo test -p tagged-index-stack --no-fail-fast
+      # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
+      # `aligned-vmem` step above ran default-features-only, so 3 of the
+      # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
+      # `mock.rs` — all gated on the `fault-injection`/`lazy-commit`/`mock`
+      # features) compiled to zero tests, and the Linux `MAP_HUGETLB`
+      # `huge-pages` code path had never been compiled by CI on any OS.
+      # `--all-features` closes both: it turns on `huge-pages`,
+      # `lazy-commit`, `fault-injection`, `mock`, and `bench-internals`
+      # together, so all 4 test files actually run (verified locally: 9 + 5 +
+      # 10 tests across `lazy_commit.rs`/`mock.rs`/`smoke.rs`, plus
+      # `fault_injection.rs` compiling and running under `mock`). As a side
+      # effect this also exercises `rust-version = "1.88"`'s MSRV-completeness
+      # for the crate standalone with every feature on, which the existing
+      # `msrv` job (root-crate-scoped) and `test-workspace`'s own
+      # default-features step never did.
+      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # Publish-readiness task #639 (P5, gaps 3+4 of 4): CI's `no_std` job
+      # (below) only ever built the ROOT crate's default-features-off
+      # configuration as its no_std signal — `size-classes` (root-gated
+      # behind `alloc-core`) and `racy-ptr-cell` both advertise `no_std` as a
+      # headline claim in their published descriptions/categories
+      # (`no-std::no-alloc`) but were never built standalone in CI. Neither
+      # crate declares a `std` Cargo feature to disable (`--no-default-
+      # features` is a no-op flag for both, verified via `cargo metadata`),
+      # so the actual proof is compiling for a genuine bare-metal target with
+      # no std in its sysroot at all — the same `thumbv7em-none-eabi` target
+      # the `no_std` job already uses for the root crate (installed via the
+      # toolchain step above). Verified locally: both compile clean.
+      - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
+      - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
 
   msrv:
     # MSRV gate: `rust-version = "1.88"` is declared but never enforced, so an
