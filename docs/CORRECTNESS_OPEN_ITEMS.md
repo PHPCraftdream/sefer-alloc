@@ -1047,6 +1047,56 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     convention so a future round can watch for a repeat and, if one occurs,
     has this occurrence on record as the first data point.
 
+    **Status: RESOLVED (2026-08-06, task #605/K10).** The above paragraph's
+    own "the counter never observes this window" reasoning was wrong — not
+    about THIS test's immediate window, but about state carried forward
+    from an EARLIER test in the same process via the large-cache. Root
+    cause identified with full confidence, not merely hypothesized: task
+    #498's own commit `eb2463a` ("large-cache HIT arm writes 4 SegmentHeader
+    fields instead of the whole 144-byte struct") replaced a full-struct
+    header rewrite on large-cache reuse with 4 targeted field writes
+    (magic/large_size/large_align/bump), silently dropping the implicit
+    reset of `owner_state`/`owner_thread_free`/`deferred_next` the old
+    full-struct write used to perform. A segment that had gone through the
+    cross-thread deferred-free path (as several do in this file's OTHER
+    tests, `xthread_large_free_reclaims_segments_no_leak` in particular,
+    which runs earlier in the same serialized test binary) retains a
+    non-`ABANDONED_TAIL` `deferred_next` link value; when the large-cache
+    later hands that same segment back out as a "fresh" allocation (a cache
+    hit) for THIS test's first loop, and the remote thread subsequently
+    frees it, `push_large_deferred_free`'s double-push claim CAS (which
+    requires the link word to read `ABANDONED_TAIL`) fails on the FIRST
+    free attempt — not the second, deliberate double-free — silently
+    dropping that segment from the deferred-free stack entirely. Each
+    dropped segment is one fewer reclaim than expected: exactly the
+    "got 42, not 50" undercount symptom, for however many of the 50
+    allocations happened to land on a stale cache hit in that run.
+
+    This defect was independently found and fixed two days later by an
+    unrelated task — R34-14/task #533, commit `7ef5a465cc23e20c518f9163520640aebc7a7ee0`
+    ("reset owner/deferred fields on large-cache hit") — whose own commit
+    body describes the identical mechanism verbatim ("a segment that went
+    through the deferred-large-free path retains a non-`ABANDONED_TAIL`
+    link value ... push_large_deferred_free's CAS from `ABANDONED_TAIL`
+    FAILS") and ships a dedicated counterfactual regression test,
+    `tests/r34_14_deferred_next_reset_on_cache_hit.rs`, that reproduces
+    the silent-drop with the reset removed and passes with it restored.
+    Nobody connected that fix to closing THIS item at the time — R34-14 was
+    framed entirely around its own symptom (a permanent leak), not this
+    flake.
+
+    Verified, not merely inferred: (1) `git merge-base --is-ancestor
+    7ef5a46 HEAD` confirms the fix is an ancestor of current `HEAD`; (2)
+    `cargo test --release --test regression_xthread_large_free_no_leak
+    --features "production internals" -- --test-threads=1
+    xthread_large_double_free_no_double_reclaim` run 5 consecutive times,
+    all green; (3) `cargo test --release --test
+    r34_14_deferred_next_reset_on_cache_hit --features "production
+    internals"` — the dedicated counterfactual — passes on current `HEAD`.
+    No further action needed; this item required no NEW fix, only
+    identifying that an already-landed one (for a differently-described
+    symptom) already closed it.
+
 13. **[A, filed 2026-08-02, task #498] Root-caused: `git worktree add` +
     this environment's global `CARGO_TARGET_DIR` can leave STALE test
     binaries that fail with misleading errors after the worktree is
