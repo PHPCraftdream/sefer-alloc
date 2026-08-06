@@ -14,6 +14,7 @@ use std::hint::black_box;
 
 use bench_scale_tool::Harness;
 use sefer_region::{Handle, Region, SyncRegion};
+use slotmap::{DefaultKey, SlotMap};
 
 /// Fixture size for the pre-populated get/iterate benches — large enough
 /// that `get`'s single-indirection lookup is not dominated by allocator
@@ -95,6 +96,42 @@ fn main() {
         },
         |(sr, handle)| {
             black_box(sr.remove(handle));
+        },
+    );
+
+    // ── raw slotmap::SlotMap — wrapper-overhead comparison ───────────────
+    //
+    // `Region<T>` is documented as "a thin typed membrane" that "delegates
+    // every operation to slotmap" (region.rs's own module doc). These
+    // workloads run the IDENTICAL operations directly against
+    // `slotmap::SlotMap<DefaultKey, u64>` (`Region`'s own backing type),
+    // with no `Handle<T>` wrapping, so `st/*` vs `raw/*` isolates exactly
+    // the cost of the membrane itself — the PhantomData-branded `Handle<T>`
+    // and the one-line delegation methods — with the underlying slotmap
+    // algorithm held constant.
+
+    h.bench_batched("raw/insert", SlotMap::<DefaultKey, u64>::new, |mut m| {
+        black_box(m.insert(black_box(42u64)));
+    });
+
+    {
+        let mut m: SlotMap<DefaultKey, u64> = SlotMap::new();
+        let keys: Vec<DefaultKey> = (0..PREPOPULATE).map(|i| m.insert(i)).collect();
+        let mid = keys[(PREPOPULATE / 2) as usize];
+        h.bench("raw/get_hit", move || {
+            black_box(m.get(black_box(mid)));
+        });
+    }
+
+    h.bench_batched(
+        "raw/remove",
+        || {
+            let mut m: SlotMap<DefaultKey, u64> = SlotMap::new();
+            let key = m.insert(1u64);
+            (m, key)
+        },
+        |(mut m, key)| {
+            black_box(m.remove(key));
         },
     );
 

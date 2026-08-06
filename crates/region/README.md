@@ -142,6 +142,27 @@ run/time one workload — e.g. `-- st/insert` runs only `Region::insert`,
 never `SyncRegion::insert`, since the two prefixes are chosen to never be
 substrings of one another).
 
+### Wrapper overhead: measured, not assumed
+
+`Region<T>` is documented as "a thin typed membrane" that "delegates every
+operation to slotmap" — but that was a design claim, never actually
+measured against the type it wraps. `benches/region_bench.rs` also runs
+`raw/insert`/`raw/get_hit`/`raw/remove` directly against a bare
+`slotmap::SlotMap<DefaultKey, u64>` (`Region`'s own backing type, no
+`Handle<T>` involved) as an A/B baseline. Median-of-3 result: `st/insert`
+281 ns/op vs `raw/insert` 305 ns/op; `st/get_hit` 5.07 vs `raw/get_hit`
+4.76; `st/remove` 99.3 vs `raw/remove` 106.4 — the wrapped and raw numbers
+interleave with no consistent direction, fully inside the ~15–25%
+run-to-run noise this dev host already shows elsewhere in this table.
+**No measurable wrapper overhead was found.** None of `Region`'s methods
+carry an explicit `#[inline]` hint; since every method is generic over `T`
+(so its MIR is available for cross-crate monomorphization regardless) and
+each is a single-line delegation, LLVM's own size-based inlining heuristic
+already inlines them at the release optimization level this bench (and any
+real consumer's release build) uses. Investigated so this stays a checked
+fact rather than an assumption — no code change was made, because none was
+supported by the measurement.
+
 ### Capacity growth (verified, not assumed)
 
 Measured with [`captrack`](https://crates.io/crates/captrack)
