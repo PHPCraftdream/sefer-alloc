@@ -41,6 +41,7 @@
 //! `const` expressions (see [`size2class_len`]) so nothing is dynamic.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 #![no_std]
 
 /// Parameters for a size-class scheme, consumed by [`build_table`],

@@ -123,6 +123,7 @@
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 // The stack head is one AtomicU64 (see the crate-doc "Portability limit"
 // section above) — that requires native 64-bit atomic support from the target.
