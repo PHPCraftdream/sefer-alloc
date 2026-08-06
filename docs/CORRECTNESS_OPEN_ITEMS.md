@@ -1166,8 +1166,10 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     pre-existing, isolated-run-clean" instead of re-diagnosing from
     scratch.
 
-_(item 15, the F-2 provenance-asymmetry hypothesis, was resolved-negative by
-R34-5 (task #524) — see "Recently resolved" below.)_
+_(item 35 (renumbered from a collision, task #623/M2 — see that item's own
+history for the prior "15"/"16" mislabel), the F-2 provenance-asymmetry
+hypothesis, was resolved-negative by R34-5 (task #524) — see "Recently
+resolved" below.)_
 
 16. **[T, filed 2026-08-04, R34-2/task #521] Cross-thread routing's documented
     residual (caller-contract-violation surface) needs to reach the release
@@ -2126,7 +2128,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
      comment only) and this index. Zero `src/` behavior change; `git diff
      HEAD -- src/` shows only the doc-comment edit. No version bumps.
 
-5. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
+30. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
    assertion proved no double-release, not no leak.** — **RESOLVED** by
    R28-2 (task #431), a test-only strengthening (no `src/` behavior change).
 
@@ -2363,7 +2365,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
        verified at 0/2000). This is NOT a still-live allocator correctness
        concern and does NOT block anything.
 
-6. **CI clippy `--all-targets` red on all five rows — pre-existing
+31. **CI clippy `--all-targets` red on all five rows — pre-existing
    example/test lint+compile errors** — **RESOLVED** by R33-1 (task #506,
    commit `e526517befbf5a0cd0ca1a7ee62f9d84ffe509ee`). Five distinct failures, all pre-existing on `main`
    (four inherited from Round-31 example files, one from Round-32 task
@@ -2424,7 +2426,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
      remains OPEN above (the bugs are fixed but the question of why the
      local gate did not catch them is not).
 
-12. **F10 shadow-head ordering gap — finding F-1**
+32. **F10 shadow-head ordering gap — finding F-1**
    (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-1
    [medium]) — **RESOLVED** by R34-6 (task #525). The F10 shadow-head fast
    path in `RemoteFreeRing::full_check`
@@ -2458,7 +2460,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
      code changed to close a latent ordering/correctness defect, no
      speedup claimed, no observable behavior change on real hardware.
 
-13. **F-5 release-surviving panic sites vs. "NEVER panics" doc claim**
+33. **F-5 release-surviving panic sites vs. "NEVER panics" doc claim**
     (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-5
     [low]) — **RESOLVED** by R34-16 (task #535). The module doc in
     `src/global/sefer_alloc.rs` claimed "Every entry point here returns null
@@ -2504,7 +2506,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       accuracy fix, no shipping code changed (the only non-doc additions are
       the regression test and this index entry).
 
-14. **F-6 `HeapCore` by-value construction stack-pressure pin**
+34. **F-6 `HeapCore` by-value construction stack-pressure pin**
     (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-6
     [low]) — **RESOLVED** by R34-18 (task #537). `HeapCore` is constructed BY
     VALUE on the frame that triggers a thread's FIRST allocation
@@ -2578,7 +2580,8 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       very likely not detect it. What the model pins: value-domain
       invariants (exactly-once delivery, no overflow into occupied slot,
       no deadlock/panic) hold under slot reuse + concurrent drain. The
-      ordering question itself was resolved in R34-6 (item 12 above).
+      ordering question itself was resolved in R34-6 (item 32 above,
+      renumbered from a collision by task #623/M2).
     - **Counterfactual verification (non-vacuity):** replacing
       `full_check`'s body with `Ok(())` (always admit) causes the test to
       FAIL — in the zero-preemption interleaving where all 4 pushes
@@ -2592,7 +2595,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       code changes; this is pure verification-coverage addition with zero
       shipping code changed.
 
-16. **F-2 provenance-asymmetry hypothesis — RESOLVED-NEGATIVE**
+35. **F-2 provenance-asymmetry hypothesis — RESOLVED-NEGATIVE**
     (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-2
     [low]; open item 15) — **RESOLVED** by R34-5 (task #524), following the
     item's own decision rule. The item's blocking question was: does the
@@ -2660,11 +2663,12 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       the item's own text already argued is structurally immune here via
       `Cell` permission on raw-pointer-derived `&AtomicU32`, a separate,
       independent argument this resolution does not depend on).
-    - **Files changed (doc-only):** this index entry (item 15 above replaced
-      with a one-line "Recently resolved" pointer per CLAUDE.md's R34-24
-      current-state-card structural rule; this closure narrative added
-      here). No source, test, or CI file changed by this task — #524
-      already landed the test and CI wiring in a prior commit.
+    - **Files changed (doc-only):** this index entry (the corresponding open
+      item, now item 35 above after task #623/M2's collision renumbering,
+      was replaced with a one-line "Recently resolved" pointer per
+      CLAUDE.md's R34-24 current-state-card structural rule; this closure
+      narrative added here). No source, test, or CI file changed by this
+      task — #524 already landed the test and CI wiring in a prior commit.
     - **Commit prefix:** `docs` — pure documentation update (closing a
       stale open-item card to reflect an already-landed, already-verified
       resolution); no shipping or opt-in code changed, no measurement run
@@ -2672,7 +2676,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
       here reproduces #524's own already-published result, it does not
       establish a new one).
 
-24. **H8 — `dbb4016`'s `fix(perf):` prefix considered for a reword to
+36. **H8 — `dbb4016`'s `fix(perf):` prefix considered for a reword to
     `feat(api):`, DECIDED against a rebase, prefix left as-is** (task #578,
     `docs/reviews/2026-08-05-sol-remediation-readonly-review.md` finding H8)
     — **RESOLVED, no code change.** Sol-F1's commit (`9296adb`, post-G1-
@@ -2711,7 +2715,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     - **Files changed:** none (this index entry only) — a documented
       decision, not a rebase or a reword.
 
-25. **Flaky test — `repeated_same_segment_frees_are_observed_as_tier1_hits`**
+37. **Flaky test — `repeated_same_segment_frees_are_observed_as_tier1_hits`**
     (`tests/segment_table_contains_base_tier1_counters.rs`) — **RESOLVED**
     by wave 3's own `npm run check --all-features` gate run (2026-08-05,
     same session as H1-H8, tasks #571-578).
@@ -2751,7 +2755,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     - **Files changed:** `tests/segment_table_contains_base_tier1_counters.rs`
       (serialization only); this index entry.
 
-26. **Flaky test — `ac1_trim_empties_pool_and_evicts_large_cache`**
+38. **Flaky test — `ac1_trim_empties_pool_and_evicts_large_cache`**
     (`tests/r31_10_trim_current_thread_api.rs`) — **RESOLVED** by wave 4's
     own post-landing `npm run check --all-features` gate run (2026-08-05,
     same session as I1-I10, tasks #579-588; found in a background rerun
@@ -2793,7 +2797,7 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     - **Files changed:** `tests/r31_10_trim_current_thread_api.rs`
       (serialization only); this index entry.
 
-27. **Flaky test — `oom_injection_flag_is_clean_after_test`**
+39. **Flaky test — `oom_injection_flag_is_clean_after_test`**
     (`tests/regression_free_path_chunk_oom_graceful.rs`) — **RESOLVED**
     by the first full remote CI run over the pushed backlog (2026-08-05,
     CI run `31045983765` on landing SHA `42d4206`, task #621, found during
