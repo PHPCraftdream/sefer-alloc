@@ -39,6 +39,22 @@ name: Release
 #   before the dependent crate's publish is triggered. Standard
 #   `cargo publish` validation will fail loudly if not.
 #
+# - `racy-ptr-cell`, `size-classes`, and `tagged-index-stack` (task K3/#598)
+#   are LEAF crates: none of the three has a path dependency on each other
+#   or on any other workspace member (`loom` is their only non-dev
+#   dependency for two of them, and it's a `cfg(loom)`-gated crates.io
+#   dependency, not a workspace path dep) -- verify with
+#   `grep -A3 '^\[dependencies\]' crates/{racy-ptr-cell,size-classes,tagged-index-stack}/Cargo.toml`.
+#   So there is no publish-ordering constraint among the three, or relative
+#   to `aligned-vmem`/`sefer-region`/`numa-shim`. They DO still need to
+#   publish before `sefer-alloc` itself, same as the other member crates
+#   above: `sefer-alloc`'s root `Cargo.toml` declares all three as versioned
+#   path dependencies (`racy-ptr-cell = { path = ..., version = "0.1",
+#   optional = true }` and similarly for the other two), reachable from the
+#   `alloc-core`/`alloc-global`/`production` feature bundles, so
+#   `cargo publish -p sefer-alloc` will fail to resolve until all three are
+#   on crates.io.
+#
 # ## Future improvements
 #
 # - Move to crates.io **trusted publishing** (OIDC) — removes the
@@ -52,6 +68,9 @@ on:
       - 'sefer-region-v*'
       - 'malloc-bench-rs-v*'
       - 'numa-shim-v*'
+      - 'racy-ptr-cell-v*'
+      - 'size-classes-v*'
+      - 'tagged-index-stack-v*'
       - 'sefer-alloc-v*'
   workflow_dispatch:
     inputs:
@@ -64,6 +83,9 @@ on:
           - sefer-region
           - malloc-bench-rs
           - numa-shim
+          - racy-ptr-cell
+          - size-classes
+          - tagged-index-stack
           - sefer-alloc
       dry-run:
         description: 'Dry-run only (do not push to crates.io)'
