@@ -1333,6 +1333,41 @@ jobs:
       - run: cargo test -p numa-shim --features vmem-integration
       - run: cargo test -p numa-shim --features mock
 
+  numa-shim-macos-miri:
+    # Publish-readiness task #635 (P1, F1 of the 2026-08-06 numa-shim review):
+    # `crates/numa/src/lib.rs`'s `#[cfg(target_os = "macos")] mod platform`
+    # block (the macOS stub) was missing the `not(miri)` guard that its three
+    # sibling platform blocks (Linux, Windows, the unsupported-platform
+    # fallback) all carry. Under macOS + miri simultaneously, BOTH that block
+    # and the separate `#[cfg(miri)] mod platform` block (any-OS-under-miri
+    # stub) satisfy their cfg at once, so `mod platform` is defined twice
+    # (E0428) — a hard compile break on that one cell of the matrix. It was
+    # never caught because every miri job in this workflow (`miri-core`,
+    # `miri-alloc-core`, `miri-fastbin`, `miri-plain`) runs on `ubuntu-latest`,
+    # and `numa-shim-macos` above runs plain `cargo test` — no job crosses
+    # macOS x miri. This job is that missing cell: it compiles `numa-shim`
+    # under miri on a real `macos-latest` runner, which is enough to catch
+    # the specific `mod platform`-defined-twice class of bug (and any future
+    # cfg divergence between the macOS and miri stub blocks) without
+    # needing multi-node NUMA hardware — a plain `cargo miri test` on the
+    # crate's own test suite exercises every `#[cfg(miri)]` arm.
+    # `-p numa-shim` keeps the crate small enough that miri's interpreter
+    # overhead is affordable per-PR (matching `numa-shim-macos`'s own
+    # "lightweight per-PR coverage" framing above), unlike the heavier
+    # `numa-real-kernel` job below which is scheduled/on-demand only.
+    name: numa-shim macOS under miri (mod platform cfg regression guard)
+    runs-on: macos-latest
+    env:
+      MIRIFLAGS: "-Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test -p numa-shim
+      - run: cargo miri test -p numa-shim --features vmem-integration
+      - run: cargo miri test -p numa-shim --features mock
+
   numa-real-kernel:
     # NUMA Phase 2: validate the real-kernel Linux integration path on every
     # scheduled run (weekly) and on-demand (workflow_dispatch).  The GitHub

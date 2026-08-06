@@ -760,7 +760,17 @@ mod platform {
 }
 
 // ---- macOS stub -----------------------------------------------------------
-#[cfg(target_os = "macos")]
+// `not(miri)` is required here (matching the Linux/Windows/fallback blocks
+// at `:259`/`:608`/`:812` above): without it, this block and the separate
+// `#[cfg(miri)] mod platform` block below (any-OS-under-miri stub) BOTH
+// satisfy their cfg simultaneously when running miri on macOS
+// (`target_os = "macos"` is true AND `miri` is true), causing `mod platform`
+// to be defined twice (E0428). No CI job caught this because every miri job
+// runs on `ubuntu-latest` and the macOS job (`numa-shim-macos`) runs plain
+// `cargo test`, never miri — the two conditions never crossed until an
+// explicit macOS+miri CI job was added. If you ever touch this block or the
+// `#[cfg(miri)]` block below, keep them mutually exclusive.
+#[cfg(all(target_os = "macos", not(miri)))]
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::NO_NODE;
