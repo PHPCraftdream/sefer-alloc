@@ -510,9 +510,9 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: eleven independently-publishable companion crates
+### Workspace: ten independently-publishable companion crates
 
-The workspace extracted eleven building blocks. Each is a real crates.io crate
+The workspace extracted ten building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
@@ -523,7 +523,6 @@ sefer-alloc
  ├── numa-shim          (crates/numa)               — NUMA detection + binding             (feature: numa-aware)
  ├── malloc-bench-rs    (crates/malloc-bench)       — portable GlobalAlloc bench harness   (standalone, dev-only)
  ├── racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
- ├── ring-mpsc          (crates/ring-mpsc)          — bounded MPSC index ring + DirtyRouter (standalone; swap-in filed as CRATE-P4)
  ├── size-classes       (crates/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
  ├── tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
  ├── globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
@@ -533,10 +532,14 @@ sefer-alloc
 
 `malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
 not in sefer-alloc's runtime dependency tree — they are dev-only / example
-infra. `ring-mpsc` is likewise standalone today (its swap-in for the in-tree
-`RemoteFreeRing`/`HeapOverflow` is filed as follow-up CRATE-P4). The other
-six are pulled in under the feature gates noted above (`alloc-core`,
-`alloc-global`, `numa-aware`).
+infra. The other six are pulled in under the feature gates noted above
+(`alloc-core`, `alloc-global`, `numa-aware`).
+
+(A former eleventh crate, `ring-mpsc` — a standalone bounded MPSC index ring
++ DirtyRouter — was removed from the workspace: it had zero production
+consumers, since the in-tree `RemoteFreeRing`/`HeapOverflow` swap it was
+extracted for was investigated and found NO-GO, see
+`docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md`.)
 
 Per-crate status:
 
@@ -547,7 +550,6 @@ Per-crate status:
 | `numa-shim` | [![Crates.io](https://img.shields.io/crates/v/numa-shim.svg)](https://crates.io/crates/numa-shim) | [![Documentation](https://docs.rs/numa-shim/badge.svg)](https://docs.rs/numa-shim) |
 | `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
 | `racy-ptr-cell` | [![Crates.io](https://img.shields.io/crates/v/racy-ptr-cell.svg)](https://crates.io/crates/racy-ptr-cell) | [![Documentation](https://docs.rs/racy-ptr-cell/badge.svg)](https://docs.rs/racy-ptr-cell) |
-| `ring-mpsc` | [![Crates.io](https://img.shields.io/crates/v/ring-mpsc.svg)](https://crates.io/crates/ring-mpsc) | [![Documentation](https://docs.rs/ring-mpsc/badge.svg)](https://docs.rs/ring-mpsc) |
 | `size-classes` | [![Crates.io](https://img.shields.io/crates/v/size-classes.svg)](https://crates.io/crates/size-classes) | [![Documentation](https://docs.rs/size-classes/badge.svg)](https://docs.rs/size-classes) |
 | `tagged-index-stack` | [![Crates.io](https://img.shields.io/crates/v/tagged-index-stack.svg)](https://crates.io/crates/tagged-index-stack) | [![Documentation](https://docs.rs/tagged-index-stack/badge.svg)](https://docs.rs/tagged-index-stack) |
 | `globalalloc-model` | [![Crates.io](https://img.shields.io/crates/v/globalalloc-model.svg)](https://crates.io/crates/globalalloc-model) | [![Documentation](https://docs.rs/globalalloc-model/badge.svg)](https://docs.rs/globalalloc-model) |
@@ -578,7 +580,6 @@ the line to begin with the attribute, not a `//` prefix.
 | `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
 | `racy-ptr-cell` | `crates/racy-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
-| `ring-mpsc` | `crates/ring-mpsc/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe fn over_raw` materialises `&AtomicUN` views over caller-supplied raw memory; `slot_at` + every raw-pointer materialisation carries `// SAFETY:`. **Zero production consumers today**: the in-tree swap of `RemoteFreeRing`/`HeapOverflow` onto this crate was investigated and found NO-GO (commit `d062798`, see `docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md`); a real, well-tested workspace member, flagged here so it doesn't silently bit-rot. |
 | `globalalloc-model` | `crates/globalalloc-model/` | `#![allow(unsafe_code)]` — single documented reason: the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout); every impl + call carries `// SAFETY:` |
 | `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
 | `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s audited core owns the generational layout |
@@ -653,8 +654,8 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
-That's the full list (both tiers): **20** tier-1 module-level seams (13 in
-`src/`, 7 in `crates/`) plus **73** tier-2 item-scoped allows across **18**
+That's the full list (both tiers): **19** tier-1 module-level seams (13 in
+`src/`, 6 in `crates/`) plus **73** tier-2 item-scoped allows across **18**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1296,7 +1297,7 @@ in `tests/` (100 conventional + 11 loom models — counted separately below);
 |---|---|---|
 | Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (111 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_deferred_large.rs`, `loom_dirty_multi_segment.rs`, `loom_dirty_publish.rs`, `loom_epoch.rs`, `loom_heap_overflow.rs`, `loom_heap_overflow_drain_guard.rs`, `loom_magazine_ring_compose.rs`, `loom_overflow_first_retry.rs`, `loom_remote_ring.rs`, `loom_remote_ring_drain_guard.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (13 in-tree models), plus the extracted crates' real-type suites `crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`, `crates/ring-mpsc/tests/loom_ring_mpsc.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (CRATE-P3/P4/P7 — replacing the former in-tree `loom_bootstrap_cas`/`loom_chunk_cas`/`loom_fallback_init`/`loom_overflow_sidecar_cas`/`loom_free_slots_aba` shadow models) |
+| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_deferred_large.rs`, `loom_dirty_multi_segment.rs`, `loom_dirty_publish.rs`, `loom_epoch.rs`, `loom_heap_overflow.rs`, `loom_heap_overflow_drain_guard.rs`, `loom_magazine_ring_compose.rs`, `loom_overflow_first_retry.rs`, `loom_remote_ring.rs`, `loom_remote_ring_drain_guard.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (13 in-tree models), plus the extracted crates' real-type suites `crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (CRATE-P3/P7 — replacing the former in-tree `loom_bootstrap_cas`/`loom_chunk_cas`/`loom_fallback_init`/`loom_overflow_sidecar_cas`/`loom_free_slots_aba` shadow models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |

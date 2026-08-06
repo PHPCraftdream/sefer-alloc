@@ -80,7 +80,7 @@ const RING_SLOT_EMPTY: u32 = u32::MAX;
 /// space at all, keeping capacity questions fully out of scope: this file
 /// is about the per-class dirty-bit protocol, not the ring's own push
 /// contention shape (separately, already loom-verified — see
-/// `crates/ring-mpsc`/`loom_remote_ring.rs`).
+/// `loom_remote_ring.rs`).
 const RING_CAP: u32 = 4;
 
 /// Model: ONE segment's ring (`RING_CAP` slots, comfortably holding the 2

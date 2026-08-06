@@ -1097,25 +1097,6 @@ jobs:
       - run: >-
           cargo test --release -p racy-ptr-cell
           --test loom_racy_ptr_cell
-      # CRATE-P4: real-type `MpscRing` / `DirtyRouter` loom suite for the
-      # STANDALONE `ring-mpsc` crate only. The crate aliases its atomics to
-      # `loom` under `--cfg loom`, and ships the drain-without-break /
-      # drain-without-clear / wrong-pair-publish-order / R2-4-return-tail
-      # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
-      # This does NOT cover sefer's shipping in-tree `RemoteFreeRing` /
-      # `HeapOverflow` / dirty-segment protocols: the in-tree swap (wiring
-      # the shipping types onto the extracted `ring-mpsc` crate) was
-      # investigated and found NO-GO (commit d062798 — the shipping rings
-      # and the crate's rings are structurally similar but are NOT the same
-      # types). The real loom coverage of those shipping protocols is the
-      # seven in-tree files (loom_remote_ring, loom_remote_ring_drain_guard,
-      # loom_dirty_publish, loom_dirty_multi_segment in the `loom-xthread`
-      # job below; loom_overflow_first_retry, loom_heap_overflow,
-      # loom_heap_overflow_drain_guard in the `loom-misc` job below) wired
-      # into CI by task #204.
-      - run: >-
-          cargo test --release -p ring-mpsc
-          --test loom_ring_mpsc
 
   loom-xthread:
     name: loom (alloc-core alloc-xthread)
@@ -1169,9 +1150,12 @@ jobs:
     # toolchain) rather than each justifying its own job: the empty-feature
     # `loom_thread_free` model, and the `alloc-global,alloc-xthread` group
     # (`loom_magazine_ring_compose` + task #204's three shipping HeapOverflow
-    # / overflow-composition models — see CRATE-P4 above for why these
-    # in-tree files, not the standalone `ring-mpsc` crate, are the real
-    # coverage of those protocols).
+    # / overflow-composition models — these in-tree files are the real
+    # coverage of those protocols; the standalone `ring-mpsc` crate that
+    # once shipped a parallel real-type suite for the same protocol shape
+    # was removed from the workspace, task #655 — it had zero production
+    # consumers, the in-tree swap having been investigated and found NO-GO,
+    # see docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md).
     name: loom (misc)
     runs-on: ubuntu-latest
     env:

@@ -86,11 +86,11 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: eleven independently-publishable companion crates ─────────────
+// ── Workspace: ten independently-publishable companion crates ────────────────
 //
-// The workspace extracted eleven building blocks that can also be used
+// The workspace extracted ten building blocks that can also be used
 // standalone. Six are pulled into sefer-alloc's runtime dep tree under named
-// feature gates; the other five are dev-only / standalone infra:
+// feature gates; the other four are dev-only infra:
 //
 //   sefer-region       (crates/region)             — typed handle store (this re-export; runtime, no feature gate)
 //   aligned-vmem       (crates/vmem)               — OS virtual-memory aperture          (feature: alloc-core)
@@ -102,7 +102,11 @@
 //   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
 //   proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
 //   proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol    (dev-only)
-//   ring-mpsc          (crates/ring-mpsc)          — bounded MPSC index ring + DirtyRouter (standalone; CRATE-P4 swap-in filed)
+//
+// (`ring-mpsc`, a standalone bounded MPSC index ring, was removed from the
+// workspace, task #655 — it had zero production consumers; the in-tree
+// RemoteFreeRing/HeapOverflow swap it was extracted for was investigated and
+// found NO-GO, see docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md.)
 //
 // ── Unsafe inventory — the complete, verifiable picture ───────────────────────
 //
@@ -134,14 +138,6 @@
 //     Single documented reason: `unsafe impl Send/Sync` for the AtomicPtr-backed
 //     cell + `NonNull::new_unchecked`. Lazy CAS-published pointer cell; every
 //     site has `# Safety` / `// SAFETY:`. Pulled in under `alloc-core`.
-//
-//   ring-mpsc     (crates/ring-mpsc/src/lib.rs)     — #![allow(unsafe_code)]
-//     Single documented reason: `unsafe fn over_raw` materialises `&AtomicUN`
-//     views over caller-supplied raw memory (slot_at + raw-pointer
-//     materialisation carry `// SAFETY:`). Standalone today — zero production
-//     consumers: the in-tree RemoteFreeRing/HeapOverflow swap was investigated
-//     and found NO-GO (commit d062798, see CRATE_P4_FOLLOWUP_NOGO.md); a
-//     real, well-tested workspace member, flagged so it doesn't silently bit-rot.
 //
 //   globalalloc-model (crates/globalalloc-model/src/lib.rs) — #![allow(unsafe_code)]
 //     Single documented reason: the `unsafe trait RawAllocator` (impls must

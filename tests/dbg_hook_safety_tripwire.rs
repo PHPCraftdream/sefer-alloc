@@ -164,8 +164,6 @@ fn rel_id(abs: &Path) -> String {
 /// by reading each body).
 const PURE_OBSERVERS: &[&str] = &[
     "crates/racy-ptr-cell/src/lib.rs::dbg_is_ready",
-    "crates/ring-mpsc/src/lib.rs::dbg_cursors",
-    "crates/ring-mpsc/src/lib.rs::dbg_is_marked",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_foreign_or_unroutable_frees",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_reserved_total",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_released_total",
@@ -285,14 +283,6 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
         "crates/racy-ptr-cell/src/lib.rs::dbg_rollback_reenterable",
         "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered",
-    ),
-    (
-        "crates/ring-mpsc/src/lib.rs::dbg_reserve_unpublished",
-        "generic test-infra ring (no allocator metadata); documented quiescent-ring single-writer test contract",
-    ),
-    (
-        "crates/ring-mpsc/src/lib.rs::dbg_set_cursors",
-        "generic test-infra ring (no allocator metadata); documented quiescent-ring single-writer test contract",
     ),
     (
         "src/alloc_core/alloc_core_core_diag.rs::dbg_reset_hash_remove_max_scan_steps",

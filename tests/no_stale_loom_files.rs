@@ -75,8 +75,8 @@ fn loom_test_file_stems() -> Vec<String> {
 /// the `loom-misc` job's first step). A single generic scan over the whole
 /// file (not restricted to specific job names) intentionally also picks up
 /// the `loom-alloc-global`/`loom-experimental` jobs' own `--test loom_*`
-/// tokens (e.g. `loom_aba`, `loom_racy_ptr_cell`, `loom_ring_mpsc` are
-/// crate-local loom suites under `-p <crate>`, not `tests/loom_*.rs` files in
+/// tokens (e.g. `loom_aba`, `loom_racy_ptr_cell` are crate-local loom
+/// suites under `-p <crate>`, not `tests/loom_*.rs` files in
 /// THIS repo's root — they simply never match a stem from
 /// `loom_test_file_stems()` above, so including them in the scan cannot
 /// cause a false negative, only extra tokens that are harmlessly ignored).

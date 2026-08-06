@@ -1580,11 +1580,18 @@ resolved" below.)_
       `sefer-alloc` — release-workflow plumbing exists for every crate this
       item originally flagged as missing it. This does NOT close the item:
       none of the three has actually been published to crates.io yet (the
-      headline claim below is unchanged), and 4 more workspace members
-      (`ring-mpsc`, `globalalloc-model`, `proc-memstat`, `proc-probe` — never
-      checked against crates.io) still have no release-workflow entry at
-      all. `README.md:545-555` displays crates.io badges for all 11
-      regardless.
+      headline claim below is unchanged), and 3 more workspace members
+      (`globalalloc-model`, `proc-memstat`, `proc-probe` — never checked
+      against crates.io) still have no release-workflow entry at all.
+      `README.md`'s crate-count table now lists 10, not 11, workspace
+      members (the eleventh, `ring-mpsc`, was removed from the workspace
+      entirely — user-requested, 2026-08-06, task #655: it had zero
+      production consumers and its one filed use case, the in-tree
+      `RemoteFreeRing`/`HeapOverflow` swap, was independently found NO-GO —
+      see `docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md`. This shrinks,
+      but does not close, this item's scope: one fewer unpublished crate to
+      track, from 4 down to 3). `README.md`'s badge table now shows badges
+      only for the remaining 10.
     - **Why filed instead of fixed here:** the fix depends on the same
       publish-DAG decision already deferred this sprint by explicit user
       instruction (tasks K3/K4/K9/L2/L3/L5, "path dependencies stay local
@@ -1604,7 +1611,7 @@ resolved" below.)_
       "Round start" rule).
     - **Next trigger:** resolve as part of the deferred publish-DAG pass
       (K3/#598) — either publish the missing crates before 0.3.0 ships, or
-      rewrite `README.md:515` to something like "eleven
+      rewrite `README.md:515` to something like "ten
       independently-publishable building blocks; N of them are published
       on crates.io today" and remove badges for unpublished ones.
     - **Evidence:** `README.md:515`, `:545-555`;
