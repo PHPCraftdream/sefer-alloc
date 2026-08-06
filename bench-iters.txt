@@ -4,11 +4,11 @@
 # Counts are STATIC across runs so run wall-time is a comparable speed signal.
 # Hand-edit an N to pin/nudge it; delete a line to force recalibration.
 
-region_bench::region/get_hit = 231215417
-region_bench::region/get_stale = 222405491
-region_bench::region/insert = 2518132
-region_bench::region/iterate = 635499
-region_bench::region/remove = 2219415
-region_bench::sync_region/get_cloned_hit = 28054066
-region_bench::sync_region/insert = 2338931
-region_bench::sync_region/remove = 2082569
+region_bench::st/get_hit = 499085002
+region_bench::st/get_stale = 486465489
+region_bench::st/insert = 5168339
+region_bench::st/iterate = 1506104
+region_bench::st/remove = 5202548
+region_bench::sync/get_cloned_hit = 57890064
+region_bench::sync/insert = 4843652
+region_bench::sync/remove = 4437706

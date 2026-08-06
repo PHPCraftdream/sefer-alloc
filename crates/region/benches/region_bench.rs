@@ -25,7 +25,7 @@ fn main() {
 
     // ── Region<T> — single-threaded ──────────────────────────────────────
 
-    h.bench_batched("region/insert", Region::<u64>::new, |mut r| {
+    h.bench_batched("st/insert", Region::<u64>::new, |mut r| {
         black_box(r.insert(black_box(42u64)));
     });
 
@@ -33,7 +33,7 @@ fn main() {
         let mut r: Region<u64> = Region::new();
         let handles: Vec<Handle<u64>> = (0..PREPOPULATE).map(|i| r.insert(i)).collect();
         let mid = handles[(PREPOPULATE / 2) as usize];
-        h.bench("region/get_hit", move || {
+        h.bench("st/get_hit", move || {
             black_box(r.get(black_box(mid)));
         });
     }
@@ -43,13 +43,13 @@ fn main() {
         let handles: Vec<Handle<u64>> = (0..PREPOPULATE).map(|i| r.insert(i)).collect();
         let stale = handles[0];
         r.remove(stale);
-        h.bench("region/get_stale", move || {
+        h.bench("st/get_stale", move || {
             black_box(r.get(black_box(stale)));
         });
     }
 
     h.bench_batched(
-        "region/remove",
+        "st/remove",
         || {
             let mut r: Region<u64> = Region::new();
             let handle = r.insert(1u64);
@@ -65,7 +65,7 @@ fn main() {
         for i in 0..PREPOPULATE {
             r.insert(i);
         }
-        h.bench("region/iterate", move || {
+        h.bench("st/iterate", move || {
             let sum: u64 = r.iter().sum();
             black_box(sum);
         });
@@ -73,7 +73,7 @@ fn main() {
 
     // ── SyncRegion<T> — RwLock-wrapped one-shot convenience methods ──────
 
-    h.bench_batched("sync_region/insert", SyncRegion::<u64>::new, |sr| {
+    h.bench_batched("sync/insert", SyncRegion::<u64>::new, |sr| {
         black_box(sr.insert(black_box(42u64)));
     });
 
@@ -81,13 +81,13 @@ fn main() {
         let sr: SyncRegion<u64> = SyncRegion::new();
         let handles: Vec<Handle<u64>> = (0..PREPOPULATE).map(|i| sr.insert(i)).collect();
         let mid = handles[(PREPOPULATE / 2) as usize];
-        h.bench("sync_region/get_cloned_hit", move || {
+        h.bench("sync/get_cloned_hit", move || {
             black_box(sr.get_cloned(black_box(mid)));
         });
     }
 
     h.bench_batched(
-        "sync_region/remove",
+        "sync/remove",
         || {
             let sr: SyncRegion<u64> = SyncRegion::new();
             let handle = sr.insert(1u64);

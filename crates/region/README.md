@@ -111,6 +111,62 @@ Disable default features for `no_std + alloc` (`Region<T>` + `Handle<T>` only):
 sefer-region = { version = "0.1", default-features = false }
 ```
 
+## Performance
+
+Measured with [`bench-scale-tool`](https://crates.io/crates/bench-scale-tool)
+(a fixed-iteration harness — the iteration count is calibrated once and
+pinned, so run time is a direct speed signal, not a statistical estimate).
+Single noisy Windows dev host, 3 runs each; the table below shows the
+median, with the observed min–max range in parentheses so the numbers
+aren't read as more precise than they are:
+
+| Workload | ns/op (median, range) |
+|---|---|
+| `Region::insert` | 290 (242–327) |
+| `Region::get` (hit) | 5.0 (4.3–6.5) |
+| `Region::get` (stale handle) | 5.0 (4.7–5.1) |
+| `Region::remove` | 97 (96–111) |
+| `Region::iter` (1,000 live values, sum) | 1,319 (1,292–1,546) |
+| `SyncRegion::insert` (uncontended) | 281 (269–324) |
+| `SyncRegion::get_cloned` (hit) | 34.5 (34.2–36.0) |
+| `SyncRegion::remove` (uncontended) | 124 (123–130) |
+
+`get`'s single-indirection lookup is roughly 30–60x cheaper than `insert`,
+consistent with `slotmap::SlotMap`'s own documented lookup/churn tradeoff
+(see [`docs/BENCHMARKS.md`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md)
+in the parent workspace for the container-choice comparison this crate's
+backing store was picked from). Reproduce: `cargo bench -p sefer-region
+--bench region_bench` (add `-- --calibrate <secs>` to recalibrate the
+pinned iteration counts in `bench-iters.txt` first, or `-- <substring>` to
+run/time one workload — e.g. `-- st/insert` runs only `Region::insert`,
+never `SyncRegion::insert`, since the two prefixes are chosen to never be
+substrings of one another).
+
+### Capacity growth (verified, not assumed)
+
+Measured with [`captrack`](https://crates.io/crates/captrack)
+(`tests/captrack_probe.rs`, run manually — `slotmap::SlotMap` isn't one of
+captrack's natively-wrapped collection types, so this drives its public
+registry API directly rather than the usual macros):
+
+- **Organic growth** (`Region::new()`, 1,000 sequential inserts):
+  capacity grows geometrically — 3 → 127 → 255 → 511 → 1023 — landing at
+  **1,023 for 1,000 live values (~2.3% overhead)**, not the tight-fit
+  guess a caller might otherwise assume.
+- **Churn is genuinely free-list-bounded, not just documented as such:**
+  inserting 1,000, removing every other one, then inserting 500 more
+  measured capacity staying flat at 1,023 through the whole cycle — the
+  refill reuses freed slots rather than growing past the prior high-water
+  mark. (`Region::reserve`'s own doc comment already claimed this; this is
+  the first time it was actually measured rather than trusted.)
+- **`Region::with_capacity(n)` reserves exactly `n` up front** — no
+  intermediate reallocation for a workload that stays within it. If you
+  know your workload's peak live count ahead of time, pre-sizing avoids
+  the ~2.3% organic-growth overhead entirely.
+
+Reproduce: `cargo test -p sefer-region --test captrack_probe -- --ignored
+--nocapture`.
+
 ## Safety
 
 `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` in
