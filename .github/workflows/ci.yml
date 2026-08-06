@@ -759,12 +759,28 @@ jobs:
     # would slip through (stable CI runs a much newer toolchain). A build-only
     # `cargo check --all-features` on the pinned 1.88 toolchain is sufficient
     # evidence that the crate still compiles on its declared minimum.
-    name: MSRV 1.88 (cargo check)
+    #
+    # R16 (gap-audit item 19/task #612/K17): `cargo check` alone never
+    # compiles `#[cfg(test)]`-only code or dev-dependency-only paths, so an
+    # MSRV-incompatible construct reachable ONLY from those (e.g. a test
+    # helper using a post-1.88 stdlib API, or a dev-dependency whose own MSRV
+    # has crept past 1.88) would not be caught here — the exact gap
+    # `docs/CORRECTNESS_OPEN_ITEMS.md` item 19 already documents as an
+    # accepted release-notes caveat. Closed the "better" option that item's
+    # own filing named: `cargo test --no-run --all-features` (build-only, no
+    # tests actually executed — running the full suite on MSRV would be slow
+    # and redundant with what the `test`/`test-core`/etc. jobs already do on
+    # stable) compiles the ENTIRE test + dev-dependency graph under 1.88,
+    # not just the library. Verified feasible before adding this step: run
+    # locally, exit 0, ~6 minutes build-only — the dev-dependency graph
+    # (proptest, criterion, tokio, slotmap, ...) genuinely supports 1.88.
+    name: MSRV 1.88 (cargo check + test --no-run)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
       - run: cargo check --all-features
+      - run: cargo test --no-run --all-features
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
