@@ -1,7 +1,10 @@
 //! Property tests over the `const`-generic builder for DIFFERENT
 //! parameterizations — the payoff of extraction: the in-tree constants are
-//! baked, but the crate lets a proptest vary `(min_block, growth, geo_count,
-//! extras)` and still assert the two structural guarantees for every scheme:
+//! baked, but this file instantiates **three hand-picked `const` schemes**
+//! (`min_block` / `growth` / `geo_count` / `extras` differ per scheme below;
+//! `const` generics require `const` params, so these cannot themselves be
+//! proptest-generated) and property-tests `(size, align)` *within* each
+//! scheme, asserting the two structural guarantees below for every one:
 //!
 //! 1. **jump ≡ walk** — the alignment slow path's jump is bit-identical to a
 //!    naive step-by-1 walk (the counterfactual the in-tree

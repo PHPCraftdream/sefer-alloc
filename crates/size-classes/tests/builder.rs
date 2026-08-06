@@ -1,8 +1,12 @@
 //! Correctness of the `const`-generic builder itself — table shape, the derived
-//! O(1) lookup, and the alignment-jump classifier — over BOTH sefer's concrete
-//! parameterization and arbitrary property-generated parameterizations. The
-//! in-tree `size_classes.rs` bakes one parameterization; here the builder is
-//! varied so the mechanism is property-tested, not just the one instance.
+//! O(1) lookup, and the alignment-jump classifier — against sefer's own
+//! concrete parameterization (`SEFER_PARAMS` below), via hand-written unit
+//! tests (an independent, from-scratch reference builder/classifier, an
+//! exhaustive small-size×alignment sweep, and the `Params::extras`
+//! precondition `#[should_panic]`s). This file has no proptest of its own —
+//! the sibling `tests/proptest_builder.rs` is where `(size, align)` is
+//! property-generated, across three additional hand-picked schemes distinct
+//! from `SEFER_PARAMS`.
 
 use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
