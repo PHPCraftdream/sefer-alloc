@@ -63,20 +63,31 @@ own hash changes the hash it just embedded. Resolve the last row's SHA via
 | **build(ci) — workflow-config-only** | 2 | 6fc2f1b, 2a75d91 |
 | **docs-only** | 11 | ebe615d, b17ffab, 9ecada3, 7e1020f, 19698da, c8498cd, 0a42519, 7c8621f, 03d6243, 9716792, *(this commit)* |
 
-**Net default-feature impact:** `production`'s feature composition is
-**UNCHANGED** across all 19 commits — no row touches the root `Cargo.toml`'s
-`[features]` section, and no crate's `[package] version` was touched
-anywhere in this wave. The four correctness fixes (rows 1-4) all land on
+**Net default-feature impact:** one row (`4c059fa`, #13) edits the root
+`Cargo.toml`'s `[features]` table — migrating two `production`-reachable
+feature entries (`primordial-lazy-commit`, `small-segment-lazy-commit`) off
+the deprecated `aligned-vmem/alloc-lazy-commit` alias onto its replacement
+`aligned-vmem/lazy-commit` — verified inert because the removed alias name
+has zero `cfg`-gated uses anywhere in `crates/vmem/src/` (it survives only
+as a pure feature-name alias in `crates/vmem/Cargo.toml` for external
+back-compat, `alloc-lazy-commit = ["lazy-commit"]`), confirmed by
+`cargo build -p sefer-alloc --features production` staying green; no crate's
+`[package] version` was touched anywhere in this wave. The four correctness
+fixes (rows 1-4) all land on
 crates not yet part of `sefer-alloc`'s own runtime dependency surface at the
 versions currently in use — `numa-shim`'s macOS+miri cfg path was never
 reachable in CI before this wave added the job that reaches it; the other
 three are on crates.io-unpublished or about-to-be-republished crates whose
 in-tree consumers (sefer's own `EXTRAS`, `INDEX_BITS=16` usage) were each
 explicitly confirmed unaffected by the fix. `node
-scripts/verify-commit-prefixes.mjs dc003c9~1..HEAD` reports PASS (6
-direction-2 warnings on `docs(...)`-prefixed commits touching non-`docs/`
-paths — every one individually re-verified via full diff read as a genuine
-false positive: pure doc-comment/metadata/test-doc changes with zero logic
+scripts/verify-commit-prefixes.mjs dc003c9~1..HEAD` reports PASS (8
+direction-2 warnings on `docs`-prefixed commits — both scoped `docs(...):`
+and bare `docs:` — touching non-`docs/` paths; the bare-`docs:` case (rows
+8 and 19, `b17ffab`/`7c8621f`) only started being flagged after task #652
+closed a scanner gap where bare `docs:` fell through to `'other'` and
+skipped the direction-2 check entirely — every one of the 8 individually
+re-verified via full diff read as a genuine false positive: pure
+doc-comment/metadata/test-doc/lint-attribute changes with zero logic
 touched, the same false-positive class this scanner has flagged
 consistently since wave 5).
 
