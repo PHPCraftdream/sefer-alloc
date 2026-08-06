@@ -18,3 +18,18 @@ std = ["slotmap/std"]
 
 [dependencies]
 slotmap = { version = "1", default-features = false }
+
+[dev-dependencies]
+# Fixed-iteration bench harness (dev-only — never reaches published
+# consumers). See benches/region_bench.rs.
+bench-scale-tool = "0.1"
+# Capacity telemetry (dev-only). `slotmap::SlotMap` is not one of captrack's
+# natively-wrapped collection types, so tests/captrack_probe.rs drives its
+# public registry API (record_creation/record_sample) directly rather than
+# via the CapInspect trait/macros. `telemetry` is required for the registry
+# module to exist at all.
+captrack = { version = "0.1", features = ["telemetry"] }
+
+[[bench]]
+name = "region_bench"
+harness = false

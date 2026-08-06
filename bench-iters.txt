@@ -1,0 +1,14 @@
+# Fixed-iteration bench manifest (bench-scale-tool).
+# Format: <bin>::<id> = <iterations>
+# Recalibrate: cargo bench -p <crate> --bench <bin> -- --calibrate <secs>
+# Counts are STATIC across runs so run wall-time is a comparable speed signal.
+# Hand-edit an N to pin/nudge it; delete a line to force recalibration.
+
+region_bench::region/get_hit = 231215417
+region_bench::region/get_stale = 222405491
+region_bench::region/insert = 2518132
+region_bench::region/iterate = 635499
+region_bench::region/remove = 2219415
+region_bench::sync_region/get_cloned_hit = 28054066
+region_bench::sync_region/insert = 2338931
+region_bench::sync_region/remove = 2082569
