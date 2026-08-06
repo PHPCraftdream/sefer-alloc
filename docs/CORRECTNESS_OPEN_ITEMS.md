@@ -1337,6 +1337,19 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     place rather than moved/renumbered — see item 16's identical note
     above; both fall under task M2/#623's broader numbering-cleanup scope.
 
+    **Update (2026-08-06, task #612/K17):** the "better" option gap-audit
+    R16 separately named (a bounded `cargo test --no-run` on MSRV) was also
+    implemented — the `msrv` CI job now runs `cargo test --no-run
+    --all-features` in addition to `cargo check --all-features`, verified
+    feasible first (exit 0, ~6 minutes build-only; the full dev-dependency
+    graph genuinely compiles under 1.88). This narrows, but does not fully
+    close, the gap this item's caveat describes: build-only coverage now
+    exists for every `#[cfg(test)]` path and dev-dependency, but the tests
+    still aren't EXECUTED on 1.88 (only compiled) — a construct that
+    compiles but panics/behaves differently only under 1.88 at runtime
+    would still slip through. The release-notes caveat above remains
+    accurate as stated and is not being reworded.
+
 20. **[T, filed 2026-08-04, R34-2/task #521] F11 residual — Round 31's
     CHANGELOG section still carries the "Runtime improvements this round: 0"
     collision shape, and Rounds 31/32 are out of section order
