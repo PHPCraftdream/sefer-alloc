@@ -1209,6 +1209,81 @@ R34-5 (task #524) — see "Recently resolved" below.)_
     (especially `sidecar`, which is on the `production` path) closes the
     largest remaining verification-coverage gaps.
 
+    **Status: PARTIALLY RESOLVED (2026-08-06, task #606/K11) — 2 of 5 claims
+    corrected, 2 real CI-wiring gaps closed, 2 seams remain genuinely
+    uncovered (accepted risk, see below).**
+
+    - **`registry::heap_slot`'s claim was already stale when filed.**
+      `tests/regression_xthread_thread_free_alias_miri.rs` (its own header
+      comment: "`Sync` `HeapSlot`, mirroring W3) is required") already
+      exercises the exact `unsafe impl Sync for HeapSlot` this item names,
+      under real cross-thread miri, and was already wired into
+      `ci.yml`'s `miri-plain` job (line ~973) before this item was even
+      filed. No action needed — the original claim was simply wrong.
+    - **`alloc_core::sidecar` / `alloc_core::large_cache_extended` — real
+      gap, partially closed.** `tests/segment_directory_a5_miri.rs` (R7-A5's
+      own miri target) already existed, already passed, and genuinely
+      exercises the shared `alloc_core::sidecar::OwnedSidecar` primitive
+      (via `os::reserve_directory_sidecar`/`deref_directory_sidecar`, which
+      call `sidecar::reserve_zeroed_with`/`sidecar::deref` directly — same
+      primitive `large_cache_extended.rs` calls) — but was never wired
+      into any CI job, so it never actually ran. Wired into `miri-core`
+      as a new step (commit `4dd0624`). Residual gap, explicitly NOT
+      closed: this test is BELOW-threshold only (`table.count() < 32`,
+      the sidecar never actually materialises) — the test's own header
+      comment explains why the full materialised path (reserve, rebuild,
+      lookup, set/clear bits, 32+ segments) is impractically slow under
+      miri and is instead covered only by NATIVE tests
+      (`segment_directory_a1.rs`/`_a2.rs`/`_a3.rs`/`_a5.rs`/`_a5_proptest.rs`).
+      The materialised-path `sidecar::reserve`/`deref` calls themselves —
+      the actual UB-sensitive boundary — remain unproven under miri.
+      Writing a miri-tractable materialised-threshold test (a lower
+      test-only threshold, or a direct unit-level `OwnedSidecar` miri test
+      that bypasses the 32-segment precondition entirely) is real
+      follow-up work, not attempted here.
+    - **A second, unrelated CI-wiring gap found and closed in the same
+      pass**: `tests/remote_fanin.rs`'s `remote_fanin_miri_minimal_retry_ub_check`
+      (a purpose-built minimal miri UB-detection harness for
+      `push_with_overflow_retry`'s retry path, per its own doc comment
+      "Harness 3: minimal miri UB-detection target") also existed, already
+      passed, and was also never wired into any CI job. Wired into
+      `miri-core` as its own step (commit `4dd0624`) — kept separate from
+      the pre-existing `reclaim_offset_unit` step rather than combined
+      with a positional test-name filter, after that combination was tried
+      first and found to silently zero `reclaim_offset_unit`'s own test
+      out of its run ("0 passed ... 1 filtered out") — the exact
+      false-PASS shape `miri-core`'s own header comment already documents
+      from a prior incident (a bare positional filter matching nothing
+      while still reporting green). Caught before landing, not shipped.
+    - **`global::sefer_alloc` (the `unsafe impl GlobalAlloc` boundary
+      itself) and `global::fallback` (the `static mut MaybeUninit<HeapCore>`
+      plus spinlock) — genuinely zero miri/loom/kani coverage, confirmed by
+      direct grep across `src/` and `tests/`, ACCEPTED AS RESIDUAL RISK for
+      this release rather than closed.** Both are exercised extensively by
+      ORDINARY (non-miri/loom) integration tests (`tests/global_alloc.rs`,
+      `tests/global_alloc_mt.rs`, `tests/global_alloc_installed.rs`, and
+      indirectly by the whole test suite, since `SeferAlloc` is the
+      `#[global_allocator]` under `--features production`) — functional or
+      logic bugs in these paths would be caught. What miri/loom
+      specifically add beyond that — Stacked/Tree Borrows aliasing
+      violations, data races invisible without a memory model, the exact
+      class of bug `heap_slot`'s own dedicated test above was written to
+      catch for a DIFFERENT boundary — remain unproven here. Rationale for
+      accepting this rather than blocking release: (a) `global::sefer_alloc`'s
+      own trait impl is a thin TLS-lookup-and-dispatch wrapper (the heavy
+      unsafe logic it delegates to — `HeapCore::alloc`/`dealloc` — already
+      has substantial miri coverage via `reclaim_offset_unit`,
+      `decommit_miri_cycle`, and now
+      `remote_fanin_miri_minimal_retry_ub_check` above); (b)
+      `global::fallback`'s pre-TLS/post-teardown windows are, by the
+      module's own doc comment, rare and effectively single-threaded in
+      practice, narrowing the real-world UB surface relative to the hot
+      per-thread path. Writing dedicated miri/loom harnesses for both
+      remains real, valuable follow-up work, not attempted here — this
+      status update is the explicit "record the accepted residual risk"
+      resolution K11's own filing offered as an alternative to full
+      harness-writing.
+
 18. **[T, filed 2026-08-04, R34-2/task #521] kani proves only the smallest
     seam and a deprecated tier — two highest-value CBMC-reachable properties
     are unproven (`docs/reviews/2026-08-04-release-stabilization-audit.md` G4
