@@ -33,10 +33,20 @@ fn region_stale_handle_returns_none() {
     let mut r: Region<u32> = Region::new();
 
     let h_old = r.insert(1u32);
+    let cap_after_first = r.capacity();
+
     r.remove(h_old); // retire slot; generation bumped inside slotmap
+    assert_eq!(r.len(), 0, "length after remove");
 
     // Insert a new value — may reuse the same physical slot.
+    // Verify slot reuse actually happened by checking capacity didn't grow.
     let h_new = r.insert(2u32);
+    assert_eq!(
+        r.capacity(),
+        cap_after_first,
+        "second insert reused freed slot (no capacity growth)"
+    );
+    assert_eq!(r.len(), 1, "length after second insert");
 
     // Old handle must NOT resolve (generation mismatch).
     assert!(r.get(h_old).is_none(), "stale handle must not resolve (I3)");
