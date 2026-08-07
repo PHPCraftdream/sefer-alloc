@@ -72,6 +72,42 @@ fn main() {
         });
     }
 
+    // Holey iteration: 50% holes (2,000 insert, remove every other, 1,000 live).
+    {
+        let mut r: Region<u64> = Region::new();
+        let mut handles: Vec<Handle<u64>> = Vec::new();
+        // Insert 2,000 values
+        for i in 0..2_000 {
+            handles.push(r.insert(i));
+        }
+        // Remove every other one, leaving 1,000 live values with 1,000 holes
+        for i in (0..2_000).step_by(2) {
+            r.remove(handles[i]);
+        }
+        h.bench("st/holey_sweep", move || {
+            let sum: u64 = r.iter().sum();
+            black_box(sum);
+        });
+    }
+
+    // Sparse iteration: 90% holes (10,000 insert, remove 9,000, 1,000 live).
+    {
+        let mut r: Region<u64> = Region::new();
+        let mut handles: Vec<Handle<u64>> = Vec::new();
+        // Insert 10,000 values
+        for i in 0..10_000 {
+            handles.push(r.insert(i));
+        }
+        // Remove 9,000, leaving 1,000 live values with 9,000 holes
+        for handle in handles.iter().take(9_000) {
+            r.remove(*handle);
+        }
+        h.bench("st/sparse_sweep", move || {
+            let sum: u64 = r.iter().sum();
+            black_box(sum);
+        });
+    }
+
     // Steady-state churn: remove then reinsert the same entry, keeping map size constant.
     // Times ONLY the churn cost, not teardown or cold allocation.
     {

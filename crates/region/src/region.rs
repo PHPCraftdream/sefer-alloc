@@ -100,6 +100,12 @@ impl<T> Region<T> {
     }
 
     /// Current value-storage capacity, in entries.
+    ///
+    /// Note: the underlying `slotmap` provides no shrink/compact operation of any kind.
+    /// Capacity — and therefore per-sweep iteration cost — is permanently bounded BELOW
+    /// by the historical high-water mark of live entries. The only way to reclaim that
+    /// cost is to build a fresh `Region` and re-insert (which invalidates every
+    /// outstanding handle from the old one).
     #[must_use]
     pub fn capacity(&self) -> usize {
         self.inner.capacity()
@@ -166,6 +172,14 @@ impl<T> Region<T> {
     /// skipping tombstone holes — so this is NOT cache-dense over live values
     /// (a `DenseSlotMap`-backed store would be); see
     /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md>.
+    ///
+    /// Note: iteration cost is proportional to the slot-array length, not to
+    /// the live-value count. Since the underlying `slotmap` provides no shrink
+    /// operation, the slot-array length is permanently bounded below by the
+    /// historical high-water mark of live entries — a post-churn region with
+    /// many holes pays iteration cost proportional to that high-water mark,
+    /// even if few values remain live. See `capacity()`'s documentation for
+    /// the full permanence semantics.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.inner.values()
     }
@@ -178,6 +192,10 @@ impl<T> Region<T> {
 
     /// Removes every value, invalidating all outstanding handles, while
     /// retaining allocated capacity. The region is reusable afterwards.
+    ///
+    /// Note: `clear` does NOT shrink the underlying slot array; the capacity
+    /// remains at the historical high-water mark of live entries. See
+    /// `capacity()`'s documentation for the full permanence semantics.
     ///
     /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
     /// values already visited (including the panicking one) are removed and

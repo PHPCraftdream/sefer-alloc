@@ -132,7 +132,9 @@ aren't read as more precise than they are:
 | `Region::get` (hit) | 5.0 (4.3–6.5) |
 | `Region::get` (stale handle) | 5.0 (4.7–5.1) |
 | `Region::remove` (cold: fresh map with one entry, teardown included) | 97 (96–111) |
-| `Region::iter` (1,000 live values, sum) | 1,319 (1,292–1,546) |
+| `Region::iter` (1,000 live values, sum, zero holes — best case) | 1,319 (1,292–1,546) |
+| `Region::iter` (1,000 live values, sum, 50% holes — post-churn cost) | 2,476 (2,228–2,510) |
+| `Region::iter` (1,000 live values, sum, 90% holes — post-churn cost) | 11,482 (10,955–11,845) |
 | `Region` steady-state churn (remove + reinsert, map size constant) | 3.6 (3.3–4.2) |
 | `SyncRegion::insert` (uncontended, cold: fresh map + teardown) | 281 (269–324) |
 | `SyncRegion::get_cloned` (hit) | 34.5 (34.2–36.0) |
@@ -144,6 +146,14 @@ means the fixture (a fresh `Region`/`SyncRegion`) is dropped inside the timed wi
 these numbers include allocation, teardown, and cold-path overhead, not just the
 steady-state operation cost. See the `steady-state churn` rows for the warm-path
 performance.
+
+**Iteration cost scales with high-water mark, not live count:** the three `Region::iter`
+rows measure the same 1,000 live values, but with different hole percentages (0%, 50%, 90%).
+Since the underlying `slotmap` provides no shrink operation, iteration cost is proportional
+to the slot-array length, which stays at the historical high-water mark of live entries.
+The 50%-holes case (2,000 high-water mark) is ~1.9× the zero-holes baseline; the 90%-holes
+case (10,000 high-water mark) is ~8.7×. The only way to reclaim that cost is to build a
+fresh `Region` and re-insert (which invalidates every outstanding handle from the old one).
 
 `get`'s single-indirection lookup is roughly 30–60x cheaper than `insert`,
 consistent with `slotmap::SlotMap`'s own documented lookup/churn tradeoff
