@@ -126,14 +126,22 @@ aren't read as more precise than they are:
 
 | Workload | ns/op (median, range) |
 |---|---|
-| `Region::insert` | 290 (242–327) |
+| `Region::insert` (cold: fresh map, allocation + full teardown inside the timed window) | 290 (242–327) |
 | `Region::get` (hit) | 5.0 (4.3–6.5) |
 | `Region::get` (stale handle) | 5.0 (4.7–5.1) |
-| `Region::remove` | 97 (96–111) |
+| `Region::remove` (cold: fresh map with one entry, teardown included) | 97 (96–111) |
 | `Region::iter` (1,000 live values, sum) | 1,319 (1,292–1,546) |
-| `SyncRegion::insert` (uncontended) | 281 (269–324) |
+| `Region` steady-state churn (remove + reinsert, map size constant) | 3.6 (3.3–4.2) |
+| `SyncRegion::insert` (uncontended, cold: fresh map + teardown) | 281 (269–324) |
 | `SyncRegion::get_cloned` (hit) | 34.5 (34.2–36.0) |
-| `SyncRegion::remove` (uncontended) | 124 (123–130) |
+| `SyncRegion::remove` (uncontended, cold: fresh map with one entry) | 124 (123–130) |
+| `SyncRegion` steady-state churn (remove + reinsert, map size constant) | 76.0 (72.1–84.2) |
+
+**Note:** The `insert` and `remove` rows above are measured with `bench_batched`, which
+means the fixture (a fresh `Region`/`SyncRegion`) is dropped inside the timed window —
+these numbers include allocation, teardown, and cold-path overhead, not just the
+steady-state operation cost. See the `steady-state churn` rows for the warm-path
+performance.
 
 `get`'s single-indirection lookup is roughly 30–60x cheaper than `insert`,
 consistent with `slotmap::SlotMap`'s own documented lookup/churn tradeoff

@@ -72,6 +72,17 @@ fn main() {
         });
     }
 
+    // Steady-state churn: remove then reinsert the same entry, keeping map size constant.
+    // Times ONLY the churn cost, not teardown or cold allocation.
+    {
+        let mut r: Region<u64> = Region::new();
+        let mut handle: Handle<u64> = r.insert(42u64);
+        h.bench("st/churn", move || {
+            let v = r.remove(handle).unwrap();
+            handle = r.insert(v);
+        });
+    }
+
     // ── SyncRegion<T> — RwLock-wrapped one-shot convenience methods ──────
 
     h.bench_batched("sync/insert", SyncRegion::<u64>::new, |sr| {
@@ -98,6 +109,16 @@ fn main() {
             black_box(sr.remove(handle));
         },
     );
+
+    // Steady-state churn for SyncRegion: same pattern as st/churn, through the one-shot API.
+    {
+        let sr: SyncRegion<u64> = SyncRegion::new();
+        let mut handle: Handle<u64> = sr.insert(42u64);
+        h.bench("sync/churn", move || {
+            let v = sr.remove(handle).unwrap();
+            handle = sr.insert(v);
+        });
+    }
 
     // ── raw slotmap::SlotMap — wrapper-overhead comparison ───────────────
     //
@@ -134,6 +155,16 @@ fn main() {
             black_box(m.remove(key));
         },
     );
+
+    // Steady-state churn for raw SlotMap: same pattern as st/churn.
+    {
+        let mut m: SlotMap<DefaultKey, u64> = SlotMap::new();
+        let mut k: DefaultKey = m.insert(42u64);
+        h.bench("raw/churn", move || {
+            let v = m.remove(k).unwrap();
+            k = m.insert(v);
+        });
+    }
 
     h.run();
 }
