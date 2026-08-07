@@ -7,11 +7,16 @@ green.
 
 - **I1 — resolution.** A handle returned by `insert` resolves via `get` to the
   inserted value until it is `remove`d.
-- **I2 — tombstone.** After `remove(h)`, `get(h)` is `None` forever and a
+- **I2 — tombstone.** After `remove(h)`, `get(h)` returns `None` for roughly
+  `2^31` reuse cycles of that slot (a stale handle that has survived that many
+  insert/remove cycles may wrap and spuriously resolve to a later value). A
   second `remove(h)` is a no-op `None`.
 - **I3 — no ABA.** A stale handle — one whose slot has since been reused —
-  never resolves to a live value. The slot's generation is bumped on removal,
-  so the old handle fails the generation check and yields `None`.
+  does not resolve to a live value for roughly `2^31` reuse cycles of that
+  slot. The slot's generation is bumped on removal (incremented by 2 per
+  `remove_from_slot` in slotmap), so the old handle fails the generation check
+  and yields `None`. After ~2^31 cycles the generation wraps and a very old
+  handle may alias a later value. Memory safety is never affected.
 - **I4 — accounting.** `len()` equals the number of live entries, and
   `is_empty()` agrees.
 - **I5 — drop-once.** Every live value is dropped exactly once: on `remove`
@@ -86,7 +91,13 @@ source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
   `segment_of(ptr) = ptr & ~(SEGMENT-1)`; cross-thread free (Phase 10) reaches
   exactly the owning heap and reclaims exactly once.
 - **M8 — generational coherence (Handle face).** A stale `Handle` into reused
-  memory never resolves to a live value (I3 carried onto the segment substrate).
+  memory does not resolve to a live value within the segment substrate's own
+  generation-reuse budget (I3 carried onto the segment substrate). NOTE
+  (2026-08-07): I3's own bound above is `sefer_region`/`slotmap`'s 32-bit
+  wrap, roughly `2^31` reuse cycles of one *slot* — that specific figure is
+  NOT re-asserted here for the segment substrate, which uses its own
+  generation/tag mechanism, not `slotmap`, and has not been independently
+  re-measured for this document.
 
 ## Why handles, not pointers
 

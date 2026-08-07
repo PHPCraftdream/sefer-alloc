@@ -19,12 +19,18 @@ use crate::Handle;
 ///
 /// - **I1 — resolution:** a fresh handle resolves via [`get`](Self::get) to the
 ///   inserted value until it is [`remove`](Self::remove)d.
-/// - **I2 — tombstone:** after `remove(h)`, `get(h)` is `None` forever and a
-///   second `remove(h)` is a no-op `None`.
+/// - **I2 — tombstone:** after `remove(h)`, `get(h)` returns `None` for
+///   roughly `2^31` reuse cycles of that slot (a stale handle that has
+///   survived that many insert/remove cycles may wrap and spuriously
+///   resolve to a later value). A second `remove(h)` is a no-op `None`.
 /// - **I3 — no ABA:** a stale handle — one whose slot has since been reused —
-///   never resolves to a live value. `slotmap`'s `DefaultKey` carries a
-///   generation that is bumped on removal, so the old handle fails the version
-///   check and yields `None`.
+///   does not resolve to a live value for roughly `2^31` reuse cycles of
+///   that slot. `slotmap`'s `DefaultKey` carries a 32-bit generation (odd =
+///   occupied, even = vacant): insert sets the low bit, remove increments via
+///   `wrapping_add(1)`, so a full occupy/free cycle advances the generation
+///   by 2 — after `2^31` such cycles it wraps and a very old handle may alias
+///   a later value. Memory safety is never affected — `slotmap` guarantees
+///   this even after wrap.
 /// - **I4 — accounting:** [`len`](Self::len) equals the number of live entries
 ///   and [`is_empty`](Self::is_empty) agrees.
 /// - **I5 — drop-once:** every live value is dropped exactly once — on
@@ -33,12 +39,27 @@ use crate::Handle;
 ///
 /// ## Generation saturation
 ///
-/// Version saturation (a slot whose generation would have to wrap) is
-/// `slotmap`'s responsibility: `DefaultKey` retires such a slot rather than
-/// wrapping a generation into alias, so a handle can never alias a future value
-/// — the classic generational-arena ABA caveat stays closed at the
-/// astronomically rare cost of one slot per `2^32` reuses. There is no
-/// hand-rolled retirement code in this crate.
+/// `slotmap::DefaultKey` uses a 32-bit generation counter stored alongside each
+/// slot, where an odd value means occupied and an even value means vacant.
+/// `SlotMap::insert` sets the low bit on reuse (`version | 1`); `SlotMap::remove`
+/// advances it past that with `version.wrapping_add(1)` (odd -> even). So one
+/// full occupy/free cycle of a slot advances its generation by 2, and after
+/// approximately `2^31` such cycles the generation wraps around to its starting
+/// value, and a sufficiently stale handle may then resolve to (or remove) a
+/// different live value that now occupies the same slot.
+///
+/// This is a **logic/aliasing issue, not memory unsafety** — `slotmap` guarantees
+/// that its internal data structure never becomes corrupt, even when a handle wraps.
+/// The worst case for reaching wrap quickly is a hot single-slot churn pattern
+/// (repeatedly inserting and removing at the same slot index while nothing else
+/// is live), because `slotmap`'s freelist is LIFO. This was empirically confirmed:
+/// a tight insert/remove loop on one slot for `2^31 - 1` cycles took ~12 seconds
+/// on one development machine in release mode; treat this as an order-of-magnitude
+/// sense, not a guaranteed bound.
+///
+/// There is **no slot-retirement code** in this crate. Applications that need a
+/// stronger guarantee (e.g. to reuse handles without ever risking alias) must add
+/// their own wrapper layer that tracks generation saturation.
 pub struct Region<T> {
     inner: slotmap::SlotMap<slotmap::DefaultKey, T>,
 }

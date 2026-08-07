@@ -24,11 +24,15 @@
 //!
 //! - **I1 — resolution:** a fresh handle resolves via [`Region::get`] to the
 //!   inserted value until it is [`Region::remove`]d.
-//! - **I2 — tombstone:** after `remove(h)`, `get(h)` is `None` forever; a
-//!   second `remove(h)` is a no-op `None`.
+//! - **I2 — tombstone:** after `remove(h)`, `get(h)` returns `None` for
+//!   roughly `2^31` reuse cycles of that slot (a stale handle that has
+//!   survived that many insert/remove cycles may wrap and spuriously
+//!   resolve to a later value). A second `remove(h)` is a no-op `None`.
 //! - **I3 — no ABA:** a stale handle — one whose slot has since been reused —
-//!   never resolves to a live value. slotmap's `DefaultKey` carries a generation
-//!   that is bumped on removal, so the old handle fails the version check.
+//!   does not resolve to a live value for roughly `2^31` reuse cycles of
+//!   that slot. slotmap's `DefaultKey` carries a generation counter bumped on
+//!   removal, so the old handle fails the version check. After ~2^31 cycles the
+//!   generation wraps and a very old handle may alias a later value.
 //! - **I4 — accounting:** [`Region::len`] equals the number of live entries and
 //!   [`Region::is_empty`] agrees.
 //! - **I5 — drop-once:** every live value is dropped exactly once — on `remove`

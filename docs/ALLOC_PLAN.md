@@ -140,7 +140,14 @@ Lifted into [`INVARIANTS.md`](INVARIANTS.md) when P8 lands. In addition to I1–
 - **M7 — owner routing:** a cross-thread free reaches exactly the owning heap
   (O(1) via segment alignment) and is reclaimed exactly once.
 - **M8 — generational coherence (Handle face):** a stale `Handle` into reused
-  memory never resolves to a live value (I3 carried to the segment substrate).
+  memory does not resolve to a live value within the segment substrate's own
+  generation-reuse budget (I3 carried to the segment substrate). NOTE
+  (2026-08-07): I3's own bound for `sefer_region::Region` is slotmap's 32-bit
+  wrap, roughly `2^31` reuse cycles of one *slot* — that specific figure is
+  NOT re-asserted here for the segment substrate, which uses its own
+  generation/tag mechanism, not `slotmap`, and has not been independently
+  re-measured for this document. Do not copy the `2^31` figure to this line
+  without first checking the segment substrate's actual generation width.
 
 ---
 

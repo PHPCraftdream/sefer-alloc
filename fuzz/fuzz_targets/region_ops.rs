@@ -5,8 +5,10 @@
 //! (I1–I5 from `docs/INVARIANTS.md`):
 //!
 //! - I1: a fresh handle resolves to the inserted value.
-//! - I2: a removed handle is `None` forever; a second remove is a no-op.
-//! - I3: a stale handle (slot reused) never resolves to a live value.
+//! - I2: a removed handle is `None` for roughly `2^31` reuse cycles of that
+//!   slot; a second remove is a no-op.
+//! - I3: a stale handle (slot reused) does not resolve to a live value for roughly
+//!   `2^31` reuse cycles of that slot. After wrap it may alias a later value.
 //! - I4: `len()` tracks the live count exactly.
 //! - I5: drop-once — at run end, drops == inserts (no double-free, no leak).
 //!

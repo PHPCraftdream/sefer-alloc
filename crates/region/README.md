@@ -60,12 +60,16 @@ assert!(region.get(h).is_none());
 
 - **I1 — resolution:** a fresh handle resolves via `get` to the inserted value
   until it is `remove`d.
-- **I2 — tombstone:** after `remove(h)`, `get(h)` is `None` forever; a second
-  `remove(h)` is a no-op `None`.
+- **I2 — tombstone:** after `remove(h)`, `get(h)` returns `None` for
+  roughly `2^31` reuse cycles of that slot (a stale handle that has
+  survived that many insert/remove cycles may wrap and spuriously
+  resolve to a later value). A second `remove(h)` is a no-op `None`.
 - **I3 — no ABA:** a stale handle — one whose slot has since been reused for a
-  new value — never resolves to the new value. `slotmap`'s `DefaultKey` carries
-  a generation counter bumped on removal, so the old handle fails the version
-  check and yields `None`.
+  new value — does not resolve to the new value for roughly `2^31` reuse cycles of
+  that slot. `slotmap`'s `DefaultKey` carries a generation counter bumped on
+  removal, so the old handle fails the version check and yields `None`. After
+  ~2^31 cycles the generation wraps and a very old handle may alias a later value.
+  Memory safety is never affected.
 - **I4 — accounting:** `len()` equals the number of live entries; `is_empty()`
   agrees.
 - **I5 — drop-once:** every live value is dropped exactly once — on `remove`

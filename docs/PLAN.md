@@ -121,9 +121,11 @@ The properties every change must keep green (full text in
 [`INVARIANTS.md`](INVARIANTS.md)):
 
 - **I1 — resolution:** a fresh handle resolves to its value until removed.
-- **I2 — tombstone:** a removed handle is `None` forever; second remove is a
-  no-op.
-- **I3 — no ABA:** a stale handle (slot reused) never resolves to a live value.
+- **I2 — tombstone:** a removed handle is `None` for roughly `2^31` reuse cycles
+  of that slot; second remove is a no-op.
+- **I3 — no ABA:** a stale handle (slot reused) does not resolve to a live value
+  for roughly `2^31` reuse cycles of that slot. After wrap it may alias a later
+  value.
 - **I4 — accounting:** `len()` equals the live count.
 - **I5 — drop-once:** every value is dropped exactly once (on remove or on
   `Region` drop), never twice, never leaked.
@@ -167,7 +169,8 @@ the objective, tool-checkable condition for "done".
     only adding the typed `Handle<T>` boundary.
   3. **Generation saturation / slot retirement** is now `slotmap`'s
     responsibility — `DefaultKey` already handles version saturation safely
-    (it retires a slot rather than wrapping a generation into alias). The
+    (it uses a 32-bit generation counter that wraps after ~2^31 reuse cycles of
+  the same slot; memory safety is never affected). The
     hand-rolled retirement is **removed**; note this explicitly so it is not
     re-introduced.
   4. **Keep the proptest differential harness** as a conformance check on our
@@ -451,7 +454,8 @@ remote-free depth, 7c/7d the locality apex and the parallel byte tier.
   generational core is `slotmap`'s, and our effort is the typed membrane + the
   concurrent/byte tiers.
 - **~~Generation wrap (`u32`).~~** Now `slotmap`'s responsibility — `DefaultKey`
-  handles version saturation safely (retires a slot rather than wrapping into
+  handles version saturation safely (uses a 32-bit generation counter that wraps
+  after ~2^31 reuse cycles of the same slot; memory safety is never affected).
   alias). The hand-rolled retirement is removed; the Phase 1 gate no longer
   asserts it.
 - **`u32` index ceiling.** A region holds up to `u32::MAX` entries; documented.
