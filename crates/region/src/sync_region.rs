@@ -9,9 +9,8 @@ use crate::{Handle, Region};
 /// This is a coarse-grained `std::sync::RwLock<Region<T>>` with an ergonomic
 /// guard-based API: multiple readers (`read`) or one writer (`write`) at a time.
 /// It is the *always-shippable* concurrent answer: correct under any interleaving
-/// because every mutation serialises through the lock. Lock-free tiers
-/// (Phase 3b) are a later opt-in upgrade for read-mostly hot paths; until those
-/// land and clear loom/TSan, this is the default for shared mutable regions.
+/// because every mutation serialises through the lock. Finer-grained or lock-free
+/// alternatives are out of scope for this crate.
 ///
 /// The wrapper stays `#![forbid(unsafe_code)]`: all interior mutability comes
 /// from `std`'s `RwLock`. Use [`read`](Self::read) / [`write`](Self::write) for
@@ -95,7 +94,12 @@ impl<T> SyncRegion<T> {
 
     /// Whether `handle` currently resolves to a live value.
     ///
-    /// One-shot convenience that locks for read internally.
+    /// One-shot convenience that locks for read internally. Note that under
+    /// concurrency a `true` result may be stale by the time the caller acts on it;
+    /// acting on a stale handle can only ever produce `None` at the point of use,
+    /// never resolve to a wrong live value within roughly `2^31` reuse cycles of
+    /// that slot. Callers who need an atomic check-then-act should use
+    /// [`write`](Self::write) instead of two separate lock acquisitions.
     #[must_use]
     pub fn contains(&self, handle: Handle<T>) -> bool {
         self.read().contains(handle)
@@ -127,8 +131,8 @@ impl<T> SyncRegion<T> {
         self.write().clear();
     }
 
-    /// Clones the value for `handle` out without holding a guard, or `None` if
-    /// stale/removed. One-shot convenience that locks for read internally.
+    /// Clones the value for `handle` out without leaving the caller holding a guard,
+    /// or `None` if stale/removed. One-shot convenience that locks for read internally.
     ///
     /// Prefer this over [`read`](Self::read) when you only need a by-value copy
     /// and don't want to hold the guard across other work.

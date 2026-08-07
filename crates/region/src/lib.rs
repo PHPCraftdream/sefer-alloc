@@ -3,7 +3,7 @@
 //! A thin typed membrane over [`slotmap`](https://docs.rs/slotmap): values live
 //! in `slotmap::SlotMap` — a contiguous slot array resolved by a single
 //! indirection (the lookup/churn axis it was benchmarked to win; see
-//! `docs/BENCHMARKS.md`). `SlotMap` keeps tombstone holes after removals, so it
+//! <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md>). `SlotMap` keeps tombstone holes after removals, so it
 //! is NOT always-compact; `DenseSlotMap` is the dense-iteration alternative.
 //! Every operation exposes only typed [`Handle<T>`] values — raw `DefaultKey`s
 //! never escape the crate boundary.

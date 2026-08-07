@@ -7,7 +7,7 @@ use crate::Handle;
 /// A thin typed membrane over `slotmap::SlotMap<slotmap::DefaultKey, T>`.
 /// `SlotMap` keeps values in a contiguous slot array resolved by a single
 /// indirection (the lookup/churn axis it was benchmarked to win; see
-/// `docs/BENCHMARKS.md`), but it leaves tombstone holes after removals — it is
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md>), but it leaves tombstone holes after removals — it is
 /// NOT always-compact, and iteration walks the slot array skipping holes
 /// (~30 % slower than a `DenseSlotMap`, which packs live values for dense
 /// iteration). Every operation delegates to `slotmap` while exposing only typed
@@ -164,7 +164,8 @@ impl<T> Region<T> {
     /// Iterates the live values. The order is unspecified and changes as
     /// elements are removed. Walks the underlying `SlotMap`'s slot array,
     /// skipping tombstone holes — so this is NOT cache-dense over live values
-    /// (a `DenseSlotMap`-backed store would be); see `docs/BENCHMARKS.md`.
+    /// (a `DenseSlotMap`-backed store would be); see
+    /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md>.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.inner.values()
     }
