@@ -37,6 +37,21 @@ use crate::{Handle, Region};
 /// multi-op transactions need all-or-nothing semantics, must implement their
 /// own signaling — this crate provides none beyond what's documented here.
 ///
+/// ## Reentrancy
+///
+/// [`get_cloned`](Self::get_cloned) runs `T::clone`, and [`clear`](Self::clear) runs each
+/// `T::Drop`, while the internal lock is held. If `T`'s `Clone` or `Drop` implementation
+/// re-enters the same `SyncRegion` (directly or transitively), the thread deadlocks or
+/// panics per `std::sync::RwLock`'s documented same-thread reacquisition behavior.
+/// Even non-reentrant but slow `Clone`/`Drop` delays every other user: `clear` holds
+/// the write lock across its entire linear sweep, while `get_cloned` holds the read lock
+/// across the clone (readers are unaffected by the latter, but writers block). Never
+/// call a one-shot convenience method (or a nested `read`/`write`) while the calling
+/// thread already holds a read/write guard from the same `SyncRegion` — the one-shots
+/// lock internally and the nested acquisition deadlocks (`std`'s `RwLock` is not reentrant;
+/// even read-after-read can block behind a queued writer, since the platform's priority
+/// policy is unspecified).
+///
 /// ## Contended reads
 ///
 /// Under multi-threaded read contention, the one-shot convenience methods
@@ -72,7 +87,9 @@ impl<T> SyncRegion<T> {
     /// Locks for shared read, returning a guard that hands out `&Region<T>`.
     ///
     /// Multiple readers may hold the guard concurrently. Recovers from poison
-    /// (see the [poisoning policy](Self#poisoning-policy)).
+    /// (see the [poisoning policy](Self#poisoning-policy)). Returns `std`'s
+    /// own guard type directly — a deliberate, stable API commitment; migrating
+    /// the internal lock implementation in the future would be a breaking change.
     pub fn read(&self) -> RwLockReadGuard<'_, Region<T>> {
         self.inner.read().unwrap_or_else(PoisonError::into_inner)
     }
@@ -80,7 +97,9 @@ impl<T> SyncRegion<T> {
     /// Locks for exclusive write, returning a guard that hands out `&mut Region<T>`.
     ///
     /// Blocks all other readers and writers until dropped. Recovers from poison
-    /// (see the [poisoning policy](Self#poisoning-policy)).
+    /// (see the [poisoning policy](Self#poisoning-policy)). Returns `std`'s
+    /// own guard type directly — a deliberate, stable API commitment; migrating
+    /// the internal lock implementation in the future would be a breaking change.
     pub fn write(&self) -> RwLockWriteGuard<'_, Region<T>> {
         self.inner.write().unwrap_or_else(PoisonError::into_inner)
     }
@@ -99,7 +118,10 @@ impl<T> SyncRegion<T> {
 
     /// Removes and returns the value for `handle`, or `None` if stale/removed.
     ///
-    /// One-shot convenience that locks for write internally.
+    /// One-shot convenience that locks for write internally. The write guard is
+    /// released before the removed value is dropped by the caller, so a reentrant
+    /// `Drop` on the removed value is safe against the deadlock class described
+    /// in the [reentrancy section](Self#reentrancy).
     pub fn remove(&self, handle: Handle<T>) -> Option<T> {
         self.write().remove(handle)
     }
