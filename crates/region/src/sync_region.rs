@@ -17,6 +17,8 @@ use crate::{Handle, Region};
 /// multi-operation transactions (the borrows tie to the guard), or the
 /// one-shot convenience methods ([`insert`](Self::insert),
 /// [`remove`](Self::remove), …) which take `&self` and lock internally.
+/// `reserve` and `capacity` have no one-shot form — reach them through a
+/// held guard, e.g. `sr.write().reserve(n)` / `sr.read().capacity()`.
 ///
 /// ## Poisoning policy
 ///
@@ -80,6 +82,13 @@ impl<T> SyncRegion<T> {
     }
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
+    ///
+    /// Note: for realistic `capacity` values, this reserves exactly the requested
+    /// amount. At the extreme (e.g. `capacity` near `usize::MAX`), the underlying
+    /// `slotmap` arithmetic may wrap in a release build and result in a far
+    /// smaller capacity than requested; use `sr.read().capacity()` to verify the
+    /// actual reserved amount after construction (`SyncRegion` has no one-shot
+    /// `capacity()` — reach it through a held guard).
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -135,8 +144,10 @@ impl<T> SyncRegion<T> {
     /// concurrency a `true` result may be stale by the time the caller acts on it;
     /// acting on a stale handle can only ever produce `None` at the point of use,
     /// never resolve to a wrong live value within roughly `2^31` reuse cycles of
-    /// that slot. Callers who need an atomic check-then-act should use
-    /// [`write`](Self::write) instead of two separate lock acquisitions.
+    /// that slot. Callers who need an atomic check-then-act use [`write`](Self::write);
+    /// callers who only need an atomic check-then-**read** can use the cheaper
+    /// [`read`](Self::read) instead — either way, one held guard instead of two
+    /// separate lock acquisitions.
     #[must_use]
     pub fn contains(&self, handle: Handle<T>) -> bool {
         self.read().contains(handle)
@@ -152,6 +163,9 @@ impl<T> SyncRegion<T> {
     }
 
     /// Whether the region holds no live values (I4).
+    ///
+    /// One-shot convenience that locks for read internally. Note that under
+    /// concurrency this is a momentary snapshot, not a stable property.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.read().is_empty()
