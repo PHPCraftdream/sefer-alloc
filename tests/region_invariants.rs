@@ -20,8 +20,9 @@ impl Drop for DropCounter {
     }
 }
 
-/// I1 / I2: insert→get→remove keeps other handles valid; a removed handle is
-/// `None` forever; a second remove is a no-op `None`.
+/// I1 / I2: insert→get→remove keeps other handles valid; a removed handle
+/// resolves to `None` for roughly `2^31` reuse cycles of that slot; a second
+/// remove is a no-op `None`.
 #[test]
 fn insert_get_remove_keeps_others_valid() {
     let mut r = Region::new();

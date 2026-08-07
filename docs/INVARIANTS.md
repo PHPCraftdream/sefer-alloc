@@ -13,10 +13,13 @@ green.
   second `remove(h)` is a no-op `None`.
 - **I3 — no ABA.** A stale handle — one whose slot has since been reused —
   does not resolve to a live value for roughly `2^31` reuse cycles of that
-  slot. The slot's generation is bumped on removal (incremented by 2 per
-  `remove_from_slot` in slotmap), so the old handle fails the generation check
-  and yields `None`. After ~2^31 cycles the generation wraps and a very old
-  handle may alias a later value. Memory safety is never affected.
+  slot. `slotmap`'s `DefaultKey` carries a 32-bit generation (odd = occupied,
+  even = vacant): `insert` sets the low bit on reuse (`version | 1`), and
+  `remove` separately advances it via `remove_from_slot`'s
+  `version.wrapping_add(1)` — two different functions, so a full occupy/free
+  cycle advances the generation by 2, and the old handle fails the generation
+  check and yields `None`. After ~2^31 cycles the generation wraps and a very
+  old handle may alias a later value. Memory safety is never affected.
 - **I4 — accounting.** `len()` equals the number of live entries, and
   `is_empty()` agrees.
 - **I5 — drop-once.** Every live value is dropped exactly once: on `remove`

@@ -170,7 +170,7 @@ the objective, tool-checkable condition for "done".
   3. **Generation saturation / slot retirement** is now `slotmap`'s
     responsibility — `DefaultKey` already handles version saturation safely
     (it uses a 32-bit generation counter that wraps after ~2^31 reuse cycles of
-  the same slot; memory safety is never affected). The
+    the same slot; memory safety is never affected). The
     hand-rolled retirement is **removed**; note this explicitly so it is not
     re-introduced.
   4. **Keep the proptest differential harness** as a conformance check on our
@@ -456,8 +456,7 @@ remote-free depth, 7c/7d the locality apex and the parallel byte tier.
 - **~~Generation wrap (`u32`).~~** Now `slotmap`'s responsibility — `DefaultKey`
   handles version saturation safely (uses a 32-bit generation counter that wraps
   after ~2^31 reuse cycles of the same slot; memory safety is never affected).
-  alias). The hand-rolled retirement is removed; the Phase 1 gate no longer
-  asserts it.
+  The hand-rolled retirement is removed; the Phase 1 gate no longer asserts it.
 - **`u32` index ceiling.** A region holds up to `u32::MAX` entries; documented.
 
 ## 8. Decisions log
