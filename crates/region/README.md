@@ -147,6 +147,16 @@ these numbers include allocation, teardown, and cold-path overhead, not just the
 steady-state operation cost. See the `steady-state churn` rows for the warm-path
 performance.
 
+**Note on `SyncRegion` steady-state churn's range:** the landing commit's own message cites
+a wider spread (~69.6-84.2 ns/op) than the table's published 3-run median-of-3 (72.1-84.2)
+for the same workload — a broader across-multiple-runs sample was taken while iterating on
+the fix, of which the table publishes only the specific 3 runs the median is drawn from.
+Re-measured independently while auditing this note: three fresh runs came back 83.60-86.17
+ns/op, a third distinct range again — this workload's absolute number visibly drifts on this
+single noisy dev host from one measurement session to the next, more than most other rows in
+this table. Treat the published range as an order-of-magnitude anchor for this specific
+workload, not a tight bound.
+
 **Iteration cost scales with high-water mark, not live count:** the three `Region::iter`
 rows measure the same 1,000 live values, but with different hole percentages (0%, 50%, 90%).
 Since the underlying `slotmap` provides no shrink operation, iteration cost is proportional
