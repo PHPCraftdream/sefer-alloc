@@ -74,6 +74,12 @@ impl<T> Region<T> {
     }
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
+    ///
+    /// Note: for realistic `capacity` values, this reserves exactly the requested
+    /// amount. At the extreme (e.g. `capacity` near `usize::MAX`), the underlying
+    /// `slotmap` arithmetic may wrap in a release build and result in a far
+    /// smaller capacity than requested; use `capacity()` to verify the actual
+    /// reserved amount after construction.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -106,12 +112,24 @@ impl<T> Region<T> {
     /// reuses existing capacity and does not grow unboundedly (the backing
     /// stays bounded by the high-water mark of live entries). Delegates to
     /// `slotmap`'s `reserve`; may allocate more than asked to avoid frequent
-    /// reallocations. Panics if the new allocation size overflows `usize`.
+    /// reallocations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new allocation size overflows `usize`. Note: in a release
+    /// build (overflow-checks off), an `additional` argument near `usize::MAX`
+    /// may silently wrap in the underlying `slotmap` arithmetic (`len + additional`)
+    /// and result in a no-op rather than a panic. In a debug build, the same
+    /// argument instead panics with "attempt to add with overflow".
     pub fn reserve(&mut self, additional: usize) {
         self.inner.reserve(additional);
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
     pub fn insert(&mut self, value: T) -> Handle<T> {
         Handle::from_key(self.inner.insert(value))
     }

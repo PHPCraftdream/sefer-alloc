@@ -194,7 +194,7 @@ registry API directly rather than the usual macros):
   refill reuses freed slots rather than growing past the prior high-water
   mark. (`Region::reserve`'s own doc comment already claimed this; this is
   the first time it was actually measured rather than trusted.)
-- **`Region::with_capacity(n)` reserves exactly `n` up front** — no
+- **`Region::with_capacity(n)` reserves exactly `n` up front for realistic `n`** — no
   intermediate reallocation for a workload that stays within it. If you
   know your workload's peak live count ahead of time, pre-sizing avoids
   the ~2.3% organic-growth overhead entirely.

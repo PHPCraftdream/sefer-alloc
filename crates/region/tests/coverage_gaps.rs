@@ -435,6 +435,22 @@ fn region_reserve() {
     assert_eq!(r.len(), additional);
 }
 
+#[test]
+fn region_reserve_overflow_panics() {
+    // Region<T>::reserve() panics for genuine capacity-overflow arguments
+    // in both debug and release builds (profile-independent).
+    // usize::MAX / 2 is large enough to trigger overflow panic but not so
+    // large that the underlying len+additional arithmetic wraps in release.
+    use std::panic::{self, AssertUnwindSafe};
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut r: Region<i32> = Region::new();
+        r.reserve(usize::MAX / 2);
+    }));
+
+    assert!(result.is_err(), "reserve(usize::MAX / 2) should panic");
+}
+
 #[cfg(feature = "std")]
 mod sync_misc_tests {
     use sefer_region::SyncRegion;

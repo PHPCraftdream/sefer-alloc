@@ -78,6 +78,10 @@ impl<T> SyncRegion<T> {
     ///
     /// One-shot convenience that locks for write internally. For a transaction
     /// that does several ops under one lock, use [`write`](Self::write) instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
     pub fn insert(&self, value: T) -> Handle<T> {
         self.write().insert(value)
     }
