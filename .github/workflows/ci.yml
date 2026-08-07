@@ -752,6 +752,14 @@ jobs:
       # toolchain step above). Verified locally: both compile clean.
       - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
       - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
+      # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
+      # of gap, but UNLIKE the two crates above, sefer-region genuinely
+      # declares a `std` Cargo feature to disable (`default = ["std"]`,
+      # `std = ["slotmap/std"]`, gating `SyncRegion`) — so this is not a
+      # no-op flag for it, and the bare-metal target is what actually proves
+      # the `no_std + alloc` configuration its own README/keywords advertise.
+      # Verified locally: compiles clean.
+      - run: cargo build -p sefer-region --no-default-features --target thumbv7em-none-eabi
 
   msrv:
     # MSRV gate: `rust-version = "1.88"` is declared but never enforced, so an
