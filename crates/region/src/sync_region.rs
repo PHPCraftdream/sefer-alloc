@@ -28,6 +28,15 @@ use crate::{Handle, Region};
 /// `RwLockReadGuard`/`RwLockWriteGuard` recovery (`PoisonError::into_inner`),
 /// handing back the intact inner `Region` and letting callers continue. This
 /// keeps a panic in one thread from bricking the region for all others.
+///
+/// **Poison recovery guarantees container integrity only, not operation completion.**
+/// The recovered `Region` has no memory corruption, but an interrupted operation
+/// may have left partial effects visible: a panicking `T::Drop` during `clear()`
+/// leaves later values live (a partial clear, not a full one), and a panicked
+/// multi-op `write()` transaction leaves whatever partial effects it already
+/// applied. Callers whose `T` carries cross-value invariants, or whose
+/// multi-op transactions need all-or-nothing semantics, must implement their
+/// own signaling — this crate provides none beyond what's documented here.
 pub struct SyncRegion<T> {
     inner: RwLock<Region<T>>,
 }
@@ -106,6 +115,10 @@ impl<T> SyncRegion<T> {
     /// Removes every value, invalidating all outstanding handles.
     ///
     /// One-shot convenience that locks for write internally.
+    /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
+    /// values already visited (including the panicking one) are removed and
+    /// dropped, but later values remain live and correctly accounted. The region
+    /// itself stays fully consistent and reusable after unwinding.
     pub fn clear(&self) {
         self.write().clear();
     }

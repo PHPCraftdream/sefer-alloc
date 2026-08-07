@@ -79,7 +79,9 @@ assert!(region.get(h).is_none());
 
 `SyncRegion<T>` wraps `Region<T>` in a `std::sync::RwLock` for safe concurrent
 access. It recovers from lock poison rather than propagating it (a panicked op
-leaves the slotmap structurally intact).
+leaves the slotmap structurally intact). Poison recovery guarantees container
+integrity only — an interrupted operation may have left partial effects visible
+(e.g., a panicking `T::Drop` during `clear()` leaves later values live).
 
 ```rust
 use sefer_region::SyncRegion;

@@ -136,7 +136,9 @@ impl<T> Region<T> {
     }
 
     /// Removes and returns the value for `handle`, or `None` if it is already
-    /// stale/removed. After this, `handle` resolves to `None` forever (I2).
+    /// stale/removed. After this, `handle` resolves to `None` for roughly
+    /// `2^31` reuse cycles of that slot (I2 — see the struct-level doc for
+    /// the generation-wrap caveat).
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         self.inner.remove(handle.key)
     }
@@ -157,6 +159,11 @@ impl<T> Region<T> {
 
     /// Removes every value, invalidating all outstanding handles, while
     /// retaining allocated capacity. The region is reusable afterwards.
+    ///
+    /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
+    /// values already visited (including the panicking one) are removed and
+    /// dropped, but later values remain live and correctly accounted. The region
+    /// itself stays fully consistent and reusable after unwinding.
     pub fn clear(&mut self) {
         self.inner.clear();
     }
