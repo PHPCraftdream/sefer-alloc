@@ -147,6 +147,21 @@ these numbers include allocation, teardown, and cold-path overhead, not just the
 steady-state operation cost. See the `steady-state churn` rows for the warm-path
 performance.
 
+### Contended reads
+
+Under multi-threaded read contention, `SyncRegion`'s one-shot convenience methods
+(`get_cloned`, `contains`, `len`, `is_empty`) anti-scale: each call pays a
+shared-cache-line lock acquisition that dominates the nanosecond-scale lookup.
+Batching reads under one `read()` guard restores flat scaling. Single noisy
+Windows dev host, 3 runs each (median reported):
+
+| Workload | ns/op (median, range) |
+|---|---|
+| 8 readers, one-shot `get_cloned` | 1,221 (1,187–1,227) |
+| 8 readers, 64 gets per `read()` guard | 38.7 (37.6–40.2) |
+
+Reproduce: `cargo run --release --example contended_reads -p sefer-region`.
+
 **Note on `SyncRegion` steady-state churn's range:** the landing commit's own message cites
 a wider spread (~69.6-84.2 ns/op) than the table's published 3-run median-of-3 (72.1-84.2)
 for the same workload — a broader across-multiple-runs sample was taken while iterating on

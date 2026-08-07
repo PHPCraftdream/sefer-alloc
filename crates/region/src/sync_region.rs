@@ -36,6 +36,18 @@ use crate::{Handle, Region};
 /// applied. Callers whose `T` carries cross-value invariants, or whose
 /// multi-op transactions need all-or-nothing semantics, must implement their
 /// own signaling — this crate provides none beyond what's documented here.
+///
+/// ## Contended reads
+///
+/// Under multi-threaded read contention, the one-shot convenience methods
+/// ([`get_cloned`](Self::get_cloned), [`contains`](Self::contains),
+/// [`len`](Self::len), [`is_empty`](Self::is_empty)) anti-scale: each call pays a
+/// shared-cache-line lock acquisition that dominates the nanosecond-scale lookup,
+/// resulting in a ~4× aggregate throughput loss going from 1 to 8 reader threads
+/// on a 16-CPU host. Batching multiple reads under one held [`read`](Self::read)
+/// guard restores flat scaling at ~30× the one-shot aggregate at 8 threads.
+/// This is inherent `RwLock` physics for a nanosecond-scale critical section,
+/// not a defect in the lock implementation.
 pub struct SyncRegion<T> {
     inner: RwLock<Region<T>>,
 }
