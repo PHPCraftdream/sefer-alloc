@@ -20,7 +20,10 @@ use crate::{Handle, Region};
 ///
 /// ## Poisoning policy
 ///
-/// A panic while a guard is held poisons the `RwLock`. A poisoned `Region` is
+/// A panic while the **write** guard is held poisons the `RwLock` — `std` never
+/// poisons on a read-guard panic (e.g. a panicking `T::clone` inside
+/// [`get_cloned`](Self::get_cloned) releases the read lock cleanly, with no
+/// poison and no effect on the stored value). A poisoned `Region` is
 /// still structurally valid — no broken memory invariants: `slotmap` keeps the
 /// slot store generational and consistent regardless of a panicked op, so we
 /// **recover from poison** rather than propagate it. Every accessor uses
