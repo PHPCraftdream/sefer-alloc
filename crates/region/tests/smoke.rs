@@ -27,26 +27,65 @@ fn region_insert_get_remove_roundtrip() {
     assert!(r.remove(h).is_none());
 }
 
+/// Extracts the slot index from a `Handle`'s `{:?}` output.
+///
+/// `Handle`'s `Debug` impl forwards `slotmap::DefaultKey`'s own `Debug`
+/// (`{idx}v{version}`), e.g. `Handle { key: DefaultKey(1v1) }`. Parsing this
+/// is the only way to observe slot identity from outside the crate — `key`
+/// is `pub(crate)`. Fragile w.r.t. slotmap's exact Debug format, but that is
+/// the tradeoff this test deliberately accepts to prove reuse directly
+/// rather than vacuously (see the module-level comment on the test below).
+fn slot_index(h: impl std::fmt::Debug) -> u32 {
+    let s = format!("{h:?}");
+    let start = s
+        .find("DefaultKey(")
+        .expect("Handle's Debug output includes `DefaultKey(...)`")
+        + "DefaultKey(".len();
+    let rest = &s[start..];
+    let end = rest
+        .find('v')
+        .expect("DefaultKey's Debug format is `{idx}v{version}`");
+    rest[..end]
+        .parse::<u32>()
+        .expect("the index portion of DefaultKey's Debug output should parse as u32")
+}
+
 #[test]
 fn region_stale_handle_returns_none() {
     // I3 — no ABA: a slot reused for a new value does NOT resolve via the old handle.
+    //
+    // NOTE: `capacity()` does NOT discriminate slot reuse from fresh growth —
+    // slotmap pre-allocates, so capacity stays flat across a second insert
+    // regardless of whether a slot was removed first (verified: three
+    // consecutive inserts into a fresh Region with ZERO removals leave
+    // capacity() unchanged after the first insert). An earlier version of
+    // this test asserted exactly that non-discriminating capacity equality
+    // and would have kept passing even if slotmap's freelist policy stopped
+    // reusing slots entirely — the class of vacuous test this file's own I3
+    // doc comment warns against. Proving reuse requires comparing slot
+    // IDENTITY (the index component of the key), not a size proxy.
     let mut r: Region<u32> = Region::new();
 
     let h_old = r.insert(1u32);
-    let cap_after_first = r.capacity();
 
+    // Verified non-vacuous: commenting out this remove call (so the second
+    // insert lands on a FRESH slot instead of reusing h_old's freed one) makes
+    // the slot_index equality assertion below fail on its own, isolated from
+    // the len()/None checks around it (`left: 1, right: 2`), then reverted.
     r.remove(h_old); // retire slot; generation bumped inside slotmap
     assert_eq!(r.len(), 0, "length after remove");
 
     // Insert a new value — may reuse the same physical slot.
-    // Verify slot reuse actually happened by checking capacity didn't grow.
     let h_new = r.insert(2u32);
-    assert_eq!(
-        r.capacity(),
-        cap_after_first,
-        "second insert reused freed slot (no capacity growth)"
-    );
     assert_eq!(r.len(), 1, "length after second insert");
+
+    // Prove slot reuse actually happened: the new handle's slot INDEX must
+    // match the old handle's (only the generation differs).
+    assert_eq!(
+        slot_index(h_old),
+        slot_index(h_new),
+        "second insert should reuse the freed slot's index (proves slot reuse, not fresh allocation)"
+    );
 
     // Old handle must NOT resolve (generation mismatch).
     assert!(r.get(h_old).is_none(), "stale handle must not resolve (I3)");
