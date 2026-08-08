@@ -6,7 +6,9 @@
 //! <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/BENCHMARKS.md>). `SlotMap` keeps tombstone holes after removals, so it
 //! is NOT always-compact; `DenseSlotMap` is the dense-iteration alternative.
 //! Every operation exposes only typed [`Handle<T>`] values — raw `DefaultKey`s
-//! never escape the crate boundary.
+//! never escape as usable values through the API (Debug output renders the
+//! underlying key for diagnostics only — it cannot be turned back into a
+//! functioning handle through this crate's public surface).
 //!
 //! ## What makes this different from using slotmap directly?
 //!

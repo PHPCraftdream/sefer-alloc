@@ -10,7 +10,7 @@ A thin typed membrane over [`slotmap`](https://crates.io/crates/slotmap):
 values live in slotmap's slot array (resolved by a single indirection),
 but removed entries leave tombstone holes — iteration skips them, so the
 backing store is NOT always-compact. Every operation exposes only typed
-`Handle<T>` values — raw `DefaultKey`s never escape the crate boundary. The original single-threaded face of
+`Handle<T>` values — raw `DefaultKey`s never escape as usable values through the API (Debug output renders the underlying key for diagnostics only — it cannot be turned back into a functioning handle through this crate's public surface). The original single-threaded face of
 [`sefer-alloc`](https://crates.io/crates/sefer-alloc), extracted as a
 standalone crate.
 
