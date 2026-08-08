@@ -447,9 +447,9 @@ fn region_reserve_reuses_freed_slots_on_churn() {
     // COUNTERFACTUAL: If Region were incorrectly growing capacity on every
     // insert (e.g., by ignoring the free list and always allocating fresh
     // slots), this test would fail with cap_after_refill > cap_after_remove.
-    // The test has been verified to catch that class of bug by temporarily
-    // bypassing the slotmap free list (inserting fresh handles instead of
-    // reusing freed slots) and confirming the assertion fails.
+    // Verified by temporarily raising the refill loop below from 500 to 700
+    // (over-running the 500 freed slots): the assertion correctly failed
+    // (after_remove=1023, after_refill=2047), then the change was reverted.
 
     let mut r: Region<u64> = Region::new();
 
