@@ -104,6 +104,13 @@ fn width_20_partitions() {
 /// guard, corrupting a chain — see the crate's F1 write-up). This test pins
 /// the width-32 boundary behaves correctly now that it is the crate's hard
 /// maximum, not an arbitrary midpoint.
+///
+/// The panic assertion pins the guard's own message substring (not just
+/// `is_err()`): the rust-intel audit (§D1, 2026-08-07) found that an
+/// unrelated out-of-bounds panic from `ArrayLinks::store_next` (reached if
+/// the guard were ever deleted or weakened) would ALSO satisfy a bare
+/// `is_err()` check, making the test pass whether or not the guard the F1
+/// regression exists to pin is even present.
 #[test]
 fn width_32_index_mask_equals_tail_and_is_rejected() {
     type T = TaggedIndex<32>;
@@ -120,17 +127,25 @@ fn width_32_index_mask_equals_tail_and_is_rejected() {
     stack.push(&links, 3);
     assert_eq!(stack.pop(&links), Some(3));
 
-    // `index == TAIL` (== INDEX_MASK at this width) must panic under the
-    // debug_assert — it is indistinguishable from the empty sentinel/end-of-chain
-    // otherwise. This is compiled with debug assertions on (the default `cargo
-    // test` profile), matching how this guard is meant to be exercised.
+    // `index == TAIL` (== INDEX_MASK at this width) must panic — it is
+    // indistinguishable from the empty sentinel/end-of-chain otherwise. The
+    // guard is now a full `assert!` (promoted from `debug_assert!`), so this
+    // holds identically in both debug and release builds.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         stack.push(&links, TAIL);
     }));
+    let err = result.expect_err("pushing index == TAIL must panic");
+    let message = err
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .expect("panic payload should be a string message");
     assert!(
-        result.is_err(),
-        "pushing index == TAIL must panic (debug_assert) rather than silently \
-         corrupt the chain — this is the F1 regression"
+        message.contains("index must be < INDEX_MASK"),
+        "panic message did not name the push guard's own contract (got: {message:?}) — \
+         an unrelated panic (e.g. an ArrayLinks out-of-bounds index) must NOT satisfy \
+         this test, since that would mean the guard itself could be deleted without \
+         this test noticing — this is the F1 regression"
     );
 }
 

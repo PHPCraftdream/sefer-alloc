@@ -368,19 +368,27 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// Writes `index`'s next link (the current head's index, or [`TAIL`] if the
     /// stack is empty) under `Release`, bumps the tag (the ABA defence), then
     /// CASes the head to `(index, tag + 1)`. `index` MUST be a valid index
-    /// (`< TaggedIndex::INDEX_MASK`) — the caller guarantees this; passing the
-    /// empty sentinel or a wider value corrupts the head word. The real bound is
-    /// also `index != TAIL`: since `INDEX_BITS` is compile-time capped at `32`
-    /// (see [`TaggedIndex`]'s `_CHECK_BITS`), `INDEX_MASK` can never exceed
-    /// `u32::MAX` (`TAIL`), so `index < INDEX_MASK` already implies `index !=
-    /// TAIL` for every representable width — the two conditions coincide instead
-    /// of needing to be asserted separately.
+    /// (`< TaggedIndex::INDEX_MASK`) — a violation panics (see `# Panics`)
+    /// rather than being trusted, because a corrupted head word downstream lets
+    /// a later `pop` return an index nobody actually pushed, which in the
+    /// parent allocator means handing out a slot that is still live elsewhere
+    /// — memory unsafety reachable from this `#![forbid(unsafe_code)]` crate's
+    /// 100% safe public API. The real bound is also `index != TAIL`: since
+    /// `INDEX_BITS` is compile-time capped at `32` (see [`TaggedIndex`]'s
+    /// `_CHECK_BITS`), `INDEX_MASK` can never exceed `u32::MAX` (`TAIL`), so
+    /// `index < INDEX_MASK` already implies `index != TAIL` for every
+    /// representable width — the two conditions coincide instead of needing to
+    /// be asserted separately.
     ///
     /// # Panics
     ///
-    /// Debug-asserts `index < INDEX_MASK` (never in release).
+    /// Panics if `index >= INDEX_MASK` (the empty sentinel is reserved), in
+    /// both debug and release builds — this is a caller-contract violation
+    /// checked unconditionally, not a `debug_assert!`, because the failure
+    /// mode is silent free-list corruption rather than a merely-suboptimal
+    /// fallback.
     pub fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
-        debug_assert!(
+        assert!(
             (index as u64) < TaggedIndex::<INDEX_BITS>::INDEX_MASK,
             "index must be < INDEX_MASK (the empty sentinel is reserved)"
         );
