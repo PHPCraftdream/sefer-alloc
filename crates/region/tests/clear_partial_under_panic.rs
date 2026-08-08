@@ -76,33 +76,50 @@ fn region_clear_partial_under_panic() {
         "clear() should have panicked due to Drop panic"
     );
 
-    // After unwinding: exactly 3 drops occurred (ids 0,1,2), len() == 2 (ids 3,4).
+    // After unwinding: exactly 3 drops occurred, 2 survivors remain.
+    // Note: slotmap's drain order is unspecified, so we don't assert WHICH IDs
+    // were dropped/survived — only that the total accounting is correct and the
+    // bomb (id=2) was definitely dropped.
     assert_eq!(
         drop_count.load(Ordering::SeqCst),
         3,
-        "exactly 3 values should have been dropped (ids 0,1,2)"
+        "exactly 3 values should have been dropped (order unspecified)"
     );
-    assert_eq!(r.len(), 2, "region should have 2 survivors (ids 3,4)");
+    assert_eq!(r.len(), 2, "region should have 2 survivors");
 
-    // Handles 0,1,2 should resolve None; handles 3,4 should still resolve.
-    assert!(r.get(handles[0]).is_none(), "handle 0 should be removed");
-    assert!(r.get(handles[1]).is_none(), "handle 1 should be removed");
+    // Collect the set of surviving IDs via iter().
+    let survivor_ids: std::collections::HashSet<usize> =
+        r.iter().map(|counter| counter.id).collect();
+
+    // The bomb (id=2) should NOT be among survivors — it panicked.
     assert!(
-        r.get(handles[2]).is_none(),
-        "handle 2 (bomb) should be removed"
-    );
-    assert!(
-        r.get(handles[3]).is_some(),
-        "handle 3 should still resolve (survivor)"
-    );
-    assert!(
-        r.get(handles[4]).is_some(),
-        "handle 4 should still resolve (survivor)"
+        !survivor_ids.contains(&bomb_id),
+        "bomb id {} should have been dropped during partial clear",
+        bomb_id
     );
 
-    // Verify survivors are the correct values by checking their ids.
-    assert_eq!(r.get(handles[3]).map(|c| c.id), Some(3));
-    assert_eq!(r.get(handles[4]).map(|c| c.id), Some(4));
+    // Verify that every surviving ID corresponds to a handle that resolves correctly.
+    for &survivor_id in &survivor_ids {
+        let handle = &handles[survivor_id];
+        assert!(
+            r.get(*handle).is_some(),
+            "survivor id {} should resolve correctly",
+            survivor_id
+        );
+        // Verify the value is actually the right one.
+        assert_eq!(r.get(*handle).map(|c| c.id), Some(survivor_id));
+    }
+
+    // Verify that dropped IDs (complement of survivors) do not resolve.
+    for (i, handle) in handles.iter().enumerate() {
+        if !survivor_ids.contains(&i) {
+            assert!(
+                r.get(*handle).is_none(),
+                "dropped id {} should not resolve",
+                i
+            );
+        }
+    }
 
     // Region should be reusable: insert new value, it resolves correctly.
     let new_counter = DropCounter::new(10, 999, Arc::clone(&drop_count));
@@ -174,39 +191,50 @@ mod sync_tests {
         let join_result = join.join();
         assert!(join_result.is_ok(), "thread should have completed");
 
-        // After poison recovery: exactly 3 drops occurred (ids 0,1,2), len() == 2 (ids 3,4).
+        // After poison recovery: exactly 3 drops occurred, 2 survivors remain.
+        // Note: slotmap's drain order is unspecified, so we don't assert WHICH IDs
+        // were dropped/survived — only that the total accounting is correct and the
+        // bomb (id=2) was definitely dropped.
         assert_eq!(
             drop_count.load(Ordering::SeqCst),
             3,
-            "exactly 3 values should have been dropped (ids 0,1,2)"
+            "exactly 3 values should have been dropped (order unspecified)"
         );
-        assert_eq!(sr.len(), 2, "SyncRegion should have 2 survivors (ids 3,4)");
+        assert_eq!(sr.len(), 2, "SyncRegion should have 2 survivors");
 
-        // Handles 0,1,2 should resolve None; handles 3,4 should still resolve.
+        // Collect the set of surviving IDs via iter().
+        let survivor_ids: std::collections::HashSet<usize> =
+            sr.read().iter().map(|counter| counter.id).collect();
+
+        // The bomb (id=2) should NOT be among survivors — it panicked.
         assert!(
-            sr.read().get(handles[0]).is_none(),
-            "handle 0 should be removed"
-        );
-        assert!(
-            sr.read().get(handles[1]).is_none(),
-            "handle 1 should be removed"
-        );
-        assert!(
-            sr.read().get(handles[2]).is_none(),
-            "handle 2 (bomb) should be removed"
-        );
-        assert!(
-            sr.read().get(handles[3]).is_some(),
-            "handle 3 should still resolve (survivor)"
-        );
-        assert!(
-            sr.read().get(handles[4]).is_some(),
-            "handle 4 should still resolve (survivor)"
+            !survivor_ids.contains(&bomb_id),
+            "bomb id {} should have been dropped during partial clear",
+            bomb_id
         );
 
-        // Verify survivors are the correct values by checking their ids.
-        assert_eq!(sr.read().get(handles[3]).map(|c| c.id), Some(3));
-        assert_eq!(sr.read().get(handles[4]).map(|c| c.id), Some(4));
+        // Verify that every surviving ID corresponds to a handle that resolves correctly.
+        for &survivor_id in &survivor_ids {
+            let handle = &handles[survivor_id];
+            assert!(
+                sr.read().get(*handle).is_some(),
+                "survivor id {} should resolve correctly",
+                survivor_id
+            );
+            // Verify the value is actually the right one.
+            assert_eq!(sr.read().get(*handle).map(|c| c.id), Some(survivor_id));
+        }
+
+        // Verify that dropped IDs (complement of survivors) do not resolve.
+        for (i, handle) in handles.iter().enumerate() {
+            if !survivor_ids.contains(&i) {
+                assert!(
+                    sr.read().get(*handle).is_none(),
+                    "dropped id {} should not resolve",
+                    i
+                );
+            }
+        }
 
         // SyncRegion should be reusable: insert new value, it resolves correctly.
         let new_counter = DropCounter::new(10, 999, Arc::clone(&drop_count));
