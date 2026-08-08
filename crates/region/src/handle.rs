@@ -10,9 +10,16 @@ use core::marker::PhantomData;
 /// `Copy` and unconditionally `Send + Sync` regardless of `T` — it owns no `T`,
 /// it only names one. The `PhantomData<fn() -> T>` keeps the handle *typed* (so
 /// a `Handle<A>` cannot be passed to a `Region<B>`) while staying covariant in
-/// `T` and free of any drop/auto-trait obligations.
+/// `T` and free of any drop/auto-trait obligations. `#[repr(transparent)]`
+/// makes `Handle<T>`'s layout — identical to `DefaultKey`'s (8 bytes, with
+/// `Option<Handle<T>>` also 8 bytes via `DefaultKey`'s `NonZeroU32` niche) — a
+/// guarantee, not an incidental fact of the current rustc layout algorithm;
+/// this is what makes the compile-time layout assertions in
+/// `tests/handle_static_asserts.rs` a pinned invariant rather than a
+/// toolchain-dependent assumption.
 ///
 /// [`Region`]: crate::Region
+#[repr(transparent)]
 pub struct Handle<T> {
     /// Crate-visible so [`Region`](crate::Region) can build and read a handle,
     /// never exposed publicly.

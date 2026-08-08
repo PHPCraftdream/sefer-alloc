@@ -6,10 +6,13 @@
 //!    only holds a `slotmap::DefaultKey` plus a `PhantomData<fn() -> T>` (a
 //!    fn-pointer phantom, which is Send+Sync regardless of T).
 //!
-//! 2. [`Handle<T>`]'s layout: `size_of::<Handle<T>>()` should be exactly 8 bytes
+//! 2. [`Handle<T>`]'s layout: `size_of::<Handle<T>>()` is exactly 8 bytes
 //!    (a `u32` index + a `NonZeroU32` version from slotmap's DefaultKey, with no
-//!    padding), and `Option<Handle<T>>` should also be exactly 8 bytes via the
-//!    niche optimization (the version field is NonZeroU32).
+//!    padding), and `Option<Handle<T>>` is also exactly 8 bytes via the niche
+//!    optimization (the version field is NonZeroU32). `Handle<T>`'s
+//!    `#[repr(transparent)]` makes this a genuine layout GUARANTEE (rests on
+//!    `DefaultKey`'s own layout), not merely what the current rustc happens
+//!    to produce under the default `#[repr(Rust)]`.
 //!
 //! The negative direction (that `SyncRegion<Cell<u32>>: Sync` must NOT compile)
 //! was manually verified in `docs/reviews/2026-08-07-sefer-region-safety-review.md`
