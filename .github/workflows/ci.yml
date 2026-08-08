@@ -760,6 +760,18 @@ jobs:
       # the `no_std + alloc` configuration its own README/keywords advertise.
       # Verified locally: compiles clean.
       - run: cargo build -p sefer-region --no-default-features --target thumbv7em-none-eabi
+      # rust-intel audit (task #693, finding 2, 2026-08-07): sefer-region's own
+      # test comments (coverage_gaps.rs: region_reserve_overflow_panics,
+      # region_with_capacity_overflow_panics) claim their panic contracts hold
+      # "in both debug and release builds (profile-independent)" -- but every
+      # other step above runs in debug only, so that specific claim was never
+      # actually CI-verified for the release binary. Cheap to close (the suite
+      # is tiny, seconds of extra CI time): run the same suite once more under
+      # --release. This closes the gap for real now that task #690 added a
+      # checked-arithmetic guard making the two profiles agree (previously,
+      # release-mode overflow-checks-off arithmetic silently wrapped instead of
+      # panicking -- this step would have caught that divergence directly).
+      - run: cargo test -p sefer-region --release --no-fail-fast
 
   msrv:
     # MSRV gate: `rust-version = "1.88"` is declared but never enforced, so an

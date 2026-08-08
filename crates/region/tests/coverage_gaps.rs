@@ -568,3 +568,68 @@ mod sync_misc_tests {
         );
     }
 }
+
+// ── genuine multi-thread concurrency test for SyncRegion<T> ───────────────
+
+#[cfg(feature = "std")]
+mod sync_concurrency_tests {
+    use super::*;
+    use sefer_region::SyncRegion;
+    use std::thread;
+
+    #[test]
+    fn sync_region_concurrent_insert_remove_get_is_consistent() {
+        // SyncRegion's struct doc claims it is "correct under any interleaving
+        // because every mutation serialises through the lock" -- but every
+        // OTHER threaded test in this crate spawns exactly ONE thread and
+        // joins it BEFORE any assertion runs (sequential-by-construction, not
+        // genuinely concurrent). This is the first test with multiple threads
+        // actually racing inside the RwLock-wrapped API at the same time.
+        // Kept small/fast per this repo's speed rules -- a correctness smoke
+        // test, not a perf harness (see examples/contended_reads.rs for the
+        // measurement-focused version added by task #685).
+        const THREADS: usize = 4;
+        const OPS_PER_THREAD: usize = 200;
+
+        let drop_count = Arc::new(AtomicUsize::new(0));
+        let sr: Arc<SyncRegion<DropCounter>> = Arc::new(SyncRegion::new());
+
+        thread::scope(|s| {
+            for t in 0..THREADS {
+                let sr = Arc::clone(&sr);
+                let drop_count = Arc::clone(&drop_count);
+                s.spawn(move || {
+                    for i in 0..OPS_PER_THREAD {
+                        let id = t * OPS_PER_THREAD + i;
+                        let h = sr.insert(DropCounter::new(id, Arc::clone(&drop_count)));
+                        // Exercise reads concurrently with other threads' writes.
+                        let _ = sr.contains(h);
+                        let cloned = sr.get_cloned(h);
+                        assert_eq!(cloned.map(|c| c.id), Some(id));
+                        let removed = sr.remove(h);
+                        drop(removed);
+                    }
+                });
+            }
+        });
+        // `thread::scope` blocks until every spawned thread has joined, so
+        // this point is only reached after all 4 threads' work has fully
+        // interleaved through the shared SyncRegion and completed.
+
+        assert_eq!(sr.len(), 0, "every inserted value was also removed");
+        assert_eq!(
+            drop_count.load(Ordering::SeqCst),
+            THREADS * OPS_PER_THREAD * 2,
+            "each iteration produces exactly 2 drops (the get_cloned clone, \
+             dropped when it goes out of scope, plus the original after \
+             remove) -- any other count means something is double-dropped, \
+             leaked, or the clone is missing/duplicated"
+        );
+
+        // COUNTERFACTUAL (verified, then reverted): temporarily replaced
+        // `drop(removed)` above with `std::mem::forget(removed)`; the
+        // assertion correctly failed (left: 800, right: 1600 -- half the
+        // expected drops, since only the get_cloned clone was still dropped),
+        // confirming the drop-count assertion is not vacuous.
+    }
+}
