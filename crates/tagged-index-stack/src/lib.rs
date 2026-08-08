@@ -440,7 +440,8 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             let (idx_v, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
             let index = idx_v as u32;
             // Read the next link BEFORE the CAS (the push stored it under
-            // Release; our Acquire load of head + this Acquire read see it).
+            // Release; our Acquire observation of head — whether from the
+            // initial load OR from a retry CAS failure — synchronizes with it).
             let next = links.load_next(index);
             let new_head = if next == TAIL {
                 // H-2: preserve the RUNNING tag across the empty transition.
@@ -450,7 +451,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             };
             match self
                 .head
-                .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Relaxed)
+                .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire)
             {
                 Ok(_) => return Some(index),
                 Err(actual) => head = actual,
