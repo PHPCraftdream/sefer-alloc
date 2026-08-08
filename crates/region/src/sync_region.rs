@@ -83,12 +83,10 @@ impl<T> SyncRegion<T> {
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
     ///
-    /// Note: for realistic `capacity` values, this reserves exactly the requested
-    /// amount. At the extreme (e.g. `capacity` near `usize::MAX`), the underlying
-    /// `slotmap` arithmetic may wrap in a release build and result in a far
-    /// smaller capacity than requested; use `sr.read().capacity()` to verify the
-    /// actual reserved amount after construction (`SyncRegion` has no one-shot
-    /// `capacity()` — reach it through a held guard).
+    /// # Panics
+    ///
+    /// Panics if `capacity == usize::MAX` (see [`Region::with_capacity`]'s own
+    /// `# Panics` section — this delegates directly and the same guard applies).
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {

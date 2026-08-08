@@ -76,13 +76,16 @@ impl<T> Region<T> {
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
     ///
-    /// Note: for realistic `capacity` values, this reserves exactly the requested
-    /// amount. At the extreme (e.g. `capacity` near `usize::MAX`), the underlying
-    /// `slotmap` arithmetic may wrap in a release build and result in a far
-    /// smaller capacity than requested; use `capacity()` to verify the actual
-    /// reserved amount after construction.
+    /// # Panics
+    ///
+    /// Panics if `capacity == usize::MAX` (the underlying `slotmap` reserves one
+    /// extra slot for an internal sentinel; a capacity that would overflow that
+    /// reservation is rejected up front, in both debug and release builds).
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
+        capacity
+            .checked_add(1)
+            .expect("Region::with_capacity: capacity overflow");
         Self {
             inner: slotmap::SlotMap::with_capacity(capacity),
         }
@@ -123,12 +126,13 @@ impl<T> Region<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the new allocation size overflows `usize`. Note: in a release
-    /// build (overflow-checks off), an `additional` argument near `usize::MAX`
-    /// may silently wrap in the underlying `slotmap` arithmetic (`len + additional`)
-    /// and result in a no-op rather than a panic. In a debug build, the same
-    /// argument instead panics with "attempt to add with overflow".
+    /// Panics if `len() + additional` overflows `usize`, in both debug and
+    /// release builds — checked up front, before delegating to `slotmap`.
     pub fn reserve(&mut self, additional: usize) {
+        self.inner
+            .len()
+            .checked_add(additional)
+            .expect("Region::reserve: capacity overflow");
         self.inner.reserve(additional);
     }
 

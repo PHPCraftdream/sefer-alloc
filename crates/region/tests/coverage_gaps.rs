@@ -451,6 +451,22 @@ fn region_reserve_overflow_panics() {
     assert!(result.is_err(), "reserve(usize::MAX / 2) should panic");
 }
 
+#[test]
+fn region_with_capacity_overflow_panics() {
+    // Region::with_capacity(usize::MAX) panics in both debug and release builds
+    // (profile-independent) -- slotmap reserves one extra slot for an internal
+    // sentinel (capacity + 1), so usize::MAX is exactly the one value that would
+    // overflow that reservation; guarded up front via checked_add before
+    // delegating to slotmap.
+    use std::panic::{self, AssertUnwindSafe};
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let _r: Region<i32> = Region::with_capacity(usize::MAX);
+    }));
+
+    assert!(result.is_err(), "with_capacity(usize::MAX) should panic");
+}
+
 #[cfg(feature = "std")]
 mod sync_misc_tests {
     use sefer_region::SyncRegion;
