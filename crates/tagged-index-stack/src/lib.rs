@@ -467,11 +467,19 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
         }
     }
 
-    /// The raw packed head word (`Acquire`) — for diagnostics/tests only. The
-    /// index half is a live top-of-stack index or [`empty_index`](TaggedIndex::empty_index);
-    /// the high bits are the running tag. `Acquire` so a loom test that splits a
-    /// pop's read from its CAS (to open the ABA window) still forms the same
-    /// happens-before edge the real `pop`'s `Acquire` head load does.
+    /// The raw packed head word (`Acquire`) — for this crate's own diagnostics
+    /// and tests only. The index half is a live top-of-stack index or
+    /// [`empty_index`](TaggedIndex::empty_index); the high bits are the running
+    /// tag. `Acquire` so a loom test that splits a pop's read from its CAS (to
+    /// open the ABA window) still forms the same happens-before edge the real
+    /// `pop`'s `Acquire` head load does.
+    ///
+    /// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
+    /// from this crate's own perspective — can reach it) but NOT a stable,
+    /// documented part of the public API; it is not exercised by any
+    /// production caller and carries no semver stability guarantee. See this
+    /// project's established `#[doc(hidden)]` test-only-forwarder convention.
+    #[doc(hidden)]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
         self.head.load(Ordering::Acquire)

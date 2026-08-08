@@ -73,6 +73,15 @@ proving the harness is non-vacuous:
 RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba
 ```
 
+## Test-only diagnostic surface
+
+`TaggedIndexStack::raw_head` is `pub` (so this crate's own `tests/` — an
+external crate from the library's own perspective — can reach it) but
+`#[doc(hidden)]`: it is NOT a stable, documented part of the public API,
+carries no semver guarantee, and is not exercised by any production caller.
+It exists solely so this crate's own loom/unit tests can inspect the raw
+packed head word. Do not depend on it from outside this crate.
+
 ## Example
 
 ```text
