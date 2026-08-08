@@ -2,6 +2,7 @@
 //! and basic coverage for iter/iter_mut/get_mut/Default/capacity/with_capacity/reserve.
 
 use sefer_region::Region;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -441,14 +442,14 @@ fn region_reserve_overflow_panics() {
     // in both debug and release builds (profile-independent).
     // usize::MAX / 2 is large enough to trigger overflow panic but not so
     // large that the underlying len+additional arithmetic wraps in release.
-    use std::panic::{self, AssertUnwindSafe};
-
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let mut r: Region<i32> = Region::new();
+    let mut r: Region<i32> = Region::new();
+    let msg = catch_panic_message(AssertUnwindSafe(|| {
         r.reserve(usize::MAX / 2);
     }));
-
-    assert!(result.is_err(), "reserve(usize::MAX / 2) should panic");
+    assert!(
+        msg.contains("capacity overflow"),
+        "expected the panic message to mention capacity overflow, got: {msg:?}"
+    );
 }
 
 #[test]
@@ -458,13 +459,61 @@ fn region_with_capacity_overflow_panics() {
     // sentinel (capacity + 1), so usize::MAX is exactly the one value that would
     // overflow that reservation; guarded up front via checked_add before
     // delegating to slotmap.
-    use std::panic::{self, AssertUnwindSafe};
-
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+    let msg = catch_panic_message(AssertUnwindSafe(|| {
         let _r: Region<i32> = Region::with_capacity(usize::MAX);
     }));
+    assert!(
+        msg.contains("capacity overflow"),
+        "expected the panic message to mention capacity overflow, got: {msg:?}"
+    );
+}
 
-    assert!(result.is_err(), "with_capacity(usize::MAX) should panic");
+/// Serializes calls to [`catch_panic_message`] across concurrently-running
+/// test threads, since it temporarily installs a process-global panic hook.
+static PANIC_HOOK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Runs `f`, which is expected to panic, and returns the formatted panic
+/// message text -- so a test can pin the SPECIFIC panic it expects instead of
+/// accepting any panic whatsoever (an unrelated panic silently satisfying
+/// `result.is_err()` is exactly the vacuous-test shape this helper exists to
+/// close off). Captures the message via a temporary panic hook rather than
+/// downcasting the `catch_unwind` payload's `Box<dyn Any>` directly: in this
+/// crate's own test binary, a panic payload originating inside the
+/// `sefer-region` library crate (a separate compilation unit linked in as a
+/// dependency) does not downcast to `&str`/`String` even though the panic
+/// macro produces exactly those types -- `TypeId` mismatches across the
+/// library/test-binary boundary for reasons not fully root-caused here.
+/// The hook-based capture sidesteps that entirely by reading the already-
+/// formatted `Display` text instead of downcasting the raw payload.
+///
+/// Panics (test-harness-level, not the caught panic) if `f` does not panic.
+fn catch_panic_message<F: FnOnce() + std::panic::UnwindSafe>(f: F) -> String {
+    use std::panic;
+    use std::sync::Mutex;
+
+    let _serialize = PANIC_HOOK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let captured_in_hook = Arc::clone(&captured);
+    let previous_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        *captured_in_hook.lock().unwrap() = Some(info.to_string());
+    }));
+
+    let result = panic::catch_unwind(f);
+
+    panic::set_hook(previous_hook);
+
+    assert!(
+        result.is_err(),
+        "expected the closure to panic, but it did not"
+    );
+    let message = captured
+        .lock()
+        .unwrap()
+        .take()
+        .expect("panic hook should have captured a message");
+    message
 }
 
 #[cfg(feature = "std")]
