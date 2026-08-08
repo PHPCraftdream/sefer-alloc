@@ -58,8 +58,10 @@ fn region_capacity_under_churn() {
     // slots onto slotmap's internal free list), then insert 500 more.
     // `Region::reserve`'s own doc comment claims re-inserts after a churn
     // reuse freed slots rather than growing unboundedly — this measures
-    // that claim rather than trusting it: capacity after the refill should
-    // NOT exceed capacity right after the removal pass.
+    // that claim rather than trusting it.
+    // (The actual assertion verifying this claim lives in
+    // `coverage_gaps.rs::region_reserve_reuses_freed_slots_on_churn`
+    // as a non-ignored test.)
     {
         let (name, file, line, column) = loc("region/churn_half_remove_refill");
         captrack::registry::record_creation(name, file, line, column);
@@ -77,30 +79,21 @@ fn region_capacity_under_churn() {
         }
         let cap_after_refill = r.capacity();
         captrack::registry::record_sample(file, line, column, cap_after_refill);
-        assert!(
-            cap_after_refill <= cap_after_remove,
-            "refilling freed slots should not grow capacity past the post-removal high-water \
-             mark: after_remove={cap_after_remove}, after_refill={cap_after_refill}"
-        );
     }
 
     // Workload 3: with_capacity pre-sized vs. default new() for the
     // identical insert pattern — checks whether pre-sizing avoids any
     // intermediate reallocation (the final capacity should be no larger
     // than exactly what was requested, unlike workload 1's organic growth).
+    // (The with_capacity guarantee is tested in `coverage_gaps.rs::region_with_capacity`.)
     {
         let (name, file, line, column) = loc("region/with_capacity_1000_presized");
         captrack::registry::record_creation(name, file, line, column);
         let mut r: Region<u64> = Region::with_capacity(1000);
-        let cap_before_insert = r.capacity();
         for i in 0..1000u64 {
             r.insert(i);
         }
         captrack::registry::record_sample(file, line, column, r.capacity());
-        assert!(
-            cap_before_insert >= 1000,
-            "with_capacity(1000) must reserve at least 1000 slots up front, got {cap_before_insert}"
-        );
     }
 
     let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("captrack-region-probe.json");

@@ -62,44 +62,6 @@ const _: () = assert_send_sync::<Handle<*const u32>>();
 /// Verify Handle<T> is Send+Sync even when T contains both !Send and !Sync components.
 const _: () = assert_send_sync::<Handle<std::rc::Rc<std::cell::Cell<u32>>>>();
 
-/// Runtime test: verify Handle<T> is actually Send at runtime across threads.
-#[test]
-fn handle_is_send_even_when_t_is_not_send() {
-    let h: Handle<NonSendType> = sefer_region::Region::new().insert(NonSendType {
-        _rc: std::rc::Rc::new(()),
-    });
-
-    // This must compile: if Handle<T> is !Send, this thread::spawn call fails.
-    std::thread::spawn(move || {
-        // Use the handle to prove we received it.
-        let _ = h;
-    })
-    .join()
-    .expect("thread should succeed");
-}
-
-/// Runtime test: verify Handle<T> is actually Sync at runtime across threads.
-#[test]
-fn handle_is_sync_even_when_t_is_not_sync() {
-    use std::sync::Arc;
-
-    let h: Handle<NonSyncType> = sefer_region::Region::new().insert(NonSyncType {
-        _cell: std::cell::Cell::new(0),
-    });
-
-    // This must compile: if Handle<T> is !Sync, Arc::clone won't work
-    // for sharing across threads.
-    let h_arc = Arc::new(h);
-
-    let h_arc_clone = Arc::clone(&h_arc);
-    std::thread::spawn(move || {
-        // Use the handle to prove we received it.
-        let _ = *h_arc_clone;
-    })
-    .join()
-    .expect("thread should succeed");
-}
-
 /// Compile-time layout assertion: Handle<T> is exactly 8 bytes.
 ///
 /// slotmap::DefaultKey is 8 bytes (u32 index + NonZeroU32 version), and

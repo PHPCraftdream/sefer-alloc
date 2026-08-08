@@ -437,6 +437,47 @@ fn region_reserve() {
 }
 
 #[test]
+fn region_reserve_reuses_freed_slots_on_churn() {
+    // Verify that Region::reserve's documented claim ("After a churn that
+    // removes entries, the freed slots live on the free list, so re-inserting
+    // reuses existing capacity and does not grow unboundedly") actually holds.
+    // This is the same scenario as captrack_probe.rs workload 2, but without
+    // the manual/ignored restriction.
+    //
+    // COUNTERFACTUAL: If Region were incorrectly growing capacity on every
+    // insert (e.g., by ignoring the free list and always allocating fresh
+    // slots), this test would fail with cap_after_refill > cap_after_remove.
+    // The test has been verified to catch that class of bug by temporarily
+    // bypassing the slotmap free list (inserting fresh handles instead of
+    // reusing freed slots) and confirming the assertion fails.
+
+    let mut r: Region<u64> = Region::new();
+
+    // Insert 1000 values.
+    let handles: Vec<_> = (0..1000u64).map(|i| r.insert(i)).collect();
+
+    // Remove every other value (500 freed slots).
+    for (i, h) in handles.iter().enumerate() {
+        if i % 2 == 0 {
+            r.remove(*h);
+        }
+    }
+    let cap_after_remove = r.capacity();
+
+    // Re-insert 500 values — these should reuse the freed slots, not grow.
+    for i in 0..500u64 {
+        r.insert(i);
+    }
+    let cap_after_refill = r.capacity();
+
+    assert!(
+        cap_after_refill <= cap_after_remove,
+        "refilling freed slots should not grow capacity past the post-removal high-water \
+         mark: after_remove={cap_after_remove}, after_refill={cap_after_refill}"
+    );
+}
+
+#[test]
 fn region_reserve_overflow_panics() {
     // Region<T>::reserve() panics for genuine capacity-overflow arguments
     // in both debug and release builds (profile-independent).
