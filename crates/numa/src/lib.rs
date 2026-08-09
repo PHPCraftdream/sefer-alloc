@@ -461,16 +461,46 @@ mod platform {
         Some(r)
     }
 
-    /// Map a CPU index to its NUMA node by reading
-    /// `/sys/devices/system/node/nodeN/cpumap` for each node N.
+    /// Boot-static cpu→node topology, parsed via sysfs ONCE and cached for
+    /// the life of the process (task #723, rust-intel audit §E5: each
+    /// `current_node()` call previously re-derived the mapping via up to 64
+    /// open/read/close syscall triples -- expensive on an ALLOCATION path,
+    /// since `current_node()` is re-entered from sefer-alloc's `numa-aware`
+    /// feature). CPU-hotplug changes after the first call are NOT
+    /// reflected -- acceptable for an `MPOL_PREFERRED` hint, itself already
+    /// a soft, best-effort preference the kernel can override under memory
+    /// pressure.
+    ///
+    /// Index `i` holds node `i`'s raw cpumap file bytes (empty if the
+    /// node's cpumap could not be read -- absent sysfs, permission error,
+    /// or a wider-than-4-KiB read). Re-parsed on every `current_node()`
+    /// call via the pure `crate::cpumap::parse_contains_cpu` (task #721) --
+    /// cheap in-memory parsing, no further syscalls after this one-time
+    /// populate.
+    static TOPOLOGY: std::sync::OnceLock<Vec<Vec<u8>>> = std::sync::OnceLock::new();
+
+    fn topology() -> &'static Vec<Vec<u8>> {
+        TOPOLOGY.get_or_init(|| {
+            (0u32..64)
+                .map(|node| {
+                    let mut path = [0u8; 64];
+                    let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
+                    read_cpumap_bytes(path_str).unwrap_or_default()
+                })
+                .collect()
+        })
+    }
+
+    /// Map a CPU index to its NUMA node using the cached boot-static
+    /// topology (`topology()` above). Pure in-memory bit-testing after the
+    /// topology's one-time syscall-driven populate.
     ///
     /// Returns `0` when sysfs NUMA topology files are absent (single-node
     /// system where the kernel didn't compile NUMA support).
     fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
-        // Try up to 64 NUMA nodes (reasonable upper bound for current hardware).
-        for node in 0u32..64 {
-            if node_contains_cpu(node, cpu_idx) {
-                return node;
+        for (node, bytes) in topology().iter().enumerate() {
+            if !bytes.is_empty() && crate::cpumap::parse_contains_cpu(bytes, cpu_idx) {
+                return node as u32;
             }
         }
         // Single-node system or NUMA sysfs not present: treat as node 0.
@@ -479,44 +509,36 @@ mod platform {
         0
     }
 
-    /// Return `true` if `node` lists `cpu_idx` in its cpumap.
-    ///
-    /// Reads `/sys/devices/system/node/nodeN/cpumap`, a comma-separated list
-    /// of hex 32-bit words (most-significant word first) encoding a CPU bitmask.
-    fn node_contains_cpu(node: u32, cpu_idx: u32) -> bool {
-        let mut path = [0u8; 64];
-        let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
-        read_cpumap_contains_cpu(path_str, cpu_idx)
-    }
-
-    /// Open the cpumap file at `path` and check if `cpu_idx` bit is set.
+    /// Open the cpumap file at `path` and read its complete contents.
     ///
     /// The cpumap file format: `"00000000,00000001\n"` — comma-separated
     /// hex 32-bit words, most-significant word first; each word covers 32 CPUs.
     /// Parsing itself is delegated to `crate::cpumap` (task #721) -- a
     /// target-independent module so the parser can be exercised by
     /// `tests/cpumap_parser.rs` on every target, not just real Linux.
-    fn read_cpumap_contains_cpu(path: &[u8], cpu_idx: u32) -> bool {
+    ///
+    /// Returns `None` on open/read failure. task #720 (rust-intel audit
+    /// §C4): a single 256-byte read used to be treated as the WHOLE cpumap
+    /// file -- on a host with more than ~28 mask words (~896-900+ CPUs,
+    /// exactly the large-NUMA machines this crate targets) the file exceeds
+    /// 256 bytes, and the parser's most-significant-word-first
+    /// `word_count`/`left_index` arithmetic silently misaligns on a
+    /// truncated prefix, returning a WRONG node rather than failing loudly.
+    /// Fixed: loop the read to EOF into a larger (4 KiB) buffer -- 4 KiB of
+    /// comma-separated 8-hex-digit words covers roughly 14,500 CPUs, an
+    /// order of magnitude past any currently-shipping NUMA system. If the
+    /// buffer fills completely without ever observing EOF (`n == 0`), the
+    /// file is wider than this crate is prepared to parse; returns `None`
+    /// (this node's entry in the cached topology stays empty, the
+    /// documented "cannot determine" fallback) rather than silently
+    /// caching a truncated prefix.
+    fn read_cpumap_bytes(path: &[u8]) -> Option<Vec<u8>> {
         // SAFETY: `path` is a valid nul-terminated C string constructed above.
         // `open` is a POSIX syscall; we check for -1 on error.
         let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
         if fd < 0 {
-            return false;
+            return None;
         }
-        // task #720 (rust-intel audit §C4): a single 256-byte read was
-        // previously treated as the WHOLE cpumap file -- on a host with more
-        // than ~28 mask words (~896-900+ CPUs, exactly the large-NUMA
-        // machines this crate targets) the file exceeds 256 bytes, and the
-        // parser's most-significant-word-first `word_count`/`left_index`
-        // arithmetic silently misaligns on a truncated prefix, returning a
-        // WRONG node rather than failing loudly. Fixed: loop the read to EOF
-        // into a larger (4 KiB, still stack/heap-free) buffer -- 4 KiB of
-        // comma-separated 8-hex-digit words covers roughly 14,500 CPUs, an
-        // order of magnitude past any currently-shipping NUMA system. If the
-        // buffer fills completely without ever observing EOF (`n == 0`), the
-        // file is wider than this crate is prepared to parse; return `false`
-        // (the documented "cannot determine" fallback) rather than silently
-        // parsing a prefix.
         const BUF_LEN: usize = 4096;
         let mut buf = [0u8; BUF_LEN];
         let mut total = 0usize;
@@ -524,7 +546,7 @@ mod platform {
             if total >= BUF_LEN {
                 // SAFETY: `fd` was opened by us and must be closed exactly once.
                 unsafe { libc_close(fd) };
-                return false;
+                return None;
             }
             // SAFETY: `buf[total..]` is a valid writable sub-slice of `buf`
             // (length `BUF_LEN - total > 0`, checked above); `fd` was
@@ -539,7 +561,7 @@ mod platform {
             if n < 0 {
                 // SAFETY: same as above.
                 unsafe { libc_close(fd) };
-                return false;
+                return None;
             }
             if n == 0 {
                 break; // EOF: `buf[..total]` holds the complete file.
@@ -549,9 +571,9 @@ mod platform {
         // SAFETY: `fd` was opened by us and must be closed exactly once.
         unsafe { libc_close(fd) };
         if total == 0 {
-            return false;
+            return None;
         }
-        crate::cpumap::parse_contains_cpu(&buf[..total], cpu_idx)
+        Some(buf[..total].to_vec())
     }
 
     // -- Raw Linux FFI (no libc crate dependency) ----------------------------
