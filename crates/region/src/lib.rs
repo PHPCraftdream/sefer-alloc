@@ -56,8 +56,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-
-extern crate alloc;
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod handle;
 mod region;
@@ -69,4 +68,5 @@ pub use handle::Handle;
 pub use region::Region;
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub use sync_region::SyncRegion;

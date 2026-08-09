@@ -4,13 +4,18 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "100% Rust typed handle-addressed store — Region<T> + generational Handle<T> + thread-safe SyncRegion<T> over the audited `slotmap` crate. The single-threaded face of sefer-alloc, extracted as a standalone crate: zero own unsafe (#![forbid(unsafe_code)]), no C/C++ libraries pulled in, no_std + alloc capable. For users who want a typed slotmap-like handle store WITHOUT pulling a full allocator stack."
+description = "Typed, generational handle-addressed store over slotmap — zero own unsafe, no C/C++, no_std + alloc capable."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/region"
 documentation = "https://docs.rs/sefer-region"
 keywords = ["slotmap", "arena", "handle", "generational", "no-std"]
 categories = ["data-structures", "memory-management", "no-std"]
+
+# docs.rs: render with all features so SyncRegion appears with the std feature badge
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["std"]
@@ -33,3 +38,8 @@ captrack = { version = "0.1", features = ["telemetry"] }
 [[bench]]
 name = "region_bench"
 harness = false
+required-features = ["std"]
+
+[[example]]
+name = "contended_reads"
+required-features = ["std"]

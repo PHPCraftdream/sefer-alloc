@@ -3149,3 +3149,27 @@ resolved" below.)_
       not an open action item.
     - **Files changed:** `.github/workflows/ci.yml` (task #773); this
       index entry.
+
+41. **SyncRegion one-shot convenience methods missing reentrancy cross-references**
+   (`crates/region/src/sync_region.rs`, methods `clear` and `get_cloned`) — **RESOLVED**
+   by the release-prep review's finding F5 closure (2026-08-09). The round-2 closing review
+   (`docs/reviews/2026-08-08-sefer-region-round2-closing-review.md`, finding F) flagged that
+   of the seven one-shot convenience methods (`insert`, `remove`, `contains`, `len`,
+   `is_empty`, `clear`, `get_cloned`), only `remove` explicitly cross-references the type-level
+   `## Reentrancy` section. This is a documentation gap: `clear` runs every `T::Drop` under
+   the write lock, and `get_cloned` runs `T::clone` under the read lock — the two methods that
+   actually execute user code under the lock — yet neither points to the deadlock hazard section.
+
+   - **Root cause, confirmed:** the type-level `## Reentrancy` section at
+     `crates/region/src/sync_region.rs:45-58` does document the hazard thoroughly
+     (it explicitly names `clear` and `get_cloned` on lines 47-48), but the per-method
+     rustdoc pages for those two methods have no inline reference to it. A reader who
+     arrives at `SyncRegion::clear`'s or `SyncRegion::get_cloned`'s rustdoc via a search
+     engine sees no deadlock warning.
+   - **Fix:** added `see the [reentrancy section](Self#reentrancy)` links to the doc
+     comments for both `SyncRegion::clear` and `SyncRegion::get_cloned`, mirroring the
+     existing pattern in `SyncRegion::remove`'s own doc.
+   - **Verification:** `cargo doc -p sefer-region --all-features --no-deps` generates
+     without broken-intra-doc-link warnings; the new links resolve correctly on the
+     rendered docs.
+   - **Files changed:** `crates/region/src/sync_region.rs`, `docs/CORRECTNESS_OPEN_ITEMS.md`.

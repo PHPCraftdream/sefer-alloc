@@ -72,6 +72,20 @@ pub struct SyncRegion<T> {
     inner: RwLock<Region<T>>,
 }
 
+impl<T> From<Region<T>> for SyncRegion<T> {
+    /// Wraps an existing `Region<T>` in a `SyncRegion` for safe concurrent access.
+    ///
+    /// This provides a zero-copy conversion path from single-threaded to
+    /// concurrent usage without invalidating existing handles — all `Handle<T>`
+    /// values from the original `Region` remain valid and resolve correctly in
+    /// the wrapped `SyncRegion`.
+    fn from(region: Region<T>) -> Self {
+        Self {
+            inner: RwLock::new(region),
+        }
+    }
+}
+
 impl<T> SyncRegion<T> {
     /// Creates an empty region that allocates nothing until first use.
     #[must_use]
@@ -176,6 +190,8 @@ impl<T> SyncRegion<T> {
     /// values already visited (including the panicking one) are removed and
     /// dropped, but later values remain live and correctly accounted. The region
     /// itself stays fully consistent and reusable after unwinding.
+    /// See the [reentrancy section](Self#reentrancy) for the deadlock hazard
+    /// when `T::Drop` re-enters the same `SyncRegion`.
     pub fn clear(&self) {
         self.write().clear();
     }
@@ -191,6 +207,9 @@ impl<T> SyncRegion<T> {
     /// by up to that much (measured ~1.5–1.8 ms worst-case writer stall for a 4 MiB
     /// payload). For such payloads, store `Arc<T>` instead so the "clone" is a cheap
     /// refcount bump.
+    ///
+    /// See the [reentrancy section](Self#reentrancy) for the deadlock hazard
+    /// when `T::clone` re-enters the same `SyncRegion`.
     pub fn get_cloned(&self, handle: Handle<T>) -> Option<T>
     where
         T: Clone,

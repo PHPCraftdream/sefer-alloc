@@ -481,15 +481,16 @@ fn region_reserve_reuses_freed_slots_on_churn() {
 fn region_reserve_overflow_panics() {
     // Region<T>::reserve() panics for genuine capacity-overflow arguments
     // in both debug and release builds (profile-independent).
-    // usize::MAX / 2 is large enough to trigger overflow panic but not so
-    // large that the underlying len+additional arithmetic wraps in release.
+    // len() == 1 is required to reach the checked_add guard — on an empty
+    // region, 0.checked_add(usize::MAX) is Some(_), so the guard never fires.
     let mut r: Region<i32> = Region::new();
+    r.insert(0); // len() == 1 — required to reach the guard (see F1 review)
     let msg = catch_panic_message(AssertUnwindSafe(|| {
-        r.reserve(usize::MAX / 2);
+        r.reserve(usize::MAX);
     }));
     assert!(
-        msg.contains("capacity overflow"),
-        "expected the panic message to mention capacity overflow, got: {msg:?}"
+        msg.contains("Region::reserve: capacity overflow"),
+        "expected the crate's own guard message, got: {msg:?}"
     );
 }
 
@@ -504,8 +505,8 @@ fn region_with_capacity_overflow_panics() {
         let _r: Region<i32> = Region::with_capacity(usize::MAX);
     }));
     assert!(
-        msg.contains("capacity overflow"),
-        "expected the panic message to mention capacity overflow, got: {msg:?}"
+        msg.contains("Region::with_capacity: capacity overflow"),
+        "expected the crate's own guard message, got: {msg:?}"
     );
 }
 

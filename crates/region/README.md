@@ -198,11 +198,12 @@ operation to slotmap" — but that was a design claim, never actually
 measured against the type it wraps. `benches/region_bench.rs` also runs
 `raw/insert`/`raw/get_hit`/`raw/remove` directly against a bare
 `slotmap::SlotMap<DefaultKey, u64>` (`Region`'s own backing type, no
-`Handle<T>` involved) as an A/B baseline. Median-of-3 result: `st/insert`
-281 ns/op vs `raw/insert` 305 ns/op; `st/get_hit` 5.07 vs `raw/get_hit`
-4.76; `st/remove` 99.3 vs `raw/remove` 106.4 — the wrapped and raw numbers
-interleave with no consistent direction, fully inside the ~15–25%
-run-to-run noise this dev host already shows elsewhere in this table.
+`Handle<T>` involved) as an A/B baseline. Median-of-3 result (measured in a
+separate session from the table above; see that table's ranges):
+`st/insert` 281 ns/op vs `raw/insert` 305 ns/op; `st/get_hit` 5.07 vs
+`raw/get_hit` 4.76; `st/remove` 99.3 vs `raw/remove` 106.4 — the wrapped and
+raw numbers interleave with no consistent direction, fully inside the
+~15–25% run-to-run noise this dev host already shows elsewhere in this table.
 **No measurable wrapper overhead was found.** None of `Region`'s methods
 carry an explicit `#[inline]` hint; since every method is generic over `T`
 (so its MIR is available for cross-crate monomorphization regardless) and

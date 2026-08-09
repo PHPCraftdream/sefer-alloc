@@ -11,12 +11,11 @@ use core::marker::PhantomData;
 /// it only names one. The `PhantomData<fn() -> T>` keeps the handle *typed* (so
 /// a `Handle<A>` cannot be passed to a `Region<B>`) while staying covariant in
 /// `T` and free of any drop/auto-trait obligations. `#[repr(transparent)]`
-/// makes `Handle<T>`'s layout — identical to `DefaultKey`'s (8 bytes, with
-/// `Option<Handle<T>>` also 8 bytes via `DefaultKey`'s `NonZeroU32` niche) — a
-/// guarantee, not an incidental fact of the current rustc layout algorithm;
-/// this is what makes the compile-time layout assertions in
-/// `tests/handle_static_asserts.rs` a pinned invariant rather than a
-/// toolchain-dependent assumption.
+/// guarantees `Handle<T>` and `DefaultKey` share a layout; the specific 8-byte
+/// size and the `Option` niche additionally rest on `slotmap`'s own (private,
+/// not-semver-guaranteed) `KeyData` representation, which
+/// `tests/handle_static_asserts.rs` pins as a tripwire rather than an
+/// assumption.
 ///
 /// [`Region`]: crate::Region
 #[repr(transparent)]

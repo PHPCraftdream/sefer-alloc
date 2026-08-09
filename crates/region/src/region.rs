@@ -84,6 +84,10 @@ impl<T> Region<T> {
     /// Panics if `capacity == usize::MAX` (the underlying `slotmap` reserves one
     /// extra slot for an internal sentinel; a capacity that would overflow that
     /// reservation is rejected up front, in both debug and release builds).
+    /// Additionally panics (as any `Vec`-backed container does) for any `capacity`
+    /// whose slot array would exceed `isize::MAX` bytes — roughly
+    /// `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond that aborts
+    /// rather than panicking.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         capacity
@@ -131,6 +135,10 @@ impl<T> Region<T> {
     ///
     /// Panics if `len() + additional` overflows `usize`, in both debug and
     /// release builds — checked up front, before delegating to `slotmap`.
+    /// Additionally panics (as any `Vec`-backed container does) for any
+    /// `len() + additional` whose slot array would exceed `isize::MAX` bytes
+    /// — roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure
+    /// beyond that aborts rather than panicking.
     pub fn reserve(&mut self, additional: usize) {
         self.inner
             .len()
