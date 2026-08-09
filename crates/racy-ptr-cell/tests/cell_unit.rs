@@ -152,3 +152,61 @@ fn oom_rolls_back_and_retry_succeeds() {
     assert_eq!(unsafe { p.as_ref().marker }, 0x9999);
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }
+
+#[test]
+#[should_panic(expected = "RacyPtrCell<T> requires align_of::<T>() >= 2")]
+fn align_of_one_payload_panics_at_construction() {
+    // task #708 (1/2): the align_of::<T>() >= 2 guard in `new`/`default` is
+    // soundness/liveness-load-bearing -- an align-1 T could publish a real
+    // pointer at address 1, which every reader would misread as the
+    // INITIALIZING sentinel and spin on forever. This was documented (`#
+    // Panics` on RacyPtrCell::new) but never tested: deleting the assert
+    // previously left the whole suite green. `default()` is the doc's own
+    // named runtime-panic route (the `new()` route is `const fn`, so a
+    // `static` usage with an align-1 T fails to COMPILE via const-eval,
+    // which is untestable here without a `compile_fail` doctest --
+    // CLAUDE.md bans doctests; `default()`'s runtime arm checks the exact
+    // same predicate).
+    let _ = RacyPtrCell::<u8>::default();
+}
+
+#[test]
+fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
+    // task #708 (2/2): `dbg_rollback_reenterable`'s happy-path contract
+    // (Some(true) + the restore postcondition) is asserted only in the
+    // PARENT repo's own integration test, which does not ship with the
+    // standalone published crate. Within crates/racy-ptr-cell itself the
+    // only call site discards the result -- stubbing the probe to
+    // unconditionally return None previously left the whole suite green.
+
+    // Happy-path arm: a fresh (UNINIT) cell.
+    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    assert_eq!(
+        cell.dbg_rollback_reenterable(),
+        Some(true),
+        "on a fresh UNINIT cell the probe must observe and restore UNINIT"
+    );
+    // Restore postcondition: the cell is back to UNINIT, not left at the
+    // sentinel or leaked into some other state.
+    assert!(!cell.dbg_is_ready());
+    assert!(cell.get().is_none());
+    // A subsequent real get_or_try_init must succeed normally.
+    let p = cell.get_or_try_init(|| Some(leak(0x7777))).unwrap();
+    assert!(cell.dbg_is_ready());
+    assert_eq!(cell.get(), Some(p));
+    // SAFETY: p is the leaked, still-live payload.
+    assert_eq!(unsafe { p.as_ref().marker }, 0x7777);
+
+    // Not-applicable arm: a READY cell (the probe's entry CAS observes
+    // something other than UNINIT and must not touch the cell at all).
+    assert_eq!(
+        cell.dbg_rollback_reenterable(),
+        None,
+        "on an already-READY cell the probe is not applicable"
+    );
+    // Confirm the probe truly left the READY cell untouched.
+    assert!(cell.dbg_is_ready());
+    assert_eq!(cell.get(), Some(p));
+
+    unsafe { drop(Box::from_raw(p.as_ptr())) };
+}
