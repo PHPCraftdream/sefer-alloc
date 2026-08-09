@@ -6,13 +6,10 @@
 //!    only holds a `slotmap::DefaultKey` plus a `PhantomData<fn() -> T>` (a
 //!    fn-pointer phantom, which is Send+Sync regardless of T).
 //!
-//! 2. [`Handle<T>`]'s layout: `size_of::<Handle<T>>()` is exactly 8 bytes
-//!    (a `u32` index + a `NonZeroU32` version from slotmap's DefaultKey, with no
-//!    padding), and `Option<Handle<T>>` is also exactly 8 bytes via the niche
-//!    optimization (the version field is NonZeroU32). `Handle<T>`'s
-//!    `#[repr(transparent)]` makes this a genuine layout GUARANTEE (rests on
-//!    `DefaultKey`'s own layout), not merely what the current rustc happens
-//!    to produce under the default `#[repr(Rust)]`.
+//! 2. [`Handle<T>`]'s layout: `size_of::<Handle<T>>()` is exactly 16 bytes
+//!    (a `u32` index + a `NonZeroU32` version from slotmap's DefaultKey, plus
+//!    a `NonZeroU64` region_id, with no padding), and `Option<Handle<T>>` is also
+//!    exactly 16 bytes via the niche optimization (region_id is NonZeroU64).
 //!
 //! The negative direction (that `SyncRegion<Cell<u32>>: Sync` must NOT compile)
 //! was manually verified in `docs/reviews/2026-08-07-sefer-region-safety-review.md`
@@ -62,26 +59,27 @@ const _: () = assert_send_sync::<Handle<*const u32>>();
 /// Verify Handle<T> is Send+Sync even when T contains both !Send and !Sync components.
 const _: () = assert_send_sync::<Handle<std::rc::Rc<std::cell::Cell<u32>>>>();
 
-/// Compile-time layout assertion: Handle<T> is exactly 8 bytes.
+/// Compile-time layout assertion: Handle<T> is exactly 16 bytes.
 ///
-/// slotmap::DefaultKey is 8 bytes (u32 index + NonZeroU32 version), and
-/// PhantomData is zero-sized, so Handle<T> should be exactly 8 bytes with no padding.
-const _: () = assert!(size_of::<Handle<u8>>() == 8);
+/// Handle<T> contains: slotmap::DefaultKey (8 bytes: u32 index + NonZeroU32 version),
+/// NonZeroU64 region_id (8 bytes), and PhantomData (zero-sized), so Handle<T> should be
+/// exactly 16 bytes with no padding.
+const _: () = assert!(size_of::<Handle<u8>>() == 16);
 
-/// Compile-time layout assertion: Option<Handle<T>> is exactly 8 bytes.
+/// Compile-time layout assertion: Option<Handle<T>> is exactly 16 bytes.
 ///
-/// Because Handle<T> contains a NonZeroU32 field (the version part of DefaultKey),
-/// Option<Handle<T>> should use the niche optimization and also be exactly 8 bytes.
-const _: () = assert!(size_of::<Option<Handle<u8>>>() == 8);
+/// Because Handle<T> contains NonZero fields (NonZeroU64 for region_id),
+/// Option<Handle<T>> should use the niche optimization and also be exactly 16 bytes.
+const _: () = assert!(size_of::<Option<Handle<u8>>>() == 16);
 
 #[test]
 fn handle_layout_matches_expectations() {
     // Runtime check for documentation purposes; the compile-time assertions above
     // are the real guard. This just makes the numbers visible in test output.
-    assert_eq!(size_of::<Handle<u8>>(), 8, "Handle<T> should be 8 bytes");
+    assert_eq!(size_of::<Handle<u8>>(), 16, "Handle<T> should be 16 bytes");
     assert_eq!(
         size_of::<Option<Handle<u8>>>(),
-        8,
-        "Option<Handle<T>> should also be 8 bytes (niche optimization)"
+        16,
+        "Option<Handle<T>> should also be 16 bytes (niche optimization)"
     );
 }

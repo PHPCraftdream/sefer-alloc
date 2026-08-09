@@ -95,39 +95,112 @@ fn region_stale_handle_returns_none() {
 }
 
 #[test]
-fn region_handle_crosses_instance_of_same_type() {
-    // Documents the REAL (weaker-than-it-sounds) semantics of Handle<T>'s
-    // PhantomData<fn() -> T> branding: it separates handles by value type T
-    // (a Handle<Foo> cannot be passed where a Handle<Bar> is expected — that
-    // part IS a compile error), but it does NOT separate handles by Region
-    // INSTANCE. A Handle<T> minted by one Region<T> is silently accepted by
-    // an unrelated Region<T> of the same T, and can resolve to (or remove)
-    // whatever value happens to occupy the same slot in that other Region.
-    // See crates/region/src/lib.rs and README.md "Why?" for the disclosure
-    // this test exists to keep honest.
+fn region_handle_from_different_instance_is_rejected() {
     let mut region_a: Region<u32> = Region::new();
     let mut region_b: Region<u32> = Region::new();
 
     let h_a = region_a.insert(1u32);
     let h_b = region_b.insert(2u32);
 
-    // Same slot index/generation on both sides (both are the first insert
-    // into a fresh Region), so h_a and h_b are interchangeable in practice —
-    // but even without that coincidence, nothing at the type level stops
-    // h_a from being handed to region_b: this compiles today and always will.
-    assert_eq!(region_b.get(h_a).copied(), Some(2u32));
-    assert_eq!(region_a.get(h_b).copied(), Some(1u32));
+    // Cross-region access should now FAIL (return None):
+    assert_eq!(region_b.get(h_a), None, "cross-region get should fail");
+    assert_eq!(region_a.get(h_b), None, "cross-region get should fail");
 
-    // The hazard is not just read confusion — remove() against the WRONG
-    // region silently removes the other region's value.
-    let removed = region_b
-        .remove(h_a)
-        .expect("wrong-region remove still succeeds");
-    assert_eq!(removed, 2u32);
-    assert!(
-        region_b.is_empty(),
-        "region_b's own value was removed via region_a's handle"
+    // Cross-region remove should now FAIL (return None):
+    assert_eq!(
+        region_b.remove(h_a),
+        None,
+        "cross-region remove should fail"
     );
+    assert_eq!(
+        region_a.remove(h_b),
+        None,
+        "cross-region remove should fail"
+    );
+
+    // Verify handles still work in their own regions:
+    assert_eq!(region_a.get(h_a).copied(), Some(1u32));
+    assert_eq!(region_b.get(h_b).copied(), Some(2u32));
+
+    // Verify contains respects region_id:
+    assert!(
+        !region_b.contains(h_a),
+        "cross-region contains should be false"
+    );
+    assert!(
+        !region_a.contains(h_b),
+        "cross-region contains should be false"
+    );
+    assert!(
+        region_a.contains(h_a),
+        "same-region contains should be true"
+    );
+    assert!(
+        region_b.contains(h_b),
+        "same-region contains should be true"
+    );
+}
+
+#[test]
+fn handles_from_different_regions_are_distinct() {
+    use std::collections::{HashMap, HashSet};
+
+    let mut region_a: Region<u32> = Region::new();
+    let mut region_b: Region<u32> = Region::new();
+
+    // First insert in each region typically produces the same DefaultKey
+    let h_a = region_a.insert(100);
+    let h_b = region_b.insert(200);
+
+    // Despite having the same raw key, handles from different regions are NOT equal
+    assert_ne!(
+        h_a, h_b,
+        "handles from different regions should not compare equal"
+    );
+
+    // They should hash to different values
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher_a = DefaultHasher::new();
+    h_a.hash(&mut hasher_a);
+    let hash_a = hasher_a.finish();
+
+    let mut hasher_b = DefaultHasher::new();
+    h_b.hash(&mut hasher_b);
+    let hash_b = hasher_b.finish();
+
+    assert_ne!(
+        hash_a, hash_b,
+        "handles from different regions should hash to different values"
+    );
+
+    // HashSet should NOT contain both if they were equal (they shouldn't)
+    let mut set: HashSet<Handle<u32>> = HashSet::new();
+    set.insert(h_a);
+    assert!(set.contains(&h_a), "set should contain h_a");
+    assert!(
+        !set.contains(&h_b),
+        "set should NOT contain h_b (different region)"
+    );
+    set.insert(h_b); // This adds a second entry
+    assert_eq!(
+        set.len(),
+        2,
+        "set should have 2 entries (different handles)"
+    );
+
+    // HashMap should NOT collide keys from different regions
+    let mut map: HashMap<Handle<u32>, &str> = HashMap::new();
+    map.insert(h_a, "region_a_value");
+    map.insert(h_b, "region_b_value");
+    assert_eq!(map.len(), 2, "map should have 2 entries (no collision)");
+    assert_eq!(map.get(&h_a), Some(&"region_a_value"));
+    assert_eq!(map.get(&h_b), Some(&"region_b_value"));
+
+    // Verify handles still work correctly in their own regions
+    assert_eq!(region_a.get(h_a).copied(), Some(100));
+    assert_eq!(region_b.get(h_b).copied(), Some(200));
 }
 
 #[test]

@@ -1,6 +1,10 @@
 //! [`Region`] — a handle-addressed store of `T` backed by `slotmap`.
 
 use crate::Handle;
+use core::num::NonZeroU64;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_REGION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A handle-addressed store of `T`.
 ///
@@ -40,6 +44,15 @@ use crate::Handle;
 /// - **I5 — drop-once:** every live value is dropped exactly once — on
 ///   `remove` (returned to the caller) or on `Region` drop — never twice,
 ///   never leaked. `slotmap` owns the storage and therefore the drops.
+/// - **I6 — instance isolation:** a [`Handle<T>`] resolves only through the
+///   `Region<T>` instance that minted it. Every accessor
+///   ([`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
+///   [`contains`](Self::contains)) stamps its `region_id` at construction and
+///   checks it before touching the backing slotmap; a handle from a
+///   *different* `Region<T>` is rejected exactly like a stale handle (`None`/
+///   `false`), even when its raw `DefaultKey` collides with a live key in
+///   this region (this doubles `Handle<T>`'s size from 8 to 16 bytes versus
+///   the pre-0.2.0 layout — see `tests/handle_static_asserts.rs`).
 ///
 /// ## Generation saturation
 ///
@@ -70,6 +83,7 @@ use crate::Handle;
 /// ever risking alias) must add their own wrapper layer that tracks generation
 /// wrap or otherwise avoids cross-region handle reuse.
 pub struct Region<T> {
+    region_id: NonZeroU64,
     inner: slotmap::SlotMap<slotmap::DefaultKey, T>,
 }
 
@@ -78,6 +92,8 @@ impl<T> Region<T> {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            region_id: NonZeroU64::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
+                .expect("region_id overflow"),
             inner: slotmap::SlotMap::new(),
         }
     }
@@ -111,6 +127,8 @@ impl<T> Region<T> {
             .checked_add(1)
             .expect("Region::with_capacity: capacity overflow");
         Self {
+            region_id: NonZeroU64::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
+                .expect("region_id overflow"),
             inner: slotmap::SlotMap::with_capacity(capacity),
         }
     }
@@ -180,25 +198,34 @@ impl<T> Region<T> {
     /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
     #[must_use]
     pub fn insert(&mut self, value: T) -> Handle<T> {
-        Handle::from_key(self.inner.insert(value))
+        Handle::from_key_and_region(self.inner.insert(value), self.region_id)
     }
 
     /// Borrows the value for `handle`, or `None` if the handle is stale or
     /// removed (I1, I2, I3).
     #[must_use]
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         self.inner.get(handle.key)
     }
 
     /// Mutably borrows the value for `handle`, or `None` if stale/removed.
     #[must_use]
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         self.inner.get_mut(handle.key)
     }
 
     /// Whether `handle` currently resolves to a live value.
     #[must_use]
     pub fn contains(&self, handle: Handle<T>) -> bool {
+        if handle.region_id != self.region_id {
+            return false;
+        }
         self.inner.contains_key(handle.key)
     }
 
@@ -207,6 +234,9 @@ impl<T> Region<T> {
     /// `2^31` reuse cycles of that slot (I2 — see the struct-level doc for
     /// the generation-wrap caveat).
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
+        if handle.region_id != self.region_id {
+            return None;
+        }
         self.inner.remove(handle.key)
     }
 

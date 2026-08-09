@@ -14,15 +14,16 @@
 //!
 //! Slotmap's `DefaultKey` is untyped: a `DefaultKey` from one map can be passed
 //! to another of a different value type without a compile error. `sefer-region`
-//! wraps it in `Handle<T>` — a `PhantomData<fn() -> T>`-branded key — so the
-//! compiler rejects cross-**type** handle confusion at the type level (a
-//! `Handle<Foo>` cannot be used where a `Handle<Bar>` is expected). Note:
-//! branding is by value type `T`, not by `Region` instance — a `Handle<T>`
-//! from one `Region<T>` is accepted by a *different* `Region<T>` of the same
-//! type and could silently access or remove a value keyed by the same
-//! `DefaultKey` in that other instance.
+//! wraps it in `Handle<T>` — a `PhantomData<fn() -> T>`-branded key plus a
+//! `region_id` — so the compiler rejects cross-**type** handle confusion at the
+//! type level (a `Handle<Foo>` cannot be used where a `Handle<Bar>` is
+//! expected), and the runtime `region_id` check rejects cross-**instance**
+//! handle confusion at the value level: a `Handle<T>` minted by one
+//! `Region<T>` is rejected (treated exactly like a stale handle — `None`/
+//! `false`, no panic) by every *other* `Region<T>` of the same type, even one
+//! whose slotmap key happens to collide with the handle's own key.
 //!
-//! ## Invariants upheld (I1–I5)
+//! ## Invariants upheld (I1–I6)
 //!
 //! - **I1 — resolution:** a fresh handle resolves via [`Region::get`] to the
 //!   inserted value until it is [`Region::remove`]d.
@@ -39,6 +40,13 @@
 //!   [`Region::is_empty`] agrees.
 //! - **I5 — drop-once:** every live value is dropped exactly once — on `remove`
 //!   (returned to the caller) or on `Region` drop — never twice, never leaked.
+//! - **I6 — instance isolation:** a `Handle<T>` resolves only through the
+//!   [`Region<T>`] instance that minted it. Every accessor checks the
+//!   handle's `region_id` against the region's own before touching the
+//!   backing slotmap; a mismatch is treated exactly like a stale handle. Two
+//!   `Region<T>`s can never alias each other's values through a shared
+//!   `DefaultKey`, even when that key collides (as it commonly does — the
+//!   first insert into any fresh `Region` tends to produce the same key).
 //!
 //! ## Pure Rust / zero own unsafe
 //!

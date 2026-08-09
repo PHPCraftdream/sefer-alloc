@@ -18,12 +18,16 @@ standalone crate.
 
 `slotmap`'s `DefaultKey` is untyped: a key from one map compiles against another
 map of a different value type without error. `sefer-region` wraps it in
-`Handle<T>` — a `PhantomData<fn() -> T>`-branded key — so the compiler rejects
-cross-**type** handle confusion at the type level (a `Handle<Foo>` cannot be
-used where a `Handle<Bar>` is expected). Note: branding is by value type `T`,
-not by `Region` instance — a `Handle<T>` from one `Region<T>` is accepted by
-a *different* `Region<T>` of the same type and could silently access or remove
-a value keyed by the same `DefaultKey` in that other instance.
+`Handle<T>` — a `PhantomData<fn() -> T>`-branded key plus a `region_id` — so the
+compiler rejects cross-**type** handle confusion at the type level (a
+`Handle<Foo>` cannot be used where a `Handle<Bar>` is expected), and the
+runtime `region_id` check rejects cross-**instance** handle confusion at the
+value level: a `Handle<T>` minted by one `Region<T>` is rejected — treated
+exactly like a stale handle (`None`/`false`, never a panic) — by every other
+`Region<T>` of the same type, even when its raw `DefaultKey` collides with a
+live key in that other instance (as it commonly does — the first insert into
+any fresh `Region` tends to produce the same key). This doubles `Handle<T>`'s
+size from 8 to 16 bytes versus the pre-0.2.0 layout.
 
 The differentiator for the pure-Rust audience: **zero own unsafe** —
 `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` lives
