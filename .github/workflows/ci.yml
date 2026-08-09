@@ -50,6 +50,45 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  sefer-region-gates:
+    # Task #793/F15: permanent release-gating checks for sefer-region beyond
+    # what test-workspace already covers (that job already runs `cargo test
+    # -p sefer-region` default-features and the `--no-default-features`
+    # bare-metal `thumbv7em-none-eabi` build -- not duplicated here).
+    name: sefer-region package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo clippy -p sefer-region --all-features --all-targets -- -D warnings
+      - run: cargo clippy -p sefer-region --no-default-features --all-targets -- -D warnings
+      - run: cargo doc -p sefer-region --all-features --no-deps -- -D warnings
+      # F15's "host tests under --no-default-features" -- the existing
+      # test-workspace job only cross-BUILDS this configuration for the
+      # bare-metal target; it never TESTS it on a host target with std
+      # (SyncRegion, all `#[cfg(feature = "std")]` code) compiled out.
+      - run: cargo test -p sefer-region --no-default-features
+      # Packaging verification -- confirms the crate packages and its
+      # isolated build succeeds against the published manifest. This is
+      # NOT the same guarantee as F14's "run the benchmark from an
+      # extracted tarball with no ancestor workspace" concern (that
+      # would additionally require extracting the tarball to a scratch
+      # directory and running `cargo bench` there, which is not automated
+      # here -- see region_bench.rs's own comment on why: bench-scale-tool
+      # 0.1.0 exposes no public API to redirect its manifest path, so the
+      # exposure the finding describes is upstream, not fixable from this
+      # step).
+      - run: cargo publish --dry-run -p sefer-region
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      # sefer-region 0.1.0 is published on crates.io (task #785/F1's own
+      # finding); cargo-semver-checks fetches that baseline from the
+      # registry automatically, no local tag needed. A real failure here
+      # is a real gate -- no `|| true` swallowing it.
+      - run: cargo semver-checks check-release --package sefer-region
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production

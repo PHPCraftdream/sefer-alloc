@@ -43,8 +43,8 @@ fn readme_sync_region_example() {
         // Multi-op transaction: hold the write guard for atomicity.
         {
             let mut w = sr.write();
-            w.insert(1u32);
-            w.insert(2u32);
+            let _ = w.insert(1u32);
+            let _ = w.insert(2u32);
         } // guard dropped, lock released
 
         assert_eq!(sr.len(), 3);

@@ -1,10 +1,12 @@
 //! Regression test for clear() partial completion under panicking `T::Drop`.
 //!
-//! Documents and validates that Region::clear() and SyncRegion::clear() complete
-//! partially when a value's Drop panics: values already visited (including the
-//! panicking one) are removed and dropped, but later values remain live and
-//! correctly accounted. The region stays consistent and reusable — no corruption,
-//! no double-drop, no leak.
+//! Documents and validates what the CURRENT `slotmap` version does when
+//! a value's Drop panics during Region::clear() or SyncRegion::clear().
+//! The invariant that holds across slotmap 1.x is: the region stays consistent
+//! and reusable after unwinding, with no double-drop or leak by the region
+//! itself. The EXACT set of survivors is NOT a stable API contract — slotmap 1.x
+//! reserves the right to change its unwind cleanup order. This test documents
+//! the behavior of the resolved slotmap version as an oracle, not a promise.
 
 use sefer_region::{Handle, Region};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -182,15 +184,22 @@ mod sync_tests {
         // to the test harness, while still causing the partial-clear behavior.
         let sr_clone = Arc::clone(&sr);
         let join = std::thread::spawn(move || {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 sr_clone.clear();
-            }));
+            }))
         });
 
         // Wait for the thread to complete (it will panic internally, but the
         // inner catch_unwind swallows it, so join() itself returns Ok).
         let join_result = join.join();
         assert!(join_result.is_ok(), "thread should have completed");
+
+        // Verify that clear DID panic inside the thread.
+        let clear_result = join_result.unwrap();
+        assert!(
+            clear_result.is_err(),
+            "clear() should have panicked due to Drop panic"
+        );
 
         // After poison recovery: partial clear completed. The invariant that is truly
         // order-free is that total constructions (5) must equal drops + survivors.

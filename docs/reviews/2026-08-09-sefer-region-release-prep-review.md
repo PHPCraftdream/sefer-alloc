@@ -1,5 +1,28 @@
 # `sefer-region` release-preparation review (read-only)
 
+> **SUPERSEDED (2026-08-09, task #797).** This report's `GO-WITH-FIXES`
+> verdict has been superseded by the stricter follow-up static audit,
+> `docs/reviews/2026-08-09-sefer-region-static-release-audit.md`, whose
+> verdict is `HOLD / NO-GO`. That audit corrects several conclusions this
+> report reached: the "every one of I1-I5 is accurate as written" claim
+> was wrong for I5 (safe `mem::forget` defeats an unconditional
+> "never leaked" guarantee); the "rebuild a fresh Region to compact"
+> advice this report's own predecessor tasks had shipped was actively
+> dangerous, not merely stale (a stale handle from the old Region can
+> silently alias a value in the new one); the standalone packaged
+> benchmark's self-sufficiency gap (this report's own F14) was
+> understated in severity; the "~4 orders of magnitude" panic-surface
+> arithmetic in this report's F2 does not follow from the cited
+> comparison; and the "no new irreversible risk" summary line was too
+> strong given the floating `slotmap = "1"` dependency, the exact-layout
+> promise, and the then-unresolved cross-region handle identity question.
+> This report's genuinely-found defects (the vacuous `reserve` overflow
+> test, real package/metadata gaps) remain valid and were fixed
+> regardless — see the newer audit and its own follow-up tasks
+> (#779-780, #786-803) for the full, corrected picture. Kept here
+> unmodified as the historical record, per this project's append-only,
+> non-retroactive correction convention.
+
 **Date:** 2026-08-09
 **HEAD at review:** `e7c13b28dd8ae12d514d31a9a5f85b556f6cc5ec` (`main`).
 `crates/region/` itself is unchanged since `6cb3f6b` (task #770); `git diff 11ca6ee..HEAD --

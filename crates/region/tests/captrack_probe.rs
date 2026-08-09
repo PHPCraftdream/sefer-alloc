@@ -46,7 +46,7 @@ fn region_capacity_under_churn() {
         captrack::registry::record_creation(name, file, line, column);
         let mut r: Region<u64> = Region::new();
         for i in 0..1000u64 {
-            r.insert(i);
+            let _ = r.insert(i);
             if i % 100 == 0 {
                 captrack::registry::record_sample(file, line, column, r.capacity());
             }
@@ -75,7 +75,7 @@ fn region_capacity_under_churn() {
         let cap_after_remove = r.capacity();
         captrack::registry::record_sample(file, line, column, cap_after_remove);
         for i in 0..500u64 {
-            r.insert(i);
+            let _ = r.insert(i);
         }
         let cap_after_refill = r.capacity();
         captrack::registry::record_sample(file, line, column, cap_after_refill);
@@ -91,7 +91,7 @@ fn region_capacity_under_churn() {
         captrack::registry::record_creation(name, file, line, column);
         let mut r: Region<u64> = Region::with_capacity(1000);
         for i in 0..1000u64 {
-            r.insert(i);
+            let _ = r.insert(i);
         }
         captrack::registry::record_sample(file, line, column, r.capacity());
     }

@@ -9,8 +9,12 @@ use crate::{Handle, Region};
 /// This is a coarse-grained `std::sync::RwLock<Region<T>>` with an ergonomic
 /// guard-based API: multiple readers (`read`) or one writer (`write`) at a time.
 /// It is the *always-shippable* concurrent answer: correct under any interleaving
-/// because every mutation serialises through the lock. Finer-grained or lock-free
-/// alternatives are out of scope for this crate.
+/// because every mutation serialises through the lock. Note: "correct under any
+/// interleaving" refers to **safety/serialization** — memory safety and API
+/// contract invariants — not to bounded writer latency. `std::sync::RwLock` does
+/// not guarantee portable fairness or starvation-freedom; on some platforms a new
+/// reader may be delayed behind an awaiting writer depending on OS scheduling.
+/// Finer-grained or lock-free alternatives are out of scope for this crate.
 ///
 /// The wrapper stays `#![forbid(unsafe_code)]`: all interior mutability comes
 /// from `std`'s `RwLock`. Use [`read`](Self::read) / [`write`](Self::write) for
@@ -25,13 +29,12 @@ use crate::{Handle, Region};
 /// A panic while the **write** guard is held poisons the `RwLock` — `std` never
 /// poisons on a read-guard panic (e.g. a panicking `T::clone` inside
 /// [`get_cloned`](Self::get_cloned) releases the read lock cleanly, with no
-/// poison and no effect on the stored value). A poisoned `Region` is
-/// still structurally valid — no broken memory invariants: `slotmap` keeps the
-/// slot store generational and consistent regardless of a panicked op, so we
-/// **recover from poison** rather than propagate it. Every accessor uses
-/// `RwLockReadGuard`/`RwLockWriteGuard` recovery (`PoisonError::into_inner`),
-/// handing back the intact inner `Region` and letting callers continue. This
-/// keeps a panic in one thread from bricking the region for all others.
+/// poison). The **container structure** (Region/slotmap invariants) stays
+/// intact regardless of the panic — this crate guarantees no memory
+/// corruption. However, **interior side effects are the responsibility of `T`**:
+/// if `T::clone` modifies internal state (e.g. `Cell`, atomics, internal `Mutex`)
+/// before panicking, that modification persists. The `RwLock` itself does not
+/// poison on read-guard panic, so the `SyncRegion` remains usable.
 ///
 /// **Poison recovery guarantees container integrity only, not operation completion.**
 /// The recovered `Region` has no memory corruption, but an interrupted operation
@@ -187,9 +190,15 @@ impl<T> SyncRegion<T> {
     ///
     /// One-shot convenience that locks for write internally.
     /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
-    /// values already visited (including the panicking one) are removed and
-    /// dropped, but later values remain live and correctly accounted. The region
-    /// itself stays fully consistent and reusable after unwinding.
+    /// the region stays fully consistent and reusable after unwinding, but
+    /// the exact set of survivors depends on the underlying `slotmap` version's
+    /// unwind cleanup (slotmap 1.x reserves the right to change this). What is
+    /// guaranteed is that: (1) no value is dropped twice, (2) no value is leaked
+    /// by the region itself (caller-side `mem::forget` of removed values is
+    /// outside this guarantee), and (3) the region's internal accounting remains
+    /// correct. See `tests/clear_partial_under_panic.rs`, which documents what
+    /// the CURRENT slotmap version actually does -- an observation of the
+    /// present dependency, not a stable contract this crate promises.
     /// See the [reentrancy section](Self#reentrancy) for the deadlock hazard
     /// when `T::Drop` re-enters the same `SyncRegion`.
     pub fn clear(&self) {

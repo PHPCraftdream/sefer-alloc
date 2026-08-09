@@ -3173,3 +3173,46 @@ resolved" below.)_
      without broken-intra-doc-link warnings; the new links resolve correctly on the
      rendered docs.
    - **Files changed:** `crates/region/src/sync_region.rs`, `docs/CORRECTNESS_OPEN_ITEMS.md`.
+
+42. **`sefer-region`'s packaged benchmark can attempt a write outside its own
+   package root when run standalone** (`crates/region/benches/region_bench.rs`)
+   — **OPEN**, from the static release audit's finding F14
+   (`docs/reviews/2026-08-09-sefer-region-static-release-audit.md`, task #792).
+
+   - **Root cause, confirmed against `bench-scale-tool` 0.1.0's actual
+     source** (not just its doc comments): `Harness` exposes no public API
+     to override where its manifest lives. `manifest_path()` (private to
+     that crate) walks up from `CARGO_MANIFEST_DIR` for the nearest
+     `[workspace]`-declaring `Cargo.toml`, falling back to
+     `<crate>/../../bench-iters.txt` only when no such ancestor exists
+     (e.g. this crate extracted standalone from a published tarball). A
+     plain `cargo bench` run (no `--calibrate` flag) still attempts
+     `save_manifest` at the end whenever any workload was JIT-calibrated
+     on the spot (the self-healing path for a missing manifest entry) —
+     which is every workload on a fresh/missing manifest. For a
+     standalone-extracted package this targets a path OUTSIDE the package
+     root.
+   - **Why not closed:** there is no fix reachable from `sefer-region`'s
+     own source. The harness's manifest routing lives entirely in the
+     separately-published `bench-scale-tool` crate (a registry dependency,
+     not a workspace member this repo vendors or can patch). Closing this
+     for real requires either an upstream `bench-scale-tool` change (a
+     public API to override the manifest path, or a "read-only, never
+     write" mode) or a CI-side fix (extracting the packaged tarball into
+     an isolated temp directory and observing the actual failure/success
+     mode empirically, rather than assuming from source reading alone).
+   - **Mitigating:** `load_manifest` on a missing/unreadable path returns
+     an empty map rather than crashing, and every workload self-heals via
+     a 1-second JIT calibration pass rather than aborting — so a
+     standalone `cargo bench` run does not fail outright; the exposure is
+     the ATTEMPTED write outside the package root (which may itself fail
+     silently on a read-only extraction, or succeed and pollute an
+     ancestor directory on a writable one), not a guaranteed crash.
+   - **Next trigger:** either (a) `bench-scale-tool` ships a version with
+     a manifest-path override API sefer-region's `region_bench.rs` can
+     use, or (b) someone actually performs the isolated-tarball-extraction
+     verification this item currently only reasons about from source, and
+     records the real observed behavior.
+   - **Files changed:** `crates/region/benches/region_bench.rs` (comment
+     documenting the exposure honestly instead of claiming a fix that
+     doesn't exist); this index entry.

@@ -69,7 +69,7 @@ fn region_drop_drops_all_values_once() {
         let mut r: Region<DropCounter> = Region::new();
         for i in 0..n {
             let counter = DropCounter::new(i, Arc::clone(&drop_count));
-            r.insert(counter);
+            let _ = r.insert(counter);
         }
 
         // All values live, none dropped yet.
@@ -189,7 +189,7 @@ mod sync_drop_once_tests {
             let sr: SyncRegion<DropCounter> = SyncRegion::new();
             for i in 0..n {
                 let counter = DropCounter::new(i, Arc::clone(&drop_count));
-                sr.insert(counter);
+                let _ = sr.insert(counter);
             }
 
             assert_eq!(drop_count.load(Ordering::SeqCst), 0);
@@ -388,26 +388,32 @@ fn region_with_capacity() {
     let n = 10;
     let mut r: Region<i32> = Region::with_capacity(n);
 
+    // Capture capacity IMMEDIATELY after with_capacity, before any insert.
+    let initial_cap = r.capacity();
+
     assert!(r.is_empty());
     assert_eq!(r.len(), 0);
     assert!(
-        r.capacity() >= n,
-        "capacity should be at least requested {}",
-        n
+        initial_cap >= n,
+        "capacity should be at least requested {} (got {})",
+        n,
+        initial_cap
     );
 
-    // Can insert up to n values without reallocation (we don't verify
-    // "without reallocation" directly, but capacity shouldn't shrink).
+    // Can insert up to n values without reallocation (capacity should not
+    // decrease during inserts, and should not increase if n <= initial_cap).
     let caps: Vec<usize> = (0..n)
         .map(|_| {
-            r.insert(0);
+            let _ = r.insert(0);
             r.capacity()
         })
         .collect();
 
     // Capacity should never drop below the initial capacity during inserts.
-    let initial_cap = caps[0];
     assert!(caps.iter().all(|&c| c >= initial_cap));
+
+    // Since n <= initial_cap, we should NOT have reallocated.
+    assert!(caps.iter().all(|&c| c == initial_cap));
 }
 
 #[test]
@@ -420,20 +426,25 @@ fn region_reserve() {
     let additional = 10;
     r.reserve(additional);
 
-    let new_cap = r.capacity();
+    // Capture capacity IMMEDIATELY after reserve, before any insert.
+    let reserved_cap = r.capacity();
+
     assert!(
-        new_cap >= initial_cap + additional,
+        reserved_cap >= initial_cap + additional,
         "capacity should increase by at least {} (was {}, now {})",
         additional,
         initial_cap,
-        new_cap
+        reserved_cap
     );
 
     // Can insert up to `additional` values without further reserve.
     for _ in 0..additional {
-        r.insert(0);
+        let _ = r.insert(0);
     }
     assert_eq!(r.len(), additional);
+
+    // Verify capacity didn't change during inserts (since we reserved enough).
+    assert_eq!(r.capacity(), reserved_cap);
 }
 
 #[test]
@@ -466,7 +477,7 @@ fn region_reserve_reuses_freed_slots_on_churn() {
 
     // Re-insert 500 values — these should reuse the freed slots, not grow.
     for i in 0..500u64 {
-        r.insert(i);
+        let _ = r.insert(i);
     }
     let cap_after_refill = r.capacity();
 
@@ -484,7 +495,7 @@ fn region_reserve_overflow_panics() {
     // len() == 1 is required to reach the checked_add guard — on an empty
     // region, 0.checked_add(usize::MAX) is Some(_), so the guard never fires.
     let mut r: Region<i32> = Region::new();
-    r.insert(0); // len() == 1 — required to reach the guard (see F1 review)
+    let _ = r.insert(0); // len() == 1 — required to reach the guard (see F1 review)
     let msg = catch_panic_message(AssertUnwindSafe(|| {
         r.reserve(usize::MAX);
     }));
@@ -496,66 +507,64 @@ fn region_reserve_overflow_panics() {
 
 #[test]
 fn region_with_capacity_overflow_panics() {
-    // Region::with_capacity(usize::MAX) panics in both debug and release builds
-    // (profile-independent) -- slotmap reserves one extra slot for an internal
-    // sentinel (capacity + 1), so usize::MAX is exactly the one value that would
-    // overflow that reservation; guarded up front via checked_add before
-    // delegating to slotmap.
+    // Region::with_capacity(usize::MAX) panics in both debug and release
+    // builds (profile-independent). Since task #791/F13, the FIRST guard hit
+    // is the SlotMap live-entry domain check (max 2^32 - 2 live entries, so
+    // max reserve is 2^32 - 3) -- usize::MAX vastly exceeds that limit, so
+    // this guard fires before the older checked_add(1)-overflow guard ever
+    // gets a chance to (that older guard is now reachable only for a
+    // capacity in the empty range strictly between SLOTMAP_MAX_RESERVE and
+    // usize::MAX, which does not exist -- SLOTMAP_MAX_RESERVE IS usize::MAX
+    // - 3, so the two guards' domains abut with no gap the checked_add path
+    // can still occupy on its own; it stays as defense-in-depth, not dead
+    // code, for any future change to the domain constant).
     let msg = catch_panic_message(AssertUnwindSafe(|| {
         let _r: Region<i32> = Region::with_capacity(usize::MAX);
     }));
     assert!(
-        msg.contains("Region::with_capacity: capacity overflow"),
-        "expected the crate's own guard message, got: {msg:?}"
+        msg.contains("Region::with_capacity: capacity") && msg.contains("exceeds slotmap limit"),
+        "expected the crate's own domain-limit guard message, got: {msg:?}"
     );
 }
-
-/// Serializes calls to [`catch_panic_message`] across concurrently-running
-/// test threads, since it temporarily installs a process-global panic hook.
-static PANIC_HOOK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Runs `f`, which is expected to panic, and returns the formatted panic
 /// message text -- so a test can pin the SPECIFIC panic it expects instead of
 /// accepting any panic whatsoever (an unrelated panic silently satisfying
 /// `result.is_err()` is exactly the vacuous-test shape this helper exists to
-/// close off). Captures the message via a temporary panic hook rather than
-/// downcasting the `catch_unwind` payload's `Box<dyn Any>` directly: in this
-/// crate's own test binary, a panic payload originating inside the
-/// `sefer-region` library crate (a separate compilation unit linked in as a
-/// dependency) does not downcast to `&str`/`String` even though the panic
-/// macro produces exactly those types -- `TypeId` mismatches across the
-/// library/test-binary boundary for reasons not fully root-caused here.
-/// The hook-based capture sidesteps that entirely by reading the already-
-/// formatted `Display` text instead of downcasting the raw payload.
+/// close off). Directly downcasts the `catch_unwind` payload to `&str` or `String`
+/// to avoid process-global panic hook races with other intentional-panic tests
+/// in the same process (F18 fix).
 ///
 /// Panics (test-harness-level, not the caught panic) if `f` does not panic.
 fn catch_panic_message<F: FnOnce() + std::panic::UnwindSafe>(f: F) -> String {
     use std::panic;
-    use std::sync::Mutex;
-
-    let _serialize = PANIC_HOOK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-
-    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let captured_in_hook = Arc::clone(&captured);
-    let previous_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
-        *captured_in_hook.lock().unwrap() = Some(info.to_string());
-    }));
 
     let result = panic::catch_unwind(f);
-
-    panic::set_hook(previous_hook);
-
     assert!(
         result.is_err(),
         "expected the closure to panic, but it did not"
     );
-    let message = captured
-        .lock()
-        .unwrap()
-        .take()
-        .expect("panic hook should have captured a message");
-    message
+
+    // Downcast the panic payload directly to avoid process-global hook races.
+    match result {
+        Err(payload) => {
+            // Try as &str first (most common case).
+            if let Some(s) = payload.downcast_ref::<&str>() {
+                return (*s).to_string();
+            }
+            // Try as String next.
+            if let Some(s) = payload.downcast_ref::<String>() {
+                return s.clone();
+            }
+            // Fallback to Display formatting.
+            if let Some(s) = payload.downcast_ref::<Box<dyn std::fmt::Display>>() {
+                return format!("{s}");
+            }
+            // Last resort: give up and return a placeholder.
+            "<unextractable panic payload>".to_string()
+        }
+        Ok(_) => unreachable!(), // We already checked is_err()
+    }
 }
 
 #[cfg(feature = "std")]
@@ -617,6 +626,7 @@ mod sync_misc_tests {
 mod sync_concurrency_tests {
     use super::*;
     use sefer_region::SyncRegion;
+    use std::sync::{Barrier, Mutex};
     use std::thread;
 
     #[test]
@@ -673,5 +683,75 @@ mod sync_concurrency_tests {
         // assertion correctly failed (left: 800, right: 1600 -- half the
         // expected drops, since only the get_cloned clone was still dropped),
         // confirming the drop-count assertion is not vacuous.
+    }
+
+    #[test]
+    fn sync_region_deterministic_shared_handle_races() {
+        // F16 fix: use Barrier to force simultaneous access, and add deterministic
+        // shared-handle scenarios: two concurrent `remove(h)` → exactly one winner;
+        // `get_cloned(h)` racing remove → only old value OR None.
+        //
+        // Both racing threads MUST be spawned inside the SAME `thread::scope`
+        // call: `Barrier::new(2)` needs two waiters to unblock, and
+        // `thread::scope` blocks the calling thread until every thread
+        // spawned INSIDE that one call finishes. Two separate sequential
+        // `thread::scope` calls, each spawning only one waiter, would hang
+        // forever on the first call -- there is no second waiter until the
+        // (never-reached) second call starts.
+        const THREADS: usize = 2;
+        let sr: SyncRegion<u64> = SyncRegion::new();
+
+        // Insert a value and race two threads on remove(h).
+        let handle = sr.insert(42u64);
+        let winner_count = AtomicUsize::new(0);
+        let barrier = Barrier::new(THREADS);
+
+        thread::scope(|s| {
+            for _ in 0..THREADS {
+                s.spawn(|| {
+                    barrier.wait();
+                    if sr.remove(handle).is_some() {
+                        winner_count.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+
+        assert_eq!(
+            winner_count.load(Ordering::SeqCst),
+            1,
+            "exactly one of two concurrent remove(h) calls should win"
+        );
+        assert_eq!(sr.len(), 0, "handle should be removed by winner");
+        assert!(
+            sr.get_cloned(handle).is_none(),
+            "removed handle should not resolve"
+        );
+
+        // Test get_cloned(h) racing remove → only old value OR None.
+        let handle2 = sr.insert(99u64);
+        let barrier2 = Barrier::new(THREADS);
+        let get_clone_result: Mutex<Option<Option<u64>>> = Mutex::new(None);
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                barrier2.wait();
+                let result = sr.get_cloned(handle2);
+                *get_clone_result.lock().unwrap() = Some(result);
+            });
+            s.spawn(|| {
+                barrier2.wait();
+                let _ = sr.remove(handle2);
+            });
+        });
+
+        let result = get_clone_result.lock().unwrap().take().unwrap();
+        // get_cloned(h) racing remove must see either the old value or None.
+        // It cannot see some new unrelated value (impossible here).
+        assert!(
+            result == Some(99) || result.is_none(),
+            "get_cloned(h) racing remove must see either old value or None, got {:?}",
+            result
+        );
     }
 }

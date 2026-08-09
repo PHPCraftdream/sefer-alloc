@@ -44,26 +44,31 @@ use crate::Handle;
 /// ## Generation saturation
 ///
 /// `slotmap::DefaultKey` uses a 32-bit generation counter stored alongside each
-/// slot, where an odd value means occupied and an even value means vacant.
-/// `SlotMap::insert` sets the low bit on reuse (`version | 1`); `SlotMap::remove`
-/// advances it past that with `version.wrapping_add(1)` (odd -> even). So one
-/// full occupy/free cycle of a slot advances its generation by 2, and after
-/// approximately `2^31` such cycles the generation wraps around to its starting
-/// value, and a sufficiently stale handle may then resolve to (or remove) a
-/// different live value that now occupies the same slot.
+/// slot. The exact encoding (odd = occupied, even = vacant), the LIFO freelist
+/// behavior, and the measured "~12 seconds" bound for `2^31 - 1` insert/remove
+/// cycles on a hot slot are **implementation details of the resolved
+/// slotmap 1.1.1 snapshot** — slotmap 1.x reserves the right to change these.
+///
+/// In the current version: `SlotMap::insert` sets the low bit on reuse
+/// (`version | 1`); `SlotMap::remove` advances it past that with
+/// `version.wrapping_add(1)` (odd -> even). So one full occupy/free cycle of a
+/// slot advances its generation by 2, and after approximately `2^31` such cycles
+/// the generation wraps around to its starting value, and a sufficiently stale
+/// handle may then resolve to (or remove) a different live value that now
+/// occupies the same slot.
 ///
 /// This is a **logic/aliasing issue, not memory unsafety** — `slotmap` guarantees
 /// that its internal data structure never becomes corrupt, even when a handle wraps.
 /// The worst case for reaching wrap quickly is a hot single-slot churn pattern
 /// (repeatedly inserting and removing at the same slot index while nothing else
-/// is live), because `slotmap`'s freelist is LIFO. This was empirically confirmed:
-/// a tight insert/remove loop on one slot for `2^31 - 1` cycles took ~12 seconds
-/// on one development machine in release mode; treat this as an order-of-magnitude
-/// sense, not a guaranteed bound.
+/// is live). This was empirically confirmed on slotmap 1.1.1: a tight insert/remove
+/// loop on one slot for `2^31 - 1` cycles took ~12 seconds on one development
+/// machine in release mode; treat this as an order-of-magnitude sense for that
+/// version, not a guaranteed bound for all slotmap 1.x.
 ///
-/// There is **no slot-retirement code** in this crate. Applications that need a
-/// stronger guarantee (e.g. to reuse handles without ever risking alias) must add
-/// their own wrapper layer that tracks generation saturation.
+/// Applications that need a stronger guarantee (e.g. to reuse handles without
+/// ever risking alias) must add their own wrapper layer that tracks generation
+/// wrap or otherwise avoids cross-region handle reuse.
 pub struct Region<T> {
     inner: slotmap::SlotMap<slotmap::DefaultKey, T>,
 }
@@ -84,12 +89,24 @@ impl<T> Region<T> {
     /// Panics if `capacity == usize::MAX` (the underlying `slotmap` reserves one
     /// extra slot for an internal sentinel; a capacity that would overflow that
     /// reservation is rejected up front, in both debug and release builds).
+    /// Panics if `capacity > 2^32 - 3` (slotmap's maximum live-entry limit is
+    /// `2^32 - 2`; reserving for sentinel gives `2^32 - 3`). On 64-bit this is
+    /// a theoretical guard only — realistic workloads never approach this limit.
     /// Additionally panics (as any `Vec`-backed container does) for any `capacity`
     /// whose slot array would exceed `isize::MAX` bytes — roughly
     /// `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond that aborts
     /// rather than panicking.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
+        // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
+        // With one sentinel slot, the maximum reserve is 2^32 - 3.
+        const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
+        if capacity > SLOTMAP_MAX_RESERVE {
+            panic!(
+                "Region::with_capacity: capacity {} exceeds slotmap limit {}",
+                capacity, SLOTMAP_MAX_RESERVE
+            );
+        }
         capacity
             .checked_add(1)
             .expect("Region::with_capacity: capacity overflow");
@@ -135,15 +152,24 @@ impl<T> Region<T> {
     ///
     /// Panics if `len() + additional` overflows `usize`, in both debug and
     /// release builds — checked up front, before delegating to `slotmap`.
+    /// Panics if `len() + additional > 2^32 - 2` (slotmap's maximum live-entry limit).
     /// Additionally panics (as any `Vec`-backed container does) for any
     /// `len() + additional` whose slot array would exceed `isize::MAX` bytes
     /// — roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure
     /// beyond that aborts rather than panicking.
     pub fn reserve(&mut self, additional: usize) {
-        self.inner
+        const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
+        let target = self
+            .inner
             .len()
             .checked_add(additional)
             .expect("Region::reserve: capacity overflow");
+        if target > SLOTMAP_MAX_LIVE {
+            panic!(
+                "Region::reserve: target {} exceeds slotmap limit {}",
+                target, SLOTMAP_MAX_LIVE
+            );
+        }
         self.inner.reserve(additional);
     }
 
@@ -152,6 +178,7 @@ impl<T> Region<T> {
     /// # Panics
     ///
     /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
+    #[must_use]
     pub fn insert(&mut self, value: T) -> Handle<T> {
         Handle::from_key(self.inner.insert(value))
     }
@@ -214,9 +241,15 @@ impl<T> Region<T> {
     /// `capacity()`'s documentation for the full permanence semantics.
     ///
     /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
-    /// values already visited (including the panicking one) are removed and
-    /// dropped, but later values remain live and correctly accounted. The region
-    /// itself stays fully consistent and reusable after unwinding.
+    /// the region stays fully consistent and reusable after unwinding, but
+    /// the exact set of survivors depends on the underlying `slotmap` version's
+    /// unwind cleanup (slotmap 1.x reserves the right to change this). What is
+    /// guaranteed is that: (1) no value is dropped twice, (2) no value is leaked
+    /// by the region itself (caller-side `mem::forget` of removed values is
+    /// outside this guarantee), and (3) the region's internal accounting remains
+    /// correct. See `tests/clear_partial_under_panic.rs`, which documents what
+    /// the CURRENT slotmap version actually does -- an observation of the
+    /// present dependency, not a stable contract this crate promises.
     pub fn clear(&mut self) {
         self.inner.clear();
     }

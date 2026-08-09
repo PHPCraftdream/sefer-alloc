@@ -24,6 +24,9 @@ std = ["slotmap/std"]
 [dependencies]
 slotmap = { version = "1", default-features = false }
 
+[lints.rust]
+unsafe_code = "forbid"
+
 [dev-dependencies]
 # Fixed-iteration bench harness (dev-only — never reaches published
 # consumers). See benches/region_bench.rs.
@@ -34,6 +37,9 @@ bench-scale-tool = "0.1"
 # via the CapInspect trait/macros. `telemetry` is required for the registry
 # module to exist at all.
 captrack = { version = "0.1", features = ["telemetry"] }
+# Note: captrack is intentionally heavy (proc macro, supply-chain side effects)
+# but accepted as a known cost for one ignored diagnostic probe. The workspace-local
+# .cargo/config.toml sets CAPTRACK_AUTODUMP=0 to mitigate autodump side effects.
 
 [[bench]]
 name = "region_bench"

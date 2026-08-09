@@ -22,6 +22,29 @@ use slotmap::{DefaultKey, SlotMap};
 const PREPOPULATE: u64 = 1_000;
 
 fn main() {
+    // Task #792/F14, verified against bench-scale-tool 0.1.0's actual
+    // source (not just its doc comments): `Harness` exposes NO way to
+    // override where its manifest lives -- `manifest_path()` is private to
+    // that crate. It walks up from `CARGO_MANIFEST_DIR` for the nearest
+    // `[workspace]`-declaring `Cargo.toml`, falling back to
+    // `<crate>/../../bench-iters.txt` only when no such ancestor exists
+    // (e.g. this crate extracted standalone from a published tarball).
+    // `load_manifest` on a missing file returns an empty map (no crash),
+    // and each workload self-heals via a 1s JIT calibration pass instead of
+    // aborting -- but a plain `cargo bench` run (no `--calibrate` flag)
+    // STILL attempts `save_manifest` at the end whenever any workload was
+    // JIT-calibrated, which is every workload on a fresh/missing manifest.
+    // For a standalone-extracted package this targets a path OUTSIDE the
+    // package root -- exactly the exposure F14 flags. There is no fix
+    // reachable from THIS crate's own source: the harness's manifest
+    // routing lives entirely in the separately-published bench-scale-tool
+    // crate, which this workspace does not vendor or patch. Filed as a
+    // known residual limitation rather than silently claimed fixed --
+    // see docs/CORRECTNESS_OPEN_ITEMS.md for the tracking entry. The
+    // sibling `crates/region/benches/bench-iters.txt` (a plain hand-edited
+    // copy of the pinned counts, matching bench-scale-tool's own manifest
+    // format) is kept for human reference next to the bench source, but
+    // the harness has no way to actually be pointed at it.
     let mut h = Harness::new("region_bench", env!("CARGO_MANIFEST_DIR"));
 
     // ── Region<T> — single-threaded ──────────────────────────────────────
@@ -64,7 +87,7 @@ fn main() {
     {
         let mut r: Region<u64> = Region::new();
         for i in 0..PREPOPULATE {
-            r.insert(i);
+            let _ = r.insert(i);
         }
         h.bench("st/iterate", move || {
             let sum: u64 = r.iter().sum();

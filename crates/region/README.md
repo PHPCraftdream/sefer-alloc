@@ -26,9 +26,10 @@ a *different* `Region<T>` of the same type and could silently access or remove
 a value keyed by the same `DefaultKey` in that other instance.
 
 The differentiator for the pure-Rust audience: **zero own unsafe** —
-`#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` in
-`slotmap` is its own, audited and battle-tested. No C / C++ libraries are pulled
-in. With `default-features = false` the crate builds under `no_std + alloc`.
+`#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` lives
+upstream, in the mature, widely-used `slotmap` crate, not in this one. No C / C++
+libraries are pulled in. With `default-features = false` the crate builds under
+`no_std + alloc`.
 
 For users who want a typed slotmap-like handle store **without** pulling a full
 allocator stack.
@@ -95,7 +96,9 @@ let h = sr.insert(42u32);
 assert_eq!(sr.get_cloned(h), Some(42u32));
 assert_eq!(sr.len(), 1);
 
-// Multi-op transaction: hold the write guard for atomicity.
+// Multi-op transaction: hold the write guard for interleaving isolation
+// (serializes the critical section). Panics mid-transaction do NOT roll
+// back already-applied changes — all-or-nothing rollback is not provided.
 {
     let mut w = sr.write();
     w.insert(1u32);
@@ -240,9 +243,13 @@ Reproduce: `cargo test -p sefer-region --test captrack_probe -- --ignored
 
 ## Safety
 
-`#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` in
-the `slotmap` dependency is its own, audited and battle-tested. This crate
-contributes zero `unsafe` blocks and pulls in no C / C++ libraries.
+`#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` lives
+upstream, in the `slotmap` dependency, not in this crate -- this crate
+contributes zero `unsafe` blocks and pulls in no C / C++ libraries. No
+version-scoped audit record for `slotmap` is tracked by this project; `slotmap`
+is a mature, widely-used dependency, and this crate's own `cargo-deny` CI check
+covers advisories/licenses/sources of the current lockfile (not a substitute
+for a code audit).
 
 ## License
 

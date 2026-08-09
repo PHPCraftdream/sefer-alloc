@@ -42,9 +42,10 @@
 //!
 //! ## Pure Rust / zero own unsafe
 //!
-//! `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` in
-//! the `slotmap` dependency is its own, audited and battle-tested. This crate
-//! adds no C / C++ libraries and contributes zero `unsafe` blocks of its own.
+//! `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe`
+//! lives upstream, in the mature, widely-used `slotmap` dependency, not in
+//! this crate. This crate adds no C / C++ libraries and contributes zero
+//! `unsafe` blocks of its own.
 //!
 //! ## `no_std` support
 //!
