@@ -182,7 +182,7 @@ fn extras_not_multiple_of_min_block_panics() {
 }
 
 #[test]
-#[should_panic(expected = "strictly increasing")]
+#[should_panic(expected = "table must be strictly increasing")]
 fn extras_overlapping_geometric_run_panics() {
     // min_block=16, extras=[16, 32], geo_count=8 — the exact §5.1(b)
     // reproduction: both extras already appear in the geometric run
@@ -191,6 +191,17 @@ fn extras_overlapping_geometric_run_panics() {
     // adjacent slots to equal values, so it surfaces as a strict-increase
     // violation in `build_size2class` (the monotonicity chokepoint), which
     // is what `SizeClasses::build` reaches on a non-const call.
+    //
+    // task #730 (rust-intel audit §D1, MEDIUM): the expected substring was
+    // previously the bare "strictly increasing", which ALSO matches
+    // `build_table`'s OWN "Params::extras: must be strictly increasing"
+    // message (a different check, on the `extras` list itself, reached in
+    // this test's SETUP before the actual SUT call below) -- a spurious
+    // panic from that setup path would have coincidentally satisfied the
+    // expectation, silently defeating the chokepoint this test exists to
+    // pin. Narrowed to "table must be strictly increasing", the
+    // `build_size2class`-specific prefix `build_table`'s extras check
+    // cannot produce.
     const MIN_BLOCK: usize = 16;
     const EXTRAS: &[usize] = &[16, 32];
     const GEO_COUNT: usize = 8;
@@ -218,6 +229,42 @@ fn extras_overlapping_geometric_run_panics() {
     // directly, since `L` must be a const generic matching `l` above.
     const L: usize = size2class_len(200, MIN_BLOCK);
     let _ = SizeClasses::<N, L>::build(params);
+}
+
+// task #730 (rust-intel audit §D1a/§F1, INFO): `reference_table`'s
+// rounding/spacing core (`let mut next = (cur * num).div_ceil(den); next =
+// (next + mask) & !mask;`, near the top of this file) is BYTE-IDENTICAL to
+// `build_table`'s own formula -- a circular-oracle shape: it proves
+// const-eval and runtime-eval agree on ONE expression tree, not that the
+// expression tree itself computes the right spacing. A shared misconception
+// in the rounding/spacing formula would be structurally unobservable to
+// `sefer_table_matches_reference_and_is_strictly_increasing` above. This
+// test is a genuinely independent check: `GOLDEN` was computed BY HAND (see
+// the arithmetic in the comment below), not derived from either
+// `build_table` or `reference_table`.
+#[test]
+fn geometric_run_matches_hand_derived_golden_values() {
+    // min_block=16, growth=(5,4) (1.25x spacing), 8 classes starting at
+    // min_block. Each step: multiply by 5/4 (round up to an integer, i.e.
+    // ceiling division), then round up to the next multiple of min_block
+    // (16) -- computed independently of this crate's own code, by hand:
+    //   c0 = 16
+    //   c1 = round_up(ceil(16  * 5 / 4), 16) = round_up(20,  16) = 32
+    //   c2 = round_up(ceil(32  * 5 / 4), 16) = round_up(40,  16) = 48
+    //   c3 = round_up(ceil(48  * 5 / 4), 16) = round_up(60,  16) = 64
+    //   c4 = round_up(ceil(64  * 5 / 4), 16) = round_up(80,  16) = 80
+    //   c5 = round_up(ceil(80  * 5 / 4), 16) = round_up(100, 16) = 112
+    //   c6 = round_up(ceil(112 * 5 / 4), 16) = round_up(140, 16) = 144
+    //   c7 = round_up(ceil(144 * 5 / 4), 16) = round_up(180, 16) = 192
+    const GOLDEN: [usize; 8] = [16, 32, 48, 64, 80, 112, 144, 192];
+    const MIN_BLOCK: usize = 16;
+    const GEO_COUNT: usize = 8;
+    const P: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, &[], 1 << 20);
+    const T: [usize; GEO_COUNT] = build_table::<GEO_COUNT>(&P);
+    assert_eq!(
+        T, GOLDEN,
+        "geometric run drifted from the hand-derived golden values"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +334,16 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // huge_threshold is a pure Params policy value; the crate never references
     // an OS segment size. Two different thresholds → two different verdicts for
     // the same size, proving it is parameterized.
+    //
+    // task #730 (rust-intel audit §D1, INFO): this comment's claim was
+    // previously asserted only in PROSE -- the test built a single scheme
+    // (huge_threshold: 1024), so an `is_huge` HARDCODED to compare against
+    // the literal 1024 would have passed. The `>=` boundary pin (1023 vs
+    // 1024) was real, so the test was not vacuous, only under-delivering on
+    // its own stated claim. Now builds a SECOND scheme with a DIFFERENT
+    // threshold (4096) and asserts the SAME size (2048) gets OPPOSITE
+    // verdicts across the two schemes -- the actual parameterization proof
+    // the comment above promises.
     const P_SMALL: Params = Params::new(16, (5, 4), 4, &[], 1024);
     const N: usize = 4;
     const T: [usize; N] = build_table::<N>(&P_SMALL);
@@ -295,4 +352,20 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     assert!(SC.is_huge(1024));
     assert!(SC.is_huge(4096));
     assert!(!SC.is_huge(1023));
+
+    const P_LARGE_THRESHOLD: Params = Params::new(16, (5, 4), 4, &[], 4096);
+    const T2: [usize; N] = build_table::<N>(&P_LARGE_THRESHOLD);
+    const L2: usize = size2class_len(T2[N - 1], 16);
+    const SC2: SizeClasses<N, L2> = SizeClasses::build(P_LARGE_THRESHOLD);
+    const PROBE: usize = 2048;
+    assert!(
+        SC.is_huge(PROBE),
+        "SC (threshold 1024) must call {PROBE} huge"
+    );
+    assert!(
+        !SC2.is_huge(PROBE),
+        "SC2 (threshold 4096) must NOT call {PROBE} huge -- same size, opposite \
+         verdict across the two schemes proves is_huge is genuinely parameterized \
+         by Params::huge_threshold, not hardcoded"
+    );
 }
