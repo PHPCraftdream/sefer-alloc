@@ -477,16 +477,16 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
     #[cfg(feature = "mock")]
     mock::record(mock::Call::Reserve { size, align });
 
-    match reserve_aligned_raw(size, align) {
-        Some((base, reservation, reservation_len)) => Ok(Reservation {
-            base,
-            len: size,
-            reservation,
-            reservation_len,
-            align,
-        }),
-        None => Err(VmemError::last_os_error()),
-    }
+    // task #713: `reserve_aligned_raw` now captures its own `VmemError`
+    // immediately at the point of failure (before any cleanup FFI); this
+    // just propagates it rather than re-deriving a possibly-stale one here.
+    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len)| Reservation {
+        base,
+        len: size,
+        reservation,
+        reservation_len,
+        align,
+    })
 }
 
 /// Release a whole OS reservation obtained from [`Reservation::into_parts`].
@@ -729,7 +729,14 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
         // compiled out entirely when the feature is off.
         #[cfg(feature = "fault-injection")]
         if fault_injection::should_fail_commit() {
-            return Err(VmemError::last_os_error());
+            // task #713: this is a SIMULATED failure — no real syscall ran,
+            // so `VmemError::last_os_error()` would read whatever `errno`/
+            // `GetLastError` happens to be lying around from unrelated prior
+            // code, not a cause tied to this call at all.
+            // `os_refusal_unknown_code()` states plainly that the OS refused
+            // with no (real) code to report, instead of manufacturing a
+            // misleading one.
+            return Err(VmemError::os_refusal_unknown_code());
         }
         // SAFETY: forwarded from the caller's contract.
         unsafe { commit_range_impl(base, start, end) }
@@ -801,16 +808,15 @@ pub fn try_reserve_aligned_lazy(
     #[cfg(not(feature = "mock"))]
     let raw = reserve_aligned_lazy_raw(size, align, initial_commit);
 
-    match raw {
-        Some((base, reservation, reservation_len)) => Ok(Reservation {
-            base,
-            len: size,
-            reservation,
-            reservation_len,
-            align,
-        }),
-        None => Err(VmemError::last_os_error()),
-    }
+    // task #713: both `raw` branches now capture their own `VmemError`
+    // immediately at the point of failure; this just propagates it.
+    raw.map(|(base, reservation, reservation_len)| Reservation {
+        base,
+        len: size,
+        reservation,
+        reservation_len,
+        align,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -850,16 +856,15 @@ pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation
     #[cfg(feature = "mock")]
     mock::record(mock::Call::ReserveHuge { size, align });
 
-    match reserve_aligned_huge_raw(size, align) {
-        Some((base, reservation, reservation_len)) => Ok(Reservation {
-            base,
-            len: size,
-            reservation,
-            reservation_len,
-            align,
-        }),
-        None => Err(VmemError::last_os_error()),
-    }
+    // task #713: `reserve_aligned_huge_raw` now captures its own `VmemError`
+    // immediately at the point of failure; this just propagates it.
+    reserve_aligned_huge_raw(size, align).map(|(base, reservation, reservation_len)| Reservation {
+        base,
+        len: size,
+        reservation,
+        reservation_len,
+        align,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -919,7 +924,10 @@ pub fn leak_zeroed_pages(size: usize) -> Option<NonNull<u8>> {
 // ===========================================================================
 
 #[cfg(all(windows, not(miri)))]
-fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+fn reserve_aligned_raw(
+    size: usize,
+    align: usize,
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     win_reserve_commit(size, align, size, 0)
 }
 
@@ -928,21 +936,34 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
 /// `commit_len` bytes (with `extra_flags` OR-ed into `MEM_COMMIT`, e.g.
 /// `MEM_LARGE_PAGES`). Returns the aligned base, the reservation base and the
 /// full reservation length. On commit failure the whole reservation is
-/// released and `None` returned.
+/// released and `Err` returned.
+///
+/// task #713: every `Err` here carries a [`VmemError`] captured IMMEDIATELY
+/// after the syscall that produced it, before any cleanup FFI call that could
+/// clobber `GetLastError` — a fit-computation failure (not a real OS refusal)
+/// maps to [`VmemError::invalid_argument`] rather than a stale/irrelevant
+/// error code.
 #[cfg(all(windows, not(miri)))]
 fn win_reserve_commit(
     size: usize,
     align: usize,
     commit_len: usize,
     extra_commit_flags: u32,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
-    let over = size.checked_add(align)?;
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+    let over = size
+        .checked_add(align)
+        .ok_or_else(VmemError::invalid_argument)?;
     let region = unsafe {
         // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
         // reserves (but does not commit) `over` bytes of address space,
         // returning the base or NULL on OOM/refusal. NULL is checked below.
         let p = winapi_virtual_reserve(over);
-        NonNull::new(p as *mut u8)?
+        match NonNull::new(p as *mut u8) {
+            Some(n) => n,
+            // Nothing was reserved; no cleanup needed, so capturing here is
+            // already the immediate-capture the task requires.
+            None => return Err(VmemError::last_os_error()),
+        }
     };
     let region_ptr = region.as_ptr();
     let region_addr = region_ptr as usize;
@@ -954,11 +975,13 @@ fn win_reserve_commit(
     let base_addr = match fits {
         Some(a) => a,
         None => {
+            // Not an OS refusal — an internal fit-computation failure (should
+            // not occur given `over = size + align`); do not read errno here.
             // SAFETY: `region` was returned by the `MEM_RESERVE` call above and
             // has not been released yet; releasing before handing to a caller
             // cannot double-free.
             unsafe { winapi_virtual_release(region_ptr) };
-            return None;
+            return Err(VmemError::invalid_argument());
         }
     };
     // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned.
@@ -989,16 +1012,24 @@ fn win_reserve_commit(
             if !plain.is_null() {
                 #[cfg(feature = "bench-internals")]
                 WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
-                return Some((base, region, over));
+                return Ok((base, region, over));
             }
+            // Capture immediately after the FINAL failing syscall (the plain
+            // retry), before the cleanup release below.
+            let err = VmemError::last_os_error();
+            // SAFETY: `region` reserved above, not yet handed out — release once.
+            unsafe { winapi_virtual_release(region_ptr) };
+            return Err(err);
         }
+        // Capture immediately after the failing commit, before cleanup.
+        let err = VmemError::last_os_error();
         // SAFETY: `region` reserved above, not yet handed out — release once.
         unsafe { winapi_virtual_release(region_ptr) };
-        return None;
+        return Err(err);
     }
     #[cfg(feature = "bench-internals")]
     WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
-    Some((base, region, over))
+    Ok((base, region, over))
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -1065,7 +1096,7 @@ fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
     initial_commit: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     win_reserve_commit(size, align, initial_commit, 0)
 }
 
@@ -1073,7 +1104,7 @@ fn reserve_aligned_lazy_raw(
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
@@ -1169,7 +1200,10 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
 // ===========================================================================
 
 #[cfg(all(unix, not(miri)))]
-fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+fn reserve_aligned_raw(
+    size: usize,
+    align: usize,
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     unix_reserve(size, align, false)
 }
 
@@ -1177,16 +1211,28 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
 /// the exact-size fast path and over-reserve fallback both request
 /// `MAP_HUGETLB` (Linux) and fall back to ordinary pages if the huge mapping
 /// fails.
+///
+/// task #713: every `Err` here carries a [`VmemError`] captured IMMEDIATELY
+/// after the syscall that produced it, before any cleanup `munmap` call that
+/// could clobber `errno` — a fit-computation failure (not a real OS refusal)
+/// maps to [`VmemError::invalid_argument`] rather than a stale/irrelevant
+/// error code. The exact-size fast path's own failure cause is discarded
+/// (this function always falls through to the over-reserve attempt
+/// regardless of why the fast path failed — unchanged control flow from
+/// before this task); the final returned error is always the over-reserve
+/// attempt's own.
 #[cfg(all(unix, not(miri)))]
 fn unix_reserve(
     size: usize,
     align: usize,
     huge: bool,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
-    if let Some(exact) = try_reserve_aligned_exact(size, align, huge) {
-        return Some(exact);
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+    if let Ok(exact) = try_reserve_aligned_exact(size, align, huge) {
+        return Ok(exact);
     }
-    let over = size.checked_add(align)?;
+    let over = size
+        .checked_add(align)
+        .ok_or_else(VmemError::invalid_argument)?;
     let region_ptr = unsafe {
         // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` — anonymous
         // private mapping; the kernel chooses the address or returns MAP_FAILED
@@ -1198,11 +1244,13 @@ fn unix_reserve(
                 // SAFETY: same call, ordinary pages.
                 let p2 = libc_mmap(over, false);
                 if p2.is_null() {
-                    return None;
+                    // Nothing was mapped; no cleanup needed, so capturing
+                    // here is already the immediate-capture the task requires.
+                    return Err(VmemError::last_os_error());
                 }
                 p2
             } else {
-                return None;
+                return Err(VmemError::last_os_error());
             }
         } else {
             p
@@ -1217,10 +1265,12 @@ fn unix_reserve(
     let (base_addr, tail_start, region_end) = match fits {
         Some(t) => t,
         None => {
+            // Not an OS refusal — an internal fit-computation failure (should
+            // not occur given `over = size + align`); do not read errno here.
             // SAFETY: `region_ptr` was returned by `mmap` above; releasing the
             // whole `over`-byte mapping before handing to a caller is sound.
             unsafe { libc_munmap(region_ptr as *mut u8, over) };
-            return None;
+            return Err(VmemError::invalid_argument());
         }
     };
     // SAFETY: `base_addr >= region_addr` and `align`-aligned.
@@ -1241,24 +1291,36 @@ fn unix_reserve(
         // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Some((base, base, size))
+    Ok((base, base, size))
 }
 
 /// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
 /// `MAP_HUGETLB`.
+///
+/// task #713: a genuine `mmap` failure captures its [`VmemError`]
+/// IMMEDIATELY, before returning. An alignment miss (the exact address `mmap`
+/// handed back doesn't satisfy `align`) is NOT an OS refusal — it maps to
+/// [`VmemError::invalid_argument`] instead of a stale/irrelevant error code.
+/// Either way, [`unix_reserve`] discards this function's own error and always
+/// falls through to the over-reserve path on any failure (unchanged control
+/// flow from before this task) — the error value here is not observable by
+/// any public caller today, but is still captured correctly for future
+/// callers / diagnostics.
 #[cfg(all(unix, not(miri)))]
 fn try_reserve_aligned_exact(
     size: usize,
     align: usize,
     huge: bool,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     #[cfg(feature = "bench-internals")]
     UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let region_ptr = unsafe {
         // SAFETY: anonymous private mapping of exactly `size` bytes.
         let p = libc_mmap(size, huge);
         if p.is_null() {
-            return None;
+            // Nothing was mapped; no cleanup needed, so capturing here is
+            // already the immediate-capture the task requires.
+            return Err(VmemError::last_os_error());
         }
         p
     };
@@ -1266,7 +1328,7 @@ fn try_reserve_aligned_exact(
     if !region_addr.is_multiple_of(align) {
         // SAFETY: `region_ptr` was just mapped with length `size`; unmap once.
         unsafe { libc_munmap(region_ptr as *mut u8, size) };
-        return None;
+        return Err(VmemError::invalid_argument());
     }
     #[cfg(feature = "bench-internals")]
     UNIX_EXACT_RESERVE_HITS.fetch_add(1, Ordering::Relaxed);
@@ -1277,7 +1339,7 @@ fn try_reserve_aligned_exact(
         // SAFETY: `base` is a live `size`-byte mapping; hint-only.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Some((base, base, size))
+    Ok((base, base, size))
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -1328,7 +1390,7 @@ fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
     _initial_commit: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     reserve_aligned_raw(size, align)
 }
 
@@ -1336,7 +1398,7 @@ fn reserve_aligned_lazy_raw(
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     unix_reserve(size, align, true)
 }
 
@@ -1494,15 +1556,26 @@ unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
 // Miri aperture: miri cannot execute raw FFI, so fall back to `std::alloc`.
 // ===========================================================================
 
+/// task #713: a bad `(size, align)` `Layout` combination is a caller contract
+/// violation, not an OS refusal — maps to [`VmemError::invalid_argument`]. A
+/// genuine `std::alloc::alloc` failure (null return) has no real
+/// `errno`/`GetLastError` to read under miri; `VmemError::last_os_error()`
+/// correctly yields [`VmemError::os_refusal_unknown_code`] here rather than a
+/// misleading `code 0`.
 #[cfg(miri)]
-fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+fn reserve_aligned_raw(
+    size: usize,
+    align: usize,
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     use std::alloc::Layout;
-    let layout = Layout::from_size_align(size, align).ok()?;
+    let layout = Layout::from_size_align(size, align).map_err(|_| VmemError::invalid_argument())?;
     // SAFETY: `layout` has non-zero size and pow2 align; under miri the consumer
     // is not the global allocator, so no reentrancy.
     let ptr = unsafe { std::alloc::alloc(layout) };
-    let base = NonNull::new(ptr)?;
-    Some((base, base, size))
+    match NonNull::new(ptr) {
+        Some(base) => Ok((base, base, size)),
+        None => Err(VmemError::last_os_error()),
+    }
 }
 
 #[cfg(miri)]
@@ -1545,7 +1618,7 @@ fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
     _initial_commit: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     reserve_aligned_raw(size, align)
 }
 
@@ -1553,7 +1626,7 @@ fn reserve_aligned_lazy_raw(
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     // Miri has no huge pages; ordinary allocation is observably identical.
     reserve_aligned_raw(size, align)
 }

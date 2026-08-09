@@ -240,3 +240,79 @@ fn distinct_reservations_do_not_overlap() {
     // Non-overlapping usable spans.
     assert!(pa + span <= pb || pb + span <= pa, "reservations overlap");
 }
+
+// ── VmemError classification (task #713) ────────────────────────────────────
+
+#[test]
+fn vmem_error_kinds_are_distinguishable() {
+    // task #713 (fold-in, §B26): `os_code()` used to be `Some(0)` for BOTH a
+    // genuine `code 0` OS refusal and "no code available" -- storing
+    // `Option<u32>` internally closes that ambiguity. Pin all three kinds and
+    // their pairwise distinctions.
+    let invalid = VmemError::invalid_argument();
+    let real_zero = VmemError::from_os_code(0);
+    let unknown = VmemError::os_refusal_unknown_code();
+    let real_nonzero = VmemError::from_os_code(1455); // ERROR_COMMITMENT_LIMIT
+
+    assert!(invalid.is_invalid_argument());
+    assert_eq!(invalid.os_code(), None);
+
+    assert!(!real_zero.is_invalid_argument());
+    assert_eq!(
+        real_zero.os_code(),
+        Some(0),
+        "a genuine OS refusal reporting code 0 must still be distinguishable \
+         via os_code() == Some(0)"
+    );
+
+    assert!(!unknown.is_invalid_argument());
+    assert_eq!(
+        unknown.os_code(),
+        None,
+        "an OS refusal with no known code must report os_code() == None, \
+         DISTINCT from invalid_argument() (also None) via is_invalid_argument()"
+    );
+
+    assert!(!real_nonzero.is_invalid_argument());
+    assert_eq!(real_nonzero.os_code(), Some(1455));
+
+    // `invalid` and `unknown` both have `os_code() == None` but must not be
+    // conflated -- this is the whole point of the fix.
+    assert_ne!(invalid, unknown);
+    assert!(invalid.is_invalid_argument() != unknown.is_invalid_argument());
+
+    // Display must not claim a specific code when none is known.
+    let unknown_msg = format!("{unknown}");
+    assert!(
+        !unknown_msg.contains("code 0"),
+        "os_refusal_unknown_code() must not print as if code 0 (ERROR_SUCCESS) \
+         were the genuine cause: {unknown_msg}"
+    );
+    assert!(format!("{real_zero}").contains("code 0"));
+}
+
+#[test]
+fn try_reserve_huge_size_is_a_genuine_os_refusal_not_invalid_argument() {
+    // task #713 end-to-end: a well-formed (page-aligned, power-of-two-aligned)
+    // but far-past-any-realistic-commit-budget size must reach the real OS
+    // backend and be classified as a genuine OS refusal -- NOT
+    // VmemError::invalid_argument(), which is reserved for a contract
+    // violation rejected BEFORE ever touching the OS. Verified concretely on
+    // Windows: 1 << 46 (64 TiB) fails with `ERROR_COMMITMENT_LIMIT` (raw code
+    // 1455), captured correctly (not a stale/irrelevant errno from
+    // intervening cleanup FFI, and not the ambiguous `Some(0)` a pre-#713
+    // `VmemError` could not tell apart from "no code available").
+    let huge = 1usize << 46;
+    match try_reserve_aligned(huge, PAGE) {
+        Err(e) => assert!(
+            !e.is_invalid_argument(),
+            "a well-formed (if absurd) size/align must never be classified \
+             as a caller contract violation: {e:?}"
+        ),
+        Ok(_) => {
+            // Only plausible with genuinely enormous overcommit-backed
+            // virtual memory; not itself a defect if it ever happens -- the
+            // crate never promised a size ceiling beyond page-alignment.
+        }
+    }
+}

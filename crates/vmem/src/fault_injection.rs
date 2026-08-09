@@ -9,9 +9,11 @@
 //! changes nothing about which backend runs: [`crate::try_commit_range`]
 //! always calls the real per-OS `commit_range_impl`. It only splices two armed
 //! checks in front of that call so a test can deterministically force a
-//! specific call to report `VmemError::last_os_error()` instead of touching
-//! the OS — simulating commit-charge exhaustion at an exact point in a real
-//! allocation sequence.
+//! specific call to report `VmemError::os_refusal_unknown_code()` (task #713:
+//! not `last_os_error()` — no real syscall runs for a simulated fault, so
+//! there is no real OS code to report) instead of touching the OS —
+//! simulating commit-charge exhaustion at an exact point in a real allocation
+//! sequence.
 //!
 //! Two independent, additive hooks (mirrors the two-tier hook that
 //! `sefer-alloc` carried before this crate absorbed it):
