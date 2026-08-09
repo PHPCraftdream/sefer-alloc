@@ -292,6 +292,16 @@ fn vmem_error_kinds_are_distinguishable() {
 }
 
 #[test]
+// task #714 zero-trust re-verification found this incompatible with miri:
+// under miri's `std::alloc`-based fallback backend, there is no OS-level
+// commit-charge limit to refuse against -- miri's own interpreter tries to
+// genuinely honor the 64 TiB request and exhausts ITS OWN resources
+// ("resource exhaustion: tried to allocate more memory than available to
+// compiler") instead of returning null the way a real OS does. This test is
+// specifically about the REAL backend's OS-refusal classification, which the
+// miri fallback does not model at all -- skip under miri rather than assert
+// on miri-interpreter-specific resource limits this test was never about.
+#[cfg_attr(miri, ignore)]
 fn try_reserve_huge_size_is_a_genuine_os_refusal_not_invalid_argument() {
     // task #713 end-to-end: a well-formed (page-aligned, power-of-two-aligned)
     // but far-past-any-realistic-commit-budget size must reach the real OS

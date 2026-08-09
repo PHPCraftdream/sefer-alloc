@@ -235,10 +235,16 @@ pub fn page_size() -> usize {
         return cached;
     }
     let queried = query_os_page_size();
-    // Guard against an OS returning 0 or a non-power-of-two (never observed in
-    // practice, but a hostile/broken value would corrupt every rounding
-    // computation downstream). Fall back to PAGE.
-    let value = if queried != 0 && queried.is_power_of_two() {
+    // Guard against an OS returning 0, a non-power-of-two, or (task #714) a
+    // value smaller than PAGE (4 KiB) -- the OS page size is never smaller
+    // than PAGE on any target this crate supports, so a queried value below
+    // it indicates `query_os_page_size()` read the wrong sysconf(3)
+    // parameter entirely (exactly the failure mode a wrong `_SC_PAGESIZE`
+    // constant on an untested target produces: a plausible-looking
+    // power-of-two answer to a DIFFERENT question). A hostile/broken value
+    // would otherwise corrupt every rounding computation downstream. Fall
+    // back to PAGE.
+    let value = if queried >= PAGE && queried.is_power_of_two() {
         queried
     } else {
         PAGE
@@ -1221,12 +1227,48 @@ fn reserve_aligned_raw(
 /// regardless of why the fast path failed — unchanged control flow from
 /// before this task); the final returned error is always the over-reserve
 /// attempt's own.
+///
+/// task #714 (rust-intel audit MEDIUM §F1): on Linux, `huge` requests
+/// `MAP_HUGETLB`, and Linux's `mmap(2)` "Huge TLB mappings" section requires
+/// BOTH `munmap(2)`'s `addr` and `length` to be multiples of the huge page
+/// size (`man 2 mmap`: "the length ... must also be huge page aligned" for
+/// `MAP_HUGETLB`; the kernel additionally guarantees an anonymous
+/// `MAP_HUGETLB` mapping with `addr == NULL` starts at a huge-page-aligned
+/// address). This function's over-reserve/head-tail-trim path (below)
+/// previously trimmed a hugetlb mapping down to a caller-supplied `size` at
+/// ordinary [`PAGE`] granularity, which is misaligned for a hugetlb mapping
+/// unless `size` happens to already be huge-page-aligned — the resulting
+/// `munmap` calls fail `EINVAL` (silently discarded by this function's own
+/// `let _ = munmap(...)` cleanup calls), leaking the ENTIRE untrimmed
+/// mapping (plus its pinned physical huge pages) on every affected
+/// reservation AND on every subsequent [`release`].
+///
+/// REASONED-FROM-SPEC, NOT empirically verified (per this task's own
+/// instruction: no hugetlb-configured host is in this project's CI). Fixed
+/// by requiring `size` AND `align` to both be multiples of
+/// [`LINUX_HUGE_PAGE_SIZE`] before attempting a Linux huge-page reservation
+/// at all — with both huge-page-aligned, `over = size + align` is also
+/// huge-page-aligned, the kernel-guaranteed huge-page-aligned `region_addr`
+/// makes `head` provably `0` (`align_up_addr` of an already-aligned address
+/// to an aligned `align` is a no-op), and `tail_len` (the difference of two
+/// huge-page-aligned addresses) is provably huge-page-aligned too — so every
+/// `munmap` this function can still reach is provably conformant, not merely
+/// less likely to misalign. A caller that does not supply huge-page-aligned
+/// `size`/`align` gets a clean, documented [`VmemError::invalid_argument`]
+/// instead of a silent leak.
 #[cfg(all(unix, not(miri)))]
 fn unix_reserve(
     size: usize,
     align: usize,
     huge: bool,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+    #[cfg(all(target_os = "linux", feature = "huge-pages"))]
+    if huge
+        && (!size.is_multiple_of(LINUX_HUGE_PAGE_SIZE)
+            || !align.is_multiple_of(LINUX_HUGE_PAGE_SIZE))
+    {
+        return Err(VmemError::invalid_argument());
+    }
     if let Ok(exact) = try_reserve_aligned_exact(size, align, huge) {
         return Ok(exact);
     }
@@ -1450,6 +1492,19 @@ const MAP_ANON: i32 = 0x1000;
 /// Linux `MAP_HUGETLB` (request huge pages at mmap time).
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MAP_HUGETLB: i32 = 0x40000;
+/// task #714: the default Linux huge page size (`mmap(2)`'s "Huge TLB
+/// mappings" section; `/proc/meminfo`'s `Hugepagesize:` on a default
+/// configuration). `MAP_HUGETLB` without an explicit size-encoding flag
+/// (`MAP_HUGE_2MB`/`MAP_HUGE_1GB` etc., which this crate does not use) always
+/// requests the system's DEFAULT huge page size, which is 2 MiB on every
+/// mainstream x86_64/aarch64 Linux configuration this crate's own platform
+/// support targets. `unix_reserve` requires `size`/`align` to be multiples of
+/// this before attempting a huge-page reservation at all, so every `munmap`
+/// it can still reach is provably huge-page-aligned (see `unix_reserve`'s own
+/// doc for the full reasoning) — REASONED-FROM-SPEC, not empirically
+/// verified on a real hugetlb-configured host (none is in this project's CI).
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+const LINUX_HUGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
 #[cfg(all(unix, not(miri)))]
 const MAP_FAILED: usize = usize::MAX;
 #[cfg(all(unix, not(miri)))]
@@ -1468,13 +1523,57 @@ const MADV_FREE_REUSABLE: i32 = 7;
 /// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MADV_HUGEPAGE: i32 = 14;
+// task #714 (rust-intel audit MEDIUM §F1): `_SC_PAGESIZE`'s numeric value is
+// NOT portable across the `unix` family — it is an index into each OS's own
+// `sysconf(3)` name table, not a POSIX-wide constant. The prior version of
+// this constant used the Darwin value (29) for macOS/iOS and the Linux value
+// (30) for every OTHER `unix` target, INCLUDING all four BSDs this crate's
+// own `MAP_ANON` cfg list above already supports — on FreeBSD/DragonFly/
+// NetBSD/OpenBSD, `sysconf(30)` queries an unrelated `sysconf` parameter, not
+// the page size, and if that unrelated value happened to be a power of two
+// it would silently pass `page_size()`'s validation guard and poison the
+// decommit-offset rounding callers are told to base on `page_size()`
+// (`:227-230`).
+//
+// REASONED-FROM-SPEC, NOT empirically verified (per this task's own
+// instruction: none of the four BSDs run in this project's CI) — values
+// cited from each OS's own `sys/unistd.h` `_SC_*` name table:
+// - FreeBSD `sys/unistd.h`: `_SC_PAGESIZE` = 47 (`_SC_PAGE_SIZE` is a
+//   `#define` alias for the same value). DragonFly BSD forked from FreeBSD
+//   and has NOT renumbered this table; DragonFly's own `sys/unistd.h`
+//   confirms the same 47.
+// - NetBSD `sys/unistd.h`: `_SC_PAGESIZE` = 28 (`_SC_PAGE_SIZE` aliases it).
+// - OpenBSD `sys/unistd.h`: `_SC_PAGESIZE` = 28 (same table position as
+//   NetBSD; OpenBSD forked from NetBSD's 4.4BSD-derived `unistd.h`).
 #[cfg(all(unix, not(miri)))]
 const _SC_PAGESIZE: i32 = {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos"
+    ))]
     {
         29
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+    {
+        47
+    }
+    #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+    {
+        28
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    )))]
     {
         // Linux and most other unices use 30 for _SC_PAGESIZE / _SC_PAGE_SIZE.
         30
