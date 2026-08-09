@@ -368,8 +368,19 @@ pub mod cpumap {
             buf[pos] = b;
             pos += 1;
         }
-        // Write decimal digits of `node` (up to 3 digits for node < 1000).
-        let mut tmp = [0u8; 4];
+        // task #727 (rust-intel audit §B7): `tmp` sized `[u8; 10]` -- the
+        // maximum decimal digit count for ANY `u32` (`u32::MAX` =
+        // 4294967295, 10 digits) -- rather than the previous `[u8; 4]`,
+        // which panicked (`tmp[digits]` out of bounds) for `node >= 10000`.
+        // Unreachable today (the only caller, `topology()` below, iterates
+        // `0u32..64`), but this is a `#[doc(hidden)] pub` function reachable
+        // by `tests/cpumap_parser.rs` with an arbitrary `node`, and the old
+        // doc comment ("up to 3 digits for node < 1000") already disagreed
+        // with the old buffer size (4 bytes = up to 3 digits + none-needed
+        // slack, not 4 full digits) -- sizing for the real signature (`u32`)
+        // removes the latent panic instead of just re-stating the caller's
+        // unstated bound.
+        let mut tmp = [0u8; 10];
         let mut n = node;
         let mut digits = 0usize;
         if n == 0 {
@@ -452,9 +463,21 @@ pub mod cpumap {
         }
     }
 
-    /// Parse a hex string (no `0x` prefix) as `u32`. Returns `None` on error.
+    /// Parse a hex string (no `0x` prefix) as `u32`. Returns `None` on error,
+    /// including a token longer than 8 hex digits (would silently overflow
+    /// `u32`; see task #727 below).
     pub fn parse_hex_u32(s: &[u8]) -> Option<u32> {
         if s.is_empty() {
+            return None;
+        }
+        // task #727 (rust-intel audit §B26): previously absent, so a token
+        // longer than 8 hex digits silently WRAPPED (`wrapping_shl` drops
+        // the most-significant nibbles) instead of failing like every other
+        // malformed input this parser rejects (empty token, invalid digit).
+        // Real sysfs cpumap words are fixed 8 hex chars, so this had no live
+        // impact, but a silently-wrong value for oversized input is
+        // inconsistent with the rest of this parser's fail-closed behavior.
+        if s.len() > 8 {
             return None;
         }
         let mut val: u32 = 0;

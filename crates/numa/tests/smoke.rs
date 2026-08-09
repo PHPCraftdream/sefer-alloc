@@ -51,6 +51,18 @@ fn bind_range_on_owned_memory_does_not_panic() {
 }
 
 /// `bind_range` with `NO_NODE` sentinel must be a no-op and not panic.
+///
+/// task #727 (rust-intel audit §D1): on a non-`mock` build this test has NO
+/// observable postcondition to assert -- a no-op leaves nothing to inspect,
+/// so it structurally cannot fail for the specific property its name claims
+/// ("is a no-op"). Its real, load-bearing value here is narrower: a
+/// cross-platform "doesn't crash the real dispatch path" probe (does
+/// `bind_range` itself panic/UB when built for whichever real OS this test
+/// runs on, before the mock ever enters the picture). The actual short-
+/// circuit POSTCONDITION -- that NO_NODE prevents any call from reaching the
+/// platform backend at all -- is asserted for real in
+/// `tests/mock_dispatch.rs` (`bind_range_no_node_short_circuits`, via
+/// `drain().is_empty()`); do not read this test as covering that property.
 #[test]
 fn bind_range_no_node_is_noop() {
     let mut buf = [0u8; 16];
@@ -61,6 +73,12 @@ fn bind_range_no_node_is_noop() {
 }
 
 /// `bind_range` with `len == 0` must be a no-op and not panic.
+///
+/// task #727 (rust-intel audit §D1): same caveat as
+/// `bind_range_no_node_is_noop` above -- this is a cross-platform doesn't-
+/// crash-the-real-dispatch-path probe, not coverage of the short-circuit
+/// postcondition itself (that lives in `tests/mock_dispatch.rs`'s
+/// `bind_range_zero_len_short_circuits`).
 #[test]
 fn bind_range_zero_len_is_noop() {
     let mut buf = [0u8; 1];

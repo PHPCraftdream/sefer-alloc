@@ -150,6 +150,28 @@ fn parse_hex_u32_rejects_empty_and_invalid() {
     assert_eq!(parse_hex_u32(b"12g4"), None);
 }
 
+/// task #727 (rust-intel audit §B26): before this task, a token longer than
+/// 8 hex digits silently WRAPPED via `wrapping_shl` (dropping the
+/// most-significant nibbles) instead of returning `None` like every other
+/// malformed input this parser rejects. `"1_00000000"`-shaped inputs never
+/// occur in real sysfs cpumap files (fixed 8-char words), but the parser
+/// should fail closed on them like it does on an invalid digit or an empty
+/// token.
+#[test]
+fn parse_hex_u32_rejects_tokens_longer_than_8_digits() {
+    assert_eq!(
+        parse_hex_u32(b"ffffffff"),
+        Some(u32::MAX),
+        "8 digits: valid"
+    );
+    assert_eq!(
+        parse_hex_u32(b"1ffffffff"),
+        None,
+        "9 digits must be rejected, not silently wrapped"
+    );
+    assert_eq!(parse_hex_u32(b"00000000000"), None, "11 digits: rejected");
+}
+
 // ── format_sysfs_path ────────────────────────────────────────────────────
 
 #[test]
@@ -164,4 +186,21 @@ fn format_sysfs_path_multi_digit_node() {
     let mut buf = [0u8; 64];
     let path = format_sysfs_path(&mut buf, 123);
     assert_eq!(path, b"/sys/devices/system/node/node123/cpumap\0");
+}
+
+/// task #727 (rust-intel audit §B7): before this task, `format_sysfs_path`'s
+/// internal digit buffer was `[u8; 4]`, which panics (`tmp[digits]` out of
+/// bounds) for any `node >= 10000` -- unreachable via the crate's own 0..64
+/// caller bound, but reachable through this `#[doc(hidden)] pub` function
+/// directly, which is exactly how this test reaches it. Proves the fix
+/// (buffer sized for the full `u32` range) with the maximum possible value.
+#[test]
+fn format_sysfs_path_does_not_panic_on_five_plus_digit_node() {
+    let mut buf = [0u8; 64];
+    let path = format_sysfs_path(&mut buf, 10000);
+    assert_eq!(path, b"/sys/devices/system/node/node10000/cpumap\0");
+
+    let mut buf = [0u8; 64];
+    let path = format_sysfs_path(&mut buf, u32::MAX);
+    assert_eq!(path, b"/sys/devices/system/node/node4294967295/cpumap\0");
 }
