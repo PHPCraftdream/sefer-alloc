@@ -3,10 +3,21 @@
 
 use aligned_vmem::{
     decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
-    try_reserve_aligned, VmemError, PAGE,
+    try_reserve_aligned, Reservation, VmemError, PAGE,
 };
 
 const MIB: usize = 1024 * 1024;
+
+// task #719: `unsafe impl Send for Reservation {}` had no test at all pinning
+// the claim. `assert_send` intentionally checks ONLY `Send`, not `Sync` --
+// `Reservation` is documented as deliberately NOT `Sync` (unsynchronised
+// writes through the raw pointer), and Rust auto-traits mean there is no
+// unconditional POSITIVE assertion to write for a negative claim; proving the
+// negative would need a `compile_fail` doctest or a `trybuild` dependency,
+// mirroring the same tradeoff `sefer-region`'s own `Handle<T>` static
+// assertions already made (see `crates/region/tests/handle_static_asserts.rs`).
+const fn assert_send<T: Send>() {}
+const _: () = assert_send::<Reservation>();
 
 #[test]
 fn reserve_is_aligned_and_writable() {
@@ -228,6 +239,51 @@ fn leak_zeroed_pages_is_zeroed_and_static() {
         assert_eq!(base.read(), 0x42);
     }
     assert!(leak_zeroed_pages(0).is_none(), "zero size rejected");
+}
+
+/// task #719: `from_raw_parts` used to accept any `align` and defer
+/// validation to `Drop` time (a `Layout::from_size_align(...).expect(...)`
+/// panic inside the miri backend's `release_reservation`, reachable from
+/// `Drop::drop` -- if that fires while ANOTHER panic is already unwinding,
+/// the process aborts). Fixed by validating the documented `align` contract
+/// immediately, at the unsafe call site.
+#[test]
+#[should_panic(expected = "align must be a power of two >= PAGE")]
+fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
+    // Reserve real memory so `base`/`reservation` are non-null and valid --
+    // the panic under test is specifically about the `align` contract, not
+    // the already-tested null checks.
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, _align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len` are a genuinely live reservation from the line
+    // above; `align = 3` is deliberately NOT a power of two, which is exactly
+    // the contract violation this test proves panics immediately instead of
+    // being silently accepted and deferred to `Drop`. The process never
+    // reaches a point where this "reservation" is used unsoundly -- the
+    // `assert!` fires before `Self` is even constructed.
+    let _ = unsafe { Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3) };
+}
+
+/// The positive-path complement to the panic test above: a genuinely valid
+/// `align` must construct and behave normally (readable/writable, releases
+/// cleanly on drop) -- `from_raw_parts`'s validation must reject ONLY
+/// contract violations, not legitimate input.
+#[test]
+fn from_raw_parts_accepts_a_valid_reservation() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation, adopted back
+    // with `base == reservation` and `len == raw_len` (the reservation has no
+    // over-reserved head/tail here, since `size == align == PAGE`).
+    let adopted = unsafe { Reservation::from_raw_parts(raw, raw_len, raw, raw_len, align) };
+    let base = adopted.as_ptr();
+    // SAFETY: the adopted reservation is a live, committed PAGE-byte span.
+    unsafe {
+        base.write(0x77);
+        assert_eq!(base.read(), 0x77);
+    }
+    // Dropping `adopted` releases the reservation exactly once.
 }
 
 #[test]

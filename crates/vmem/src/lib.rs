@@ -382,10 +382,24 @@ impl Reservation {
     /// (`VirtualFree(MEM_RELEASE)` on Windows, `munmap` on Unix,
     /// `std::alloc::dealloc` on miri).
     ///
-    /// This is the inverse of [`into_parts`](Self::into_parts) and exists for
-    /// the cross-crate handoff pattern: a sibling crate (`numa-shim` on
-    /// Windows) issues a platform-specific reservation call that `aligned-vmem`
-    /// itself does not wrap, then adopts the result via this constructor.
+    /// **Not the inverse of [`into_parts`](Self::into_parts)** (task #719: an
+    /// earlier revision of this doc claimed exactly that, which is
+    /// misleading — [`into_parts`](Self::into_parts) returns only 3 of the 5
+    /// fields this constructor requires, discarding `base` and `len`
+    /// entirely, so `r.into_parts()` cannot be fed straight back into
+    /// `from_raw_parts` to reconstruct `r`). [`into_parts`](Self::into_parts)'s
+    /// true structural complement is [`release`], whose signature is exactly
+    /// the 3-tuple `into_parts` returns
+    /// (`reservation_ptr, reservation_len, align`) — that is the intended
+    /// matched pair for "take ownership out of RAII, then give it back to
+    /// the OS manually". `from_raw_parts` is a separate, more general
+    /// constructor for the cross-crate handoff pattern: a sibling crate
+    /// (`numa-shim` on Windows) issues a platform-specific reservation call
+    /// that `aligned-vmem` itself does not wrap, then adopts the result via
+    /// this constructor — it needs `base`/`len` too because the adopted
+    /// reservation's usable span need not start at the OS reservation's own
+    /// base (the over-reserve + trim technique this crate itself uses
+    /// internally is exactly that shape).
     ///
     /// # Safety
     ///
@@ -420,6 +434,26 @@ impl Reservation {
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
         let res_nn =
             NonNull::new(reservation).expect("from_raw_parts: reservation must be non-null");
+        // task #719: validate the documented `align` contract HERE, at the
+        // unsafe call site, rather than leaving it to surface later as a
+        // panic inside `Drop::drop` (via the miri backend's
+        // `Layout::from_size_align(reservation_len, align).expect(...)` in
+        // `release_reservation`) -- a panic reachable from `Drop` is far more
+        // dangerous than one at construction time: if this `Reservation` is
+        // ever dropped while ANOTHER panic is already unwinding the stack,
+        // Rust aborts the whole process on the second panic. Every other
+        // construction path in this crate already produces a valid
+        // `(align, reservation_len)` pair by construction (validated at each
+        // public entry point), so this check is specific to the
+        // caller-supplied values `from_raw_parts` accepts. Violating the
+        // documented `align` contract is already undefined behaviour per
+        // this function's own `# Safety` section; panicking immediately here
+        // converts a silently-deferred hazard into a loud, attributable
+        // failure at the actual point of misuse.
+        assert!(
+            align.is_power_of_two() && align >= PAGE,
+            "Reservation::from_raw_parts: align must be a power of two >= PAGE, got {align}"
+        );
         Self {
             base: base_nn,
             len,
@@ -1407,6 +1441,10 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: DecommitKind) {
     let len = end - start;
+    // task #719: missing SAFETY comment (the Windows sibling has one for the
+    // identical `base.add(start)` offset above its own commit call).
+    // SAFETY: caller guarantees `[base+start, +len)` is within a live
+    // reservation owned by them, so the offset stays in-bounds.
     let addr = unsafe { base.add(start) };
     match kind {
         // SAFETY: caller guarantees `[base+start, +len)` is within a live
@@ -1590,6 +1628,21 @@ const _SC_PAGESIZE: i32 = {
     }
 };
 
+// task #719: `offset`'s type hardcodes `i64` for POSIX `off_t`, which is
+// NOT a portable assumption in general -- `off_t`'s width is platform- (and
+// sometimes build-config-) dependent, e.g. 32-bit on some 32-bit Linux
+// targets without large-file-support flags, while BSDs/macOS define it as a
+// 64-bit `int64_t` even in 32-bit builds. `i64` is correct for every target
+// this crate actually builds/tests on today (this session verified
+// x86_64-unknown-{linux-gnu,freebsd,netbsd} plus native Windows/macOS are
+// all 64-bit-off_t targets) -- narrowing this further (e.g. per-OS
+// `target_pointer_width`-conditional typing) is deferred until this crate
+// gains a real 32-bit Unix target in its own supported/tested set, per
+// CLAUDE.md's "don't design for hypothetical future requirements". `mmap`
+// is ALWAYS called with a literal `0` offset here (anonymous mappings only,
+// no file descriptor) -- there is no code path where a wrong-width `off_t`
+// could silently truncate a real value; the residual risk is purely an ABI
+// shape mismatch on a target this crate does not currently support.
 #[cfg(all(unix, not(miri)))]
 extern "C" {
     fn mmap(
@@ -1636,6 +1689,17 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
 #[cfg(all(unix, not(miri)))]
 unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     // SAFETY: caller guarantees `[addr, addr+len)` was mmap'd and is unmapped once.
+    // task #719: the `-1`/`EINVAL` return is deliberately discarded, not
+    // merely overlooked — every caller of this function already establishes
+    // page/huge-page alignment before calling (task #714 closed the one case
+    // where that was NOT true, a silent whole-mapping leak); given that
+    // precondition, a genuine `munmap` failure here would indicate a bug in
+    // this crate's own alignment bookkeeping, not a recoverable runtime
+    // condition the caller could act on (`release`/`decommit`'s public
+    // signatures are infallible `()`/`bool`, so there is no channel to
+    // surface it through even if we wanted to). The failure mode on error is
+    // a leaked mapping, never memory unsafety — the memory stays validly
+    // mapped, just not returned to the OS.
     let _ = munmap(addr as *mut core::ffi::c_void, len);
 }
 
@@ -1645,6 +1709,13 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region.
+    // task #719: the return value is deliberately discarded -- `madvise`
+    // failing here means the OS did not reclaim the pages (the mapping stays
+    // exactly as valid and readable/writable as before the call), not a
+    // memory-safety concern; [`decommit`]/[`decommit_lazy`]'s own public
+    // contracts already document decommit as an OS-cooperative hint whose
+    // failure mode is "the physical pages were not actually returned", never
+    // a dangling/invalid mapping.
     let _ = madvise(addr as *mut core::ffi::c_void, len, advice);
 }
 
@@ -1748,7 +1819,13 @@ fn reserve_aligned_huge_raw(
 /// (`MADV_FREE`) decommit paths. Threaded into `decommit_pages_impl` so both
 /// [`decommit`] and [`decommit_lazy`] share one platform routine.
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // unused under the `mock` feature (syscalls bypassed)
+// task #719: this was a blanket `#[allow(dead_code)]`, suppressing the lint
+// in EVERY feature config (not just under `mock`, where it is genuinely
+// unused) -- exactly the crate-wide-suppression hazard task #646/F8 already
+// narrowed every other dead-code allow in this file away from (see the
+// module doc above). `DecommitKind` was missed from that pass. Narrowed to
+// match the established per-item pattern.
+#[cfg_attr(feature = "mock", allow(dead_code))]
 enum DecommitKind {
     Eager,
     Lazy,
