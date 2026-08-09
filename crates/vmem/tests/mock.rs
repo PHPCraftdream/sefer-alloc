@@ -5,7 +5,7 @@
 #![cfg(feature = "mock")]
 
 use aligned_vmem::mock::{self, Call};
-use aligned_vmem::{decommit, decommit_lazy, recommit, reserve_aligned, PAGE};
+use aligned_vmem::{decommit, decommit_lazy, recommit, reserve_aligned, try_reserve_aligned, PAGE};
 
 const MIB: usize = 1024 * 1024;
 
@@ -128,6 +128,47 @@ fn fail_next_reserve_injects_through_huge_path() {
         calls[0]
     );
     assert!(matches!(calls[1], Call::ReserveHuge { .. }));
+}
+
+/// task #776 (F2): a simulated mock fault used to report
+/// `VmemError::last_os_error()` -- reading whatever `errno`/`GetLastError`
+/// happened to be lying around from unrelated prior code, since no real
+/// syscall ran. That is exactly the "code 0 ambiguity" task #713 already
+/// fixed for the real-path fault-injection branch (`os_refusal_unknown_code()`
+/// instead of `last_os_error()`); `mock`'s own fault takers had the same
+/// defect. Proves the fix: a simulated fault's `VmemError` reports
+/// `os_code() == None`, distinct from a genuine OS error code (which would be
+/// `Some(_)`).
+#[test]
+fn simulated_fault_reports_no_os_code() {
+    mock::reset();
+    mock::fail_next_reserve(1);
+    let err = match try_reserve_aligned(MIB, MIB) {
+        Err(e) => e,
+        Ok(_) => panic!("armed fault must fail"),
+    };
+    assert_eq!(
+        err.os_code(),
+        None,
+        "a SIMULATED failure must not report a fabricated OS code: {err:?}"
+    );
+    assert!(
+        !err.is_invalid_argument(),
+        "a simulated OS refusal is distinct from a contract violation: {err:?}"
+    );
+
+    mock::reset();
+    let r = reserve_aligned(MIB, MIB).expect("reserve");
+    let base = r.as_ptr();
+    mock::fail_next_commit(1);
+    // SAFETY: base is a live reservation.
+    let err = unsafe { aligned_vmem::try_recommit(base, 0, PAGE) }
+        .expect_err("armed commit fault must fail");
+    assert_eq!(
+        err.os_code(),
+        None,
+        "a SIMULATED commit failure must not report a fabricated OS code: {err:?}"
+    );
 }
 
 #[test]

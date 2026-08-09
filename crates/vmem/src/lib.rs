@@ -434,25 +434,40 @@ impl Reservation {
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
         let res_nn =
             NonNull::new(reservation).expect("from_raw_parts: reservation must be non-null");
-        // task #719: validate the documented `align` contract HERE, at the
-        // unsafe call site, rather than leaving it to surface later as a
-        // panic inside `Drop::drop` (via the miri backend's
-        // `Layout::from_size_align(reservation_len, align).expect(...)` in
-        // `release_reservation`) -- a panic reachable from `Drop` is far more
-        // dangerous than one at construction time: if this `Reservation` is
-        // ever dropped while ANOTHER panic is already unwinding the stack,
-        // Rust aborts the whole process on the second panic. Every other
-        // construction path in this crate already produces a valid
-        // `(align, reservation_len)` pair by construction (validated at each
-        // public entry point), so this check is specific to the
-        // caller-supplied values `from_raw_parts` accepts. Violating the
-        // documented `align` contract is already undefined behaviour per
-        // this function's own `# Safety` section; panicking immediately here
+        // task #719: validate the documented `align`/`reservation_len`
+        // contract HERE, at the unsafe call site, rather than leaving it to
+        // surface later as a panic inside `Drop::drop` (via the miri
+        // backend's `Layout::from_size_align(reservation_len,
+        // align).expect(...)` in `release_reservation`) -- a panic reachable
+        // from `Drop` is far more dangerous than one at construction time:
+        // if this `Reservation` is ever dropped while ANOTHER panic is
+        // already unwinding the stack, Rust aborts the whole process on the
+        // second panic. Every other construction path in this crate already
+        // produces a valid `(align, reservation_len)` pair by construction
+        // (validated at each public entry point), so this check is specific
+        // to the caller-supplied values `from_raw_parts` accepts. Violating
+        // the documented contract is already undefined behaviour per this
+        // function's own `# Safety` section; panicking immediately here
         // converts a silently-deferred hazard into a loud, attributable
         // failure at the actual point of misuse.
+        //
+        // task #776 (F2 revision -- round-closing review finding F7): the
+        // original check validated only `align`, but `Layout::from_size_align`
+        // also fails when `reservation_len` overflows `isize::MAX` once
+        // rounded up to `align` -- an `align`-only check left that half of
+        // the SAME Drop-reachable-panic hazard open (e.g.
+        // `from_raw_parts(b, PAGE, r, usize::MAX, PAGE)` still constructed
+        // successfully and still panicked inside `Drop` under miri). Checking
+        // `Layout::from_size_align(...).is_ok()` directly covers both halves
+        // of the documented contract in one call, matching exactly what
+        // `release_reservation`'s miri backend will later attempt.
         assert!(
-            align.is_power_of_two() && align >= PAGE,
-            "Reservation::from_raw_parts: align must be a power of two >= PAGE, got {align}"
+            align.is_power_of_two()
+                && align >= PAGE
+                && std::alloc::Layout::from_size_align(reservation_len, align).is_ok(),
+            "Reservation::from_raw_parts: align must be a power of two >= PAGE, and \
+             (reservation_len, align) must form a valid Layout; got align={align}, \
+             reservation_len={reservation_len}"
         );
         Self {
             base: base_nn,
@@ -728,6 +743,15 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// and `[base+start, base+end)` must fall within that reservation's usable span
 /// (i.e. `end <= len`). The range must be currently reserved but not yet
 /// committed (or already committed — recommitting is harmless on Windows).
+///
+/// **Concurrent calls are safe** (task #776, F14): multiple threads may call
+/// `commit_range` concurrently on ranges within the SAME reservation, whether
+/// the ranges overlap or not — `VirtualAlloc(MEM_COMMIT)` (Windows) is itself
+/// thread-safe and idempotent, and the Unix/miri backends are no-ops (the
+/// entire span is already committed eagerly on those platforms). This does
+/// NOT relax the range/liveness contract above; it only states that issuing
+/// several legal calls from different threads at once is not itself a new
+/// hazard.
 #[must_use]
 #[cfg(feature = "lazy-commit")]
 pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
@@ -874,8 +898,17 @@ pub fn try_reserve_aligned_lazy(
 /// this never fails purely because huge pages are unavailable — it fails only
 /// on a genuine reservation error (OOM) or a contract violation.
 ///
-/// Base/align/size contract is identical to [`reserve_aligned`]. For the
-/// failure cause use [`try_reserve_aligned_huge`].
+/// Base/align/size contract is otherwise identical to [`reserve_aligned`],
+/// **except on Linux with `huge-pages` enabled** (task #776, F3): `size` and
+/// `align` must BOTH additionally be multiples of the Linux huge-page size
+/// (2 MiB) — a request that only satisfies `reserve_aligned`'s own weaker
+/// `PAGE`-multiple contract is rejected with `VmemError::invalid_argument()`
+/// before any syscall runs, even though such a request could previously
+/// succeed there via the documented ordinary-page fallback (task #714 added
+/// this rejection to close a real `munmap` mapping leak — see that task's
+/// own commit for the full reasoning; the trade-off is a stricter contract
+/// in exchange for a provably-correct trim). For the failure cause use
+/// [`try_reserve_aligned_huge`].
 #[must_use]
 #[cfg(feature = "huge-pages")]
 pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
@@ -1410,10 +1443,14 @@ fn try_reserve_aligned_exact(
         }
         p
     };
-    let region_addr = region_ptr as usize;
+    // task #776 (F8): `.addr()` reads the address without exposing
+    // provenance, completing the strict-provenance discipline task #717
+    // applied to `unix_reserve`'s slow path -- this is the Unix FAST path
+    // (tried first by every reservation), so it is the higher-traffic site.
+    let region_addr = region_ptr.addr();
     if !region_addr.is_multiple_of(align) {
         // SAFETY: `region_ptr` was just mapped with length `size`; unmap once.
-        unsafe { libc_munmap(region_ptr as *mut u8, size) };
+        unsafe { libc_munmap(region_ptr.cast(), size) };
         return Err(VmemError::invalid_argument());
     }
     #[cfg(feature = "bench-internals")]
@@ -1679,7 +1716,9 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
         -1,
         0,
     );
-    if (p as usize) == MAP_FAILED {
+    // task #776 (F8): `.addr()` for the same reason as the fast-path fix
+    // above -- a comparison-only read, not a round-trip.
+    if p.addr() == MAP_FAILED {
         core::ptr::null_mut()
     } else {
         p

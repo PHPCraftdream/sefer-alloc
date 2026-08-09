@@ -180,7 +180,13 @@ pub(crate) fn take_reserve_fault() -> Option<VmemError> {
         let mut n = c.borrow_mut();
         if *n > 0 {
             *n -= 1;
-            Some(VmemError::last_os_error())
+            // task #776 (F2): this is a SIMULATED failure -- no real syscall
+            // runs, so `VmemError::last_os_error()` would read whatever
+            // `errno`/`GetLastError` happens to be lying around from
+            // unrelated prior code, exactly the "fabricated OS code" hazard
+            // task #713 already fixed for `try_commit_range`'s real-path
+            // fault-injection branch (`lib.rs`). Mirrors that fix.
+            Some(VmemError::os_refusal_unknown_code())
         } else {
             None
         }
@@ -193,7 +199,8 @@ pub(crate) fn take_commit_fault() -> Option<VmemError> {
         let mut n = c.borrow_mut();
         if *n > 0 {
             *n -= 1;
-            Some(VmemError::last_os_error())
+            // task #776 (F2): same reasoning as `take_reserve_fault` above.
+            Some(VmemError::os_refusal_unknown_code())
         } else {
             None
         }

@@ -38,11 +38,23 @@
 //! is the "flag" that makes a fresh arming visible) and needs a
 //! Release/Acquire pair, not `Relaxed`, to guarantee a reader that observes
 //! the flag also observes the payload -- see [`arm_fail_at`] and
-//! [`should_fail_commit`]'s doc comments for the exact pairing. [`FAIL_NEXT`]'s
+//! `should_fail_commit`'s doc comments for the exact pairing. `FAIL_NEXT`'s
 //! decrement uses [`AtomicU32::fetch_update`] (a genuine atomic
 //! read-modify-write) instead of a separate load then store, which would
 //! otherwise race under concurrent callers and lose or duplicate a
 //! decrement.
+//!
+//! **Scope note (task #776, F15):** these fixes close the two hazards named
+//! above. A THIRD, narrower hazard in this same 3-atomic protocol remains
+//! unhandled: `should_fail_commit`'s one-shot self-disarm
+//! (`FAIL_AT_TARGET = 0` then `FAIL_AT_COUNTER = 0`, both `Relaxed`) can race
+//! a CONCURRENT [`arm_fail_at`] call re-arming the hook -- the disarm may
+//! land after the re-arm, silently cancelling a freshly-armed hook with no
+//! signal to the caller. This is out of scope for the two hazards this
+//! module's fixes targeted, and matters only for a consumer that arms
+//! `arm_fail_at` from multiple threads (this crate's own test suite never
+//! does). Not fixed here; recorded so "closed two real data-race hazards"
+//! is not read as an exhaustive audit of this module's every atomic.
 //!
 //! Zero cost when the feature is off: this entire module is compiled out
 //! (`#[cfg(feature = "fault-injection")]` on the `mod` declaration in
@@ -82,8 +94,8 @@ pub fn arm_fail_next(n: u32) {
 /// Checked AFTER [`arm_fail_next`]'s hook.
 ///
 /// task #718: the counter reset is the "payload" and the target store is the
-/// "flag" a reader gates on ([`should_fail_commit`] only inspects
-/// [`FAIL_AT_COUNTER`] once it has observed [`FAIL_AT_TARGET`] `> 0`) — a
+/// "flag" a reader gates on (`should_fail_commit` only inspects
+/// `FAIL_AT_COUNTER` once it has observed `FAIL_AT_TARGET` `> 0`) — a
 /// `Release` store here, paired with the `Acquire` load there, guarantees a
 /// reader that observes a freshly-armed target also observes the zeroed
 /// counter, even when the arming and committing calls run on different

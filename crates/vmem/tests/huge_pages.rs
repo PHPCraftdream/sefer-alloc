@@ -11,12 +11,25 @@
 //! only ever compile and run on Linux; everywhere else (including the
 //! Windows host this round's fixes were authored and verified on) they are
 //! `#[cfg]`-excluded and only the general best-effort-fallback sanity test
-//! above them runs. The Linux-only tests' correctness was checked by a
-//! cross-compile (`cargo check --target x86_64-unknown-linux-gnu`), NOT by
-//! execution on a real hugetlb-backed system — this file exists so a Linux
-//! CI runner (were one added -- see `docs/CORRECTNESS_OPEN_ITEMS.md` item 41
-//! for the adjacent miri-CI gap) would actually exercise this rejection
-//! logic.
+//! above them runs. The Linux-only tests' correctness was checked, when
+//! authored, by a cross-compile (`cargo check --target
+//! x86_64-unknown-linux-gnu`), NOT by execution on a real hugetlb-backed
+//! system.
+//!
+//! task #776 (F12, round-closing review): an earlier revision of this
+//! comment said this file exists so a Linux CI runner "were one added"
+//! would exercise this rejection logic -- that undersold this file's own
+//! coverage. A Linux runner ALREADY exists (`.github/workflows/ci.yml`'s
+//! `test-workspace` job, `runs-on: ubuntu-latest`) and already runs
+//! `cargo test -p aligned-vmem --all-features`, which compiles this file
+//! (gated only on `feature = "huge-pages"`, not `target_os`) and executes
+//! all four Linux-gated tests below on every push. This file's Linux-only
+//! regression coverage is therefore genuinely LIVE in CI, not merely
+//! compile-checked. The real residual gap, stated precisely: no
+//! **hugetlb-configured** host runs these tests, so the
+//! `MAP_HUGETLB`-actually-succeeds branch (as opposed to the
+//! best-effort-fallback branch, which IS exercised) stays untested end to
+//! end.
 
 #![cfg(feature = "huge-pages")]
 

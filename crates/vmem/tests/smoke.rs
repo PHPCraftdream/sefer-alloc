@@ -264,6 +264,25 @@ fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
     let _ = unsafe { Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3) };
 }
 
+/// task #776 (F7): the original `assert!` validated only `align`, leaving
+/// half of the SAME Drop-reachable-panic hazard open -- `Layout::from_size_align`
+/// also fails when `reservation_len` overflows `isize::MAX` once rounded up
+/// to `align`, and `from_raw_parts`'s own `# Safety` contract requires
+/// `reservation_len` to be a valid, non-zero `PAGE`-multiple. Proves the
+/// extended check closes this half too.
+#[test]
+#[should_panic(expected = "must form a valid Layout")]
+fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, _raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`align` come from a genuinely live reservation above;
+    // `reservation_len = usize::MAX` deliberately overflows `isize::MAX` when
+    // `Layout::from_size_align` rounds it up to `align` -- exactly the
+    // contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let _ = unsafe { Reservation::from_raw_parts(raw, PAGE, raw, usize::MAX, align) };
+}
+
 /// The positive-path complement to the panic test above: a genuinely valid
 /// `align` must construct and behave normally (readable/writable, releases
 /// cleanly on drop) -- `from_raw_parts`'s validation must reject ONLY

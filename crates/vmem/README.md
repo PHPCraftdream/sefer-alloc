@@ -52,7 +52,10 @@ Every fallible entry point has an infallible `Option`/`bool` counterpart that
 discards the cause. Optional features: `lazy-commit` (incremental commit:
 `reserve_aligned_lazy` + `commit_range`; formerly `alloc-lazy-commit`, still
 accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
-`MEM_LARGE_PAGES`, best-effort with fallback), `mock` (recording call log +
+`MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
+must both additionally be multiples of the huge-page size (2 MiB), or the
+request is rejected up front**; see the function's own rustdoc), `mock`
+(recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
 backend with a stub — **⚠ Cargo feature-unification hazard: enable only in a
@@ -82,10 +85,28 @@ reservation"), and what the file-mapping crates don't directly offer.
 
 - `align` must be a power of two `>=` `PAGE` (4 KiB).
 - `size` must be a non-zero multiple of `PAGE`.
-- `decommit`/`recommit` offsets must be multiples of `PAGE`.
+- `decommit`/`recommit`/`commit_range` offsets must be multiples of `PAGE`.
+- On Linux with `huge-pages` enabled, `reserve_aligned_huge`/
+  `try_reserve_aligned_huge` additionally require `size` and `align` to both
+  be multiples of the huge-page size (2 MiB) — see that function's own
+  rustdoc.
 
-Violations return `None` / are no-ops — never a panic, so this is safe to call
-from inside a `GlobalAlloc::alloc` body.
+Most violations return `None` / `false` / `Err(_)` — never a panic, so this
+is safe to call from inside a `GlobalAlloc::alloc` body: `reserve_aligned`
+and its siblings, and `decommit`/`decommit_lazy` (which silently no-op on a
+violated range, an intentional asymmetry with `recommit`/`commit_range`
+below — since `decommit`'s `()` return has no write-permitting sentinel to
+misuse, silently skipping is safe, whereas `recommit`/`commit_range`'s
+boolean/`Result` return previously clamped a contract violation to the same
+value a genuine success reports, which crashed an in-repo consumer — see
+`recommit`'s own rustdoc). Two exceptions to "never panics": `recommit` and
+`commit_range` (and their fallible `try_*` forms) now **reject**, rather
+than silently accept, a violated offset range (`start > end` or misaligned)
+— they still don't panic, but callers relying on the old silent-no-op shape
+should check the return value; and `Reservation::from_raw_parts` (an
+`unsafe fn` for adopting a foreign OS reservation, not part of the ordinary
+reservation flow) panics immediately on a contract-violating `align`/
+`reservation_len` pair.
 
 ## Provenance & safety
 

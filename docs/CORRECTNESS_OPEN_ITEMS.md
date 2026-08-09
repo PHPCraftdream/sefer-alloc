@@ -1799,49 +1799,127 @@ resolved" below.)_
     running the suite under miri, as that task's own instruction required,
     was the first time in this crate's history it happened.)
 
-    - **Status:** OPEN — not actioned, filed for a future task.
-    - **Evidence, current as of this filing:**
+    - **Status:** OPEN — the CI step itself is still missing. 1 of the 2
+      originally-listed miri blockers is now CLOSED (updated 2026-08-09,
+      task #776/F11 — task #716's own fix closed sub-item 2 below two
+      commits after this item was filed, and the update was missed at the
+      time per CLAUDE.md's "update the card in the SAME commit" rule; this
+      is that correction).
+    - **Evidence, current as of this update:**
       - `.github/workflows/ci.yml`'s only miri invocation touching this
         crate at all is `cargo miri test -p numa-shim --features
         vmem-integration` (`:1572`), which transitively exercises some
         `aligned-vmem` code paths through `numa-shim`'s own integration
-        tests, not this crate's own `tests/*.rs` suite directly.
-      - Running `cargo +nightly miri test -p aligned-vmem --all-features`
-        surfaces TWO real miri-incompatibilities in this crate's OWN test
-        suite, neither previously caught by any CI:
-        1. `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`
+        tests, not this crate's own `tests/*.rs` suite directly. This is
+        still true — the missing CI step is the item's live blocker.
+      - Of the two miri-incompatibilities originally found by running
+        `cargo +nightly miri test -p aligned-vmem --all-features`:
+        1. **Still OPEN.** `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`
            intentionally leaks (the function under test,
            `leak_zeroed_pages`, `core::mem::forget`-leaks by design for a
            process-lifetime sidecar) — miri's default leak-checker flags
            this as "memory leaked" and fails the run. Not a real bug; needs
            either `MIRIFLAGS=-Zmiri-ignore-leaks` for this crate's miri
-           runs, or restructuring the test to avoid the intentional leak
-           (e.g. asserting on the pointer without invoking the real
-           leaking helper, or accepting the leak as this specific test's
-           documented cost).
-        2. `tests/lazy_commit.rs`'s `sequential_commit_range_grows_incrementally`
-           reads uninitialized memory under miri
-           (`crates/vmem/tests/lazy_commit.rs:287`) — this is the SAME
-           underlying defect already tracked on the TaskList as task #716
-           ("the public huge-pages API has zero tests, and lazy_commit's
-           zero-fill assert is an uninitialized read under miri"), not a
-           new finding here — confirmed identical via `git stash` (the
-           failure reproduces byte-for-byte on the pre-task-#713 tree).
-           Task #716 has no prior entry in this index; this is its first
-           mention here, cross-referenced rather than duplicated.
+           runs, or restructuring the test to avoid the intentional leak.
+        2. **CLOSED by task #716** (commit `81ecfe3`). `tests/lazy_commit.rs`'s
+           `sequential_commit_range_grows_incrementally` read uninitialized
+           memory under miri (`crates/vmem/tests/lazy_commit.rs:287`);
+           task #716 gated the offending assertion with `#[cfg(not(miri))]`
+           and re-ran it under miri to confirm the UB report disappeared.
+           Independently re-confirmed clean during task #776's own
+           `cargo +nightly miri test` re-run of this crate's suite this
+           round (see `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`
+           §0, which ran the file under miri and reported it green).
       - Verified NOT a regression from task #713's own changes: `git stash`
-        (reverting all of #713's edits) reproduces both failures
+        (reverting all of #713's edits) reproduces both original failures
         identically on the pre-#713 tree.
     - **Why filed instead of fixed here:** out of scope for task #713 (an
       errno-capture-timing fix) — fixing #1 needs a scoped
-      `MIRIFLAGS`/test-restructure decision, and #2 is already task #716's
-      to fix. Adding the missing CI step itself is a `ci.yml` change with
-      its own blast radius (miri run time, whether to scope it to specific
-      test files to dodge #1/#2 until they're separately fixed) that
-      deserves its own task rather than a drive-by inside #713.
-    - **Next trigger:** a future task (or task #716's own fix) should add
-      a `cargo miri test -p aligned-vmem` CI step, scoped or flagged to
-      route around whichever of #1/#2 is still open at that time.
+      `MIRIFLAGS`/test-restructure decision. Adding the missing CI step
+      itself is a `ci.yml` change with its own blast radius (miri run
+      time, whether to scope it to specific test files to dodge #1 until
+      it's separately fixed) that deserves its own task rather than a
+      drive-by inside #713 or #776.
+    - **Next trigger:** a future task should add a
+      `cargo miri test -p aligned-vmem` CI step, using
+      `MIRIFLAGS=-Zmiri-ignore-leaks` (or a test restructure) to route
+      around sub-item #1 above, which is the only remaining blocker.
+
+42. **Deferred decision — `aligned-vmem`'s `mock` Cargo-feature-unification
+    hazard was resolved with a doc-only fix, explicitly deferring a
+    stronger `--cfg`-flag conversion; the SAME finding recurs in
+    `numa-shim` and the deferral is load-bearing for that crate's own
+    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
+    review of the aligned-vmem round.)
+
+    - **Status:** OPEN — decision recorded, not yet revisited.
+    - **Current-number-or-verdict:** `aligned-vmem`'s `mock` feature
+      (`crates/vmem/Cargo.toml`) is a Cargo feature (not a `--cfg` flag),
+      documented with a Cargo-feature-unification warning in three places
+      (`Cargo.toml`, `mock.rs`'s module doc, `README.md`). Task #715
+      (commit `e5f6700`) explicitly evaluated and DEFERRED the stronger
+      fix — converting `mock` from a Cargo feature to a `--cfg vmem_mock`
+      RUSTFLAGS flag, matching this repo's own `cfg(loom)`/`cfg(kani)`
+      precedent (cfg flags do not unify across a build the way Cargo
+      features do) — reasoning that this crate has zero real external
+      consumers before its first publish (task #658), so the doc-only fix
+      closes the realistic near-term risk at much lower cost than a
+      mechanical rewrite of the whole test-invocation surface and CI
+      matrix.
+    - **Evidence:** `crates/vmem/Cargo.toml:60-81`'s `mock = []` feature
+      comment states the deferral explicitly: "Revisit if/when this crate
+      gains external consumers and the hazard is reported for real."
+      `numa-shim` has the IDENTICAL §C10 finding from the same
+      `/rust-intel` audit, per task #715's own commit message, which
+      states this decision should be treated as "one consistent policy
+      across both crates" when numa-shim's round is reached (numa-shim's
+      fix-task group is #697/#720-727, next in the crate-by-crate sweep
+      after aligned-vmem's own round closes).
+    - **Next trigger:** when numa-shim's round reaches its own §C10
+      finding (mock feature-unification hazard), apply the SAME doc-only
+      resolution task #715 chose here, citing this item and task #715's
+      own reasoning, rather than re-deriving the decision from scratch —
+      or, if numa-shim's round decides the calculus has changed (e.g. one
+      of the two crates has since gained a real external consumer),
+      revisit BOTH crates' resolution together rather than letting them
+      drift into two different policies for the same finding shape.
+
+43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
+    constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
+    targets, never empirically executed.** (Filed 2026-08-09, task
+    #776/F13, round-closing review of the aligned-vmem round.)
+
+    - **Status:** OPEN — no action needed unless a runner becomes
+      available; filed so the gap is visible rather than silently
+      load-bearing on an unverified constant.
+    - **Current-number-or-verdict:** `crates/vmem/src/lib.rs`'s
+      `_SC_PAGESIZE` cfg table (task #714, commit `2e7f4f5`) sets: macOS
+      family = 29 (verified — this session ran on/cross-compiled for a
+      Darwin-adjacent config); FreeBSD/DragonFly = 47 and NetBSD/OpenBSD =
+      28 (NOT independently executed on real hardware — reasoned from each
+      OS's own `sys/unistd.h` header value, cross-compile-checked via
+      `cargo check --target x86_64-unknown-{freebsd,netbsd}` only, which
+      confirms the code COMPILES but not that the numeric constant is
+      correct; `x86_64-unknown-dragonfly`/`x86_64-unknown-openbsd` have no
+      prebuilt rustup std component on this session's Windows host, so
+      those two are not even cross-compile-checked, only reasoned by
+      sharing the identical cfg arm as their verified-by-citation
+      siblings). A wrong `_SC_PAGESIZE` value would cause `page_size()` to
+      query the WRONG name via `sysconf`, silently returning garbage (or
+      an unrelated system parameter's value) on any of these 4 targets if
+      the header-citation reasoning is wrong.
+    - **Evidence:** `crates/vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
+      definition and its own doc comment cite the per-OS header values
+      directly; no BSD runner exists in `.github/workflows/ci.yml`'s
+      current matrix for this crate.
+    - **Next trigger:** if/when a FreeBSD, NetBSD, DragonFly, or OpenBSD
+      CI runner becomes available for this crate (or this repo gains one
+      for any purpose), run `page_size()` on it and assert the returned
+      value matches the platform's actual page size (typically 4 KiB on
+      all four, making a silent wrong-constant bug hard to notice without
+      an explicit assertion against the OS's own reported value via a
+      DIFFERENT API, e.g. comparing against `/proc/self/status` or
+      equivalent, not just checking the result is a power of two).
 
 ---
 

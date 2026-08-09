@@ -758,10 +758,15 @@ jobs:
       # real syscall backend, which `mock` entirely replaces), so turning
       # `mock` on alongside it via `--all-features` makes the whole file
       # compile to ZERO tests (verified: `cargo test -p aligned-vmem
-      # --all-features --test fault_injection` -> "0 passed"). All 4 of
-      # this file's tests had therefore never executed in ANY CI
-      # configuration. Fixed with a dedicated step using the file's actual
-      # required feature combination (verified locally: 4 passed).
+      # --all-features --test fault_injection` -> "0 passed"). This file's
+      # own tests had therefore never executed in ANY CI configuration.
+      # Fixed with a dedicated step using the file's actual required
+      # feature combination. Deliberately not stating a test COUNT here
+      # (task #776, F10) -- a hardcoded count goes stale the moment a test
+      # is added or removed, exactly as happened to this comment's own
+      # original "4 passed" once `#718` added a 5th test five commits
+      # later without anyone revisiting it; `cargo test`'s own output is
+      # the live source of truth for the current count.
       - run: cargo test -p aligned-vmem --features "fault-injection lazy-commit" --no-fail-fast
       # Publish-readiness task #639 (P5, gaps 3+4 of 4): CI's `no_std` job
       # (below) only ever built the ROOT crate's default-features-off
