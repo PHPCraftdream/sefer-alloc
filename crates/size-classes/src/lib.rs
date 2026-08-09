@@ -173,8 +173,34 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
             // Advance the geometric value for the next iteration:
             // next = round_up(ceil(cur * num / den), min_block), min step min_block.
             if gi < geo_count {
-                let mut next = (cur * num).div_ceil(den);
-                next = (next + mask) & !mask; // round up to a multiple of min_block
+                // task #701 (rust-intel audit §B26, MEDIUM): `cur * num` was
+                // a bare multiply on a geometrically-ACCUMULATING value --
+                // this is a library (`build_table`/`Params` are `pub`, and
+                // some call sites reach this at runtime, not just in
+                // `const` table construction), so per §B26 it cannot assume
+                // the consumer built with `overflow-checks = true`. In a
+                // release profile the multiply would silently WRAP, and the
+                // `next <= cur` min-step fallback below then MASKED that
+                // wrap into a valid-looking strictly-increasing table
+                // (min_block steps instead of the requested geometry) --
+                // `build_size2class`'s downstream monotonicity check cannot
+                // catch this, since the masked table IS still strictly
+                // increasing, just silently wrong. `checked_mul`/
+                // `checked_add` turn a release-silent wrong-table bug into
+                // an always-panicking one, with a diagnostic naming the
+                // actual overflow; in `const` context this was ALREADY a
+                // hard compile error either way (const-eval traps on
+                // overflow regardless of profile), so this fix's real
+                // effect is entirely on the previously-unguarded runtime
+                // call sites.
+                let mut next = cur
+                    .checked_mul(num)
+                    .expect("geometric progression overflows usize -- reduce geo_count/growth")
+                    .div_ceil(den);
+                next = next
+                    .checked_add(mask)
+                    .expect("geometric progression overflows usize -- reduce geo_count/growth")
+                    & !mask; // round up to a multiple of min_block
                 if next <= cur {
                     next = cur + min_block; // enforce the minimum step
                 }

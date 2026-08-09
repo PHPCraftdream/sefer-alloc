@@ -232,6 +232,43 @@ fn extras_overlapping_geometric_run_panics() {
     let _ = SizeClasses::<N, L>::build(params);
 }
 
+// ---------------------------------------------------------------------------
+// task #701 (rust-intel audit §B26, MEDIUM): the geometric-advance multiply
+// (`cur * num`) was a bare, unchecked `usize` multiply on a value that grows
+// on every geometric step -- in a release profile (this crate does not
+// control the consumer's `overflow-checks` setting) it would silently WRAP,
+// and the subsequent `next <= cur` min-step fallback masked the wrap into a
+// valid-looking, strictly-increasing table (min_block-sized steps instead of
+// the requested geometry) rather than surfacing an error anywhere.
+// `build_size2class`'s own monotonicity check cannot catch this, since the
+// masked table genuinely IS strictly increasing.
+//
+// docs/reviews/2026-08-07-size-classes-rust-intel-audit.md §B26.
+
+#[test]
+#[should_panic(expected = "geometric progression overflows usize")]
+fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
+    // min_block = 2^63 (the largest representable power-of-two usize on a
+    // 64-bit target), growth = doubling (2/1), geo_count = 2 -- the very
+    // first advance step computes `cur.checked_mul(num)` = `(1 << 63) * 2` =
+    // `1 << 64`, which overflows `usize::MAX` (`(1 << 64) - 1`) by exactly
+    // one bit. This is the smallest possible reproduction: geo_count = 1
+    // never advances at all (the loop body only advances when
+    // `gi < geo_count` after the FIRST push), so 2 is the minimum count that
+    // actually reaches the checked multiply.
+    const MIN_BLOCK: usize = 1usize << 63;
+    const GEO_COUNT: usize = 2;
+    const N: usize = GEO_COUNT;
+    let params = Params {
+        min_block: MIN_BLOCK,
+        growth: (2, 1),
+        geo_count: GEO_COUNT,
+        extras: &[],
+        huge_threshold: 1 << 20,
+    };
+    let _ = build_table::<N>(&params);
+}
+
 #[test]
 fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // huge_threshold is a pure Params policy value; the crate never references
