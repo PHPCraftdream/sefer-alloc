@@ -252,6 +252,138 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
 }
 
 // ---------------------------------------------------------------------------
+// Linux cpumap parsing (task #721): extracted from the Linux-only `platform`
+// module below into a target-INDEPENDENT module. These five functions are
+// pure byte-slice parsing with no syscalls and no OS dependency whatsoever
+// -- gating them inside `#[cfg(target_os = "linux")]` was an accident of
+// code organization, not a genuine platform requirement, and it meant the
+// crate's own most intricate parsing logic (the most-significant-word-first
+// cpumap bitmask format) could ONLY be exercised on a real Linux host. This
+// crate's own `mock` feature bypasses the whole `platform` module rather
+// than exercising it, so before this change there was no way to run these
+// functions on ANY host this project's CI or this session actually has.
+// Moving them here (still `#[doc(hidden)]`, not part of this crate's public
+// API — see the established "doc-hidden test-only forwarders" pattern in
+// `CLAUDE.md`) lets `tests/cpumap_parser.rs` exercise the real parsing logic
+// directly, on every target, closing the round-closing audit's §D1a finding
+// for this half of its "zero behavioral oracles" claim.
+// ---------------------------------------------------------------------------
+#[doc(hidden)]
+pub mod cpumap {
+    /// Write `/sys/devices/system/node/nodeN/cpumap\0` into `buf` and return
+    /// the nul-terminated slice. Avoids heap allocation.
+    pub fn format_sysfs_path(buf: &mut [u8; 64], node: u32) -> &[u8] {
+        const PREFIX: &[u8] = b"/sys/devices/system/node/node";
+        const SUFFIX: &[u8] = b"/cpumap\0";
+        let mut pos = 0usize;
+        for &b in PREFIX {
+            buf[pos] = b;
+            pos += 1;
+        }
+        // Write decimal digits of `node` (up to 3 digits for node < 1000).
+        let mut tmp = [0u8; 4];
+        let mut n = node;
+        let mut digits = 0usize;
+        if n == 0 {
+            tmp[0] = b'0';
+            digits = 1;
+        } else {
+            while n > 0 {
+                tmp[digits] = b'0' + (n % 10) as u8;
+                n /= 10;
+                digits += 1;
+            }
+            // Written in reverse; fix ordering.
+            tmp[..digits].reverse();
+        }
+        for &d in tmp.iter().take(digits) {
+            buf[pos] = d;
+            pos += 1;
+        }
+        for &b in SUFFIX {
+            buf[pos] = b;
+            pos += 1;
+        }
+        &buf[..pos]
+    }
+
+    /// Parse a Linux cpumap bitmask string and test whether `cpu_idx` is set.
+    ///
+    /// Format: comma-separated hex 32-bit words, most-significant first,
+    /// optional trailing newline. Example: `"00000000,00000003\n"` means
+    /// CPUs 0 and 1 are in this node.
+    pub fn parse_contains_cpu(data: &[u8], cpu_idx: u32) -> bool {
+        let data = trim_end(data);
+        let word_count = data.iter().filter(|&&b| b == b',').count() + 1;
+        let target_word = (cpu_idx / 32) as usize;
+        let bit_in_word = cpu_idx % 32;
+        if target_word >= word_count {
+            return false;
+        }
+        // The leftmost word covers the highest CPU indices.
+        let left_index = word_count - 1 - target_word;
+        let word_str = match nth_token(data, left_index, b',') {
+            Some(s) => s,
+            None => return false,
+        };
+        let val = match parse_hex_u32(word_str) {
+            Some(v) => v,
+            None => return false,
+        };
+        (val >> bit_in_word) & 1 == 1
+    }
+
+    /// Trim trailing `\n`/`\r`/` ` bytes.
+    pub fn trim_end(data: &[u8]) -> &[u8] {
+        let mut end = data.len();
+        while end > 0 && (data[end - 1] == b'\n' || data[end - 1] == b'\r' || data[end - 1] == b' ')
+        {
+            end -= 1;
+        }
+        &data[..end]
+    }
+
+    /// Return the `n`-th token (0-indexed) delimited by `sep`.
+    pub fn nth_token(data: &[u8], n: usize, sep: u8) -> Option<&[u8]> {
+        let mut idx = 0usize;
+        let mut start = 0usize;
+        for (i, &b) in data.iter().enumerate() {
+            if b == sep {
+                if idx == n {
+                    return Some(&data[start..i]);
+                }
+                idx += 1;
+                start = i + 1;
+            }
+        }
+        // Last token (no trailing separator).
+        if idx == n {
+            Some(&data[start..])
+        } else {
+            None
+        }
+    }
+
+    /// Parse a hex string (no `0x` prefix) as `u32`. Returns `None` on error.
+    pub fn parse_hex_u32(s: &[u8]) -> Option<u32> {
+        if s.is_empty() {
+            return None;
+        }
+        let mut val: u32 = 0;
+        for &b in s {
+            let digit = match b {
+                b'0'..=b'9' => b - b'0',
+                b'a'..=b'f' => b - b'a' + 10,
+                b'A'..=b'F' => b - b'A' + 10,
+                _ => return None,
+            };
+            val = val.wrapping_shl(4) | digit as u32;
+        }
+        Some(val)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Per-platform implementations
 // ---------------------------------------------------------------------------
 
@@ -325,51 +457,17 @@ mod platform {
     /// of hex 32-bit words (most-significant word first) encoding a CPU bitmask.
     fn node_contains_cpu(node: u32, cpu_idx: u32) -> bool {
         let mut path = [0u8; 64];
-        let path_str = format_sysfs_path(&mut path, node);
+        let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
         read_cpumap_contains_cpu(path_str, cpu_idx)
-    }
-
-    /// Write `/sys/devices/system/node/nodeN/cpumap\0` into `buf` and return
-    /// the nul-terminated slice. Avoids heap allocation.
-    fn format_sysfs_path(buf: &mut [u8; 64], node: u32) -> &[u8] {
-        const PREFIX: &[u8] = b"/sys/devices/system/node/node";
-        const SUFFIX: &[u8] = b"/cpumap\0";
-        let mut pos = 0usize;
-        for &b in PREFIX {
-            buf[pos] = b;
-            pos += 1;
-        }
-        // Write decimal digits of `node` (up to 3 digits for node < 1000).
-        let mut tmp = [0u8; 4];
-        let mut n = node;
-        let mut digits = 0usize;
-        if n == 0 {
-            tmp[0] = b'0';
-            digits = 1;
-        } else {
-            while n > 0 {
-                tmp[digits] = b'0' + (n % 10) as u8;
-                n /= 10;
-                digits += 1;
-            }
-            // Written in reverse; fix ordering.
-            tmp[..digits].reverse();
-        }
-        for &d in tmp.iter().take(digits) {
-            buf[pos] = d;
-            pos += 1;
-        }
-        for &b in SUFFIX {
-            buf[pos] = b;
-            pos += 1;
-        }
-        &buf[..pos]
     }
 
     /// Open the cpumap file at `path` and check if `cpu_idx` bit is set.
     ///
     /// The cpumap file format: `"00000000,00000001\n"` — comma-separated
     /// hex 32-bit words, most-significant word first; each word covers 32 CPUs.
+    /// Parsing itself is delegated to `crate::cpumap` (task #721) -- a
+    /// target-independent module so the parser can be exercised by
+    /// `tests/cpumap_parser.rs` on every target, not just real Linux.
     fn read_cpumap_contains_cpu(path: &[u8], cpu_idx: u32) -> bool {
         // SAFETY: `path` is a valid nul-terminated C string constructed above.
         // `open` is a POSIX syscall; we check for -1 on error.
@@ -425,81 +523,7 @@ mod platform {
         if total == 0 {
             return false;
         }
-        parse_cpumap_contains_cpu(&buf[..total], cpu_idx)
-    }
-
-    /// Parse a Linux cpumap bitmask string and test whether `cpu_idx` is set.
-    ///
-    /// Format: comma-separated hex 32-bit words, most-significant first,
-    /// optional trailing newline. Example: `"00000000,00000003\n"` means
-    /// CPUs 0 and 1 are in this node.
-    fn parse_cpumap_contains_cpu(data: &[u8], cpu_idx: u32) -> bool {
-        let data = trim_end(data);
-        let word_count = data.iter().filter(|&&b| b == b',').count() + 1;
-        let target_word = (cpu_idx / 32) as usize;
-        let bit_in_word = cpu_idx % 32;
-        if target_word >= word_count {
-            return false;
-        }
-        // The leftmost word covers the highest CPU indices.
-        let left_index = word_count - 1 - target_word;
-        let word_str = match nth_token(data, left_index, b',') {
-            Some(s) => s,
-            None => return false,
-        };
-        let val = match parse_hex_u32(word_str) {
-            Some(v) => v,
-            None => return false,
-        };
-        (val >> bit_in_word) & 1 == 1
-    }
-
-    fn trim_end(data: &[u8]) -> &[u8] {
-        let mut end = data.len();
-        while end > 0 && (data[end - 1] == b'\n' || data[end - 1] == b'\r' || data[end - 1] == b' ')
-        {
-            end -= 1;
-        }
-        &data[..end]
-    }
-
-    /// Return the `n`-th token (0-indexed) delimited by `sep`.
-    fn nth_token(data: &[u8], n: usize, sep: u8) -> Option<&[u8]> {
-        let mut idx = 0usize;
-        let mut start = 0usize;
-        for (i, &b) in data.iter().enumerate() {
-            if b == sep {
-                if idx == n {
-                    return Some(&data[start..i]);
-                }
-                idx += 1;
-                start = i + 1;
-            }
-        }
-        // Last token (no trailing separator).
-        if idx == n {
-            Some(&data[start..])
-        } else {
-            None
-        }
-    }
-
-    /// Parse a hex string (no `0x` prefix) as `u32`. Returns `None` on error.
-    fn parse_hex_u32(s: &[u8]) -> Option<u32> {
-        if s.is_empty() {
-            return None;
-        }
-        let mut val: u32 = 0;
-        for &b in s {
-            let digit = match b {
-                b'0'..=b'9' => b - b'0',
-                b'a'..=b'f' => b - b'a' + 10,
-                b'A'..=b'F' => b - b'A' + 10,
-                _ => return None,
-            };
-            val = val.wrapping_shl(4) | digit as u32;
-        }
-        Some(val)
+        crate::cpumap::parse_contains_cpu(&buf[..total], cpu_idx)
     }
 
     // -- Raw Linux FFI (no libc crate dependency) ----------------------------
