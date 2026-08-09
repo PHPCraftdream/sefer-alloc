@@ -37,6 +37,29 @@ fn current_node_default_zero() {
     assert_eq!(calls, vec![mock::MockCall::CurrentNode(0)]);
 }
 
+/// task #722 (rust-intel audit §F2): `current_node`'s mock arm used to wrap
+/// the scripted slot in `Some` UNCONDITIONALLY, so `set_current_node(NO_NODE)`
+/// produced `Some(NO_NODE)` -- violating this function's own documented
+/// "returns `Option`, never the sentinel" guarantee, and making the `None`
+/// branch impossible to exercise under `mock` (the feature that exists
+/// precisely so CI can assert the wrapping logic). Proves the fix: scripting
+/// the sentinel now yields a genuine `None`.
+#[test]
+fn current_node_scripted_no_node_yields_none() {
+    fresh_drain();
+    mock::set_current_node(NO_NODE);
+    let n = current_node();
+    assert_eq!(
+        n, None,
+        "scripting the NO_NODE sentinel must produce None, not Some(NO_NODE)"
+    );
+    // The call is still recorded with the raw sentinel value -- only the
+    // PUBLIC return value is remapped, matching the real dispatch's own
+    // record-then-remap order.
+    let calls = fresh_drain();
+    assert_eq!(calls, vec![mock::MockCall::CurrentNode(NO_NODE)]);
+}
+
 #[test]
 fn bind_range_no_node_short_circuits() {
     fresh_drain();

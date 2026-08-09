@@ -99,6 +99,11 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
 On other Linux architectures `bind_range` is a documented no-op (the syscall
 number is unknown; contributions welcome).
 
+**`node >= 64` is silently skipped** (task #722): the Linux nodemask is a
+single `u64`, so only node IDs 0..63 can be addressed, even though
+`mbind(2)` itself supports node counts up to `MAX_NUMNODES` (commonly 1024
+on real kernels).
+
 ## MSRV
 
 Rust 1.88

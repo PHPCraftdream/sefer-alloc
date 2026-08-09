@@ -143,17 +143,38 @@ pub mod mock {
 /// - The platform does not provide a NUMA API (macOS, miri, unsupported OS).
 /// - The OS API returns an error (e.g. single-NUMA host with disabled NUMA
 ///   support in the kernel).
-/// - The CPU index cannot be mapped to a NUMA node via sysfs.
 ///
 /// On a single-node Linux system where sysfs NUMA files are absent, this
 /// function returns `Some(0)` (all CPUs are on node 0).
+///
+/// **On Linux, `None` for "CPU index cannot be mapped to a NUMA node via
+/// sysfs" is currently UNREACHABLE** (task #722, rust-intel audit §F2, an
+/// earlier revision of this doc claimed that case existed): every sysfs
+/// read/permission failure, every truncated cpumap read, and every CPU
+/// whose real node is `>= 64` all collapse into the SAME `Some(0)` fallback
+/// as a genuinely topology-absent single-node system — the code does not
+/// currently distinguish "no NUMA topology exists" from "topology exists
+/// but this CPU's real node could not be determined." A caller cannot tell
+/// these apart from the return value alone; `Some(0)` from this function on
+/// Linux does not guarantee the calling thread is actually on node 0.
 #[must_use]
 pub fn current_node() -> Option<u32> {
     #[cfg(feature = "mock")]
     {
         let n = mock::current_node_slot();
         mock::record(mock::MockCall::CurrentNode(n));
-        Some(n)
+        // task #722 (rust-intel audit §F2): this used to unconditionally
+        // wrap the scripted slot in `Some`, so `set_current_node(NO_NODE)`
+        // (`u32::MAX`) produced `Some(NO_NODE)` -- violating this function's
+        // own documented "returns `Option`, never the sentinel" guarantee,
+        // and making every consumer's `None` branch impossible to exercise
+        // under `mock`, the very feature that exists so CI can assert this
+        // wrapping logic. Mirrored the real dispatch's remapping below.
+        if n == NO_NODE {
+            None
+        } else {
+            Some(n)
+        }
     }
     #[cfg(not(feature = "mock"))]
     {
@@ -182,6 +203,13 @@ pub fn current_node() -> Option<u32> {
 /// The function silently ignores OS errors (e.g. `EINVAL` on a single-node
 /// kernel): the allocation is always valid regardless of whether binding
 /// succeeded.
+///
+/// **`node >= 64` is silently skipped** (task #722, rust-intel audit §F1):
+/// the Linux implementation encodes the nodemask in a single `u64`, so it
+/// can only address node IDs 0..63. `mbind(2)` itself supports node counts
+/// up to `MAX_NUMNODES` (commonly 1024 on real kernels), so a caller on a
+/// system with 64+ NUMA nodes binding to one of the high nodes gets a
+/// silent no-op rather than an error or a wider nodemask.
 ///
 /// # Safety
 ///
@@ -582,6 +610,10 @@ mod platform {
 // Reached only from the platform module, which is itself unused under `mock`.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
+    // task #722 (rust-intel audit §F1): DEVIATION -- this nodemask is a
+    // single u64, so nodes >= 64 are silently skipped rather than bound;
+    // real `mbind(2)` supports node counts up to `MAX_NUMNODES` (commonly
+    // 1024). Documented on `bind_range`'s own public rustdoc.
     if node == NO_NODE || node >= 64 {
         return;
     }
@@ -697,11 +729,22 @@ mod platform {
         unsafe { GetCurrentProcessorNumberEx(&mut proc_num) };
 
         let mut node: u16 = 0;
-        // SAFETY: `proc_num` was filled by `GetCurrentProcessorNumberEx`;
-        // `GetNumaProcessorNodeEx` maps it to a NUMA node (returns 0 on
-        // single-node or error, which we remap to NO_NODE).
+        // task #722 (rust-intel audit §F1): corrected -- the previous
+        // comment here said this API "returns 0 on single-node or error",
+        // conflating the BOOL return (`ok`) with the OUT-parameter
+        // (`node`). The actual contract: `ok == 0` (Win32 `FALSE`) means the
+        // call FAILED outright; `node == 0` on a SUCCESSFUL call is the
+        // genuine single-node-system answer, not an error signal. Separately
+        // (and NOT previously handled at all): Microsoft's own docs for
+        // `GetNumaProcessorNodeEx` state the OUT node number is set to
+        // `MAXUSHORT` (`u16::MAX`) when the given processor does not exist,
+        // while the call STILL reports success -- that sentinel is checked
+        // below, after the `ok` check.
+        // SAFETY: `proc_num` was filled by `GetCurrentProcessorNumberEx`
+        // above and is a valid `PROCESSOR_NUMBER`; `node` is a valid `u16`
+        // out-pointer.
         let ok = unsafe { GetNumaProcessorNodeEx(&proc_num, &mut node) };
-        if ok == 0 {
+        if ok == 0 || node == u16::MAX {
             return NO_NODE;
         }
         node as u32
