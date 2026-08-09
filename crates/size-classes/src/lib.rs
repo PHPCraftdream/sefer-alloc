@@ -479,8 +479,38 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///
     /// `size` is expected `>= min_block` (the caller's contract); it is also
     /// well-defined for `size >= 1`, since `(size - 1) >> shift` stays in range.
+    ///
+    /// # Preconditions
+    ///
+    /// task #729 (rust-intel audit §F2/§B26): `align` **must be a power of
+    /// two** — the same `Layout` contract Rust's own allocator API requires
+    /// of its callers. This was previously stated only in an INTERNAL
+    /// slow-path comment, never in this function's own public contract.
+    /// For a non-power-of-two `align`, BOTH paths can silently violate the
+    /// fit predicate stated above (`block_size % align == 0`): the fast
+    /// path (`align <= small_align_max`) returns `seed` unconditionally,
+    /// without ever checking divisibility by a non-pow2 `align`; the slow
+    /// path's bitmask round-up (`(block | (align - 1)) + 1`) is only a
+    /// correct "next multiple of `align`" computation for a power-of-two
+    /// `align` and can overshoot for a non-pow2 one, skipping a class that
+    /// would actually have fit or returning `None` where a fitting class
+    /// exists. Neither path panics for a non-pow2 `align` — this is
+    /// deliberately a `debug_assert!`, not a hard `assert!`, since the
+    /// failure mode is a suboptimal/wrong CLASS CHOICE for a contract
+    /// violation, not memory unsafety or table corruption (contrast task
+    /// #701's geometric-overflow finding, which promoted to a release-
+    /// active `assert!` because a masked wrong TABLE is a worse failure
+    /// mode than a masked wrong class choice here). Every real caller in
+    /// this repo derives `align` from `core::alloc::Layout`, which already
+    /// guarantees power-of-two by construction, so practical exposure is
+    /// low; the `debug_assert!` exists to catch a caller that violates the
+    /// contract some other way, at zero cost in release.
     #[must_use]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
+        debug_assert!(
+            align.is_power_of_two(),
+            "class_for: align must be a power of two (the Layout contract)"
+        );
         let need = if size > align { size } else { align };
         if need > self.small_max {
             return None;

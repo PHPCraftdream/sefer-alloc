@@ -251,6 +251,37 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
     let _ = build_table::<N>(&params);
 }
 
+// ---------------------------------------------------------------------------
+// task #729 (rust-intel audit §F2/§B26, MEDIUM): `class_for`'s documented fit
+// predicate ("`block_size % align == 0`") was silently violated by BOTH
+// paths for a non-power-of-two `align` -- the fast path never checked
+// divisibility at all, and the slow path's bitmask round-up is only correct
+// for a power-of-two `align`. Neither path panicked; both could return a
+// non-conforming class or a wrong `None`. `align` must be a power of two is
+// now a documented precondition, enforced by a `debug_assert!` (deliberately
+// NOT a release-active `assert!` -- see the doc comment on `class_for` for
+// why this differs from task #701's promotion).
+//
+// docs/reviews/2026-08-07-size-classes-rust-intel-audit.md §F2 (lib.rs:408)
+// and the companion §B26 (lib.rs:432).
+
+#[test]
+#[should_panic(expected = "align must be a power of two")]
+fn class_for_non_pow2_align_violates_debug_assert() {
+    // A tiny scheme is enough: the debug_assert fires before either the
+    // fast-path or slow-path arithmetic even runs, so the scheme's actual
+    // shape does not matter for this test.
+    const MIN_BLOCK: usize = 16;
+    const N: usize = 4;
+    const P: Params = Params::new(MIN_BLOCK, (5, 4), N, &[], 1 << 20);
+    const T: [usize; N] = build_table::<N>(&P);
+    const L: usize = size2class_len(T[N - 1], MIN_BLOCK);
+    const SC: SizeClasses<N, L> = SizeClasses::build(P);
+    // align = 6 is not a power of two -- exactly the out-of-contract shape
+    // §F2/§B26 describe (neither 1, 2, 4, 8, ... nor a Layout-derived value).
+    let _ = SC.class_for(32, 6);
+}
+
 #[test]
 fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // huge_threshold is a pure Params policy value; the crate never references
