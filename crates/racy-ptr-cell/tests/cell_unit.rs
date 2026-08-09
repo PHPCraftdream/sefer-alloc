@@ -116,6 +116,25 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
 }
 
 #[test]
+#[should_panic(expected = "init returned the null/sentinel address")]
+fn init_returning_the_sentinel_address_panics() {
+    // task #707: a SAFE init closure can construct and return the sentinel
+    // address (1) -- `NonNull` only rules out null, not this specific
+    // address. Without a release-active guard this would get published as
+    // if it were READY, and every reader (this thread's own fast path
+    // included, plus every future caller) would misclassify it as
+    // `INITIALIZING` forever, since `is_ready`/`is_empty`-style checks key
+    // off the exact same address. This must be a release-active `assert!`,
+    // not `debug_assert!` (which would compile out and let this test pass
+    // vacuously) -- verified via a counterfactual: temporarily reverting to
+    // `debug_assert!` and re-running under `--release` makes this test fail
+    // (no panic occurs), confirming the check is genuinely load-bearing.
+    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let sentinel = NonNull::new(core::ptr::without_provenance_mut::<Payload>(1)).unwrap();
+    let _ = cell.get_or_try_init(|| Some(sentinel));
+}
+
+#[test]
 fn oom_rolls_back_and_retry_succeeds() {
     let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
 

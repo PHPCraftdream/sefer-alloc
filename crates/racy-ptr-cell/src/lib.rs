@@ -365,15 +365,34 @@ impl<T> RacyPtrCell<T> {
                     // ── Winner ──────────────────────────────────────────────
                     // We hold the INITIALIZING sentinel; we are the sole
                     // initialiser. Hold a rollback guard across `init()` so an
-                    // UNWINDING init (a panic in caller code, or the
-                    // `debug_assert!` below firing) also rolls the sentinel
-                    // back — see `RollbackGuard`'s own doc for why this is
-                    // load-bearing (task #706).
+                    // UNWINDING init (a panic in caller code, or the `assert!`
+                    // below firing) also rolls the sentinel back — see
+                    // `RollbackGuard`'s own doc for why this is load-bearing
+                    // (task #706).
                     let mut guard = RollbackGuard::new(&self.ptr);
                     match init() {
                         Some(ptr) => {
                             let raw = ptr.as_ptr();
-                            debug_assert!(
+                            // Release-active `assert!`, not `debug_assert!`
+                            // (task #707): a SAFE init closure can construct
+                            // `NonNull::new(without_provenance_mut(1))` and
+                            // hand back the very SENTINEL address this cell
+                            // uses to mean "still initialising". In release,
+                            // a `debug_assert!` here compiles out, so the
+                            // sentinel would get published as if it were
+                            // READY — every current loser and every future
+                            // caller then spins forever, since the published
+                            // value reads back as `INITIALIZING`, not `READY`
+                            // (`is_ready`'s own definition), with no
+                            // diagnostic anywhere. Two integer compares on a
+                            // once-per-cell cold path is a negligible cost
+                            // for closing a violation of this method's own
+                            // documented "never null, never the sentinel"
+                            // guarantee that is reachable from 100% safe
+                            // code — exactly the class `debug_assert!` is
+                            // NOT meant for. If this fires, the rollback
+                            // guard above (task #706) unwinds it cleanly.
+                            assert!(
                                 Self::is_ready(raw),
                                 "RacyPtrCell: init returned the null/sentinel address"
                             );
