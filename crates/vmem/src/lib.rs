@@ -598,18 +598,20 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
 /// no-op.
 ///
 /// Returns `true` if the range is now committed (or the call was a well-formed
-/// no-op — empty range), and `false` if the OS refused to commit the pages
-/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT write
-/// into `[base+start, base+end)`. Never panics. For the cause use
-/// [`try_recommit`].
-///
-/// A contract violation on the offsets (misaligned, or `start >= end`) returns
-/// `true` as a no-op.
+/// no-op — empty range, `start == end`), and `false` if the OS refused to
+/// commit the pages (commit-charge exhaustion / true OOM) OR the offsets
+/// violated the contract below. On `false` the caller MUST NOT write into
+/// `[base+start, base+end)`. Never panics. For the cause use [`try_recommit`].
 ///
 /// # Safety
 ///
 /// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation
 /// whose `[base+start, base+end)` range was previously decommitted.
+/// `start`/`end` must be multiples of [`PAGE`] with `start <= end` — a
+/// violation returns `false` (task #712: an earlier version of this function
+/// clamped a contract violation to the WRITE-PERMITTING `true` sentinel,
+/// which already caused a real crash — see `docs/CORRECTNESS_OPEN_ITEMS.md`
+/// for the incident this class of bug produces on Windows).
 #[must_use]
 pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: forwarded from the caller's contract.
@@ -617,15 +619,19 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 }
 
 /// Fallible [`recommit`]: `Ok(())` if the range is now committed (or was a
-/// well-formed no-op), `Err(VmemError)` carrying the OS cause on commit
-/// failure.
+/// well-formed no-op), `Err(VmemError::invalid_argument())` if the offsets
+/// violated the contract (misaligned, or `start > end`), `Err(VmemError)`
+/// carrying the OS cause on genuine commit failure.
 ///
 /// # Safety
 ///
 /// Same as [`recommit`].
 pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    if start == end {
         return Ok(());
+    }
+    if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return Err(VmemError::invalid_argument());
     }
     #[cfg(feature = "mock")]
     {
@@ -656,12 +662,18 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// under miri the pages are already accessible, so this is a no-op that always
 /// returns `true`.
 ///
-/// `start` and `end` must be multiples of [`PAGE`] and `start < end`. A
-/// contract violation is a no-op returning `true`.
+/// `start` and `end` must be multiples of [`PAGE`] with `start <= end`. A
+/// genuinely empty range (`start == end`) is a no-op returning `true`; any
+/// other contract violation (misaligned, or `start > end`) returns `false`
+/// (task #712: an earlier version of this function clamped a contract
+/// violation to the WRITE-PERMITTING `true` sentinel, which already caused a
+/// real crash — see `docs/CORRECTNESS_OPEN_ITEMS.md` for the incident this
+/// class of bug produces on Windows).
 ///
 /// Returns `true` if the range is now committed, `false` if the OS refused
-/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT write
-/// into the range. Never panics. For the cause use [`try_commit_range`].
+/// (commit-charge exhaustion / true OOM) OR the offsets violated the contract
+/// above. On `false` the caller MUST NOT write into the range. Never panics.
+/// For the cause use [`try_commit_range`].
 ///
 /// # Difference from [`recommit`]
 ///
@@ -683,16 +695,21 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
     unsafe { try_commit_range(base, start, end).is_ok() }
 }
 
-/// Fallible [`commit_range`]: `Ok(())` on success (or well-formed no-op),
-/// `Err(VmemError)` carrying the OS cause on commit failure.
+/// Fallible [`commit_range`]: `Ok(())` on success (or a genuinely empty
+/// no-op, `start == end`), `Err(VmemError::invalid_argument())` if the
+/// offsets violated the contract (misaligned, or `start > end`),
+/// `Err(VmemError)` carrying the OS cause on genuine commit failure.
 ///
 /// # Safety
 ///
 /// Same as [`commit_range`].
 #[cfg(feature = "lazy-commit")]
 pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    if start == end {
         return Ok(());
+    }
+    if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return Err(VmemError::invalid_argument());
     }
     #[cfg(feature = "mock")]
     {

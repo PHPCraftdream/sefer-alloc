@@ -82,19 +82,23 @@ fn decommit_recommit_roundtrip() {
 fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
     // Non-regression for the fallible `recommit` API (bug-hunt 2026-07-09):
     // `recommit` now returns `bool` (`true` = committed / no-op, `false` = OS
-    // refused). We cannot portably force a commit-charge failure without an FFI
-    // test seam, so this locks the SUCCESS contract: a well-formed recommit of a
-    // decommitted range on a live reservation returns `true`, and misformed /
-    // empty ranges return `true` as a no-op. A `false` from a genuine OOM is the
+    // refused OR a contract violation). We cannot portably force a
+    // commit-charge failure without an FFI test seam, so this locks the
+    // SUCCESS contract: a well-formed recommit of a decommitted range on a
+    // live reservation returns `true`; a genuinely EMPTY range (`start ==
+    // end`) is also a success no-op. A `false` from a genuine OOM is the
     // path `carve_block`/`carve_batch` translate into a null carve.
+    //
+    // task #712: a contract-VIOLATING range (misaligned, or `start > end`)
+    // used to also return `true` here, clamped to the WRITE-PERMITTING
+    // sentinel — see `recommit_rejects_contract_violating_offsets` below for
+    // the corrected (and separately regression-tested) behavior.
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
     // SAFETY: base is a live reservation for `span` bytes.
     unsafe {
         assert!(recommit(base, 0, 0), "empty range is a success no-op");
-        assert!(recommit(base, span, span + PAGE), "start>=end no-op");
-        assert!(recommit(base, 1, PAGE), "misaligned start no-op");
         aligned_vmem::decommit(base, span / 2, span);
         assert!(
             recommit(base, span / 2, span),
@@ -103,6 +107,45 @@ fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
         // Writing into the now-committed range must not fault.
         base.add(span / 2).write(0x5C);
         assert_eq!(base.add(span / 2).read(), 0x5C);
+    }
+}
+
+#[test]
+fn recommit_rejects_contract_violating_offsets() {
+    // task #712 (rust-intel audit MEDIUM, already crashed an in-repo
+    // consumer): `recommit`/`try_recommit` used to clamp a contract
+    // VIOLATION (misaligned offsets, or `start > end`) to the same
+    // WRITE-PERMITTING sentinel a genuine success reports (`true` /
+    // `Ok(())`) — on Windows, a caller that (incorrectly) trusted that
+    // sentinel and wrote into the range took a hard
+    // `STATUS_ACCESS_VIOLATION`, since nothing was actually committed. Fixed
+    // to return `false` / `Err(VmemError::invalid_argument())` for a genuine
+    // violation, while a truly EMPTY range (`start == end`) stays a success
+    // no-op (see the happy-path test above).
+    let span = 2 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+    // SAFETY: base is a live reservation for `span` bytes; none of the calls
+    // below reach the real commit syscall (all are rejected before it).
+    unsafe {
+        assert!(
+            !recommit(base, 1, PAGE),
+            "misaligned start must be rejected, not silently permitted"
+        );
+        assert!(
+            !recommit(base, 0, PAGE + 1),
+            "misaligned end must be rejected, not silently permitted"
+        );
+        assert!(
+            !recommit(base, span + PAGE, span),
+            "start > end (inverted range) must be rejected, not silently permitted"
+        );
+        assert!(
+            aligned_vmem::try_recommit(base, 1, PAGE)
+                .unwrap_err()
+                .is_invalid_argument(),
+            "the fallible form must carry VmemError::invalid_argument(), not an OS code"
+        );
     }
 }
 

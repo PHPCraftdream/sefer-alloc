@@ -6,7 +6,7 @@
 
 #![cfg(feature = "lazy-commit")]
 
-use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, PAGE};
+use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE};
 
 const MIB: usize = 1024 * 1024;
 
@@ -93,19 +93,60 @@ fn lazy_reserve_commit_entire_remainder() {
 // ── commit_range: contract validation ───────────────────────────────────────
 
 #[test]
-fn commit_range_noop_on_bad_offsets() {
+fn commit_range_empty_range_is_a_noop() {
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
 
     // SAFETY: base is a live reservation.
     unsafe {
-        // start >= end → no-op, returns true.
-        assert!(commit_range(base, PAGE, PAGE), "start==end is no-op");
-        assert!(commit_range(base, 2 * PAGE, PAGE), "start>end is no-op");
-        // Misaligned offsets → no-op, returns true.
-        assert!(commit_range(base, 1, PAGE), "misaligned start is no-op");
-        assert!(commit_range(base, 0, PAGE + 1), "misaligned end is no-op");
+        // A genuinely empty range (start == end) is the ONLY contract-legal
+        // no-op — it returns true. See
+        // `commit_range_rejects_contract_violating_offsets` below for the
+        // (task #712-corrected) behavior on an actual contract violation.
+        assert!(
+            commit_range(base, PAGE, PAGE),
+            "start==end is a success no-op"
+        );
+    }
+}
+
+#[test]
+fn commit_range_rejects_contract_violating_offsets() {
+    // task #712 (rust-intel audit MEDIUM, already crashed an in-repo
+    // consumer): `commit_range`/`try_commit_range` used to clamp a contract
+    // VIOLATION (misaligned offsets, or `start > end`) to the same
+    // WRITE-PERMITTING sentinel a genuine success reports (`true` /
+    // `Ok(())`). Renamed from this test's former name
+    // (`commit_range_noop_on_bad_offsets`), which asserted exactly that
+    // buggy behavior — a misaligned/inverted range is not a "no-op", it is a
+    // rejected contract violation the caller MUST NOT treat as "safe to
+    // write".
+    let span = 2 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+
+    // SAFETY: base is a live reservation; none of the calls below reach the
+    // real commit syscall (all are rejected before it).
+    unsafe {
+        assert!(
+            !commit_range(base, 2 * PAGE, PAGE),
+            "start > end (inverted range) must be rejected, not silently permitted"
+        );
+        assert!(
+            !commit_range(base, 1, PAGE),
+            "misaligned start must be rejected, not silently permitted"
+        );
+        assert!(
+            !commit_range(base, 0, PAGE + 1),
+            "misaligned end must be rejected, not silently permitted"
+        );
+        assert!(
+            try_commit_range(base, 1, PAGE)
+                .unwrap_err()
+                .is_invalid_argument(),
+            "the fallible form must carry VmemError::invalid_argument(), not an OS code"
+        );
     }
 }
 
