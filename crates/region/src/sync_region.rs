@@ -90,6 +90,25 @@ impl<T> From<Region<T>> for SyncRegion<T> {
 }
 
 impl<T> SyncRegion<T> {
+    /// Extracts the inner `Region<T>`, consuming this `SyncRegion`.
+    ///
+    /// This is the inverse of `From<Region<T>> for SyncRegion<T>`. It provides
+    /// a zero-cost conversion from concurrent back to single-threaded usage,
+    /// preserving all handles (they remain valid in the extracted `Region<T>`).
+    ///
+    /// If the `RwLock` is poisoned (due to a panic in a writer thread), this
+    /// method recovers the `Region` anyway — the container structure is
+    /// guaranteed intact, and `T`'s invariants are the caller's responsibility
+    /// (see the [poisoning policy](Self#poisoning-policy) for full details).
+    #[must_use]
+    pub fn into_inner(self) -> Region<T> {
+        self.inner
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl<T> SyncRegion<T> {
     /// Creates an empty region that allocates nothing until first use.
     #[must_use]
     pub fn new() -> Self {
@@ -230,5 +249,20 @@ impl<T> SyncRegion<T> {
 impl<T> Default for SyncRegion<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> std::fmt::Debug for SyncRegion<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Pattern borrowed from std::sync::RwLock's own Debug impl:
+        // try_read() first, and fall back to a "<locked>" placeholder if
+        // the lock is currently held by another thread.
+        match self.inner.try_read() {
+            Ok(guard) => f.debug_struct("SyncRegion").field("inner", &guard).finish(),
+            Err(_) => f
+                .debug_struct("SyncRegion")
+                .field("inner", &"<locked>")
+                .finish(),
+        }
     }
 }

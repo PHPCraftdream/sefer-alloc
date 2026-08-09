@@ -65,6 +65,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![warn(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod handle;
@@ -74,7 +75,7 @@ mod region;
 mod sync_region;
 
 pub use handle::Handle;
-pub use region::Region;
+pub use region::{Iter, IterMut, Region};
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]

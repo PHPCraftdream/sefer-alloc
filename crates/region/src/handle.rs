@@ -60,6 +60,28 @@ impl<T> core::hash::Hash for Handle<T> {
         self.region_id.hash(state);
     }
 }
+
+// Comparison order: first by `key`, then by `region_id`.
+// This matches the `Hash` impl (which also hashes key first).
+// Handles from different regions (different `region_id`) will never
+// compare equal per `PartialEq`, but they still have a consistent
+// total order — useful for sorting/`BTreeMap` even though `HashMap`
+// is the more common use case.
+impl<T> PartialOrd for Handle<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for Handle<T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        match self.key.cmp(&other.key) {
+            core::cmp::Ordering::Equal => self.region_id.cmp(&other.region_id),
+            ordering => ordering,
+        }
+    }
+}
+
 impl<T> core::fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Handle")

@@ -253,14 +253,23 @@ impl<T> Region<T> {
     /// many holes pays iteration cost proportional to that high-water mark,
     /// even if few values remain live. See `capacity()`'s documentation for
     /// the full permanence semantics.
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.inner.values()
+    ///
+    /// The returned iterator implements `ExactSizeIterator`, `FusedIterator`,
+    /// and `Clone`.
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            inner: self.inner.values(),
+        }
     }
 
     /// Mutably iterates the live values (same non-dense order caveat as
     /// [`iter`](Self::iter)).
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.inner.values_mut()
+    ///
+    /// The returned iterator implements `ExactSizeIterator` and `FusedIterator`.
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut {
+            inner: self.inner.values_mut(),
+        }
     }
 
     /// Removes every value, invalidating all outstanding handles, while
@@ -288,5 +297,120 @@ impl<T> Region<T> {
 impl<T> Default for Region<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> core::fmt::Debug for Region<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Region")
+            .field("region_id", &self.region_id)
+            .field("len", &self.len())
+            .field("capacity", &self.capacity())
+            .finish()
+    }
+}
+
+// Note: `IntoIterator for Region<T>` (consuming by value) is deliberately NOT
+// implemented. The underlying `slotmap::SlotMap::into_iter()` yields
+// `(DefaultKey, T)` pairs, and exposing `slotmap::DefaultKey` would break
+// this crate's encapsulation (raw keys must never escape through the public
+// API). Iteration by reference (`&Region<T>` and `&mut Region<T>`) is
+// provided below.
+
+impl<'a, T> IntoIterator for &'a Region<T> {
+    type Item = &'a T;
+    type IntoIter = Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Region<T> {
+    type Item = &'a mut T;
+    type IntoIter = IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+/// Iterator over the live values in a [`Region<T>`], returned by
+/// [`Region::iter`] and `IntoIterator for &Region<T>`.
+///
+/// A thin wrapper over `slotmap`'s own values iterator — kept as a distinct
+/// named type (rather than re-exporting `slotmap`'s type directly) so this
+/// crate's public API surface never names a `slotmap` type, matching the
+/// rest of this crate's encapsulation of its backing store.
+pub struct Iter<'a, T> {
+    inner: slotmap::basic::Values<'a, slotmap::DefaultKey, T>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<T> ExactSizeIterator for Iter<'_, T> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<T> core::iter::FusedIterator for Iter<'_, T> {}
+
+impl<T> Clone for Iter<'_, T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T> core::fmt::Debug for Iter<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Iter").field("len", &self.len()).finish()
+    }
+}
+
+/// Mutable iterator over the live values in a [`Region<T>`], returned by
+/// [`Region::iter_mut`] and `IntoIterator for &mut Region<T>`.
+///
+/// Same encapsulation rationale as [`Iter`] — not `Clone` (a mutable
+/// iterator cannot be duplicated without aliasing `&mut` references).
+pub struct IterMut<'a, T> {
+    inner: slotmap::basic::ValuesMut<'a, slotmap::DefaultKey, T>,
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<T> ExactSizeIterator for IterMut<'_, T> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<T> core::iter::FusedIterator for IterMut<'_, T> {}
+
+impl<T> core::fmt::Debug for IterMut<'_, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("IterMut").field("len", &self.len()).finish()
     }
 }
