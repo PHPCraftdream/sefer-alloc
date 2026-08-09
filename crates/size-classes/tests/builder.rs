@@ -298,6 +298,27 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
     let _ = build_table::<N>(&params);
 }
 
+// task #755's closing review (F4, MEDIUM): the min-step fallback (`next =
+// cur + min_block`, taken when the geometric advance does not exceed `cur`)
+// had a bare `+` sharing the exact overflow hazard #701 fixed on its two
+// neighbouring `checked_*` calls -- named in #701's own commit message as
+// a known-but-unfixed sibling. `growth.0 == 0` is a docs-blessed valid
+// scheme (see `build_table`'s own doc comment) whose EVERY advance step
+// goes through this exact fallback, since a zero numerator always computes
+// `next == 0 <= cur`. `min_block = 1 << 63` doubling via repeated
+// min-block steps overflows on the second step's fallback add.
+#[test]
+#[should_panic(expected = "geometric progression overflows usize")]
+fn min_step_fallback_overflow_panics_instead_of_silently_wrapping() {
+    const MIN_BLOCK: usize = 1usize << 63;
+    const GEO_COUNT: usize = 2;
+    const N: usize = GEO_COUNT;
+    // growth.0 == 0 forces every advance through the min-step fallback
+    // (the geometric term is always 0, which never exceeds `cur`).
+    let params = Params::new(MIN_BLOCK, (0, 1), GEO_COUNT, &[], 1 << 20);
+    let _ = build_table::<N>(&params);
+}
+
 // ---------------------------------------------------------------------------
 // task #729 (rust-intel audit §F2/§B26, MEDIUM): `class_for`'s documented fit
 // predicate ("`block_size % align == 0`") was silently violated by BOTH

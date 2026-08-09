@@ -26,6 +26,10 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
 The "huge" threshold is a **policy parameter** (`Params::huge_threshold`); the
 crate has no notion of an OS segment size.
 
+`Params` is `#[non_exhaustive]` (field growth is plausible, e.g. a future
+`small_align_max` knob) — construct it via `Params::new(..)`, not a struct
+literal.
+
 ## Example
 
 ```text
@@ -37,13 +41,13 @@ const N: usize = 40 + EXTRAS.len();
 const MAX_CLASS: usize = /* table[N-1] — compute or pin */ 258_752;
 const L: usize = size2class_len(MAX_CLASS, MIN_BLOCK);
 
-const SC: SizeClasses<N, L> = SizeClasses::build(Params {
-    min_block: MIN_BLOCK,
-    growth: (5, 4),
-    geo_count: 40,
-    extras: EXTRAS,
-    huge_threshold: 4 * 1024 * 1024,
-});
+const SC: SizeClasses<N, L> = SizeClasses::build(Params::new(
+    MIN_BLOCK,
+    (5, 4),
+    40,
+    EXTRAS,
+    4 * 1024 * 1024,
+));
 
 // SC.class_for(size, align) -> Option<usize>
 // SC.block_size(idx) -> usize;  SC.count() -> usize;  SC.small_max() -> usize;

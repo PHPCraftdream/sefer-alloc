@@ -185,7 +185,12 @@ const SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 /// `::block_size(..)` / `::is_huge(..)` call sites compile unchanged.
 ///
 /// All methods are `const` pure arithmetic — no allocations, no panics on the
-/// lookup path.
+/// lookup path FOR IN-CONTRACT INPUTS (task #755's closing review, F6:
+/// mirrors the same qualification task #731 already applied to the crate's
+/// own doc, `size_classes::SizeClasses::class_for` — `class_for` below
+/// forwards straight into a `debug_assert!` that fires for a non-power-of-two
+/// `align`, and `block_size` panics on an out-of-range index in every
+/// profile, not just debug — see that method's own doc below).
 pub(crate) struct SizeClasses;
 
 impl SizeClasses {
@@ -204,8 +209,11 @@ impl SizeClasses {
         SC.class_for(size, align)
     }
 
-    /// The block size of class `idx`. Panics (debug) if out of range — the
-    /// Cartographer only ever passes indices returned by `class_for`.
+    /// The block size of class `idx`. Panics (all profiles) if out of range
+    /// — `self.table[idx]` is a bounds-checked array index, not a
+    /// `debug_assertions`-gated guard (task #755's closing review, F6: this
+    /// doc previously said "(debug)", which was wrong in every profile) —
+    /// the Cartographer only ever passes indices returned by `class_for`.
     #[must_use]
     pub(crate) const fn block_size(idx: usize) -> usize {
         SC.block_size(idx)

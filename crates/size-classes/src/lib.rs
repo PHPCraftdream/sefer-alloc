@@ -280,7 +280,23 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                     .expect("geometric progression overflows usize -- reduce geo_count/growth")
                     & !mask; // round up to a multiple of min_block
                 if next <= cur {
-                    next = cur + min_block; // enforce the minimum step
+                    // task #755's closing review (F4, MEDIUM): this bare `+`
+                    // shares the exact overflow hazard the two `checked_*`
+                    // calls above were fixed for -- #701's own commit
+                    // message named this line and left it unguarded. It is
+                    // reachable with a `min_block` in the 2^62+ range (an
+                    // absurd but not `Params`-rejected value) and, worse,
+                    // on every step of the `growth.0 == 0` linear-degradation
+                    // scheme this crate's own docs bless as valid (see this
+                    // function's rustdoc), since that scheme's fallback IS
+                    // the only advance path. Reproduced pre-fix: a
+                    // `min_block` of `1 << 62` wraps `next` to a duplicate
+                    // AND a zero-sized class, not even monotone -- worse than
+                    // the bug #701 fixed, since #701's masked table was at
+                    // least strictly increasing.
+                    next = cur
+                        .checked_add(min_block)
+                        .expect("geometric progression overflows usize -- reduce geo_count/growth");
                 }
                 cur = next;
             }
