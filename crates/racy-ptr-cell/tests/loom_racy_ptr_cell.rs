@@ -95,9 +95,12 @@ fn make_payload() -> core::ptr::NonNull<Payload> {
     core::ptr::NonNull::from(Box::leak(b))
 }
 
-/// Reclaim a leaked payload (loom leak-check hygiene). SAFETY: `p` came from
-/// `make_payload`'s `Box::leak` and is reclaimed exactly once per iteration
-/// after all threads joined.
+/// Reclaim a leaked payload (loom leak-check hygiene).
+///
+/// # Safety
+///
+/// `p` came from `make_payload`'s `Box::leak` and is reclaimed exactly once
+/// per iteration after all threads joined.
 unsafe fn reclaim_payload(p: core::ptr::NonNull<Payload>) {
     drop(Box::from_raw(p.as_ptr()));
 }
@@ -134,6 +137,19 @@ fn real_exactly_once_two_threads() {
             // `ensure_relaxed_publish_broken_and_check`'s identical pattern for
             // the shadow model. SAFETY: `ptr` is the published, non-null,
             // non-sentinel pointer `get_or_try_init` just returned.
+            // NOTE (task #774, finding F9): this `assert_eq!` cannot itself
+            // observe a wrong VALUE — `make_payload` only ever stores
+            // `0xDEAD_BEEF`, so there is no zero-then-store sequence for a
+            // broken publish to expose here. What actually fails under a
+            // `Relaxed` publish is loom's own causality checker
+            // ("Causality violation: Concurrent load and mut accesses"),
+            // triggered by this READ happening at a point with no
+            // join-established happens-before to the winner's store; the
+            // assertion is only the vehicle that forces the cross-thread
+            // read to occur at that point. Do not "simplify" this into a
+            // check that doesn't dereference `ptr` (e.g. comparing pointer
+            // values) — that would silently remove the detection while
+            // looking equivalent.
             let marker = unsafe { (*ptr.as_ptr()).init_marker.load(Ordering::Relaxed) };
             assert_eq!(
                 marker, 0xDEAD_BEEF,
@@ -183,7 +199,10 @@ fn real_exactly_once_three_threads() {
                 .expect("init must succeed");
             // Happens-before check INSIDE the thread, before any join — see
             // `real_exactly_once_two_threads`'s identical fix (task #700) for
-            // why the check must not happen after `join`.
+            // why the check must not happen after `join`, and its NOTE (task
+            // #774, finding F9) for why the real detector on a broken publish
+            // is loom's own causality checker, not this `assert_eq!`'s value
+            // comparison.
             // SAFETY: `ptr` is the published, non-null, non-sentinel pointer
             // `get_or_try_init` just returned.
             let marker = unsafe { (*ptr.as_ptr()).init_marker.load(Ordering::Relaxed) };
@@ -206,7 +225,9 @@ fn real_exactly_once_three_threads() {
             })
             .expect("main init must succeed");
         // Same check for the main "thread"'s own result, likewise BEFORE the
-        // t1/t2 joins below (task #700).
+        // t1/t2 joins below (task #700) — see the F9 NOTE above for why
+        // loom's causality checker, not this assertion's value comparison,
+        // is the real detector on a broken publish.
         // SAFETY: `r_main` is the published, non-null, non-sentinel pointer
         // `get_or_try_init` just returned.
         let main_marker = unsafe { (*r_main.as_ptr()).init_marker.load(Ordering::Relaxed) };
@@ -468,12 +489,19 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
                 "must never publish the sentinel as success"
             );
         }
-        if seen.len() == 2 {
-            assert_eq!(
-                seen[0], seen[1],
-                "both real callers must observe the SAME published pointer"
-            );
-        }
+        // Unconditional, not `if seen.len() == 2` (task #774, finding F12):
+        // in this model both real callers' closures always return `Some`,
+        // so `seen.len()` is always 2 by construction — the old conditional
+        // form could never actually skip, but made that fact something a
+        // reader had to verify rather than something the assertion itself
+        // states. Asserting the length first turns a hypothetical future
+        // change (a caller able to return `None`) into a loud failure here
+        // instead of a silently-skipped comparison below.
+        assert_eq!(seen.len(), 2, "both real callers must have published");
+        assert_eq!(
+            seen[0], seen[1],
+            "both real callers must observe the SAME published pointer"
+        );
 
         // Reclaim whatever was actually published (dedup — both callers may
         // report the same address).

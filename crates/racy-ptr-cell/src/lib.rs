@@ -179,6 +179,23 @@ unsafe impl<T> Sync for RacyPtrCell<T> {}
 /// Defused (via [`RollbackGuard::defuse`]) on both non-unwinding exits — the
 /// successful publish and the explicit `None`/OOM rollback — so the normal
 /// paths are unaffected; this guard only ever fires on the unwind path.
+///
+/// Test coverage note (task #774, finding F10): `tests/cell_unit.rs`'s
+/// `panicking_init_rolls_back_and_subsequent_call_succeeds` proves a
+/// strictly weaker property than the one described above — that a
+/// SUBSEQUENT call on an already-quiescent cell succeeds after a panicking
+/// init unwound and rolled back. It does not model a loser thread that was
+/// ALREADY spinning inside `get_or_try_init` at the moment the winner's
+/// `init` unwinds. The two properties coincide for the guard's current
+/// implementation (both reduce to "the cell left `INITIALIZING`"), so this
+/// is a coverage gap, not a known hole in the fix — a future change that
+/// made the rollback conditional (e.g. skipping it when a loser is
+/// observed waiting) could pass the existing test while reintroducing the
+/// spin. Not closed by a loom test here: loom's deterministic scheduling
+/// model and `std::panic::catch_unwind` do not compose cleanly (loom needs
+/// to replay every interleaving of an unwind path, which its own docs do
+/// not treat as a first-class supported pattern), and the ROI did not
+/// justify building a bespoke harness for it in this round.
 struct RollbackGuard<'a, T> {
     ptr: &'a AtomicPtr<T>,
     defused: bool,
@@ -336,6 +353,21 @@ impl<T> RacyPtrCell<T> {
     /// it runs while this thread holds the `INITIALIZING` sentinel, so it must
     /// not itself call back into `get_or_try_init` on the SAME cell (that would
     /// spin forever — the current thread is the only one able to publish).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the winning `init` call returns `Some(ptr)` where `ptr`'s
+    /// address is the reserved `INITIALIZING` sentinel (`1`) — a safe `init`
+    /// closure can construct and return this exact address, and publishing it
+    /// unguarded would make every reader (this thread's own fast path
+    /// included) misclassify the cell as still-initializing forever. This
+    /// check is release-active, not `debug_assert!`-gated.
+    ///
+    /// If `init` itself panics (unwinds) instead of returning, the panic
+    /// propagates out of `get_or_try_init` and the cell is left in `UNINIT`
+    /// (not wedged in `INITIALIZING`) — a later call, on any thread, may
+    /// retry `init`. This mirrors the OOM/`None` rollback above; the only
+    /// difference is how the winner exits.
     pub fn get_or_try_init<F>(&self, mut init: F) -> Option<NonNull<T>>
     where
         F: FnMut() -> Option<NonNull<T>>,
@@ -464,9 +496,20 @@ impl<T> RacyPtrCell<T> {
     /// Test-probe introspection: `true` iff the cell is currently `READY`
     /// (holds a real, non-null, non-sentinel pointer). Says nothing about
     /// the published *value* itself (that is [`RacyPtrCell::get`]'s
-    /// contract) — exists so a test (in this crate or a downstream
-    /// consumer's) can assert lazy-materialisation ordering without racing
-    /// a concurrent init.
+    /// contract).
+    ///
+    /// This is functionally identical to `get().is_some()` — same single
+    /// `Acquire` load, same predicate, no capability `get` lacks — it does
+    /// **not** avoid racing a concurrent init any differently than `get`
+    /// does (task #774, finding F4 corrected an earlier doc claiming
+    /// otherwise). It exists as a named, self-documenting boolean
+    /// introspection primitive: a caller writing `assert!(cell.dbg_is_ready())`
+    /// reads as "assert the cell materialised" without an
+    /// `.is_some()`/`.is_none()` match at the call site. A real in-repo
+    /// consumer already relies on exactly this: the root `sefer-alloc`
+    /// crate's `Registry::dbg_chunk_is_materialised`
+    /// (`src/registry/bootstrap.rs`) forwards to this method to assert
+    /// chunk-materialisation state in its own regression tests.
     ///
     /// # Stability
     ///

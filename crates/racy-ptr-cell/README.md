@@ -36,8 +36,14 @@ let chunk: Option<NonNull<Chunk>> = CHUNK.get_or_try_init(|| {
 
 Both rules are pinned by **executable loom proofs that run against the real
 `RacyPtrCell` type** (the crate aliases its atomics to `loom::sync::atomic`
-under `--cfg loom`), including `#[should_panic]` counterfactuals that fail
-without the correct code:
+under `--cfg loom`) — `real_exactly_once_two_threads`/`real_exactly_once_three_threads`
+for rule 1, `real_survives_oom_rollback_two_threads` for rule 2. The
+`#[should_panic]` counterfactuals in the same test module are a separate,
+complementary check: they run against small shadow models of the same two
+rules (an `AtomicPtr`/`AtomicU8` standing in for `RacyPtrCell`'s own
+internals, since loom cannot rebuild this crate with a deliberately-broken
+ordering baked in), proving the loom harness itself is sensitive to each
+protocol violation rather than passing vacuously:
 
 ```sh
 RUSTFLAGS="--cfg loom" cargo test --release --test loom_racy_ptr_cell
@@ -60,12 +66,26 @@ deliberate posture decision (task #710), not an oversight:
   `#[doc(hidden)]`, which only affects documentation visibility, not the
   semver surface.
 - The alternative considered — gating both methods behind a non-default
-  Cargo feature (e.g. `test-probes`) — was rejected as disproportionate:
-  both methods are already exercised unconditionally by this crate's own
-  `tests/cell_unit.rs` and `tests/loom_racy_ptr_cell.rs`, so feature-gating
-  them would require restructuring the whole existing test suite behind an
-  opt-in flag (plus a corresponding CI matrix addition) for two methods
-  whose only cost is a documented, semver-guaranteed public surface.
+  Cargo feature (e.g. `test-probes`), the default CLAUDE.md's benchmark-hook
+  rule (2) recommends for any hook with no production caller — was rejected.
+  Cost, restated precisely (the earlier "would require restructuring the
+  whole existing test suite" framing overstated it): `[[test]]
+  required-features` exists, so the real cost is only the corresponding CI
+  matrix addition. The rejection is still correct on its actual merits:
+  neither method accepts a raw pointer or touches allocator metadata (the
+  hazard CLAUDE.md's rule targets), and this crate's `dbg_*` surface is
+  independently policed by the root repo's
+  `tests/dbg_hook_safety_tripwire.rs` allowlist, which requires a reviewed
+  justification per hook and already covers both.
+- `dbg_is_ready` is functionally identical to `get().is_some()` — same
+  single `Acquire` load, same predicate. It is not exempt from CLAUDE.md's
+  "no production caller" framing on a technicality, either: the root
+  `sefer-alloc` crate's `Registry::dbg_chunk_is_materialised`
+  (`src/registry/bootstrap.rs`) is a real, exercised caller of this exact
+  method (via `RacyPtrCell::dbg_is_ready`), used to assert chunk-
+  materialisation state in that crate's own regression tests. It stays
+  public for that reason, not because it offers any capability `get`
+  lacks.
 
 Both methods carry the crate's ordinary semver guarantee: they are public
 API, not "test-only, may change or vanish any time" hidden internals. Their

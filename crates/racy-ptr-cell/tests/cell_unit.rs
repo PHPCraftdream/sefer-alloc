@@ -96,7 +96,7 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     let _handle = std::thread::spawn(move || {
         let p = cell2
             .get_or_try_init(|| Some(leak(0xABCD)))
-            .map(|p| p.as_ptr() as usize);
+            .map(|p| p.as_ptr().expose_provenance());
         let _ = tx.send(p);
     });
 
@@ -108,7 +108,13 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
              livelock is back)",
         )
         .expect("init must succeed");
-    let p = NonNull::new(addr as *mut Payload).unwrap();
+    // `addr` is the exposed provenance of a pointer this same process just
+    // published via `expose_provenance()` above; reconstructing it via
+    // `with_exposed_provenance_mut` (rather than a plain `as` cast) keeps
+    // this test clean under `-Zmiri-strict-provenance` (task #774, finding
+    // F2 -- mirrors task #709's identical fix one file over in
+    // tests/loom_racy_ptr_cell.rs).
+    let p = NonNull::new(core::ptr::with_exposed_provenance_mut::<Payload>(addr)).unwrap();
 
     assert!(cell.dbg_is_ready());
     assert_eq!(cell.get(), Some(p));
