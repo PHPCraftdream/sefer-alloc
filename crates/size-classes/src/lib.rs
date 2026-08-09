@@ -132,8 +132,26 @@ impl<'a> Params<'a> {
 /// `max_class`: one `u8` per `min_block`-sized bucket from `0` up to and
 /// including `max_class`. A consumer uses this in a `const` expression to pin
 /// the `L` generic of [`SizeClasses`].
+///
+/// # Panics
+///
+/// Panics in `const` evaluation if `min_block` is not a power of two.
+///
+/// task #731 (rust-intel audit §B26, INFO): this is this crate's ONE `pub`
+/// function that previously had zero parameter validation -- `max_class /
+/// min_block` hit an unguarded integer division for `min_block == 0`
+/// (panics in every profile, but with a bare "attempt to divide by zero"
+/// rather than a diagnostic naming the actual bad parameter), even though
+/// every sibling entry point ([`build_table`], [`build_size2class`])
+/// asserts `min_block.is_power_of_two()` with a named message. Added the
+/// matching assert here for the same precondition, closing the one
+/// inconsistent chokepoint.
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
+    assert!(
+        min_block.is_power_of_two(),
+        "size2class_len: min_block must be a power of two"
+    );
     max_class / min_block + 1
 }
 
@@ -150,9 +168,10 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// # Panics
 ///
 /// Panics in `const` evaluation if `N != geo_count + extras.len()`, if
-/// `min_block` is not a power of two, if `geo_count == 0`, if any
-/// `extras` entry is not a multiple of `min_block`, or if `extras` is not
-/// strictly increasing.
+/// `min_block` is not a power of two, if `geo_count == 0`, if
+/// `params.growth.1` (the growth denominator) is `0`, if any `extras`
+/// entry is not a multiple of `min_block`, or if `extras` is not strictly
+/// increasing.
 #[must_use]
 pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -161,6 +180,16 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
         "min_block must be a power of two"
     );
     assert!(params.geo_count > 0, "geo_count must be > 0");
+    // task #731 (rust-intel audit §B26, INFO): `growth.1` (the denominator)
+    // was never asserted non-zero -- `den == 0` reached the geometric
+    // advance step below and panicked with a BARE "attempt to divide by
+    // zero", inconsistent with every sibling precondition here (all of
+    // which name the actual bad parameter). `growth.0 == 0` is NOT
+    // rejected: it silently degrades to a linear min_block-step table via
+    // the existing `next <= cur` min-step fallback rather than panicking,
+    // which is an intentional (if unusual) valid scheme, not a contract
+    // violation -- only the denominator has no such fallback.
+    assert!(params.growth.1 > 0, "growth denominator must be > 0");
     let geo_count = params.geo_count;
     let extras = params.extras;
     assert!(
@@ -355,7 +384,15 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// - `L` — the `size2class` length ([`size2class_len`]`(max_class, min_block)`).
 ///
 /// Construct one at compile time with [`SizeClasses::build`]. All query methods
-/// are `const` pure arithmetic — no allocation, no panics on the lookup path.
+/// are `const` pure arithmetic — no allocation, and no panics on the lookup
+/// path FOR IN-CONTRACT INPUTS (`size >= 1`, a power-of-two `align`, and an
+/// `idx` obtained from [`class_for`](Self::class_for) rather than picked
+/// independently). task #731 (rust-intel audit §F2, INFO): the previous
+/// unqualified "no panics on the lookup path" contradicted
+/// [`block_size`](Self::block_size)'s own `# Panics` section on this same
+/// type (`idx >= N` panics there) -- qualified here rather than removing
+/// `block_size`'s panic doc, since that panic is the correct behavior for
+/// an out-of-contract `idx`.
 #[derive(Debug, Clone, Copy)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
