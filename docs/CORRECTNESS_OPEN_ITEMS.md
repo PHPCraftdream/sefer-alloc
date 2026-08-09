@@ -1792,6 +1792,57 @@ resolved" below.)_
       `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
       finding P4-12.
 
+41. **CI-coverage gap — `aligned-vmem` has NO dedicated `cargo miri test -p
+    aligned-vmem` step in `.github/workflows/ci.yml`; the crate's own test
+    suite has never run under miri.** (Discovered 2026-08-09 during task
+    #713's zero-trust verification of a `VmemError` errno-capture fix —
+    running the suite under miri, as that task's own instruction required,
+    was the first time in this crate's history it happened.)
+
+    - **Status:** OPEN — not actioned, filed for a future task.
+    - **Evidence, current as of this filing:**
+      - `.github/workflows/ci.yml`'s only miri invocation touching this
+        crate at all is `cargo miri test -p numa-shim --features
+        vmem-integration` (`:1572`), which transitively exercises some
+        `aligned-vmem` code paths through `numa-shim`'s own integration
+        tests, not this crate's own `tests/*.rs` suite directly.
+      - Running `cargo +nightly miri test -p aligned-vmem --all-features`
+        surfaces TWO real miri-incompatibilities in this crate's OWN test
+        suite, neither previously caught by any CI:
+        1. `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`
+           intentionally leaks (the function under test,
+           `leak_zeroed_pages`, `core::mem::forget`-leaks by design for a
+           process-lifetime sidecar) — miri's default leak-checker flags
+           this as "memory leaked" and fails the run. Not a real bug; needs
+           either `MIRIFLAGS=-Zmiri-ignore-leaks` for this crate's miri
+           runs, or restructuring the test to avoid the intentional leak
+           (e.g. asserting on the pointer without invoking the real
+           leaking helper, or accepting the leak as this specific test's
+           documented cost).
+        2. `tests/lazy_commit.rs`'s `sequential_commit_range_grows_incrementally`
+           reads uninitialized memory under miri
+           (`crates/vmem/tests/lazy_commit.rs:287`) — this is the SAME
+           underlying defect already tracked on the TaskList as task #716
+           ("the public huge-pages API has zero tests, and lazy_commit's
+           zero-fill assert is an uninitialized read under miri"), not a
+           new finding here — confirmed identical via `git stash` (the
+           failure reproduces byte-for-byte on the pre-task-#713 tree).
+           Task #716 has no prior entry in this index; this is its first
+           mention here, cross-referenced rather than duplicated.
+      - Verified NOT a regression from task #713's own changes: `git stash`
+        (reverting all of #713's edits) reproduces both failures
+        identically on the pre-#713 tree.
+    - **Why filed instead of fixed here:** out of scope for task #713 (an
+      errno-capture-timing fix) — fixing #1 needs a scoped
+      `MIRIFLAGS`/test-restructure decision, and #2 is already task #716's
+      to fix. Adding the missing CI step itself is a `ci.yml` change with
+      its own blast radius (miri run time, whether to scope it to specific
+      test files to dodge #1/#2 until they're separately fixed) that
+      deserves its own task rather than a drive-by inside #713.
+    - **Next trigger:** a future task (or task #716's own fix) should add
+      a `cargo miri test -p aligned-vmem` CI step, scoped or flagged to
+      route around whichever of #1/#2 is still open at that time.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
