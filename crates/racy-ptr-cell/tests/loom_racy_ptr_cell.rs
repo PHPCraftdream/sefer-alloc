@@ -109,11 +109,28 @@ fn real_exactly_once_two_threads() {
         let init_count = Arc::new(AtomicU32::new(0));
 
         let run = |cell: Arc<RacyPtrCell<Payload>>, ic: Arc<AtomicU32>| {
-            cell.get_or_try_init(|| {
-                ic.fetch_add(1, Ordering::Relaxed);
-                Some(make_payload())
-            })
-            .expect("init must succeed (no OOM in this model)")
+            let ptr = cell
+                .get_or_try_init(|| {
+                    ic.fetch_add(1, Ordering::Relaxed);
+                    Some(make_payload())
+                })
+                .expect("init must succeed (no OOM in this model)");
+            // Happens-before check INSIDE the thread, immediately after
+            // `get_or_try_init` returns and before any `join` — `join` itself
+            // establishes a happens-before relationship that would hide a lost
+            // Release/Acquire pairing (task #700: the prior version of this
+            // test read `init_marker` only after both threads had already
+            // joined, which made this assertion vacuous — it stayed green even
+            // with the publish downgraded to `Relaxed`). Mirrors
+            // `ensure_relaxed_publish_broken_and_check`'s identical pattern for
+            // the shadow model. SAFETY: `ptr` is the published, non-null,
+            // non-sentinel pointer `get_or_try_init` just returned.
+            let marker = unsafe { (*ptr.as_ptr()).init_marker.load(Ordering::Relaxed) };
+            assert_eq!(
+                marker, 0xDEAD_BEEF,
+                "loser must see the fully constructed pointee (Release/Acquire pair)"
+            );
+            ptr
         };
 
         let (c1, i1) = (Arc::clone(&cell), Arc::clone(&init_count));
@@ -131,13 +148,6 @@ fn real_exactly_once_two_threads() {
         let count = init_count.load(Ordering::Relaxed);
         assert_eq!(count, 1, "exactly ONE thread must run init (got {count})");
 
-        // Happens-before: loser observing the pointer under Acquire sees the
-        // winner's init write. SAFETY: r1 == r2 is the published pointer.
-        let marker = unsafe { (*r1.as_ptr()).init_marker.load(Ordering::Relaxed) };
-        assert_eq!(
-            marker, 0xDEAD_BEEF,
-            "loser must see the fully constructed pointee (Release/Acquire pair)"
-        );
         unsafe { reclaim_payload(r1) };
     });
 }
@@ -153,11 +163,23 @@ fn real_exactly_once_three_threads() {
         let init_count = Arc::new(AtomicU32::new(0));
 
         let run = |cell: Arc<RacyPtrCell<Payload>>, ic: Arc<AtomicU32>| {
-            cell.get_or_try_init(|| {
-                ic.fetch_add(1, Ordering::Relaxed);
-                Some(make_payload())
-            })
-            .expect("init must succeed")
+            let ptr = cell
+                .get_or_try_init(|| {
+                    ic.fetch_add(1, Ordering::Relaxed);
+                    Some(make_payload())
+                })
+                .expect("init must succeed");
+            // Happens-before check INSIDE the thread, before any join — see
+            // `real_exactly_once_two_threads`'s identical fix (task #700) for
+            // why the check must not happen after `join`.
+            // SAFETY: `ptr` is the published, non-null, non-sentinel pointer
+            // `get_or_try_init` just returned.
+            let marker = unsafe { (*ptr.as_ptr()).init_marker.load(Ordering::Relaxed) };
+            assert_eq!(
+                marker, 0xDEAD_BEEF,
+                "loser must see the fully constructed pointee (Release/Acquire pair)"
+            );
+            ptr
         };
 
         let (c1, i1) = (Arc::clone(&cell), Arc::clone(&init_count));
@@ -171,6 +193,15 @@ fn real_exactly_once_three_threads() {
                 Some(make_payload())
             })
             .expect("main init must succeed");
+        // Same check for the main "thread"'s own result, likewise BEFORE the
+        // t1/t2 joins below (task #700).
+        // SAFETY: `r_main` is the published, non-null, non-sentinel pointer
+        // `get_or_try_init` just returned.
+        let main_marker = unsafe { (*r_main.as_ptr()).init_marker.load(Ordering::Relaxed) };
+        assert_eq!(
+            main_marker, 0xDEAD_BEEF,
+            "main must see the fully constructed pointee (Release/Acquire pair)"
+        );
 
         let r1 = t1.join().unwrap();
         let r2 = t2.join().unwrap();
@@ -182,8 +213,6 @@ fn real_exactly_once_three_threads() {
         let count = init_count.load(Ordering::Relaxed);
         assert_eq!(count, 1, "exactly ONE init (got {count})");
 
-        let marker = unsafe { (*r_main.as_ptr()).init_marker.load(Ordering::Relaxed) };
-        assert_eq!(marker, 0xDEAD_BEEF);
         unsafe { reclaim_payload(r_main) };
     });
 }
