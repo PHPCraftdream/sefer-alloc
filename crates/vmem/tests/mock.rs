@@ -96,6 +96,40 @@ fn fail_next_commit_injects_commit_range_failure() {
     assert_eq!(calls.len(), 3);
 }
 
+#[cfg(feature = "huge-pages")]
+#[test]
+fn fail_next_reserve_injects_through_huge_path() {
+    // task #716 fix (1) item (c): `reserve_aligned_huge` shares
+    // `try_reserve_aligned_exact`'s reserve-fault-injection point with the
+    // ordinary path, but had no direct regression test proving `Call::ReserveHuge`
+    // is actually the variant recorded and that `fail_next_reserve` actually
+    // fires on this specific entry point (as opposed to merely on
+    // `reserve_aligned`, which every other test here exercises).
+    use aligned_vmem::reserve_aligned_huge;
+    mock::reset();
+    mock::fail_next_reserve(1);
+    assert!(
+        reserve_aligned_huge(2 * MIB, 2 * MIB).is_none(),
+        "1st huge reserve fails (armed)"
+    );
+    assert!(
+        reserve_aligned_huge(2 * MIB, 2 * MIB).is_some(),
+        "2nd huge reserve succeeds (fault consumed)"
+    );
+    let calls = mock::drain();
+    assert_eq!(
+        calls.len(),
+        2,
+        "both attempts are recorded regardless of outcome"
+    );
+    assert!(
+        matches!(calls[0], Call::ReserveHuge { size, align, .. } if size == 2 * MIB && align == 2 * MIB),
+        "must record Call::ReserveHuge, not Call::Reserve: {:?}",
+        calls[0]
+    );
+    assert!(matches!(calls[1], Call::ReserveHuge { .. }));
+}
+
 #[test]
 fn reset_clears_faults_and_log() {
     mock::reset();

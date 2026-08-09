@@ -284,6 +284,14 @@ fn sequential_commit_range_grows_incrementally() {
     // Verify all written bytes are still accessible and correct.
     // SAFETY: all chunks from [0, frontier) are committed and were written.
     unsafe {
+        // task #716: this test never writes offset 0 -- on a real OS backend
+        // that byte is a fresh, zero-filled page (guaranteed by the OS), but
+        // under miri's `std::alloc`-based fallback (documented as NOT
+        // zeroing, unlike a real OS) reading it is a genuine uninitialized-
+        // memory read. Mirrors the identical, already-established gate in
+        // tests/smoke.rs's `recommit_is_fallible_and_reports_success_on_the_happy_path`
+        // for the exact same real-OS-zero-fill-vs-miri distinction.
+        #[cfg(not(miri))]
         assert_eq!(base.read(), 0, "initial region byte not overwritten");
         for step in 0..5u8 {
             let off = chunk + (step as usize) * chunk;
