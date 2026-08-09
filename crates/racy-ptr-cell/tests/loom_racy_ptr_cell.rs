@@ -396,7 +396,15 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
                 Some(make_payload())
             });
             if let Some(p) = r {
-                pa.lock().unwrap().push(p.as_ptr().addr());
+                // `NonNull<Payload>`/`*mut Payload` is `!Send`, so the
+                // pointer itself cannot cross this thread boundary through
+                // the shared `Mutex<Vec<_>>` (task #709) -- expose its
+                // provenance instead of discarding it via a bare `.addr()`,
+                // so the address can be reconstructed later with
+                // `with_exposed_provenance_mut` (well-defined under the
+                // exposed-provenance model) rather than a provenance-losing
+                // `usize as *mut T` cast (UB under strict provenance).
+                pa.lock().unwrap().push(p.as_ptr().expose_provenance());
             }
         });
 
@@ -413,7 +421,8 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
                 Some(make_payload())
             });
             if let Some(p) = r {
-                pb.lock().unwrap().push(p.as_ptr().addr());
+                // Same rationale as thread A above.
+                pb.lock().unwrap().push(p.as_ptr().expose_provenance());
             }
         });
 
@@ -452,11 +461,21 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
         unique.dedup();
         drop(seen);
         for addr in unique {
-            // SAFETY: `addr` came from a successful `get_or_try_init` return,
-            // i.e. a leaked `make_payload()` box; reclaimed exactly once here
-            // (dedup'd) after all threads joined.
+            // SAFETY: `addr` came from `expose_provenance()` on a pointer
+            // returned by a successful `get_or_try_init` (a leaked
+            // `make_payload()` box), so `with_exposed_provenance_mut`
+            // reconstructs a pointer with that same exposed provenance --
+            // unlike a bare `addr as *mut Payload` cast, which strict
+            // provenance treats as having NO valid provenance and makes
+            // deallocating through it UB (task #709). Reclaimed exactly once
+            // here (dedup'd) after all threads joined.
             unsafe {
-                reclaim_payload(core::ptr::NonNull::new(addr as *mut Payload).unwrap());
+                reclaim_payload(
+                    core::ptr::NonNull::new(core::ptr::with_exposed_provenance_mut::<Payload>(
+                        addr,
+                    ))
+                    .unwrap(),
+                );
             }
         }
     });
