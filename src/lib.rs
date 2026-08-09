@@ -3,8 +3,10 @@
 //! A safe, *handle-addressed* region store. Instead of handing out raw
 //! pointers, a [`Region<T>`] hands out small generational [`Handle<T>`]
 //! values; the bytes live in `slotmap`'s contiguous slot array, resolved by a
-//! single indirection (see `docs/BENCHMARKS.md`). A stale handle never
-//! resolves to a live value — it returns `None`, never undefined behaviour.
+//! single indirection (see `docs/BENCHMARKS.md`). A stale handle does not
+//! resolve to a live value for roughly `2^31` reuse cycles of that slot
+//! (after ~2^31 cycles the generation wraps and a very old handle may
+//! alias a later value). It returns `None`, never undefined behaviour.
 //!
 //! ## The engine
 //!
@@ -14,7 +16,7 @@
 //! `DefaultKey` plus `PhantomData<fn() -> T>`, so handles stay generic-over-`T`
 //! and typed (which raw slotmap keys are not). `slotmap`'s audited `unsafe`
 //! owns the generational layout — the free list, generation bump on
-//! remove, and version-saturation retirement; this crate adds the typed
+//! remove, and 32-bit generation wrap after ~2^31 cycles; this crate adds the typed
 //! boundary and stays `#![forbid(unsafe_code)]`.
 //!
 //! [`Region`], [`Handle`], and [`SyncRegion`] now live in the `sefer-region`

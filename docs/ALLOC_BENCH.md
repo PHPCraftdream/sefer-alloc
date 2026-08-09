@@ -742,8 +742,11 @@ within noise".
 `SeferMalloc` (feature `alloc-global`) is the **malloc face** of `sefer-alloc`:
 an `unsafe impl GlobalAlloc` over the per-thread segment heap (Phase 8 segment
 substrate + Phase 9 intrusive free-list hot path + Phase 10 cross-thread free
-under `alloc-xthread`). One substrate, two faces — the typed `Handle` face and
-this raw `*mut u8` drop-in face.
+under `alloc-xthread`). The typed `Handle` face (`Region<T>`/`Handle<T>`) is a
+separate, independent API over third-party `slotmap` and shares no backing
+memory with this segment substrate (corrected 2026-08-09 per the static
+release audit's F5 — this section's original "one substrate, two faces"
+framing described design intent, not what shipped).
 
 This is the honest measurement the campaign promised: *"as fast as the best, and
 safe."* Stated plainly, win or lose.

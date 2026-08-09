@@ -1,14 +1,14 @@
 # Implementation plan — sefer-alloc
 
 `sefer-alloc` is a safe, handle-addressed region store over bytes. It hands out
-small generational handles instead of raw pointers, keeps values in a dense
-cache-friendly backing store, and confines `unsafe` to a single audited organ
-that appears only in the lower tiers. The build is **verification-first**: the
-tests and their tooling (proptest / miri / loom / fuzz / multi-arch) are part of
-each phase, not an afterthought.
+small generational handles instead of raw pointers, keeps values in a
+generational cache-friendly backing store (slotmap), and confines `unsafe`
+to a single audited organ that appears only in the lower tiers. The build is
+**verification-first**: the tests and their tooling (proptest / miri / loom /
+fuzz / multi-arch) are part of each phase, not an afterthought.
 
 This document is the canonical, detailed plan. Architecture lives in
-[`DESIGN.md`](DESIGN.md); the safety spec lives in
+[`ARCHITECTURE.md`](ARCHITECTURE.md); the safety spec lives in
 [`INVARIANTS.md`](INVARIANTS.md).
 
 ---
@@ -27,7 +27,7 @@ single move is what lets the entire upper tier be `#![forbid(unsafe_code)]`.
 From that one principle the design descends in tiers, each admitting only as
 much `unsafe` as its world genuinely requires:
 
-- the **typed, single-threaded core** needs *none* (the dense `Vec<T>` performs
+- the **typed, single-threaded core** needs *none* (the generational layout provided by slotmap performs
   every init and drop);
 - the **concurrent tier** needs a confined, loom-checked `unsafe` for lock-free
   reads (the read-copy-update / shadow-paging principle);
@@ -73,7 +73,7 @@ single-threaded core the Cartographer + Hand are now **provided by `slotmap`**
 `#![forbid(unsafe_code)]`. Our own Hand organ appears only in the concurrent
 epoch tier (3b-II) and the byte mode (4).
 
-- **Cartographer** (safe) — all placement / free-list / compaction logic; pure
+- **Cartographer** (safe) — all placement / free-list logic; pure
   integer arithmetic over indices, never touches memory. In the
   single-threaded core this is `slotmap`'s.
 - **Membrane** (safe) — the typed `Handle<T>` API and generation checks;
@@ -82,13 +82,12 @@ epoch tier (3b-II) and the byte mode (4).
 - **Hand** (unsafe) — the single confined `unsafe` organ, present only in the
   epoch tier and the byte mode.
 
-Data layout (single-threaded core): the dense generational layout is the one
+Data layout (single-threaded core): the generational layout is the one
 `slotmap` gives us — a stable `slots` array (`handle.index` indexes it; each
-slot carries a generation and is either `Occupied{dense}` or
-`Vacant{next_free}`), a compact `dense: Vec<T>` of the live values, a
-`dense_to_slot` back-pointer array, and a `free_head`. All operations are
-`O(1)`; the dense array is compact by construction. (We adopt this rather than
-re-implement it.)
+slot carries a generation and is either occupied or vacant), a `values`
+storage for live entries, and a freelist head. All operations are
+`O(1)`; freed slots are reused by insert and capacity is bounded by the
+historical high-water mark. (We adopt this rather than re-implement it.)
 
 ## 3. Verification methodology (first-class)
 
@@ -129,7 +128,7 @@ The properties every change must keep green (full text in
 - **I4 — accounting:** `len()` equals the live count.
 - **I5 — drop-once:** every value is dropped exactly once (on remove or on
   `Region` drop), never twice, never leaked.
-- **I6 — compaction (Phase 2):** compaction preserves live-handle resolution.
+- **I6 — slot reuse and bounded growth (Phase 2):** freed slots are reused; capacity is bounded by high-water mark.
 
 ---
 
@@ -185,17 +184,18 @@ the objective, tool-checkable condition for "done".
 - **Status:** old hand-rolled core landed (commit before this decision); now
   PIVOTING to the `slotmap`-engine + typed membrane.
 
-### Phase 2 — Container choice benches + delegated compaction · task #121
+### Phase 2 — Container choice benches + delegated slot reuse · task #121
 
 - **Goal:** empirically **choose** the backing container, and confirm the
-  compaction/capacity properties that `slotmap` now owns on our behalf.
-- **Why this phase changed:** compaction and capacity are now mostly DELEGATED
-  to `slotmap` (it owns the dense layout, the free list, and capacity growth).
+  slot-reuse/capacity properties that `slotmap` now owns on our behalf.
+- **Why this phase changed:** slot reuse and capacity are now DELEGATED
+  to `slotmap` (it owns the free list, slot reuse, and capacity growth).
   Our work shifts to measuring and to asserting slotmap's properties as a
   contract.
 - **Deliverables:** criterion benches that empirically CHOOSE the container
   (`SlotMap` vs `DenseSlotMap` vs `HashMap` vs `Vec<Box<T>>`) with an honest
-  verdict; I6 (compaction) confirmed as a property of `slotmap` via a test.
+  verdict; I6 (slot reuse and bounded growth) confirmed as a property of
+  `slotmap` via a test.
 - **Steps:**
   1. **Honest verdict on container choice:** the dense layout (`DenseSlotMap`)
      wins **ITERATION** (contiguous `dense` array, cache-friendly); but the
@@ -205,10 +205,10 @@ the objective, tool-checkable condition for "done".
      honestly — including if `DenseSlotMap`'s extra indirection on lookup
      matters more than its iteration win.
   2. Benchmark insert/remove throughput against `HashMap` and `Vec<Box<T>>`.
-  3. **I6 (compaction) as a property of `slotmap`:** a test that after a
-     sequence of inserts and removes, live-handle resolution is preserved and
-     the dense store has no live-value fragmentation — asserting `slotmap`'s
-     compaction-by-construction holds through our wrapper.
+  3. **I6 (slot reuse and bounded growth) as a property of `slotmap`:** a test
+     that after a sequence of inserts and removes, live-handle resolution is
+     preserved and capacity stays bounded — asserting `slotmap`'s slot reuse
+     and bounded growth hold through our wrapper.
 - **Gate:** I6 green (test over our wrapper); benches recorded with an honest
   verdict naming the chosen container and why.
 - **Tools:** proptest, criterion.

@@ -1,11 +1,14 @@
 //! Phase 12.3 -- the alloc face: [`SeferAlloc`], an `unsafe impl GlobalAlloc`
 //! over the global heap registry (Phase 12.2) via raw-pointer TLS (Phase 12.3).
 //!
-//! This is the **drop-in face** -- the campaign's victory deliverable. One
-//! substrate (the segment-backed, self-hosted, registry-resident heap
-//! allocator), two faces: the `Handle` face (typed, generational,
-//! relocatable) and this `alloc` face (raw `*mut u8`, drop-in
-//! `#[global_allocator]` replacement).
+//! This is the **drop-in face** -- the campaign's victory deliverable, over
+//! the segment-backed, self-hosted, registry-resident heap allocator. Note:
+//! the `Handle` face (`Region<T>`/`Handle<T>`, typed, generational,
+//! relocatable) is a SEPARATE, independent API over third-party `slotmap` --
+//! it shares no backing memory with this segment substrate (corrected
+//! 2026-08-09 per the static release audit's F5; the original "one
+//! substrate, two faces" design intent is preserved as history in
+//! `docs/ALLOC_PLAN.md`, but is not what shipped).
 //!
 //! ## Phase 12.3 rewiring
 //!
@@ -186,9 +189,12 @@ use super::AllocStats;
 /// pre-TLS / post-teardown windows, so the face is **never-null for a
 /// serviceable request** (M10).
 ///
-/// This is the **alloc face** of one substrate; the **handle face**
-/// (`Region<T>` / `Handle<T>`) is the typed, generational view over the same
-/// governed memory. See `docs/ALLOC_PLAN.md` §3 "The two faces".
+/// This is `SeferAlloc`'s own segment substrate. The **handle face**
+/// (`Region<T>` / `Handle<T>`, in the separate `sefer-region` crate) is an
+/// independent typed API over third-party `slotmap` -- it shares no backing
+/// memory with this substrate (corrected 2026-08-09 per the static release
+/// audit's F5; `docs/ALLOC_PLAN.md` SS3 preserves the original "one substrate,
+/// two faces" design intent as history, not current architecture).
 ///
 /// # Multi-thread safety — read this before enabling `alloc-global` alone
 ///

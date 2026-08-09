@@ -11,7 +11,7 @@
 
 | Organ | Responsibility | Safety |
 | --- | --- | --- |
-| **Cartographer** | All placement / free-list / (later) compaction logic — pure integer arithmetic over indices. Never touches memory. | safe |
+| **Cartographer** | All placement / free-list logic — pure integer arithmetic over indices. Never touches memory. | safe |
 | **Membrane** | The typed API: `Handle<T>`, generation checks, lifetimes. *Total* — cannot express UB. | safe |
 | **Hand** | The single, audited `unsafe` organ that touches raw memory. | confined |
 

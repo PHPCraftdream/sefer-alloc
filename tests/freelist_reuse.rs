@@ -1,14 +1,16 @@
-//! I6 — compaction-by-construction (Phase 2).
+//! I6 — freelist reuse and bounded growth (Phase 2).
 //!
-//! These tests assert, through the *public* API alone, that the
-//! compaction-by-construction property holds through our [`Region`] wrapper:
-//! after a churn of inserts interleaved with removes, every surviving handle
-//! still resolves to its value, the live values are densely accounted
-//! (`len() == iter count`), and removing then re-inserting reuses the free
-//! list so the backing capacity stays bounded by the high-water mark of live
-//! entries — no fragmentation leaks through the membrane.
+//! These tests assert, through the *public* API alone, that slot reuse
+//! and bounded growth properties hold through our [`Region`] wrapper:
+//! after a churn of inserts interleaved with removes, every surviving
+//! handle still resolves to its value, the live values are correctly
+//! accounted (`len() == iter count`), and removing then re-inserting
+//! reuses the free list so the backing capacity stays bounded by the
+//! historical high-water mark of live entries — growth is bounded even
+//! though `slotmap` does not physically compact (tombstone slots remain
+//! in the backing store).
 //!
-//! `slotmap` owns the dense layout and the free list; these tests treat that
+//! `slotmap` owns the slot reuse and free list; these tests treat that
 //! ownership as a *contract* observable from outside. Randomness comes from a
 //! fixed-seed hand-rolled LCG (no `rand` dependency) so the churn is
 //! deterministic and reproducible.
@@ -57,7 +59,7 @@ fn churn(seed: u64, target: usize) -> Region<u64> {
             live.push((handle, value));
         }
         // Randomly retire ~half as many entries as we have live, to force the
-        // free list to churn and the dense store to compact.
+        // free list to churn (slotmap reuses freed slots; tombstones remain).
         if !live.is_empty() && rng.next_u64().is_multiple_of(3) {
             // The cast is safe: `live.len()` is tiny (at most `target`), so the
             // modulo result fits in `usize` on every target we support.
@@ -83,7 +85,7 @@ fn churn(seed: u64, target: usize) -> Region<u64> {
 }
 
 /// I6 (a): after a churn, **every surviving handle still resolves to its
-/// value** — compaction preserves live-handle resolution.
+/// value** — slot reuse preserves live-handle resolution.
 #[test]
 fn surviving_handles_resolve_after_churn() {
     let region = churn(0xA11CE, 4096);
@@ -93,8 +95,7 @@ fn surviving_handles_resolve_after_churn() {
 }
 
 /// I6 (b): `len()` equals the number of survivors, and `iter()` yields exactly
-/// `len()` items — the live values stay densely accounted through the wrapper,
-/// with no fragmentation leaking past the typed boundary.
+/// `len()` items — the live values stay correctly accounted through the wrapper.
 #[test]
 fn len_matches_iter_after_churn() {
     let region = churn(0xB0B, 8192);

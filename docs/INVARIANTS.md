@@ -1,7 +1,7 @@
 # Safety invariants
 
 These are the properties `sefer-alloc` upholds. They are encoded as tests
-(`tests/region_invariants.rs`, `tests/compaction.rs`, and the proptest harness
+(`tests/region_invariants.rs`, `tests/freelist_reuse.rs`, and the proptest harness
 in `tests/differential.rs`) and form the spec that every future change must keep
 green.
 
@@ -11,11 +11,11 @@ green.
   `2^31` reuse cycles of that slot (a stale handle that has survived that many
   insert/remove cycles may wrap and spuriously resolve to a later value). A
   second `remove(h)` is a no-op `None`.
-- **I3 — no ABA.** A stale handle — one whose slot has since been reused —
-  does not resolve to a live value for roughly `2^31` reuse cycles of that
-  slot. `slotmap`'s `DefaultKey` carries a 32-bit generation (odd = occupied,
-  even = vacant): `insert` sets the low bit on reuse (`version | 1`), and
-  `remove` separately advances it via `remove_from_slot`'s
+- **I3 — bounded stale-handle detection.** A stale handle — one whose slot has
+  since been reused — does not resolve to a live value for roughly `2^31`
+  reuse cycles of that slot. `slotmap`'s `DefaultKey` carries a 32-bit generation
+  (odd = occupied, even = vacant): `insert` sets the low bit on reuse
+  (`version | 1`), and `remove` separately advances it via `remove_from_slot`'s
   `version.wrapping_add(1)` — two different functions, so a full occupy/free
   cycle advances the generation by 2, and the old handle fails the generation
   check and yields `None`. After ~2^31 cycles the generation wraps and a very
@@ -23,12 +23,18 @@ green.
 - **I4 — accounting.** `len()` equals the number of live entries, and
   `is_empty()` agrees.
 - **I5 — drop-once.** Every live value is dropped exactly once: on `remove`
-  (returned to the caller) or on `Region` drop. None is dropped twice; none is
-  leaked.
-- **I6 — compaction (Phase 2, implemented).** After compaction, every
-  live handle still resolves to the same logical value, and reclaimed slots are
-  reused. Compaction-by-construction is provided by the slotmap backing and is
-  verified in `tests/compaction.rs`. See `docs/PLAN.md`.
+  (returned to the caller) or on `Region` drop. None is dropped twice; the
+  crate does not duplicate or internally forget values. Ownership contract:
+  a stored value has exactly one owner; successful `remove` transfers
+  ownership to the caller without calling `Drop`; values still owned when a
+  normally-destroyed `Region` drops are dropped. Caller-side `mem::forget`
+  of a removed value or the entire `Region` is outside this guarantee.
+- **I6 — slot reuse and bounded growth.** Freed slots are reused by
+  `insert`; capacity grows to a historical high-water mark of live entries
+  and does not increase further under steady-state churn. Verified in
+  `tests/freelist_reuse.rs`. Note: `slotmap` does not physically compact
+  — tombstone slots remain in the backing store; I6 guarantees only reuse
+  and bounded growth, not physical density.
 
 ## Allocator invariants (Phase 8+, `alloc-core`)
 

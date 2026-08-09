@@ -100,7 +100,20 @@ discipline). Everything between is safe.
   └───────────────────────────────────────────────────────────────┘
 ```
 
-### The two faces (the unification)
+### The two faces (the unification) — STALE, not what was built (2026-08-09)
+
+> **This subsection describes the ORIGINAL plan, not the shipped
+> architecture — flagged by the static release audit's finding F5
+> (`docs/reviews/2026-08-09-sefer-region-static-release-audit.md`).**
+> `Region<T>`/`Handle<T>` did NOT end up unified over the segment
+> substrate described above: it shipped as an independent typed wrapper
+> over third-party `slotmap::SlotMap`, sharing no backing memory, no
+> `(segment_id, offset)` addressing, and no Cartographer/Hand machinery
+> with `SeferAlloc`. See `docs/ARCHITECTURE.md` SS1 for the actual shipped
+> shape (two independent APIs, one package). This subsection is kept for
+> historical record of the original design intent, per this project's
+> non-retroactive-rewrite convention — it is not read as current
+> architecture.
 
 Internally everything is addressed by safe `(segment_id, offset)` integers. A
 `Handle` and a `*mut u8` are two **views** of the same governed memory:
@@ -369,9 +382,12 @@ miri-clean, **stop** — the rest is unsound without it.
   OS memory instead of consuming `Vec<T>`; metadata self-hosts in managed
   segments. This is the one change that makes a global allocator possible without
   abandoning the safe-tools-govern-raw-memory principle.
-- **Two faces, one substrate** (DECIDED) — `Handle` and `*mut u8` are views of
-  the same governed memory; we do not fork the project into "handle store" vs
-  "malloc". Internally everything is `(segment, offset)`.
+- **Two faces, one substrate** (DECIDED, but NOT what shipped — see the
+  STALE note on SS3's "The two faces (the unification)" subsection above,
+  added 2026-08-09 per the static release audit's F5) — `Handle` and
+  `*mut u8` were planned as views of the same governed memory. What
+  actually shipped is two independent APIs (`Region<T>` over `slotmap`,
+  `SeferAlloc` over the segment substrate) sharing no backing memory.
 - **Reuse Phase 1–7 organs** (DECIDED) — `Region` slot discipline → metadata;
   `AtomicSlot`/epoch → cross-thread free + reclamation; `ShardedRegion` TLS
   router → per-thread heap; Phase-7b Treiber/owner-drain → thread-free list;

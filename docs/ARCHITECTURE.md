@@ -22,7 +22,7 @@ cited in each section if in doubt.
 
 ## Table of contents
 
-1. [The big picture: two faces, one substrate](#1-the-big-picture-two-faces-one-substrate)
+1. [The big picture: two independent APIs, one package](#1-the-big-picture-two-independent-apis-one-package)
 2. [Three organs: Cartographer / Membrane / Hand](#2-three-organs-cartographer--membrane--hand)
 3. [The segment substrate (Phase 8)](#3-the-segment-substrate-phase-8)
 4. [Per-thread heaps and the lock-free fast path (Phases 9-10)](#4-per-thread-heaps-and-the-lock-free-fast-path-phases-9-10)
@@ -35,46 +35,55 @@ cited in each section if in doubt.
 
 ---
 
-## 1. The big picture: two faces, one substrate
+## 1. The big picture: two independent APIs, one package
+
+`sefer-alloc` ships two APIs that share no backing memory. `Region<T>` /
+`Handle<T>` is a typed handle store over a third-party `slotmap::SlotMap` —
+it never touches the segment substrate below. `SeferAlloc` is a separate,
+OS-backed segment allocator with its own Cartographer/Hand tiers:
 
 ```
-  +-----------------------------------------------------------------+
-  |  MEMBRANE -- two faces (safe API surface)                        |
-  |                                                                  |
-  |   Handle face          |   alloc face                           |
-  |   Region<T>/Handle<T>  |   SeferAlloc                          |
-  |   typed, generational  |   unsafe impl GlobalAlloc              |
-  |   single-threaded core |   MT, production-ready (feature:       |
-  |   or concurrent tier   |   alloc-global + alloc-xthread)        |
-  +------------------------+-----------------------------------------+
-  |  CARTOGRAPHER -- 100% safe integer arithmetic                    |
-  |   size classes, bin tables, page maps, segment registries,       |
-  |   placement, decommit policy, O(1) owner lookup                  |
-  +-----------------------------------------------------------------+
-  |  SEGMENT SUBSTRATE -- self-hosted OS-backed memory (Phase 8+)   |
-  |   4 MiB SEGMENT-aligned spans; metadata carved from segments;   |
-  |   no Vec / Box / std::alloc on any path (M5)                    |
-  +-----------------------------------------------------------------+
-  |  HAND -- confined unsafe seams (see §2)                          |
-  +-----------------------------------------------------------------+
+  +--------------------------+   +-----------------------------------+
+  |  Region<T> / Handle<T>   |   |  SeferAlloc (alloc face)           |
+  |  typed, generational     |   |  unsafe impl GlobalAlloc            |
+  |  wraps slotmap::SlotMap  |   |  MT, production-ready (feature:     |
+  |  #![forbid(unsafe_code)] |   |  alloc-global + alloc-xthread)      |
+  |  own storage, no         |   |                                     |
+  |  segment substrate       |   |  CARTOGRAPHER -- 100% safe          |
+  |  (concurrent tier: an    |   |   integer arithmetic (size classes, |
+  |  optional confined       |   |   bin tables, page maps, segment    |
+  |  `hand` module of its    |   |   registries, placement, decommit,  |
+  |  own, unrelated to the   |   |   O(1) owner lookup)                |
+  |  alloc face's Hand)      |   |                                     |
+  |                          |   |  SEGMENT SUBSTRATE -- self-hosted   |
+  |                          |   |   OS-backed memory (Phase 8+): 4 MiB|
+  |                          |   |   SEGMENT-aligned spans; metadata   |
+  |                          |   |   carved from segments; no Vec /    |
+  |                          |   |   Box / std::alloc on any path (M5) |
+  |                          |   |                                     |
+  |                          |   |  HAND -- confined unsafe seams      |
+  |                          |   |   (see SS2)                          |
+  +--------------------------+   +-----------------------------------+
 ```
-
-Both API faces live on the **same segment substrate**. The difference is the
-API surface:
 
 - `Region<T>` / `Handle<T>` -- a typed, generational handle store. A stale
   handle returns `None`, never undefined behaviour. The single-threaded core
-  wraps the audited `slotmap` crate and is `#![forbid(unsafe_code)]`. The
+  wraps the audited `slotmap` crate and is `#![forbid(unsafe_code)]`; it has
+  no OS segment, no page map, no page registry of its own. The
   concurrent tier (feature `experimental`) adds lock-free reads via `arc-swap`
-  (RCU, zero own `unsafe`) or `crossbeam-epoch` (one confined `unsafe` module).
+  (RCU, zero own `unsafe`) or `crossbeam-epoch` (one confined `unsafe` module) --
+  this is a separate, `Region`-scoped confined-`unsafe` seam, not the same
+  `Hand` organ the alloc face uses.
 - `SeferAlloc` -- `unsafe impl GlobalAlloc` over the per-thread segment heap.
   Enabled by feature `alloc-global`; cross-thread `dealloc` requires
   `alloc-xthread`. The `production` alias bundles
   `alloc-global + alloc-xthread + alloc-decommit + fastbin` as the recommended
   long-running deployment set.
 
-Full safety invariants for both faces: [INVARIANTS.md](INVARIANTS.md)
-(I1-I6 for the Handle face, M1-M8 for the alloc face).
+Full safety invariants for both APIs: [INVARIANTS.md](INVARIANTS.md)
+(I1-I6 for `Region`/`Handle`, M1-M8 for `SeferAlloc` -- the M-series
+invariants describe `SeferAlloc`'s own segment substrate only and do not
+apply to `Region<T>`, which has none).
 
 **Additional opt-in features** (default OFF, NOT part of `production` — see the
 feature table in [README.md](../README.md#feature-flags)):
@@ -104,7 +113,7 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 
 | Organ | Responsibility | Safety |
 |---|---|---|
-| **Cartographer** | All placement / free-list / compaction / decommit logic -- pure integer arithmetic over indices. Never touches memory directly. | `safe` |
+| **Cartographer** | All placement / free-list / decommit logic -- pure integer arithmetic over indices. Never touches memory directly. | `safe` |
 | **Membrane** | Typed API: `Handle<T>`, generation checks, lifetimes; `AllocCore::alloc` / `SeferAlloc::alloc` -- total, cannot express UB. | `safe` |
 | **Hand** | Confined `unsafe` seams that touch raw memory or issue OS syscalls. | `confined unsafe` |
 

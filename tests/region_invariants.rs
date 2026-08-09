@@ -2,9 +2,9 @@
 //!
 //! These encode invariants I1–I5 from `docs/INVARIANTS.md` as observable
 //! properties of [`Region`]/[`Handle`], with no access to private fields.
-//! Generation-saturation / slot-retirement is now `slotmap`'s responsibility,
-//! so the former white-box saturation tests are gone — saturation is asserted
-//! only as a black-box property (a reused slot never honours a stale handle).
+//! Generation wrap is `slotmap`'s responsibility (32-bit generation wraps
+//! after ~2^31 cycles), so saturation is asserted only as a black-box
+//! property (a reused slot does not honour a stale handle until wrap).
 
 use std::cell::Cell;
 use std::rc::Rc;

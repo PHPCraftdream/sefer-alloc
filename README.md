@@ -329,12 +329,15 @@ config is live: **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)**.
 
 ---
 
-## Two faces
+## Two independent APIs, one package
 
-`sefer-alloc` ships a second face over the same substrate — a typed
-handle store for slot-storage use cases. Generational handles instead
-of pointers; a stale handle returns `None`, never UB. This face needs
-no features beyond the default:
+`sefer-alloc` also ships `Region<T>` — a typed handle store for
+slot-storage use cases, independent of the `SeferAlloc` allocator below.
+`Region<T>` is a thin typed membrane over a third-party
+[`slotmap::SlotMap`](https://crates.io/crates/slotmap); it shares no
+backing memory, no segment substrate, and no allocator invariants with
+`SeferAlloc`. Generational handles instead of pointers; a stale handle
+returns `None`, never UB. This API needs no features beyond the default:
 
 ```rust
 use sefer_alloc::Region;
@@ -356,10 +359,12 @@ default build is `#![forbid(unsafe_code)]` at the top; the only
 `unsafe` comes from `slotmap`'s audited core wrapped by a thin typed
 membrane.
 
-The two faces share one substrate: SEGMENT-aligned (4 MiB) OS-backed
-spans, self-hosted metadata (no `Vec` / `HashSet` / `std::alloc` on
-any alloc path), per-thread heaps, non-intrusive cross-thread free
-through a per-segment MPSC ring. See
+`SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
+segment allocator: SEGMENT-aligned (4 MiB) OS-backed spans, self-hosted
+metadata (no `Vec` / `HashSet` / `std::alloc` on any alloc path),
+per-thread heaps, non-intrusive cross-thread free through a
+per-segment MPSC ring. `Region<T>` above does not use any of this — it
+is backed entirely by `slotmap`'s own storage. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute tour.
 
 Under `production`, the crate becomes `#![deny(unsafe_code)]` and every
@@ -469,34 +474,44 @@ one actually proves.
 
 ## Architecture & principles
 
-### Two faces, one substrate
+### Two independent APIs, one package
+
+`Region<T>`/`Handle<T>` and `SeferAlloc` share NO backing memory — corrected
+2026-08-09 per the static release audit's F5
+(`docs/reviews/2026-08-09-sefer-region-static-release-audit.md`); an earlier
+version of this section drew both as reaching into the same `HeapCore`/
+`AllocCore`/`SegmentTable` box via a shared Cartographer, which was false.
 
 ```
          ┌───────────────────┐         ┌────────────────────────┐
          │  Region<T>        │         │  SeferAlloc           │
          │  Handle<T>        │         │  #[global_allocator]   │
-         │  (safe membrane)  │         │  (unsafe trait impl)   │
-         └─────────┬─────────┘         └──────────┬─────────────┘
-                   │                              │
-                   ▼                              ▼
-         ┌─────────────────────────────────────────────────────┐
-         │  HeapCore (registry + stamp + xthread routing)      │
-         │  AllocCore (single-thread alloc/dealloc/realloc)    │
-         │  SegmentTable + page_map + bin_table + alloc_bitmap │
-         │  RemoteFreeRing (per-segment MPSC, non-intrusive)   │
-         │                                                     │
-         │  Hand (confined-unsafe seams):                      │
-         │    os::      mmap/VirtualAlloc, decommit/recommit   │
-         │    node::    intrusive free-list pointer r/w        │
-         │    numa::    mbind / VirtualAllocExNuma (opt-in)    │
-         └─────────────────────────────────────────────────────┘
+         │  (safe membrane,  │         │  (unsafe trait impl)   │
+         │  wraps slotmap,   │         │                        │
+         │  own storage)     │         │                        │
+         └───────────────────┘         └──────────┬─────────────┘
+                                                   │
+                                                   ▼
+                                    ┌─────────────────────────────────────────────────────┐
+                                    │  HeapCore (registry + stamp + xthread routing)      │
+                                    │  AllocCore (single-thread alloc/dealloc/realloc)    │
+                                    │  SegmentTable + page_map + bin_table + alloc_bitmap │
+                                    │  RemoteFreeRing (per-segment MPSC, non-intrusive)   │
+                                    │                                                     │
+                                    │  Hand (confined-unsafe seams):                      │
+                                    │    os::      mmap/VirtualAlloc, decommit/recommit   │
+                                    │    node::    intrusive free-list pointer r/w        │
+                                    │    numa::    mbind / VirtualAllocExNuma (opt-in)    │
+                                    └─────────────────────────────────────────────────────┘
 ```
 
-The same OS-backed segments serve both faces. The handle store reaches in via
-the safe Cartographer (slot tables + generation checks); the global allocator
-reaches in via the same Cartographer plus the documented `unsafe impl
-GlobalAlloc` aperture. The Hand is always the same three modules — there is
-no second copy of `mmap` somewhere else in the crate.
+Only `SeferAlloc` reaches into the OS-backed segment substrate — via the safe
+Cartographer plus the documented `unsafe impl GlobalAlloc` aperture. `Region<T>`
+is a separate, independent typed API entirely backed by third-party
+`slotmap::SlotMap`; it never touches the Cartographer, the segment substrate,
+or the Hand. The Hand is always the same three modules within `SeferAlloc` —
+there is no second copy of `mmap` somewhere else in the crate, and `Region<T>`
+has no `unsafe` of its own at all (`#![forbid(unsafe_code)]`).
 
 ### Three organs
 
