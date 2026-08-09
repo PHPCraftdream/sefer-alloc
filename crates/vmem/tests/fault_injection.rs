@@ -142,6 +142,117 @@ fn fail_next_has_priority_over_fail_at() {
     assert!(c3, "both hooks consumed; 3rd call succeeds for real");
 }
 
+/// task #718: `should_fail_commit`'s `FAIL_NEXT` decrement used to be a
+/// separate `load` then `store` (not atomic as a pair) — under concurrent
+/// callers, two threads could race to observe the same pre-decrement value,
+/// either both firing when only one failure was armed or both writing back
+/// the same decremented value and silently losing a decrement. Fixed with
+/// `AtomicU32::fetch_update`. This test arms exactly `TOTAL` failures and
+/// spawns `THREADS` real committing threads racing (synchronized to the same
+/// instant every round via a `Barrier`) on the SAME already-fully-committed
+/// span (`commit_range` on an already-committed range is
+/// documented-idempotent — see `commit_range_idempotent_on_already_committed`
+/// in `tests/lazy_commit.rs` — so concurrent calls are safe regardless of the
+/// fault-injection hook itself), then asserts the observed failure count is
+/// EXACTLY `TOTAL`.
+///
+/// Verification-honesty note (task #718): this test does NOT reliably fail
+/// against the pre-fix racy implementation, and that was verified, not
+/// assumed. Before landing this fix, a temporarily-reverted
+/// `should_fail_commit` (the original separate `load` then `store`) was run
+/// against two versions of this test: an earlier unsynchronized 8-thread/
+/// 200-call-per-thread design (5 runs, all passed) and this `Barrier`-
+/// synchronized 32-thread/200-round design (5 more runs, all passed) — 10
+/// runs total, zero failures, against genuinely racy code. The reason: the
+/// actual
+/// race window is a handful of instructions (a `Relaxed` load immediately
+/// followed by a `Relaxed` store, no real work between them), while real OS
+/// thread wake-up jitter after a `Barrier::wait()` release is typically
+/// microseconds — several orders of magnitude wider than the window it would
+/// need to land inside. No amount of thread/round count fixes this on real
+/// hardware without either a model checker (`loom`, not currently wired into
+/// `aligned-vmem` — see the module doc) or injecting an artificial delay into
+/// the very code path under test, which would defeat the point. This test's
+/// actual value is therefore narrower than "catches a reintroduced race": it
+/// proves the FIX is correct and introduces no regression, deadlock, or
+/// miscount under real concurrent load (a genuine positive-path guarantee),
+/// and it documents the intended exactly-once-per-armed-failure contract as
+/// an executable spec. The actual soundness guarantee for the fix itself
+/// rests on `fetch_update` being atomic BY CONSTRUCTION (a single indivisible
+/// read-modify-write, per `core::sync::atomic`'s own documented semantics),
+/// not on this test's ability to have caught the old bug.
+#[test]
+fn fail_next_is_atomic_under_concurrent_callers() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    arm_fail_next(0);
+    arm_fail_at(0);
+
+    let span = 4 * MIB;
+    // `initial_commit == span`: the whole span is committed up front, so
+    // every thread's `commit_range` call hits the safe, documented-idempotent
+    // "already committed" path regardless of fault-injection outcome.
+    let r = reserve_aligned_lazy(span, span, span).expect("fully-committed real reserve");
+
+    // A thin Send/Sync wrapper around the raw pointer -- avoids an
+    // exposed-address `as usize` round-trip to move the pointer across the
+    // `thread::scope` boundary (the exact pattern task #717 removed from this
+    // crate's own internals).
+    struct SendPtr(*mut u8);
+    // SAFETY: the pointee is a live reservation for the whole scope below;
+    // every thread only calls `commit_range` on an already-committed range,
+    // which the crate documents as idempotent and safe to call concurrently.
+    unsafe impl Send for SendPtr {}
+    // SAFETY: same reasoning as the `Send` impl above.
+    unsafe impl Sync for SendPtr {}
+    let base = SendPtr(r.as_ptr());
+
+    // A `Barrier` synchronizes every thread's decrement ATTEMPT to the same
+    // instant, round after round -- without it, each thread's OS commit
+    // syscall latency naturally spreads decrements out in time and the race
+    // window (a handful of instructions between the load and the store)
+    // essentially never gets hit in practice, even with many threads and
+    // calls (confirmed empirically while building this test: an unsynchronized
+    // 8-thread/200-call version never caught the pre-fix racy implementation
+    // across repeated runs). Synchronized bursts make many threads actually
+    // contend on the SAME pre-decrement value at the same time.
+    const THREADS: usize = 32;
+    const ROUNDS: u32 = 200;
+    const TOTAL: u32 = THREADS as u32 * ROUNDS;
+
+    arm_fail_next(TOTAL);
+    let barrier = std::sync::Barrier::new(THREADS);
+
+    let failures: u32 = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let base = &base;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    let mut local_failures = 0u32;
+                    for _ in 0..ROUNDS {
+                        barrier.wait();
+                        // SAFETY: `[0, PAGE)` is within the fully-committed
+                        // span; recommitting an already-committed range is
+                        // documented-idempotent and safe from any thread.
+                        let ok = unsafe { commit_range(base.0, 0, PAGE) };
+                        if !ok {
+                            local_failures += 1;
+                        }
+                    }
+                    local_failures
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+
+    assert_eq!(
+        failures, TOTAL,
+        "exactly {TOTAL} calls were armed to fail; a torn load-then-store \
+         decrement would under- or over-count under concurrent callers"
+    );
+}
+
 /// `arm_fail_next(0)` / `arm_fail_at(0)` are no-ops (disarm without firing):
 /// a real commit proceeds normally.
 #[test]

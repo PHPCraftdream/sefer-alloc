@@ -25,11 +25,24 @@
 //! is disarmed (0), `arm_fail_at`'s "fail the k-th" is checked. Both may be
 //! armed simultaneously.
 //!
-//! Process-wide `Relaxed` atomics (not thread-local): the intended caller is
-//! a single-writer allocator under test (owner-only discipline) where the
-//! arming test thread and the committing thread are the same thread, so no
-//! cross-thread ordering is required — this matches the hook's prior home in
-//! `sefer-alloc`'s `os.rs` exactly.
+//! Process-wide atomics (not thread-local): a test typically arms a fault
+//! from one thread and triggers the committing call from another (e.g. an
+//! `alloc-xthread` reclaim test spawning worker threads while the main test
+//! thread stays armed), so this module does NOT assume the arming and
+//! committing thread are the same (task #718 -- an earlier revision of this
+//! doc claimed exactly that "owner-only discipline" assumption and used
+//! `Relaxed` throughout on that basis; the assumption does not hold for
+//! multi-threaded consumers, so it is not a safe basis for the ordering
+//! choice). Concretely: [`arm_fail_at`]'s counter-reset-then-target-store is
+//! a payload-then-flag publish (the reset is the "payload", the target store
+//! is the "flag" that makes a fresh arming visible) and needs a
+//! Release/Acquire pair, not `Relaxed`, to guarantee a reader that observes
+//! the flag also observes the payload -- see [`arm_fail_at`] and
+//! [`should_fail_commit`]'s doc comments for the exact pairing. [`FAIL_NEXT`]'s
+//! decrement uses [`AtomicU32::fetch_update`] (a genuine atomic
+//! read-modify-write) instead of a separate load then store, which would
+//! otherwise race under concurrent callers and lose or duplicate a
+//! decrement.
 //!
 //! Zero cost when the feature is off: this entire module is compiled out
 //! (`#[cfg(feature = "fault-injection")]` on the `mod` declaration in
@@ -67,9 +80,17 @@ pub fn arm_fail_next(n: u32) {
 ///
 /// Resets the internal call counter, so arming always counts from zero.
 /// Checked AFTER [`arm_fail_next`]'s hook.
+///
+/// task #718: the counter reset is the "payload" and the target store is the
+/// "flag" a reader gates on ([`should_fail_commit`] only inspects
+/// [`FAIL_AT_COUNTER`] once it has observed [`FAIL_AT_TARGET`] `> 0`) — a
+/// `Release` store here, paired with the `Acquire` load there, guarantees a
+/// reader that observes a freshly-armed target also observes the zeroed
+/// counter, even when the arming and committing calls run on different
+/// threads.
 pub fn arm_fail_at(k: u32) {
     FAIL_AT_COUNTER.store(0, Ordering::Relaxed);
-    FAIL_AT_TARGET.store(k, Ordering::Relaxed);
+    FAIL_AT_TARGET.store(k, Ordering::Release);
 }
 
 /// Internal: consult both hooks for the current real commit call. Returns
@@ -80,12 +101,27 @@ pub fn arm_fail_at(k: u32) {
 // unused whenever `mock` is enabled alongside `fault-injection`.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 pub(crate) fn should_fail_commit() -> bool {
-    let next = FAIL_NEXT.load(Ordering::Relaxed);
-    if next > 0 {
-        FAIL_NEXT.store(next - 1, Ordering::Relaxed);
+    // task #718: `fetch_update` performs the load-check-decrement as one
+    // atomic read-modify-write, closing the race a separate `load` then
+    // `store` had under concurrent callers (two threads could both observe
+    // the same pre-decrement value and either both fire when only one
+    // failure was armed, or both write back the same decremented value and
+    // silently lose a decrement).
+    let fired = FAIL_NEXT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            // `then_some` evaluates its argument EAGERLY (before the call),
+            // so `next - 1` would underflow-panic when `next == 0` even
+            // though the resulting `Option` would be `None`; `then` with a
+            // closure evaluates lazily, only when `next > 0`.
+            (next > 0).then(|| next - 1)
+        })
+        .is_ok();
+    if fired {
         return true;
     }
-    let target = FAIL_AT_TARGET.load(Ordering::Relaxed);
+    // task #718: `Acquire` pairs with `arm_fail_at`'s `Release` store on
+    // `FAIL_AT_TARGET` — see that function's doc comment.
+    let target = FAIL_AT_TARGET.load(Ordering::Acquire);
     if target > 0 {
         let prev = FAIL_AT_COUNTER.fetch_add(1, Ordering::Relaxed);
         let call_number = prev + 1; // 1-based
