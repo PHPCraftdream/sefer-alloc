@@ -92,9 +92,10 @@
 //! on one slot with the victim frozen the whole time, a wrap-around ABA would
 //! take `2^48 / 100_000 / (3600 · 24 · 365) ≈ 89 years` — effectively
 //! unreachable in any process lifetime. (A 32-bit tag, by contrast, gives only
-//! ~2^32 pushes ≈ 43 s of frozen-victim churn — a probabilistic hazard, not a
-//! structural non-hazard.) Widening the index half shrinks this budget; a
-//! caller choosing `INDEX_BITS` trades index range against tag headroom.
+//! `2^32 / 100_000 / 3600 ≈ 12 hours` of frozen-victim churn at the SAME
+//! 100k pushes/sec rate — a probabilistic hazard, not a structural
+//! non-hazard.) Widening the index half shrinks this budget; a caller
+//! choosing `INDEX_BITS` trades index range against tag headroom.
 //!
 //! # loom — the tests run against THIS type
 //!
@@ -188,14 +189,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Capping at compile time closes that class of bug structurally instead of
     /// requiring every caller to separately exclude `TAIL` at runtime.
     ///
-    /// This `const` is only forced to evaluate by the `let () = Self::_CHECK_BITS;`
-    /// reference inside [`pack`](Self::pack) — it is not a universal guard fired by
-    /// every associated item of `TaggedIndex<INDEX_BITS>`. Calling
-    /// [`unpack`](Self::unpack)/[`INDEX_MASK`](Self::INDEX_MASK)/other associated
-    /// items in isolation, without ever calling `pack`, does not trigger this check.
-    /// In practice every real [`TaggedIndexStack`] construction routes through
-    /// `pack`, so the guard fires before any out-of-range width is reachable in
-    /// normal use.
+    /// This `const` is forced to evaluate from BOTH [`pack`](Self::pack) (via a
+    /// `let () = Self::_CHECK_BITS;` reference) AND `INDEX_MASK`'s
+    /// own initializer — since [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
+    /// and [`is_empty`](Self::is_empty) all reference `INDEX_MASK` directly, every
+    /// mask-touching associated item of `TaggedIndex<INDEX_BITS>` forces this
+    /// guard, not just `pack`. There is no remaining path to an out-of-range
+    /// width reaching any of these items unchecked.
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 32,
         "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \
@@ -205,16 +205,30 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 
     /// Bit-mask for the low [`INDEX_BITS`](Self) (the index half), e.g. `0xFFFF`
     /// for `INDEX_BITS = 16`. Also the [`empty_index`](Self::empty_index) value.
-    pub const INDEX_MASK: u64 = (1u64 << INDEX_BITS) - 1;
+    ///
+    /// Forces `_CHECK_BITS` to evaluate here too (not just
+    /// inside [`pack`](Self::pack)), since [`unpack`](Self::unpack),
+    /// [`empty_index`](Self::empty_index), and [`is_empty`](Self::is_empty) all
+    /// reference `INDEX_MASK` directly — this closes the residual gap where an
+    /// out-of-range `INDEX_BITS` could reach those associated items without
+    /// ever calling `pack` first.
+    pub const INDEX_MASK: u64 = {
+        let () = Self::_CHECK_BITS;
+        (1u64 << INDEX_BITS) - 1
+    };
 
     /// Number of bits carrying the tag (`64 - INDEX_BITS`). The tag wraps at
     /// `2^TAG_BITS`.
     pub const TAG_BITS: u32 = 64 - INDEX_BITS;
 
     /// Pack `(index, tag)` into one `u64`. `index` MUST be `< 2^INDEX_BITS`; a
-    /// wider value silently collides with the tag bits (the caller — the stack —
-    /// guarantees this by construction, since indices come from
-    /// [`push`](TaggedIndexStack::push)'s `< INDEX_MASK` contract).
+    /// wider value is silently TRUNCATED to its low `INDEX_BITS` bits (the
+    /// `& Self::INDEX_MASK` below masks it before OR-ing with the tag, so the
+    /// two never actually collide bitwise — the failure mode is a wrong index
+    /// round-tripping out of [`unpack`](Self::unpack), not tag corruption).
+    /// The caller — the stack — guarantees the `< 2^INDEX_BITS` precondition by
+    /// construction, since indices come from
+    /// [`push`](TaggedIndexStack::push)'s `< INDEX_MASK` contract.
     #[must_use]
     pub const fn pack(index: u64, tag: u64) -> u64 {
         // Force the compile-time bounds check to be evaluated.
@@ -274,6 +288,14 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// pairing so a pop that observes a slot as the head (via its `Acquire` CAS
 /// success) also sees the link a pusher wrote (via its `Release` store) before
 /// publishing that slot as head.
+///
+/// # Stability
+///
+/// This trait is intentionally OPEN to external implementation — slot-resident
+/// links in caller-owned storage (rather than an owned array like
+/// [`ArrayLinks`]) is the whole design point. New methods will only ever be
+/// added with default bodies (or via a major version bump); this trait is not
+/// sealed.
 pub trait Links {
     /// Load the "next" link for `index` with `Acquire` ordering.
     fn load_next(&self, index: u32) -> u32;

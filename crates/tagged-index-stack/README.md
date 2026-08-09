@@ -48,8 +48,9 @@ provides an owned `[AtomicU32; N]` backing.
 With `INDEX_BITS = 16` the tag gets 48 bits, wrapping at `2^48 ≈ 2.8 × 10^14`. A
 wrap only reopens ABA if a victim is parked across an entire wrap's worth of
 pushes on one slot: at an unrealistic 100k pushes/sec that is **~89 years** —
-a structural non-hazard. A 32-bit tag, by contrast, gives only ~43 s of
-frozen-victim churn (probabilistic). Wider indices shrink this budget.
+a structural non-hazard. A 32-bit tag, by contrast, gives only **~12 hours**
+of frozen-victim churn at the SAME 100k pushes/sec rate (probabilistic).
+Wider indices shrink this budget.
 
 ## Portability limit — requires 64-bit atomics
 
