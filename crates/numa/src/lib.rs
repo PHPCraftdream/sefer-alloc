@@ -213,10 +213,26 @@ pub fn current_node() -> Option<u32> {
 ///
 /// # Safety
 ///
-/// `[base, base + len)` must be a valid OS reservation owned exclusively by
-/// the caller for the duration of the call. The function never reads or writes
-/// payload bytes — it only passes the range to `mbind(2)` which sets kernel
-/// page-policy metadata.
+/// When `node != NO_NODE` and `len != 0`, `[base, base + len)` must be a
+/// valid OS reservation owned exclusively by the caller for the duration of
+/// the call. When either condition is false, the function returns
+/// immediately without touching `base` at all (see the short-circuit at the
+/// top of the body) — `base` need not be valid, dereferenceable, or even
+/// non-dangling in that case, and any address value is permitted.
+///
+/// task #725 (rust-intel audit §B5): this doc previously stated the
+/// `[base, base+len)` precondition UNCONDITIONALLY, even though the function
+/// itself never touches `base` when the node/len short-circuit fires above.
+/// Every current test call site relies on exactly that short-circuit rather
+/// than a genuinely valid reservation (`tests/mock_dispatch.rs` passes a
+/// dummy `0x1000 as *mut u8`; `tests/smoke.rs` passes a stack-array pointer
+/// under `mock`/`NO_NODE`/`len == 0`) — under the old wording those call
+/// sites were UB-by-contract despite being harmless in practice, and a
+/// future edit reordering the short-circuit after a real platform call would
+/// have silently turned them into real UB with no doc contradiction to catch
+/// it. The function never reads or writes payload bytes in either case — it
+/// only passes the range to `mbind(2)` (Linux) or a platform no-op, both of
+/// which set/ignore kernel page-policy metadata, never payload memory.
 pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 {
         return;
