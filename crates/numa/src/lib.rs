@@ -797,16 +797,32 @@ mod platform {
     /// memory to a NUMA node on Windows — there is no post-reservation
     /// equivalent to Linux `mbind(2)`.
     ///
-    /// Strategy (mirrors `aligned-vmem`'s own Windows reservation): over-reserve
-    /// `size + align` bytes via `VirtualAllocExNuma`, find the aligned chunk
-    /// inside, and adopt the WHOLE reservation into an `aligned_vmem::Reservation`
-    /// via [`aligned_vmem::Reservation::from_raw_parts`]. The handle's `Drop` /
-    /// release path will `VirtualFree(MEM_RELEASE)` the entire over-reserved
+    /// Strategy (mirrors `aligned-vmem`'s own Windows reservation,
+    /// `win_reserve_commit` in `crates/vmem/src/lib.rs`): over-reserve
+    /// `size + align` bytes as ADDRESS SPACE ONLY (`MEM_RESERVE`, no
+    /// `MEM_COMMIT`), find the aligned chunk inside, then commit only the
+    /// caller-requested `size` bytes at that aligned sub-range (`MEM_COMMIT`,
+    /// still via `VirtualAllocExNuma` so the NUMA node preference is honored
+    /// at the point physical pages actually get allocated — reservation alone
+    /// allocates no physical memory, so the node argument is immaterial to
+    /// it). The WHOLE `over`-byte reservation is then adopted into an
+    /// `aligned_vmem::Reservation` via [`aligned_vmem::Reservation::from_raw_parts`];
+    /// its `Drop` / release path will `VirtualFree(MEM_RELEASE)` the entire
     /// span exactly once.
+    ///
+    /// task #724 (rust-intel audit): the previous version committed the
+    /// FULL `over = size + align` bytes in one `MEM_RESERVE | MEM_COMMIT`
+    /// call -- up to double the commit-charge of the byte range the caller
+    /// actually asked for and can use (e.g. `align == size` commits `2 *
+    /// size`), silently contradicting this function's own doc claim that it
+    /// "mirrors aligned-vmem's own Windows reservation" (aligned-vmem's
+    /// `win_reserve_commit` has always reserved `over` but committed only
+    /// `commit_len <= size`). Fixed to the same two-call reserve-then-commit
+    /// shape.
     ///
     /// Returns `None` on contract violation (`align` not a power of two `>= PAGE`,
     /// `size` zero or not a multiple of `PAGE`) or when the OS refuses the
-    /// reservation (OOM / no memory on the requested node).
+    /// reservation or the commit (OOM / no memory on the requested node).
     #[cfg(feature = "vmem-integration")]
     fn reserve_aligned_numa(
         size: usize,
@@ -820,15 +836,18 @@ mod platform {
         let over = size.checked_add(align)?;
 
         // SAFETY: `VirtualAllocExNuma(GetCurrentProcess(), NULL, over,
-        // MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE, node)` reserves+commits
-        // `over` bytes on (preferred) `node`, returning the base or NULL.
-        // We treat NULL as OOM and bail.
+        // MEM_RESERVE, PAGE_READWRITE, node)` reserves (but does not commit)
+        // `over` bytes of address space, returning the base or NULL on
+        // refusal. `node` has no effect on a reserve-only call (no physical
+        // pages are allocated yet); passing it through is harmless and keeps
+        // this one call site rather than adding a second, non-NUMA
+        // `VirtualAlloc` import just for the reserve step.
         let raw = unsafe {
             VirtualAllocExNuma(
                 GetCurrentProcess(),
                 core::ptr::null_mut(),
                 over,
-                MEM_RESERVE | MEM_COMMIT,
+                MEM_RESERVE,
                 PAGE_READWRITE,
                 node,
             )
@@ -840,17 +859,46 @@ mod platform {
         let base_u = (raw_u + align - 1) & !(align - 1);
         let base = base_u as *mut u8;
 
+        // SAFETY: `VirtualAllocExNuma(.., base, size, MEM_COMMIT, ..,
+        // node)` commits exactly the caller-requested `size` bytes at the
+        // aligned sub-range within the just-reserved `over`-byte region
+        // (`base + size <= raw + over` by construction: `base <= raw +
+        // align - 1` rounds down to `raw + align`, and `over = size +
+        // align`). This is the call that actually allocates physical pages,
+        // so `node` takes effect here. NULL indicates commit-charge
+        // exhaustion; the reservation is released and `None` returned.
+        let committed = unsafe {
+            VirtualAllocExNuma(
+                GetCurrentProcess(),
+                base.cast(),
+                size,
+                MEM_COMMIT,
+                PAGE_READWRITE,
+                node,
+            )
+        };
+        if committed.is_null() {
+            // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
+            // has not been handed to any caller yet; releasing before
+            // returning `None` cannot double-free.
+            unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
+            return None;
+        }
+
         // SAFETY of from_raw_parts:
         // - `base` is non-null, valid for `size` bytes (it's inside the
         //   `over`-byte reservation since `align <= over - size`), aligned
-        //   to `align` (by construction above).
+        //   to `align` (by construction above), and its `size`-byte range
+        //   was just committed above.
         // - `raw` is the start of the OS reservation, non-null.
         // - `over = size + align` is the full reservation length, multiple of PAGE.
         // - `align` was just used to align `base` — same value.
         // - The reservation will be released exactly once when the returned
         //   handle's `Drop` fires (or via `release` after `into_parts`).
-        // - The reservation was created with `MEM_RESERVE | MEM_COMMIT` →
-        //   `VirtualFree(MEM_RELEASE)` will accept it.
+        // - The reservation was created with `MEM_RESERVE` and the `size`-byte
+        //   sub-range separately committed with `MEM_COMMIT` →
+        //   `VirtualFree(MEM_RELEASE)` on the WHOLE `over`-byte span will
+        //   accept it (matches aligned-vmem's own `win_reserve_commit` shape).
         let r = unsafe {
             aligned_vmem::Reservation::from_raw_parts(base, size, raw as *mut u8, over, align)
         };
@@ -886,12 +934,22 @@ mod platform {
             fl_protect: u32,
             nnd_preferred: u32,
         ) -> *mut core::ffi::c_void;
+        // task #724: needed to release a reservation whose commit step
+        // failed, before any `aligned_vmem::Reservation` (whose own `Drop`
+        // would otherwise own that release) has been constructed.
+        fn VirtualFree(
+            lp_address: *mut core::ffi::c_void,
+            dw_size: usize,
+            dw_free_type: u32,
+        ) -> i32;
     }
 
     #[cfg(feature = "vmem-integration")]
     const MEM_RESERVE: u32 = 0x0000_2000;
     #[cfg(feature = "vmem-integration")]
     const MEM_COMMIT: u32 = 0x0000_1000;
+    #[cfg(feature = "vmem-integration")]
+    const MEM_RELEASE: u32 = 0x0000_8000;
     #[cfg(feature = "vmem-integration")]
     const PAGE_READWRITE: u32 = 0x04;
 }
