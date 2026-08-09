@@ -56,6 +56,29 @@ huge-pages = []
 # Lets any consumer deterministically test its OOM-handling on any target
 # (including macOS and miri) without exhausting real commit charge. Off by
 # default; NOT part of any bundle.
+#
+# CARGO FEATURE-UNIFICATION HAZARD (task #715, rust-intel audit MEDIUM §C10)
+# — read before enabling: this is a NON-ADDITIVE, backend-REPLACING feature.
+# Cargo unifies features across a build's WHOLE dependency graph, not per
+# edge — so if ANY crate anywhere downstream of your build (including a
+# sibling workspace member's own `[dev-dependencies]`) enables
+# `aligned-vmem/mock`, every OTHER consumer in that SAME build silently gets
+# the mock backend too: `reserve_aligned`/`recommit`/`decommit`/etc. stop
+# touching the real OS for THEM as well, with no compile error and no
+# warning. Enable this feature ONLY in a leaf test/dev target (a `[[test]]`,
+# an integration-test crate, or a `[dev-dependencies]` entry in a binary that
+# is never itself a library dependency of anything else) — never in a
+# library's own `[dependencies]`, and never in a `[dev-dependencies]` entry
+# that could be reached from more than one build target in the same
+# workspace. A stronger fix (a build-time `--cfg` flag instead of a Cargo
+# feature, matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg
+# flags do not unify) was evaluated and DEFERRED: this crate has not yet had
+# its first `crates.io` publish (task #659), so removing `mock` as a Cargo
+# feature later remains possible without an immediate breaking-change cost,
+# and converting now would be a large mechanical change (every test file,
+# `ci.yml`, this crate's whole feature-powerset CI matrix) for a hazard that,
+# today, has zero real external consumers to protect. Revisit if/when this
+# crate gains external consumers and the hazard is reported for real.
 mock = []
 
 # Real-path commit fault injection: an armed "fail the next N / fail exactly

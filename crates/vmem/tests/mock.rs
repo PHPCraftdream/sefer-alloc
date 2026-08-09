@@ -25,7 +25,8 @@ fn records_reserve_and_decommit() {
         calls[0],
         Call::Reserve {
             size,
-            align
+            align,
+            ..
         } if size == 2 * MIB && align == 2 * MIB
     ));
     assert!(matches!(calls[1], Call::Decommit { start: 0, .. }));

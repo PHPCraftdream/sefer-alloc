@@ -21,16 +21,42 @@
 //! ```
 //!
 //! Runnable form: `tests/mock.rs`.
+//!
+//! # Cargo feature-unification hazard (task #715)
+//!
+//! `mock` is a NON-ADDITIVE, backend-REPLACING feature, and Cargo unifies
+//! features across a build's WHOLE dependency graph, not per edge. If ANY
+//! crate anywhere downstream of your build enables `aligned-vmem/mock`
+//! (including a sibling workspace member's own `[dev-dependencies]`), every
+//! OTHER consumer in that SAME build silently gets the mock backend too —
+//! with no compile error and no warning. **Enable this feature only in a
+//! leaf test/dev target — never in a library's own `[dependencies]`, and
+//! never in a shared `[dev-dependencies]` entry reachable from more than one
+//! build target in the same workspace.** See the `mock` feature's own doc
+//! comment in `Cargo.toml` for the full reasoning and the stronger
+//! alternative (a `--cfg` flag instead of a Cargo feature) considered and
+//! deferred for this crate's first publish.
 
 use core::cell::RefCell;
 
 use crate::error::VmemError;
 
 /// One recorded invocation of a public `aligned-vmem` function under the mock.
+///
+/// task #715 (rust-intel audit MEDIUM §C1a): every struct-like variant below
+/// ALSO carries its own `#[non_exhaustive]` (the enum-level one above only
+/// reserves the right to add whole VARIANTS — adding a FIELD to an existing
+/// variant is still semver-major for every downstream `Call::Reserve { size,
+/// align }` match without the variant-level marker too; `ReserveLazy` already
+/// grew `initial_commit` after `Reserve`/`ReserveHuge` were designed, so this
+/// is not a hypothetical). Decided now, before this crate's first publish
+/// (task #659) — adding it retroactively after publish would itself be the
+/// breaking change this is meant to prevent.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Call {
     /// [`crate::try_reserve_aligned`] / [`crate::reserve_aligned`].
+    #[non_exhaustive]
     Reserve {
         /// Requested reservation size in bytes.
         size: usize,
@@ -38,6 +64,7 @@ pub enum Call {
         align: usize,
     },
     /// [`crate::reserve_aligned_lazy`] (feature `lazy-commit`).
+    #[non_exhaustive]
     ReserveLazy {
         /// Requested reservation size in bytes.
         size: usize,
@@ -47,6 +74,7 @@ pub enum Call {
         initial_commit: usize,
     },
     /// [`crate::reserve_aligned_huge`] (feature `huge-pages`).
+    #[non_exhaustive]
     ReserveHuge {
         /// Requested reservation size in bytes.
         size: usize,
@@ -54,6 +82,7 @@ pub enum Call {
         align: usize,
     },
     /// [`crate::release`] (from `into_parts` + manual release).
+    #[non_exhaustive]
     Release {
         /// Reservation base address, as `usize`.
         reservation: usize,
@@ -61,6 +90,7 @@ pub enum Call {
         reservation_len: usize,
     },
     /// [`crate::decommit`].
+    #[non_exhaustive]
     Decommit {
         /// Span base address, as `usize`.
         base: usize,
@@ -70,6 +100,7 @@ pub enum Call {
         end: usize,
     },
     /// [`crate::decommit_lazy`].
+    #[non_exhaustive]
     DecommitLazy {
         /// Span base address, as `usize`.
         base: usize,
@@ -79,6 +110,7 @@ pub enum Call {
         end: usize,
     },
     /// [`crate::recommit`].
+    #[non_exhaustive]
     Recommit {
         /// Span base address, as `usize`.
         base: usize,
@@ -88,6 +120,7 @@ pub enum Call {
         end: usize,
     },
     /// [`crate::commit_range`] (feature `lazy-commit`).
+    #[non_exhaustive]
     CommitRange {
         /// Span base address, as `usize`.
         base: usize,

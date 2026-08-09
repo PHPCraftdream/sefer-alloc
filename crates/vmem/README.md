@@ -55,7 +55,11 @@ accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback), `mock` (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
-backend with a stub), and `fault-injection` (`fault_injection::arm_fail_next` /
+backend with a stub — **⚠ Cargo feature-unification hazard: enable only in a
+leaf test/dev target, never in a library's own `[dependencies]` or a shared
+`[dev-dependencies]` entry — see `mock`'s own module doc and its `Cargo.toml`
+feature comment for the full reasoning, task #715**), and `fault-injection`
+(`fault_injection::arm_fail_next` /
 `arm_fail_at` — an armed hook on the REAL `try_commit_range` syscall path,
 DISTINCT from `mock`: it changes nothing about which backend runs, it only
 forces a specific real commit call to report failure, for a consumer that
