@@ -36,16 +36,25 @@
 //!
 //! Loom cannot rebuild the crate with a deliberately-broken ordering, so the
 //! two broken protocols are transcribed here as `#[should_panic]` models over
-//! `loom::sync::atomic` — the exact shape `RacyPtrCell` implements, with the ONE
-//! ordering/condition flipped:
+//! `loom::sync::atomic`, each with the ONE ordering/condition under test
+//! flipped:
 //!
-//! - `counterfactual_relaxed_publish_loses_happens_before` — publishes the real
-//!   pointer with `Relaxed` instead of `Release`; loom finds the interleaving
-//!   where a loser reads the pointer without observing the pointee write.
-//! - `counterfactual_spin_on_ready_livelocks_on_oom_rollback` — a loser spins
-//!   `while != READY` instead of `while == INITIALIZING`; after the winner's OOM
-//!   rollback the loser spins past a bound → the livelock this crate's
-//!   `== INITIALIZING` rule exists to prevent.
+//! - `counterfactual_relaxed_publish_loses_happens_before` — models the SAME
+//!   `AtomicPtr`-with-sentinel shape `RacyPtrCell` implements, but publishes
+//!   the real pointer with `Relaxed` instead of `Release`; loom finds the
+//!   interleaving where a loser reads the pointer without observing the
+//!   pointee write.
+//! - `counterfactual_spin_on_ready_livelocks_on_oom_rollback` — models the
+//!   SAME three-state `UNINIT -> INITIALIZING -> READY` protocol, but over a
+//!   simpler `AtomicU8` 3-state encoding rather than the packed
+//!   `AtomicPtr`-with-sentinel `RacyPtrCell` actually uses (task #710: this
+//!   simplification is deliberate — the livelock property under test depends
+//!   only on the state machine's transitions, not on how a state is encoded
+//!   into bits — but it means this ONE counterfactual is not literally
+//!   `RacyPtrCell`'s exact bit-level shape, unlike the other one above). A
+//!   loser spins `while != READY` instead of `while == INITIALIZING`; after
+//!   the winner's OOM rollback the loser spins past a bound → the livelock
+//!   this crate's `== INITIALIZING` rule exists to prevent.
 //!
 //! If either counterfactual PASSES (does not panic) the suite is vacuous.
 //!
@@ -148,6 +157,9 @@ fn real_exactly_once_two_threads() {
         let count = init_count.load(Ordering::Relaxed);
         assert_eq!(count, 1, "exactly ONE thread must run init (got {count})");
 
+        // SAFETY: r1 (== r2) came from make_payload()'s Box::leak, via a
+        // successful get_or_try_init; reclaimed exactly once here after all
+        // threads joined.
         unsafe { reclaim_payload(r1) };
     });
 }
@@ -213,6 +225,9 @@ fn real_exactly_once_three_threads() {
         let count = init_count.load(Ordering::Relaxed);
         assert_eq!(count, 1, "exactly ONE init (got {count})");
 
+        // SAFETY: r_main (== r1 == r2) came from make_payload()'s Box::leak,
+        // via a successful get_or_try_init; reclaimed exactly once here
+        // after all threads joined.
         unsafe { reclaim_payload(r_main) };
     });
 }
@@ -260,6 +275,9 @@ fn real_fast_path_reentry_same_pointer() {
             count, 1,
             "exactly ONE init across both threads (got {count})"
         );
+        // SAFETY: r1 (== r2) came from make_payload()'s Box::leak, via a
+        // successful get_or_try_init; reclaimed exactly once here after all
+        // threads joined.
         unsafe { reclaim_payload(r1) };
     });
 }
@@ -335,6 +353,9 @@ fn real_survives_oom_rollback_two_threads() {
             .get()
             .expect("cell must be READY after the survivor succeeds");
         assert_eq!(ready, winner, "the READY pointer is the survivor's");
+        // SAFETY: winner came from make_payload()'s Box::leak, via the
+        // single successful get_or_try_init publish; reclaimed exactly once
+        // here after all threads joined.
         unsafe { reclaim_payload(winner) };
     });
 }
@@ -575,6 +596,9 @@ fn counterfactual_relaxed_publish_loses_happens_before() {
         let r1 = t1.join().unwrap();
         let r2 = t2.join().unwrap();
         assert_eq!(r1, r2, "both threads observe the same pointer");
+        // SAFETY: r1 (== r2) came from `Box::into_raw` inside
+        // `ensure_relaxed_publish_broken_and_check`'s winner branch;
+        // reclaimed exactly once here after both threads joined.
         unsafe { drop(Box::from_raw(r1)) };
     });
 }
@@ -594,8 +618,10 @@ const STATE_READY: u8 = 2;
 /// bound is the failure we assert.
 // The broken protocol's retry loop always return/panics on the FIRST iteration
 // in this model (winner returns, loser panics on the livelock) — that early exit
-// IS the shape under test; the outer `loop` faithfully mirrors the real
-// `heap_ptr` retry structure.
+// IS the shape under test; the outer `loop` faithfully mirrors
+// `RacyPtrCell::get_or_try_init`'s own retry loop structure (task #710: this
+// comment previously named `heap_ptr`, a stale identifier from the parent
+// repo this crate was extracted from — this crate has no `heap_ptr`).
 #[allow(clippy::never_loop)]
 fn ensure_spin_on_ready_broken(
     state: &Arc<AtomicU8>,

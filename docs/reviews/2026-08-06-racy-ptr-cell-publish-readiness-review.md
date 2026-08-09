@@ -466,6 +466,23 @@ from rustdoc; it does not remove it from the callable or the semver surface.
    wants the public surface minimal on day one; fix 1+2 alone closes the
    defect.
 
+**Resolution note (appended, task #710, 2026-08-09):** this finding is
+CLOSED — fix 1 above (conditional step 4) landed in `src/lib.rs:471-474`
+(`postcondition_holds` gates the restore store, matching this section's
+own suggestion exactly), and a real-type loom regression test
+(`tests/loom_racy_ptr_cell.rs`, `real_probe_rollback_does_not_clobber_concurrent_winner`)
+now proves the clobber cannot recur. The rust-intel audit that queued
+this task independently confirmed this was already fixed by the time it
+ran (`docs/reviews/2026-08-07-racy-ptr-cell-rust-intel-audit.md`'s "NO
+CODE CHANGE NEEDED" note) and flagged only that this section's own
+snapshot — describing the pre-fix behavior as still live — could
+mislead a reader who does not cross-reference the newer audit. This note
+closes that gap; no further action needed. Suggested fix 3 (feature-gate
+the `dbg_*` hooks) was independently evaluated and REJECTED — see task
+#710's commit for the chosen alternative (promote both hooks to
+documented, non-`#[doc(hidden)]` public API instead) and the crate
+README's "Test-probe API stability" section for the full rationale.
+
 ### 5.2 [LOW] `new()` is a runtime panic, not a compile error, when not const-evaluated
 
 `src/lib.rs:179-183` (and the loom twin at `:194-197`) asserts

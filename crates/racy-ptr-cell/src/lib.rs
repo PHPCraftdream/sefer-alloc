@@ -299,7 +299,8 @@ impl<T> RacyPtrCell<T> {
     pub fn get(&self) -> Option<NonNull<T>> {
         let p = self.ptr.load(Ordering::Acquire);
         if Self::is_ready(p) {
-            // `is_ready` proved `p` non-null.
+            // SAFETY: `is_ready(p)` just proved `p` is non-null (neither null
+            // nor the sentinel).
             Some(unsafe { NonNull::new_unchecked(p) })
         } else {
             None
@@ -460,11 +461,24 @@ impl<T> RacyPtrCell<T> {
         }
     }
 
-    /// Test-only introspection: `true` iff the cell is currently `READY` (holds
-    /// a real, non-null, non-sentinel pointer). Not part of the value contract —
-    /// exists so tests can assert lazy-materialisation ordering without racing
+    /// Test-probe introspection: `true` iff the cell is currently `READY`
+    /// (holds a real, non-null, non-sentinel pointer). Says nothing about
+    /// the published *value* itself (that is [`RacyPtrCell::get`]'s
+    /// contract) — exists so a test (in this crate or a downstream
+    /// consumer's) can assert lazy-materialisation ordering without racing
     /// a concurrent init.
-    #[doc(hidden)]
+    ///
+    /// # Stability
+    ///
+    /// This is a deliberate, STABLE part of the public API (task #710) — a
+    /// `dbg_`-prefixed test-probe surface, not a hidden implementation
+    /// detail. It carries the crate's normal semver guarantee like any
+    /// other public item; a `#[doc(hidden)]` posture was rejected precisely
+    /// because it would advertise this function to downstream consumers'
+    /// tests (see [`RacyPtrCell::dbg_rollback_reenterable`]'s own doc) while
+    /// hiding it from the rustdoc those consumers would need to discover it
+    /// — see the crate README's "Test-probe API stability" section for the
+    /// full rationale.
     #[inline]
     #[must_use]
     pub fn dbg_is_ready(&self) -> bool {
@@ -508,7 +522,18 @@ impl<T> RacyPtrCell<T> {
     /// probe's final restore step accounts for that by only touching the cell
     /// when its own postcondition CAS actually re-won ownership (see the
     /// step-by-step comments in the body).
-    #[doc(hidden)]
+    ///
+    /// # Stability
+    ///
+    /// This is a deliberate, STABLE part of the public API (task #710), not
+    /// `#[doc(hidden)]`. This function is explicitly written to be called
+    /// FROM a downstream consumer's own test suite ("a consumer's test can
+    /// drive the rollback on a REAL, LIVE cell" above) — a `#[doc(hidden)]`
+    /// posture would have advertised it to those consumers while hiding it
+    /// from the rustdoc they would need to find it in the first place, an
+    /// unresolvable contradiction the crate's rust-intel audit caught. See
+    /// the crate README's "Test-probe API stability" section for the full
+    /// rationale and the rejected feature-flag alternative.
     #[must_use]
     pub fn dbg_rollback_reenterable(&self) -> Option<bool> {
         // Step 1: only proceed if the cell is UNINIT (null). If it is already

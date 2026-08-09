@@ -54,7 +54,9 @@ fn init_runs_once_then_fast_path() {
     // get() agrees.
     assert_eq!(cell.get(), Some(p1));
 
-    // Reclaim the leak.
+    // SAFETY: p1 was leaked exactly once by leak()'s Box::leak and never
+    // freed since; reclaiming it here (once, at test end) pairs with that
+    // leak.
     unsafe { drop(Box::from_raw(p1.as_ptr())) };
 }
 
@@ -112,6 +114,9 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     assert_eq!(cell.get(), Some(p));
     // SAFETY: p is the leaked, still-live payload.
     assert_eq!(unsafe { p.as_ref().marker }, 0xABCD);
+    // SAFETY: p was leaked exactly once by leak()'s Box::leak (via the
+    // background thread's init closure) and never freed since; reclaiming
+    // it here (once, at test end) pairs with that leak.
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }
 
@@ -150,6 +155,9 @@ fn oom_rolls_back_and_retry_succeeds() {
     assert_eq!(cell.get(), Some(p));
     // SAFETY: p is the leaked, still-live payload.
     assert_eq!(unsafe { p.as_ref().marker }, 0x9999);
+    // SAFETY: p was leaked exactly once by leak()'s Box::leak on the retry
+    // attempt and never freed since; reclaiming it here (once, at test end)
+    // pairs with that leak.
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }
 
@@ -208,5 +216,8 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     assert!(cell.dbg_is_ready());
     assert_eq!(cell.get(), Some(p));
 
+    // SAFETY: p was leaked exactly once by leak()'s Box::leak and never
+    // freed since; reclaiming it here (once, at test end) pairs with that
+    // leak.
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }

@@ -43,6 +43,35 @@ without the correct code:
 RUSTFLAGS="--cfg loom" cargo test --release --test loom_racy_ptr_cell
 ```
 
+## Test-probe API stability
+
+`RacyPtrCell` exposes two `dbg_`-prefixed methods — `dbg_is_ready` and
+`dbg_rollback_reenterable` — that are NOT hidden from `rustdoc`. This is a
+deliberate posture decision (task #710), not an oversight:
+
+- `dbg_rollback_reenterable`'s own doc explicitly invites downstream
+  consumers to call it FROM their own test suites, to drive the OOM-rollback
+  protocol on a real, live cell (e.g. a process-global registry chunk)
+  without a process-terminating OOM. A `#[doc(hidden)]` posture — the usual
+  default for a `dbg_*` diagnostic hook — would have hidden this function
+  from the very rustdoc a consumer needs to discover it in, while
+  simultaneously advertising it for their use: an unresolvable
+  contradiction, since a published `pub` item is callable regardless of
+  `#[doc(hidden)]`, which only affects documentation visibility, not the
+  semver surface.
+- The alternative considered — gating both methods behind a non-default
+  Cargo feature (e.g. `test-probes`) — was rejected as disproportionate:
+  both methods are already exercised unconditionally by this crate's own
+  `tests/cell_unit.rs` and `tests/loom_racy_ptr_cell.rs`, so feature-gating
+  them would require restructuring the whole existing test suite behind an
+  opt-in flag (plus a corresponding CI matrix addition) for two methods
+  whose only cost is a documented, semver-guaranteed public surface.
+
+Both methods carry the crate's ordinary semver guarantee: they are public
+API, not "test-only, may change or vanish any time" hidden internals. Their
+own doc comments each carry a "# Stability" section stating this
+explicitly.
+
 ## License
 
 MIT OR Apache-2.0.
