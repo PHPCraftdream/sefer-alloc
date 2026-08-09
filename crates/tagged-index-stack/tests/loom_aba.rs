@@ -218,38 +218,42 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
         });
 
         let a_result = ta.join().unwrap();
-        let (_b_popped_0, _b_held_1) = tb.join().unwrap();
+        let (_b_popped_0, b_held_1) = tb.join().unwrap();
 
-        // FIX #1: Use the actual value from a_result, not hardcoded 0.
-        let mut popped: Vec<u32> = Vec::new();
+        // Conservation invariant, robust to scheduling: A's popped item (if
+        // any), B's held-and-never-repushed item (if any), and everything the
+        // final drain yields must be PAIRWISE DISJOINT — no index may appear
+        // twice across these three sources. This mirrors
+        // tagged_stack_survives_the_same_resurrection_pattern's oracle below,
+        // which the tag defeats under the identical B-does-two-pops-then-one-
+        // push scenario. A prior version of this oracle asserted
+        // `!popped.contains(&1)` directly, which is scheduling-DEPENDENT: it
+        // fires on ANY schedule where A completes cleanly before B's second
+        // pop can race it (a benign, non-corrupting interleaving that loom
+        // visits first), so the genuine ABA interleaving was never reached
+        // before loom aborted model-checking at that first, spurious panic.
+        let mut accounted: Vec<u32> = Vec::new();
         if let Ok(idx) = a_result {
-            popped.push(idx);
+            accounted.push(idx);
+        }
+        if let Some(idx) = b_held_1 {
+            accounted.push(idx);
         }
 
         // Drain the remaining stack.
         while let Some(idx) = reg.pop() {
-            popped.push(idx);
+            accounted.push(idx);
         }
-        popped.sort_unstable();
-
-        // FIX #2: The untagged ABA bug causes index 1 to appear when it should NOT.
-        //
-        // Without ABA (with tag): A's CAS fails, A retries and correctly observes
-        // head=0, next[0]=TAIL, sets head=TAIL, returns 0. Final state: empty.
-        // Drain: nothing. Total: vec![0].
-        //
-        // With ABA (without tag): A's stale CAS succeeds with (head=0, next=1),
-        // setting head=1. But B changed next[0]=TAIL, so the chain is broken.
-        // Final state: head=1, next[0]=TAIL, next[1]=TAIL.
-        // Drain: pops 1. Total: vec![0, 1] (0 from A, 1 from drain).
-        //
-        // So the corruption is seeing index 1 in the drain when the correct
-        // behavior would only have vec![0].
-        assert!(
-            !popped.contains(&1),
-            "free-list corrupted by ABA: index 1 appears in drain {popped:?} \
-             when only vec![0] is correct. The untagged stack allowed A's stale \
-             CAS to commit an incorrect chain, which the tag prevents."
+        let before_dedup = accounted.len();
+        accounted.sort_unstable();
+        accounted.dedup();
+        assert_eq!(
+            accounted.len(),
+            before_dedup,
+            "free-list corrupted (duplicate index) via the untagged model: \
+             {accounted:?}. The untagged stack allowed A's stale CAS to \
+             commit an incorrect chain, which the tag prevents (see \
+             tagged_stack_survives_the_same_resurrection_pattern)."
         );
     });
 }
