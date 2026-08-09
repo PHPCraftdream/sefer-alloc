@@ -524,7 +524,16 @@ unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
     }
     // 64-bit nodemask with bit `node` set.
     let nodemask: u64 = 1u64 << node;
-    let maxnode: u64 = 64;
+    // task #697 (rust-intel audit §F1): `maxnode` is NOT simply "number of
+    // bits in the mask" -- the kernel's `get_nodes()` (mm/mempolicy.c)
+    // decrements `maxnode` internally before computing which bits are
+    // addressable, so `maxnode = 64` only covers bits 0..62, silently
+    // dropping bit 63 (`bind_range(node = 63)` would pass an effectively
+    // empty nodemask and `MPOL_PREFERRED` would silently degrade to local
+    // allocation, with mbind's own errors already discarded by design, so
+    // nothing would surface the miss). `libnuma` compensates for this exact
+    // kernel quirk by always passing bitmask-size + 1; mirrored here.
+    let maxnode: u64 = 65;
     // SAFETY: `base` is the start of a live OS reservation (caller's contract).
     // `mbind` only sets kernel page-policy metadata; it never accesses payload
     // bytes. Errors are silently discarded — the allocation is correct regardless.
