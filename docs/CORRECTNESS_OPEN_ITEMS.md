@@ -2838,3 +2838,54 @@ resolved" below.)_
       `cargo fmt --check` clean.
     - **Files changed:** `tests/regression_free_path_chunk_oom_graceful.rs`
       (serialization only); this index entry.
+
+40. **CI-coverage gap — `cargo test -p racy-ptr-cell` ran in ZERO CI
+    configurations** (`.github/workflows/ci.yml`'s `test-workspace` job)
+    — **FLAGGED AND RESOLVED IN THE SAME ROUND** (2026-08-09, task #774
+    filing this entry per this file's own "file in the same commit that
+    flags it" rule; found by the racy-ptr-cell round-closing review,
+    `docs/reviews/2026-08-09-racy-ptr-cell-round-closing-review.md` §F1;
+    closed by task #773 immediately prior in the same round, commit
+    `a5e8e42`).
+
+    - **Root cause, confirmed:** the crate's only two prior CI
+      invocations were `cargo build -p racy-ptr-cell --no-default-features
+      --target thumbv7em-none-eabi` (compiles no test target at all) and
+      `cargo test --release -p racy-ptr-cell --test loom_racy_ptr_cell`
+      under `RUSTFLAGS="--cfg loom"` (excludes `tests/cell_unit.rs` twice
+      over — by `--test` target selection and by the file's own
+      `#![cfg(not(loom))]` gate). All 7 of `cell_unit.rs`'s tests,
+      including 4 added by the racy-ptr-cell `rust-intel` remediation
+      round (tasks #700/#706-710) — `panicking_init_rolls_back_and_subsequent_call_succeeds`,
+      `init_returning_the_sentinel_address_panics`,
+      `align_of_one_payload_panics_at_construction`,
+      `dbg_rollback_reenterable_happy_path_and_not_applicable_arm` — had
+      never executed in CI. Same gap class as the identical
+      `tagged-index-stack` gap task #639/#772 (F4/F5) closed one round
+      earlier.
+    - **Fix:** added `cargo test -p racy-ptr-cell --no-fail-fast` and
+      `cargo test -p racy-ptr-cell --release --no-fail-fast` to
+      `test-workspace`, next to the existing bare-metal build. The
+      `--release` step specifically matters: `init_returning_the_sentinel_address_panics`
+      regression-guards an `assert!` promoted from `debug_assert!` (task
+      #707) — a debug-only run would stay green even if that promotion
+      were silently reverted.
+    - **Verification:** counterfactual — reverted the `assert!` to
+      `debug_assert!` locally, confirmed the new debug step stays green
+      (expected: `debug_assert!` still fires in debug) and the new
+      `--release` step fails with the expected panic-message mismatch;
+      reverted cleanly (`git diff` empty on `src/lib.rs`).
+    - **Related, also resolved same round (not a separate item):** the
+      round-closing review's F5 also flagged `CHANGELOG.md`'s "`#709` is
+      **Not miri-verified**" caveat as unfiled; task #774 closed the
+      underlying gap for `tests/cell_unit.rs` directly (applied `#709`'s
+      own `expose_provenance`/`with_exposed_provenance_mut` fix to an
+      identical provenance-losing pattern the same round's `#706`
+      introduced there — see finding F2 in the same review) rather than
+      filing it as a standing open item. `#709`'s own fix, in
+      `tests/loom_racy_ptr_cell.rs`, remains structurally unverifiable by
+      miri (loom's green-thread scheduling simulation is incompatible with
+      miri's execution model) — this is an intrinsic tooling limitation,
+      not an open action item.
+    - **Files changed:** `.github/workflows/ci.yml` (task #773); this
+      index entry.
