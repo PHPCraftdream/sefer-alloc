@@ -65,13 +65,7 @@ fn scan_class_for(table: &[usize], size: usize, align: usize) -> Option<usize> {
 const A_MB: usize = 16;
 const A_EX: &[usize] = &[256, 512, 1024, 2048, 4096];
 const A_N: usize = 32 + A_EX.len();
-const A_P: Params = Params {
-    min_block: A_MB,
-    growth: (5, 4),
-    geo_count: 32,
-    extras: A_EX,
-    huge_threshold: 1 << 20,
-};
+const A_P: Params = Params::new(A_MB, (5, 4), 32, A_EX, 1 << 20);
 const A_T: [usize; A_N] = build_table::<A_N>(&A_P);
 const A_MAX: usize = A_T[A_N - 1];
 const A_L: usize = size2class_len(A_MAX, A_MB);
@@ -82,13 +76,7 @@ static A_S2C: [u8; A_L] = build_size2class::<A_N, A_L>(&A_T, A_MB);
 const B_MB: usize = 8;
 const B_EX: &[usize] = &[];
 const B_N: usize = 24;
-const B_P: Params = Params {
-    min_block: B_MB,
-    growth: (3, 2),
-    geo_count: 24,
-    extras: B_EX,
-    huge_threshold: 1 << 20,
-};
+const B_P: Params = Params::new(B_MB, (3, 2), 24, B_EX, 1 << 20);
 const B_T: [usize; B_N] = build_table::<B_N>(&B_P);
 const B_MAX: usize = B_T[B_N - 1];
 const B_L: usize = size2class_len(B_MAX, B_MB);
@@ -100,13 +88,7 @@ static B_S2C: [u8; B_L] = build_size2class::<B_N, B_L>(&B_T, B_MB);
 const C_MB: usize = 64;
 const C_EX: &[usize] = &[8192, 16384, 65536];
 const C_N: usize = 30 + C_EX.len();
-const C_P: Params = Params {
-    min_block: C_MB,
-    growth: (9, 8),
-    geo_count: 30,
-    extras: C_EX,
-    huge_threshold: 1 << 20,
-};
+const C_P: Params = Params::new(C_MB, (9, 8), 30, C_EX, 1 << 20);
 const C_T: [usize; C_N] = build_table::<C_N>(&C_P);
 const C_MAX: usize = C_T[C_N - 1];
 const C_L: usize = size2class_len(C_MAX, C_MB);

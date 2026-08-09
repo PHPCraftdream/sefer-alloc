@@ -48,7 +48,22 @@
 /// [`build_size2class`] and [`SizeClasses::build`].
 ///
 /// All fields are plain data so the whole thing is usable in `const` context.
+///
+/// task #728 (rust-intel audit §C1a, MEDIUM): decided before this crate's
+/// first crates.io publish (task #660) -- retrofitting `#[non_exhaustive]`
+/// on an already-published all-pub-field config struct is ITSELF a breaking
+/// change, so this had to be settled now, not deferred. `Params` carries
+/// `#[non_exhaustive]`: adding a future policy field (plausible --
+/// `small_align_max` is currently hardwired to `min_block` inside
+/// `SizeClasses::build`, an obvious future knob the audit itself named) is
+/// a semver-MINOR addition instead of MAJOR for every downstream struct
+/// literal. Construct via [`Params::new`] (a `const fn`, so it works in the
+/// same `const PARAMS: Params = ...` context struct-literal syntax did) --
+/// plain `#[non_exhaustive]` alone would make this type UNCONSTRUCTABLE
+/// downstream, since `const` context has no `Default`/functional-record-
+/// update escape hatch, so the two halves cannot be shipped separately.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct Params<'a> {
     /// The minimum block size and the fundamental small-class alignment. Must
     /// be a power of two. Every generated class is a multiple of it, so every
@@ -71,12 +86,46 @@ pub struct Params<'a> {
     /// monotonicity — is separately machine-checked in
     /// [`build_size2class`]. Typical uses: page-aligned classes, an exact
     /// size the geometric run skips, a feature-gated medium tier.
+    ///
+    /// task #728 (rust-intel audit §B1b, INFO): `Params`'s borrowed
+    /// lifetime `'a` was reviewed and is justified, not a defect — this is
+    /// a `no_std`, zero-alloc, `const`-fn crate, so a borrowed slice is the
+    /// only representable form for a variable-length field, and the
+    /// zero-copy `const`-context design goal is documented at the
+    /// crate-doc level. In typical `const` usage (a `const PARAMS: Params
+    /// = Params::new(.., EXTRAS, ..)` binding to a `const`/`static` slice)
+    /// `'a` resolves to `'static`; nothing about the type requires it to.
     pub extras: &'a [usize],
     /// The "huge" policy threshold: [`SizeClasses::is_huge`] reports `true` for
     /// a size `>=` this. Pure bookkeeping for the crate — the consumer decides
     /// what "huge" means for its own segment policy (guard pages, eager
     /// decommit, …).
     pub huge_threshold: usize,
+}
+
+impl<'a> Params<'a> {
+    /// Construct a [`Params`] from its component fields.
+    ///
+    /// `const fn` so this works everywhere the previous struct-literal
+    /// syntax did, including `const PARAMS: Params = Params::new(..);` —
+    /// the required construction path now that [`Params`] is
+    /// `#[non_exhaustive]` (task #728).
+    #[must_use]
+    pub const fn new(
+        min_block: usize,
+        growth: (usize, usize),
+        geo_count: usize,
+        extras: &'a [usize],
+        huge_threshold: usize,
+    ) -> Self {
+        Self {
+            min_block,
+            growth,
+            geo_count,
+            extras,
+            huge_threshold,
+        }
+    }
 }
 
 /// The `size2class` array length for a scheme whose largest class is

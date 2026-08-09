@@ -146,13 +146,7 @@ pub(crate) const HUGE_THRESHOLD: usize = super::os::SEGMENT;
 
 /// The [`Params`] describing sefer's concrete size-class scheme — the single
 /// instantiation of the crate's `const`-generic builder.
-const PARAMS: Params = Params {
-    min_block: MIN_BLOCK,
-    growth: GROWTH,
-    geo_count: GEO_COUNT,
-    extras: EXTRAS,
-    huge_threshold: HUGE_THRESHOLD,
-};
+const PARAMS: Params = Params::new(MIN_BLOCK, GROWTH, GEO_COUNT, EXTRAS, HUGE_THRESHOLD);
 
 /// The table of fine small size classes, in strictly increasing order — built
 /// at compile time by the crate's `build_table` from [`PARAMS`]. The **single

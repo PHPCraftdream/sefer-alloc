@@ -71,13 +71,13 @@ const SEFER_MIN_BLOCK: usize = 16;
 const SEFER_EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
 const SEFER_GEO: usize = 40;
 const SEFER_N: usize = SEFER_GEO + SEFER_EXTRAS.len();
-const SEFER_PARAMS: Params = Params {
-    min_block: SEFER_MIN_BLOCK,
-    growth: (5, 4),
-    geo_count: SEFER_GEO,
-    extras: SEFER_EXTRAS,
-    huge_threshold: 4 * 1024 * 1024,
-};
+const SEFER_PARAMS: Params = Params::new(
+    SEFER_MIN_BLOCK,
+    (5, 4),
+    SEFER_GEO,
+    SEFER_EXTRAS,
+    4 * 1024 * 1024,
+);
 const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
 const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
 const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
@@ -177,13 +177,7 @@ fn extras_not_multiple_of_min_block_panics() {
     const EXTRAS: &[usize] = &[100, 200];
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
-    let params = Params {
-        min_block: MIN_BLOCK,
-        growth: (5, 4),
-        geo_count: GEO_COUNT,
-        extras: EXTRAS,
-        huge_threshold: 1 << 20,
-    };
+    let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
     let _ = build_table::<N>(&params);
 }
 
@@ -201,13 +195,7 @@ fn extras_overlapping_geometric_run_panics() {
     const EXTRAS: &[usize] = &[16, 32];
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
-    let params = Params {
-        min_block: MIN_BLOCK,
-        growth: (5, 4),
-        geo_count: GEO_COUNT,
-        extras: EXTRAS,
-        huge_threshold: 1 << 20,
-    };
+    let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
     // `extras` here IS strictly increasing and IS min_block-aligned, so
     // `build_table` alone accepts it (case (b) is purely an overlap with the
     // geometric run, not an `extras`-internal-shape defect) — the violation
@@ -259,13 +247,7 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
     const MIN_BLOCK: usize = 1usize << 63;
     const GEO_COUNT: usize = 2;
     const N: usize = GEO_COUNT;
-    let params = Params {
-        min_block: MIN_BLOCK,
-        growth: (2, 1),
-        geo_count: GEO_COUNT,
-        extras: &[],
-        huge_threshold: 1 << 20,
-    };
+    let params = Params::new(MIN_BLOCK, (2, 1), GEO_COUNT, &[], 1 << 20);
     let _ = build_table::<N>(&params);
 }
 
@@ -274,13 +256,7 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // huge_threshold is a pure Params policy value; the crate never references
     // an OS segment size. Two different thresholds → two different verdicts for
     // the same size, proving it is parameterized.
-    const P_SMALL: Params = Params {
-        min_block: 16,
-        growth: (5, 4),
-        geo_count: 4,
-        extras: &[],
-        huge_threshold: 1024,
-    };
+    const P_SMALL: Params = Params::new(16, (5, 4), 4, &[], 1024);
     const N: usize = 4;
     const T: [usize; N] = build_table::<N>(&P_SMALL);
     const L: usize = size2class_len(T[N - 1], 16);
