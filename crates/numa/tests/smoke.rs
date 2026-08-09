@@ -176,3 +176,132 @@ fn reserve_on_node_large_align_round_trip() {
         drop(r2);
     }
 }
+
+/// task #778 (rust-intel audit round-closing review, finding F3, MEDIUM):
+/// `reserve_on_node`'s Windows path (`reserve_aligned_numa`, fixed by task
+/// #724) must commit only the caller-requested `size` bytes, NOT the whole
+/// `over = size + align` over-reservation. #724's own "EMPIRICALLY VERIFIED"
+/// claim cited `reserve_on_node_returns_valid_span` /
+/// `reserve_on_node_large_align_round_trip` above as proof -- the review
+/// showed both pass IDENTICALLY against the reverted pre-#724 double-commit
+/// bug (they assert alignment/length/byte-readback, none of which the bug
+/// affects), so neither is a real regression test for the specific defect
+/// #724 fixed. This test IS: it inspects the OS's own bookkeeping via
+/// `VirtualQuery` and asserts the region strictly beyond `[base, base+size)`
+/// -- which is ALWAYS non-empty, since `over - size == align > 0` by
+/// construction -- reports `MEM_RESERVE`, not `MEM_COMMIT`. Zero-trust
+/// counterfactual verified (see the task #778 commit message): reverting to
+/// the pre-#724 single `MEM_RESERVE | MEM_COMMIT` call makes this test fail
+/// with the tail region reporting `MEM_COMMIT`.
+#[cfg(all(windows, feature = "vmem-integration"))]
+#[test]
+fn reserve_on_node_commits_only_the_requested_span_not_the_whole_over_reservation() {
+    use numa_shim::reserve_on_node;
+
+    // Mirrors the real `MEMORY_BASIC_INFORMATION` (winnt.h) on 64-bit
+    // Windows, the only realistic target for this crate (this repo's own
+    // Windows platform code elsewhere assumes a 64-bit pointer width too).
+    // `PartitionId` is conditionally present in the C header
+    // (`#if defined(_WIN64)`) -- included here since every supported target
+    // triple for this crate is 64-bit.
+    #[repr(C)]
+    struct MemoryBasicInformation {
+        base_address: *mut core::ffi::c_void,
+        allocation_base: *mut core::ffi::c_void,
+        allocation_protect: u32,
+        partition_id: u16,
+        region_size: usize,
+        state: u32,
+        protect: u32,
+        type_: u32,
+    }
+
+    extern "system" {
+        fn VirtualQuery(
+            lp_address: *const core::ffi::c_void,
+            lp_buffer: *mut MemoryBasicInformation,
+            dw_length: usize,
+        ) -> usize;
+    }
+
+    const MEM_COMMIT: u32 = 0x0000_1000;
+    const MEM_RESERVE: u32 = 0x0000_2000;
+
+    // SAFETY: `MemoryBasicInformation` is `#[repr(C)]` and zero-initialized
+    // fields are all valid bit patterns (pointers, u32s, usize, u16) --
+    // `VirtualQuery` overwrites every field it succeeds on before this
+    // value is read.
+    fn query_state(addr: *const core::ffi::c_void) -> u32 {
+        let mut mbi = MemoryBasicInformation {
+            base_address: core::ptr::null_mut(),
+            allocation_base: core::ptr::null_mut(),
+            allocation_protect: 0,
+            partition_id: 0,
+            region_size: 0,
+            state: 0,
+            protect: 0,
+            type_: 0,
+        };
+        // SAFETY: `addr` is a valid address inside a live reservation this
+        // process owns (the caller passes either `base` or `base + size`,
+        // both within `[reservation_ptr, reservation_ptr + reservation_len)`);
+        // `&mut mbi` is a valid, correctly-sized out-pointer for the exact
+        // struct size passed as `dw_length`. `VirtualQuery` never fails for
+        // an address inside the calling process's own address space.
+        let n = unsafe {
+            VirtualQuery(
+                addr,
+                &mut mbi,
+                core::mem::size_of::<MemoryBasicInformation>(),
+            )
+        };
+        assert_ne!(n, 0, "VirtualQuery failed for {addr:p}");
+        mbi.state
+    }
+
+    let page = aligned_vmem::page_size();
+    let size = page * 4;
+    let align = page * 8; // align > size guarantees real slack to probe.
+    let node = current_node().unwrap_or(0);
+
+    let r = reserve_on_node(size, align, node)
+        .expect("reserve_on_node returned None — OOM or contract violation");
+
+    let base = r.as_ptr();
+    let committed_len = r.len();
+    let raw = r.reservation_ptr();
+    let over = r.reservation_len();
+    assert_eq!(committed_len, size);
+
+    // `over - size == align > 0` always (see `reserve_aligned_numa`'s own
+    // arithmetic: `over = size + align`), so `[base + size, raw + over)` is
+    // ALWAYS non-empty -- no branching needed to find a probe point.
+    let front_slack = (base as usize) - (raw as usize);
+    let tail_slack = over - front_slack - committed_len;
+    assert!(
+        tail_slack > 0,
+        "tail slack must be non-empty by construction"
+    );
+
+    // SAFETY: `base` is valid for `committed_len` bytes (the reservation's
+    // own contract); `base.add(committed_len)` stays within the `over`-byte
+    // reservation since `committed_len + tail_slack <= over - front_slack`.
+    let tail_probe = unsafe { base.add(committed_len) };
+
+    let committed_state = query_state(base.cast());
+    assert_eq!(
+        committed_state, MEM_COMMIT,
+        "the requested [base, base+size) span must be committed"
+    );
+
+    let tail_state = query_state(tail_probe.cast());
+    assert_eq!(
+        tail_state, MEM_RESERVE,
+        "the slack beyond [base, base+size) must stay MEM_RESERVE, not \
+         MEM_COMMIT -- MEM_COMMIT here is exactly the #724 double-commit \
+         regression (committing the whole `over = size + align` span \
+         instead of only the requested `size`)"
+    );
+
+    drop(r);
+}

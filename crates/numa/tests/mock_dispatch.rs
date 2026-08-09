@@ -134,22 +134,31 @@ fn reserve_on_node_chains_and_records() {
 /// sefer-alloc-as-global `numa-aware-mock` scenario, `record()` is called
 /// from an allocation hot path with nothing ever draining the log -- before
 /// this task `CALLS` grew without bound. Confirms the fix: pushing well past
-/// the module's own `CALLS_CAP` (4096, mirrored here since the constant
-/// itself is private) leaves the log capped rather than matching the push
-/// count. This test WOULD fail against the pre-fix unbounded `Vec::push`
-/// (it would observe `calls.len() == PUSHES`).
+/// the module's own `CALLS_CAP` leaves the log capped rather than matching
+/// the push count. This test WOULD fail against the pre-fix unbounded
+/// `Vec::push` (it would observe `calls.len() == PUSHES`).
+///
+/// task #778 (round-closing review, F7): `CALLS_CAP` is now `pub`, so this
+/// test asserts against the real constant instead of a hardcoded mirror.
 #[test]
 fn calls_log_is_capped_not_unbounded() {
     fresh_drain();
     const PUSHES: usize = 5000;
+    const {
+        assert!(
+            PUSHES > mock::CALLS_CAP,
+            "PUSHES must exceed CALLS_CAP for this test to be meaningful"
+        )
+    };
     for i in 0..PUSHES {
         mock::set_current_node((i % 64) as u32);
         let _ = current_node();
     }
     let calls = fresh_drain();
     assert!(
-        calls.len() <= 4096,
-        "CALLS must be capped at 4096, got {}",
+        calls.len() <= mock::CALLS_CAP,
+        "CALLS must be capped at {}, got {}",
+        mock::CALLS_CAP,
         calls.len()
     );
     assert!(

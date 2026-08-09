@@ -1852,37 +1852,43 @@ resolved" below.)_
     upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
     review of the aligned-vmem round.)
 
-    - **Status:** OPEN — decision recorded, not yet revisited.
+    - **Status:** CLOSED (updated 2026-08-09, task #778/F5 — round-closing
+      review of the numa-shim round). `numa-shim`'s round reached its own
+      §C10 finding in task #726 (commit `53b3ca2`) and applied EXACTLY the
+      policy this item's "Next trigger" prescribed — a doc-only fix
+      (`crates/numa/Cargo.toml`'s `mock = []` feature comment, the `mock`
+      module's own rustdoc, and a new `README.md` section), citing task
+      #715's reasoning — but the review found this card was never updated
+      in that commit, the same "update the card in the SAME commit"
+      violation this file's own convention exists to catch (see item 41's
+      analogous correction above). Both crates now carry the SAME recorded
+      policy for the identical finding shape, so this item is closed
+      rather than left open with a stale forward-reference.
     - **Current-number-or-verdict:** `aligned-vmem`'s `mock` feature
-      (`crates/vmem/Cargo.toml`) is a Cargo feature (not a `--cfg` flag),
-      documented with a Cargo-feature-unification warning in three places
-      (`Cargo.toml`, `mock.rs`'s module doc, `README.md`). Task #715
-      (commit `e5f6700`) explicitly evaluated and DEFERRED the stronger
-      fix — converting `mock` from a Cargo feature to a `--cfg vmem_mock`
-      RUSTFLAGS flag, matching this repo's own `cfg(loom)`/`cfg(kani)`
-      precedent (cfg flags do not unify across a build the way Cargo
-      features do) — reasoning that this crate has zero real external
-      consumers before its first publish (task #658), so the doc-only fix
-      closes the realistic near-term risk at much lower cost than a
-      mechanical rewrite of the whole test-invocation surface and CI
-      matrix.
-    - **Evidence:** `crates/vmem/Cargo.toml:60-81`'s `mock = []` feature
-      comment states the deferral explicitly: "Revisit if/when this crate
-      gains external consumers and the hazard is reported for real."
-      `numa-shim` has the IDENTICAL §C10 finding from the same
-      `/rust-intel` audit, per task #715's own commit message, which
-      states this decision should be treated as "one consistent policy
-      across both crates" when numa-shim's round is reached (numa-shim's
-      fix-task group is #697/#720-727, next in the crate-by-crate sweep
-      after aligned-vmem's own round closes).
-    - **Next trigger:** when numa-shim's round reaches its own §C10
-      finding (mock feature-unification hazard), apply the SAME doc-only
-      resolution task #715 chose here, citing this item and task #715's
-      own reasoning, rather than re-deriving the decision from scratch —
-      or, if numa-shim's round decides the calculus has changed (e.g. one
-      of the two crates has since gained a real external consumer),
-      revisit BOTH crates' resolution together rather than letting them
-      drift into two different policies for the same finding shape.
+      (`crates/vmem/Cargo.toml`) AND `numa-shim`'s `mock` feature
+      (`crates/numa/Cargo.toml`) are both Cargo features (not `--cfg`
+      flags), each documented with a Cargo-feature-unification warning in
+      three places (`Cargo.toml`, the `mock` module's own doc, `README.md`).
+      Task #715 (commit `e5f6700`) explicitly evaluated and DEFERRED the
+      stronger fix for `aligned-vmem` — converting `mock` from a Cargo
+      feature to a `--cfg`-style RUSTFLAGS flag, matching this repo's own
+      `cfg(loom)`/`cfg(kani)` precedent (cfg flags do not unify across a
+      build the way Cargo features do) — reasoning that neither crate has
+      real external consumers before its first publish (`aligned-vmem`:
+      task #658; `numa-shim`: task #657), so the doc-only fix closes the
+      realistic near-term risk at much lower cost than a mechanical
+      rewrite of the whole test-invocation surface and CI matrix for
+      EITHER crate. Task #726 (commit `53b3ca2`) applied the identical
+      reasoning to `numa-shim`.
+    - **Evidence:** `crates/vmem/Cargo.toml:60-81` and
+      `crates/numa/Cargo.toml`'s `mock = []` feature comments both state
+      the deferral explicitly: "Revisit if/when this crate gains external
+      consumers and the hazard is reported for real."
+    - **Revisit condition (both crates jointly):** if EITHER crate gains a
+      real external consumer that reports this hazard for real, re-open
+      this item and revisit BOTH crates' resolution together — do not let
+      one crate silently drift to a `--cfg`-flag conversion while the
+      other stays doc-only for the same finding shape.
 
 43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
     constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
@@ -1920,6 +1926,131 @@ resolved" below.)_
       an explicit assertion against the OS's own reported value via a
       DIFFERENT API, e.g. comparing against `/proc/self/status` or
       equivalent, not just checking the result is a power of two).
+
+44. **Deferred verification — `numa-shim`'s mbind path (`lib.rs:531`, the
+    crate's key selling point) has no behavioral oracle anywhere.** (Filed
+    2026-08-09, task #778/F4, round-closing review of the numa-shim round —
+    a distinct §D1a MEDIUM audit finding from the cpumap-parser one task
+    #721 closed; #721's own commit message declines this half explicitly
+    but only in commit prose, exactly the failure mode this index exists to
+    prevent.)
+
+    - **Status:** OPEN — no test on this repository's own CI asserts the
+      `mbind(2)` syscall this crate wraps actually succeeds or has the
+      documented effect.
+    - **Current-number-or-verdict:** `bind_range_impl_linux`'s `mbind`
+      return value is silently discarded by design; every test suite that
+      touches this path asserts only no-panic (`tests/smoke.rs`) or that a
+      `MockCall::BindRange` record was emitted (`tests/mock_dispatch.rs` —
+      a declaration, not a behavioral proof). Mutating `SYS_MBIND` or
+      scrambling the argument marshalling would leave every current test
+      green.
+    - **Evidence:** `docs/reviews/2026-08-07-numa-shim-rust-intel-audit.md`
+      §D1a (`lib.rs:531`); confirmed still true by
+      `docs/reviews/2026-08-09-numa-shim-round-closing-review.md`, which
+      re-checked this specific gap during the round-closing review and
+      found no test filled it in the round's 9 commits.
+    - **Next trigger:** add an env-guarded Linux test (the weekly
+      `numa-real-kernel` CI job is the natural home) asserting the
+      `mbind(2)` syscall return is `0` for a valid single-node bind (a
+      wrong syscall number yields `-1`/`ENOSYS` and goes red) and/or a
+      `get_mempolicy(2)` readback asserting `MPOL_PREFERRED` with the
+      expected nodemask — this would also be the only test capable of
+      catching a future `maxnode`/marshalling regression of the exact
+      shape task #697 fixed.
+
+45. **`numa-shim`'s `CURRENT_NODE_SLOT: RefCell<u32>` where a `Cell<u32>`
+    would do, and its accessor still uses a panicking `borrow_mut()`.**
+    (Filed 2026-08-09, task #778/F4, round-closing review — audit §A2,
+    INFO, left untouched by task #726's visibility narrowing.)
+
+    - **Status:** OPEN — cosmetic/defensive, not a live bug.
+    - **Current-number-or-verdict:** `crates/numa/src/lib.rs`'s
+      `CURRENT_NODE_SLOT` thread-local is `RefCell<u32>`; `Cell<u32>` would
+      be strictly sufficient (only ever `get`/`set` a `Copy` value) and
+      would structurally rule out the §B17 reentrant-borrow hazard this
+      same module documents and defends against for its sibling `CALLS`
+      cell (`record()`'s `try_borrow_mut`) — `set_current_node` still calls
+      a PANICKING `RefCell::borrow_mut()` (`crates/numa/src/lib.rs:149` as
+      of task #726), not the `try_borrow_mut` pattern its sibling was
+      deliberately given.
+    - **Evidence:**
+      `docs/reviews/2026-08-07-numa-shim-rust-intel-audit.md` §A2.
+    - **Next trigger:** low priority — fold into any future edit that
+      touches the `mock` module's thread-locals (e.g. a future `CALLS_CAP`
+      follow-up, item 46's public-surface work, or a `mock` API revision
+      before first publish, task #657).
+
+46. **`numa-shim`'s public `reserve_on_node` signature returns
+    `aligned_vmem::Reservation`, coupling the crate's own semver to
+    `aligned-vmem 0.2`.** (Filed 2026-08-09, task #778/F4, round-closing
+    review — audit §A3, a "documentation/re-export decision only" the
+    audit explicitly asked be settled before first publish.)
+
+    - **Status:** OPEN — undecided; load-bearing for task #657 (numa-shim's
+      own crates.io publish gate).
+    - **Current-number-or-verdict:** `crates/numa/src/lib.rs:231`'s
+      `reserve_on_node(..) -> Option<aligned_vmem::Reservation>` exposes a
+      SIBLING crate's own public type directly in `numa-shim`'s public API
+      — a semver-major bump in `aligned-vmem` (e.g. `0.2` → `0.3` changing
+      `Reservation`'s shape) forces a corresponding `numa-shim` semver bump
+      too, even if nothing in `numa-shim`'s own code changed. `grep -rn
+      "pub use aligned_vmem" crates/numa/` returns zero hits — there is no
+      re-export/newtype wrapper, and no doc note discussing the coupling.
+    - **Evidence:**
+      `docs/reviews/2026-08-07-numa-shim-rust-intel-audit.md` §A3.
+    - **Next trigger:** decide before task #657 (numa-shim's first
+      crates.io publish): (a) accept the coupling as intentional and
+      document it (the two crates are siblings in the same workspace,
+      released together, so drift risk is low in practice), or (b) wrap
+      `Reservation` in a `numa-shim`-owned newtype to decouple the public
+      APIs at the cost of forwarding boilerplate. Precedent: this is the
+      same class of decision task #715/#726 already made for the `mock`
+      feature-unification hazard (item 42 above) — settle it now rather
+      than after publish, when either fix becomes a breaking change.
+
+47. **`numa-shim`'s entire round (tasks #697/#720-727) is REASONED-FROM-SPEC
+    for its Linux-only code, never empirically executed on this session's
+    host.** (Filed 2026-08-09, task #778/F4, round-closing review —
+    `aligned-vmem`'s round filed the analogous gap as item 43; `numa-shim`'s
+    had no counterpart until now.)
+
+    - **Status:** OPEN — no action needed unless a Linux runner with
+      `#[global_allocator]`-installed test binaries becomes available;
+      filed so the gap is visible rather than silently load-bearing.
+    - **Current-number-or-verdict:** tasks #697 (`mbind` `maxnode`
+      arithmetic), #720 (cpumap loop-to-EOF read), and #723/#777 (the
+      `OnceLock`-based topology cache and its allocation-free redesign) are
+      all `#[cfg(all(target_os = "linux", not(miri)))]`-gated and have
+      NEVER executed on this session's Windows host — verified only via
+      `cargo check`/`clippy --target x86_64-unknown-linux-gnu` (confirms
+      the code COMPILES and type-checks, not that its runtime behavior
+      matches the stated reasoning) plus careful manual derivation from
+      kernel/API documentation. This is not hypothetical risk: task #777
+      itself exists because task #723's REASONED-FROM-SPEC design had a
+      real defect (a reentrancy deadlock) that compiled cleanly, passed
+      every test this session could run, and was only found by a
+      round-closing review reasoning about a deployment scenario
+      (`#[global_allocator]` + `numa-aware` on real Linux) this session
+      cannot construct.
+    - **Evidence:**
+      `docs/reviews/2026-08-09-numa-shim-round-closing-review.md` §5 (the
+      review's own explicit confirmation that the verification-honesty
+      distinction was maintained consistently, which is a STATEMENT about
+      what was labeled correctly, not a substitute for the missing
+      execution); the weekly `numa-real-kernel` CI job (`.github/workflows/ci.yml`)
+      exercises real Linux but its test binaries do not install
+      `#[global_allocator]` (grep-verified), so it cannot reproduce a
+      reentrancy scenario like the one #777 fixed even though it does run
+      on real Linux hardware.
+    - **Next trigger:** if/when this repo gains a Linux CI runner (or a
+      local `crush`/agent session with Linux execution access) capable of
+      running `cargo test -p numa-shim --all-features` AND a real
+      `#[global_allocator] = SeferAlloc` + `numa-aware` allocation
+      workload together, use it to (a) empirically confirm #697/#720's
+      REASONED-FROM-SPEC fixes behave as derived, and (b) add the
+      integration-level regression test item 44 above also asks for —
+      both share the same missing infrastructure.
 
 ---
 

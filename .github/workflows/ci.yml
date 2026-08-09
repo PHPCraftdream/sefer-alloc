@@ -1506,8 +1506,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
+      # task #778 (round-closing review, F9): crates/numa had NO clippy
+      # coverage anywhere in this file -- the four numa-shim-* jobs all ran
+      # cargo test only, so a clippy regression here (e.g. the
+      # GetCurrentProcess-unused-in-default-features bug F9 itself fixed)
+      # had zero CI signal. `--all-features` here is the Linux-cross-
+      # relevant combination; DEFAULT features is checked on
+      # numa-shim-windows below, since Windows is this crate's own primary
+      # dev platform for its Windows-only code.
+      - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
 
   numa-shim-windows:
     # Run the numa-shim real-syscall path on a real Windows kernel.
@@ -1523,10 +1534,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
+      # task #778 (round-closing review, F9): DEFAULT features is what
+      # `cargo add numa-shim` produces for a downstream consumer -- checked
+      # here (Windows, this crate's primary platform) rather than on the
+      # Linux mock job above, alongside --all-features for the Windows-only
+      # code paths (VirtualAllocExNuma, ProcessorNumber) clippy would
+      # otherwise never see exercised.
+      - run: cargo clippy -p numa-shim --all-targets -- -D warnings
+      - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
 
   numa-shim-macos:
     # macOS NUMA support is a documented no-op (no public NUMA API), but

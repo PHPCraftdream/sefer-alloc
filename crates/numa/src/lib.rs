@@ -64,6 +64,10 @@ pub const NO_NODE: u32 = u32::MAX;
 /// Enabled by feature `mock`.  When enabled, the public NUMA functions
 /// dispatch into this module instead of the platform implementations.
 ///
+/// The recording log is capped at [`mock::CALLS_CAP`] entries (task
+/// #726/#778) — see [`mock::drain`]'s own doc for what that means for a
+/// caller driving more calls than the cap without an intervening drain.
+///
 /// # Cargo feature-unification hazard (task #726)
 ///
 /// `mock` is a NON-ADDITIVE, backend-REPLACING feature, and Cargo unifies
@@ -83,9 +87,12 @@ pub const NO_NODE: u32 = u32::MAX;
 pub mod mock {
     use core::cell::RefCell;
 
+    /// Maximum number of calls `CALLS` retains before `record()` stops
+    /// pushing.
+    ///
     /// task #726 (rust-intel audit §B14): under the documented
     /// sefer-alloc-as-global `numa-aware-mock` scenario (this module's own
-    /// R11-5 note on [`record`]), every allocation calls `current_node()` →
+    /// R11-5 note on `record`), every allocation calls `current_node()` →
     /// `record()` → `Vec::push` with nothing ever draining the log in that
     /// scenario — an unbounded insert-only Vec growing linearly with
     /// allocation count per thread. Once `CALLS` holds this many entries,
@@ -93,13 +100,34 @@ pub mod mock {
     /// call-log's usual "what happened first" debugging value) rather than
     /// growing forever; direct mock tests that `drain()` promptly never
     /// approach this cap.
-    const CALLS_CAP: usize = 4096;
+    ///
+    /// task #778 (round-closing review, F7): made `pub` so a downstream
+    /// test driving a large number of mocked calls can assert against this
+    /// exact value instead of hardcoding a mirror of it (as
+    /// `tests/mock_dispatch.rs`'s own `calls_log_is_capped_not_unbounded`
+    /// now does).
+    pub const CALLS_CAP: usize = 4096;
 
     /// One recorded invocation of a public NUMA function.
     #[non_exhaustive]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum MockCall {
         /// `current_node()` was called; the inner value is what was returned.
+        ///
+        /// task #778 (round-closing review, F13): unlike [`BindRange`] and
+        /// [`ReserveOnNode`] below, this tuple variant deliberately does NOT
+        /// carry `#[non_exhaustive]` -- `current_node()`'s signature is
+        /// `fn() -> Option<u32>`, a single scalar return with no plausible
+        /// second field to grow into (unlike `bind_range`/`reserve_on_node`,
+        /// which each take multiple arguments a future API revision could
+        /// add to). Marking it would force `tests/mock_dispatch.rs`'s two
+        /// `assert_eq!(calls, vec![MockCall::CurrentNode(n)])` equality-
+        /// oracle sites into weaker `matches!` form for no real growth path
+        /// this shape needs to reserve. This variant's single-field layout
+        /// is considered frozen.
+        ///
+        /// [`BindRange`]: MockCall::BindRange
+        /// [`ReserveOnNode`]: MockCall::ReserveOnNode
         CurrentNode(u32),
         /// `bind_range(base, len, node)` was called (past the short-circuit).
         #[non_exhaustive]
@@ -140,6 +168,12 @@ pub mod mock {
     }
 
     /// Drain every recorded call since the last drain (or test start).
+    ///
+    /// task #778 (round-closing review, F7): truthful only up to
+    /// [`CALLS_CAP`] entries — past that, `record()` has already stopped
+    /// pushing (see `CALLS_CAP`'s own doc), so a caller that drives more
+    /// than `CALLS_CAP` calls without an intervening `drain()` gets a
+    /// silently truncated (oldest-first) prefix here, not the full set.
     pub fn drain() -> Vec<MockCall> {
         CALLS.with(|c| c.borrow_mut().drain(..).collect())
     }
@@ -201,6 +235,17 @@ pub mod mock {
 /// but this CPU's real node could not be determined." A caller cannot tell
 /// these apart from the return value alone; `Some(0)` from this function on
 /// Linux does not guarantee the calling thread is actually on node 0.
+///
+/// **First-call cost on Linux** (task #778, round-closing review, F12): the
+/// VERY FIRST call to this function on a real Linux host performs up to 64
+/// `open`/`read`/`close` syscall triples (one per candidate NUMA node) to
+/// populate a process-lifetime topology cache; every subsequent call is a
+/// pure in-memory bit-test with no syscalls at all. For a crate whose
+/// selling point is "zero dependencies, `forbid(unsafe_code)`-friendly for
+/// consumers," this first-call cost is a contract-level fact a caller on a
+/// latency-sensitive cold path should know about — most callers should call
+/// this once early (e.g. at startup) rather than assuming every call is
+/// equally cheap.
 #[must_use]
 pub fn current_node() -> Option<u32> {
     #[cfg(feature = "mock")]
@@ -255,28 +300,46 @@ pub fn current_node() -> Option<u32> {
 /// system with 64+ NUMA nodes binding to one of the high nodes gets a
 /// silent no-op rather than an error or a wider nodemask.
 ///
+/// task #725 (rust-intel audit §B5) / task #778 (round-closing review, F6):
+/// this doc previously stated the `[base, base+len)` precondition
+/// UNCONDITIONALLY, even though the function itself never touches `base`
+/// when the node/len short-circuit fires below. Every current test call
+/// site relies on exactly that short-circuit rather than a genuinely valid
+/// reservation (`tests/mock_dispatch.rs` passes a dummy `0x1000 as *mut
+/// u8`; `tests/smoke.rs`'s `bind_range_no_node_is_noop` /
+/// `bind_range_zero_len_is_noop` pass stack-array pointers under
+/// `mock`/`NO_NODE`/`len == 0`) — under the old wording those call sites
+/// were UB-by-contract despite being harmless in practice, and a future
+/// edit reordering the short-circuit after a real platform call would have
+/// silently turned them into real UB with no doc contradiction to catch it.
+/// task #725 fixed the unconditional framing; task #778/F6 fixed a residual
+/// the same audit finding also named but #725 left open: `tests/smoke.rs`'s
+/// `bind_range_on_owned_memory_does_not_panic` is the crate's ONE test call
+/// site that reaches a real platform backend on a real host (`node =
+/// current_node().unwrap_or(0)`, typically `Some(0)`, so NOT short-
+/// circuited) against a `Vec<u8>` heap buffer — not an "OS reservation" in
+/// the literal sense the `# Safety` section below used to require verbatim,
+/// though harmless in practice (`mbind(MPOL_PREFERRED)` only sets kernel
+/// page-policy metadata). The contract below now says "valid mapped range,"
+/// which a heap buffer genuinely satisfies, closing that residual too.
+///
 /// # Safety
 ///
 /// When `node != NO_NODE` and `len != 0`, `[base, base + len)` must be a
-/// valid OS reservation owned exclusively by the caller for the duration of
-/// the call. When either condition is false, the function returns
-/// immediately without touching `base` at all (see the short-circuit at the
-/// top of the body) — `base` need not be valid, dereferenceable, or even
-/// non-dangling in that case, and any address value is permitted.
-///
-/// task #725 (rust-intel audit §B5): this doc previously stated the
-/// `[base, base+len)` precondition UNCONDITIONALLY, even though the function
-/// itself never touches `base` when the node/len short-circuit fires above.
-/// Every current test call site relies on exactly that short-circuit rather
-/// than a genuinely valid reservation (`tests/mock_dispatch.rs` passes a
-/// dummy `0x1000 as *mut u8`; `tests/smoke.rs` passes a stack-array pointer
-/// under `mock`/`NO_NODE`/`len == 0`) — under the old wording those call
-/// sites were UB-by-contract despite being harmless in practice, and a
-/// future edit reordering the short-circuit after a real platform call would
-/// have silently turned them into real UB with no doc contradiction to catch
-/// it. The function never reads or writes payload bytes in either case — it
-/// only passes the range to `mbind(2)` (Linux) or a platform no-op, both of
-/// which set/ignore kernel page-policy metadata, never payload memory.
+/// valid MAPPED RANGE (an OS reservation, a heap allocation, or any other
+/// live mapping) owned exclusively by the caller for the duration of the
+/// call. `mbind(2)`'s `MPOL_PREFERRED` policy applies at PAGE granularity,
+/// so any other data sharing a page with `[base, base+len)` (e.g. a heap
+/// allocator's neighboring objects) is affected by the same policy change —
+/// harmless for a policy hint, but worth knowing when reasoning about which
+/// bytes this call actually touches at the OS level. When either condition
+/// (`node`/`len`) is false, the function returns immediately without
+/// touching `base` at all (see the short-circuit at the top of the body) —
+/// `base` need not be valid, dereferenceable, or even non-dangling in that
+/// case, and any address value is permitted. The function never reads or
+/// writes payload bytes in either case — it only passes the range to
+/// `mbind(2)` (Linux) or a platform no-op, both of which set/ignore kernel
+/// page-policy metadata, never payload memory.
 pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 {
         return;
@@ -573,6 +636,19 @@ mod platform {
     /// reflected -- acceptable for an `MPOL_PREFERRED` hint, itself already
     /// a soft, best-effort preference the kernel can override under memory
     /// pressure.
+    ///
+    /// task #778 (round-closing review, F12): the caveat above covers
+    /// hotplug AFTER the first call; it does not cover the narrower window
+    /// this cache also opens: `topology()` reads 64 sysfs files
+    /// SEQUENTIALLY, so a hotplug event landing mid-scan can freeze a TORN
+    /// snapshot for the rest of the process's lifetime (a CPU that existed
+    /// only after the scan passed its node's file permanently falls back to
+    /// the `Some(0)` single-node answer, where the OLD un-cached per-call
+    /// derivation would have self-corrected on the very next call). Still
+    /// acceptable for the same reason as the broader hotplug caveat above
+    /// (a soft `MPOL_PREFERRED` hint), but worth naming as its own distinct
+    /// property rather than folding it into the "after the first call"
+    /// wording, which reads as covering only post-scan hotplug.
     ///
     /// task #777 (rust-intel audit round-closing review, finding F1, HIGH):
     /// task #723's original design cached `Vec<Vec<u8>>` -- ~65 heap
@@ -929,13 +1005,12 @@ mod platform {
     /// `size + align` bytes as ADDRESS SPACE ONLY (`MEM_RESERVE`, no
     /// `MEM_COMMIT`), find the aligned chunk inside, then commit only the
     /// caller-requested `size` bytes at that aligned sub-range (`MEM_COMMIT`,
-    /// still via `VirtualAllocExNuma` so the NUMA node preference is honored
-    /// at the point physical pages actually get allocated — reservation alone
-    /// allocates no physical memory, so the node argument is immaterial to
-    /// it). The WHOLE `over`-byte reservation is then adopted into an
-    /// `aligned_vmem::Reservation` via [`aligned_vmem::Reservation::from_raw_parts`];
-    /// its `Drop` / release path will `VirtualFree(MEM_RELEASE)` the entire
-    /// span exactly once.
+    /// still via `VirtualAllocExNuma` for API-site uniformity, though the
+    /// NUMA preference is already fixed by the reserve call above — see the
+    /// task #778/F2 note below). The WHOLE `over`-byte reservation is then
+    /// adopted into an `aligned_vmem::Reservation` via
+    /// [`aligned_vmem::Reservation::from_raw_parts`]; its `Drop` / release
+    /// path will `VirtualFree(MEM_RELEASE)` the entire span exactly once.
     ///
     /// task #724 (rust-intel audit): the previous version committed the
     /// FULL `over = size + align` bytes in one `MEM_RESERVE | MEM_COMMIT`
@@ -946,6 +1021,30 @@ mod platform {
     /// `win_reserve_commit` has always reserved `over` but committed only
     /// `commit_len <= size`). Fixed to the same two-call reserve-then-commit
     /// shape.
+    ///
+    /// task #778 (round-closing review, F2, MEDIUM): the mechanism note
+    /// above and this function's two `// SAFETY:` comments originally stated
+    /// the `node` argument "has no effect" on the `MEM_RESERVE` call and
+    /// "takes effect" on the `MEM_COMMIT` call — the EXACT INVERSE of
+    /// Microsoft's documented `VirtualAllocExNuma` contract. Per the
+    /// Win32 API reference, `nndPreferred` is "used only when allocating a
+    /// NEW VA region (either committed or reserved)... ignored when the API
+    /// is used to commit pages in a region that already exists" — so `node`
+    /// takes effect on the `MEM_RESERVE` call (a new VA region) and is
+    /// IGNORED on the `MEM_COMMIT` call (into the region the reserve call
+    /// already created). Separately, no `VirtualAllocExNuma` call "actually
+    /// allocates physical pages" at all — per the same reference, physical
+    /// pages are allocated ON DEMAND at first touch, regardless of which
+    /// call reserved/committed the range. The net shipped behavior was
+    /// still correct (the preference IS recorded, by the reserve call, and
+    /// the commit charge IS halved) — but purely because `node` happened to
+    /// be passed on the reserve call too, which the ORIGINAL comments framed
+    /// as a harmless no-op kept only "for API uniformity." A reader who
+    /// trusted that framing would have every reason to drop `node` from the
+    /// (documented-as-inert) reserve call and keep it only on the
+    /// (documented-as-load-bearing) commit call — silently disabling Windows
+    /// NUMA binding entirely, with no error from either call. Comments
+    /// corrected to state the true mechanism.
     ///
     /// Returns `None` on contract violation (`align` not a power of two `>= PAGE`,
     /// `size` zero or not a multiple of `PAGE`) or when the OS refuses the
@@ -965,10 +1064,12 @@ mod platform {
         // SAFETY: `VirtualAllocExNuma(GetCurrentProcess(), NULL, over,
         // MEM_RESERVE, PAGE_READWRITE, node)` reserves (but does not commit)
         // `over` bytes of address space, returning the base or NULL on
-        // refusal. `node` has no effect on a reserve-only call (no physical
-        // pages are allocated yet); passing it through is harmless and keeps
-        // this one call site rather than adding a second, non-NUMA
-        // `VirtualAlloc` import just for the reserve step.
+        // refusal. task #778 (F2): `node` IS load-bearing on this call --
+        // per Microsoft's documented `nndPreferred` contract, the NUMA
+        // preference is recorded when allocating a NEW VA region (reserved
+        // or committed), which this call is; it is the ONLY call in this
+        // function where `node` has any effect (see the corrected mechanism
+        // note on this function's own rustdoc above).
         let raw = unsafe {
             VirtualAllocExNuma(
                 GetCurrentProcess(),
@@ -991,9 +1092,15 @@ mod platform {
         // aligned sub-range within the just-reserved `over`-byte region
         // (`base + size <= raw + over` by construction: `base <= raw +
         // align - 1` rounds down to `raw + align`, and `over = size +
-        // align`). This is the call that actually allocates physical pages,
-        // so `node` takes effect here. NULL indicates commit-charge
-        // exhaustion; the reservation is released and `None` returned.
+        // align`). task #778 (F2): `node` has NO effect on this call --
+        // per Microsoft's documented `nndPreferred` contract, the NUMA
+        // preference is ignored when committing pages into a region that
+        // already exists (the `MEM_RESERVE` call above already created it);
+        // passed through for API-site uniformity only, not because it does
+        // anything here. Physical pages are not allocated by EITHER call --
+        // Windows allocates them on demand at first touch, regardless of
+        // which call reserved/committed the range. NULL indicates commit-
+        // charge exhaustion; the reservation is released and `None` returned.
         let committed = unsafe {
             VirtualAllocExNuma(
                 GetCurrentProcess(),
@@ -1058,7 +1165,6 @@ mod platform {
     extern "system" {
         fn GetCurrentProcessorNumberEx(proc_number: *mut ProcessorNumber);
         fn GetNumaProcessorNodeEx(processor: *const ProcessorNumber, node_number: *mut u16) -> i32;
-        fn GetCurrentProcess() -> *mut core::ffi::c_void;
     }
 
     // `VirtualAllocExNuma` is the load-bearing call: it is the ONLY way to
@@ -1068,6 +1174,16 @@ mod platform {
     // `windows-sys` / `winapi` just for one syscall.
     #[cfg(feature = "vmem-integration")]
     extern "system" {
+        // task #778 (round-closing review, F9): moved here from the
+        // always-compiled extern block above -- its only two call sites
+        // (`reserve_aligned_numa`) are already `vmem-integration`-gated, so
+        // leaving it in the unconditional block made `cargo clippy
+        // --all-targets -- -D warnings` fail on this crate's DEFAULT
+        // feature set (what `cargo add numa-shim` produces) with "function
+        // `GetCurrentProcess` is never used" -- every downstream Windows
+        // consumer's default build saw this warning, and no CI job for this
+        // crate runs clippy at all to catch it either way.
+        fn GetCurrentProcess() -> *mut core::ffi::c_void;
         fn VirtualAllocExNuma(
             h_process: *mut core::ffi::c_void,
             lp_address: *mut core::ffi::c_void,
@@ -1097,8 +1213,11 @@ mod platform {
 }
 
 // ---- macOS stub -----------------------------------------------------------
-// `not(miri)` is required here (matching the Linux/Windows/fallback blocks
-// at `:259`/`:608`/`:812` above): without it, this block and the separate
+// `not(miri)` is required here (matching the other three sibling
+// `mod platform` blocks above -- Linux, Windows, and the generic
+// fallback -- task #778/F11: line numbers drift with every edit to this
+// file, so this is described by role instead of a citation that goes
+// stale silently): without it, this block and the separate
 // `#[cfg(miri)] mod platform` block below (any-OS-under-miri stub) BOTH
 // satisfy their cfg simultaneously when running miri on macOS
 // (`target_os = "macos"` is true AND `miri` is true), causing `mod platform`
