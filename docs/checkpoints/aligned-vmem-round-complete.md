@@ -29,6 +29,31 @@ argument eagerly, causing an underflow panic that 4 of 5 tests in the affected
 file immediately caught before commit).
 
 Task #718 (`fault_injection`'s Relaxed payload-then-flag publish + non-atomic
+FAIL_NEXT decrement) shipped with a regression test and an explanation for why
+it "could not reliably fail against the pre-fix race" that turned out to be
+WRONG — corrected append-only below, per task #775 (the round-closing review's
+sole HIGH finding, F1). **[CORRECTION, task #775]** The original test armed
+exactly as many failures as it made calls (`armed == calls`), and the
+round-closing review proved mathematically (then this session independently
+re-verified empirically, both directions) that this oracle is STRUCTURALLY
+incapable of failing against the bug, for a reason having nothing to do with
+scheduling or thread/round count: a torn decrement under the race can only
+INFLATE the observed fire count, never deflate it below the trajectory a
+correct implementation would show, and since `armed == calls` already forces
+100% of calls to fire under the correct implementation (the trivial ceiling),
+the racy implementation cannot exceed that ceiling either. The thread-jitter
+explanation below was therefore not the real reason the 10 runs all passed —
+the oracle could not have failed no matter how many runs were attempted. Fixed
+by arming only HALF the calls (`arm_fail_next(TOTAL / 2)`,
+`assert_eq!(failures, TOTAL / 2)`); the corrected oracle FAILS 5/5 runs against
+the reverted racy code with zero artificial delay. See
+`docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md` finding F1 and
+`CHANGELOG.md`'s `aligned-vmem — round-closing-review follow-ups` section for
+the full account. The paragraph below is left as the ORIGINAL (incorrect)
+record of what this session believed at checkpoint-write time — not deleted,
+per this project's own append-only correction convention.
+
+Task #718 (`fault_injection`'s Relaxed payload-then-flag publish + non-atomic
 FAIL_NEXT decrement) required genuinely trying — and failing — to build a
 reliable regression test for a real hardware-scheduling-timescale race: neither
 an 8-thread/200-call design nor a 32-thread/200-round `Barrier`-synchronized

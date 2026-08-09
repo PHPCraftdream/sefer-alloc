@@ -147,40 +147,53 @@ fn fail_next_has_priority_over_fail_at() {
 /// callers, two threads could race to observe the same pre-decrement value,
 /// either both firing when only one failure was armed or both writing back
 /// the same decremented value and silently losing a decrement. Fixed with
-/// `AtomicU32::fetch_update`. This test arms exactly `TOTAL` failures and
-/// spawns `THREADS` real committing threads racing (synchronized to the same
+/// `AtomicU32::fetch_update`. This test arms `TOTAL / 2` failures and spawns
+/// `THREADS` real committing threads racing (synchronized to the same
 /// instant every round via a `Barrier`) on the SAME already-fully-committed
 /// span (`commit_range` on an already-committed range is
 /// documented-idempotent — see `commit_range_idempotent_on_already_committed`
 /// in `tests/lazy_commit.rs` — so concurrent calls are safe regardless of the
 /// fault-injection hook itself), then asserts the observed failure count is
-/// EXACTLY `TOTAL`.
+/// EXACTLY `TOTAL / 2`.
 ///
-/// Verification-honesty note (task #718): this test does NOT reliably fail
-/// against the pre-fix racy implementation, and that was verified, not
-/// assumed. Before landing this fix, a temporarily-reverted
-/// `should_fail_commit` (the original separate `load` then `store`) was run
-/// against two versions of this test: an earlier unsynchronized 8-thread/
-/// 200-call-per-thread design (5 runs, all passed) and this `Barrier`-
-/// synchronized 32-thread/200-round design (5 more runs, all passed) — 10
-/// runs total, zero failures, against genuinely racy code. The reason: the
-/// actual
-/// race window is a handful of instructions (a `Relaxed` load immediately
-/// followed by a `Relaxed` store, no real work between them), while real OS
-/// thread wake-up jitter after a `Barrier::wait()` release is typically
-/// microseconds — several orders of magnitude wider than the window it would
-/// need to land inside. No amount of thread/round count fixes this on real
-/// hardware without either a model checker (`loom`, not currently wired into
-/// `aligned-vmem` — see the module doc) or injecting an artificial delay into
-/// the very code path under test, which would defeat the point. This test's
-/// actual value is therefore narrower than "catches a reintroduced race": it
-/// proves the FIX is correct and introduces no regression, deadlock, or
-/// miscount under real concurrent load (a genuine positive-path guarantee),
-/// and it documents the intended exactly-once-per-armed-failure contract as
-/// an executable spec. The actual soundness guarantee for the fix itself
-/// rests on `fetch_update` being atomic BY CONSTRUCTION (a single indivisible
-/// read-modify-write, per `core::sync::atomic`'s own documented semantics),
-/// not on this test's ability to have caught the old bug.
+/// task #775 (round-closing review finding F1, HIGH): an earlier revision of
+/// this test armed exactly `TOTAL` failures for `TOTAL` calls and asserted
+/// `failures == TOTAL`. That oracle is STRUCTURALLY INCAPABLE of failing
+/// against the pre-fix race, for a reason independent of scheduling,
+/// hardware, or thread/round count — not merely "unlikely to trigger on real
+/// hardware", which is what that revision's own doc comment (and this
+/// crate's `b8b70fb` commit message) incorrectly claimed. The argument: a
+/// call fires iff it observes `FAIL_NEXT > 0`. Every torn decrement under the
+/// racy `load`-then-`store` pair can only LOSE a decrement (two threads
+/// racing on the same value both write back the same decremented result) —
+/// it can never cause the counter to drop BELOW its correct trajectory. So
+/// the racy counter is pointwise `>=` the counter a correct implementation
+/// would show at every instant, meaning every call that fires under the
+/// CORRECT implementation also fires under the racy one. With `armed ==
+/// calls`, the correct implementation already fires on 100% of calls (the
+/// trivial upper bound) — so the racy implementation ALSO fires on 100% of
+/// calls, and `failures == TOTAL` holds under BOTH implementations. No
+/// number of threads or rounds changes that; the assertion is one-sided in
+/// the direction the bug never moves.
+///
+/// Fixed by arming only HALF the calls (`TOTAL / 2`): now a correct
+/// implementation fires on exactly half of them, so the racy implementation
+/// (which can only inflate the observed fire count above the correct value,
+/// per the argument above) has room to diverge and get CAUGHT. Verified,
+/// not assumed: reverted `should_fail_commit` to the pre-`#718` racy
+/// `load`-then-`store` and ran BOTH oracle shapes against it. The `armed ==
+/// calls` shape passed 3/3 runs (confirming the mathematical argument above,
+/// not just asserting it). The `armed == calls / 2` shape FAILED 5/5 runs,
+/// on this exact `Barrier`-synchronized 32-thread/200-round design, with NO
+/// artificial delay — directly refuting the prior revision's claim that "no
+/// amount of thread/round count fixes this on real hardware without a model
+/// checker or an artificial delay." Reverted cleanly afterward (`git diff`
+/// showed zero net change to `src/fault_injection.rs`). The soundness
+/// guarantee for the FIX itself still rests on `fetch_update` being atomic
+/// BY CONSTRUCTION (a single indivisible read-modify-write, per
+/// `core::sync::atomic`'s own documented semantics) — what changed is that
+/// this test can now actually observe a regression, instead of only
+/// asserting a true-but-untestable-by-this-oracle fact.
 #[test]
 fn fail_next_is_atomic_under_concurrent_callers() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -219,7 +232,10 @@ fn fail_next_is_atomic_under_concurrent_callers() {
     const ROUNDS: u32 = 200;
     const TOTAL: u32 = THREADS as u32 * ROUNDS;
 
-    arm_fail_next(TOTAL);
+    // task #775: arm only HALF the calls, so a correct implementation fires
+    // on exactly half of them -- see the doc comment above for why arming
+    // ALL of them (the pre-#775 shape) made this oracle one-sided.
+    arm_fail_next(TOTAL / 2);
     let barrier = std::sync::Barrier::new(THREADS);
 
     let failures: u32 = std::thread::scope(|scope| {
@@ -247,8 +263,9 @@ fn fail_next_is_atomic_under_concurrent_callers() {
     });
 
     assert_eq!(
-        failures, TOTAL,
-        "exactly {TOTAL} calls were armed to fail; a torn load-then-store \
+        failures,
+        TOTAL / 2,
+        "exactly TOTAL/2 calls were armed to fail; a torn load-then-store \
          decrement would under- or over-count under concurrent callers"
     );
 }
