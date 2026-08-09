@@ -31,6 +31,29 @@ vmem-integration = ["dep:aligned-vmem"]
 # Test-only: replace platform syscalls with a recording mock.  Lets every
 # CI run (any target) assert the wrapping logic without touching the real
 # kernel.  See docs/NUMA_TESTING_OPTIONS.md Phase 1.
+#
+# CARGO FEATURE-UNIFICATION HAZARD (task #726, rust-intel audit §C10) — read
+# before enabling: this is a NON-ADDITIVE, backend-REPLACING feature. Cargo
+# unifies features across a build's WHOLE dependency graph, not per edge —
+# so if ANY crate anywhere downstream of your build (including a sibling
+# workspace member's own `[dev-dependencies]`) enables `numa-shim/mock`,
+# every OTHER consumer in that SAME build silently gets the mock backend
+# too: `current_node`/`bind_range`/`reserve_on_node` stop touching the real
+# OS for THEM as well, with no compile error and no warning. Enable this
+# feature ONLY in a leaf test/dev target (a `[[test]]`, an integration-test
+# crate, or a `[dev-dependencies]` entry in a binary that is never itself a
+# library dependency of anything else) — never in a library's own
+# `[dependencies]`, and never in a `[dev-dependencies]` entry reachable from
+# more than one build target in the same workspace. Same policy as
+# `aligned-vmem`'s own `mock` feature (`../vmem/Cargo.toml`, task #715): a
+# stronger fix (a build-time `--cfg` flag instead of a Cargo feature,
+# matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
+# unify) was evaluated and DEFERRED for the same reason — this crate has not
+# yet had its first crates.io publish (task #657), so removing `mock` as a
+# Cargo feature later remains possible without an immediate breaking-change
+# cost, and converting now would be a large mechanical change for a hazard
+# that, today, has zero real external consumers to protect. Revisit if/when
+# this crate gains external consumers and the hazard is reported for real.
 mock = []
 
 [dependencies]

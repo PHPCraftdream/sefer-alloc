@@ -89,14 +89,21 @@ fn bind_range_records_args() {
     // SAFETY: dummy pointer; mock intercepts before any dereference.
     unsafe { bind_range(0x1000 as *mut u8, 4096, 3) };
     let calls = fresh_drain();
-    assert_eq!(
-        calls,
-        vec![mock::MockCall::BindRange {
+    // task #726 (rust-intel audit §C1a): `MockCall`'s struct-like variants
+    // now carry their own `#[non_exhaustive]`, so an external crate (this
+    // integration test) can no longer construct a `BindRange { .. }` value
+    // via struct-literal syntax to compare with `assert_eq!` -- only
+    // pattern-match it, and only with a trailing `..`.
+    assert_eq!(calls.len(), 1);
+    assert!(matches!(
+        calls[0],
+        mock::MockCall::BindRange {
             base: 0x1000,
             len: 4096,
             node: 3,
-        }]
-    );
+            ..
+        }
+    ));
 }
 
 #[cfg(feature = "vmem-integration")]
@@ -112,7 +119,8 @@ fn reserve_on_node_chains_and_records() {
         mock::MockCall::ReserveOnNode {
             size: _,
             align: _,
-            node: 2
+            node: 2,
+            ..
         }
     ));
     assert!(matches!(
@@ -120,6 +128,36 @@ fn reserve_on_node_chains_and_records() {
         mock::MockCall::BindRange { node: 2, .. }
     ));
     drop(r);
+}
+
+/// task #726 (rust-intel audit §B14): under the documented
+/// sefer-alloc-as-global `numa-aware-mock` scenario, `record()` is called
+/// from an allocation hot path with nothing ever draining the log -- before
+/// this task `CALLS` grew without bound. Confirms the fix: pushing well past
+/// the module's own `CALLS_CAP` (4096, mirrored here since the constant
+/// itself is private) leaves the log capped rather than matching the push
+/// count. This test WOULD fail against the pre-fix unbounded `Vec::push`
+/// (it would observe `calls.len() == PUSHES`).
+#[test]
+fn calls_log_is_capped_not_unbounded() {
+    fresh_drain();
+    const PUSHES: usize = 5000;
+    for i in 0..PUSHES {
+        mock::set_current_node((i % 64) as u32);
+        let _ = current_node();
+    }
+    let calls = fresh_drain();
+    assert!(
+        calls.len() <= 4096,
+        "CALLS must be capped at 4096, got {}",
+        calls.len()
+    );
+    assert!(
+        calls.len() < PUSHES,
+        "a capped log must hold fewer entries than were pushed ({} pushed, {} recorded)",
+        PUSHES,
+        calls.len()
+    );
 }
 
 #[cfg(feature = "vmem-integration")]

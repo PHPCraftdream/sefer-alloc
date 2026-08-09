@@ -63,9 +63,37 @@ pub const NO_NODE: u32 = u32::MAX;
 ///
 /// Enabled by feature `mock`.  When enabled, the public NUMA functions
 /// dispatch into this module instead of the platform implementations.
+///
+/// # Cargo feature-unification hazard (task #726)
+///
+/// `mock` is a NON-ADDITIVE, backend-REPLACING feature, and Cargo unifies
+/// features across a build's WHOLE dependency graph, not per edge. If ANY
+/// crate anywhere downstream of your build enables `numa-shim/mock`
+/// (including a sibling workspace member's own `[dev-dependencies]`), every
+/// OTHER consumer in that SAME build silently gets the mock backend too —
+/// with no compile error and no warning. **Enable this feature only in a
+/// leaf test/dev target — never in a library's own `[dependencies]`, and
+/// never in a shared `[dev-dependencies]` entry reachable from more than one
+/// build target in the same workspace.** See the `mock` feature's own doc
+/// comment in `Cargo.toml` for the full reasoning and the stronger
+/// alternative (a `--cfg` flag instead of a Cargo feature) considered and
+/// deferred for this crate's first publish, matching `aligned-vmem`'s own
+/// task #715 decision for its identical `mock` feature.
 #[cfg(feature = "mock")]
 pub mod mock {
     use core::cell::RefCell;
+
+    /// task #726 (rust-intel audit §B14): under the documented
+    /// sefer-alloc-as-global `numa-aware-mock` scenario (this module's own
+    /// R11-5 note on [`record`]), every allocation calls `current_node()` →
+    /// `record()` → `Vec::push` with nothing ever draining the log in that
+    /// scenario — an unbounded insert-only Vec growing linearly with
+    /// allocation count per thread. Once `CALLS` holds this many entries,
+    /// `record()` stops pushing (oldest entries are kept, matching a
+    /// call-log's usual "what happened first" debugging value) rather than
+    /// growing forever; direct mock tests that `drain()` promptly never
+    /// approach this cap.
+    const CALLS_CAP: usize = 4096;
 
     /// One recorded invocation of a public NUMA function.
     #[non_exhaustive]
@@ -74,6 +102,7 @@ pub mod mock {
         /// `current_node()` was called; the inner value is what was returned.
         CurrentNode(u32),
         /// `bind_range(base, len, node)` was called (past the short-circuit).
+        #[non_exhaustive]
         BindRange {
             /// Base address passed to `bind_range`, as `usize`.
             base: usize,
@@ -83,6 +112,7 @@ pub mod mock {
             node: u32,
         },
         /// `reserve_on_node(size, align, node)` was called.
+        #[non_exhaustive]
         ReserveOnNode {
             /// Requested reservation size in bytes.
             size: usize,
@@ -95,9 +125,18 @@ pub mod mock {
 
     std::thread_local! {
         /// Calls recorded since the last `drain()`.
-        pub static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
+        ///
+        /// task #726 (rust-intel audit §A3): was `pub`, committing this
+        /// thread-local's internal representation (`RefCell<Vec<MockCall>>`)
+        /// to the crate's semver surface even though the intended API is the
+        /// encapsulating pair [`drain`]/[`set_current_node`] — no code
+        /// anywhere in this workspace (including this crate's own tests)
+        /// touched `CALLS`/`CURRENT_NODE_SLOT` directly. Narrowed to
+        /// `pub(crate)`; external consumers keep `drain()`/`set_current_node()`
+        /// as the only surface.
+        pub(crate) static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
         /// Value returned by `current_node()` under the mock.  Default 0.
-        pub static CURRENT_NODE_SLOT: RefCell<u32> = const { RefCell::new(0) };
+        pub(crate) static CURRENT_NODE_SLOT: RefCell<u32> = const { RefCell::new(0) };
     }
 
     /// Drain every recorded call since the last drain (or test start).
@@ -130,7 +169,12 @@ pub mod mock {
     pub(crate) fn record(call: MockCall) {
         let _ = CALLS.try_with(|c| {
             if let Ok(mut b) = c.try_borrow_mut() {
-                b.push(call);
+                // task #726 (rust-intel audit §B14): cap the log so an
+                // unbounded numa-aware-mock allocation scenario (see this
+                // fn's own R11-5 note above) cannot grow this Vec forever.
+                if b.len() < CALLS_CAP {
+                    b.push(call);
+                }
             }
         });
     }
@@ -928,6 +972,21 @@ mod platform {
         number: u8,
         reserved: u8,
     }
+
+    // task #726 (rust-intel audit §B25): `ProcessorNumber` is passed by
+    // pointer to `GetCurrentProcessorNumberEx`/`GetNumaProcessorNodeEx` --
+    // the hand-written mirror currently matches the real `PROCESSOR_NUMBER`
+    // layout (size 4, align 2, offsets 0/2/3), but nothing pinned that
+    // before this assertion, so a future field edit (reordering, adding a
+    // field) would silently corrupt the out-parameter write these two FFI
+    // calls make into it, with no compile-time signal.
+    const _: () = {
+        assert!(core::mem::size_of::<ProcessorNumber>() == 4);
+        assert!(core::mem::align_of::<ProcessorNumber>() == 2);
+        assert!(core::mem::offset_of!(ProcessorNumber, group) == 0);
+        assert!(core::mem::offset_of!(ProcessorNumber, number) == 2);
+        assert!(core::mem::offset_of!(ProcessorNumber, reserved) == 3);
+    };
 
     extern "system" {
         fn GetCurrentProcessorNumberEx(proc_number: *mut ProcessorNumber);

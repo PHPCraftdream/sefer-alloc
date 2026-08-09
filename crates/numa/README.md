@@ -70,6 +70,25 @@ let r = reserve_on_node(PAGE * 16, PAGE, node).expect("OOM");
 
 Without this feature, `numa-shim` has **zero runtime dependencies**.
 
+### `mock`
+
+Test-only: replaces the real platform NUMA syscalls with a recording stub
+(`numa_shim::mock`) so CI can assert the wrapping logic on any target,
+including macOS and miri, where no real NUMA API exists.
+
+**⚠ Cargo feature-unification hazard (task #726):** `mock` is a
+non-additive, backend-REPLACING feature, and Cargo unifies features across a
+build's whole dependency graph, not per edge. If ANY crate anywhere
+downstream of your build enables `numa-shim/mock` — including a sibling
+workspace member's own `[dev-dependencies]` — every other consumer in that
+same build silently gets the mock backend too, with no compile error and no
+warning. Enable this feature only in a leaf test/dev target — never in a
+library's own `[dependencies]`, and never in a shared `[dev-dependencies]`
+entry reachable from more than one build target in the same workspace. See
+the `mock` feature's own doc comment in `Cargo.toml` and the `mock` module's
+own rustdoc for the full reasoning (matching `aligned-vmem`'s identical
+`mock` feature, task #715).
+
 ## Public API
 
 ```rust
