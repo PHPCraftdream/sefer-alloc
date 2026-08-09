@@ -176,7 +176,14 @@ fn size2class_o1_lookup_agrees_with_brute_force_at_medium_boundaries() {
 
 #[test]
 fn item1_mib_alignment_resolves_to_small_not_large() {
-    for &align in MEDIUM_SIZES {
+    // `class_for`'s own documented precondition (task #729, src/alloc_core/
+    // size_classes.rs's crate) requires `align` to be a power of two -- the
+    // same `Layout` contract Rust's allocator API imposes on its callers.
+    // Three of MEDIUM_SIZES (320/384/768 KiB) are NOT powers of two, so this
+    // align-axis loop is restricted to the pow2 members; the non-pow2 sizes
+    // are still fully covered on the *size* axis by the loop below (size is
+    // unconstrained -- only `align` carries the pow2 precondition).
+    for &align in MEDIUM_SIZES.iter().filter(|a| a.is_power_of_two()) {
         // size=1 forces the slow path to seed low and walk up to a
         // divisible class; align equal to a real table entry is trivially
         // divisible by itself, so the class holding exactly `align` bytes

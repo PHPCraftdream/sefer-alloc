@@ -312,6 +312,15 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
 // docs/reviews/2026-08-07-size-classes-rust-intel-audit.md §F2 (lib.rs:408)
 // and the companion §B26 (lib.rs:432).
 
+// task #755's closing review (F3, HIGH): the guard under test is a
+// `debug_assert!`, which compiles away entirely in `--release` (debug
+// assertions off). `#[should_panic]` against a guard that cannot fire in
+// release makes this test itself fail under `cargo test --release` --
+// reproduced verbatim: "test did not panic as expected". Gated to the only
+// profile that can satisfy it; release has nothing to assert here by
+// design (see `class_for`'s own doc comment on why this is deliberately
+// debug-only, not promoted to a release-active `assert!`).
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "align must be a power of two")]
 fn class_for_non_pow2_align_violates_debug_assert() {

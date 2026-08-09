@@ -698,6 +698,9 @@ jobs:
     #   4-5. `size-classes` / `racy-ptr-cell` — `--no-default-features` cross-
     #      built for `thumbv7em-none-eabi` (bare-metal no_std proof for their
     #      published `no-std::no-alloc` category claim).
+    #   6-9. `size-classes` (debug + release, task #755 F1-F3) and
+    #      `racy-ptr-cell` (debug + release, task #773 F1) — `cargo test`
+    #      proper, since steps 4-5's cross-builds compile no test target.
     name: test workspace members
     runs-on: ubuntu-latest
     steps:
@@ -781,6 +784,25 @@ jobs:
       # the `no_std` job already uses for the root crate (installed via the
       # toolchain step above). Verified locally: both compile clean.
       - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
+      # rust-intel round-closing review (task #755, finding F1/F2/F3,
+      # 2026-08-09): the `cargo build` step above compiles no test target at
+      # all -- `size-classes` had ZERO `cargo test` coverage anywhere in CI,
+      # the identical gap class as the `tagged-index-stack` (task #772
+      # F4-F5) and `racy-ptr-cell` (task #773 F1) steps in this same job.
+      # All 14 of the crate's tests, including the 3 regression tests this
+      # round's fix commits added (#701, #729, #730), had never run in CI.
+      # The `--release` row specifically matters here, mirroring the
+      # `racy-ptr-cell` release-row rationale immediately below: task #729's
+      # `class_for` precondition is enforced by a `debug_assert!`
+      # (deliberately not promoted to a release-active `assert!`, see its
+      # own doc comment), so a debug-only `cargo test` run would stay green
+      # even if that guard's presence were silently reverted -- release has
+      # nothing to assert there by design, which is exactly why
+      # `class_for_non_pow2_align_violates_debug_assert`
+      # (tests/builder.rs) is itself `#[cfg(debug_assertions)]`-gated rather
+      # than expected to pass in both profiles.
+      - run: cargo test -p size-classes --all-features --no-fail-fast
+      - run: cargo test -p size-classes --all-features --release --no-fail-fast
       - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
       # rust-intel round-closing review (task #773, finding F1, 2026-08-09):
       # the two `racy-ptr-cell` invocations above are `cargo build`, which

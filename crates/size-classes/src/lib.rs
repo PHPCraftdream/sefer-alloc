@@ -537,11 +537,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// violation, not memory unsafety or table corruption (contrast task
     /// #701's geometric-overflow finding, which promoted to a release-
     /// active `assert!` because a masked wrong TABLE is a worse failure
-    /// mode than a masked wrong class choice here). Every real caller in
-    /// this repo derives `align` from `core::alloc::Layout`, which already
-    /// guarantees power-of-two by construction, so practical exposure is
-    /// low; the `debug_assert!` exists to catch a caller that violates the
-    /// contract some other way, at zero cost in release.
+    /// mode than a masked wrong class choice here). Most callers derive
+    /// `align` from `core::alloc::Layout`, which already guarantees
+    /// power-of-two by construction -- but NOT all: task #755's closing
+    /// review found `tests/medium_classes_correctness.rs` (in this crate's
+    /// consuming workspace) calling this function directly with a non-pow2
+    /// `align` (a test bug, since fixed there), which is exactly the shape
+    /// of caller this precondition exists to catch. The `debug_assert!`
+    /// fires on any such violation at zero cost in release.
     #[must_use]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
         debug_assert!(
