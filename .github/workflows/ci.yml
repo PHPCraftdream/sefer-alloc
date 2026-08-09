@@ -739,16 +739,30 @@ jobs:
       # `mock.rs` — all gated on the `fault-injection`/`lazy-commit`/`mock`
       # features) compiled to zero tests, and the Linux `MAP_HUGETLB`
       # `huge-pages` code path had never been compiled by CI on any OS.
-      # `--all-features` closes both: it turns on `huge-pages`,
+      # `--all-features` closes most of that: it turns on `huge-pages`,
       # `lazy-commit`, `fault-injection`, `mock`, and `bench-internals`
-      # together, so all 4 test files actually run (verified locally: 9 + 5 +
-      # 10 tests across `lazy_commit.rs`/`mock.rs`/`smoke.rs`, plus
-      # `fault_injection.rs` compiling and running under `mock`). As a side
-      # effect this also exercises `rust-version = "1.88"`'s MSRV-completeness
-      # for the crate standalone with every feature on, which the existing
-      # `msrv` job (root-crate-scoped) and `test-workspace`'s own
-      # default-features step never did.
+      # together, so `lazy_commit.rs`/`mock.rs`/`smoke.rs` actually run
+      # (verified locally: 9 + 5 + 10 tests). As a side effect this also
+      # exercises `rust-version = "1.88"`'s MSRV-completeness for the crate
+      # standalone with every feature on, which the existing `msrv` job
+      # (root-crate-scoped) and `test-workspace`'s own default-features step
+      # never did.
       - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # rust-intel audit finding (task #699, HIGH, 2026-08-09):
+      # `--all-features` does NOT actually run `fault_injection.rs` -- this
+      # step's own comment above previously claimed it did ("plus
+      # fault_injection.rs compiling and running under mock"), which was
+      # false: the file's own `#![cfg(all(feature = "fault-injection",
+      # feature = "lazy-commit", not(feature = "mock")))]` gate requires
+      # `mock` OFF (it tests the REAL commit-fault-injection hook on the
+      # real syscall backend, which `mock` entirely replaces), so turning
+      # `mock` on alongside it via `--all-features` makes the whole file
+      # compile to ZERO tests (verified: `cargo test -p aligned-vmem
+      # --all-features --test fault_injection` -> "0 passed"). All 4 of
+      # this file's tests had therefore never executed in ANY CI
+      # configuration. Fixed with a dedicated step using the file's actual
+      # required feature combination (verified locally: 4 passed).
+      - run: cargo test -p aligned-vmem --features "fault-injection lazy-commit" --no-fail-fast
       # Publish-readiness task #639 (P5, gaps 3+4 of 4): CI's `no_std` job
       # (below) only ever built the ROOT crate's default-features-off
       # configuration as its no_std signal — `size-classes` (root-gated
