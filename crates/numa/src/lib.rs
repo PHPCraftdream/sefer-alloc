@@ -544,6 +544,26 @@ mod platform {
         Some(r)
     }
 
+    /// Per-node raw cpumap byte capacity for the cached [`Topology`].
+    ///
+    /// task #777 (rust-intel audit round-closing review, finding F1):
+    /// bounds each node's cached cpumap to a FIXED size instead of a
+    /// heap-allocated `Vec` (see `Topology`'s own doc for why). 1024 bytes
+    /// of comma-separated 8-hex-digit words covers `1024 / 9 * 32 ≈ 3640`
+    /// CPUs on a SINGLE node -- comfortably past the per-node CPU count of
+    /// any currently-shipping NUMA system (real multi-socket hosts run at
+    /// most a few hundred CPUs per node; the crate's own separate 64-node
+    /// ceiling, documented at `bind_range_impl_linux`'s `node >= 64` guard,
+    /// already bounds total system-wide CPU count far below what 3640/node
+    /// could ever combine with in practice). This is a DEVIATION from
+    /// task #720's original 4 KiB read buffer (chosen there to cover
+    /// ~14,500 CPUs on a SINGLE node, a bound this cache does not need to
+    /// match since it exists on the stack/static, not the heap, and 64
+    /// nodes x 4 KiB would be 256 KiB of static storage). A node whose
+    /// cpumap file is wider than this buffer is treated identically to a
+    /// read failure -- `false`/not-cached, same as before.
+    const NODE_CPUMAP_BUF_LEN: usize = 1024;
+
     /// Boot-static cpu→node topology, parsed via sysfs ONCE and cached for
     /// the life of the process (task #723, rust-intel audit §E5: each
     /// `current_node()` call previously re-derived the mapping via up to 64
@@ -554,23 +574,51 @@ mod platform {
     /// a soft, best-effort preference the kernel can override under memory
     /// pressure.
     ///
-    /// Index `i` holds node `i`'s raw cpumap file bytes (empty if the
-    /// node's cpumap could not be read -- absent sysfs, permission error,
-    /// or a wider-than-4-KiB read). Re-parsed on every `current_node()`
-    /// call via the pure `crate::cpumap::parse_contains_cpu` (task #721) --
-    /// cheap in-memory parsing, no further syscalls after this one-time
-    /// populate.
-    static TOPOLOGY: std::sync::OnceLock<Vec<Vec<u8>>> = std::sync::OnceLock::new();
+    /// task #777 (rust-intel audit round-closing review, finding F1, HIGH):
+    /// task #723's original design cached `Vec<Vec<u8>>` -- ~65 heap
+    /// allocations inside the `OnceLock::get_or_init` initializer below.
+    /// `current_node()` is reachable from `AllocCore::alloc` (via
+    /// `current_node_cached` on a cache miss, inside `reserve_small_segment`
+    /// / `alloc_large_slow`), and the parent `sefer-alloc` crate's own `M5`
+    /// invariant declares that entire path allocation-free/reentrancy-free
+    /// specifically so it never re-enters the global allocator. Under a real
+    /// `#[global_allocator] = SeferAlloc` + `numa-aware` deployment on
+    /// Linux, the FIRST allocation needing a NUMA lookup would have
+    /// triggered `topology()`'s heap allocation, which re-enters
+    /// `GlobalAlloc::alloc`, which re-enters `current_node()`, which
+    /// re-enters `OnceLock::get_or_init` on the SAME `TOPOLOGY` cell mid-
+    /// initialization -- documented by `std::sync::OnceLock` as "an error
+    /// to reentrantly initialize the cell from `f`... current implementation
+    /// deadlocks" -- confirmed by the reviewing agent in a standalone
+    /// scratch reproduction on this exact toolchain. Fixed by making the
+    /// cache allocation-free: `Topology` below holds only fixed-size
+    /// stack/static data (`[[u8; NODE_CPUMAP_BUF_LEN]; 64]` +
+    /// `[usize; 64]`), so populating it touches no `Vec`/`Box`/heap at all,
+    /// and the reentrancy hazard is structurally removed rather than
+    /// guarded against.
+    struct Topology {
+        /// Node `i`'s cpumap byte length (0 if unreadable or oversized).
+        len: [usize; 64],
+        /// Node `i`'s raw cpumap file bytes, `buf[i][..len[i]]` valid.
+        buf: [[u8; NODE_CPUMAP_BUF_LEN]; 64],
+    }
 
-    fn topology() -> &'static Vec<Vec<u8>> {
+    static TOPOLOGY: std::sync::OnceLock<Topology> = std::sync::OnceLock::new();
+
+    fn topology() -> &'static Topology {
         TOPOLOGY.get_or_init(|| {
-            (0u32..64)
-                .map(|node| {
-                    let mut path = [0u8; 64];
-                    let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
-                    read_cpumap_bytes(path_str).unwrap_or_default()
-                })
-                .collect()
+            let mut t = Topology {
+                len: [0; 64],
+                buf: [[0u8; NODE_CPUMAP_BUF_LEN]; 64],
+            };
+            for node in 0u32..64 {
+                let mut path = [0u8; 64];
+                let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
+                if let Some(n) = read_cpumap_into(path_str, &mut t.buf[node as usize]) {
+                    t.len[node as usize] = n;
+                }
+            }
+            t
         })
     }
 
@@ -581,8 +629,10 @@ mod platform {
     /// Returns `0` when sysfs NUMA topology files are absent (single-node
     /// system where the kernel didn't compile NUMA support).
     fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
-        for (node, bytes) in topology().iter().enumerate() {
-            if !bytes.is_empty() && crate::cpumap::parse_contains_cpu(bytes, cpu_idx) {
+        let topo = topology();
+        for node in 0usize..64 {
+            let len = topo.len[node];
+            if len > 0 && crate::cpumap::parse_contains_cpu(&topo.buf[node][..len], cpu_idx) {
                 return node as u32;
             }
         }
@@ -592,7 +642,8 @@ mod platform {
         0
     }
 
-    /// Open the cpumap file at `path` and read its complete contents.
+    /// Open the cpumap file at `path` and read its complete contents into
+    /// the caller-supplied fixed buffer `out`, returning the byte count.
     ///
     /// The cpumap file format: `"00000000,00000001\n"` — comma-separated
     /// hex 32-bit words, most-significant word first; each word covers 32 CPUs.
@@ -600,45 +651,38 @@ mod platform {
     /// target-independent module so the parser can be exercised by
     /// `tests/cpumap_parser.rs` on every target, not just real Linux.
     ///
-    /// Returns `None` on open/read failure. task #720 (rust-intel audit
-    /// §C4): a single 256-byte read used to be treated as the WHOLE cpumap
-    /// file -- on a host with more than ~28 mask words (~896-900+ CPUs,
-    /// exactly the large-NUMA machines this crate targets) the file exceeds
-    /// 256 bytes, and the parser's most-significant-word-first
-    /// `word_count`/`left_index` arithmetic silently misaligns on a
-    /// truncated prefix, returning a WRONG node rather than failing loudly.
-    /// Fixed: loop the read to EOF into a larger (4 KiB) buffer -- 4 KiB of
-    /// comma-separated 8-hex-digit words covers roughly 14,500 CPUs, an
-    /// order of magnitude past any currently-shipping NUMA system. If the
-    /// buffer fills completely without ever observing EOF (`n == 0`), the
-    /// file is wider than this crate is prepared to parse; returns `None`
-    /// (this node's entry in the cached topology stays empty, the
-    /// documented "cannot determine" fallback) rather than silently
-    /// caching a truncated prefix.
-    fn read_cpumap_bytes(path: &[u8]) -> Option<Vec<u8>> {
+    /// Returns `None` on open/read failure, or if the file is wider than
+    /// `out` (task #720, rust-intel audit §C4: a truncated read must never
+    /// be silently treated as complete -- the most-significant-word-first
+    /// `word_count`/`left_index` arithmetic would misalign on a prefix and
+    /// return a WRONG node rather than failing loudly; task #777 preserves
+    /// this fail-closed behavior while replacing the original heap `Vec`
+    /// destination with `out: &mut [u8; NODE_CPUMAP_BUF_LEN]`, a fixed
+    /// buffer that lives inside `Topology`'s own storage -- no allocation
+    /// anywhere in this function).
+    fn read_cpumap_into(path: &[u8], out: &mut [u8; NODE_CPUMAP_BUF_LEN]) -> Option<usize> {
         // SAFETY: `path` is a valid nul-terminated C string constructed above.
         // `open` is a POSIX syscall; we check for -1 on error.
         let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
         if fd < 0 {
             return None;
         }
-        const BUF_LEN: usize = 4096;
-        let mut buf = [0u8; BUF_LEN];
         let mut total = 0usize;
         loop {
-            if total >= BUF_LEN {
+            if total >= NODE_CPUMAP_BUF_LEN {
                 // SAFETY: `fd` was opened by us and must be closed exactly once.
                 unsafe { libc_close(fd) };
                 return None;
             }
-            // SAFETY: `buf[total..]` is a valid writable sub-slice of `buf`
-            // (length `BUF_LEN - total > 0`, checked above); `fd` was
-            // returned by the successful `open` call above and not yet closed.
+            // SAFETY: `out[total..]` is a valid writable sub-slice of `out`
+            // (length `NODE_CPUMAP_BUF_LEN - total > 0`, checked above);
+            // `fd` was returned by the successful `open` call above and not
+            // yet closed.
             let n = unsafe {
                 libc_read(
                     fd,
-                    buf[total..].as_mut_ptr() as *mut core::ffi::c_void,
-                    BUF_LEN - total,
+                    out[total..].as_mut_ptr() as *mut core::ffi::c_void,
+                    NODE_CPUMAP_BUF_LEN - total,
                 )
             };
             if n < 0 {
@@ -647,7 +691,7 @@ mod platform {
                 return None;
             }
             if n == 0 {
-                break; // EOF: `buf[..total]` holds the complete file.
+                break; // EOF: `out[..total]` holds the complete file.
             }
             total += n as usize;
         }
@@ -656,7 +700,7 @@ mod platform {
         if total == 0 {
             return None;
         }
-        Some(buf[..total].to_vec())
+        Some(total)
     }
 
     // -- Raw Linux FFI (no libc crate dependency) ----------------------------
