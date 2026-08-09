@@ -763,6 +763,27 @@ jobs:
       # toolchain step above). Verified locally: both compile clean.
       - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
       - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
+      # rust-intel round-closing review (task #773, finding F1, 2026-08-09):
+      # the two `racy-ptr-cell` invocations above are `cargo build`, which
+      # compiles no test target at all, and `loom-alloc-global`'s `cargo test
+      # --release -p racy-ptr-cell --test loom_racy_ptr_cell` (elsewhere in
+      # this workflow), which excludes `tests/cell_unit.rs` twice over -- by
+      # `--test` target selection and by the file's own `#![cfg(not(loom))]`
+      # gate. `cell_unit.rs`'s 7 tests, including 4 added by the
+      # racy-ptr-cell rust-intel remediation round (task #700/#706-710) --
+      # `panicking_init_rolls_back_and_subsequent_call_succeeds`,
+      # `init_returning_the_sentinel_address_panics`,
+      # `align_of_one_payload_panics_at_construction`,
+      # `dbg_rollback_reenterable_happy_path_and_not_applicable_arm` -- had
+      # never run in CI. The exact same gap class as the two
+      # `tagged-index-stack` steps above (task #639/#772 F4-F5). The
+      # `--release` step specifically matters here: `init_returning_the_
+      # sentinel_address_panics` regression-guards an `assert!` that was
+      # promoted from `debug_assert!` (task #707) -- a debug-only `cargo
+      # test` run would stay green even if that promotion were silently
+      # reverted, since `debug_assert!` still fires in a debug build.
+      - run: cargo test -p racy-ptr-cell --no-fail-fast
+      - run: cargo test -p racy-ptr-cell --release --no-fail-fast
       # rust-intel round-closing review (task #772, finding F5, 2026-08-09):
       # tagged-index-stack advertises `categories = [..., "no-std::no-alloc"]`
       # but was never cross-built for ANY bare-metal target -- it can't use
