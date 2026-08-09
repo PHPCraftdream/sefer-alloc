@@ -165,6 +165,57 @@ unsafe impl<T> Send for RacyPtrCell<T> {}
 // SAFETY: see the `Send` impl above.
 unsafe impl<T> Sync for RacyPtrCell<T> {}
 
+/// RAII rollback guard held across the init closure (task #706): if `init`
+/// unwinds instead of returning, the winner thread's stack unwinds through
+/// this guard's `Drop`, which stores `null` with `Release` — exactly the
+/// same rollback the explicit OOM path performs. Without this, an unwinding
+/// `init` leaves the `INITIALIZING` sentinel stuck forever: every concurrent
+/// loser busy-spins at 100% CPU indefinitely (they spin on `==
+/// INITIALIZING`, which never changes), and every future
+/// `get_or_try_init`/`get` caller observes permanent `INITIALIZING` — a
+/// silent whole-process livelock, strictly worse than `OnceLock`'s poison
+/// (which at least panics loudly for every subsequent caller).
+///
+/// Defused (via [`RollbackGuard::defuse`]) on both non-unwinding exits — the
+/// successful publish and the explicit `None`/OOM rollback — so the normal
+/// paths are unaffected; this guard only ever fires on the unwind path.
+struct RollbackGuard<'a, T> {
+    ptr: &'a AtomicPtr<T>,
+    defused: bool,
+}
+
+impl<'a, T> RollbackGuard<'a, T> {
+    #[inline]
+    fn new(ptr: &'a AtomicPtr<T>) -> Self {
+        Self {
+            ptr,
+            defused: false,
+        }
+    }
+
+    /// Disarm the guard: its `Drop` becomes a no-op. Call once the caller has
+    /// itself handled the `INITIALIZING` state (published `READY`, or
+    /// performed the explicit `None`/OOM rollback).
+    #[inline]
+    fn defuse(&mut self) {
+        self.defused = true;
+    }
+}
+
+impl<T> Drop for RollbackGuard<'_, T> {
+    #[inline]
+    fn drop(&mut self) {
+        if !self.defused {
+            // Same ordering rationale as the explicit OOM rollback in
+            // `get_or_try_init`: `Release` pairs with the retrying thread's
+            // later CAS `Acquire`; there is no partially-initialised state to
+            // synchronise (init never published), only the "cell is free
+            // again" fact.
+            self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+        }
+    }
+}
+
 impl<T> RacyPtrCell<T> {
     /// Construct a fresh `UNINIT` cell (null pointer).
     ///
@@ -313,7 +364,12 @@ impl<T> RacyPtrCell<T> {
                 Ok(_) => {
                     // ── Winner ──────────────────────────────────────────────
                     // We hold the INITIALIZING sentinel; we are the sole
-                    // initialiser. Run the caller's init closure.
+                    // initialiser. Hold a rollback guard across `init()` so an
+                    // UNWINDING init (a panic in caller code, or the
+                    // `debug_assert!` below firing) also rolls the sentinel
+                    // back — see `RollbackGuard`'s own doc for why this is
+                    // load-bearing (task #706).
+                    let mut guard = RollbackGuard::new(&self.ptr);
                     match init() {
                         Some(ptr) => {
                             let raw = ptr.as_ptr();
@@ -327,6 +383,9 @@ impl<T> RacyPtrCell<T> {
                             // This is THE ordering the Relaxed-publish
                             // counterfactual breaks.
                             self.ptr.store(raw, Ordering::Release);
+                            // Defuse: the guard's rollback must NOT fire now
+                            // that the real pointer is published.
+                            guard.defuse();
                             return Some(ptr);
                         }
                         None => {
@@ -336,7 +395,11 @@ impl<T> RacyPtrCell<T> {
                             // pairs with the retrying thread's later CAS
                             // `Acquire`: there is no partially-initialised state
                             // to synchronise (init never published), only the
-                            // "cell is free again" fact.
+                            // "cell is free again" fact. Explicit here (rather
+                            // than relying on the guard's Drop) to keep this
+                            // path's ordering self-documenting; defuse first so
+                            // the guard does not redundantly store again.
+                            guard.defuse();
                             self.ptr.store(core::ptr::null_mut(), Ordering::Release);
                             return None;
                         }

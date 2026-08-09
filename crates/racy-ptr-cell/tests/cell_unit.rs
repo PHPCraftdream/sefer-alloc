@@ -59,6 +59,63 @@ fn init_runs_once_then_fast_path() {
 }
 
 #[test]
+fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
+    // task #706: if `init` unwinds instead of returning, the RollbackGuard
+    // must still roll the INITIALIZING sentinel back to null -- otherwise
+    // every subsequent caller (this same cell, any thread) spins forever on
+    // the loser path, since nothing else will ever move the cell out of
+    // INITIALIZING.
+    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+
+    // First attempt: init PANICS. Catch the unwind.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        cell.get_or_try_init(|| -> Option<NonNull<Payload>> {
+            panic!("simulated init panic");
+        })
+    }));
+    assert!(
+        result.is_err(),
+        "the panic must propagate out of get_or_try_init"
+    );
+
+    // The subsequent call must succeed -- the cell recovered. Run it on a
+    // background thread and bound OUR wait with a timeout: WITHOUT the
+    // RollbackGuard fix, this call spins forever on the loser path (the
+    // sentinel never left INITIALIZING) -- exactly the livelock task #706
+    // exists to close. A bounded wait turns "hangs forever" into a reported
+    // test failure instead of wedging the whole test run; the spinning
+    // thread (if the bug were present) would be orphaned, not joined, and
+    // reaped at process exit.
+    // `NonNull<Payload>` is `!Send`, so ferry the address (a plain `usize`)
+    // across the channel instead and reconstruct `NonNull` on this thread.
+    let cell = std::sync::Arc::new(cell);
+    let cell2 = std::sync::Arc::clone(&cell);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _handle = std::thread::spawn(move || {
+        let p = cell2
+            .get_or_try_init(|| Some(leak(0xABCD)))
+            .map(|p| p.as_ptr() as usize);
+        let _ = tx.send(p);
+    });
+
+    let addr = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect(
+            "get_or_try_init after a panicking init did not return within 5s \
+             -- the INITIALIZING sentinel is stuck forever (task #706's \
+             livelock is back)",
+        )
+        .expect("init must succeed");
+    let p = NonNull::new(addr as *mut Payload).unwrap();
+
+    assert!(cell.dbg_is_ready());
+    assert_eq!(cell.get(), Some(p));
+    // SAFETY: p is the leaked, still-live payload.
+    assert_eq!(unsafe { p.as_ref().marker }, 0xABCD);
+    unsafe { drop(Box::from_raw(p.as_ptr())) };
+}
+
+#[test]
 fn oom_rolls_back_and_retry_succeeds() {
     let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
 
