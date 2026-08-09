@@ -18,6 +18,9 @@ proptest! {
 
     #[test]
     fn round_trip_width_1(
+        // At width 1, INDEX_MASK == 1, so `index` (0..1) only ever takes the
+        // value 0 — this property exercises the TAG axis under the degenerate
+        // 1-bit index half, not a randomized index.
         index in 0u64..TaggedIndex::<1>::INDEX_MASK,
         tag in 0u64..(1u64 << TaggedIndex::<1>::TAG_BITS),
     ) {

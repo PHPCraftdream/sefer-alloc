@@ -67,8 +67,9 @@ build fails fast with an explicit `compile_error!` naming the requirement.
 
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite
 model-checks the REAL `TaggedIndexStack` / `TaggedIndex` code, with
-`#[should_panic]` counterfactuals (untagged corruption + the H-2 tag-reset ABA)
-proving the harness is non-vacuous:
+`#[should_panic]` counterfactuals (untagged corruption, the H-2 tag-reset ABA,
+and a Relaxed-CAS-failure-ordering regression) proving the harness is
+non-vacuous:
 
 ```text
 RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba

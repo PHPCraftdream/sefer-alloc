@@ -33,6 +33,42 @@ fn pack_unpack_round_trip_16() {
 }
 
 #[test]
+fn pack_truncates_an_over_wide_index_never_collides_with_the_tag() {
+    // rust-intel round-closing review (task #772, finding F10): pack()'s
+    // doc says an over-wide index is TRUNCATED (masked with INDEX_MASK
+    // before OR-ing with the tag), not that it "collides" with the tag
+    // bits. No existing test exercised the mask at all — the proptest
+    // properties all draw `index` strictly below INDEX_MASK. This pins
+    // the sharpest case: at width 16, an over-wide index whose low 16
+    // bits equal INDEX_MASK itself truncates to the EMPTY SENTINEL, not
+    // merely "a wrong index" — is_empty() then reads true for a packed
+    // word whose caller-supplied index was never the empty sentinel.
+    type T = TaggedIndex<16>;
+    let tag = 42u64;
+
+    // 0x1_FFFF's low 16 bits are 0xFFFF == INDEX_MASK == the empty sentinel.
+    let over_wide = 0x1_FFFFu64;
+    let word = T::pack(over_wide, tag);
+    let (v, t) = T::unpack(word);
+    assert_eq!(v, T::INDEX_MASK, "truncates to the low INDEX_BITS bits");
+    assert_eq!(t, tag, "the tag half is untouched by truncation");
+    assert!(
+        T::is_empty(word),
+        "truncating to INDEX_MASK reads as the empty sentinel, not merely \
+         a wrong live index"
+    );
+
+    // A less extreme over-wide value truncates to a live (non-sentinel)
+    // index, confirming truncation (not collision) in the general case too.
+    let over_wide_live = 0x1_0001u64; // low 16 bits: 0x0001
+    let word2 = T::pack(over_wide_live, tag);
+    let (v2, t2) = T::unpack(word2);
+    assert_eq!(v2, 1, "truncates to the low INDEX_BITS bits");
+    assert_eq!(t2, tag, "the tag half is untouched by truncation");
+    assert!(!T::is_empty(word2));
+}
+
+#[test]
 fn empty_sentinel_16() {
     type T = TaggedIndex<16>;
     let e = T::empty();

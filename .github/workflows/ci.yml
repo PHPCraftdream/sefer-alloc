@@ -704,7 +704,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: thumbv7em-none-eabi
+          targets: thumbv7em-none-eabi,x86_64-unknown-none
       - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
       # Publish-readiness task #639 (P5, gap 1 of 4 — 2026-08-06 consolidated
       # summary §8 cross-cutting theme #4): `tests/stack_unit.rs` and
@@ -722,6 +722,17 @@ jobs:
       # `#![cfg(loom)]` gate), which is fine — its real coverage stays the
       # `loom-alloc-global` job above.
       - run: cargo test -p tagged-index-stack --no-fail-fast
+      # rust-intel round-closing review (task #772, finding F4, 2026-08-09):
+      # `push`'s index-validity guard was promoted from `debug_assert!` to a
+      # full `assert!` (task #703) specifically so it holds identically in
+      # debug and release, but nothing in CI ever ran this crate's tests in
+      # `--release` -- only `loom-alloc-global`'s `--test loom_aba` runs in
+      # release, and that target selection excludes `stack_unit.rs` (the file
+      # with the promoted guard's regression test) both by `--test` and by its
+      # own `#![cfg(not(loom))]` gate. Closes the gap for real: if the
+      # `assert!` were ever accidentally reverted to `debug_assert!`, this
+      # step is what would catch it.
+      - run: cargo test -p tagged-index-stack --release --no-fail-fast
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
@@ -752,6 +763,20 @@ jobs:
       # toolchain step above). Verified locally: both compile clean.
       - run: cargo build -p size-classes --no-default-features --target thumbv7em-none-eabi
       - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
+      # rust-intel round-closing review (task #772, finding F5, 2026-08-09):
+      # tagged-index-stack advertises `categories = [..., "no-std::no-alloc"]`
+      # but was never cross-built for ANY bare-metal target -- it can't use
+      # `thumbv7em-none-eabi` like the two crates above (that target has no
+      # 64-bit atomics, and this crate's head is a single `AtomicU64` behind
+      # a `compile_error!` guard requiring `target_has_atomic = "64"`), which
+      # is presumably why it was skipped when the two builds above were
+      # added. `x86_64-unknown-none` has 64-bit atomics and no std in its
+      # sysroot, so it is a genuine bare-metal proof for this crate
+      # specifically. No `std` feature to disable (verified via `cargo
+      # metadata`: this crate declares no Cargo features at all), so no
+      # `--no-default-features` flag is needed. Verified locally: compiles
+      # clean.
+      - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
       # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
       # of gap, but UNLIKE the two crates above, sefer-region genuinely
       # declares a `std` Cargo feature to disable (`default = ["std"]`,

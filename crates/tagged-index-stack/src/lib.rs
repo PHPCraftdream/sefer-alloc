@@ -102,8 +102,9 @@
 //! Under `--cfg loom` the stack's atomics alias to `loom::sync::atomic`, so the
 //! shipped loom suite (`tests/loom_aba.rs`) model-checks the REAL
 //! [`TaggedIndexStack`] / [`TaggedIndex`] code, not a transcription — with
-//! `#[should_panic]` counterfactuals (untagged corruption + the H-2
-//! empty-transition tag-reset ABA) proving the harness is non-vacuous.
+//! `#[should_panic]` counterfactuals (untagged corruption, the H-2
+//! empty-transition tag-reset ABA, and a Relaxed-CAS-failure-ordering
+//! regression) proving the harness is non-vacuous.
 //!
 //! # Portability limit — requires 64-bit atomics
 //!
@@ -194,8 +195,9 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// own initializer — since [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
     /// and [`is_empty`](Self::is_empty) all reference `INDEX_MASK` directly, every
     /// mask-touching associated item of `TaggedIndex<INDEX_BITS>` forces this
-    /// guard, not just `pack`. There is no remaining path to an out-of-range
-    /// width reaching any of these items unchecked.
+    /// guard, not just `pack`. [`TAG_BITS`](Self::TAG_BITS) is the one associated
+    /// item that does NOT touch `INDEX_MASK` and so remains reachable, unguarded,
+    /// at any out-of-range width.
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 32,
         "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \
@@ -226,9 +228,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// `& Self::INDEX_MASK` below masks it before OR-ing with the tag, so the
     /// two never actually collide bitwise — the failure mode is a wrong index
     /// round-tripping out of [`unpack`](Self::unpack), not tag corruption).
+    /// The sharpest case of this: if the truncated low bits happen to equal
+    /// `INDEX_MASK` itself, the result reads as the EMPTY sentinel via
+    /// [`is_empty`](Self::is_empty), not merely as some other live index.
     /// The caller — the stack — guarantees the `< 2^INDEX_BITS` precondition by
     /// construction, since indices come from
-    /// [`push`](TaggedIndexStack::push)'s `< INDEX_MASK` contract.
+    /// [`push`](TaggedIndexStack::push)'s `< INDEX_MASK` contract, which this
+    /// truncation can never be reached through.
     #[must_use]
     pub const fn pack(index: u64, tag: u64) -> u64 {
         // Force the compile-time bounds check to be evaluated.

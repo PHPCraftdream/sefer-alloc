@@ -19,17 +19,32 @@
 //! # Properties asserted
 //!
 //! (a) In the classic "B pops X then re-pushes X inside A's read→CAS window",
-//!     A's stale-tag CAS is FORCED to fail (retry) rather than succeeding onto a
-//!     stale chain.
-//! (b) The free-list stays loss/duplication-free after the race resolves.
+//!     A's single-shot CAS attempt races against B's repush and may
+//!     legitimately SUCCEED or FAIL depending on scheduling — there is no
+//!     property requiring a specific outcome (a prior version of this list
+//!     claimed A's CAS is unconditionally "FORCED to fail", which is only
+//!     true of the separate, rendezvous-pinned H-2 scenario (d) below).
+//! (b) Regardless of which way (a)'s race resolves, the free-list stays
+//!     loss/duplication-free — the actual property
+//!     `aba_repush_forces_stale_cas_retry_and_stays_consistent` asserts.
 //! (c) **Untagged counterfactual** (`#[should_panic]`): a bare `AtomicU32` head
-//!     with NO tag lets the same interleaving corrupt the free-list — proving
-//!     the harness is non-vacuous and the tag is load-bearing.
+//!     with NO tag lets a same-shape interleaving corrupt the free-list —
+//!     proving the harness is non-vacuous and the tag is load-bearing. Also
+//!     checked under a live-consumer-shaped variant (B pops TWO indices and
+//!     re-pushes only the first, holding the second) via
+//!     `counterfactual_untagged_head_lets_aba_corrupt_free_list` and its
+//!     tagged companion `tagged_stack_survives_the_same_resurrection_pattern`.
 //! (d) **H-2 empty-transition:** the REAL `pop` preserves the running tag across
 //!     a drain-to-empty, so a stalled popper's CAS fails (fixed); a buggy pop
 //!     that packs `TaggedIndex::empty()` (tag 0) on the drain lets the stale CAS
 //!     recur — the `#[should_panic]` counterfactual
 //!     `counterfactual_empty_transition_tag_reset_lets_aba_recur`.
+//! (e) **CAS-failure ordering:** a pop that retries after a failed CAS must
+//!     Acquire-synchronize with the push that caused the failure, checked both
+//!     via a hand-inlined exposition harness and an end-to-end regression test
+//!     calling the real `pop`/`push` directly — the `#[should_panic]`
+//!     counterfactual `counterfactual_relaxed_cas_failure_corrupts_free_list`
+//!     proves a `Relaxed` failure ordering lets this corrupt the free-list.
 //!
 //! # How to run
 //!
@@ -222,9 +237,10 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 
         // Conservation invariant, robust to scheduling: A's popped item (if
         // any), B's held-and-never-repushed item (if any), and everything the
-        // final drain yields must be PAIRWISE DISJOINT — no index may appear
-        // twice across these three sources. This mirrors
-        // tagged_stack_survives_the_same_resurrection_pattern's oracle below,
+        // final drain yields must together account for EXACTLY {0, 1} — no
+        // index may appear twice (duplication/resurrection) AND no index may
+        // be missing (loss). This mirrors
+        // tagged_stack_survives_the_same_resurrection_pattern's oracle above,
         // which the tag defeats under the identical B-does-two-pops-then-one-
         // push scenario. A prior version of this oracle asserted
         // `!popped.contains(&1)` directly, which is scheduling-DEPENDENT: it
@@ -244,15 +260,13 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
         while let Some(idx) = reg.pop() {
             accounted.push(idx);
         }
-        let before_dedup = accounted.len();
         accounted.sort_unstable();
-        accounted.dedup();
         assert_eq!(
-            accounted.len(),
-            before_dedup,
-            "free-list corrupted (duplicate index) via the untagged model: \
-             {accounted:?}. The untagged stack allowed A's stale CAS to \
-             commit an incorrect chain, which the tag prevents (see \
+            accounted,
+            vec![0, 1],
+            "free-list corrupted (lost or duplicate index) via the untagged \
+             model: {accounted:?}. The untagged stack allowed A's stale CAS \
+             to commit an incorrect chain, which the tag prevents (see \
              tagged_stack_survives_the_same_resurrection_pattern)."
         );
     });
@@ -331,11 +345,12 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 
         // Conservation invariant, robust to scheduling: A's popped item (if
         // any), B's held-and-never-repushed item (if any), and everything
-        // the final drain yields must be PAIRWISE DISJOINT — no index may
-        // appear twice across these three sources. Duplication here is
-        // exactly the resurrection bug the untagged counterfactual proves;
-        // which specific index (0 or 1) lands in which bucket is scheduling-
-        // dependent and not itself significant.
+        // the final drain yields must together account for EXACTLY {0, 1} —
+        // no index may appear twice (duplication/resurrection) AND no index
+        // may be missing (loss — e.g. a stale CAS installing `empty` where
+        // `next` was a real index, truncating the chain past a live slot).
+        // Which specific index lands in which bucket is scheduling-dependent
+        // and not itself significant; only the final SET matters.
         let mut accounted: Vec<u32> = Vec::new();
         if let Ok(idx) = a_result {
             accounted.push(idx);
@@ -346,14 +361,12 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
         while let Some(idx) = stack.pop(&*links) {
             accounted.push(idx);
         }
-        let before_dedup = accounted.len();
         accounted.sort_unstable();
-        accounted.dedup();
         assert_eq!(
-            accounted.len(),
-            before_dedup,
-            "tagged stack: an index was resurrected/duplicated across A's pop, \
-             B's held item, and the final drain: {accounted:?}"
+            accounted,
+            vec![0, 1],
+            "tagged stack: an index was lost or resurrected/duplicated \
+             across A's pop, B's held item, and the final drain: {accounted:?}"
         );
     });
 }
@@ -608,6 +621,14 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
             let (idx_v2, _tag2) = Tag::unpack(head);
             let idx2 = idx_v2 as u32;
             let next2 = links_a.load_next(idx2);
+            // NOTE: unlike the real `pop` (which preserves the observed
+            // `_tag2`), this exposition harness hardcodes tag 0 on the
+            // SUCCEEDING second CAS too — it is not a faithful `pop`
+            // transcription on this point. Harmless here: nothing pushes
+            // after this test's assertions run, and none of them depend on
+            // the resulting tag value. The real end-to-end regression guard
+            // at `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
+            // (below) calls the actual `pop`, which does preserve it.
             let new_head2 = if next2 == TAIL {
                 Tag::pack(Tag::empty_index(), 0)
             } else {
@@ -693,6 +714,10 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
             let (idx_v2, _tag2) = Tag::unpack(head);
             let idx2 = idx_v2 as u32;
             let next2 = links_a.load_next(idx2);
+            // NOTE: hardcodes tag 0 on the retry CAS instead of preserving
+            // `_tag2`, same as `cas_retry_path_must_acquire_with_concurrent_push`
+            // above — not a faithful `pop` transcription on this point, but
+            // harmless (nothing pushes afterward, no assertion depends on it).
             let new_head2 = if next2 == TAIL {
                 Tag::pack(Tag::empty_index(), 0)
             } else {
