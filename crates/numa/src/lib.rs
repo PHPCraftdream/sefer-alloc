@@ -377,16 +377,55 @@ mod platform {
         if fd < 0 {
             return false;
         }
-        let mut buf = [0u8; 256];
-        // SAFETY: `buf` is a valid writable buffer of length 256; `fd` was
-        // returned by a successful `open` call above.
-        let n = unsafe { libc_read(fd, buf.as_mut_ptr() as *mut core::ffi::c_void, 256) };
+        // task #720 (rust-intel audit §C4): a single 256-byte read was
+        // previously treated as the WHOLE cpumap file -- on a host with more
+        // than ~28 mask words (~896-900+ CPUs, exactly the large-NUMA
+        // machines this crate targets) the file exceeds 256 bytes, and the
+        // parser's most-significant-word-first `word_count`/`left_index`
+        // arithmetic silently misaligns on a truncated prefix, returning a
+        // WRONG node rather than failing loudly. Fixed: loop the read to EOF
+        // into a larger (4 KiB, still stack/heap-free) buffer -- 4 KiB of
+        // comma-separated 8-hex-digit words covers roughly 14,500 CPUs, an
+        // order of magnitude past any currently-shipping NUMA system. If the
+        // buffer fills completely without ever observing EOF (`n == 0`), the
+        // file is wider than this crate is prepared to parse; return `false`
+        // (the documented "cannot determine" fallback) rather than silently
+        // parsing a prefix.
+        const BUF_LEN: usize = 4096;
+        let mut buf = [0u8; BUF_LEN];
+        let mut total = 0usize;
+        loop {
+            if total >= BUF_LEN {
+                // SAFETY: `fd` was opened by us and must be closed exactly once.
+                unsafe { libc_close(fd) };
+                return false;
+            }
+            // SAFETY: `buf[total..]` is a valid writable sub-slice of `buf`
+            // (length `BUF_LEN - total > 0`, checked above); `fd` was
+            // returned by the successful `open` call above and not yet closed.
+            let n = unsafe {
+                libc_read(
+                    fd,
+                    buf[total..].as_mut_ptr() as *mut core::ffi::c_void,
+                    BUF_LEN - total,
+                )
+            };
+            if n < 0 {
+                // SAFETY: same as above.
+                unsafe { libc_close(fd) };
+                return false;
+            }
+            if n == 0 {
+                break; // EOF: `buf[..total]` holds the complete file.
+            }
+            total += n as usize;
+        }
         // SAFETY: `fd` was opened by us and must be closed exactly once.
         unsafe { libc_close(fd) };
-        if n <= 0 {
+        if total == 0 {
             return false;
         }
-        parse_cpumap_contains_cpu(&buf[..n as usize], cpu_idx)
+        parse_cpumap_contains_cpu(&buf[..total], cpu_idx)
     }
 
     /// Parse a Linux cpumap bitmask string and test whether `cpu_idx` is set.
