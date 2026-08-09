@@ -972,7 +972,14 @@ fn win_reserve_commit(
         }
     };
     let region_ptr = region.as_ptr();
-    let region_addr = region_ptr as usize;
+    // task #717: `.addr()` reads the address without exposing provenance
+    // (strict-provenance-legal); the paired `.with_addr()` below reconstructs
+    // `base` carrying `region_ptr`'s OWN provenance (valid for the whole
+    // `over`-byte reservation) at the computed aligned address, instead of
+    // the previous `base_addr as *mut u8` cast, which manufactured a pointer
+    // with no established provenance at all (contradicted the README's
+    // documented "no exposed-address `as usize` round-trips" guarantee).
+    let region_addr = region_ptr.addr();
     let fits = align_up_addr(region_addr, align).and_then(|a| {
         let end = a.checked_add(size)?;
         let region_end = region_addr.checked_add(over)?;
@@ -990,14 +997,16 @@ fn win_reserve_commit(
             return Err(VmemError::invalid_argument());
         }
     };
-    // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned.
-    let base = unsafe { NonNull::new_unchecked(base_addr as *mut u8) };
+    // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned;
+    // `region_ptr.with_addr` carries `region_ptr`'s provenance to the new
+    // address, so `base` is a valid derived pointer into the live reservation.
+    let base = unsafe { NonNull::new_unchecked(region_ptr.with_addr(base_addr)) };
     // SAFETY: `[base_addr, base_addr+commit_len)` is within the just-reserved
     // region (`commit_len <= size`, validated by callers); `MEM_COMMIT` commits
     // exactly this aligned sub-range. NULL indicates commit-charge exhaustion.
     let committed = unsafe {
         VirtualAlloc(
-            base_addr as *mut core::ffi::c_void,
+            base.as_ptr().cast(),
             commit_len,
             MEM_COMMIT | extra_commit_flags,
             PAGE_READWRITE,
@@ -1008,12 +1017,7 @@ fn win_reserve_commit(
             // Best-effort large pages: retry the commit with ordinary pages.
             // SAFETY: same range within the same live reservation.
             let plain = unsafe {
-                VirtualAlloc(
-                    base_addr as *mut core::ffi::c_void,
-                    commit_len,
-                    MEM_COMMIT,
-                    PAGE_READWRITE,
-                )
+                VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE)
             };
             if !plain.is_null() {
                 #[cfg(feature = "bench-internals")]
@@ -1298,7 +1302,10 @@ fn unix_reserve(
             p
         }
     };
-    let region_addr = region_ptr as usize;
+    // task #717: `.addr()`/`.with_addr()` (strict-provenance) replace the
+    // previous `as usize` / `as *mut u8` round-trip — see win_reserve_commit's
+    // matching comment above for the full reasoning.
+    let region_addr = region_ptr.addr();
     let fits = align_up_addr(region_addr, align).and_then(|a| {
         let tail_start = a.checked_add(size)?;
         let region_end = region_addr.checked_add(over)?;
@@ -1311,21 +1318,24 @@ fn unix_reserve(
             // not occur given `over = size + align`); do not read errno here.
             // SAFETY: `region_ptr` was returned by `mmap` above; releasing the
             // whole `over`-byte mapping before handing to a caller is sound.
-            unsafe { libc_munmap(region_ptr as *mut u8, over) };
+            unsafe { libc_munmap(region_ptr.cast(), over) };
             return Err(VmemError::invalid_argument());
         }
     };
-    // SAFETY: `base_addr >= region_addr` and `align`-aligned.
-    let base = unsafe { NonNull::new_unchecked(base_addr as *mut u8) };
+    // SAFETY: `base_addr >= region_addr` and `align`-aligned; `with_addr`
+    // carries `region_ptr`'s provenance (valid for the whole `over`-byte
+    // mapping) to the computed address.
+    let base = unsafe { NonNull::new_unchecked(region_ptr.with_addr(base_addr).cast::<u8>()) };
     let head = base_addr - region_addr;
     let tail_len = region_end - tail_start;
     if head > 0 {
         // SAFETY: `[region_addr, region_addr+head)` is within the mapping.
-        unsafe { libc_munmap(region_ptr as *mut u8, head) };
+        unsafe { libc_munmap(region_ptr.cast(), head) };
     }
     if tail_len > 0 {
-        // SAFETY: `[tail_start, tail_start+tail_len)` is within the mapping.
-        unsafe { libc_munmap(tail_start as *mut u8, tail_len) };
+        // SAFETY: `[tail_start, tail_start+tail_len)` is within the mapping;
+        // `with_addr` carries `region_ptr`'s provenance to `tail_start`.
+        unsafe { libc_munmap(region_ptr.with_addr(tail_start).cast(), tail_len) };
     }
     #[cfg(feature = "huge-pages")]
     if huge {
