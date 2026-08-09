@@ -25,7 +25,7 @@ workspace = true
 # `cargo build` (no `--cfg loom`) pulls in zero non-std deps.
 
 [target.'cfg(loom)'.dependencies]
-loom = "0.7"
+loom = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

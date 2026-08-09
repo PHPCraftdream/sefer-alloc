@@ -78,6 +78,18 @@ features = ["production"]
 members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
 resolver = "2"
 
+# Task #711 (racy-ptr-cell round-closing review, §C10 drift hazard): `loom`
+# was pinned independently at "0.7" in three manifests (this root package's
+# own `[target.'cfg(loom)'.dev-dependencies]`, `crates/racy-ptr-cell/Cargo.toml`,
+# `crates/tagged-index-stack/Cargo.toml`) with nothing keeping them in sync —
+# a future minor-version bump to one would silently NOT propagate to the
+# other two, and a divergent version across crates in the same workspace
+# resolves to whichever `cargo` picks, not necessarily what each crate's own
+# manifest states. Pinned here once; every consumer references it via
+# `loom = { workspace = true }`.
+[workspace.dependencies]
+loom = "0.7"
+
 # Workspace-shared lint table — every loom-aware member (this root package +
 # racy-ptr-cell + tagged-index-stack) inherits it via
 # `[lints] workspace = true`, so the `loom` / `kani` build-time cfgs are declared
@@ -946,7 +958,7 @@ proc-probe = { path = "crates/proc-probe" }
 # NOT crossbeam. Reclamation correctness rests on the crate + miri, not loom.
 # Built only under `cfg(loom)` (`RUSTFLAGS="--cfg loom"` / `--cfg loom`).
 [target.'cfg(loom)'.dev-dependencies]
-loom = "0.7"
+loom = { workspace = true }
 
 # Task #127: instruction-count CI perf-gate. `iai-callgrind` benchmarks run
 # under Valgrind/Callgrind, which is Linux-only — scoped as a target-specific
