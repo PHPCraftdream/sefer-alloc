@@ -245,7 +245,13 @@ pub fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
 /// live-block overlap, a byte that does not read back, a non-zero byte from
 /// `alloc_zeroed`, or a lost realloc prefix byte.
 pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
-    let mut live: Vec<Live> = Vec::new();
+    // Every entry in `live` traces to exactly one `Op::Alloc`/`Op::AllocZeroed`
+    // in `ops` that hasn't since been freed, so `live.len() <= ops.len()`
+    // always holds -- `ops.len()` is therefore an exact, provably-sufficient
+    // upper bound, not an estimate. Pre-sizing to it makes `live` grow-once
+    // (or never grow at all) for the whole call, rather than reallocating
+    // repeatedly as the op stream is replayed.
+    let mut live: Vec<Live> = Vec::with_capacity(ops.len());
     let mut next_fill: u8 = 1;
 
     for op in ops {
