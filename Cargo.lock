@@ -1196,6 +1196,7 @@ dependencies = [
 name = "tagged-index-stack"
 version = "0.1.0"
 dependencies = [
+ "bench-scale-tool",
  "loom",
  "proptest",
 ]

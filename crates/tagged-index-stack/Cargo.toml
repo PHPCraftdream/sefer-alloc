@@ -29,3 +29,10 @@ loom = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
+# Fixed-iteration bench harness (dev-only — never reaches published
+# consumers). See benches/tagged_index_stack_bench.rs.
+bench-scale-tool = "0.1"
+
+[[bench]]
+name = "tagged_index_stack_bench"
+harness = false
