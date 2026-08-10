@@ -11,6 +11,7 @@
 //! ```
 
 use std::hint::black_box;
+use std::time::Instant;
 
 use bench_scale_tool::Harness;
 use sefer_region::{Handle, Region, SyncRegion};
@@ -69,6 +70,23 @@ fn main() {
         r.remove(stale);
         h.bench("st/get_stale", move || {
             black_box(r.get(black_box(stale)));
+        });
+    }
+
+    // Wrong-region handle: a handle minted by a SECOND, distinct `Region`
+    // (its own `region_id` from the same process-wide `NEXT_REGION_ID`
+    // counter), passed to `.get()` on the FIRST region. Since F2 (task
+    // #802), every accessor checks `region_id` before touching the
+    // slotmap, so this isolates the cost of the rejecting path the
+    // shipping code takes on a cross-Region handle -- distinct from
+    // `st/get_stale` (same region, tombstoned slot).
+    {
+        let mut r: Region<u64> = Region::new();
+        let _handles: Vec<Handle<u64>> = (0..PREPOPULATE).map(|i| r.insert(i)).collect();
+        let mut other: Region<u64> = Region::new();
+        let foreign = other.insert(42u64);
+        h.bench("st/get_wrong_region", move || {
+            black_box(r.get(black_box(foreign)));
         });
     }
 
@@ -226,4 +244,70 @@ fn main() {
     }
 
     h.run();
+
+    // ── Multi-threaded contention: Region::new() vs. the shared NEXT_REGION_ID
+    // counter ──────────────────────────────────────────────────────────────
+    //
+    // bench_scale_tool::Harness is single-threaded only (verified in this
+    // session against other crates in this workspace), so contention
+    // throughput is measured manually with real threads -- the same pattern
+    // already established in
+    // `crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`'s
+    // "Multi-threaded contention workloads" section: N threads (capped),
+    // each spinning a fixed-duration loop, summed ops/sec printed to stdout
+    // after `h.run()` (not through the bench-iters.txt manifest, which is
+    // specific to the single-threaded fixed-iteration Harness model).
+    //
+    // `Region::new()` mints its `region_id` from a single process-wide
+    // `AtomicUsize` (`NEXT_REGION_ID`, `region.rs`) via `fetch_add`. This
+    // workload measures how that one shared atomic scales as concurrently
+    // running threads each construct fresh `Region<u64>`s (and immediately
+    // drop them) as fast as possible -- the F2 domain-identity redesign's
+    // only cross-thread shared state.
+    println!("\n=== Multi-threaded contention benchmarks ===\n");
+
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(8); // Cap at 8 for consistent benchmarking across machines
+
+    println!(
+        "Using {} threads (based on available_parallelism, capped at 8)",
+        num_threads
+    );
+
+    const DURATION_SECS: u64 = 1;
+
+    let start = Instant::now();
+    let mut ops_per_thread = Vec::with_capacity(num_threads);
+
+    std::thread::scope(|s| {
+        let mut handles = Vec::with_capacity(num_threads);
+        for _ in 0..num_threads {
+            let handle = s.spawn(move || {
+                let mut ops = 0u64;
+                while start.elapsed().as_secs() < DURATION_SECS {
+                    let r: Region<u64> = Region::new();
+                    black_box(&r);
+                    ops += 1;
+                }
+                ops
+            });
+            handles.push(handle);
+        }
+        // Join all threads AFTER they've all started.
+        for handle in handles {
+            ops_per_thread.push(handle.join().unwrap());
+        }
+    });
+
+    let total_ops: u64 = ops_per_thread.iter().sum();
+    let total_ops_per_sec = total_ops / DURATION_SECS;
+    println!(
+        "contention/region_new: {} ops/sec total ({} threads, {} sec)",
+        total_ops_per_sec, num_threads, DURATION_SECS
+    );
+    println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
+
+    println!("=== All contention benchmarks complete ===");
 }

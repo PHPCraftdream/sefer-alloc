@@ -137,28 +137,58 @@ Measured with [`bench-scale-tool`](https://crates.io/crates/bench-scale-tool)
 pinned, so run time is a direct speed signal, not a statistical estimate).
 Single noisy Windows dev host, 3 runs each; the table below shows the
 median, with the observed min–max range in parentheses so the numbers
-aren't read as more precise than they are:
+aren't read as more precise than they are. Measured on commit `0c83f14`
+(after F1's `region_id` widening to `usize` and F2's domain-aware
+`Handle<T>` identity redesign — every accessor now checks `region_id`
+before touching the slotmap; this is NOT the final pre-publish SHA, F8-F10/
+F12-F19 have not landed yet, but it is the first re-measurement since F2):
 
 | Workload | ns/op (median, range) |
 |---|---|
-| `Region::insert` (cold: fresh map, allocation + full teardown inside the timed window) | 290 (242–327) |
-| `Region::get` (hit) | 5.0 (4.3–6.5) |
-| `Region::get` (stale handle) | 5.0 (4.7–5.1) |
-| `Region::remove` (cold: fresh map with one entry, teardown included) | 97 (96–111) |
-| `Region::iter` (1,000 live values, sum, zero holes — best case) | 1,319 (1,292–1,546) |
-| `Region::iter` (1,000 live values, sum, 50% holes — post-churn cost) | 2,476 (2,228–2,510) |
-| `Region::iter` (1,000 live values, sum, 90% holes — post-churn cost) | 11,482 (10,955–11,845) |
-| `Region` steady-state churn (remove + reinsert, map size constant) | 3.6 (3.3–4.2) |
-| `SyncRegion::insert` (uncontended, cold: fresh map + teardown) | 281 (269–324) |
-| `SyncRegion::get_cloned` (hit) | 34.5 (34.2–36.0) |
-| `SyncRegion::remove` (uncontended, cold: fresh map with one entry) | 124 (123–130) |
-| `SyncRegion` steady-state churn (remove + reinsert, map size constant) | 76.0 (72.1–84.2) |
+| `Region::insert` (cold: fresh map, allocation + full teardown inside the timed window) | 306 (299–311) |
+| `Region::get` (hit) | 5.4 (5.1–5.9) |
+| `Region::get` (stale handle, same region) | 5.4 (5.3–5.6) |
+| `Region::get` (wrong-region handle, minted by a different `Region`) | 4.8 (4.7–5.2) |
+| `Region::remove` (cold: fresh map with one entry, teardown included) | 115 (111–128) |
+| `Region::iter` (1,000 live values, sum, zero holes — best case) | 1,532 (1,494–1,563) |
+| `Region::iter` (1,000 live values, sum, 50% holes — post-churn cost) | 2,639 (2,605–2,681) |
+| `Region::iter` (1,000 live values, sum, 90% holes — post-churn cost) | 11,290 (11,240–11,653) |
+| `Region` steady-state churn (remove + reinsert, map size constant) | 4.1 (4.1–4.2) |
+| `SyncRegion::insert` (uncontended, cold: fresh map + teardown) | 336 (333–336) |
+| `SyncRegion::get_cloned` (hit) | 36.4 (36.3–45.4) |
+| `SyncRegion::remove` (uncontended, cold: fresh map with one entry) | 143 (141–143) |
+| `SyncRegion` steady-state churn (remove + reinsert, map size constant) | 77.7 (70.9–77.8) |
 
 **Note:** The `insert` and `remove` rows above are measured with `bench_batched`, which
 means the fixture (a fresh `Region`/`SyncRegion`) is dropped inside the timed window —
 these numbers include allocation, teardown, and cold-path overhead, not just the
 steady-state operation cost. See the `steady-state churn` rows for the warm-path
 performance.
+
+**`get` (wrong-region handle) is the rejecting path F2 added:** since the domain-aware
+`Handle<T>` identity redesign (task #802), every `Region::get`/`get_mut`/`remove` first
+compares the handle's `region_id` against the region's own before touching the slotmap at
+all. The wrong-region row above (`st/get_wrong_region` in `benches/region_bench.rs`) times
+a handle minted by a second, distinct `Region` passed to `.get()` on the first — it is
+*cheaper* than both the hit and same-region-stale rows here (the `region_id` mismatch short-
+circuits before any slotmap generation check), so the new safety check adds no cost on the
+rejecting path and is within noise on the accepting path (compare this table's `get_hit`/
+`get_stale` numbers to their pre-F2 counterparts three revisions back in this file's git
+history — same ~5 ns/op order of magnitude).
+
+### Region::new() under thread contention
+
+`Region::new()` mints its `region_id` from one process-wide `AtomicUsize` counter
+(`NEXT_REGION_ID`, `fetch_add`) — the only state the F2 redesign added that is shared
+across threads. Measured manually (`std::thread::scope`, not `bench-scale-tool`, which is
+single-threaded only): 8 threads, 1 second each, each thread constructing and immediately
+dropping `Region::<u64>::new()` in a tight loop. Same commit (`0c83f14`), one representative
+run: **13.9M `Region::new()` calls/sec aggregate** across 8 threads (~1.7M/thread,
+threads evenly balanced — see `benches/region_bench.rs`'s "Multi-threaded contention"
+section for the per-thread breakdown). The shared counter is a single `fetch_add` per call
+and does not visibly bottleneck at this thread count on this host.
+Reproduce: `cargo bench -p sefer-region --bench region_bench` (the contention section prints
+after the fixed-iteration `bench-scale-tool` run completes).
 
 ### Contended reads
 
@@ -211,20 +241,27 @@ operation to slotmap" — but that was a design claim, never actually
 measured against the type it wraps. `benches/region_bench.rs` also runs
 `raw/insert`/`raw/get_hit`/`raw/remove` directly against a bare
 `slotmap::SlotMap<DefaultKey, u64>` (`Region`'s own backing type, no
-`Handle<T>` involved) as an A/B baseline. Median-of-3 result (measured in a
-separate session from the table above; see that table's ranges):
-`st/insert` 281 ns/op vs `raw/insert` 305 ns/op; `st/get_hit` 5.07 vs
-`raw/get_hit` 4.76; `st/remove` 99.3 vs `raw/remove` 106.4 — the wrapped and
-raw numbers interleave with no consistent direction, fully inside the
-~15–25% run-to-run noise this dev host already shows elsewhere in this table.
-**No measurable wrapper overhead was found.** None of `Region`'s methods
-carry an explicit `#[inline]` hint; since every method is generic over `T`
-(so its MIR is available for cross-crate monomorphization regardless) and
-each is a single-line delegation, LLVM's own size-based inlining heuristic
-already inlines them at the release optimization level this bench (and any
-real consumer's release build) uses. Investigated so this stays a checked
-fact rather than an assumption — no code change was made, because none was
-supported by the measurement.
+`Handle<T>` involved) as an A/B baseline. Re-measured on commit `0c83f14`
+(same session as the table above, F2's `region_id` check now included on
+every `st/*` accessor — `raw/*` has no such check, so this comparison now
+also isolates F2's cost, not just the `Handle<T>` membrane). Median-of-3:
+`st/insert` 306 ns/op vs `raw/insert` 356 ns/op; `st/get_hit` 5.41 vs
+`raw/get_hit` 5.78; `st/remove` 115.03 vs `raw/remove` 118.61 — the wrapped
+numbers are consistently at or below the raw numbers across all three pairs
+in this run, still fully inside the ~15–25% run-to-run noise this dev host
+already shows elsewhere in this table: across the same three runs `st/insert`
+ranged 299–311 ns/op and `raw/insert` ranged 287–359 ns/op, i.e. the two
+distributions overlap.
+**No measurable wrapper overhead — including F2's added `region_id`
+check — was found.** None of `Region`'s methods carry an explicit
+`#[inline]` hint; since every method is generic over `T` (so its MIR is
+available for cross-crate monomorphization regardless) and each is a
+short, straight-line delegation (now including the `region_id` comparison),
+LLVM's own size-based inlining heuristic already inlines them at the
+release optimization level this bench (and any real consumer's release
+build) uses. Investigated so this stays a checked fact rather than an
+assumption — no code change was made, because none was supported by the
+measurement.
 
 ### Capacity growth (verified, not assumed)
 
