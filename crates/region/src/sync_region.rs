@@ -1,6 +1,6 @@
 //! [`SyncRegion`] — the safe concurrent default: a `Region` behind an `RwLock`.
 
-use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 
 use crate::{Handle, Region};
 
@@ -254,12 +254,29 @@ impl<T> Default for SyncRegion<T> {
 
 impl<T> std::fmt::Debug for SyncRegion<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Pattern borrowed from std::sync::RwLock's own Debug impl:
-        // try_read() first, and fall back to a "<locked>" placeholder if
-        // the lock is currently held by another thread.
+        // Pattern borrowed from std::sync::RwLock's own Debug impl: try_read()
+        // first, then discriminate *why* it failed. `try_read()` returns
+        // `Err` for two structurally different reasons that must not be
+        // collapsed into the same placeholder:
+        //   - `WouldBlock`: another thread genuinely holds the lock right
+        //     now. There is no data to show — "<locked>" is the only honest
+        //     answer.
+        //   - `Poisoned(_)`: a writer panicked while holding the write guard,
+        //     but the lock itself is free right now (poisoning does not hold
+        //     the lock). The container is intact and usable (see the
+        //     poisoning-policy doc above), so this branch recovers the data
+        //     via `into_inner()` and reports `poisoned: true` — matching how
+        //     `std::sync::RwLock`'s own `Debug` renders a poisoned lock
+        //     (`RwLock { data: .., poisoned: true, .. }`), verified by direct
+        //     comparison against `std`'s actual output.
         match self.inner.try_read() {
             Ok(guard) => f.debug_struct("SyncRegion").field("inner", &guard).finish(),
-            Err(_) => f
+            Err(TryLockError::Poisoned(e)) => f
+                .debug_struct("SyncRegion")
+                .field("inner", &*e.into_inner())
+                .field("poisoned", &true)
+                .finish(),
+            Err(TryLockError::WouldBlock) => f
                 .debug_struct("SyncRegion")
                 .field("inner", &"<locked>")
                 .finish(),

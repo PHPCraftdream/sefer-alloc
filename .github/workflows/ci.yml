@@ -85,9 +85,45 @@ jobs:
           tool: cargo-semver-checks
       # sefer-region 0.1.0 is published on crates.io (task #785/F1's own
       # finding); cargo-semver-checks fetches that baseline from the
-      # registry automatically, no local tag needed. A real failure here
-      # is a real gate -- no `|| true` swallowing it.
+      # registry automatically, no local tag needed.
+      #
+      # Scope of this gate (task #806/F3 -- corrected from an earlier comment
+      # that overstated it): cargo-semver-checks compares the *shape* of the
+      # public API from rustdoc JSON -- signatures, item presence/absence,
+      # trait impls -- against the last published baseline. It does NOT
+      # analyze runtime/behavioral semantics (e.g. task #802/F2's Handle<T>
+      # cross-Region-identity change was a real breaking change in behavior
+      # that this tool reported as "no change; assume minor" / "no semver
+      # update required", because the public signatures involved did not
+      # change shape). It also does NOT check whether the version in
+      # Cargo.toml has already been published -- that is a distinct failure
+      # mode (a `cargo publish` of an already-taken version number just
+      # fails at publish time, but by then CI has already reported green on
+      # this step) and is guarded separately by the named step below so the
+      # two failure classes are distinguishable in the Actions UI. A real
+      # failure from this step is still a real gate for the class of bug it
+      # DOES cover -- no `|| true` swallowing it.
       - run: cargo semver-checks check-release --package sefer-region
+      - name: Guard against publishing an already-taken version
+        # Distinct failure mode from cargo-semver-checks above (see that
+        # step's comment): this checks whether the version currently in
+        # crates/region/Cargo.toml is already present in the crates.io
+        # sparse index, which cargo-semver-checks does not check and a
+        # rustdoc-shape-only "no change" verdict can coexist with. Named
+        # separately so a failure here (version collision) is visually
+        # distinguishable in the CI log from a semver-checks failure
+        # (API-shape regression).
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --format-version=1 --no-deps \
+            | jq -r '.packages[] | select(.name == "sefer-region") | .version')
+          echo "Local sefer-region version: $version"
+          index_json=$(curl -sSf https://index.crates.io/se/fe/sefer-region)
+          if echo "$index_json" | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
+            echo "::error::sefer-region $version is already published on crates.io -- bump the version in crates/region/Cargo.toml before publishing."
+            exit 1
+          fi
+          echo "OK: sefer-region $version is not yet on crates.io."
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /

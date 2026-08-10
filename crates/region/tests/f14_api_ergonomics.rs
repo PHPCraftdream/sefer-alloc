@@ -108,6 +108,43 @@ fn sync_region_debug_handles_locked_state() {
     handle.join().unwrap();
 }
 
+#[cfg(feature = "std")]
+#[test]
+fn sync_region_debug_shows_poisoned_not_locked() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let sync_region: Arc<SyncRegion<i32>> = Arc::new(SyncRegion::new());
+    let sr2 = Arc::clone(&sync_region);
+
+    // Spawn a thread that panics *inside* write(), poisoning the lock, then
+    // join it so the lock is free (not held) by the time we format it.
+    let handle = thread::spawn(move || {
+        let _guard = sr2.write();
+        panic!("intentional poison for Debug regression test");
+    });
+    assert!(handle.join().is_err(), "thread should have panicked");
+
+    // The lock is poisoned but NOT held: Debug must recover the data and
+    // report `poisoned: true`, not fall back to the "<locked>" placeholder
+    // (F4 regression — try_read()'s catch-all `Err(_)` used to collapse
+    // "poisoned-but-free" into the same case as "held by another thread").
+    let debug_str = format!("{:?}", sync_region);
+    assert!(debug_str.contains("SyncRegion"));
+    assert!(
+        !debug_str.contains("<locked>"),
+        "poisoned-but-free lock must not render as \"<locked>\": {debug_str}"
+    );
+    assert!(
+        debug_str.contains("poisoned: true") || debug_str.contains("poisoned\": true"),
+        "poisoned Debug output must explicitly report poisoned: true: {debug_str}"
+    );
+
+    // The recovered region must still be usable afterward (poisoning policy).
+    sync_region.insert(42);
+    assert_eq!(sync_region.len(), 1);
+}
+
 // ── IntoIterator for Region ─────────────────────────────────────────────────
 
 // Note: `IntoIterator for Region<T>` (consuming by value) is deliberately NOT
