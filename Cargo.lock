@@ -14,6 +14,9 @@ dependencies = [
 [[package]]
 name = "aligned-vmem"
 version = "0.2.0"
+dependencies = [
+ "bench-scale-tool",
+]
 
 [[package]]
 name = "allocator-api2"

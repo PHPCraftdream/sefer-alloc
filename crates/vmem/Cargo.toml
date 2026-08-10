@@ -107,3 +107,10 @@ fault-injection = []
 bench-internals = []
 
 [dependencies]
+
+[dev-dependencies]
+bench-scale-tool = "0.1"
+
+[[bench]]
+name = "vmem_bench"
+harness = false

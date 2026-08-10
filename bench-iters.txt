@@ -25,3 +25,7 @@ region_bench::sync/churn = 13405569
 region_bench::sync/get_cloned_hit = 47192535
 region_bench::sync/insert = 3168835
 region_bench::sync/remove = 3966960
+vmem_bench::reserve_decommit_recommit_release = 38389
+vmem_bench::reserve_decommit_release = 60637
+vmem_bench::reserve_release = 75169
+vmem_bench::reserve_release_1mb = 26665
