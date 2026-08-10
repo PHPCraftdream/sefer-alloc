@@ -26,3 +26,12 @@ workspace = true
 
 [target.'cfg(loom)'.dependencies]
 loom = { workspace = true }
+
+[dev-dependencies]
+# Fixed-iteration bench harness (dev-only — never reaches published
+# consumers). See benches/racy_ptr_cell_bench.rs.
+bench-scale-tool = "0.1"
+
+[[bench]]
+name = "racy_ptr_cell_bench"
+harness = false
