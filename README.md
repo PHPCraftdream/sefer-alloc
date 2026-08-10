@@ -356,8 +356,9 @@ assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 For `no_std` + `alloc` targets, disable the `std` feature:
 `sefer-alloc = { version = "0.3", default-features = false }`. The
 default build is `#![forbid(unsafe_code)]` at the top; the only
-`unsafe` comes from `slotmap`'s audited core wrapped by a thin typed
-membrane.
+`unsafe` comes from `slotmap`'s core wrapped by a thin typed
+membrane. No version-scoped audit record for `slotmap` is tracked by
+this project (see `crates/region/README.md` "## Safety").
 
 `SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
 segment allocator: SEGMENT-aligned (4 MiB) OS-backed spans, self-hosted
@@ -597,7 +598,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `racy-ptr-cell` | `crates/racy-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
 | `globalalloc-model` | `crates/globalalloc-model/` | `#![allow(unsafe_code)]` — single documented reason: the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout); every impl + call carries `// SAFETY:` |
 | `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s audited core owns the generational layout |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/region/README.md` "## Safety") |
 | `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
 | `tagged-index-stack` | `crates/tagged-index-stack/` | `#![forbid(unsafe_code)]` — lock-free via a single packed `AtomicUsize` head word; ABA tag in the high bits, no raw-pointer derefs |
 | `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |

@@ -97,7 +97,8 @@ static NEXT_REGION_ID: AtomicUsize = AtomicUsize::new(1);
 ///
 /// Applications that need a stronger guarantee (e.g. to reuse handles without
 /// ever risking alias) must add their own wrapper layer that tracks generation
-/// wrap or otherwise avoids cross-region handle reuse.
+/// wrap on a hot slot; cross-instance confusion is already handled by I6 and
+/// needs no wrapper.
 pub struct Region<T> {
     region_id: NonZeroUsize,
     inner: slotmap::SlotMap<slotmap::DefaultKey, T>,

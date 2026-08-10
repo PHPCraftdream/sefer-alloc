@@ -68,7 +68,9 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
 
 - `Region<T>` / `Handle<T>` -- a typed, generational handle store. A stale
   handle returns `None`, never undefined behaviour. The single-threaded core
-  wraps the audited `slotmap` crate and is `#![forbid(unsafe_code)]`; it has
+  wraps the `slotmap` crate and is `#![forbid(unsafe_code)]` (no
+  version-scoped audit record for `slotmap` is tracked by this project --
+  see `crates/region/README.md` "## Safety"); it has
   no OS segment, no page map, no page registry of its own. The
   concurrent tier (feature `experimental`) adds lock-free reads via `arc-swap`
   (RCU, zero own `unsafe`) or `crossbeam-epoch` (one confined `unsafe` module) --
@@ -143,7 +145,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
 | `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's audited core owns the generational layout. |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/region/README.md` "## Safety"). |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 

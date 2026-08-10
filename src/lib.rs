@@ -12,12 +12,15 @@
 //!
 //! The single-threaded core is a thin **typed membrane** over
 //! [`slotmap`](https://crates.io/crates/slotmap): [`Region<T>`] wraps a
-//! `slotmap::SlotMap<DefaultKey, T>` and [`Handle<T>`] is a newtype over a
-//! `DefaultKey` plus `PhantomData<fn() -> T>`, so handles stay generic-over-`T`
-//! and typed (which raw slotmap keys are not). `slotmap`'s audited `unsafe`
-//! owns the generational layout — the free list, generation bump on
+//! `slotmap::SlotMap<DefaultKey, T>` and [`Handle<T>`] is a `#[repr(C)]`
+//! struct of three fields — a `slotmap::DefaultKey`, a `region_id:
+//! NonZeroUsize` that identifies which `Region` instance minted the handle
+//! (see I6 below), and a `PhantomData<fn() -> T>` — so handles stay
+//! generic-over-`T` and typed (which raw slotmap keys are not) while also
+//! rejecting cross-`Region` aliasing. `slotmap`'s `unsafe` owns the
+//! generational layout — the free list, generation bump on
 //! remove, and 32-bit generation wrap after ~2^31 cycles; this crate adds the typed
-//! boundary and stays `#![forbid(unsafe_code)]`.
+//! boundary and instance isolation while staying `#![forbid(unsafe_code)]`.
 //!
 //! [`Region`], [`Handle`], and [`SyncRegion`] now live in the `sefer-region`
 //! crate alongside `aligned-vmem` / `numa-shim` / `malloc-bench-rs`. They are
@@ -152,7 +155,9 @@
 //
 //   sefer-region  (crates/region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
-//     audited unsafe owns the generational layout.
+//     unsafe owns the generational layout. No version-scoped audit record
+//     for slotmap is tracked by this project (see crates/region/README.md
+//     "## Safety").
 //
 //   size-classes  (crates/size-classes/src/lib.rs)  — #![forbid(unsafe_code)]
 //     const-evaluated size-class tables + derived O(1) size→class lookup +
