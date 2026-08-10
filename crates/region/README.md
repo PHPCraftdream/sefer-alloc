@@ -111,8 +111,8 @@ assert_eq!(sr.len(), 1);
 // back already-applied changes — all-or-nothing rollback is not provided.
 {
     let mut w = sr.write();
-    w.insert(1u32);
-    w.insert(2u32);
+    let _ = w.insert(1u32);
+    let _ = w.insert(2u32);
 } // guard dropped, lock released
 
 assert_eq!(sr.len(), 3);

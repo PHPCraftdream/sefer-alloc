@@ -508,16 +508,19 @@ fn region_reserve_overflow_panics() {
 #[test]
 fn region_with_capacity_overflow_panics() {
     // Region::with_capacity(usize::MAX) panics in both debug and release
-    // builds (profile-independent). Since task #791/F13, the FIRST guard hit
-    // is the SlotMap live-entry domain check (max 2^32 - 2 live entries, so
-    // max reserve is 2^32 - 3) -- usize::MAX vastly exceeds that limit, so
-    // this guard fires before the older checked_add(1)-overflow guard ever
-    // gets a chance to (that older guard is now reachable only for a
-    // capacity in the empty range strictly between SLOTMAP_MAX_RESERVE and
-    // usize::MAX, which does not exist -- SLOTMAP_MAX_RESERVE IS usize::MAX
-    // - 3, so the two guards' domains abut with no gap the checked_add path
-    // can still occupy on its own; it stays as defense-in-depth, not dead
-    // code, for any future change to the domain constant).
+    // builds (profile-independent). Since task #791/F13, the FIRST (and, on
+    // every currently supported target, the ONLY reachable) guard hit is the
+    // SlotMap live-entry domain check (max 2^32 - 2 live entries, so max
+    // reserve is 2^32 - 3) -- usize::MAX vastly exceeds that limit, so this
+    // guard fires before the older checked_add(1)-overflow guard ever gets a
+    // chance to. That older guard is dead code on both 32-bit and 64-bit
+    // targets today: SLOTMAP_MAX_RESERVE (2^32 - 3) is a small, fixed
+    // constant, not `usize::MAX - 3` -- on 32-bit, `usize::MAX` is
+    // `2^32 - 1`, so `SLOTMAP_MAX_RESERVE + 1` (= 2^32 - 2) still sits below
+    // it with room to spare; on 64-bit there is even more room. It stays as
+    // defense-in-depth (see region.rs's own comment at the checked_add call
+    // site), not as a guard this test can currently exercise, in case a
+    // future slotmap version changes the domain constant.
     let msg = catch_panic_message(AssertUnwindSafe(|| {
         let _r: Region<i32> = Region::with_capacity(usize::MAX);
     }));

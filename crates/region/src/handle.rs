@@ -65,12 +65,26 @@ impl<T> core::hash::Hash for Handle<T> {
     }
 }
 
-// Comparison order: first by `key`, then by `region_id`.
-// This matches the `Hash` impl (which also hashes key first).
+// Comparison order: first by `region_id`, then by `key`.
+//
+// This is a deliberate design choice (not a `Hash`-impl-parity default —
+// field order in `Hash` has no bearing on `Ord`/`Eq` consistency, and any
+// order here is equally valid for that purpose): ordering by `region_id`
+// first means handles group by their owning `Region` under `sort()` /
+// inside a `BTreeMap<Handle<T>, V>` / `BTreeSet<Handle<T>>`, so a caller
+// holding handles from several `Region`s can range-scan just one Region's
+// slice contiguously (e.g. `handles.sort()` then `.partition_point(..)` /
+// a `BTreeMap` range bounded by that Region's own handles). Ordering by
+// `key` first (the alternative) would instead interleave handles from
+// different Regions whenever their raw `DefaultKey`s happen to compare
+// close together — which is common, since the first insert into any fresh
+// `Region` tends to produce the same key — defeating exactly the grouping
+// a `BTreeMap`/sorted-`Vec` user would reasonably want.
+//
 // Handles from different regions (different `region_id`) will never
-// compare equal per `PartialEq`, but they still have a consistent
-// total order — useful for sorting/`BTreeMap` even though `HashMap`
-// is the more common use case.
+// compare equal per `PartialEq`, but they still have a consistent total
+// order — useful for sorting/`BTreeMap` even though `HashMap` is the more
+// common use case.
 impl<T> PartialOrd for Handle<T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
@@ -79,8 +93,8 @@ impl<T> PartialOrd for Handle<T> {
 
 impl<T> Ord for Handle<T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        match self.key.cmp(&other.key) {
-            core::cmp::Ordering::Equal => self.region_id.cmp(&other.region_id),
+        match self.region_id.cmp(&other.region_id) {
+            core::cmp::Ordering::Equal => self.key.cmp(&other.key),
             ordering => ordering,
         }
     }

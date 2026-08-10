@@ -127,18 +127,17 @@ impl<T> Region<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `capacity == usize::MAX` (the underlying `slotmap` reserves one
-    /// extra slot for an internal sentinel; a capacity that would overflow that
-    /// reservation is rejected up front, in both debug and release builds).
     /// Panics if `capacity > 2^32 - 3` (slotmap's maximum live-entry limit is
-    /// `2^32 - 2`; reserving for sentinel gives `2^32 - 3`). On 64-bit this is
-    /// a theoretical guard only — realistic workloads never approach this limit.
-    /// Additionally panics (as any `Vec`-backed container does) for any `capacity`
-    /// whose slot array would exceed `isize::MAX` bytes — roughly
-    /// `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond that aborts
-    /// rather than panicking. Also panics if the process-wide `region_id`
-    /// counter has been exhausted — see [`new`](Self::new)'s `# Panics`
-    /// section and the I6 doc block above.
+    /// `2^32 - 2`; reserving for sentinel gives `2^32 - 3`) — this is the
+    /// guard that actually fires for any out-of-domain `capacity`, on both
+    /// 32-bit and 64-bit hosts; on 64-bit this is a theoretical guard only
+    /// (realistic workloads never approach this limit), but on a 32-bit host
+    /// it is reachable. Also panics (as any `Vec`-backed container does) for
+    /// any `capacity` whose slot array would exceed `isize::MAX` bytes —
+    /// roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond
+    /// that aborts rather than panicking. Also panics if the process-wide
+    /// `region_id` counter has been exhausted — see [`new`](Self::new)'s
+    /// `# Panics` section and the I6 doc block above.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
@@ -150,6 +149,16 @@ impl<T> Region<T> {
                 capacity, SLOTMAP_MAX_RESERVE
             );
         }
+        // Defense-in-depth, not a guard that can currently fire: the domain
+        // check above already rejects any `capacity > SLOTMAP_MAX_RESERVE`
+        // (2^32 - 3), so by this point `capacity + 1 <= 2^32 - 2`, which is
+        // below `usize::MAX` on every supported target — `usize::MAX` is
+        // `2^32 - 1` on the narrowest (32-bit) target this crate supports,
+        // and far larger on 64-bit. This `checked_add(1)` therefore cannot
+        // overflow today; it stays only so a future change to
+        // `SLOTMAP_MAX_RESERVE` (e.g. if a future slotmap version raises or
+        // removes its live-entry limit) can't silently reintroduce an
+        // overflow here without a guard already in place to catch it.
         capacity
             .checked_add(1)
             .expect("Region::with_capacity: capacity overflow");
@@ -331,6 +340,11 @@ impl<T> Default for Region<T> {
     }
 }
 
+/// Note: the `region_id` field shown by this impl is minted from a
+/// process-wide counter and is therefore NOT stable across separate runs or
+/// processes (its value depends on how many other `Region`/`SyncRegion`
+/// instances the process happened to construct first) — do not rely on it in
+/// snapshot/golden-output tests.
 impl<T> core::fmt::Debug for Region<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Region")

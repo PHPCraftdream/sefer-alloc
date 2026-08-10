@@ -141,7 +141,7 @@ fn sync_region_debug_shows_poisoned_not_locked() {
     );
 
     // The recovered region must still be usable afterward (poisoning policy).
-    sync_region.insert(42);
+    let _ = sync_region.insert(42);
     assert_eq!(sync_region.len(), 1);
 }
 
@@ -183,7 +183,15 @@ fn region_into_iterator_by_mut() {
     }
 
     assert_eq!(region.len(), 3);
-    assert_eq!(region.iter().cloned().collect::<Vec<_>>(), vec![2, 4, 6]);
+    // Region::iter's order is unspecified (see region.rs's own doc on
+    // `iter`), so compare as a multiset — element membership + length —
+    // rather than pinning a specific sequence. Same pattern as
+    // `coverage_gaps.rs`'s `region_iter_mut_and_iter` test.
+    let values: Vec<&i32> = region.iter().collect();
+    assert_eq!(values.len(), 3);
+    assert!(values.contains(&&2));
+    assert!(values.contains(&&4));
+    assert!(values.contains(&&6));
 }
 
 #[test]
@@ -221,21 +229,61 @@ fn handle_ord_consistent_within_same_region() {
 
 #[test]
 fn handle_ord_handles_from_different_regions() {
+    use std::cmp::Ordering;
+    use std::collections::BTreeSet;
+
     let mut region_a: Region<i32> = Region::new();
     let mut region_b: Region<i32> = Region::new();
 
+    // Both first inserts commonly land on the same raw `DefaultKey`, so this
+    // is the "colliding key, different region_id" case Ord must still order
+    // consistently rather than merely "not panic" on.
     let h_a = region_a.insert(1);
     let h_b = region_b.insert(1);
 
     // Handles from different regions should not compare equal
     assert_ne!(h_a, h_b);
 
-    // But they should have a total order (Ord should not return None)
-    let ordering = h_a.partial_cmp(&h_b);
-    assert!(ordering.is_some());
+    // Ord must actually distinguish them, not just return `Some(_)`: an
+    // Eq/Ord inconsistency (e.g. cmp ignoring region_id while PartialEq
+    // does not) would make h_a and h_b compare Equal despite being unequal
+    // under PartialEq — assert the real relation, not just its presence.
+    let ord_ab = h_a.cmp(&h_b);
+    let ord_ba = h_b.cmp(&h_a);
+    assert_ne!(
+        ord_ab,
+        Ordering::Equal,
+        "handles with colliding keys from different regions must not compare Equal under Ord"
+    );
+    assert!(
+        h_a < h_b || h_b < h_a,
+        "handles with colliding keys from different regions must have a strict order"
+    );
 
-    // Verify cmp() doesn't panic
-    let _ = h_a.cmp(&h_b);
+    // Antisymmetry: cmp(a, b) and cmp(b, a) must be exact reverses.
+    assert_eq!(
+        ord_ab,
+        ord_ba.reverse(),
+        "Ord must be antisymmetric: a.cmp(&b) == b.cmp(&a).reverse()"
+    );
+
+    // partial_cmp must agree with cmp (Ord/PartialOrd consistency).
+    assert_eq!(h_a.partial_cmp(&h_b), Some(ord_ab));
+
+    // Direct analogue of `smoke.rs`'s `handles_from_different_regions_are_distinct`
+    // HashSet case, but for BTreeSet (Ord-keyed instead of Hash-keyed):
+    // two colliding-key handles from different regions must both be kept,
+    // not collapsed into one entry by a broken Ord/Eq relationship.
+    let mut set: BTreeSet<Handle<i32>> = BTreeSet::new();
+    set.insert(h_a);
+    set.insert(h_b);
+    assert_eq!(
+        set.len(),
+        2,
+        "BTreeSet should hold both colliding-key handles from different regions"
+    );
+    assert!(set.contains(&h_a));
+    assert!(set.contains(&h_b));
 }
 
 #[test]

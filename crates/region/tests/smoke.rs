@@ -29,10 +29,12 @@ fn region_insert_get_remove_roundtrip() {
 
 /// Extracts the slot index from a `Handle`'s `{:?}` output.
 ///
-/// `Handle`'s `Debug` impl forwards `slotmap::DefaultKey`'s own `Debug`
-/// (`{idx}v{version}`), e.g. `Handle { key: DefaultKey(1v1) }`. Parsing this
-/// is the only way to observe slot identity from outside the crate — `key`
-/// is `pub(crate)`. Fragile w.r.t. slotmap's exact Debug format, but that is
+/// `Handle`'s `Debug` impl embeds `slotmap::DefaultKey`'s own Debug output
+/// (`{idx}v{version}`) as the `key` field, alongside a `region_id` field
+/// (added by F2's domain-aware identity redesign), e.g.
+/// `Handle { key: DefaultKey(1v1), region_id: 2 }`. Parsing this is the only
+/// way to observe slot identity from outside the crate — `key` is
+/// `pub(crate)`. Fragile w.r.t. slotmap's exact Debug format, but that is
 /// the tradeoff this test deliberately accepts to prove reuse directly
 /// rather than vacuously (see the module-level comment on the test below).
 fn slot_index(h: impl std::fmt::Debug) -> u32 {

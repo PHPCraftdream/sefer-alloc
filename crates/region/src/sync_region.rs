@@ -158,6 +158,7 @@ impl<T> SyncRegion<T> {
     /// # Panics
     ///
     /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
+    #[must_use]
     pub fn insert(&self, value: T) -> Handle<T> {
         self.write().insert(value)
     }

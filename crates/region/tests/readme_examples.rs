@@ -4,7 +4,10 @@
 
 #[test]
 fn readme_region_example() {
-    // Mirrors README.md:43-57
+    // Mirrors README.md's "## Quick start" section's ```rust fenced block.
+    // Cited by section heading, not line numbers, so this comment cannot go
+    // stale as the README grows/shrinks elsewhere (see F17(b) of the
+    // 2026-08-10 release-readiness review).
     use sefer_region::{Handle, Region};
 
     let mut region = Region::new();
@@ -22,7 +25,10 @@ fn readme_region_example() {
 
 #[test]
 fn readme_sync_region_example() {
-    // Mirrors README.md:86-106
+    // Mirrors README.md's "## SyncRegion (std feature, default-on)" section's
+    // ```rust fenced block. Cited by section heading, not line numbers, so
+    // this comment cannot go stale as the README grows/shrinks elsewhere
+    // (see F17(b) of the 2026-08-10 release-readiness review).
     // Note: sr2 from the original example was unused; this test drops it to
     // avoid an unused_variables warning while keeping the single-threaded
     // intent (the SyncRegion API is exercised, but no actual threading is
