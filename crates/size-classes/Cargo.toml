@@ -15,4 +15,9 @@ categories = ["memory-management", "data-structures", "no-std::no-alloc"]
 [dependencies]
 
 [dev-dependencies]
+bench-scale-tool = "0.1"
 proptest = "1"
+
+[[bench]]
+name = "size_classes_bench"
+harness = false
