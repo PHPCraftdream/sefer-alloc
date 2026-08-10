@@ -6,10 +6,18 @@
 //!    only holds a `slotmap::DefaultKey` plus a `PhantomData<fn() -> T>` (a
 //!    fn-pointer phantom, which is Send+Sync regardless of T).
 //!
-//! 2. [`Handle<T>`]'s layout: `size_of::<Handle<T>>()` is exactly 16 bytes
-//!    (a `u32` index + a `NonZeroU32` version from slotmap's DefaultKey, plus
-//!    a `NonZeroU64` region_id, with no padding), and `Option<Handle<T>>` is also
-//!    exactly 16 bytes via the niche optimization (region_id is NonZeroU64).
+//! 2. [`Handle<T>`]'s layout is WIDTH-DEPENDENT, because `region_id` is a
+//!    pointer-width `NonZeroUsize` (not a fixed-width `NonZeroU64` — chosen
+//!    so the type stays buildable on no_std targets without 64-bit atomics).
+//!    `size_of::<Handle<T>>()` is 16 bytes on a 64-bit host (a `u32` index +
+//!    `NonZeroU32` version from slotmap's `DefaultKey` = 8 bytes align 4,
+//!    plus an 8-byte `NonZeroUsize` region_id align 8 — the stricter align
+//!    pads the struct to 16) and 12 bytes on a 32-bit host (both fields
+//!    align 4, so they pack with no padding). Verified empirically for both
+//!    `x86_64-pc-windows-msvc` (16) and `i686-pc-windows-msvc` (12) — see
+//!    the sefer-region F1 task summary. `Option<Handle<T>>` matches
+//!    `Handle<T>`'s own size on every width via the niche optimization
+//!    (region_id is `NonZeroUsize`).
 //!
 //! The negative direction (that `SyncRegion<Cell<u32>>: Sync` must NOT compile)
 //! was manually verified in `docs/reviews/2026-08-07-sefer-region-safety-review.md`
@@ -59,27 +67,48 @@ const _: () = assert_send_sync::<Handle<*const u32>>();
 /// Verify Handle<T> is Send+Sync even when T contains both !Send and !Sync components.
 const _: () = assert_send_sync::<Handle<std::rc::Rc<std::cell::Cell<u32>>>>();
 
-/// Compile-time layout assertion: Handle<T> is exactly 16 bytes.
+/// Expected `size_of::<Handle<u8>>()` for the host's pointer width.
 ///
-/// Handle<T> contains: slotmap::DefaultKey (8 bytes: u32 index + NonZeroU32 version),
-/// NonZeroU64 region_id (8 bytes), and PhantomData (zero-sized), so Handle<T> should be
-/// exactly 16 bytes with no padding.
-const _: () = assert!(size_of::<Handle<u8>>() == 16);
+/// `Handle<T>` contains: `slotmap::DefaultKey` (8 bytes: `u32` index +
+/// `NonZeroU32` version, align 4), a `NonZeroUsize` region_id (pointer-width:
+/// 8 bytes/align 8 on a 64-bit host, 4 bytes/align 4 on a 32-bit host), and
+/// `PhantomData` (zero-sized). On 64-bit, region_id's stricter align-8 pads
+/// the struct to 16 bytes; on 32-bit, both fields share align 4 and pack
+/// with no padding to 12 bytes. Verified empirically by building this crate
+/// for `x86_64-pc-windows-msvc` (16) and `i686-pc-windows-msvc` (12) — see
+/// the sefer-region F1 task summary for the raw probe output. Written as a
+/// single width-driven formula (rather than two hardcoded per-width
+/// literals) so it stays correct if a third pointer width is ever exercised.
+#[cfg(target_pointer_width = "64")]
+const EXPECTED_HANDLE_SIZE: usize = 16;
+#[cfg(target_pointer_width = "32")]
+const EXPECTED_HANDLE_SIZE: usize = 12;
 
-/// Compile-time layout assertion: Option<Handle<T>> is exactly 16 bytes.
+/// Compile-time layout assertion: Handle<T> matches the width-dependent
+/// expected size (see `EXPECTED_HANDLE_SIZE`'s doc comment).
+const _: () = assert!(size_of::<Handle<u8>>() == EXPECTED_HANDLE_SIZE);
+
+/// Compile-time layout assertion: Option<Handle<T>> is the same size as
+/// Handle<T> on this width.
 ///
-/// Because Handle<T> contains NonZero fields (NonZeroU64 for region_id),
-/// Option<Handle<T>> should use the niche optimization and also be exactly 16 bytes.
-const _: () = assert!(size_of::<Option<Handle<u8>>>() == 16);
+/// Because Handle<T> contains NonZero fields (NonZeroUsize for region_id),
+/// Option<Handle<T>> should use the niche optimization and match Handle<T>'s
+/// own size exactly, on every pointer width.
+const _: () = assert!(size_of::<Option<Handle<u8>>>() == EXPECTED_HANDLE_SIZE);
 
 #[test]
 fn handle_layout_matches_expectations() {
     // Runtime check for documentation purposes; the compile-time assertions above
     // are the real guard. This just makes the numbers visible in test output.
-    assert_eq!(size_of::<Handle<u8>>(), 16, "Handle<T> should be 16 bytes");
+    assert_eq!(
+        size_of::<Handle<u8>>(),
+        EXPECTED_HANDLE_SIZE,
+        "Handle<T> should be {EXPECTED_HANDLE_SIZE} bytes on a {}-bit host",
+        usize::BITS
+    );
     assert_eq!(
         size_of::<Option<Handle<u8>>>(),
-        16,
-        "Option<Handle<T>> should also be 16 bytes (niche optimization)"
+        EXPECTED_HANDLE_SIZE,
+        "Option<Handle<T>> should also be {EXPECTED_HANDLE_SIZE} bytes (niche optimization)"
     );
 }

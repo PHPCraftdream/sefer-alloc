@@ -3,7 +3,7 @@
 //! [`Region`]: crate::Region
 
 use core::marker::PhantomData;
-use core::num::NonZeroU64;
+use core::num::NonZeroUsize;
 
 /// An opaque, copyable reference to a value stored in a [`Region`].
 ///
@@ -14,9 +14,13 @@ use core::num::NonZeroU64;
 /// *typed* (so a `Handle<A>` cannot be passed to a `Region<B>`) while staying
 /// covariant in `T` and free of any drop/auto-trait obligations.
 ///
-/// The `region_id: NonZeroU64` field ensures that handles from different
+/// The `region_id: NonZeroUsize` field ensures that handles from different
 /// `Region` instances never collide even if they have the same `key`. Using
-/// `NonZeroU64` preserves the niche optimization for `Option<Handle<T>>`.
+/// `NonZeroUsize` preserves the niche optimization for `Option<Handle<T>>`.
+/// `region_id` is pointer-width (not a fixed 64 bits) so this type stays
+/// buildable on no_std targets without 64-bit atomics (e.g.
+/// `thumbv7em-none-eabi`, `riscv32imc`/`riscv32imac`) — every such target
+/// still has pointer-width atomics.
 ///
 /// [`Region`]: crate::Region
 #[repr(C)]
@@ -24,13 +28,13 @@ pub struct Handle<T> {
     /// Crate-visible so [`Region`](crate::Region) can build and read a handle,
     /// never exposed publicly.
     pub(crate) key: slotmap::DefaultKey,
-    pub(crate) region_id: NonZeroU64,
+    pub(crate) region_id: NonZeroUsize,
     _ty: PhantomData<fn() -> T>,
 }
 
 impl<T> Handle<T> {
     /// Crate-internal constructor wrapping a raw slotmap key and region ID.
-    pub(crate) fn from_key_and_region(key: slotmap::DefaultKey, region_id: NonZeroU64) -> Self {
+    pub(crate) fn from_key_and_region(key: slotmap::DefaultKey, region_id: NonZeroUsize) -> Self {
         Self {
             key,
             region_id,

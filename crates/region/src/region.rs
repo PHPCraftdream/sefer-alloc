@@ -1,10 +1,10 @@
 //! [`Region`] — a handle-addressed store of `T` backed by `slotmap`.
 
 use crate::Handle;
-use core::num::NonZeroU64;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-static NEXT_REGION_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_REGION_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// A handle-addressed store of `T`.
 ///
@@ -51,8 +51,24 @@ static NEXT_REGION_ID: AtomicU64 = AtomicU64::new(1);
 ///   checks it before touching the backing slotmap; a handle from a
 ///   *different* `Region<T>` is rejected exactly like a stale handle (`None`/
 ///   `false`), even when its raw `DefaultKey` collides with a live key in
-///   this region (this doubles `Handle<T>`'s size from 8 to 16 bytes versus
-///   the pre-0.2.0 layout — see `tests/handle_static_asserts.rs`).
+///   this region (this grows `Handle<T>`'s size versus the pre-0.2.0 layout
+///   by one `NonZeroUsize` field — 16 bytes total on a 64-bit host, smaller
+///   on a 32-bit host, since the added field is pointer-width, not a fixed
+///   8 bytes — see `tests/handle_static_asserts.rs`). `region_id` is minted
+///   from a process-wide counter (`NEXT_REGION_ID`, `AtomicUsize`) that is
+///   incremented once per `Region::new`/`with_capacity` call and never
+///   reused; it saturates after `2^{pointer_width} - 1` `Region`
+///   constructions in one process (`usize::MAX` on the host's pointer
+///   width) and panics on overflow — see the `# Panics` sections on
+///   [`new`](Self::new) and [`with_capacity`](Self::with_capacity). On a
+///   64-bit host this is a theoretical guard only. On a **32-bit host**
+///   (e.g. `thumbv7em-none-eabi`, `i686-*`) the bound is `2^32 - 1` (about
+///   4.29 billion), which is *reachable*, not just theoretical, for a
+///   long-lived 32-bit server or embedded process that mints a fresh
+///   `Region` per request/session over its lifetime rather than reusing
+///   one — the same honest register as the I2/I3 generation-wrap
+///   disclosure below, just a much larger and process-lifetime-scoped
+///   count rather than a per-slot reuse count.
 ///
 /// ## Generation saturation
 ///
@@ -83,16 +99,24 @@ static NEXT_REGION_ID: AtomicU64 = AtomicU64::new(1);
 /// ever risking alias) must add their own wrapper layer that tracks generation
 /// wrap or otherwise avoids cross-region handle reuse.
 pub struct Region<T> {
-    region_id: NonZeroU64,
+    region_id: NonZeroUsize,
     inner: slotmap::SlotMap<slotmap::DefaultKey, T>,
 }
 
 impl<T> Region<T> {
     /// Creates an empty region that allocates nothing until first use.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process-wide `region_id` counter has been exhausted —
+    /// i.e. this would be the `2^{pointer_width}`-th `Region` constructed
+    /// (via `new`/`with_capacity`/`Default`) in this process. See the I6
+    /// doc block above for the exhaustion bound and why it is reachable,
+    /// not just theoretical, on a 32-bit host.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            region_id: NonZeroU64::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
+            region_id: NonZeroUsize::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
                 .expect("region_id overflow"),
             inner: slotmap::SlotMap::new(),
         }
@@ -111,7 +135,9 @@ impl<T> Region<T> {
     /// Additionally panics (as any `Vec`-backed container does) for any `capacity`
     /// whose slot array would exceed `isize::MAX` bytes — roughly
     /// `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond that aborts
-    /// rather than panicking.
+    /// rather than panicking. Also panics if the process-wide `region_id`
+    /// counter has been exhausted — see [`new`](Self::new)'s `# Panics`
+    /// section and the I6 doc block above.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
@@ -127,7 +153,7 @@ impl<T> Region<T> {
             .checked_add(1)
             .expect("Region::with_capacity: capacity overflow");
         Self {
-            region_id: NonZeroU64::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
+            region_id: NonZeroUsize::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
                 .expect("region_id overflow"),
             inner: slotmap::SlotMap::with_capacity(capacity),
         }
@@ -295,6 +321,10 @@ impl<T> Region<T> {
 }
 
 impl<T> Default for Region<T> {
+    /// # Panics
+    ///
+    /// Panics under the same condition as [`Region::new`] (process-wide
+    /// `region_id` counter exhaustion) — this delegates to `new`.
     fn default() -> Self {
         Self::new()
     }
