@@ -25,10 +25,19 @@ use core::num::NonZeroUsize;
 /// [`Region`]: crate::Region
 #[repr(C)]
 pub struct Handle<T> {
+    /// Declared before `key` so the struct's own field order matches
+    /// `Ord`'s comparison order below — if a future refactor ever swaps the
+    /// hand-written `Ord`/`PartialOrd` impls for `#[derive(PartialOrd, Ord)]`
+    /// (which compares fields in declaration order), this keeps that
+    /// substitution field-order-neutral instead of silently reordering
+    /// comparisons. Layout-neutral either way: `size_of::<Handle<T>>()` and
+    /// its alignment are unaffected by this field's position (verified by
+    /// `tests/handle_static_asserts.rs`, which pins the size on both
+    /// pointer widths).
+    pub(crate) region_id: NonZeroUsize,
     /// Crate-visible so [`Region`](crate::Region) can build and read a handle,
     /// never exposed publicly.
     pub(crate) key: slotmap::DefaultKey,
-    pub(crate) region_id: NonZeroUsize,
     _ty: PhantomData<fn() -> T>,
 }
 
@@ -85,6 +94,13 @@ impl<T> core::hash::Hash for Handle<T> {
 // compare equal per `PartialEq`, but they still have a consistent total
 // order — useful for sorting/`BTreeMap` even though `HashMap` is the more
 // common use case.
+/// `Ord`/`PartialOrd` provide a total order consistent with [`Eq`], suitable
+/// for storing `Handle<T>` in a `BTreeMap`/`BTreeSet` or sorting a `Vec` of
+/// them. The *relative* order between two particular handles — including
+/// whether handles from different [`Region`](crate::Region)s group together
+/// or interleave — is an unspecified implementation detail (currently:
+/// group by `region_id`, tie-break by `key`) and may change in any release.
+/// Do not depend on it for anything beyond "a total order exists".
 impl<T> PartialOrd for Handle<T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
