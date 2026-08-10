@@ -1,10 +1,16 @@
 //! Black-box invariant tests over the public API (Phase 1).
 //!
-//! These encode invariants I1–I5 from `docs/INVARIANTS.md` as observable
+//! These encode invariants I1–I6 from `docs/INVARIANTS.md` as observable
 //! properties of [`Region`]/[`Handle`], with no access to private fields.
 //! Generation wrap is `slotmap`'s responsibility (32-bit generation wraps
 //! after ~2^31 cycles), so saturation is asserted only as a black-box
 //! property (a reused slot does not honour a stale handle until wrap).
+//!
+//! This file is exercised under miri by CI's `miri-core` job (`cargo miri
+//! test --test region_invariants`), so the I6 case below is also the only
+//! place I6 (instance isolation) is checked under miri — including through
+//! the `sefer_alloc::Region` re-export this file uses, not just the
+//! `sefer-region` crate directly.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -85,6 +91,65 @@ fn drops_each_value_exactly_once() {
         3,
         "expected exactly three drops, no double-free, no leak"
     );
+}
+
+/// I6 (instance isolation): a handle minted by one `Region` instance must be
+/// rejected by a *different* `Region` instance of the same type, on every
+/// accessor (`get`, `get_mut`, `remove`, `contains`) — even when the raw
+/// underlying key collides (the first insert into a fresh `Region` commonly
+/// produces the same key as the first insert into any other fresh `Region`).
+/// This is the miri-covered instance of I6 — `region_invariants.rs` runs
+/// under CI's `miri-core` job, so this is also the only I6 check exercised
+/// under miri, through the `sefer_alloc::Region` re-export.
+#[test]
+fn handle_from_different_region_is_rejected_on_every_accessor() {
+    let mut region_a = Region::new();
+    let mut region_b = Region::new();
+
+    let h_a = region_a.insert(1u32);
+    let h_b = region_b.insert(2u32);
+
+    // get
+    assert_eq!(region_b.get(h_a), None, "I6: cross-region get must fail");
+    assert_eq!(region_a.get(h_b), None, "I6: cross-region get must fail");
+
+    // get_mut
+    assert_eq!(
+        region_b.get_mut(h_a),
+        None,
+        "I6: cross-region get_mut must fail"
+    );
+    assert_eq!(
+        region_a.get_mut(h_b),
+        None,
+        "I6: cross-region get_mut must fail"
+    );
+
+    // contains
+    assert!(
+        !region_b.contains(h_a),
+        "I6: cross-region contains must be false"
+    );
+    assert!(
+        !region_a.contains(h_b),
+        "I6: cross-region contains must be false"
+    );
+
+    // remove
+    assert_eq!(
+        region_b.remove(h_a),
+        None,
+        "I6: cross-region remove must fail"
+    );
+    assert_eq!(
+        region_a.remove(h_b),
+        None,
+        "I6: cross-region remove must fail"
+    );
+
+    // Nothing was disturbed: both handles still resolve in their own region.
+    assert_eq!(region_a.get(h_a), Some(&1));
+    assert_eq!(region_b.get(h_b), Some(&2));
 }
 
 /// `clear` invalidates all outstanding handles and the region is reusable.

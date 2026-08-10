@@ -141,6 +141,82 @@ fn region_handle_from_different_instance_is_rejected() {
     );
 }
 
+/// I6 (`get_mut`): a handle from a *different* `Region<T>` instance must be
+/// rejected by `get_mut` exactly like `get`/`remove`/`contains` already are
+/// — this is the guard-place F5 flagged as untested (deleting the
+/// `region_id` check inside `get_mut` left the crate's full test suite
+/// green before this test existed).
+#[test]
+fn region_get_mut_from_different_instance_is_rejected() {
+    let mut region_a: Region<u32> = Region::new();
+    let mut region_b: Region<u32> = Region::new();
+
+    let h_a = region_a.insert(1u32);
+    let h_b = region_b.insert(2u32);
+
+    // Cross-region get_mut should fail in BOTH directions:
+    assert_eq!(
+        region_b.get_mut(h_a),
+        None,
+        "cross-region get_mut should fail (a's handle into b)"
+    );
+    assert_eq!(
+        region_a.get_mut(h_b),
+        None,
+        "cross-region get_mut should fail (b's handle into a)"
+    );
+
+    // A rejected get_mut must not have mutated anything in the wrong region:
+    assert_eq!(region_a.get(h_a).copied(), Some(1u32));
+    assert_eq!(region_b.get(h_b).copied(), Some(2u32));
+
+    // Same-region get_mut still works and mutates in place:
+    *region_a
+        .get_mut(h_a)
+        .expect("same-region get_mut should succeed") = 100;
+    *region_b
+        .get_mut(h_b)
+        .expect("same-region get_mut should succeed") = 200;
+    assert_eq!(region_a.get(h_a).copied(), Some(100u32));
+    assert_eq!(region_b.get(h_b).copied(), Some(200u32));
+}
+
+/// I6 churn sanity: a handle from a `Region` that has been dropped must be
+/// rejected by a freshly-constructed `Region`, under ordinary (non-overflow)
+/// churn — i.e. `region_id` allocation does not accidentally recycle IDs
+/// across an ordinary drop/recreate cycle in the same process.
+#[test]
+fn region_handle_from_dropped_instance_is_rejected_by_fresh_region() {
+    let mut region_a: Region<u32> = Region::new();
+    let h_a = region_a.insert(1u32);
+    drop(region_a);
+
+    let mut region_b: Region<u32> = Region::new();
+    let h_b = region_b.insert(2u32);
+
+    // The handle from the dropped region must not resolve through the
+    // freshly-created region, even though the underlying raw key commonly
+    // collides (first insert into a fresh Region tends to produce the same
+    // DefaultKey).
+    assert_eq!(
+        region_b.get(h_a),
+        None,
+        "handle from a dropped Region must not resolve in a fresh Region"
+    );
+    assert!(
+        !region_b.contains(h_a),
+        "handle from a dropped Region must not be `contains`ed by a fresh Region"
+    );
+    assert_eq!(
+        region_b.remove(h_a),
+        None,
+        "handle from a dropped Region must not be removable from a fresh Region"
+    );
+
+    // The fresh region's own handle still works normally.
+    assert_eq!(region_b.get(h_b).copied(), Some(2u32));
+}
+
 #[test]
 fn handles_from_different_regions_are_distinct() {
     use std::collections::{HashMap, HashSet};
@@ -274,5 +350,81 @@ mod sync_tests {
         let h2 = sr.insert(99u32);
         assert_eq!(sr.get_cloned(h2), Some(99u32));
         assert_eq!(sr.len(), 2); // 42 inserted before panic + 99 just now
+    }
+
+    /// I6 on `SyncRegion`: a handle from a *different* `SyncRegion` instance
+    /// must be rejected — mirrors `region_handle_from_different_instance_is_rejected`
+    /// (single-threaded `Region`) but exercises `SyncRegion`'s own surface:
+    /// the one-shot convenience methods (`get_cloned`, `contains`, `remove`)
+    /// AND the guard-based forms (`sr.read().get(..)`, `sr.write().get_mut(..)`),
+    /// since `SyncRegion` had ZERO cross-instance coverage before this test.
+    #[test]
+    fn sync_region_handle_from_different_instance_is_rejected() {
+        let sr_a: SyncRegion<u32> = SyncRegion::new();
+        let sr_b: SyncRegion<u32> = SyncRegion::new();
+
+        let h_a = sr_a.insert(1u32);
+        let h_b = sr_b.insert(2u32);
+
+        // One-shot convenience methods: get_cloned/contains/remove.
+        assert_eq!(
+            sr_b.get_cloned(h_a),
+            None,
+            "cross-region get_cloned should fail (a's handle into b)"
+        );
+        assert_eq!(
+            sr_a.get_cloned(h_b),
+            None,
+            "cross-region get_cloned should fail (b's handle into a)"
+        );
+
+        assert!(
+            !sr_b.contains(h_a),
+            "cross-region contains should be false (a's handle into b)"
+        );
+        assert!(
+            !sr_a.contains(h_b),
+            "cross-region contains should be false (b's handle into a)"
+        );
+
+        assert_eq!(
+            sr_b.remove(h_a),
+            None,
+            "cross-region remove should fail (a's handle into b)"
+        );
+        assert_eq!(
+            sr_a.remove(h_b),
+            None,
+            "cross-region remove should fail (b's handle into a)"
+        );
+
+        // Guard-based forms: read().get(..) and write().get_mut(..).
+        assert_eq!(
+            sr_b.read().get(h_a),
+            None,
+            "cross-region read().get(..) should fail (a's handle into b)"
+        );
+        assert_eq!(
+            sr_a.read().get(h_b),
+            None,
+            "cross-region read().get(..) should fail (b's handle into a)"
+        );
+        assert_eq!(
+            sr_b.write().get_mut(h_a),
+            None,
+            "cross-region write().get_mut(..) should fail (a's handle into b)"
+        );
+        assert_eq!(
+            sr_a.write().get_mut(h_b),
+            None,
+            "cross-region write().get_mut(..) should fail (b's handle into a)"
+        );
+
+        // Nothing was disturbed by the rejected cross-region calls: both
+        // handles still resolve correctly in their own SyncRegion.
+        assert_eq!(sr_a.get_cloned(h_a), Some(1u32));
+        assert_eq!(sr_b.get_cloned(h_b), Some(2u32));
+        assert!(sr_a.contains(h_a));
+        assert!(sr_b.contains(h_b));
     }
 }

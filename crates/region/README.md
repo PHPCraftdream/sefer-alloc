@@ -79,6 +79,12 @@ assert!(region.get(h).is_none());
   agrees.
 - **I5 — drop-once:** every live value is dropped exactly once — on `remove`
   (returned to the caller) or on `Region` drop — never twice, never leaked.
+- **I6 — instance isolation:** a `Handle<T>` resolves only through the
+  `Region<T>` instance that minted it. Every accessor (`get`, `get_mut`,
+  `remove`, `contains`) stamps its `region_id` at construction and checks it
+  before touching the backing slotmap; a handle from a *different* `Region<T>`
+  is rejected exactly like a stale handle (`None`/`false`), even when its raw
+  `DefaultKey` collides with a live key in this region.
 
 ## SyncRegion (std feature, default-on)
 
