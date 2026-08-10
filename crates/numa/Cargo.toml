@@ -58,3 +58,15 @@ mock = []
 
 [dependencies]
 aligned-vmem = { version = "0.2", path = "../vmem", optional = true }
+
+[lib]
+name = "numa_shim"
+path = "src/lib.rs"
+
+[dev-dependencies]
+bench-scale-tool = "0.1"
+
+[[bench]]
+name = "numa_bench"
+harness = false
+required-features = ["mock"]

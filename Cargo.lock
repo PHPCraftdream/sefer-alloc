@@ -701,6 +701,7 @@ name = "numa-shim"
 version = "0.1.0"
 dependencies = [
  "aligned-vmem",
+ "bench-scale-tool",
 ]
 
 [[package]]
