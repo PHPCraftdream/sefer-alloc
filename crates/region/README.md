@@ -122,6 +122,11 @@ assert_eq!(sr.len(), 1);
 assert_eq!(sr.len(), 3);
 ```
 
+**Note:** `SyncRegion` uses blocking `std::sync::RwLock`, which is not async-aware.
+For async runtimes (e.g. `tokio`), see the "Async runtimes" section in the
+`SyncRegion` type documentation ([docs.rs](https://docs.rs/sefer-region)) for
+concrete hazards and recommendations.
+
 ## Feature flags
 
 | Feature | Default | Effect |

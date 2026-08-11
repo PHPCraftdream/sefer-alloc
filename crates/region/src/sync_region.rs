@@ -74,6 +74,33 @@ use crate::{Handle, Region};
 /// guard restores flat scaling at ~30× the one-shot aggregate at 8 threads.
 /// This is inherent `RwLock` physics for a nanosecond-scale critical section,
 /// not a defect in the lock implementation.
+///
+/// ## Async runtimes
+///
+/// `SyncRegion` uses blocking `std::sync::RwLock`, which is not async-aware.
+/// In an async context (e.g. `tokio`), this has concrete hazards:
+///
+/// - **Holding a guard across `.await` blocks the executor worker** for the
+///   entire await duration, not just the critical section. The worker cannot
+///   schedule other tasks while blocked.
+///
+/// - **One-shot methods (`get_cloned`, `insert`, `remove`, …) synchronously
+///   block the OS thread** — they are not "async-safe just because they're
+///   fast." Contention can still stall an executor worker.
+///
+/// - **`tokio::time::timeout` does NOT cancel a blocking lock acquisition.**
+///   The timeout fires after the operation completes (or never fires if the
+///   lock is held forever), but the blocking wait itself cannot be
+///   interrupted.
+///
+/// - **`spawn_blocking` does NOT make an already-started operation
+///   cancellation-safe.** Once a blocking call is in flight on a worker thread,
+///   dropping the `JoinHandle` does not abort it.
+///
+/// For async-friendly ownership, use an async lock type such as
+/// `tokio::sync::RwLock` or `async_rwlock` instead of this wrapper.
+/// Guard-batching (see the contended reads section above) is valid only within
+/// a synchronous section — it does not make blocking safe in async code.
 pub struct SyncRegion<T> {
     inner: RwLock<Region<T>>,
 }
@@ -113,6 +140,11 @@ impl<T> SyncRegion<T> {
 
 impl<T> SyncRegion<T> {
     /// Creates an empty region that allocates nothing until first use.
+    ///
+    /// # Panics
+    ///
+    /// Delegates to [`Region::new`] — see its `# Panics` section for the exact
+    /// conditions (process-wide `region_id` counter exhaustion).
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -124,8 +156,9 @@ impl<T> SyncRegion<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `capacity == usize::MAX` (see [`Region::with_capacity`]'s own
-    /// `# Panics` section — this delegates directly and the same guard applies).
+    /// Delegates to [`Region::with_capacity`] — see its `# Panics` section for
+    /// the exact conditions (capacity limit, allocation size overflow, and
+    /// process-wide `region_id` counter exhaustion).
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
