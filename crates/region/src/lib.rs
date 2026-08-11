@@ -75,7 +75,14 @@ mod region;
 mod sync_region;
 
 pub use handle::Handle;
-pub use region::{Iter, IterMut, Region};
+pub use region::{Iter, IterMut, Region, RegionIdExhaustedError};
+
+// Test-only forwarder (see its own doc comment in `region.rs`): exposes the
+// `region_id`-minting helper to integration tests in `tests/`, which can
+// only reach items re-exported from the crate root. `#[doc(hidden)]` keeps
+// it off docs.rs; this is not part of the public API.
+#[doc(hidden)]
+pub use region::dbg_try_mint_region_id;
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]

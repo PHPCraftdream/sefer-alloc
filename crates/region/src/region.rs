@@ -2,9 +2,95 @@
 
 use crate::Handle;
 use core::num::NonZeroUsize;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::AtomicUsize;
 
+/// Process-wide counter for minting unique `region_id` values.
+///
+/// This counter starts at 1 and is incremented once per `Region::new`/`with_capacity`
+/// call. The value 0 is reserved as a permanent "exhausted" sentinel — once the counter
+/// wraps to 0, all future `Region` constructions panic forever, ensuring no region_id
+/// is ever reused.
 static NEXT_REGION_ID: AtomicUsize = AtomicUsize::new(1);
+
+/// Error type returned when the process-wide `region_id` counter is exhausted.
+///
+/// This error is returned by the internal ID-issuance helper when the counter
+/// has reached `usize::MAX` and transitioned to the exhausted sentinel (0).
+/// After this point, all future `Region::new`/`with_capacity` calls will fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegionIdExhaustedError;
+
+impl core::fmt::Display for RegionIdExhaustedError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("process-wide region_id counter exhausted")
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for RegionIdExhaustedError {}
+
+/// Attempts to mint a unique `region_id` from the given atomic counter.
+///
+/// # Returns
+///
+/// - `Ok(NonZeroUsize)` — the newly minted region_id
+/// - `Err(RegionIdExhaustedError)` — the counter has been exhausted (transitioned
+///   to the permanent sentinel 0)
+///
+/// # Exhaustion semantics
+///
+/// This function uses `fetch_update` to ensure atomic exhaustion semantics:
+/// - If the current value is 0: immediately returns an error (already exhausted)
+/// - If the current value is `usize::MAX`: returns `MAX` (the last valid ID) and
+///   transitions the counter to 0 (permanent exhausted sentinel)
+/// - Otherwise: returns the current value and increments by 1
+///
+/// Once the counter transitions to 0, it will never transition back to a positive
+/// value — all future calls will fail with `RegionIdExhaustedError`. This ensures
+/// that no region_id is ever reused, even after exhaustion.
+#[inline]
+fn try_mint_region_id(counter: &AtomicUsize) -> Result<NonZeroUsize, RegionIdExhaustedError> {
+    use core::sync::atomic::Ordering;
+
+    match counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        if current == 0 {
+            // Already exhausted: stay at 0 forever
+            None
+        } else if current == usize::MAX {
+            // Last valid ID is MAX; transition to exhausted sentinel
+            Some(0)
+        } else {
+            // Normal case: increment
+            Some(current + 1)
+        }
+    }) {
+        // Unreachable in practice: the closure above only ever returns
+        // `Some(0)` when the *previous* value was `usize::MAX` (never 0
+        // itself), so `fetch_update`'s `Ok(previous)` can never be `Ok(0)`.
+        // Kept as a defensive match arm, not a reachable path.
+        Ok(0) => Err(RegionIdExhaustedError),
+        Ok(value) => match NonZeroUsize::new(value) {
+            Some(nz) => Ok(nz),
+            None => Err(RegionIdExhaustedError),
+        },
+        Err(_) => Err(RegionIdExhaustedError),
+    }
+}
+
+/// Test-only forwarder exposing [`try_mint_region_id`] to integration tests
+/// under `tests/`, which — unlike unit tests inside this module — can only
+/// see items re-exported from the crate root. Not part of the public API;
+/// `#[doc(hidden)]` keeps it out of rendered docs (see the "doc-hidden
+/// test-only forwarders" convention in this repo's `CLAUDE.md`). Takes an
+/// explicit `&AtomicUsize` rather than reaching for the real
+/// `NEXT_REGION_ID` static so boundary/exhaustion tests can drive a local
+/// counter without mutating process-wide state shared with other tests.
+#[doc(hidden)]
+pub fn dbg_try_mint_region_id(
+    counter: &AtomicUsize,
+) -> Result<NonZeroUsize, RegionIdExhaustedError> {
+    try_mint_region_id(counter)
+}
 
 /// A handle-addressed store of `T`.
 ///
@@ -57,18 +143,20 @@ static NEXT_REGION_ID: AtomicUsize = AtomicUsize::new(1);
 ///   8 bytes — see `tests/handle_static_asserts.rs`). `region_id` is minted
 ///   from a process-wide counter (`NEXT_REGION_ID`, `AtomicUsize`) that is
 ///   incremented once per `Region::new`/`with_capacity` call and never
-///   reused; it saturates after `2^{pointer_width} - 1` `Region`
-///   constructions in one process (`usize::MAX` on the host's pointer
-///   width) and panics on overflow — see the `# Panics` sections on
-///   [`new`](Self::new) and [`with_capacity`](Self::with_capacity). On a
-///   64-bit host this is a theoretical guard only. On a **32-bit host**
-///   (e.g. `thumbv7em-none-eabi`, `i686-*`) the bound is `2^32 - 1` (about
-///   4.29 billion), which is *reachable*, not just theoretical, for a
-///   long-lived 32-bit server or embedded process that mints a fresh
-///   `Region` per request/session over its lifetime rather than reusing
-///   one — the same honest register as the I2/I3 generation-wrap
-///   disclosure below, just a much larger and process-lifetime-scoped
-///   count rather than a per-slot reuse count.
+///   reused. Once the counter is exhausted after `2^{pointer_width}` `Region`
+///   constructions (when it would wrap from `usize::MAX` to 0), it transitions
+///   to a permanent exhausted state (0) and all future `Region` constructions
+///   panic. No region_id is ever reused, even after exhaustion — the value
+///   0 is reserved as a sentinel that never transitions back to a positive
+///   value. See the `# Panics` sections on [`new`](Self::new) and
+///   [`with_capacity`](Self::with_capacity). On a 64-bit host this is a
+///   theoretical guard only. On a **32-bit host** (e.g. `thumbv7em-none-eabi`,
+///   `i686-*`) the bound is `2^32` (about 4.29 billion), which is *reachable*,
+///   not just theoretical, for a long-lived 32-bit server or embedded process
+///   that mints a fresh `Region` per request/session over its lifetime rather
+///   than reusing one — the same honest register as the I2/I3 generation-wrap
+///   disclosure below, just a much larger and process-lifetime-scoped count
+///   rather than a per-slot reuse count.
 ///
 /// ## Generation saturation
 ///
@@ -110,15 +198,17 @@ impl<T> Region<T> {
     /// # Panics
     ///
     /// Panics if the process-wide `region_id` counter has been exhausted —
-    /// i.e. this would be the `2^{pointer_width}`-th `Region` constructed
-    /// (via `new`/`with_capacity`/`Default`) in this process. See the I6
-    /// doc block above for the exhaustion bound and why it is reachable,
-    /// not just theoretical, on a 32-bit host.
+    /// i.e. this would be the `(2^{pointer_width} + 1)`-th `Region` constructed
+    /// (via `new`/`with_capacity`/`Default`) in this process. Once the counter
+    /// is exhausted, **all** future `Region` constructions in this process will
+    /// panic, and no region_id is ever reused. See the I6 doc block above for
+    /// the exhaustion bound and why it is reachable, not just theoretical, on
+    /// a 32-bit host.
     #[must_use]
     pub fn new() -> Self {
+        let region_id = try_mint_region_id(&NEXT_REGION_ID).expect("region_id overflow");
         Self {
-            region_id: NonZeroUsize::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
-                .expect("region_id overflow"),
+            region_id,
             inner: slotmap::SlotMap::new(),
         }
     }
@@ -137,7 +227,9 @@ impl<T> Region<T> {
     /// roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond
     /// that aborts rather than panicking. Also panics if the process-wide
     /// `region_id` counter has been exhausted — see [`new`](Self::new)'s
-    /// `# Panics` section and the I6 doc block above.
+    /// `# Panics` section and the I6 doc block above. Once the counter is
+    /// exhausted, **all** future `Region` constructions in this process will
+    /// panic, and no region_id is ever reused.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
@@ -162,9 +254,9 @@ impl<T> Region<T> {
         capacity
             .checked_add(1)
             .expect("Region::with_capacity: capacity overflow");
+        let region_id = try_mint_region_id(&NEXT_REGION_ID).expect("region_id overflow");
         Self {
-            region_id: NonZeroUsize::new(NEXT_REGION_ID.fetch_add(1, Ordering::Relaxed))
-                .expect("region_id overflow"),
+            region_id,
             inner: slotmap::SlotMap::with_capacity(capacity),
         }
     }
