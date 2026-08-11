@@ -57,10 +57,10 @@ pub struct Handle<T> {
 
 impl<T> Handle<T> {
     /// Crate-internal constructor wrapping a raw slotmap key and region ID.
-    pub(crate) fn from_key_and_region(key: slotmap::DefaultKey, region_id: NonZeroUsize) -> Self {
+    pub(crate) fn from_key_and_region(region_id: NonZeroUsize, key: slotmap::DefaultKey) -> Self {
         Self {
-            key,
             region_id,
+            key,
             _ty: PhantomData,
         }
     }
@@ -133,8 +133,8 @@ impl<T> Ord for Handle<T> {
 impl<T> core::fmt::Debug for Handle<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Handle")
-            .field("key", &self.key)
             .field("region_id", &self.region_id)
+            .field("key", &self.key)
             .finish()
     }
 }

@@ -59,7 +59,8 @@ use crate::{Handle, Region};
 /// safety — the container was already proven sound on the FIRST recovery.
 /// One consequence: `SyncRegion` never exposes an `is_poisoned()` check,
 /// because poisoned state is never observable for longer than the single
-/// access that first recovers from it. Applications that need a durable,
+/// access that first recovers from it (except through [`Debug`], which
+/// reports it without clearing). Applications that need a durable,
 /// observable "a writer panicked here" signal for their own cross-value
 /// invariants must implement it themselves (e.g. an `AtomicBool` alongside
 /// the `SyncRegion`) — this crate's own poison flag is not a substitute,
@@ -85,12 +86,16 @@ use crate::{Handle, Region};
 /// Under multi-threaded read contention, the one-shot convenience methods
 /// ([`get_cloned`](Self::get_cloned), [`contains`](Self::contains),
 /// [`len`](Self::len), [`is_empty`](Self::is_empty)) anti-scale: each call pays a
-/// shared-cache-line lock acquisition that dominates the nanosecond-scale lookup,
-/// resulting in a ~4× aggregate throughput loss going from 1 to 8 reader threads
-/// on a 16-CPU host. Batching multiple reads under one held [`read`](Self::read)
-/// guard restores flat scaling at ~30× the one-shot aggregate at 8 threads.
-/// This is inherent `RwLock` physics for a nanosecond-scale critical section,
-/// not a defect in the lock implementation.
+/// shared-cache-line lock acquisition that dominates the nanosecond-scale lookup.
+/// Historical measurement (harness: `examples/contended_reads.rs`, regime: 8
+/// readers, one-shot vs. batched reads on a noisy dev host) showed a ~4×
+/// aggregate throughput loss at 8 readers and ~30× speedup from batching. A
+/// later, more rigorous gate (`docs/perf/R828_STRUCTURAL_LEVERS_GATE.md` §2)
+/// measured the same question with a different harness (`r828_batch_guard_probe.rs`)
+/// and found **9.15×** — explicitly recorded as an open discrepancy, not silently
+/// reconciled. The numbers above are retained for historical context; do not
+/// treat them as a stable measurement of batching's benefit without consulting
+/// the R828 gate's analysis.
 ///
 /// ## Async runtimes
 ///
@@ -192,9 +197,14 @@ impl<T> SyncRegion<T> {
     /// own guard type directly — a deliberate, stable API commitment; migrating
     /// the internal lock implementation in the future would be a breaking change.
     pub fn read(&self) -> RwLockReadGuard<'_, Region<T>> {
-        let guard = self.inner.read().unwrap_or_else(PoisonError::into_inner);
-        self.inner.clear_poison();
-        guard
+        match self.inner.read() {
+            Ok(g) => g,
+            Err(p) => {
+                let g = p.into_inner();
+                self.inner.clear_poison();
+                g
+            }
+        }
     }
 
     /// Locks for exclusive write, returning a guard that hands out `&mut Region<T>`.
@@ -206,9 +216,14 @@ impl<T> SyncRegion<T> {
     /// own guard type directly — a deliberate, stable API commitment; migrating
     /// the internal lock implementation in the future would be a breaking change.
     pub fn write(&self) -> RwLockWriteGuard<'_, Region<T>> {
-        let guard = self.inner.write().unwrap_or_else(PoisonError::into_inner);
-        self.inner.clear_poison();
-        guard
+        match self.inner.write() {
+            Ok(g) => g,
+            Err(p) => {
+                let g = p.into_inner();
+                self.inner.clear_poison();
+                g
+            }
+        }
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).
@@ -270,18 +285,13 @@ impl<T> SyncRegion<T> {
     /// Removes every value, invalidating all outstanding handles.
     ///
     /// One-shot convenience that locks for write internally.
-    /// If a value's `Drop` impl panics mid-`clear`, the clear is partial:
-    /// the region stays fully consistent and reusable after unwinding, but
-    /// the exact set of survivors depends on the underlying `slotmap` version's
-    /// unwind cleanup (slotmap 1.x reserves the right to change this). What is
-    /// guaranteed is that: (1) no value is dropped twice, (2) no value is leaked
-    /// by the region itself (caller-side `mem::forget` of removed values is
-    /// outside this guarantee), and (3) the region's internal accounting remains
-    /// correct. See `tests/clear_partial_under_panic.rs`, which documents what
-    /// the CURRENT slotmap version actually does -- an observation of the
-    /// present dependency, not a stable contract this crate promises.
-    /// See the [reentrancy section](Self#reentrancy) for the deadlock hazard
-    /// when `T::Drop` re-enters the same `SyncRegion`.
+    /// The partial-clear-under-panic contract is [`Region::clear`]'s — see there.
+    ///
+    /// # Reentrancy hazard
+    ///
+    /// If `T::Drop` attempts to acquire a read or write lock on the same `SyncRegion`,
+    /// a deadlock will occur (the lock is already held for write). Prefer extracting
+    /// values to a temporary container and dropping them after the lock is released.
     pub fn clear(&self) {
         self.write().clear();
     }
@@ -305,6 +315,12 @@ impl<T> SyncRegion<T> {
         T: Clone,
     {
         self.read().get(handle).cloned()
+    }
+}
+
+impl<T> From<SyncRegion<T>> for Region<T> {
+    fn from(sr: SyncRegion<T>) -> Self {
+        sr.into_inner()
     }
 }
 

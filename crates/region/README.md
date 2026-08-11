@@ -228,6 +228,13 @@ Windows dev host, 3 runs each (median reported):
 | 8 readers, one-shot `get_cloned` | 1,221 (1,187–1,227) |
 | 8 readers, 64 gets per `read()` guard | 38.7 (37.6–40.2) |
 
+**Provenance:** Measured by `examples/contended_reads.rs` (one-shot vs. batched
+reads at 8 readers). A later gate (`docs/perf/R828_STRUCTURAL_LEVERS_GATE.md`
+§2) measured the same question with `r828_batch_guard_probe.rs` and found
+**9.15×** — explicitly recorded as an open discrepancy, not silently reconciled.
+Do not treat the 31.6× ratio derived from the table above as a stable measurement
+without consulting the R828 gate's analysis.
+
 Reproduce: `cargo run --release --example contended_reads -p sefer-region`.
 
 **Note on `SyncRegion` steady-state churn's range:** the landing commit's own message cites

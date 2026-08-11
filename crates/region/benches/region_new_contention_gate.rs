@@ -30,7 +30,9 @@
 // review's F-C6 finding, which found the original two-arm design conflated the two
 // costs above).
 
-use std::collections::HashMap;
+#[path = "common/stats.rs"]
+mod stats;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::Instant;
@@ -58,7 +60,16 @@ fn main() {
     // Raw sample: (arm_name, thread_count, sample_index, total_ops, wall_ns, ops_per_sec)
     let mut raw_data: Vec<(String, usize, usize, u64, u64, f64)> = Vec::new();
 
-    for &arm_name in &["shared_atomic", "shared_fetch_add", "baseline_local_atomic"] {
+    // Arm table: (name, function). Compile-time total coverage — adding a row without
+    // a function entry causes a compile error, not a silent fallback.
+    #[allow(clippy::type_complexity)]
+    const ARM_TABLE: [(&str, fn(usize) -> u64); 3] = [
+        ("shared_atomic", run_shared_atomic),
+        ("shared_fetch_add", run_shared_fetch_add),
+        ("baseline_local_atomic", run_baseline_local_atomic),
+    ];
+
+    for (arm_name, arm_fn) in ARM_TABLE {
         for thread_count in THREAD_COUNTS {
             if thread_count > max_threads {
                 println!(
@@ -69,11 +80,7 @@ fn main() {
             }
 
             for sample_idx in 0..SAMPLES {
-                let wall_ns = match arm_name {
-                    "shared_atomic" => run_shared_atomic(thread_count),
-                    "shared_fetch_add" => run_shared_fetch_add(thread_count),
-                    _ => run_baseline_local_atomic(thread_count),
-                };
+                let wall_ns = arm_fn(thread_count);
 
                 let total_ops = (thread_count as u64) * ITERS_PER_THREAD;
                 let ops_per_sec = total_ops as f64 / (wall_ns as f64 / 1e9);
@@ -103,22 +110,17 @@ fn main() {
     println!("\n=== Summary (derived from raw samples above) ===\n");
 
     // Group samples by (arm, thread_count) for summary statistics.
-    let mut by_arm_threads: HashMap<(String, usize), Vec<f64>> = HashMap::new();
-
-    for (arm, threads, _sample, _total_ops, _wall_ns, ops_per_sec) in &raw_data {
-        by_arm_threads
-            .entry((arm.clone(), *threads))
-            .or_default()
-            .push(*ops_per_sec);
-    }
+    let by_arm_threads = stats::group_by_key(raw_data.iter().map(
+        |(arm, threads, _sample, _total_ops, _wall_ns, ops_per_sec)| {
+            ((arm.clone(), *threads), *ops_per_sec)
+        },
+    ));
 
     // Compute and print summary statistics.
     let mut summary_rows: Vec<(String, usize, f64, f64)> = Vec::new();
 
-    for ((arm, threads), mut values) in by_arm_threads {
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let median = values[values.len() / 2];
+    for ((arm, threads), values) in by_arm_threads {
+        let (mean, median) = stats::mean_and_median(values);
 
         assert!(mean.is_finite() && mean > 0.0);
         assert!(median.is_finite() && median > 0.0);

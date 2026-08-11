@@ -5,6 +5,11 @@ These are the properties `sefer-alloc` upholds. They are encoded as tests
 in `tests/differential.rs`) and form the spec that every future change must keep
 green.
 
+The canonical copy of the `sefer-region` invariants (I1–I7) lives at
+`crates/region/src/invariants.md` and is rendered in the crate's rustdoc.
+The text below is reproduced for workspace-level context; any drift is
+resolved by updating the canonical copy.
+
 - **I1 — resolution.** A handle returned by `insert` resolves via `get` to the
   inserted value until it is `remove`d.
 - **I2 — tombstone.** After `remove(h)`, `get(h)` returns `None` for roughly
@@ -32,17 +37,19 @@ green.
 - **I6 — slot reuse and bounded growth.** Freed slots are reused by
   `insert`; capacity grows to a historical high-water mark of live entries
   and does not increase further under steady-state churn. Verified in
-  `tests/freelist_reuse.rs`. Note: `slotmap` does not physically compact
-  — tombstone slots remain in the backing store; I6 guarantees only reuse
-  and bounded growth, not physical density.
+  `tests/freelist_reuse.rs` and in `crates/region/tests/coverage_gaps.rs`
+  (`region_reserve_reuses_freed_slots_on_churn`). Note: `slotmap` does not
+  physically compact — tombstone slots remain in the backing store; I6
+  guarantees only reuse and bounded growth, not physical density.
 - **I7 — instance isolation.** A `Handle<T>` resolves only through the
   `Region<T>` instance that minted it. Every accessor (`get`, `get_mut`,
   `remove`, `contains`) stamps its `region_id` at construction and checks
   it before touching the backing slotmap; a handle from a *different*
   `Region<T>` is rejected exactly like a stale handle (`None`/`false`),
   even when its raw `DefaultKey` collides with a live key in that region.
-  Verified in `tests/region_invariants.rs` and the
-  `fuzz_targets/region_ops.rs` `Op::CrossRegion` case.
+  Verified in `tests/region_invariants.rs` and in `crates/region/tests/smoke.rs`
+  (`cross_region_handle_rejection`, `cross_region_different_value_types`,
+  `cross_region_same_value_type`).
 
 ## Allocator invariants (Phase 8+, `alloc-core`)
 

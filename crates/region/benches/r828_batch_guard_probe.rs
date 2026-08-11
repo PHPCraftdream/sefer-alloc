@@ -11,7 +11,9 @@
 //
 // Output format: RAW per-sample CSV first, THEN derived summary.
 
-use std::collections::HashMap;
+#[path = "common/stats.rs"]
+mod stats;
+
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -92,14 +94,11 @@ fn main() {
     println!("\n=== Summary (derived from raw samples above) ===\n");
 
     // Group samples by (arm, reader_count) for summary statistics.
-    let mut by_arm_readers: HashMap<(String, usize), Vec<f64>> = HashMap::new();
-
-    for (arm, readers, _sample, time_ns) in &raw_data {
-        by_arm_readers
-            .entry((arm.clone(), *readers))
-            .or_default()
-            .push(*time_ns);
-    }
+    let mut by_arm_readers = stats::group_by_key(
+        raw_data
+            .iter()
+            .map(|(arm, readers, _sample, time_ns)| ((arm.clone(), *readers), *time_ns)),
+    );
 
     // Compute and print summary statistics.
     println!(
@@ -122,9 +121,7 @@ fn main() {
             continue;
         }
 
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let median = values[values.len() / 2];
+        let (mean, median) = stats::mean_and_median(std::mem::take(values));
 
         assert!(mean.is_finite() && mean > 0.0);
         assert!(median.is_finite() && median > 0.0);
@@ -207,9 +204,7 @@ fn main() {
             continue;
         }
 
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let median = values[values.len() / 2];
+        let (mean, median) = stats::mean_and_median(std::mem::take(values));
 
         assert!(mean.is_finite() && mean > 0.0);
         assert!(median.is_finite() && median > 0.0);

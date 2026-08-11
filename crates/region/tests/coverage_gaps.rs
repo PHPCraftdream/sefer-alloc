@@ -6,25 +6,10 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-// ── Drop-counting wrapper (simple, no panic behavior) ─────────────────────
-
-#[derive(Debug, Clone)]
-struct DropCounter {
-    id: usize,
-    drop_count: Arc<AtomicUsize>,
-}
-
-impl DropCounter {
-    fn new(id: usize, drop_count: Arc<AtomicUsize>) -> Self {
-        Self { id, drop_count }
-    }
-}
-
-impl Drop for DropCounter {
-    fn drop(&mut self) {
-        self.drop_count.fetch_add(1, Ordering::SeqCst);
-    }
-}
+// Common test fixture
+#[path = "common/mod.rs"]
+mod common;
+use common::DropCounter;
 
 // ── I5 drop-once tests for Region<T> ───────────────────────────────────────
 

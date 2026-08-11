@@ -9,6 +9,9 @@
 //
 // Output format: RAW per-sample CSV first, THEN derived summary.
 
+#[path = "common/stats.rs"]
+mod stats;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -107,20 +110,13 @@ fn main() {
         let clear_times: Vec<f64> = values.iter().map(|(t, _)| *t).collect();
         let blocked_times: Vec<f64> = values.iter().map(|(_, b)| *b).collect();
 
-        let mut clear_times_sorted = clear_times.clone();
-        clear_times_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let clear_mean = clear_times_sorted.iter().sum::<f64>() / clear_times_sorted.len() as f64;
-        let clear_median = clear_times_sorted[clear_times_sorted.len() / 2];
-
-        let mut blocked_times_sorted = blocked_times.clone();
-        blocked_times_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let blocked_mean =
-            blocked_times_sorted.iter().sum::<f64>() / blocked_times_sorted.len() as f64;
-        let _blocked_median = blocked_times_sorted[blocked_times_sorted.len() / 2];
+        let (clear_mean, clear_median) = stats::mean_and_median(clear_times);
+        let (blocked_mean, blocked_median) = stats::mean_and_median(blocked_times);
 
         assert!(clear_mean.is_finite() && clear_mean > 0.0);
         assert!(clear_median.is_finite() && clear_median > 0.0);
         assert!(blocked_mean.is_finite() && blocked_mean >= 0.0);
+        assert!(blocked_median.is_finite() && blocked_median >= 0.0);
 
         println!(
             "{:<20} | {:<15.2} | {:<15.2} | {:<20.2}",

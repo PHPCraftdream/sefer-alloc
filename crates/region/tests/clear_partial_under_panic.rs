@@ -12,16 +12,20 @@ use sefer_region::{Handle, Region};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+// Common test fixture
+#[path = "common/mod.rs"]
+mod common;
+
 // ── Drop-counting wrapper with optional panic ───────────────────────────────
 
 #[derive(Debug, Clone)]
-struct DropCounter {
+struct PanicDropCounter {
     id: usize,
     bomb_id: usize, // If id == bomb_id, Drop panics.
     drop_count: Arc<AtomicUsize>,
 }
 
-impl DropCounter {
+impl PanicDropCounter {
     fn new(id: usize, bomb_id: usize, drop_count: Arc<AtomicUsize>) -> Self {
         Self {
             id,
@@ -31,14 +35,14 @@ impl DropCounter {
     }
 }
 
-impl Drop for DropCounter {
+impl Drop for PanicDropCounter {
     fn drop(&mut self) {
         self.drop_count.fetch_add(1, Ordering::SeqCst);
 
         if self.id == self.bomb_id && !std::thread::panicking() {
             // Only panic if we're not already unwinding. This prevents recursive
             // panics during cleanup while still propagating the first panic.
-            panic!("intentional drop panic in DropCounter id={}", self.id);
+            panic!("intentional drop panic in PanicDropCounter id={}", self.id);
         }
     }
 }
@@ -50,12 +54,12 @@ fn region_clear_partial_under_panic() {
     let drop_count = Arc::new(AtomicUsize::new(0));
 
     // Insert 5 values, with the 3rd as the bomb.
-    let mut r: Region<DropCounter> = Region::new();
+    let mut r: Region<PanicDropCounter> = Region::new();
     let bomb_id = 2; // 0-indexed, so this is the 3rd insert
-    let mut handles: Vec<Handle<DropCounter>> = Vec::new();
+    let mut handles: Vec<Handle<PanicDropCounter>> = Vec::new();
 
     for i in 0..5 {
-        let counter = DropCounter::new(i, bomb_id, Arc::clone(&drop_count));
+        let counter = PanicDropCounter::new(i, bomb_id, Arc::clone(&drop_count));
         handles.push(r.insert(counter));
     }
 
@@ -124,7 +128,7 @@ fn region_clear_partial_under_panic() {
     }
 
     // Region should be reusable: insert new value, it resolves correctly.
-    let new_counter = DropCounter::new(10, 999, Arc::clone(&drop_count));
+    let new_counter = PanicDropCounter::new(10, 999, Arc::clone(&drop_count));
     let h_new = r.insert(new_counter);
     assert_eq!(r.get(h_new).map(|c| c.id), Some(10));
     // We don't assert the exact len() value here because the number of survivors
@@ -159,14 +163,14 @@ mod sync_tests {
     #[test]
     fn sync_region_clear_partial_under_panic() {
         let drop_count = Arc::new(AtomicUsize::new(0));
-        let sr: Arc<SyncRegion<DropCounter>> = Arc::new(SyncRegion::new());
+        let sr: Arc<SyncRegion<PanicDropCounter>> = Arc::new(SyncRegion::new());
 
         // Insert 5 values, with the 3rd as the bomb.
         let bomb_id = 2; // 0-indexed, so this is the 3rd insert
-        let mut handles: Vec<Handle<DropCounter>> = Vec::new();
+        let mut handles: Vec<Handle<PanicDropCounter>> = Vec::new();
 
         for i in 0..5 {
-            let counter = DropCounter::new(i, bomb_id, Arc::clone(&drop_count));
+            let counter = PanicDropCounter::new(i, bomb_id, Arc::clone(&drop_count));
             handles.push(sr.insert(counter));
         }
 
@@ -247,7 +251,7 @@ mod sync_tests {
         }
 
         // SyncRegion should be reusable: insert new value, it resolves correctly.
-        let new_counter = DropCounter::new(10, 999, Arc::clone(&drop_count));
+        let new_counter = PanicDropCounter::new(10, 999, Arc::clone(&drop_count));
         let h_new = sr.insert(new_counter);
         assert_eq!(sr.read().get(h_new).map(|c| c.id), Some(10));
         // We don't assert the exact len() value here because the number of survivors

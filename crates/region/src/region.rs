@@ -12,6 +12,14 @@ use core::sync::atomic::AtomicUsize;
 /// is ever reused.
 static NEXT_REGION_ID: AtomicUsize = AtomicUsize::new(1);
 
+/// Domain limits for slotmap backing store.
+///
+/// `slotmap` reserves one slot as a sentinel; `try_with_capacity` therefore
+/// rejects `capacity > 2^32 - 3` while `try_reserve` rejects `len() + additional > 2^32 - 2`
+/// (the extra slot can be filled after construction via `insert`).
+const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
+const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
+
 /// Error type returned when the process-wide `region_id` counter is exhausted.
 ///
 /// This error is returned by the internal ID-issuance helper when the counter
@@ -26,8 +34,7 @@ impl core::fmt::Display for RegionIdExhaustedError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for RegionIdExhaustedError {}
+impl core::error::Error for RegionIdExhaustedError {}
 
 /// Error returned by fallible `Region<T>` constructors and capacity operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,9 +72,8 @@ impl core::fmt::Display for TryReserveError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for TryReserveError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for TryReserveError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::RegionIdExhausted(inner) => Some(inner),
             _ => None,
@@ -163,58 +169,25 @@ pub fn dbg_try_mint_region_id(
 ///
 /// ## Invariants upheld
 ///
-/// - **I1 — resolution:** a fresh handle resolves via [`get`](Self::get) to the
-///   inserted value until it is [`remove`](Self::remove)d.
-/// - **I2 — tombstone:** after `remove(h)`, `get(h)` returns `None` for
-///   roughly `2^31` reuse cycles of that slot (a stale handle that has
-///   survived that many insert/remove cycles may wrap and spuriously
-///   resolve to a later value). A second `remove(h)` is a no-op `None`.
-/// - **I3 — no ABA:** a stale handle — one whose slot has since been reused —
-///   does not resolve to a live value for roughly `2^31` reuse cycles of
-///   that slot. `slotmap`'s `DefaultKey` carries a 32-bit generation (odd =
-///   occupied, even = vacant): insert sets the low bit, remove increments via
-///   `wrapping_add(1)`, so a full occupy/free cycle advances the generation
-///   by 2 — after `2^31` such cycles it wraps and a very old handle may alias
-///   a later value. Memory safety is never affected — `slotmap` guarantees
-///   this even after wrap.
-/// - **I4 — accounting:** [`len`](Self::len) equals the number of live entries
-///   and [`is_empty`](Self::is_empty) agrees.
-/// - **I5 — drop-once:** every live value is dropped exactly once. Successful
-///   `remove` transfers ownership to the caller without calling `Drop`; values
-///   still owned when a normally-destroyed `Region` drops are dropped. The crate
-///   never duplicates or internally forgets values.
-/// - **I6 — slot reuse and bounded growth:** freed slots are reused by
-///   `insert`; capacity grows to a historical high-water mark of live entries
-///   and does not increase further under steady-state churn (`slotmap` does
-///   not physically compact — tombstone slots remain in the backing store;
-///   I6 guarantees only reuse and bounded growth, not physical density).
-/// - **I7 — instance isolation:** a [`Handle<T>`] resolves only through the
-///   `Region<T>` instance that minted it. Every accessor
-///   ([`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
-///   [`contains`](Self::contains)) stamps its `region_id` at construction and
-///   checks it before touching the backing slotmap; a handle from a
-///   *different* `Region<T>` is rejected exactly like a stale handle (`None`/
-///   `false`), even when its raw `DefaultKey` collides with a live key in
-///   this region (this grows `Handle<T>`'s size versus the pre-0.2.0 layout
-///   by one `NonZeroUsize` field — 16 bytes total on a 64-bit host, smaller
-///   on a 32-bit host, since the added field is pointer-width, not a fixed
-///   8 bytes — see `tests/handle_static_asserts.rs`). `region_id` is minted
-///   from a process-wide counter (`NEXT_REGION_ID`, `AtomicUsize`) that is
-///   incremented once per `Region::new`/`with_capacity` call and never
-///   reused. Once the counter is exhausted -- at the `2^{pointer_width}`-th `Region`
-///   construction attempt (when it would wrap from `usize::MAX` to 0), it transitions
-///   to a permanent exhausted state (0) and all future `Region` constructions
-///   panic. No region_id is ever reused, even after exhaustion — the value
-///   0 is reserved as a sentinel that never transitions back to a positive
-///   value. See the `# Panics` sections on [`new`](Self::new) and
-///   [`with_capacity`](Self::with_capacity). On a 64-bit host this is a
-///   theoretical guard only. On a **32-bit host** (e.g. `thumbv7em-none-eabi`,
-///   `i686-*`) the bound is `2^32` (about 4.29 billion), which is *reachable*,
-///   not just theoretical, for a long-lived 32-bit server or embedded process
-///   that mints a fresh `Region` per request/session over its lifetime rather
-///   than reusing one — the same honest register as the I2/I3 generation-wrap
-///   disclosure below, just a much larger and process-lifetime-scoped count
-///   rather than a per-slot reuse count.
+#[doc = include_str!("invariants.md")]
+///
+/// `region_id` is minted from a process-wide counter (`NEXT_REGION_ID`,
+/// `AtomicUsize`) that is incremented once per `Region::new`/`with_capacity`
+/// call and never reused. Once the counter is exhausted -- at the
+/// `2^{pointer_width}`-th `Region` construction attempt (when it would wrap
+/// from `usize::MAX` to 0), it transitions to a permanent exhausted state (0)
+/// and all future `Region` constructions panic. No region_id is ever reused,
+/// even after exhaustion — the value 0 is reserved as a sentinel that never
+/// transitions back to a positive value. See the `# Panics` sections on
+/// [`new`](Self::new) and [`with_capacity`](Self::with_capacity). On a
+/// 64-bit host this is a theoretical guard only. On a **32-bit host**
+/// (e.g. `thumbv7em-none-eabi`, `i686-*`) the bound is `2^32` (about 4.29
+/// billion), which is *reachable*, not just theoretical, for a long-lived
+/// 32-bit server or embedded process that mints a fresh `Region` per
+/// request/session over its lifetime rather than reusing one — the same
+/// honest register as the I2/I3 generation-wrap disclosure below, just a
+/// much larger and process-lifetime-scoped count rather than a per-slot
+/// reuse count.
 ///
 /// ## Generation saturation
 ///
@@ -251,6 +224,13 @@ pub struct Region<T> {
 }
 
 impl<T> Region<T> {
+    /// Checks if a handle belongs to this region (I7). Returns `Some(key)` if it does,
+    /// `None` otherwise.
+    #[inline]
+    fn owned_key(&self, handle: Handle<T>) -> Option<slotmap::DefaultKey> {
+        (handle.region_id == self.region_id).then_some(handle.key)
+    }
+
     /// Creates an empty region that allocates nothing until first use.
     ///
     /// # Errors
@@ -283,7 +263,7 @@ impl<T> Region<T> {
     /// a 32-bit host.
     #[must_use]
     pub fn new() -> Self {
-        Self::try_new().expect("region_id overflow")
+        Self::try_new().unwrap_or_else(|e| panic!("Region::new: {e}"))
     }
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
@@ -312,24 +292,16 @@ impl<T> Region<T> {
     pub fn try_with_capacity(capacity: usize) -> Result<Self, TryReserveError> {
         // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
         // With one sentinel slot, the maximum reserve is 2^32 - 3.
-        const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
         if capacity > SLOTMAP_MAX_RESERVE {
             return Err(TryReserveError::CapacityExceeded {
                 requested: capacity,
                 limit: SLOTMAP_MAX_RESERVE,
             });
         }
-        // Defense-in-depth, not a guard that can currently fire: the domain
-        // check above already rejects any `capacity > SLOTMAP_MAX_RESERVE`
-        // (2^32 - 3), so by this point `capacity + 1 <= 2^32 - 2`, which is
-        // below `usize::MAX` on every supported target — `usize::MAX` is
-        // `2^32 - 1` on the narrowest (32-bit) target this crate supports,
-        // and far larger on 64-bit. This `checked_add(1)` therefore cannot
-        // overflow today; it stays only so a future change to
-        // `SLOTMAP_MAX_RESERVE` (e.g. if a future slotmap version raises or
-        // removes its live-entry limit) can't silently reintroduce an
-        // overflow here without a guard already in place to catch it.
-        capacity.checked_add(1).ok_or(TryReserveError::Overflow)?;
+        // Tripwire: confirmed unreachable on both 32- and 64-bit targets
+        // (see `tests/coverage_gaps.rs`). Stays so a future slotmap change can't
+        // silently reintroduce overflow.
+        debug_assert!(capacity.checked_add(1).is_some());
         let region_id = try_mint_region_id(&NEXT_REGION_ID)?;
         Ok(Self {
             region_id,
@@ -405,7 +377,6 @@ impl<T> Region<T> {
     /// rather than returning an error — this is not a recoverable error in standard Rust's
     /// memory model.
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
-        const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
         let target = self
             .inner
             .len()
@@ -452,35 +423,28 @@ impl<T> Region<T> {
     /// Panics if the backing `slotmap` is full (2^32 - 2 live entries).
     #[must_use]
     pub fn insert(&mut self, value: T) -> Handle<T> {
-        Handle::from_key_and_region(self.inner.insert(value), self.region_id)
+        Handle::from_key_and_region(self.region_id, self.inner.insert(value))
     }
 
     /// Borrows the value for `handle`, or `None` if the handle is stale or
     /// removed (I1, I2, I3).
     #[must_use]
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
-        if handle.region_id != self.region_id {
-            return None;
-        }
-        self.inner.get(handle.key)
+        self.inner.get(self.owned_key(handle)?)
     }
 
     /// Mutably borrows the value for `handle`, or `None` if stale/removed.
     #[must_use]
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
-        if handle.region_id != self.region_id {
-            return None;
-        }
-        self.inner.get_mut(handle.key)
+        self.inner.get_mut(self.owned_key(handle)?)
     }
 
     /// Whether `handle` currently resolves to a live value.
     #[must_use]
     pub fn contains(&self, handle: Handle<T>) -> bool {
-        if handle.region_id != self.region_id {
-            return false;
-        }
-        self.inner.contains_key(handle.key)
+        self.owned_key(handle)
+            .map(|key| self.inner.contains_key(key))
+            .unwrap_or(false)
     }
 
     /// Removes and returns the value for `handle`, or `None` if it is already
@@ -488,10 +452,7 @@ impl<T> Region<T> {
     /// `2^31` reuse cycles of that slot (I2 — see the struct-level doc for
     /// the generation-wrap caveat).
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
-        if handle.region_id != self.region_id {
-            return None;
-        }
-        self.inner.remove(handle.key)
+        self.inner.remove(self.owned_key(handle)?)
     }
 
     /// Iterates the live values. The order is unspecified and changes as
@@ -510,6 +471,7 @@ impl<T> Region<T> {
     ///
     /// The returned iterator implements `ExactSizeIterator`, `FusedIterator`,
     /// and `Clone`.
+    #[must_use]
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             inner: self.inner.values(),
@@ -520,6 +482,7 @@ impl<T> Region<T> {
     /// [`iter`](Self::iter)).
     ///
     /// The returned iterator implements `ExactSizeIterator` and `FusedIterator`.
+    #[must_use]
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut {
             inner: self.inner.values_mut(),

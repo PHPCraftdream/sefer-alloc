@@ -70,3 +70,15 @@ At 8 threads:
 
 - Raw log: `docs/perf/_raw_r827_region_new_contention.log` (force-added via `git add -f`, size < 200 KiB — Tier 1 per artifact storage policy)
 - Summary CSV: `docs/perf/R827_REGION_NEW_CONTENTION_GATE_summary.csv`
+
+## Structural mitigations considered (2026-08-11 code-quality review, Q22)
+
+The following two structural mitigations for the measured contention were raised after R827's measurement, but were not implemented and are not recommended to pursue without further measurement:
+
+1. **Lazy minting of `region_id`.** Currently, `Region::new()` and `Region::with_capacity()` mint `region_id` eagerly via a CAS loop on the shared `NEXT_REGION_ID` atomic, even though no `region_id` is needed until the first `insert()` (all accessors only compare handles against the region's own ID). A hypothetical lazy design would store `Option<NonZeroUsize>` and mint inside `insert()` — removing the shared atomic from `Region::new()` entirely, and from the workload R827 measured. This would come with real trade-offs:
+   - The exhaustion panic moves from `new()`/`with_capacity()` to `insert()` — a documented-contract change, since `insert`'s current panic list names only the slotmap-full case.
+   - `Debug` would need to render an unminted region (a state the current design never exposes).
+   - The branch cost per insert, though perfectly predicted, is non-zero.
+   This was not implemented because it changes the published panic contract and adds runtime overhead on the hot path (insert) to remove it from a cold path (construction). If future perf work reopens this question, `benches/region_new_contention_gate.rs` can be extended with a fourth arm measuring lazy minting directly.
+
+2. **Block reservation of `region_id` values.** A thread-local cursor claiming `N` IDs per shared RMW would amortize the contended operation `N`-fold (e.g., a thread-local `AtomicUsize` fetch-adding from a shared pool of 1000 IDs before touching the global `NEXT_REGION_ID`). This reduces contention at the cost of dividing the 32-bit id budget by `N`. Since this crate explicitly documents 32-bit exhaustion as *reachable rather than theoretical* (`region.rs:210-217`), a reservation mechanism that burns IDs faster is a net regression on the one target where contention actually matters. Additionally, the state machinery for thread-local pools (cleanup on thread exit, cross-thread handoff on migration, etc.) is nontrivial to implement soundly without re-entrancy hazards in `Drop`. This was not implemented because the id-budget trade-off is exactly wrong for the target that most needs the contention fix. If future work revisits this, it should pair a reservation scheme with a concurrent-generation extension (e.g. `u64` IDs on 64-bit targets only) rather than accepting the current id-space truncation.
