@@ -14,6 +14,16 @@ backing store is NOT always-compact. Every operation exposes only typed
 [`sefer-alloc`](https://crates.io/crates/sefer-alloc), extracted as a
 standalone crate.
 
+**Runtime relationship to `sefer-alloc`:** This crate exists as a public
+surface for `sefer-alloc` (the workspace root crate re-exports
+`Region`, `Handle`, and `SyncRegion` from this crate), but it is **not used
+by the `sefer-alloc` allocator runtime itself**. Empirically verified by
+searching the allocator source code (`src/`) in the main workspace: no
+direct calls into `Region`/`Handle`/`SyncRegion` on any hot path. Further
+API evolution is intentionally deferred until a confirmed external consumer
+requests it — this crate will not be polished in anticipation of needs that
+have not been demonstrated.
+
 ## Why?
 
 `slotmap`'s `DefaultKey` is untyped: a key from one map compiles against another

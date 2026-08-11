@@ -608,3 +608,21 @@ Recorded so a later reader does not re-litigate them:
 8. **Q14, Q15, Q16** — bench/test structure; no user-visible effect, but Q15 is a live
    measurement-integrity hazard in a harness that has already been rebuilt twice.
 9. **Q18–Q23** — INFO cleanup and recorded decisions.
+
+---
+
+## API evolution deferral (2026-08-11)
+
+The four pre-freeze API findings that this review explicitly marked as "resolve before
+the API freezes" — **Q3** (handle-yielding iteration/retain), **Q4** (error-type width /
+`#[non_exhaustive]`), **Q5** (fallible `SyncRegion` constructors), and **Q13** (try_insert) —
+are **consciously NOT implemented** in this round.
+
+This is not "forgotten" — it is a deliberate decision. Empirical verification confirms that
+`sefer-region` is not used by the `sefer-alloc` allocator runtime itself (a `grep` search of
+the main workspace's `src/` shows no direct calls to `Region`/`Handle`/`SyncRegion` on any hot
+path — only re-exports in the workspace root crate's public surface). Without a demonstrated
+external consumer, further API investment would be polishing an abstraction with no actual
+use case. These findings remain on the record as future work to be revisited only if/when
+a real consumer requests the features — not as a "missing" items that block the current
+state.

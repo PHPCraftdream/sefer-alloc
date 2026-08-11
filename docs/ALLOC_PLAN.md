@@ -114,6 +114,9 @@ discipline). Everything between is safe.
 > historical record of the original design intent, per this project's
 > non-retroactive-rewrite convention — it is not read as current
 > architecture.
+>
+> **Note (2026-08-11):** There is no active plan to ever unify these
+> substrates — this is a recorded decision, not an open question.
 
 Internally everything is addressed by safe `(segment_id, offset)` integers. A
 `Handle` and a `*mut u8` are two **views** of the same governed memory:

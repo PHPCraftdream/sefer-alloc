@@ -10,6 +10,14 @@
 //! underlying key for diagnostics only — it cannot be turned back into a
 //! functioning handle through this crate's public surface).
 //!
+//! **Runtime relationship to `sefer-alloc`:** This crate exists as a public
+//! surface for the `sefer-alloc` workspace root crate (which re-exports
+//! `Region`, `Handle`, and `SyncRegion`), but it is **not used by the
+//! `sefer-alloc` allocator runtime itself**. Empirically verified by searching
+//! the allocator source code (`src/`) in the main workspace: no direct calls
+//! into `Region`/`Handle`/`SyncRegion` on any hot path. Further API evolution
+//! is intentionally deferred until a confirmed external consumer requests it.
+//!
 //! ## What makes this different from using slotmap directly?
 //!
 //! Slotmap's `DefaultKey` is untyped: a `DefaultKey` from one map can be passed
