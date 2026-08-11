@@ -48,6 +48,23 @@ use crate::{Handle, Region};
 /// all-or-nothing semantics, must implement their own signaling — this crate
 /// provides none beyond what's documented here.
 ///
+/// **Poison is cleared on recovery.** [`read`](Self::read) and
+/// [`write`](Self::write) (and therefore every one-shot convenience method,
+/// which locks internally) clear the lock's poison flag immediately after
+/// recovering from it. This is a deliberate policy consistent with "poison
+/// recovery guarantees container integrity only" above: since this crate
+/// already always trusts the container after ANY recovery, permanently
+/// forcing every subsequent access down `std::sync::RwLock`'s slower
+/// poisoned-recovery path would cost real performance for no additional
+/// safety — the container was already proven sound on the FIRST recovery.
+/// One consequence: `SyncRegion` never exposes an `is_poisoned()` check,
+/// because poisoned state is never observable for longer than the single
+/// access that first recovers from it. Applications that need a durable,
+/// observable "a writer panicked here" signal for their own cross-value
+/// invariants must implement it themselves (e.g. an `AtomicBool` alongside
+/// the `SyncRegion`) — this crate's own poison flag is not a substitute,
+/// by design.
+///
 /// ## Reentrancy
 ///
 /// [`get_cloned`](Self::get_cloned) runs `T::clone`, and [`clear`](Self::clear) runs each
@@ -169,21 +186,29 @@ impl<T> SyncRegion<T> {
     /// Locks for shared read, returning a guard that hands out `&Region<T>`.
     ///
     /// Multiple readers may hold the guard concurrently. Recovers from poison
-    /// (see the [poisoning policy](Self#poisoning-policy)). Returns `std`'s
+    /// and clears it (see the [poisoning policy](Self#poisoning-policy)'s
+    /// "Poison is cleared on recovery" note) so a single past writer panic
+    /// does not permanently slow every future access. Returns `std`'s
     /// own guard type directly — a deliberate, stable API commitment; migrating
     /// the internal lock implementation in the future would be a breaking change.
     pub fn read(&self) -> RwLockReadGuard<'_, Region<T>> {
-        self.inner.read().unwrap_or_else(PoisonError::into_inner)
+        let guard = self.inner.read().unwrap_or_else(PoisonError::into_inner);
+        self.inner.clear_poison();
+        guard
     }
 
     /// Locks for exclusive write, returning a guard that hands out `&mut Region<T>`.
     ///
     /// Blocks all other readers and writers until dropped. Recovers from poison
-    /// (see the [poisoning policy](Self#poisoning-policy)). Returns `std`'s
+    /// and clears it (see the [poisoning policy](Self#poisoning-policy)'s
+    /// "Poison is cleared on recovery" note) so a single past writer panic
+    /// does not permanently slow every future access. Returns `std`'s
     /// own guard type directly — a deliberate, stable API commitment; migrating
     /// the internal lock implementation in the future would be a breaking change.
     pub fn write(&self) -> RwLockWriteGuard<'_, Region<T>> {
-        self.inner.write().unwrap_or_else(PoisonError::into_inner)
+        let guard = self.inner.write().unwrap_or_else(PoisonError::into_inner);
+        self.inner.clear_poison();
+        guard
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).
