@@ -33,13 +33,14 @@
 //! section 4 and is not tested here (would require a `compile_fail` doctest or a
 //! trybuild dependency).
 
+use core::mem::size_of;
 use sefer_region::Handle;
-use std::mem::size_of;
 
 /// Helper: compile-time check that a type implements both Send and Sync.
 const fn assert_send_sync<T: Send + Sync>() {}
 
 /// A type that is NOT Send (reference-counted, not thread-safe).
+#[cfg(feature = "std")]
 #[derive(Clone)]
 struct NonSendType {
     _rc: std::rc::Rc<()>,
@@ -49,18 +50,17 @@ struct NonSendType {
 // (Not explicitly implementing !Send; the auto-trait rules make it so.)
 
 /// A type that is NOT Sync (interior mutability without synchronization).
+#[cfg(feature = "std")]
 struct NonSyncType {
     _cell: std::cell::Cell<u32>,
 }
-
-// NonSyncType is deliberately not Sync: Cell<T> is !Sync.
-// (Not explicitly implementing !Sync; the auto-trait rules make it so.)
 
 /// Verify Handle<T> is Send+Sync even when T is !Send.
 ///
 /// If Handle<T>'s implementation ever changes such that it's no longer
 /// unconditionally Send (e.g., by changing the PhantomData to `PhantomData<T>`),
 /// this will fail to compile.
+#[cfg(feature = "std")]
 const _: () = assert_send_sync::<Handle<NonSendType>>();
 
 /// Verify Handle<T> is Send+Sync even when T is !Sync.
@@ -68,12 +68,15 @@ const _: () = assert_send_sync::<Handle<NonSendType>>();
 /// If Handle<T>'s implementation ever changes such that it's no longer
 /// unconditionally Sync (e.g., by changing the PhantomData to `PhantomData<T>`),
 /// this will fail to compile.
+#[cfg(feature = "std")]
 const _: () = assert_send_sync::<Handle<NonSyncType>>();
 
 /// Verify Handle<T> is Send+Sync even when T is neither Send nor Sync.
+#[cfg(feature = "std")]
 const _: () = assert_send_sync::<Handle<*const u32>>();
 
 /// Verify Handle<T> is Send+Sync even when T contains both !Send and !Sync components.
+#[cfg(feature = "std")]
 const _: () = assert_send_sync::<Handle<std::rc::Rc<std::cell::Cell<u32>>>>();
 
 /// Expected `size_of::<Handle<u8>>()` for the host's pointer width.

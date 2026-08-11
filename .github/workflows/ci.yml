@@ -922,6 +922,33 @@ jobs:
       # the `no_std + alloc` configuration its own README/keywords advertise.
       # Verified locally: compiles clean.
       - run: cargo build -p sefer-region --no-default-features --target thumbv7em-none-eabi
+      # sefer-region layout assertions (task #822, item 6) -- INVESTIGATED, not
+      # added: `tests/handle_static_asserts.rs` itself uses only
+      # `core`-compatible features, but `cargo check -p sefer-region
+      # --no-default-features --target thumbv7em-none-eabi --tests` (and even
+      # naming the single target explicitly via `--test
+      # handle_static_asserts`) still fails -- both pull in the full package's
+      # `[dev-dependencies]` unit graph for that target, which includes
+      # std-requiring crates (captrack, bench-scale-tool -> serde/once_cell)
+      # used by OTHER test/bench files in this same package, not by
+      # handle_static_asserts.rs itself. Verified locally: both invocations
+      # produce ~200-5800 `core`-vs-`std` prelude errors from those
+      # transitive std-only deps, not from this crate's own code. This is
+      # exactly why every OTHER `--target thumbv7em-none-eabi` line in this
+      # workflow (sefer-region, size-classes, racy-ptr-cell) uses plain
+      # `cargo build` (library only, no `--tests`) rather than `--tests` --
+      # an established convention this finding did not previously explain.
+      # The layout assertions themselves remain verified empirically (see
+      # `handle_static_asserts.rs`'s own doc comments citing measured
+      # x86_64/i686 sizes) and via this workspace's regular
+      # `cargo test -p sefer-region --no-default-features` CI job, just not
+      # CI-gated specifically on the 32-bit bare-metal target. Closing this
+      # fully would require either splitting dev-dependencies so
+      # `handle_static_asserts.rs` doesn't share a unit graph with
+      # captrack/bench-scale-tool-using targets, or a
+      # per-test-target-isolated build mechanism this repo does not have --
+      # out of scope for this task; filed as a residual limitation rather
+      # than silently left unexplained.
       # rust-intel audit (task #693, finding 2, 2026-08-07): sefer-region's own
       # test comments (coverage_gaps.rs: region_reserve_overflow_panics,
       # region_with_capacity_overflow_panics) claim their panic contracts hold

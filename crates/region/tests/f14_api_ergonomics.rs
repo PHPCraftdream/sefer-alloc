@@ -33,6 +33,12 @@ fn sync_region_into_inner_recovers_from_poison() {
     let sr: Arc<SyncRegion<i32>> = Arc::new(SyncRegion::from(region));
     let sr2 = Arc::clone(&sr);
 
+    // Insert a value BEFORE panicking, so we can verify recovery preserves it.
+    let handle = {
+        let mut guard = sr2.write();
+        guard.insert(42)
+    };
+
     // Spawn a thread that panics while holding the write lock
     let join = std::thread::spawn(move || {
         let _guard = sr2.write();
@@ -41,9 +47,13 @@ fn sync_region_into_inner_recovers_from_poison() {
 
     assert!(join.join().is_err(), "thread should have panicked");
 
-    // into_inner should recover from poison
-    let _extracted = Arc::try_unwrap(sr).unwrap().into_inner();
-    // If we got here, poison recovery worked
+    // into_inner should recover from poison AND preserve the inserted value.
+    let extracted_region = Arc::try_unwrap(sr).unwrap().into_inner();
+
+    // Verify the handle still resolves to the inserted value (not a fresh empty region)
+    assert_eq!(extracted_region.get(handle), Some(&42));
+    // Verify the region length reflects the preserved value
+    assert_eq!(extracted_region.len(), 1);
 }
 
 // ── Debug implementations ────────────────────────────────────────────────────
@@ -85,26 +95,39 @@ fn sync_region_debug_shows_structural_info() {
 #[test]
 fn sync_region_debug_handles_locked_state() {
     use std::sync::Arc;
-    use std::thread;
+    use std::sync::Barrier;
 
     let sync_region: Arc<SyncRegion<i32>> = Arc::new(SyncRegion::new());
     let sync_region2 = Arc::clone(&sync_region);
+    let barrier = Arc::new(Barrier::new(2));
 
     // Hold the lock in another thread
-    let handle = thread::spawn(move || {
-        let _guard = sync_region2.write();
-        // Sleep a bit so we can try to debug while locked
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    let handle = std::thread::spawn({
+        let barrier = Arc::clone(&barrier);
+        move || {
+            let _guard = sync_region2.write();
+            // Signal that we've acquired the lock
+            barrier.wait();
+            // Wait for the main thread to finish Debug formatting
+            barrier.wait();
+        }
     });
 
-    // Give the other thread time to acquire the lock
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Wait for the other thread to acquire the lock
+    barrier.wait();
 
     // Debug should handle the locked state gracefully (show "<locked>")
     let debug_str = format!("{:?}", sync_region);
     // Should not panic, and should still show something reasonable
     assert!(debug_str.contains("SyncRegion"));
+    // F4 added the "<locked>" marker for this case — verify it's present
+    assert!(
+        debug_str.contains("<locked>"),
+        "locked state must render as \"<locked>\": {debug_str}"
+    );
 
+    // Signal the other thread to finish
+    barrier.wait();
     handle.join().unwrap();
 }
 
