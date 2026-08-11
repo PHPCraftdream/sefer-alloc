@@ -3216,3 +3216,11 @@ resolved" below.)_
    - **Files changed:** `crates/region/benches/region_bench.rs` (comment
      documenting the exposure honestly instead of claiming a fix that
      doesn't exist); this index entry.
+   - **Related sub-finding, CLOSED by task #820:** the crate-local
+     `crates/region/benches/bench-iters.txt` file was deleted as misleading
+     — its header falsely claimed the harness read it directly (when the
+     harness has no way to be pointed at any crate-local file), and its
+     ID format used underscores (`st_insert`) instead of the actual slash
+     format (`st/insert`) used by the bench harness. No functionality is lost;
+     the workspace-level `bench-iters.txt` is the canonical source when running
+     within a workspace, and JIT calibration self-heals on fresh runs.

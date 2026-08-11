@@ -41,11 +41,13 @@ fn main() {
     // routing lives entirely in the separately-published bench-scale-tool
     // crate, which this workspace does not vendor or patch. Filed as a
     // known residual limitation rather than silently claimed fixed --
-    // see docs/CORRECTNESS_OPEN_ITEMS.md for the tracking entry. The
-    // sibling `crates/region/benches/bench-iters.txt` (a plain hand-edited
-    // copy of the pinned counts, matching bench-scale-tool's own manifest
-    // format) is kept for human reference next to the bench source, but
-    // the harness has no way to actually be pointed at it.
+    // see docs/CORRECTNESS_OPEN_ITEMS.md for the tracking entry. A
+    // previously-distributed crate-local `bench-iters.txt` was removed in
+    // task #820 as misleading (its header falsely claimed the harness read it,
+    // when in fact the harness has no way to be pointed at any crate-local
+    // file). All JIT-calibration workloads self-heal on a fresh run, and the
+    // workspace-level `bench-iters.txt` is the canonical source when running
+    // within a workspace.
     let mut h = Harness::new("region_bench", env!("CARGO_MANIFEST_DIR"));
 
     // ── Region<T> — single-threaded ──────────────────────────────────────
