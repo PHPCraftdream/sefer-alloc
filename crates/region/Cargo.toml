@@ -56,6 +56,11 @@ name = "region_bench"
 harness = false
 required-features = ["std"]
 
+[[bench]]
+name = "region_new_contention_gate"
+harness = false
+required-features = ["std"]
+
 [[example]]
 name = "contended_reads"
 required-features = ["std"]
