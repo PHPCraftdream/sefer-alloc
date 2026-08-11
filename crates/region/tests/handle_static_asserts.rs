@@ -1,4 +1,13 @@
-//! Compile-time assertions pinning [`Handle<T>`]'s Send/Sync bounds and layout.
+//! Compile-time assertions tripwiring [`Handle<T>`]'s Send/Sync bounds and layout.
+//!
+//! `Handle<T>` deliberately carries no `#[repr(C)]`/`#[repr(transparent)]` (see
+//! its own doc comment for why — no FFI use case, and the inner
+//! `slotmap::DefaultKey` isn't `#[repr(C)]` upstream either, so pinning only
+//! the outer order wouldn't yield a real stable ABI). The assertions below
+//! are a **tripwire against silent drift** in this workspace's own build
+//! (e.g. a future `slotmap` minor bump changing `DefaultKey`'s size) — not a
+//! contract this crate promises to downstream consumers, who do not compile
+//! this file at all.
 //!
 //! This file tests claims made in [`Handle`]'s documentation and implementation:
 //!

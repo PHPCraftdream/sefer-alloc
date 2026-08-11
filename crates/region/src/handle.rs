@@ -22,8 +22,22 @@ use core::num::NonZeroUsize;
 /// `thumbv7em-none-eabi`, `i686-*`) — every such target
 /// still has pointer-width atomics.
 ///
+/// ## Layout is an observed property, not a guarantee
+///
+/// This crate does not use `#[repr(C)]`/`#[repr(transparent)]` here — there is
+/// no FFI or C-ABI use case for `Handle<T>`, and one would be misleading
+/// regardless: the inner `slotmap::DefaultKey` is itself not `#[repr(C)]`
+/// upstream, so pinning only the outer field order would not yield an actual
+/// stable C layout. `size_of::<Handle<T>>()` (16 bytes on a 64-bit host, 12 on
+/// 32-bit) and the `Option<Handle<T>>` niche optimization are *current,
+/// observed* properties of this implementation, verified by
+/// `tests/handle_static_asserts.rs` — a tripwire against silent drift (e.g. a
+/// future `slotmap` minor bump changing `DefaultKey`'s size), not a stable
+/// public contract. If a genuine FFI need arises, the crate would add an
+/// explicit `to_raw`/`from_raw` conversion pair rather than promise this
+/// struct's layout.
+///
 /// [`Region`]: crate::Region
-#[repr(C)]
 pub struct Handle<T> {
     /// Declared before `key` so the struct's own field order matches
     /// `Ord`'s comparison order below — if a future refactor ever swaps the
