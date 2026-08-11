@@ -7,15 +7,18 @@ This gate measures `Region::new()` throughput under multi-threaded contention on
 - `Instant::elapsed()` calls inside the hot loop
 - No baseline to isolate contention cost from the rest of `Region::new()`'s work
 
-This gate measures the actual cost of contention on `NEXT_REGION_ID` by comparing two arms:
-- `shared_atomic`: real load — calls `Region::<u64>::new()` repeatedly, exercising the actual shared atomic
-- `baseline_local_atomic`: isolates contention — performs the same RMW pattern but on a thread-local atomic plus a `SlotMap` allocation
+This gate measures the actual cost of contention on `NEXT_REGION_ID` by comparing three arms:
+- `shared_atomic`: real load — calls `Region::<u64>::new()` repeatedly, exercising the actual shared `NEXT_REGION_ID` atomic via its `fetch_update`/CAS-retry-loop primitive
+- `shared_fetch_add`: isolates cache-line contention ALONE — a SHARED atomic, but a plain `fetch_add` (not `fetch_update`), so the primitive matches `baseline_local_atomic`'s and only "shared vs local" varies
+- `baseline_local_atomic`: isolates contention entirely — a thread-LOCAL atomic with `fetch_add`, so the primitive matches `shared_fetch_add`'s and only "shared vs local" varies
+
+**Update (2026-08-11, task #832 closing review, finding F-C6):** the original two-arm design (`shared_atomic` vs `baseline_local_atomic` only) conflated two distinct costs, because #813 changed BOTH the sharing regime (adding a process-wide `NEXT_REGION_ID`) AND the RMW primitive (`fetch_add` → `fetch_update`/CAS-loop) at the same time. A baseline that only varies "shared vs local" cannot attribute a measured gap to either cause alone. The `shared_fetch_add` arm was added to close this gap — see "Decomposition" below.
 
 ## Immutable source identity
 
-Measured on commit `59c079cf480e9c9a54297019d68c3a73aca5e22b`.
+Measured on commit `a935e79cc2f589880402452a79e0186861f70bb6` (adds the `shared_fetch_add` decomposition arm; see the closing-review update above).
 
-This commit includes ONLY the harness implementation and `Cargo.toml` bench registration — no measurement results or documentation changes. The harness code is immutable at this SHA. (An earlier harness commit, `8a6e190`, was amended-out and replaced by this one solely to fix `cargo fmt` formatting on the harness file — no behavioral change — before this measurement was taken; `8a6e190` was never cited by any committed artifact and is not a valid citation for this report.)
+This commit includes ONLY the harness implementation (`crates/region/benches/region_new_contention_gate.rs`) plus doc-comment fixes elsewhere in the crate found by the same review — no measurement results. The harness code is immutable at this SHA for the numbers below. (Prior harness identities, superseded by this measurement: `59c079c` — the original two-arm harness, still a valid citation for the historical two-arm-only numbers this report previously carried; `8a6e190` — amended out before any measurement, never a valid citation.)
 
 ## Methodology
 
@@ -25,31 +28,43 @@ This commit includes ONLY the harness implementation and `Cargo.toml` bench regi
 - **Samples:** `SAMPLES = 5` independent repetitions per (arm, thread_count) combination.
 - **Arms:**
   - `shared_atomic`: Repeatedly constructs and drops `Region::<u64>::new()`.
-  - `baseline_local_atomic`: Performs (a) one `fetch_add(1)` on a thread-local `AtomicUsize` (same RMW pattern, no cross-thread contention) and (b) one `SlotMap::<DefaultKey, u64>::new()` allocation and drop. This approximates the non-contention work inside `Region::new()`.
+  - `shared_fetch_add`: Performs (a) one `fetch_add(1)` on a SHARED `Arc<AtomicUsize>` (real cross-thread contention, but the same primitive as `baseline_local_atomic`) and (b) one `SlotMap::<DefaultKey, u64>::new()` allocation and drop.
+  - `baseline_local_atomic`: Performs (a) one `fetch_add(1)` on a thread-local `AtomicUsize` (no cross-thread contention) and (b) one `SlotMap::<DefaultKey, u64>::new()` allocation and drop.
 - **Output:** Raw per-sample CSV lines printed BEFORE any summary prose, with derived mean/median computed directly from those samples (no manual transcription).
 
 ## Results
 
 | arm | threads | mean ops/sec | median ops/sec |
 |-----|---------|--------------|----------------|
-| shared_atomic | 1 | 6,959,375 | 6,944,734 |
-| shared_atomic | 2 | 6,775,563 | 6,264,791 |
-| shared_atomic | 4 | 6,637,530 | 6,712,158 |
-| shared_atomic | 8 | 6,645,813 | 6,676,191 |
-| baseline_local_atomic | 1 | 7,581,012 | 6,969,734 |
-| baseline_local_atomic | 2 | 12,460,242 | 12,415,497 |
-| baseline_local_atomic | 4 | 23,658,480 | 23,632,980 |
-| baseline_local_atomic | 8 | 43,355,569 | 43,212,877 |
+| shared_atomic | 1 | 6,790,796 | 6,775,573 |
+| shared_atomic | 2 | 5,361,433 | 6,282,265 |
+| shared_atomic | 4 | 6,986,049 | 7,022,053 |
+| shared_atomic | 8 | 5,477,466 | 6,113,467 |
+| shared_fetch_add | 1 | 5,719,373 | 5,990,122 |
+| shared_fetch_add | 2 | 8,568,206 | 8,623,477 |
+| shared_fetch_add | 4 | 11,968,411 | 12,289,051 |
+| shared_fetch_add | 8 | 12,695,237 | 12,441,109 |
+| baseline_local_atomic | 1 | 6,624,609 | 6,937,411 |
+| baseline_local_atomic | 2 | 14,070,938 | 13,492,045 |
+| baseline_local_atomic | 4 | 25,031,949 | 24,278,179 |
+| baseline_local_atomic | 8 | 40,972,705 | 44,065,239 |
 
 (Table copied verbatim from `docs/perf/R827_REGION_NEW_CONTENTION_GATE_summary.csv`, itself derived from `docs/perf/_raw_r827_region_new_contention.log` by a small script — no hand-transcription.)
 
 ## Interpretation
 
-The overhead ratio at 8 threads is **0.153** (shared_atomic.mean / baseline_local_atomic.mean).
+The overhead ratio at 8 threads is **0.134** (shared_atomic.mean / baseline_local_atomic.mean) — `Region::new()` under 8-thread contention runs at **13.4%** of the isolated baseline's throughput, an **~87% throughput penalty**. (This ratio is noisy run to run on this single dev host — an earlier run of the same two arms measured 0.153/~85%; both runs agree on the qualitative picture: the shared arm never scales past ~1 thread's throughput.)
 
-This means `Region::new()` under 8-thread contention runs at **15.3%** of the throughput of the isolated baseline. In other words, contention on `NEXT_REGION_ID` causes an **~85% throughput penalty** at 8 threads.
+The baseline arm shows near-linear scaling from 1→8 threads (6.6M → 41.0M ops/sec), while the `shared_atomic` arm is essentially flat across all thread counts (5.4M-7.0M ops/sec regardless of N). The contention bottleneck saturates almost immediately — aggregate `Region::new()` throughput does not meaningfully improve past 1 thread, let alone scale with thread count.
 
-The baseline arm shows near-linear scaling from 1→8 threads (7.58M → 43.4M ops/sec), while the shared_atomic arm is essentially flat across all thread counts (6.6M-7.0M ops/sec regardless of N). The contention bottleneck saturates almost immediately — aggregate `Region::new()` throughput does not meaningfully improve past 1 thread, let alone scale with thread count.
+## Decomposition (added 2026-08-11, closing-review finding F-C6)
+
+At 8 threads:
+- **`contention_ratio`** = `shared_fetch_add.mean / baseline_local_atomic.mean` = 12,695,237 / 40,972,705 = **0.310** — this isolates PURE cache-line contention: same `fetch_add` primitive, only "shared vs local" differs. A shared, contended `fetch_add` alone costs ~69% of throughput versus no sharing at all.
+- **`cas_primitive_ratio`** = `shared_atomic.mean / shared_fetch_add.mean` = 5,477,466 / 12,695,237 = **0.431** — this isolates the cost of `fetch_update`'s CAS-retry-loop versus a plain `fetch_add`, holding the sharing regime constant (both arms are shared/contended). The CAS loop costs an ADDITIONAL ~57% on top of the contention already measured by `contention_ratio`.
+- The two ratios compose: `0.310 × 0.431 ≈ 0.134`, matching the `overhead_ratio` above (mean-based; median-based recomposition will differ slightly due to per-arm sampling noise).
+
+**Conclusion:** the ~87% total penalty is NOT purely a "shared atomic is slow" story — F1/#813's own primitive change (fetch_add → fetch_update/CAS-loop, made necessary by the exhaustion fix) contributes roughly as much as cache-line contention does. Both cost/perf changed together in that fix, which was a correctness fix (region_id reuse was a release blocker), not a perf regression under this project's own perf-vs-correctness framing — but this decomposition means a future perf-improvement attempt on this contention point should not assume switching back to a shared `fetch_add` would recover most of the gap; roughly a third of it is cache-line contention that plain `fetch_add` would still pay.
 
 ## Artifacts
 

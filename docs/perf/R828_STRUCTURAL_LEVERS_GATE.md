@@ -11,19 +11,31 @@ caught during personal zero-trust re-verification of the diff before
 committing, per this repo's standing review discipline:
 
 1. **P-perf-1's iteration probe had no `std::hint::black_box` around its
-   discarded `sm.values().sum()` result.** The delegated session's own
-   measurement reported "0ns/iter" for the `DenseSlotMap` arm and an
-   "effectively infinite" speedup — instead of investigating why, the
-   diff loosened the harness's own assertions (`> 0.0` → `>= 0.0`) and
-   special-cased `f64::INFINITY` to tolerate the zero, silently shipping
-   a fabricated number. This is a textbook dead-code-elimination hazard:
-   a pure sum whose result is never observed can be optimized away
-   entirely by LLVM, and `DenseSlotMap`'s simpler, contiguous memory
+   discarded `sm.values().sum()` result.** Personal zero-trust review
+   caught the harness's working tree (immediately before the `efed284`
+   commit was created) reporting "0ns/iter" for the `DenseSlotMap` arm
+   and an "effectively infinite" speedup, and — instead of investigating
+   why — silently loosening assertions (`> 0.0` → `>= 0.0`) and
+   special-casing `f64::INFINITY` to tolerate the zero, rather than
+   fixing the actual cause. This is a textbook dead-code-elimination
+   hazard: a pure sum whose result is never observed can be optimized
+   away entirely by LLVM, and `DenseSlotMap`'s simpler, contiguous memory
    layout made it a much easier target for that elimination than
-   `SlotMap`'s slot array. Fixed by wrapping every discarded sum in
-   `std::hint::black_box`, reverting the loosened assertions back to
-   strict `> 0.0`, and re-running. The `DenseSlotMap` arm now measures a
-   real, finite, reproducible number (~13.5 µs/pass, not 0).
+   `SlotMap`'s slot array. **Correction (found by the #832 closing
+   review, F-C2):** this report originally attributed the loosened
+   assertions to "the diff" (implying they were part of the committed
+   `efed284` commit). They were not — `efed284`'s own committed source
+   already has strict `> 0.0` assertions and no `f64::INFINITY`
+   special-casing anywhere (`git show efed284:...` confirms this); the
+   loosened version existed only in the uncommitted working tree at the
+   point this review's author read and fixed it. The underlying bug (the
+   missing `black_box` letting LLVM eliminate the loop, and the
+   fabricated "0ns/infinite speedup" result) is real and confirmed
+   against `efed284`'s actual content — only the claim about WHERE the
+   assertion-loosening lived was imprecise. Fixed by wrapping every
+   discarded sum in `std::hint::black_box`, keeping the assertions
+   strict, and re-running. The `DenseSlotMap` arm now measures a real,
+   finite, reproducible number (~13.5 µs/pass, not 0).
 2. **P-perf-4's tail-latency probe had a race window between the writer
    acquiring the lock and the reader attempting to read it.** Both
    threads waited on the same `std::sync::Barrier` and then proceeded
@@ -88,7 +100,7 @@ Both arms run 5 samples; raw data in `docs/perf/_raw_r828_dense_iteration.log` (
 
 ### Results
 
-#### Iteration axis (nanoseconds per full iter() pass, 1000 live values out of 10000 populated)
+#### Iteration axis (nanoseconds per full iter() pass, 10,000 live values out of 100,000 populated)
 
 | arm | mean | median | speedup |
 |-----|------|--------|---------|
@@ -102,7 +114,7 @@ Both arms run 5 samples; raw data in `docs/perf/_raw_r828_dense_iteration.log` (
 | slotmap_region | 176,174,581 | 164,257,556 | 1.00× (baseline) |
 | dense_slotmap | 60,762,024 | 62,980,224 | 0.345× vs baseline |
 
-`DenseSlotMap` shows a **2.9× regression** on churn (1 / 0.345). This aligns with the design note's expectation: `DenseSlotMap`'s swap-remove must fix up the moved element's key on every removal, real overhead `SlotMap`'s tombstone-leave-in-place pattern does not pay.
+`DenseSlotMap` shows a **2.9× regression** on churn (1 / 0.345). **Correction (found by the #832 closing review, F-C7):** this workload holds exactly ONE live element (a single key removed and re-inserted in a tight loop), so `DenseSlotMap::remove` swap-removes the last element with itself — there is no moved element and no key-fixup cost to pay, meaning the swap-remove-fixup mechanism this report originally cited cannot be the actual cause. The 0.345× number itself is unaffected and the DEFER verdict is unchanged; the more likely cause is `DenseSlotMap`'s extra `slots → indices → values` indirection and its parallel `keys` vector, paid on every insert/remove regardless of whether a swap actually moves anything. A future re-measurement at a realistic live-set size (holding 1,000–10,000 live and churning a rolling window, which WOULD exercise swap-remove fixup) is needed to test the original mechanism claim.
 
 ### Analysis
 
@@ -137,7 +149,7 @@ Also measured the manual-guard pattern under 8 concurrent readers to check conte
 
 ### Results
 
-#### Single-threaded (1 reader): time per 64 lookups
+#### Single-threaded (1 reader): time per lookup (N = 64 lookups per iteration)
 
 | arm | mean (ns) | median (ns) | ratio vs baseline |
 |-----|-----------|-------------|-------------------|
@@ -156,7 +168,7 @@ Also measured the manual-guard pattern under 8 concurrent readers to check conte
 |-----|-----------|-------------|
 | concurrent_manual_guard | 5.4 | 5.4 |
 
-Contention overhead: 1.12× vs single-threaded baseline — small, well within noise at this scale.
+**Correction (found by the #832 closing review, F-C5):** this report originally read the 1.12× figure as "small, well within noise" — backwards. The concurrent arm's 5.40 ns/lookup is *aggregate* per-op cost across 8 readers, so comparing it directly to the single-threaded 4.84 ns/lookup means: aggregate throughput with 8 readers is **~11% LOWER** than with 1 reader (1/5.40 ≈ 185M lookups/s vs. 1/4.84 ≈ 207M lookups/s) — i.e. **zero** read scaling — and each thread's own per-lookup latency degrades to roughly 5.40 × 8 ≈ 43 ns, an **~8.9× per-thread slowdown** versus the single-threaded 4.84 ns. This is a real, substantial `RwLock` read-acquisition-contention effect, consistent with the shared-cache-line cost this same round's R827 report documents for `NEXT_REGION_ID` and with `crates/region/README.md`'s existing "Contended reads" section. The P-perf-2 verdict (GO opt-in) is unaffected by this correction — if anything, real read contention makes the batching API's case stronger, not weaker — but the original "well within noise" characterization was wrong and would have misled anyone sizing a reader fleet.
 
 ### Analysis
 

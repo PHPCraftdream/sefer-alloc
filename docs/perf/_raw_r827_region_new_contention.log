@@ -1,57 +1,82 @@
-   Compiling sefer-region v0.1.0 (D:\dev\rust\sefer-alloc\crates\region)
-    Finished `bench` profile [optimized] target(s) in 6.89s
+    Finished `bench` profile [optimized] target(s) in 0.84s
      Running benches\region_new_contention_gate.rs (D:\dev\rust\.cargo-target\release\deps\region_new_contention_gate-8b0f93f96b14bbbd.exe)
 # raw_csv,arm,threads,sample,total_ops,wall_ns,ops_per_sec
-raw_csv,shared_atomic,1,0,200000,30106200,6643149.915964154
-raw_csv,shared_atomic,1,1,200000,28675400,6974619.36014842
-raw_csv,shared_atomic,1,2,200000,27096000,7381163.271331563
-raw_csv,shared_atomic,1,3,200000,29183400,6853211.072047807
-raw_csv,shared_atomic,1,4,200000,28798800,6944733.808353126
-raw_csv,shared_atomic,2,0,400000,58295800,6861557.779462671
-raw_csv,shared_atomic,2,1,400000,63848900,6264790.77948093
-raw_csv,shared_atomic,2,2,400000,41342300,9675320.43451864
-raw_csv,shared_atomic,2,3,400000,71551100,5590410.210325208
-raw_csv,shared_atomic,2,4,400000,72916400,5485734.347828472
-raw_csv,shared_atomic,4,0,800000,116119000,6889484.063762175
-raw_csv,shared_atomic,4,1,800000,123797500,6462166.0372786205
-raw_csv,shared_atomic,4,2,800000,118632900,6743491.8981159525
-raw_csv,shared_atomic,4,3,800000,119186700,6712158.319678286
-raw_csv,shared_atomic,4,4,800000,125385000,6380348.526538262
-raw_csv,shared_atomic,8,0,1600000,243553100,6569409.299245216
-raw_csv,shared_atomic,8,1,1600000,243196500,6579042.050358455
-raw_csv,shared_atomic,8,2,1600000,239657600,6676191.3663493255
-raw_csv,shared_atomic,8,3,1600000,238539200,6707492.94036368
-raw_csv,shared_atomic,8,4,1600000,238915500,6696928.411928067
-raw_csv,baseline_local_atomic,1,0,200000,29481800,6783846.3051781105
-raw_csv,baseline_local_atomic,1,1,200000,28695500,6969733.930407207
-raw_csv,baseline_local_atomic,1,2,200000,21943900,9114150.173852416
-raw_csv,baseline_local_atomic,1,3,200000,29986100,6669756.987404164
-raw_csv,baseline_local_atomic,1,4,200000,23901800,8367570.643215155
-raw_csv,baseline_local_atomic,2,0,400000,31518000,12691160.606637478
-raw_csv,baseline_local_atomic,2,1,400000,27855900,14359615.018721348
-raw_csv,baseline_local_atomic,2,2,400000,32217800,12415497.02338459
-raw_csv,baseline_local_atomic,2,3,400000,35512600,11263607.846229225
-raw_csv,baseline_local_atomic,2,4,400000,34568200,11571328.562088856
-raw_csv,baseline_local_atomic,4,0,800000,33628400,23789416.0887821
-raw_csv,baseline_local_atomic,4,1,800000,33851000,23632979.82334348
-raw_csv,baseline_local_atomic,4,2,800000,34481300,23200981.401513286
-raw_csv,baseline_local_atomic,4,3,800000,33936400,23573508.091606654
-raw_csv,baseline_local_atomic,4,4,800000,33201200,24095514.619953495
-raw_csv,baseline_local_atomic,8,0,1600000,36546500,43779842.118944354
-raw_csv,baseline_local_atomic,8,1,1600000,37449900,42723745.590775944
-raw_csv,baseline_local_atomic,8,2,1600000,37158600,43058672.82405688
-raw_csv,baseline_local_atomic,8,3,1600000,37026000,43212877.43747637
-raw_csv,baseline_local_atomic,8,4,1600000,36361400,44002706.16642924
+raw_csv,shared_atomic,1,0,200000,29517800,6775572.7052829135
+raw_csv,shared_atomic,1,1,200000,29327200,6819607.7361630155
+raw_csv,shared_atomic,1,2,200000,29551000,6767960.475110825
+raw_csv,shared_atomic,1,3,200000,28678500,6973865.439266349
+raw_csv,shared_atomic,1,4,200000,30225300,6616973.197950061
+raw_csv,shared_atomic,2,0,400000,67810400,5898800.1840425655
+raw_csv,shared_atomic,2,1,400000,461698900,866365.5035781978
+raw_csv,shared_atomic,2,2,400000,63671300,6282265.322052479
+raw_csv,shared_atomic,2,3,400000,57382800,6970729.905128366
+raw_csv,shared_atomic,2,4,400000,58918800,6789004.52826602
+raw_csv,shared_atomic,4,0,800000,113926800,7022052.7566823615
+raw_csv,shared_atomic,4,1,800000,113629200,7040443.829579017
+raw_csv,shared_atomic,4,2,800000,112954000,7082529.1711670235
+raw_csv,shared_atomic,4,3,800000,117934200,6783443.649085676
+raw_csv,shared_atomic,4,4,800000,114256700,7001777.576282178
+raw_csv,shared_atomic,8,0,1600000,261717300,6113466.706251364
+raw_csv,shared_atomic,8,1,1600000,254179000,6294776.515762514
+raw_csv,shared_atomic,8,2,1600000,252553000,6335303.876810015
+raw_csv,shared_atomic,8,3,1600000,585463800,2732876.054847456
+raw_csv,shared_atomic,8,4,1600000,270686000,5910907.841558116
+raw_csv,shared_fetch_add,1,0,200000,32068500,6236649.671796311
+raw_csv,shared_fetch_add,1,1,200000,43931100,4552583.477308786
+raw_csv,shared_fetch_add,1,2,200000,32347200,6182915.368254439
+raw_csv,shared_fetch_add,1,3,200000,35495000,5634596.422031272
+raw_csv,shared_fetch_add,1,4,200000,33388300,5990122.288346516
+raw_csv,shared_fetch_add,2,0,400000,46390200,8622510.788916625
+raw_csv,shared_fetch_add,2,1,400000,44457500,8997357.026373504
+raw_csv,shared_fetch_add,2,2,400000,45925600,8709739.230407443
+raw_csv,shared_fetch_add,2,3,400000,46385000,8623477.417268513
+raw_csv,shared_fetch_add,2,4,400000,50710300,7887943.8693914255
+raw_csv,shared_fetch_add,4,0,800000,65098600,12289050.762996439
+raw_csv,shared_fetch_add,4,1,800000,63433400,12611652.53636097
+raw_csv,shared_fetch_add,4,2,800000,74820700,10692228.220265247
+raw_csv,shared_fetch_add,4,3,800000,70714100,11313161.024463296
+raw_csv,shared_fetch_add,4,4,800000,61843100,12935962.136438828
+raw_csv,shared_fetch_add,8,0,1600000,127473800,12551598.838349529
+raw_csv,shared_fetch_add,8,1,1600000,132813600,12046959.046362722
+raw_csv,shared_fetch_add,8,2,1600000,128605900,12441108.844928578
+raw_csv,shared_fetch_add,8,3,1600000,129831700,12323646.690292126
+raw_csv,shared_fetch_add,8,4,1600000,113371700,14112869.437434562
+raw_csv,baseline_local_atomic,1,0,200000,35425600,5645634.795176369
+raw_csv,baseline_local_atomic,1,1,200000,33169100,6029708.373154532
+raw_csv,baseline_local_atomic,1,2,200000,27579900,7251657.91028974
+raw_csv,baseline_local_atomic,1,3,200000,27553400,7258632.328496665
+raw_csv,baseline_local_atomic,1,4,200000,28829200,6937410.680837484
+raw_csv,baseline_local_atomic,2,0,400000,27741300,14418934.94537026
+raw_csv,baseline_local_atomic,2,1,400000,24268200,16482475.008447269
+raw_csv,baseline_local_atomic,2,2,400000,30223200,13234865.930808121
+raw_csv,baseline_local_atomic,2,3,400000,31430800,12726370.311923336
+raw_csv,baseline_local_atomic,2,4,400000,29647100,13492044.753112447
+raw_csv,baseline_local_atomic,4,0,800000,33217300,24083835.83253305
+raw_csv,baseline_local_atomic,4,1,800000,33710000,23731830.317413233
+raw_csv,baseline_local_atomic,4,2,800000,32951400,24278179.379328344
+raw_csv,baseline_local_atomic,4,3,800000,30612900,26132774.091967765
+raw_csv,baseline_local_atomic,4,4,800000,29703200,26933125.05049961
+raw_csv,baseline_local_atomic,8,0,1600000,35947800,44508982.469024524
+raw_csv,baseline_local_atomic,8,1,1600000,37426900,42750000.667968765
+raw_csv,baseline_local_atomic,8,2,1600000,35606800,44935237.08954469
+raw_csv,baseline_local_atomic,8,3,1600000,55936100,28604067.85599997
+raw_csv,baseline_local_atomic,8,4,1600000,36309800,44065238.585726164
 
 === Summary (derived from raw samples above) ===
 
-arm=shared_atomic        threads=2  mean_ops_per_sec=6775563 median_ops_per_sec=6264791
-arm=shared_atomic        threads=4  mean_ops_per_sec=6637530 median_ops_per_sec=6712158
-arm=shared_atomic        threads=8  mean_ops_per_sec=6645813 median_ops_per_sec=6676191
-arm=baseline_local_atomic threads=1  mean_ops_per_sec=7581012 median_ops_per_sec=6969734
-arm=shared_atomic        threads=1  mean_ops_per_sec=6959375 median_ops_per_sec=6944734
-arm=baseline_local_atomic threads=2  mean_ops_per_sec=12460242 median_ops_per_sec=12415497
-arm=baseline_local_atomic threads=8  mean_ops_per_sec=43355569 median_ops_per_sec=43212877
-arm=baseline_local_atomic threads=4  mean_ops_per_sec=23658480 median_ops_per_sec=23632980
+arm=shared_fetch_add     threads=4  mean_ops_per_sec=11968411 median_ops_per_sec=12289051
+arm=shared_atomic        threads=2  mean_ops_per_sec=5361433 median_ops_per_sec=6282265
+arm=baseline_local_atomic threads=1  mean_ops_per_sec=6624609 median_ops_per_sec=6937411
+arm=shared_fetch_add     threads=8  mean_ops_per_sec=12695237 median_ops_per_sec=12441109
+arm=baseline_local_atomic threads=2  mean_ops_per_sec=14070938 median_ops_per_sec=13492045
+arm=shared_atomic        threads=1  mean_ops_per_sec=6790796 median_ops_per_sec=6775573
+arm=shared_atomic        threads=4  mean_ops_per_sec=6986049 median_ops_per_sec=7022053
+arm=baseline_local_atomic threads=4  mean_ops_per_sec=25031949 median_ops_per_sec=24278179
+arm=baseline_local_atomic threads=8  mean_ops_per_sec=40972705 median_ops_per_sec=44065239
+arm=shared_fetch_add     threads=1  mean_ops_per_sec=5719373 median_ops_per_sec=5990122
+arm=shared_atomic        threads=8  mean_ops_per_sec=5477466 median_ops_per_sec=6113467
+arm=shared_fetch_add     threads=2  mean_ops_per_sec=8568206 median_ops_per_sec=8623477
 
-overhead_ratio(threads=8) = shared_atomic.mean / baseline_local_atomic.mean = 0.153
+overhead_ratio(threads=8) = shared_atomic.mean / baseline_local_atomic.mean = 0.134
+contention_ratio(threads=8) = shared_fetch_add.mean / baseline_local_atomic.mean = 0.310 (cache-line contention alone, same fetch_add primitive)
+cas_primitive_ratio(threads=8) = shared_atomic.mean / shared_fetch_add.mean = 0.431 (fetch_update/CAS-loop cost vs. fetch_add, same sharing regime)
