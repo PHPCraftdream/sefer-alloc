@@ -299,7 +299,9 @@ registry API directly rather than the usual macros):
 - **`Region::with_capacity(n)` reserves exactly `n` up front for realistic `n`** — no
   intermediate reallocation for a workload that stays within it. If you
   know your workload's peak live count ahead of time, pre-sizing avoids
-  the ~2.3% organic-growth overhead entirely.
+  the ~2.3% organic-growth overhead entirely. (Fallible alternatives:
+  `Region::try_new`, `Region::try_with_capacity`, and `Region::try_reserve` are available
+  for recovery from capacity-limit and region-id exhaustion.)
 
 Reproduce: `cargo test -p sefer-region --test captrack_probe -- --ignored
 --nocapture`.

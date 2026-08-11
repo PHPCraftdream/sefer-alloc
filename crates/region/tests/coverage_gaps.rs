@@ -1,7 +1,7 @@
 //! Coverage gap tests for `sefer-region`: I5 drop-once, clear() happy path,
 //! and basic coverage for iter/iter_mut/get_mut/Default/capacity/with_capacity/reserve.
 
-use sefer_region::Region;
+use sefer_region::{Region, TryReserveError};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -506,6 +506,35 @@ fn region_reserve_overflow_panics() {
 }
 
 #[test]
+fn region_reserve_domain_limit_panic_names_reserve_not_with_capacity() {
+    // Region::reserve()'s domain-limit branch (target > SLOTMAP_MAX_LIVE, the
+    // CapacityExceeded variant -- distinct from the checked_add overflow
+    // branch region_reserve_overflow_panics exercises above) shares its
+    // TryReserveError::CapacityExceeded variant -- and therefore its Display
+    // text -- with Region::with_capacity's identical domain check. The
+    // panic message must correctly say "Region::reserve:", not
+    // "Region::with_capacity:", even though both panic wrappers format the
+    // same underlying error variant. Task #825 found and fixed a real bug
+    // here: TryReserveError::CapacityExceeded's Display impl originally
+    // hardcoded the "Region::with_capacity:" prefix unconditionally, so a
+    // reserve() call hitting this exact branch would have panicked with a
+    // message naming the wrong method.
+    const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
+    let mut r: Region<i32> = Region::new();
+    let msg = catch_panic_message(AssertUnwindSafe(|| {
+        r.reserve(SLOTMAP_MAX_LIVE + 1);
+    }));
+    assert!(
+        msg.contains("Region::reserve: capacity") && msg.contains("exceeds slotmap limit"),
+        "expected the reserve-specific guard message, got: {msg:?}"
+    );
+    assert!(
+        !msg.contains("with_capacity"),
+        "reserve()'s panic message must not name with_capacity, got: {msg:?}"
+    );
+}
+
+#[test]
 fn region_with_capacity_overflow_panics() {
     // Region::with_capacity(usize::MAX) panics in both debug and release
     // builds (profile-independent). Since task #791/F13, the FIRST (and, on
@@ -527,6 +556,97 @@ fn region_with_capacity_overflow_panics() {
     assert!(
         msg.contains("Region::with_capacity: capacity") && msg.contains("exceeds slotmap limit"),
         "expected the crate's own domain-limit guard message, got: {msg:?}"
+    );
+}
+
+// === Fallible variant tests (task #825) ===
+
+#[test]
+fn region_try_new_succeeds_when_counter_not_exhausted() {
+    // Region::try_new() returns Ok when the region_id counter is not exhausted.
+    let result = Region::<i32>::try_new();
+    assert!(result.is_ok(), "expected Ok when counter not exhausted");
+
+    let r = result.unwrap();
+    assert_eq!(r.len(), 0);
+    assert!(r.is_empty());
+}
+
+#[test]
+fn region_try_with_capacity_succeeds_for_valid_capacity() {
+    // Region::try_with_capacity(n) returns Ok for valid capacities.
+    let result = Region::<i32>::try_with_capacity(100);
+    assert!(result.is_ok(), "expected Ok for valid capacity");
+
+    let r = result.unwrap();
+    assert!(r.capacity() >= 100);
+}
+
+#[test]
+fn region_try_with_capacity_returns_capacity_exceeded_error() {
+    // Region::try_with_capacity(usize::MAX) returns Err(CapacityExceeded { .. })
+    // instead of panicking.
+    const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
+    let result = Region::<i32>::try_with_capacity(usize::MAX);
+
+    assert!(result.is_err(), "expected Err for usize::MAX");
+    let err = result.unwrap_err();
+    match err {
+        TryReserveError::CapacityExceeded { requested, limit } => {
+            assert_eq!(requested, usize::MAX);
+            assert_eq!(limit, SLOTMAP_MAX_RESERVE);
+        }
+        _ => panic!("expected CapacityExceeded variant, got: {:?}", err),
+    }
+}
+
+#[test]
+fn region_try_reserve_succeeds_for_valid_additional() {
+    // Region::try_reserve(n) returns Ok for valid additional capacity.
+    let mut r: Region<i32> = Region::new();
+    let result = r.try_reserve(100);
+    assert!(result.is_ok(), "expected Ok for valid additional");
+
+    assert!(r.capacity() >= 100);
+}
+
+#[test]
+fn region_try_reserve_returns_capacity_exceeded_error() {
+    // Region::try_reserve() returns Err(CapacityExceeded { .. })
+    // when len() + additional exceeds slotmap's limit.
+    const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
+
+    let mut r: Region<i32> = Region::new();
+    // We can't actually insert SLOTMAP_MAX_LIVE values, but we can
+    // verify the error path by asking for more than the limit minus 1.
+    let additional = SLOTMAP_MAX_LIVE + 1;
+    let result = r.try_reserve(additional);
+
+    assert!(result.is_err(), "expected Err for capacity exceeding limit");
+    let err = result.unwrap_err();
+    match err {
+        TryReserveError::CapacityExceeded { requested, limit } => {
+            assert_eq!(requested, SLOTMAP_MAX_LIVE + 1);
+            assert_eq!(limit, SLOTMAP_MAX_LIVE);
+        }
+        _ => panic!("expected CapacityExceeded variant, got: {:?}", err),
+    }
+}
+
+#[test]
+fn region_try_reserve_returns_overflow_error() {
+    // Region::try_reserve() returns Err(Overflow) when len() + additional would overflow.
+    let mut r: Region<i32> = Region::new();
+    let _ = r.insert(0); // len() == 1 — required to reach the overflow guard
+
+    let result = r.try_reserve(usize::MAX);
+
+    assert!(result.is_err(), "expected Err for overflow");
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, TryReserveError::Overflow),
+        "expected Overflow variant, got: {:?}",
+        err
     );
 }
 

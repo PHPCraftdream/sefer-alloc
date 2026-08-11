@@ -29,6 +29,58 @@ impl core::fmt::Display for RegionIdExhaustedError {
 #[cfg(feature = "std")]
 impl std::error::Error for RegionIdExhaustedError {}
 
+/// Error returned by fallible `Region<T>` constructors and capacity operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryReserveError {
+    /// The requested capacity/length exceeds slotmap's maximum live-entry domain.
+    CapacityExceeded {
+        /// The capacity or length that was requested
+        requested: usize,
+        /// Slotmap's maximum live-entry limit (`2^32 - 2` for reserve operations,
+        /// `2^32 - 3` for `with_capacity` since one slot is reserved as a sentinel)
+        limit: usize,
+    },
+    /// An internal capacity computation overflowed `usize`.
+    Overflow,
+    /// The process-wide `region_id` counter has been exhausted. Only ever
+    /// returned by `Region::try_new`/`try_with_capacity` (constructors mint a
+    /// new region_id); `Region::try_reserve` on an existing `Region` never
+    /// produces this variant, since it does not mint a new region_id.
+    RegionIdExhausted(RegionIdExhaustedError),
+}
+
+impl core::fmt::Display for TryReserveError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            // Deliberately method-agnostic: this variant is returned by both
+            // `try_with_capacity` and `try_reserve`. Their infallible wrappers
+            // (`with_capacity`/`reserve`) prefix the method name themselves
+            // when panicking, so this text must not bake in either name.
+            Self::CapacityExceeded { requested, limit } => {
+                write!(f, "capacity {} exceeds slotmap limit {}", requested, limit)
+            }
+            Self::Overflow => f.write_str("capacity overflow"),
+            Self::RegionIdExhausted(inner) => inner.fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TryReserveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::RegionIdExhausted(inner) => Some(inner),
+            _ => None,
+        }
+    }
+}
+
+impl From<RegionIdExhaustedError> for TryReserveError {
+    fn from(err: RegionIdExhaustedError) -> Self {
+        Self::RegionIdExhausted(err)
+    }
+}
+
 /// Attempts to mint a unique `region_id` from the given atomic counter.
 ///
 /// # Returns
@@ -196,6 +248,25 @@ pub struct Region<T> {
 impl<T> Region<T> {
     /// Creates an empty region that allocates nothing until first use.
     ///
+    /// # Errors
+    ///
+    /// Returns `Err(TryReserveError::RegionIdExhausted(...))` if the process-wide
+    /// `region_id` counter has been exhausted — i.e. this would be the
+    /// `(2^{pointer_width} + 1)`-th `Region` constructed (via `try_new`/`try_with_capacity`)
+    /// in this process. Once the counter is exhausted, **all** future `Region`
+    /// constructions in this process will fail, and no region_id is ever reused.
+    /// See the I6 doc block above for the exhaustion bound and why it is reachable,
+    /// not just theoretical, on a 32-bit host.
+    pub fn try_new() -> Result<Self, TryReserveError> {
+        let region_id = try_mint_region_id(&NEXT_REGION_ID)?;
+        Ok(Self {
+            region_id,
+            inner: slotmap::SlotMap::new(),
+        })
+    }
+
+    /// Creates an empty region that allocates nothing until first use.
+    ///
     /// # Panics
     ///
     /// Panics if the process-wide `region_id` counter has been exhausted —
@@ -207,11 +278,58 @@ impl<T> Region<T> {
     /// a 32-bit host.
     #[must_use]
     pub fn new() -> Self {
-        let region_id = try_mint_region_id(&NEXT_REGION_ID).expect("region_id overflow");
-        Self {
-            region_id,
-            inner: slotmap::SlotMap::new(),
+        Self::try_new().expect("region_id overflow")
+    }
+
+    /// Creates an empty region with space pre-reserved for `capacity` entries.
+    ///
+    /// # Errors
+    ///
+    /// - Returns `Err(TryReserveError::CapacityExceeded { .. })` if `capacity > 2^32 - 3`
+    ///   (slotmap's maximum live-entry limit is `2^32 - 2`; reserving for sentinel gives `2^32 - 3`)
+    ///   — this is the guard that fires for any out-of-domain `capacity`, on both 32-bit
+    ///   and 64-bit hosts; on 64-bit this is a theoretical guard only (realistic workloads
+    ///   never approach this limit), but on a 32-bit host it is reachable.
+    /// - Returns `Err(TryReserveError::Overflow)` if an internal capacity computation
+    ///   overflowed `usize` (defense-in-depth, not currently reachable in practice).
+    /// - Returns `Err(TryReserveError::RegionIdExhausted(...))` if the process-wide
+    ///   `region_id` counter has been exhausted — see [`try_new`](Self::try_new)'s
+    ///   `# Errors` section and the I6 doc block above. Once the counter is exhausted,
+    ///   **all** future `Region` constructions in this process will fail, and no region_id
+    ///   is ever reused.
+    ///
+    /// # Note on allocation failure
+    ///
+    /// As with any `Vec`-backed container, allocation failure for a capacity whose slot array
+    /// would exceed `isize::MAX` bytes (roughly `usize::MAX / size_of::<Slot<T>>()`) aborts
+    /// rather than returning an error — this is not a recoverable error in standard Rust's
+    /// memory model.
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, TryReserveError> {
+        // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
+        // With one sentinel slot, the maximum reserve is 2^32 - 3.
+        const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
+        if capacity > SLOTMAP_MAX_RESERVE {
+            return Err(TryReserveError::CapacityExceeded {
+                requested: capacity,
+                limit: SLOTMAP_MAX_RESERVE,
+            });
         }
+        // Defense-in-depth, not a guard that can currently fire: the domain
+        // check above already rejects any `capacity > SLOTMAP_MAX_RESERVE`
+        // (2^32 - 3), so by this point `capacity + 1 <= 2^32 - 2`, which is
+        // below `usize::MAX` on every supported target — `usize::MAX` is
+        // `2^32 - 1` on the narrowest (32-bit) target this crate supports,
+        // and far larger on 64-bit. This `checked_add(1)` therefore cannot
+        // overflow today; it stays only so a future change to
+        // `SLOTMAP_MAX_RESERVE` (e.g. if a future slotmap version raises or
+        // removes its live-entry limit) can't silently reintroduce an
+        // overflow here without a guard already in place to catch it.
+        capacity.checked_add(1).ok_or(TryReserveError::Overflow)?;
+        let region_id = try_mint_region_id(&NEXT_REGION_ID)?;
+        Ok(Self {
+            region_id,
+            inner: slotmap::SlotMap::with_capacity(capacity),
+        })
     }
 
     /// Creates an empty region with space pre-reserved for `capacity` entries.
@@ -233,33 +351,7 @@ impl<T> Region<T> {
     /// panic, and no region_id is ever reused.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        // Reject capacity that would overflow slotmap's limit: max live entries is 2^32 - 2.
-        // With one sentinel slot, the maximum reserve is 2^32 - 3.
-        const SLOTMAP_MAX_RESERVE: usize = ((1u64 << 32) - 3) as usize;
-        if capacity > SLOTMAP_MAX_RESERVE {
-            panic!(
-                "Region::with_capacity: capacity {} exceeds slotmap limit {}",
-                capacity, SLOTMAP_MAX_RESERVE
-            );
-        }
-        // Defense-in-depth, not a guard that can currently fire: the domain
-        // check above already rejects any `capacity > SLOTMAP_MAX_RESERVE`
-        // (2^32 - 3), so by this point `capacity + 1 <= 2^32 - 2`, which is
-        // below `usize::MAX` on every supported target — `usize::MAX` is
-        // `2^32 - 1` on the narrowest (32-bit) target this crate supports,
-        // and far larger on 64-bit. This `checked_add(1)` therefore cannot
-        // overflow today; it stays only so a future change to
-        // `SLOTMAP_MAX_RESERVE` (e.g. if a future slotmap version raises or
-        // removes its live-entry limit) can't silently reintroduce an
-        // overflow here without a guard already in place to catch it.
-        capacity
-            .checked_add(1)
-            .expect("Region::with_capacity: capacity overflow");
-        let region_id = try_mint_region_id(&NEXT_REGION_ID).expect("region_id overflow");
-        Self {
-            region_id,
-            inner: slotmap::SlotMap::with_capacity(capacity),
-        }
+        Self::try_with_capacity(capacity).unwrap_or_else(|e| panic!("Region::with_capacity: {e}"))
     }
 
     /// Number of live values (I4).
@@ -295,6 +387,44 @@ impl<T> Region<T> {
     /// `slotmap`'s `reserve`; may allocate more than asked to avoid frequent
     /// reallocations.
     ///
+    /// # Errors
+    ///
+    /// - Returns `Err(TryReserveError::Overflow)` if `len() + additional` would overflow `usize`.
+    /// - Returns `Err(TryReserveError::CapacityExceeded { .. })` if `len() + additional > 2^32 - 2`
+    ///   (slotmap's maximum live-entry limit).
+    ///
+    /// # Note on allocation failure
+    ///
+    /// As with any `Vec`-backed container, allocation failure for a capacity whose slot array
+    /// would exceed `isize::MAX` bytes (roughly `usize::MAX / size_of::<Slot<T>>()`) aborts
+    /// rather than returning an error — this is not a recoverable error in standard Rust's
+    /// memory model.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
+        let target = self
+            .inner
+            .len()
+            .checked_add(additional)
+            .ok_or(TryReserveError::Overflow)?;
+        if target > SLOTMAP_MAX_LIVE {
+            return Err(TryReserveError::CapacityExceeded {
+                requested: target,
+                limit: SLOTMAP_MAX_LIVE,
+            });
+        }
+        self.inner.reserve(additional);
+        Ok(())
+    }
+
+    /// Reserves capacity for at least `additional` more insertions.
+    ///
+    /// Does nothing if the backing store already has room. After a churn that
+    /// removes entries, the freed slots live on the free list, so re-inserting
+    /// reuses existing capacity and does not grow unboundedly (the backing
+    /// stays bounded by the high-water mark of live entries). Delegates to
+    /// `slotmap`'s `reserve`; may allocate more than asked to avoid frequent
+    /// reallocations.
+    ///
     /// # Panics
     ///
     /// Panics if `len() + additional` overflows `usize`, in both debug and
@@ -305,19 +435,9 @@ impl<T> Region<T> {
     /// — roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure
     /// beyond that aborts rather than panicking.
     pub fn reserve(&mut self, additional: usize) {
-        const SLOTMAP_MAX_LIVE: usize = ((1u64 << 32) - 2) as usize;
-        let target = self
-            .inner
-            .len()
-            .checked_add(additional)
-            .expect("Region::reserve: capacity overflow");
-        if target > SLOTMAP_MAX_LIVE {
-            panic!(
-                "Region::reserve: target {} exceeds slotmap limit {}",
-                target, SLOTMAP_MAX_LIVE
-            );
+        if let Err(e) = self.try_reserve(additional) {
+            panic!("Region::reserve: {e}");
         }
-        self.inner.reserve(additional);
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).

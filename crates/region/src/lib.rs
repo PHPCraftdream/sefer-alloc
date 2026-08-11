@@ -86,7 +86,7 @@ mod region;
 mod sync_region;
 
 pub use handle::Handle;
-pub use region::{Iter, IterMut, Region, RegionIdExhaustedError};
+pub use region::{Iter, IterMut, Region, RegionIdExhaustedError, TryReserveError};
 
 // Test-only forwarder (see its own doc comment in `region.rs`): exposes the
 // `region_id`-minting helper to integration tests in `tests/`, which can
