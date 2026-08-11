@@ -1,0 +1,45 @@
+    Finished `bench` profile [optimized] target(s) in 0.90s
+     Running benches\r828_dense_iteration_probe.rs (D:\dev\rust\.cargo-target\release\deps\r828_dense_iteration_probe-f8f752556c7c4947.exe)
+# raw_csv,arm,axis,sample,metric,value
+raw_csv,slotmap_region,iteration,0,time_ns_per_iter,123677
+raw_csv,slotmap_region,churn,0,ops_per_sec,163719711.85330713
+raw_csv,slotmap_region,iteration,1,time_ns_per_iter,124559
+raw_csv,slotmap_region,churn,1,ops_per_sec,164257555.84756896
+raw_csv,slotmap_region,iteration,2,time_ns_per_iter,127446
+raw_csv,slotmap_region,churn,2,ops_per_sec,225835591.68925023
+raw_csv,slotmap_region,iteration,3,time_ns_per_iter,128547
+raw_csv,slotmap_region,churn,3,ops_per_sec,149566257.85222855
+raw_csv,slotmap_region,iteration,4,time_ns_per_iter,132285
+raw_csv,slotmap_region,churn,4,ops_per_sec,177493787.71742988
+raw_csv,dense_slotmap,iteration,0,time_ns_per_iter,13269
+raw_csv,dense_slotmap,churn,0,ops_per_sec,60547348.026156455
+raw_csv,dense_slotmap,iteration,1,time_ns_per_iter,12449
+raw_csv,dense_slotmap,churn,1,ops_per_sec,68823124.56985547
+raw_csv,dense_slotmap,iteration,2,time_ns_per_iter,11842
+raw_csv,dense_slotmap,churn,2,ops_per_sec,62980224.20959818
+raw_csv,dense_slotmap,iteration,3,time_ns_per_iter,12568
+raw_csv,dense_slotmap,churn,3,ops_per_sec,65359477.124183014
+raw_csv,dense_slotmap,iteration,4,time_ns_per_iter,17262
+raw_csv,dense_slotmap,churn,4,ops_per_sec,46099944.680066384
+
+=== Summary (derived from raw samples above) ===
+
+## Iteration axis: time per full iter() over 10k populated → 1k live state
+
+Unit: nanoseconds per complete iter() pass
+
+arm                  | mean       | median     | speedup   
+------------------------------------------------------------
+slotmap_region       | 127303     | 127446     | 1.00x (baseline)
+dense_slotmap        | 13478      | 12568      | 9.45x vs baseline
+
+## Churn axis: insert/remove throughput
+
+Unit: operations (insert+remove) per second
+
+arm                  | mean       | median     | ratio     
+------------------------------------------------------------
+slotmap_region       | 176174581  | 164257556  | 1.00x (baseline)
+dense_slotmap        | 60762024   | 62980224   | 0.345x vs baseline
+
+>>> WARNING: DenseSlotMap shows substantial regression on churn axis (0.345x)

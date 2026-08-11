@@ -1,0 +1,28 @@
+    Finished `bench` profile [optimized] target(s) in 0.86s
+     Running benches\r828_drop_outside_lock_probe.rs (D:\dev\rust\.cargo-target\release\deps\r828_drop_outside_lock_probe-2a3bee1caa5c233d.exe)
+Note: Using SlowDrop with 50μs delay per value
+      Total clear time ≈ 500 ms per sample
+
+# raw_csv,arm,sample,clear_time_ns,contended_blocked_ns
+raw_csv,baseline_clear,0,4786532400,4786545900
+raw_csv,two_phase_clear,0,4905175000,2600
+raw_csv,baseline_clear,1,4963749300,4963761200
+raw_csv,two_phase_clear,1,4961003800,1400
+raw_csv,baseline_clear,2,5002495100,5002504200
+raw_csv,two_phase_clear,2,4689548500,2100
+raw_csv,baseline_clear,3,4778573100,4778585300
+raw_csv,two_phase_clear,3,4909447100,1300
+raw_csv,baseline_clear,4,4716513200,4716525900
+raw_csv,two_phase_clear,4,4621997800,2000
+
+=== Summary (derived from raw samples above) ===
+
+## Clear operation time (10000 values with 50μs Drop delay each)
+
+arm                  | mean (ms)       | median (ms)     | blocked tail (ms)   
+--------------------------------------------------------------------------------
+two_phase_clear      | 4817.43         | 4905.18         | 0.00                
+baseline_clear       | 4849.57         | 4786.53         | 4849.58             
+
+>>> Tail-latency improvement: 2579566.22x
+    PASS: Two-phase reduces contended blocked time by >90% (expected)

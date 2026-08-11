@@ -1,0 +1,46 @@
+    Blocking waiting for file lock on package cache
+    Finished `bench` profile [optimized] target(s) in 1.05s
+     Running benches\r828_batch_guard_probe.rs (D:\dev\rust\.cargo-target\release\deps\r828_batch_guard_probe-68cfe8f86ac37bad.exe)
+# raw_csv,arm,readers,sample,time_ns_per_op
+raw_csv,one_shot,1,0,38.85
+raw_csv,manual_guard,1,0,4.8465625
+raw_csv,closure_wrapper,1,0,3.39
+raw_csv,one_shot,1,1,40.13625
+raw_csv,manual_guard,1,1,4.26171875
+raw_csv,closure_wrapper,1,1,3.364375
+raw_csv,one_shot,1,2,39.94375
+raw_csv,manual_guard,1,2,4.925
+raw_csv,closure_wrapper,1,2,3.19359375
+raw_csv,one_shot,1,3,41.024375
+raw_csv,manual_guard,1,3,5.08703125
+raw_csv,closure_wrapper,1,3,2.66875
+raw_csv,one_shot,1,4,61.365625
+raw_csv,manual_guard,1,4,5.07828125
+raw_csv,closure_wrapper,1,4,4.1728125
+raw_csv,concurrent_manual_guard,8,0,5.26328125
+raw_csv,concurrent_manual_guard,8,1,5.54384765625
+raw_csv,concurrent_manual_guard,8,2,5.32490234375
+raw_csv,concurrent_manual_guard,8,3,5.3630859375
+raw_csv,concurrent_manual_guard,8,4,5.51376953125
+
+=== Summary (derived from raw samples above) ===
+
+## Single-threaded (1 reader): time per 64 lookups
+
+arm                       | mean (ns)    | median (ns)  | ratio vs baseline
+----------------------------------------------------------------------
+manual_guard              | 4.8          | 4.9          | 1.00x (baseline)
+one_shot                  | 44.3         | 40.1         | 9.15x vs baseline
+closure_wrapper           | 3.4          | 3.4          | 0.694x vs baseline
+
+>>> Closure wrapper overhead check: 0.694x vs manual guard
+    PASS: Within noise (expected)
+    One-shot penalty check: 9.15x vs manual guard
+    WARNING: One-shot penalty <10x (expected ~30x per original audit)
+
+## Concurrent (8 readers): manual guard under contention
+
+arm                       | mean (ns)    | median (ns) 
+-------------------------------------------------------
+concurrent_manual_guard   | 5.4          | 5.4         
+    Contention overhead: 1.12x vs single-threaded baseline

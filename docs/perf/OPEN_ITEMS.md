@@ -402,6 +402,19 @@ for completeness.
    >   (the CONDITIONAL-GO recommendation + the 3-condition GO path);
    >   `docs/FEATURE_PROMOTION_STATUS.md` (survey row).
 
+30. **R828 — sefer-region structural levers (P-perf-1/2/4/5).**
+
+   > **Current state**
+   > - **Status:** measured, all DEFER except P-perf-2 (GO as opt-in).
+   > - **Current number/verdict:**
+   >   - **P-perf-1 (DenseRegion):** Iteration win is real (9.45× faster, 13.5µs vs 127.3µs mean per pass at 100k→10k live scale), churn regression is also real (2.9× slower, 60.8M vs 176.2M ops/sec). Tradeoff confirmed, not a free upgrade.
+   >   - **P-perf-2 (batch/guard API):** Closure wrapper shows no reliable overhead vs manual guard (both single-digit-ns, within noise at this scale). One-shot penalty confirmed at 9.15× (materially smaller than the original audit's cited 31.6× or the first measurement attempt's DCE-inflated 59.3× — see report's zero-trust correction note). GO for opt-in convenience implementation; re-measure under a realistic workload before citing a multiplier in user docs.
+   >   - **P-perf-4 (drop outside write-lock):** Real, large, reproducible benefit once the probe's race bug was fixed — contending reader blocked for the FULL baseline clear (~4,849.6ms mean) vs ~0.0019ms under two-phase. Semantic design questions (region_id/generation survival across the swap, panic safety, landing the fix inside `SyncRegion::clear()` itself) remain open and are the actual blocker for implementation, not the measurement.
+   >   - **P-perf-5 (Sharding):** Not remeasured per task scope (defers to confirmed production bottleneck). Open design fork (Shape A vs B) unresolved.
+   > - **Next trigger:** P-perf-1: production bottleneck on holey iteration identified; open design questions (handle identity, generic backing) resolved. P-perf-2: implementation task filed; naming convention decided; one-shot ratio re-measured under a realistic consumer workload. P-perf-4: region_id/generation survival + panic safety + landing-inside-`clear()` semantic design completed. P-perf-5: production bottleneck on concurrent readers identified; design fork resolved.
+   > - **Evidence:** `docs/perf/R828_STRUCTURAL_LEVERS_GATE.md` (full report with verdicts and a zero-trust correction note documenting two methodology bugs found and fixed during review — a missing `black_box` that produced a fabricated "0ns/infinite speedup" result for P-perf-1, and a synchronization race that made the first P-perf-4 measurement meaningless); `docs/perf/_raw_r828_dense_iteration.log`, `R828_DENSE_ITERATION_summary.csv` (P-perf-1 data); `docs/perf/_raw_r828_batch_guard.log`, `R828_BATCH_GUARD_summary.csv` (P-perf-2 data); `docs/perf/_raw_r828_drop_outside_lock.log`, `R828_DROP_OUTSIDE_LOCK_summary.csv` (P-perf-4 data). Design docs: `docs/perf/SEFER_REGION_DENSE_AND_SHARDED_DESIGN.md`, `docs/perf/SEFER_REGION_BATCH_READ_API_DESIGN.md`. Harness commit: `54bfe96f7ae4649ae9813cc4b6908fae1d40aec0`.
+   Full history: task #828 (this measurement round; no prior rounds). The harness's own first-draft measurement attempt (commit `efed284`, amended out) is not a valid citation — see the report's zero-trust correction note.
+
 29. **R14-6 / R20-2 — `large-reserved-capacity` CONDITIONAL-GO, not promoted;
     owner entry added R30-14 (task #463) to close a zero-owner gap.**
 

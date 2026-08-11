@@ -1,0 +1,3 @@
+arm,clear_mean_ns,clear_median_ns,blocked_mean_ns,blocked_median_ns,commit_sha
+baseline_clear,4849572620,4786532400,4849584500,4786545900,54bfe96f7ae4649ae9813cc4b6908fae1d40aec0
+two_phase_clear,4817434440,4905175000,1880,2000,54bfe96f7ae4649ae9813cc4b6908fae1d40aec0
