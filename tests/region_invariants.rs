@@ -72,8 +72,10 @@ fn get_mut_mutates_in_place() {
     assert_eq!(r.get(h).map(String::as_str), Some("abc"));
 }
 
-/// I5 (drop-once): a drop-counting payload is dropped exactly once — on remove
-/// or on `Region` drop — never twice, never leaked.
+/// I5 (drop-once): a drop-counting payload is dropped exactly once. A successful
+/// `remove` transfers ownership to the caller without calling `Drop`; a value still
+/// owned when a normally-destroyed `Region` drops is dropped. The test never
+/// duplicates or internally forgets values.
 #[test]
 fn drops_each_value_exactly_once() {
     let counter = Rc::new(Cell::new(0));

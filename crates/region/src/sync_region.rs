@@ -39,11 +39,14 @@ use crate::{Handle, Region};
 /// **Poison recovery guarantees container integrity only, not operation completion.**
 /// The recovered `Region` has no memory corruption, but an interrupted operation
 /// may have left partial effects visible: a panicking `T::Drop` during `clear()`
-/// leaves later values live (a partial clear, not a full one), and a panicked
-/// multi-op `write()` transaction leaves whatever partial effects it already
-/// applied. Callers whose `T` carries cross-value invariants, or whose
-/// multi-op transactions need all-or-nothing semantics, must implement their
-/// own signaling — this crate provides none beyond what's documented here.
+/// leaves the region partially cleared -- container-valid and reusable, but the
+/// exact set of surviving values is an unspecified implementation detail of the
+/// underlying `slotmap` version's unwind cleanup, not a stable contract (see
+/// `Region::clear`'s own documentation), and a panicked multi-op `write()`
+/// transaction leaves whatever partial effects it already applied. Callers whose
+/// `T` carries cross-value invariants, or whose multi-op transactions need
+/// all-or-nothing semantics, must implement their own signaling — this crate
+/// provides none beyond what's documented here.
 ///
 /// ## Reentrancy
 ///

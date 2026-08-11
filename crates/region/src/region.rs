@@ -127,9 +127,10 @@ pub fn dbg_try_mint_region_id(
 ///   this even after wrap.
 /// - **I4 — accounting:** [`len`](Self::len) equals the number of live entries
 ///   and [`is_empty`](Self::is_empty) agrees.
-/// - **I5 — drop-once:** every live value is dropped exactly once — on
-///   `remove` (returned to the caller) or on `Region` drop — never twice,
-///   never leaked. `slotmap` owns the storage and therefore the drops.
+/// - **I5 — drop-once:** every live value is dropped exactly once. Successful
+///   `remove` transfers ownership to the caller without calling `Drop`; values
+///   still owned when a normally-destroyed `Region` drops are dropped. The crate
+///   never duplicates or internally forgets values.
 /// - **I7 — instance isolation:** a [`Handle<T>`] resolves only through the
 ///   `Region<T>` instance that minted it. Every accessor
 ///   ([`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),

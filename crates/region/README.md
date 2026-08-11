@@ -77,8 +77,10 @@ assert!(region.get(h).is_none());
   Memory safety is never affected.
 - **I4 — accounting:** `len()` equals the number of live entries; `is_empty()`
   agrees.
-- **I5 — drop-once:** every live value is dropped exactly once — on `remove`
-  (returned to the caller) or on `Region` drop — never twice, never leaked.
+- **I5 — drop-once:** every live value is dropped exactly once. Successful
+  `remove` transfers ownership to the caller without calling `Drop`; values still
+  owned when a normally-destroyed `Region` drops are dropped. The crate never
+  duplicates or internally forgets values.
 - **I7 — instance isolation:** a `Handle<T>` resolves only through the
   `Region<T>` instance that minted it. Every accessor (`get`, `get_mut`,
   `remove`, `contains`) stamps its `region_id` at construction and checks it
@@ -92,7 +94,9 @@ assert!(region.get(h).is_none());
 access. It recovers from lock poison rather than propagating it (a panicked op
 leaves the slotmap structurally intact). Poison recovery guarantees container
 integrity only — an interrupted operation may have left partial effects visible
-(e.g., a panicking `T::Drop` during `clear()` leaves later values live).
+(e.g., a panicking `T::Drop` during `clear()` leaves the region partially cleared,
+with the exact surviving set an unspecified `slotmap`-version-dependent detail,
+not a stable contract).
 
 ```rust
 use sefer_region::SyncRegion;
