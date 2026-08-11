@@ -68,6 +68,15 @@
 #![warn(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(not(target_has_atomic = "ptr"))]
+compile_error!(
+    "sefer-region requires a target with pointer-width atomic read-modify-write \
+     support (target_has_atomic = \"ptr\") for its process-wide region_id counter \
+     (Region::new/with_capacity use AtomicUsize::fetch_update). This target does not \
+     provide it — e.g. riscv32imc (no `A` extension) is NOT supported despite any \
+     earlier documentation suggesting otherwise."
+);
+
 mod handle;
 mod region;
 

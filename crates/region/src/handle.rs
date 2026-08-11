@@ -19,7 +19,7 @@ use core::num::NonZeroUsize;
 /// `NonZeroUsize` preserves the niche optimization for `Option<Handle<T>>`.
 /// `region_id` is pointer-width (not a fixed 64 bits) so this type stays
 /// buildable on no_std targets without 64-bit atomics (e.g.
-/// `thumbv7em-none-eabi`, `riscv32imc`/`riscv32imac`) — every such target
+/// `thumbv7em-none-eabi`, `i686-*`) — every such target
 /// still has pointer-width atomics.
 ///
 /// [`Region`]: crate::Region
