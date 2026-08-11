@@ -50,9 +50,14 @@ struct NonSendType {
 // (Not explicitly implementing !Send; the auto-trait rules make it so.)
 
 /// A type that is NOT Sync (interior mutability without synchronization).
-#[cfg(feature = "std")]
+///
+/// `core::cell::Cell`, not `std::cell::Cell` — this assertion does not need
+/// `alloc`/`std` at all, so it (and the raw-pointer assertion below) run
+/// unconditionally, giving `assert_send_sync` real users even under
+/// `--no-default-features` (only the `Rc`-based assertions below genuinely
+/// need `alloc`, so only those stay `#[cfg(feature = "std")]`-gated).
 struct NonSyncType {
-    _cell: std::cell::Cell<u32>,
+    _cell: core::cell::Cell<u32>,
 }
 
 /// Verify Handle<T> is Send+Sync even when T is !Send.
@@ -68,11 +73,13 @@ const _: () = assert_send_sync::<Handle<NonSendType>>();
 /// If Handle<T>'s implementation ever changes such that it's no longer
 /// unconditionally Sync (e.g., by changing the PhantomData to `PhantomData<T>`),
 /// this will fail to compile.
-#[cfg(feature = "std")]
+///
+/// Unconditional (needs neither `alloc` nor `std`): see `NonSyncType`'s doc.
 const _: () = assert_send_sync::<Handle<NonSyncType>>();
 
 /// Verify Handle<T> is Send+Sync even when T is neither Send nor Sync.
-#[cfg(feature = "std")]
+///
+/// Unconditional: `*const u32` is `!Send + !Sync` in `core`, no `alloc`/`std` needed.
 const _: () = assert_send_sync::<Handle<*const u32>>();
 
 /// Verify Handle<T> is Send+Sync even when T contains both !Send and !Sync components.
