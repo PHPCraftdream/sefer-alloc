@@ -130,7 +130,7 @@ pub fn dbg_try_mint_region_id(
 /// - **I5 — drop-once:** every live value is dropped exactly once — on
 ///   `remove` (returned to the caller) or on `Region` drop — never twice,
 ///   never leaked. `slotmap` owns the storage and therefore the drops.
-/// - **I6 — instance isolation:** a [`Handle<T>`] resolves only through the
+/// - **I7 — instance isolation:** a [`Handle<T>`] resolves only through the
 ///   `Region<T>` instance that minted it. Every accessor
 ///   ([`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
 ///   [`contains`](Self::contains)) stamps its `region_id` at construction and

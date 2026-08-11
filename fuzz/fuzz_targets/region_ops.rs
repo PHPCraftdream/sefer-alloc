@@ -2,7 +2,7 @@
 //!
 //! Interprets the fuzz input as a sequence of ops against a `Region<u64>` and
 //! checks the SAME reference-model invariants as `tests/differential.rs`
-//! (I1–I6 from `docs/INVARIANTS.md`):
+//! (I1–I7 from `docs/INVARIANTS.md`):
 //!
 //! - I1: a fresh handle resolves to the inserted value.
 //! - I2: a removed handle is `None` for roughly `2^31` reuse cycles of that
@@ -11,7 +11,7 @@
 //!   `2^31` reuse cycles of that slot. After wrap it may alias a later value.
 //! - I4: `len()` tracks the live count exactly.
 //! - I5: drop-once — at run end, drops == inserts (no double-free, no leak).
-//! - I6: instance isolation — a handle minted by a *different* `Region`
+//! - I7: instance isolation — a handle minted by a *different* `Region`
 //!   instance is rejected (`None`/`false`), never resolves as if it were
 //!   local. Checked via `Op::CrossRegion`, a cheap occasional branch that
 //!   spins up a scratch second `Region` and probes it with a handle from the
@@ -88,7 +88,7 @@ enum Op {
     Get(usize),
     GetMut(usize, u64),
     Clear,
-    /// I6 probe: pick a live handle from the primary region (by index modulo
+    /// I7 probe: pick a live handle from the primary region (by index modulo
     /// live count) and check it against a fresh scratch `Region` — every
     /// accessor must reject it (`None`/`false`), never resolve, never mutate
     /// anything in the scratch region. The scratch region is local to this
@@ -205,7 +205,7 @@ fuzz_target!(|data: &[u8]| {
                     // A fresh scratch region — its first insert commonly
                     // produces the same raw DefaultKey as the primary
                     // region's first insert, which is exactly the aliasing
-                    // I6 must reject even when the raw key collides.
+                    // I7 must reject even when the raw key collides.
                     let mut scratch: Region<Payload> = Region::new();
                     let scratch_h = scratch.insert(Payload {
                         id: u64::MAX,
@@ -215,21 +215,21 @@ fuzz_target!(|data: &[u8]| {
                     assert_eq!(
                         scratch.get(h).map(|p| p.id),
                         None,
-                        "I6: handle from a different Region must not resolve via get"
+                        "I7: handle from a different Region must not resolve via get"
                     );
                     assert_eq!(
                         scratch.get_mut(h).map(|p| p.id),
                         None,
-                        "I6: handle from a different Region must not resolve via get_mut"
+                        "I7: handle from a different Region must not resolve via get_mut"
                     );
                     assert!(
                         !scratch.contains(h),
-                        "I6: handle from a different Region must not be `contains`ed"
+                        "I7: handle from a different Region must not be `contains`ed"
                     );
                     assert_eq!(
                         scratch.remove(h).map(|p| p.id),
                         None,
-                        "I6: handle from a different Region must not be removable"
+                        "I7: handle from a different Region must not be removable"
                     );
 
                     // The scratch region's own handle is undisturbed by the
@@ -237,7 +237,7 @@ fuzz_target!(|data: &[u8]| {
                     assert_eq!(
                         scratch.get(scratch_h).map(|p| p.id),
                         Some(u64::MAX),
-                        "I6: scratch region's own handle must still resolve"
+                        "I7: scratch region's own handle must still resolve"
                     );
 
                     // Drop the scratch region explicitly so its one payload's

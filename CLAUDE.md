@@ -883,5 +883,5 @@ Core instructions, mandatory for all code in this repository. They
   above) are both precedents already in this file for declining exactly this
   kind of retroactive cleanup.
 - Do not bump project or dependency versions without an explicit request.
-- Verification-first: every invariant (I1–I6) is covered by proptest and/or
+- Verification-first: every invariant (I1–I7) is covered by proptest and/or
   unit test; the core is run under miri.

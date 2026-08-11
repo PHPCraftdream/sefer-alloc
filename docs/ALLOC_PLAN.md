@@ -131,7 +131,7 @@ One substrate, two faces — so we never choose between "safe handle store" and
 
 ## 4. New invariants (the allocator's safety spec)
 
-Lifted into [`INVARIANTS.md`](INVARIANTS.md) when P8 lands. In addition to I1–I6
+Lifted into [`INVARIANTS.md`](INVARIANTS.md) when P8 lands. In addition to I1–I7
 (which continue to hold for the Handle face):
 
 - **M1 — validity:** every pointer returned by `alloc(layout)` is non-null

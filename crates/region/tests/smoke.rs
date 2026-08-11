@@ -143,7 +143,7 @@ fn region_handle_from_different_instance_is_rejected() {
     );
 }
 
-/// I6 (`get_mut`): a handle from a *different* `Region<T>` instance must be
+/// I7 (`get_mut`): a handle from a *different* `Region<T>` instance must be
 /// rejected by `get_mut` exactly like `get`/`remove`/`contains` already are
 /// — this is the guard-place F5 flagged as untested (deleting the
 /// `region_id` check inside `get_mut` left the crate's full test suite
@@ -183,7 +183,7 @@ fn region_get_mut_from_different_instance_is_rejected() {
     assert_eq!(region_b.get(h_b).copied(), Some(200u32));
 }
 
-/// I6 churn sanity: a handle from a `Region` that has been dropped must be
+/// I7 churn sanity: a handle from a `Region` that has been dropped must be
 /// rejected by a freshly-constructed `Region`, under ordinary (non-overflow)
 /// churn — i.e. `region_id` allocation does not accidentally recycle IDs
 /// across an ordinary drop/recreate cycle in the same process.
@@ -354,7 +354,7 @@ mod sync_tests {
         assert_eq!(sr.len(), 2); // 42 inserted before panic + 99 just now
     }
 
-    /// I6 on `SyncRegion`: a handle from a *different* `SyncRegion` instance
+    /// I7 on `SyncRegion`: a handle from a *different* `SyncRegion` instance
     /// must be rejected — mirrors `region_handle_from_different_instance_is_rejected`
     /// (single-threaded `Region`) but exercises `SyncRegion`'s own surface:
     /// the one-shot convenience methods (`get_cloned`, `contains`, `remove`)

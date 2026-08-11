@@ -59,7 +59,7 @@ one of the other type. If `DenseRegion<T>` reuses `Handle<T>` directly,
 its `region_id` counter must draw from the SAME `NEXT_REGION_ID` static
 in `region.rs` (not a second independent counter) — two independent
 `AtomicU64` counters both starting at 1 would let a `Region<T>` and a
-`DenseRegion<T>` mint colliding `(key, region_id)` pairs, defeating I6
+`DenseRegion<T>` mint colliding `(key, region_id)` pairs, defeating I7
 across the type boundary. If `DenseRegion<T>` instead gets its own
 handle type (e.g. `DenseHandle<T>`), the type system already prevents
 cross-type confusion the way `Handle<Foo>` vs `Handle<Bar>` does today,

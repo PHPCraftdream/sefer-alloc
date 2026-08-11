@@ -9,7 +9,7 @@ If you are new to the codebase, start with:
 - [`README.md`](README.md) — feature overview and quick-start examples
 - [`docs/DESIGN.md`](docs/DESIGN.md) — architectural decisions and data-layout
   rationale
-- [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the formal invariants (I1–I6)
+- [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the formal invariants (I1–I7)
   that every PR must preserve
 - [`docs/ALLOC_PLAN.md`](docs/ALLOC_PLAN.md) — byte-allocator roadmap
 

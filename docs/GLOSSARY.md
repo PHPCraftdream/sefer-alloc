@@ -11,7 +11,7 @@ Each row is: ID family → one-line meaning → where to read more.
 
 | ID family | Meaning | Read more |
 |---|---|---|
-| **I1–I6** | Region/Handle-face invariants (I1 resolution, I2 tombstone, I3 bounded stale-handle detection, I4 accounting, I5 drop-once ownership, I6 slot reuse and bounded growth). | [INVARIANTS.md](INVARIANTS.md) |
+| **I1–I7** | Region/Handle-face invariants (I1 resolution, I2 tombstone, I3 bounded stale-handle detection, I4 accounting, I5 drop-once ownership, I6 slot reuse and bounded growth, I7 instance isolation). | [INVARIANTS.md](INVARIANTS.md) |
 | **M1–M11** | Malloc-face (allocator) invariants: M1 validity, M2 no double-free/UAF, M3 no-overlap, M4 alignment/size fidelity, M5 reentrancy-freedom, M6 OS-return (decommit), M7 owner routing, M8 generational coherence, M9–M11 cross-thread reclamation/epoch obligations. | [INVARIANTS.md](INVARIANTS.md), [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) |
 | **Phase 8–78** | The allocator build-out phases (Phase 8 segment substrate, 10 cross-thread free, 11 `GlobalAlloc` face, 35 decommit, 78 NUMA). Numbers are chronological milestones, not a version. | [ALLOC_PLAN.md](ALLOC_PLAN.md), [PLAN.md](PLAN.md) |
 | **3b-I / 3b-II** | The two legacy concurrent-tier sub-phases: 3b-I (`arc-swap` RCU, zero-`unsafe`) and 3b-II (`crossbeam-epoch` per-slot atomics, the confined `hand` organ). | [PLAN.md](PLAN.md), `src/concurrent/` |

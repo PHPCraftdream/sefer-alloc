@@ -23,7 +23,7 @@
 //! `false`, no panic) by every *other* `Region<T>` of the same type, even one
 //! whose slotmap key happens to collide with the handle's own key.
 //!
-//! ## Invariants upheld (I1–I6)
+//! ## Invariants upheld (I1–I7)
 //!
 //! - **I1 — resolution:** a fresh handle resolves via [`Region::get`] to the
 //!   inserted value until it is [`Region::remove`]d.
@@ -40,7 +40,7 @@
 //!   [`Region::is_empty`] agrees.
 //! - **I5 — drop-once:** every live value is dropped exactly once — on `remove`
 //!   (returned to the caller) or on `Region` drop — never twice, never leaked.
-//! - **I6 — instance isolation:** a `Handle<T>` resolves only through the
+//! - **I7 — instance isolation:** a `Handle<T>` resolves only through the
 //!   [`Region<T>`] instance that minted it. Every accessor checks the
 //!   handle's `region_id` against the region's own before touching the
 //!   backing slotmap; a mismatch is treated exactly like a stale handle. Two

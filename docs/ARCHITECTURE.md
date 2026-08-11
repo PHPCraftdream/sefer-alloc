@@ -83,7 +83,7 @@ OS-backed segment allocator with its own Cartographer/Hand tiers:
   long-running deployment set.
 
 Full safety invariants for both APIs: [INVARIANTS.md](INVARIANTS.md)
-(I1-I6 for `Region`/`Handle`, M1-M8 for `SeferAlloc` -- the M-series
+(I1-I7 for `Region`/`Handle`, M1-M8 for `SeferAlloc` -- the M-series
 invariants describe `SeferAlloc`'s own segment substrate only and do not
 apply to `Region<T>`, which has none).
 
@@ -591,7 +591,7 @@ context and caveats.
 |---|---|
 | [DESIGN.md](DESIGN.md) | Cartographer / Membrane / Hand model; the Region<T> dense generational layout; where `unsafe` lives and why |
 | [ALLOC_PLAN.md](ALLOC_PLAN.md) | Phase 8-13 spec: the four showstoppers and how they are dissolved; architecture descent diagram; per-phase contracts |
-| [INVARIANTS.md](INVARIANTS.md) | I1-I6 (Region/Handle face) and M1-M8 (alloc face); why handles, not pointers |
+| [INVARIANTS.md](INVARIANTS.md) | I1-I7 (Region/Handle face) and M1-M8 (alloc face); why handles, not pointers |
 | [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) | M6 decommit policy; the proof that epoch reclamation (M11) is not needed under Variant-2 cross-thread free |
 | [PHASE_NUMA_DESIGN.md](PHASE_NUMA_DESIGN.md) | NUMA OS seam; integration points; migration strategy; testing without real multi-socket hardware |
 | [CROSS_THREAD_STATE_MACHINES.md](CROSS_THREAD_STATE_MACHINES.md) | Formal state-machine spec for SM-BLOCK and SM-SEGMENT; actor rules; loom verification target |
@@ -599,4 +599,4 @@ context and caveats.
 | [ALLOC_BENCH.md](ALLOC_BENCH.md) | Single-thread and MT benchmark results; OPT-E large cache; heap-core pinning honest verdict; all numbers in context |
 | [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md) | Flamegraph analysis across 4 workloads; 6 OPT candidates (A-H) with estimated impact |
 | [DURABILITY.md](DURABILITY.md) | Ultra-long-run counter inventory: every monotonic/wrapping/saturating cursor with its width, wrap arithmetic, verdict, and boundary test — and the rule for adding a new one |
-| [GLOSSARY.md](GLOSSARY.md) | Identifier glossary: decodes the ID families in source comments (I1-I6, M1-M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
+| [GLOSSARY.md](GLOSSARY.md) | Identifier glossary: decodes the ID families in source comments (I1-I7, M1-M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |

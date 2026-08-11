@@ -15,7 +15,7 @@
 //! `slotmap::SlotMap<DefaultKey, T>` and [`Handle<T>`] is a `#[repr(C)]`
 //! struct of three fields — a `slotmap::DefaultKey`, a `region_id:
 //! NonZeroUsize` that identifies which `Region` instance minted the handle
-//! (see I6 below), and a `PhantomData<fn() -> T>` — so handles stay
+//! (see I7 below), and a `PhantomData<fn() -> T>` — so handles stay
 //! generic-over-`T` and typed (which raw slotmap keys are not) while also
 //! rejecting cross-`Region` aliasing. `slotmap`'s `unsafe` owns the
 //! generational layout — the free list, generation bump on

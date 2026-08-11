@@ -35,11 +35,19 @@ green.
   `tests/freelist_reuse.rs`. Note: `slotmap` does not physically compact
   — tombstone slots remain in the backing store; I6 guarantees only reuse
   and bounded growth, not physical density.
+- **I7 — instance isolation.** A `Handle<T>` resolves only through the
+  `Region<T>` instance that minted it. Every accessor (`get`, `get_mut`,
+  `remove`, `contains`) stamps its `region_id` at construction and checks
+  it before touching the backing slotmap; a handle from a *different*
+  `Region<T>` is rejected exactly like a stale handle (`None`/`false`),
+  even when its raw `DefaultKey` collides with a live key in that region.
+  Verified in `tests/region_invariants.rs` and the
+  `fuzz_targets/region_ops.rs` `Op::CrossRegion` case.
 
 ## Allocator invariants (Phase 8+, `alloc-core`)
 
 These hold for the segment substrate / allocator faces (`AllocCore` and the
-future `GlobalAlloc` face). I1–I6 continue to hold for the Handle face. Spec
+future `GlobalAlloc` face). I1–I7 continue to hold for the Handle face. Spec
 source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
 
 - **M1 — validity.** Every pointer returned by `alloc(layout)` is non-null

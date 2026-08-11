@@ -1504,7 +1504,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 |---|---|
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How to attach the allocator to a project + the `LargeCacheConfig` builder (budget / decay period / decay rate / headroom / mode) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 30-minute end-to-end technical tour |
-| [`docs/INVARIANTS.md`](docs/INVARIANTS.md) | The I1–I6 (Region) and M1–M8 (Malloc) invariants |
+| [`docs/INVARIANTS.md`](docs/INVARIANTS.md) | The I1–I7 (Region) and M1–M8 (Malloc) invariants |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Cartographer / Membrane / Hand model for `Region<T>` |
 | [`docs/ALLOC_PLAN.md`](docs/ALLOC_PLAN.md) | Detailed Phase 8+ allocator plan |
 | [`docs/PHASE35_DECOMMIT_DESIGN.md`](docs/PHASE35_DECOMMIT_DESIGN.md) | M6 decommit + why no epoch reclamation is needed |
@@ -1517,7 +1517,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/PROFILE_FLAMEGRAPHS.md`](docs/PROFILE_FLAMEGRAPHS.md) | Flamegraph profiling report (4 scenarios, 6 optimisation candidates) |
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
-| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I6, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
+| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I7, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
 | [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design + **implemented** (R31-10, task #474) explicit, caller-driven `SeferAlloc::trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve; measured a real 128.0 MiB RSS win during idle in [`docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`](docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md) |
 | [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no statistically distinguishable effect at this scale — the mechanism fires identically in both arms (`decommit_calls_total=40` in both), so this workload does not separate them; the null is underpowered (MDE ≈19% of the mean), not a confirmed absence of effect (§0.1/§0.2, corrected 2026-07-30) |
 

@@ -285,6 +285,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered",
     ),
     (
+        "crates/region/src/region.rs::dbg_try_mint_region_id",
+        "test-only forwarder to the real region_id-minting CAS logic (task #813), but it takes an explicit `&AtomicUsize` parameter and never touches the real `NEXT_REGION_ID` process-wide static -- the only thing it mutates is whatever local counter the caller constructed and owns (integration tests use a fresh stack-local AtomicUsize per test), so there is no shared/allocator state and no soundness relevance",
+    ),
+    (
         "src/alloc_core/alloc_core_core_diag.rs::dbg_reset_hash_remove_max_scan_steps",
         "resets a diagnostic high-water counter only; no allocator metadata, no soundness relevance",
     ),
