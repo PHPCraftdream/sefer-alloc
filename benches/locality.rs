@@ -306,7 +306,7 @@ fn payload(i: u64) -> Payload {
 fn build_region(n: usize) -> Region<Payload> {
     let mut r = Region::with_capacity(n);
     for i in 0..n {
-        r.insert(payload(i as u64));
+        let _ = r.insert(payload(i as u64));
     }
     r
 }

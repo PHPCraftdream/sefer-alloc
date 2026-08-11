@@ -62,7 +62,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo clippy -p sefer-region --all-features --all-targets -- -D warnings
       - run: cargo clippy -p sefer-region --no-default-features --all-targets -- -D warnings
-      - run: cargo doc -p sefer-region --all-features --no-deps -- -D warnings
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p sefer-region --all-features --no-deps
       # F15's "host tests under --no-default-features" -- the existing
       # test-workspace job only cross-BUILDS this configuration for the
       # bare-metal target; it never TESTS it on a host target with std
