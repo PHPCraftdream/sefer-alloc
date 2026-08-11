@@ -26,6 +26,12 @@ slotmap = { version = "1", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"
+# sefer-region does not use the loom or kani build-time cfgs (those are workspace-
+# only, for the main crate's concurrency harnesses and proof harnesses), so we
+# inherit the workspace's unexpected_cfgs policy with an empty check-cfg.
+# The docsrs cfg is well-known (recognized by docs.rs builds) and does not need
+# to be listed here.
+unexpected_cfgs = { level = "warn", check-cfg = [] }
 
 [dev-dependencies]
 # Fixed-iteration bench harness (dev-only — never reaches published

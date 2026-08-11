@@ -988,8 +988,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
+        with:
+          targets: thumbv7em-none-eabi
       - run: cargo check --all-features
       - run: cargo test --no-run --all-features
+      # sefer-region-specific MSRV checks: make the no_std path and all-features
+      # configuration explicitly verified on the pinned 1.88 toolchain (see
+      # task #823 finding for why this is needed beyond the workspace-wide
+      # checks above).
+      - run: cargo check -p sefer-region --all-features
+      - run: cargo check -p sefer-region --no-default-features
+      - run: cargo test -p sefer-region --no-run --all-features
+      - run: cargo check -p sefer-region --no-default-features --target thumbv7em-none-eabi
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
