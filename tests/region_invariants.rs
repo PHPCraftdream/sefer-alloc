@@ -42,7 +42,7 @@ fn insert_get_remove_keeps_others_valid() {
     assert_eq!(r.get(c), Some(&30));
 
     // Removing the middle handle must not disturb the others (I1 preserved
-    // for survivors — the dense store stays compact).
+    // for survivors — tombstone holes remain; storage does NOT compact).
     assert_eq!(r.remove(b), Some(20));
     assert_eq!(r.len(), 2);
     assert_eq!(r.get(b), None); // I2

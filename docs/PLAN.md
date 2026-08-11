@@ -85,9 +85,13 @@ epoch tier (3b-II) and the byte mode (4).
 Data layout (single-threaded core): the generational layout is the one
 `slotmap` gives us — a stable `slots` array (`handle.index` indexes it; each
 slot carries a generation and is either occupied or vacant), a `values`
-storage for live entries, and a freelist head. All operations are
-`O(1)`; freed slots are reused by insert and capacity is bounded by the
-historical high-water mark. (We adopt this rather than re-implement it.)
+storage for live entries, and a freelist head. Lookup/remove are `O(1)`;
+insertion is amortized `O(1)`; iteration and `clear()` are linear in the
+slot-array length (tombstone holes are walked, not skipped via compaction).
+Freed slots are reused by insert; repeated churn within already-allocated
+slots does not cause further capacity growth (though geometric growth on
+expansion can exceed the historical live-count high-water mark). (We adopt
+this rather than re-implement it.)
 
 ## 3. Verification methodology (first-class)
 
@@ -150,6 +154,13 @@ the objective, tool-checkable condition for "done".
   clippy, test, miri) — deferred until a remote exists.
 
 ### Phase 1 — Single-threaded engine: adopt `slotmap` + typed `Region<T>`/`Handle<T>` membrane · task #120
+
+> **NOTE (2026-08-11, task #816).** The `Handle<T>` design described below predates the
+> F2 identity redesign (commit `9741388`, task #802). The current design adds
+> `region_id: NonZeroUsize` as a third field to `Handle<T>` for cross-instance
+> isolation (invariant I7 in `docs/INVARIANTS.md`). See `crates/region/src/handle.rs`
+> for the actual current layout. The rest of this phase's plan remains valid as
+> historical context.
 
 - **Goal:** the typed core — zero `unsafe` of our own, miri-clean — built by
   adopting `slotmap` as the engine and wrapping it in a thin typed membrane.
@@ -476,14 +487,19 @@ remote-free depth, 7c/7d the locality apex and the parallel byte tier.
 - **`mimalloc` stays resocks5's global allocator.** Phase 4 (`ByteRegion` +
   `GlobalAlloc`) is honest research to honour the design, NOT a goal — it may
   never beat `mimalloc`, and that is an acceptable, documented outcome.
-- **Dense-slotmap layout** (values in a compact `Vec<T>`, slots index into it)
-  over a sparse "array with holes" — gives cache-friendly iteration and
-  compaction-by-construction. Now obtained from `slotmap` rather than
-  hand-built.
+- **`slotmap::SlotMap` layout** (values held in a slot array indexed by
+  generation-checked key) over a hand-rolled generational arena — battle-tested
+  and miri-clean out of the box. Note: plain `SlotMap` is **NOT** dense/compacting
+  (tombstone holes remain after `remove`; iteration/clear are linear in
+  slot-array length, not live count) — an earlier design intent named
+  `DenseSlotMap`-style compaction here, but Phase 1 adopted plain `SlotMap` for
+  simplicity/availability; a `DenseRegion<T>` alternative for holey-iteration-
+  heavy workloads is now a tracked future design (see
+  `docs/perf/SEFER_REGION_DENSE_AND_SHARDED_DESIGN.md`).
 - **Handles store `index + generation`**, with `PhantomData<fn() -> T>` so a
   handle is typed yet unconditionally `Copy + Send + Sync` and covariant in `T`.
-  In the `slotmap`-engine core, `Handle<T>` is a newtype over
-  `slotmap::DefaultKey` + `PhantomData<fn() -> T>`.
+  (Current design: `Handle<T>` also carries `region_id: NonZeroUsize` for
+  cross-instance isolation — see the Phase 1 note above.)
 - **`#![forbid(unsafe_code)]` for the upper world** — our own `unsafe` is
   admitted only in the epoch tier (3b-II) and byte mode (4), each behind a
   feature and confined to one module. (The single-threaded core has zero
