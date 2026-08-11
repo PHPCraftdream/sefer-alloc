@@ -1,21 +1,38 @@
 // region_new_contention_gate.rs
 //
 // Measures Region::new() throughput under multi-threaded contention on the
-// shared NEXT_REGION_ID atomic (post-#813 fetch_update mechanism), with a
-// baseline arm that isolates contention cost from the rest of Region::new().
+// shared NEXT_REGION_ID atomic (post-#813 fetch_update mechanism), with two
+// baseline arms that separate the two costs conflated by a naive single-baseline
+// comparison: (a) cache-line contention on a SHARED atomic, and (b) the cost of
+// the fetch_update-based CAS retry loop itself vs. a plain fetch_add (#813
+// changed the primitive AND introduced sharing at the same time — a baseline
+// that only varies "shared vs local" cannot tell you which one a given delta
+// belongs to).
 //
-// Methodology: barrier-aligned start, fixed work (not fixed-duration), two arms:
-//   - shared_atomic: real load — calls Region::<u64>::new() repeatedly
-//   - baseline_local_atomic: approximates Region::new() without contention
-//     (one local AtomicUsize fetch_add + one SlotMap allocation per iteration)
+// Methodology: barrier-aligned start, fixed work (not fixed-duration), three arms:
+//   - shared_atomic: real load — calls Region::<u64>::new() repeatedly (shared
+//     NEXT_REGION_ID, fetch_update/CAS-loop primitive)
+//   - shared_fetch_add: isolates cache-line contention alone — a SHARED AtomicUsize,
+//     but fetch_add (not fetch_update), so the primitive matches baseline_local_atomic
+//     and only "shared vs local" varies between this arm and that one
+//   - baseline_local_atomic: no contention at all — a thread-LOCAL AtomicUsize with
+//     fetch_add, so the primitive matches shared_fetch_add and only "shared vs local"
+//     varies between that arm and this one
+//
+// Reading the three arms together: (shared_fetch_add vs baseline_local_atomic) isolates
+// pure cache-line contention cost (same primitive, different sharing); (shared_atomic vs
+// shared_fetch_add) isolates the CAS-retry-loop-vs-xadd cost (same sharing, different
+// primitive) — exactly what #813 changed. Neither single baseline alone can separate these.
 //
 // Output format: RAW per-sample CSV first, THEN derived summary.
 // This is a gate harness, not a permanent benchmark — it measures a specific
-// correctness/performance question for task #827.
+// correctness/performance question for task #827 (extended per the #832 closing
+// review's F-C6 finding, which found the original two-arm design conflated the two
+// costs above).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Barrier;
+use std::sync::{Arc, Barrier};
 use std::time::Instant;
 
 use sefer_region::Region;
@@ -41,7 +58,7 @@ fn main() {
     // Raw sample: (arm_name, thread_count, sample_index, total_ops, wall_ns, ops_per_sec)
     let mut raw_data: Vec<(String, usize, usize, u64, u64, f64)> = Vec::new();
 
-    for &arm_name in &["shared_atomic", "baseline_local_atomic"] {
+    for &arm_name in &["shared_atomic", "shared_fetch_add", "baseline_local_atomic"] {
         for thread_count in THREAD_COUNTS {
             if thread_count > max_threads {
                 println!(
@@ -52,10 +69,10 @@ fn main() {
             }
 
             for sample_idx in 0..SAMPLES {
-                let wall_ns = if arm_name == "shared_atomic" {
-                    run_shared_atomic(thread_count)
-                } else {
-                    run_baseline_local_atomic(thread_count)
+                let wall_ns = match arm_name {
+                    "shared_atomic" => run_shared_atomic(thread_count),
+                    "shared_fetch_add" => run_shared_fetch_add(thread_count),
+                    _ => run_baseline_local_atomic(thread_count),
                 };
 
                 let total_ops = (thread_count as u64) * ITERS_PER_THREAD;
@@ -122,26 +139,94 @@ fn main() {
         .copied()
         .unwrap();
 
-    if let (Some(&shared_mean), Some(&baseline_mean)) = (
+    let find_mean = |name: &str| -> Option<f64> {
         summary_rows
             .iter()
-            .find(|(arm, threads, _, _)| arm == "shared_atomic" && *threads == max_threads_actual)
-            .map(|(_, _, mean, _)| mean),
-        summary_rows
-            .iter()
-            .find(|(arm, threads, _, _)| {
-                arm == "baseline_local_atomic" && *threads == max_threads_actual
-            })
-            .map(|(_, _, mean, _)| mean),
+            .find(|(arm, threads, _, _)| arm == name && *threads == max_threads_actual)
+            .map(|(_, _, mean, _)| *mean)
+    };
+
+    if let (Some(shared_mean), Some(fetch_add_mean), Some(baseline_mean)) = (
+        find_mean("shared_atomic"),
+        find_mean("shared_fetch_add"),
+        find_mean("baseline_local_atomic"),
     ) {
+        // Total overhead: real Region::new() vs. no contention at all.
         let overhead_ratio = shared_mean / baseline_mean;
         println!(
             "\noverhead_ratio(threads={}) = shared_atomic.mean / baseline_local_atomic.mean = {:.3}",
             max_threads_actual, overhead_ratio
         );
-
         assert!(overhead_ratio.is_finite() && overhead_ratio > 0.0);
+
+        // Decomposition (F-C6 fix): separates (a) cache-line contention on a shared
+        // atomic (same fetch_add primitive, shared vs. local) from (b) the cost of
+        // the fetch_update/CAS-loop primitive itself vs. a plain fetch_add (same
+        // sharing regime, different primitive) -- #813 changed BOTH at once, so a
+        // single baseline cannot attribute the gap to either one alone.
+        let contention_ratio = fetch_add_mean / baseline_mean;
+        println!(
+            "contention_ratio(threads={}) = shared_fetch_add.mean / baseline_local_atomic.mean = {:.3} (cache-line contention alone, same fetch_add primitive)",
+            max_threads_actual, contention_ratio
+        );
+        assert!(contention_ratio.is_finite() && contention_ratio > 0.0);
+
+        let cas_primitive_ratio = shared_mean / fetch_add_mean;
+        println!(
+            "cas_primitive_ratio(threads={}) = shared_atomic.mean / shared_fetch_add.mean = {:.3} (fetch_update/CAS-loop cost vs. fetch_add, same sharing regime)",
+            max_threads_actual, cas_primitive_ratio
+        );
+        assert!(cas_primitive_ratio.is_finite() && cas_primitive_ratio > 0.0);
     }
+}
+
+/// Run the `shared_fetch_add` arm: isolates cache-line contention from the CAS-loop
+/// primitive cost. Same SlotMap-allocation shape as `baseline_local_atomic`, but the
+/// AtomicUsize is SHARED across threads (like `shared_atomic`'s NEXT_REGION_ID) and
+/// uses a plain `fetch_add` (like `baseline_local_atomic`'s primitive, unlike
+/// `shared_atomic`'s `fetch_update`/CAS retry loop). Comparing this arm to
+/// `baseline_local_atomic` isolates pure cache-line contention; comparing
+/// `shared_atomic` to this arm isolates the CAS-loop-vs-xadd cost alone (see F-C6 in
+/// docs/reviews/2026-08-11-sefer-region-f1-f13-perf-closing-review.md).
+/// Returns wall_ns: max duration across all threads (time until LAST thread finished).
+fn run_shared_fetch_add(thread_count: usize) -> u64 {
+    let barrier = Barrier::new(thread_count);
+    let shared_counter = Arc::new(AtomicUsize::new(0));
+    let mut max_ns = 0u64;
+
+    std::thread::scope(|s| {
+        let barrier = &barrier;
+        let handles: Vec<_> = (0..thread_count)
+            .map(|_| {
+                let shared_counter = Arc::clone(&shared_counter);
+                s.spawn(move || {
+                    barrier.wait();
+                    let t0 = Instant::now();
+
+                    for _ in 0..ITERS_PER_THREAD {
+                        // (a) RMW operation on a SHARED atomic (real cross-thread
+                        // contention), but fetch_add -- not fetch_update/CAS -- so the
+                        // primitive matches baseline_local_atomic's, isolating sharing
+                        // from primitive choice.
+                        shared_counter.fetch_add(1, Ordering::Relaxed);
+
+                        // (b) SlotMap allocation + drop, matching the other two arms.
+                        let sm: SlotMap<DefaultKey, u64> = SlotMap::new();
+                        std::hint::black_box(&sm);
+                    }
+
+                    t0.elapsed().as_nanos() as u64
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            let ns = handle.join().unwrap();
+            max_ns = max_ns.max(ns);
+        }
+    });
+
+    max_ns
 }
 
 /// Run the `shared_atomic` arm: repeatedly construct and drop Region<u64>.

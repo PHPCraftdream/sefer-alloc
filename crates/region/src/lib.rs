@@ -42,6 +42,11 @@
 //!   `remove` transfers ownership to the caller without calling `Drop`; values
 //!   still owned when a normally-destroyed `Region` drops are dropped. The crate
 //!   never duplicates or internally forgets values.
+//! - **I6 — slot reuse and bounded growth:** freed slots are reused by
+//!   `insert`; capacity grows to a historical high-water mark of live entries
+//!   and does not increase further under steady-state churn (`slotmap` does
+//!   not physically compact — tombstone slots remain in the backing store;
+//!   I6 guarantees only reuse and bounded growth, not physical density).
 //! - **I7 — instance isolation:** a `Handle<T>` resolves only through the
 //!   [`Region<T>`] instance that minted it. Every accessor checks the
 //!   handle's `region_id` against the region's own before touching the

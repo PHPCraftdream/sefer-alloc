@@ -183,6 +183,11 @@ pub fn dbg_try_mint_region_id(
 ///   `remove` transfers ownership to the caller without calling `Drop`; values
 ///   still owned when a normally-destroyed `Region` drops are dropped. The crate
 ///   never duplicates or internally forgets values.
+/// - **I6 — slot reuse and bounded growth:** freed slots are reused by
+///   `insert`; capacity grows to a historical high-water mark of live entries
+///   and does not increase further under steady-state churn (`slotmap` does
+///   not physically compact — tombstone slots remain in the backing store;
+///   I6 guarantees only reuse and bounded growth, not physical density).
 /// - **I7 — instance isolation:** a [`Handle<T>`] resolves only through the
 ///   `Region<T>` instance that minted it. Every accessor
 ///   ([`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
@@ -196,8 +201,8 @@ pub fn dbg_try_mint_region_id(
 ///   8 bytes — see `tests/handle_static_asserts.rs`). `region_id` is minted
 ///   from a process-wide counter (`NEXT_REGION_ID`, `AtomicUsize`) that is
 ///   incremented once per `Region::new`/`with_capacity` call and never
-///   reused. Once the counter is exhausted after `2^{pointer_width}` `Region`
-///   constructions (when it would wrap from `usize::MAX` to 0), it transitions
+///   reused. Once the counter is exhausted -- at the `2^{pointer_width}`-th `Region`
+///   construction attempt (when it would wrap from `usize::MAX` to 0), it transitions
 ///   to a permanent exhausted state (0) and all future `Region` constructions
 ///   panic. No region_id is ever reused, even after exhaustion — the value
 ///   0 is reserved as a sentinel that never transitions back to a positive
@@ -238,7 +243,7 @@ pub fn dbg_try_mint_region_id(
 ///
 /// Applications that need a stronger guarantee (e.g. to reuse handles without
 /// ever risking alias) must add their own wrapper layer that tracks generation
-/// wrap on a hot slot; cross-instance confusion is already handled by I6 and
+/// wrap on a hot slot; cross-instance confusion is already handled by I7 and
 /// needs no wrapper.
 pub struct Region<T> {
     region_id: NonZeroUsize,
@@ -252,10 +257,10 @@ impl<T> Region<T> {
     ///
     /// Returns `Err(TryReserveError::RegionIdExhausted(...))` if the process-wide
     /// `region_id` counter has been exhausted — i.e. this would be the
-    /// `(2^{pointer_width} + 1)`-th `Region` constructed (via `try_new`/`try_with_capacity`)
+    /// `2^{pointer_width}`-th `Region` construction attempt (via `try_new`/`try_with_capacity`)
     /// in this process. Once the counter is exhausted, **all** future `Region`
     /// constructions in this process will fail, and no region_id is ever reused.
-    /// See the I6 doc block above for the exhaustion bound and why it is reachable,
+    /// See the I7 doc block above for the exhaustion bound and why it is reachable,
     /// not just theoretical, on a 32-bit host.
     pub fn try_new() -> Result<Self, TryReserveError> {
         let region_id = try_mint_region_id(&NEXT_REGION_ID)?;
@@ -270,10 +275,10 @@ impl<T> Region<T> {
     /// # Panics
     ///
     /// Panics if the process-wide `region_id` counter has been exhausted —
-    /// i.e. this would be the `(2^{pointer_width} + 1)`-th `Region` constructed
+    /// i.e. this would be the `2^{pointer_width}`-th `Region` construction attempt
     /// (via `new`/`with_capacity`/`Default`) in this process. Once the counter
     /// is exhausted, **all** future `Region` constructions in this process will
-    /// panic, and no region_id is ever reused. See the I6 doc block above for
+    /// panic, and no region_id is ever reused. See the I7 doc block above for
     /// the exhaustion bound and why it is reachable, not just theoretical, on
     /// a 32-bit host.
     #[must_use]
@@ -294,7 +299,7 @@ impl<T> Region<T> {
     ///   overflowed `usize` (defense-in-depth, not currently reachable in practice).
     /// - Returns `Err(TryReserveError::RegionIdExhausted(...))` if the process-wide
     ///   `region_id` counter has been exhausted — see [`try_new`](Self::try_new)'s
-    ///   `# Errors` section and the I6 doc block above. Once the counter is exhausted,
+    ///   `# Errors` section and the I7 doc block above. Once the counter is exhausted,
     ///   **all** future `Region` constructions in this process will fail, and no region_id
     ///   is ever reused.
     ///
@@ -346,7 +351,7 @@ impl<T> Region<T> {
     /// roughly `usize::MAX / size_of::<Slot<T>>()`; allocation failure beyond
     /// that aborts rather than panicking. Also panics if the process-wide
     /// `region_id` counter has been exhausted — see [`new`](Self::new)'s
-    /// `# Panics` section and the I6 doc block above. Once the counter is
+    /// `# Panics` section and the I7 doc block above. Once the counter is
     /// exhausted, **all** future `Region` constructions in this process will
     /// panic, and no region_id is ever reused.
     #[must_use]

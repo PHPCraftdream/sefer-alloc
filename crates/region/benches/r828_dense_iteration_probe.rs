@@ -1,7 +1,8 @@
 // r828_dense_iteration_probe.rs
 //
 // Compares SlotMap (holey iteration) vs DenseSlotMap (compact iteration) on two axes:
-//   1. Iteration axis: full iter() time over 10k populated → 1k live (90% removed) state
+//   1. Iteration axis: full iter() time over INITIAL_COUNT populated -> LIVE_COUNT
+//      live (90% removed) state (see the constants below for current values)
 //   2. Churn axis: insert/remove throughput on a churny workload
 //
 // Motivation: SEFER_REGION_DENSE_AND_SHARDED_DESIGN.md §1's open question — does
@@ -102,7 +103,10 @@ fn main() {
     }
 
     // Compute and print summary statistics.
-    println!("## Iteration axis: time per full iter() over 10k populated → 1k live state");
+    println!(
+        "## Iteration axis: time per full iter() over {} populated -> {} live state",
+        INITIAL_COUNT, LIVE_COUNT
+    );
     println!("\nUnit: nanoseconds per complete iter() pass\n");
     println!(
         "{:<20} | {:<10} | {:<10} | {:<10}",
@@ -240,10 +244,10 @@ fn main() {
     }
 }
 
-/// Measure SlotMap iteration time over 10k populated → 1k live state.
+/// Measure SlotMap iteration time over INITIAL_COUNT populated -> LIVE_COUNT live state.
 /// Returns nanoseconds per complete iter() pass.
 fn measure_slotmap_iteration() -> u64 {
-    // Set up SlotMap with 10k values
+    // Set up SlotMap with INITIAL_COUNT values
     let mut sm: SlotMap<DefaultKey, u64> = SlotMap::with_capacity(INITIAL_COUNT);
     let mut keys: Vec<DefaultKey> = Vec::with_capacity(INITIAL_COUNT);
 
@@ -272,10 +276,10 @@ fn measure_slotmap_iteration() -> u64 {
     elapsed_ns / ITERATIONS_PER_SAMPLE as u64
 }
 
-/// Measure DenseSlotMap iteration time over 10k populated → 1k live state.
+/// Measure DenseSlotMap iteration time over INITIAL_COUNT populated -> LIVE_COUNT live state.
 /// Returns nanoseconds per complete iter() pass.
 fn measure_dense_slotmap_iteration() -> u64 {
-    // Set up DenseSlotMap with 10k values
+    // Set up DenseSlotMap with INITIAL_COUNT values
     let mut sm: DenseSlotMap<DefaultKey, u64> = DenseSlotMap::with_capacity(INITIAL_COUNT);
     let mut keys: Vec<DefaultKey> = Vec::with_capacity(INITIAL_COUNT);
 

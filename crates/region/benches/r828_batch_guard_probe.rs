@@ -103,7 +103,7 @@ fn main() {
 
     // Compute and print summary statistics.
     println!(
-        "## Single-threaded (1 reader): time per {} lookups\n",
+        "## Single-threaded (1 reader): time per lookup (N = {} lookups per iteration)\n",
         LOOKUP_COUNT
     );
     println!(
