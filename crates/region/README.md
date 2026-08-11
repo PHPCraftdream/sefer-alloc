@@ -27,7 +27,8 @@ exactly like a stale handle (`None`/`false`, never a panic) — by every other
 `Region<T>` of the same type, even when its raw `DefaultKey` collides with a
 live key in that other instance (as it commonly does — the first insert into
 any fresh `Region` tends to produce the same key). This doubles `Handle<T>`'s
-size from 8 to 16 bytes versus the pre-0.2.0 layout.
+size from 8 to 16 bytes on a 64-bit host (12 bytes on 32-bit) versus the
+pre-0.2.0 layout.
 
 The differentiator for the pure-Rust audience: **zero own unsafe** —
 `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` lives

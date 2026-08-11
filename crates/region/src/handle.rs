@@ -66,9 +66,9 @@ impl<T> Handle<T> {
     }
 }
 
-// Hand-written impls: a handle is "a slotmap key", so these must hold for
-// *every* `T`, not only `T: Clone`/`Eq`/… that `#[derive]` would (wrongly)
-// require. They delegate to the inner `key` and hold unconditionally in `T`.
+// Hand-written impls: a handle's identity is the pair `(region_id, key)`, so these
+// impls must hold for *every* `T`, not only `T: Clone`/`Eq`/… that `#[derive]` would
+// (wrongly) require. They delegate to the inner fields and hold unconditionally in `T`.
 impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         *self

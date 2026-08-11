@@ -568,12 +568,10 @@ impl<T> core::fmt::Debug for Region<T> {
     }
 }
 
-// Note: `IntoIterator for Region<T>` (consuming by value) is deliberately NOT
-// implemented. The underlying `slotmap::SlotMap::into_iter()` yields
-// `(DefaultKey, T)` pairs, and exposing `slotmap::DefaultKey` would break
-// this crate's encapsulation (raw keys must never escape through the public
-// API). Iteration by reference (`&Region<T>` and `&mut Region<T>`) is
-// provided below.
+// Note: consuming `IntoIterator for Region<T>` is not currently implemented.
+// This is not a technical impossibility — a wrapper could yield just `T`,
+// dropping the key internally — but has not been requested.
+// Iteration by reference (`&Region<T>` and `&mut Region<T>`) is provided below.
 
 impl<'a, T> IntoIterator for &'a Region<T> {
     type Item = &'a T;

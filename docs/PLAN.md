@@ -61,7 +61,7 @@ This frees the creative budget for the genuinely novel work, where there is
 **no safe, ready-made answer**: Phases 3b–4 — the concurrent lock-free read
 tier and the byte / global-allocator descent.
 
-`slotmap`'s audited `unsafe` does the job our own Hand would have done in the
+`slotmap`'s `unsafe` does the job our own Hand would have done in the
 single-threaded core; our own Hand organ now appears ONLY in the concurrent
 epoch tier (3b-II) and the byte tier (4).
 
@@ -69,7 +69,7 @@ epoch tier (3b-II) and the byte tier (4).
 
 Three organs (full treatment in [`DESIGN.md`](DESIGN.md)). For the
 single-threaded core the Cartographer + Hand are now **provided by `slotmap`**
-(an audited dependency); our code contributes the typed Membrane and stays
+(a battle-tested, widely-used dependency); our code contributes the typed Membrane and stays
 `#![forbid(unsafe_code)]`. Our own Hand organ appears only in the concurrent
 epoch tier (3b-II) and the byte mode (4).
 
@@ -475,7 +475,7 @@ remote-free depth, 7c/7d the locality apex and the parallel byte tier.
 - **Adopt `slotmap` as the single-threaded engine** (DECIDED) — a
   battle-tested slotmap with years of production exposure and fuzzing is
   *safer* than fresh hand-rolled code, even though slotmap uses internal
-  `unsafe`. `slotmap`'s audited `unsafe` does the Cartographer/Hand job our
+  `unsafe`. `slotmap`'s `unsafe` does the Cartographer/Hand job our
   own Hand would have done in the single-threaded core; our code keeps a thin
   typed membrane (`Region<T>` / `Handle<T>`) and stays
   `#![forbid(unsafe_code)]`.
@@ -503,7 +503,7 @@ remote-free depth, 7c/7d the locality apex and the parallel byte tier.
 - **`#![forbid(unsafe_code)]` for the upper world** — our own `unsafe` is
   admitted only in the epoch tier (3b-II) and byte mode (4), each behind a
   feature and confined to one module. (The single-threaded core has zero
-  `unsafe` of our own; `slotmap`'s audited `unsafe` does that job.)
+  `unsafe` of our own; `slotmap`'s `unsafe` does that job.)
 - **`RwLock` baseline before lock-free** — ship a correct concurrent API first
   (3a), treat lock-free as an opt-in, staged upgrade (3b-I RCU, then 3b-II
   epoch only if needed).

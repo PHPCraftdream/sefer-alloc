@@ -107,20 +107,3 @@ const _: () = assert!(size_of::<Handle<u8>>() == EXPECTED_HANDLE_SIZE);
 /// Option<Handle<T>> should use the niche optimization and match Handle<T>'s
 /// own size exactly, on every pointer width.
 const _: () = assert!(size_of::<Option<Handle<u8>>>() == EXPECTED_HANDLE_SIZE);
-
-#[test]
-fn handle_layout_matches_expectations() {
-    // Runtime check for documentation purposes; the compile-time assertions above
-    // are the real guard. This just makes the numbers visible in test output.
-    assert_eq!(
-        size_of::<Handle<u8>>(),
-        EXPECTED_HANDLE_SIZE,
-        "Handle<T> should be {EXPECTED_HANDLE_SIZE} bytes on a {}-bit host",
-        usize::BITS
-    );
-    assert_eq!(
-        size_of::<Option<Handle<u8>>>(),
-        EXPECTED_HANDLE_SIZE,
-        "Option<Handle<T>> should also be {EXPECTED_HANDLE_SIZE} bytes (niche optimization)"
-    );
-}

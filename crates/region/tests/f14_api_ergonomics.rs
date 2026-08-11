@@ -70,6 +70,12 @@ fn region_debug_shows_structural_info() {
     assert!(debug_str.contains("len"));
     assert!(debug_str.contains("capacity"));
     assert!(debug_str.contains("region_id"));
+    // Verify that region_id has a concrete numeric value (not empty or placeholder)
+    // Format is "region_id: N" where N is a positive integer
+    assert!(
+        debug_str.matches(char::is_numeric).count() >= 3, // At least 3 digits: 2 for len/capacity, 1+ for region_id
+        "region_id should have a numeric value, not just the field name: {debug_str}"
+    );
 }
 
 #[test]
