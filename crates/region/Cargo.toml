@@ -61,6 +61,21 @@ name = "region_new_contention_gate"
 harness = false
 required-features = ["std"]
 
+[[bench]]
+name = "r828_dense_iteration_probe"
+harness = false
+required-features = ["std"]
+
+[[bench]]
+name = "r828_batch_guard_probe"
+harness = false
+required-features = ["std"]
+
+[[bench]]
+name = "r828_drop_outside_lock_probe"
+harness = false
+required-features = ["std"]
+
 [[example]]
 name = "contended_reads"
 required-features = ["std"]
