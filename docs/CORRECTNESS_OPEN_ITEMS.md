@@ -2052,6 +2052,43 @@ resolved" below.)_
       integration-level regression test item 44 above also asks for —
       both share the same missing infrastructure.
 
+46. **[T, filed 2026-08-11, task #821] `crates/region` depends on `captrack`
+    v0.1.1 (exact-pinned) as a dev-dependency for a single ignored probe test.**
+    `captrack` is a heavy dependency (proc macro, `ctor` constructor with a
+    background thread, supply-chain side effects). The workspace-root
+    `.cargo/config.toml` suppresses autodump via `CAPTRACK_AUTODUMP=0`, but that
+    config does NOT travel with the published crate tarball — external consumers
+    who build `sefer-region`'s tests will see the ctor run at process startup
+    without that suppression. The dependency is intentional (the probe provides
+    capacity telemetry for `Region<T>`'s `slotmap::SlotMap` backing that cannot
+    be obtained any other way — see `tests/captrack_probe.rs`'s module doc), and
+    a std-only alternative was drafted and explicitly declined in this task
+    (the user decided to keep captrack rather than rewrite the probe). The
+    mitigation applied is exact version pinning (`=0.1.1`), which eliminates the
+    risk that a future minor/patch bump of captrack silently changes its
+    side-effect profile without an explicit review.
+
+    **Standalone-build verification (empirical, not reasoned):** A fresh copy
+    of `crates/region/` was extracted to `C:\temp\sefer-region-standalone-test`,
+    outside this workspace (no parent `[workspace]` Cargo.toml, no
+    `.cargo/config.toml` with `CAPTRACK_AUTODUMP=0`). Commands run:
+    - `cargo build --tests` — clean compile, no visible side effect
+    - `cargo test --no-default-features --features std` — all tests passed,
+      `captrack_probe` correctly ignored
+    - No stray JSON files, no persistent background processes observed (the
+      ctor's behavior was not directly instrumented, only its visible side
+      effects; absence of obvious artifacts is NOT proof of absence, but it is
+      the empirical baseline recorded here)
+
+    **Status:** OPEN — the dependency and probe remain in place per explicit
+    user decision; only exact-pinning mitigation was applied (not removal,
+    not std-only replacement).
+
+    **Next trigger:** revisit if captrack's own side-effect profile changes
+    (e.g., future releases introduce additional ctor activity), or if a future
+    round decides to swap it for the std-only alternative that was drafted and
+    declined in task #821.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

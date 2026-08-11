@@ -36,10 +36,14 @@ bench-scale-tool = "0.1"
 # public registry API (record_creation/record_sample) directly rather than
 # via the CapInspect trait/macros. `telemetry` is required for the registry
 # module to exist at all.
-captrack = { version = "0.1", features = ["telemetry"] }
-# Note: captrack is intentionally heavy (proc macro, supply-chain side effects)
-# but accepted as a known cost for one ignored diagnostic probe. The workspace-local
-# .cargo/config.toml sets CAPTRACK_AUTODUMP=0 to mitigate autodump side effects.
+captrack = { version = "=0.1.1", features = ["telemetry"] }
+# Note: captrack is intentionally heavy (proc macro, ctor background thread,
+# supply-chain side effects) but accepted as a known cost for one ignored
+# diagnostic probe. This workspace's .cargo/config.toml sets CAPTRACK_AUTODUMP=0
+# to mitigate autodump side effects — that config does NOT travel with the
+# published crate tarball, so external consumers who build tests will see the
+# ctor run at process startup. Version is exact-pinned to avoid silent
+# side-effect profile drift on future captrack releases.
 
 [[bench]]
 name = "region_bench"
