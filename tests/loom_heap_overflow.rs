@@ -36,13 +36,13 @@
 
 #![cfg(loom)]
 
-use loom::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use loom::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
 /// Sentinel `base` value meaning "no entry" — matches `ENTRY_EMPTY_BASE` (0)
 /// in the real `HeapOverflow`.
-const ENTRY_EMPTY_BASE: usize = 0;
+const ENTRY_EMPTY_BASE: *mut u8 = core::ptr::null_mut();
 
 /// A small ring capacity so the wrap path stays within loom's bounded
 /// exploration. The real `HeapOverflow` uses `HEAP_OVERFLOW_CAP = 2048`.
@@ -54,7 +54,7 @@ const CAP: usize = 4;
 struct OverflowModel {
     head: AtomicUsize,
     tail: AtomicUsize,
-    bases: [AtomicUsize; CAP],
+    bases: [AtomicPtr<u8>; CAP],
     packed: [AtomicU32; CAP],
 }
 
@@ -63,7 +63,7 @@ impl OverflowModel {
         Arc::new(OverflowModel {
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            bases: std::array::from_fn(|_| AtomicUsize::new(ENTRY_EMPTY_BASE)),
+            bases: std::array::from_fn(|_| AtomicPtr::new(ENTRY_EMPTY_BASE)),
             packed: std::array::from_fn(|_| AtomicU32::new(0)),
         })
     }
@@ -71,7 +71,7 @@ impl OverflowModel {
     /// The CORRECT push (mirrors `HeapOverflow::push`): full-check (Acquire
     /// head), CAS-reserve the tail (AcqRel), publish `packed` (Relaxed) THEN
     /// `base` (Release) — `base` is the LAST-published half of the pair.
-    fn push(&self, base: usize, packed: u32) -> Result<(), ()> {
+    fn push(&self, base: *mut u8, packed: u32) -> Result<(), ()> {
         debug_assert_ne!(base, ENTRY_EMPTY_BASE);
         loop {
             let t = self.tail.load(Ordering::Relaxed);
@@ -102,7 +102,7 @@ impl OverflowModel {
     /// synchronises-with the producer's Release store of `base`, which is
     /// sequenced-after (same thread) the producer's store of `packed`, so the
     /// Release SEQUENCE carries `packed`'s value along.
-    fn drain<F: FnMut(usize, u32)>(&self, mut reclaim: F) {
+    fn drain<F: FnMut(*mut u8, u32)>(&self, mut reclaim: F) {
         let t = self.tail.load(Ordering::Acquire);
         let mut h = self.head.load(Ordering::Relaxed);
         while h != t {
@@ -128,7 +128,7 @@ impl OverflowModel {
     /// CURRENT `base`. This is the two-field torn-read hazard unique to
     /// `HeapOverflow` (impossible in `RemoteFreeRing`, which has only one
     /// atomic per slot).
-    fn push_broken_wrong_publish_order(&self, base: usize, packed: u32) -> Result<(), ()> {
+    fn push_broken_wrong_publish_order(&self, base: *mut u8, packed: u32) -> Result<(), ()> {
         debug_assert_ne!(base, ENTRY_EMPTY_BASE);
         loop {
             let t = self.tail.load(Ordering::Relaxed);
@@ -173,9 +173,9 @@ fn correct_overflow_never_tears_loses_or_duplicates() {
         let ring = OverflowModel::new();
         // Producer A: base=0x1000, packed=111. Producer B: base=0x2000, packed=222.
         let ring_a = Arc::clone(&ring);
-        let ta = thread::spawn(move || while ring_a.push(0x1000, 111).is_err() {});
+        let ta = thread::spawn(move || while ring_a.push(0x1000 as *mut u8, 111).is_err() {});
         let ring_b = Arc::clone(&ring);
-        let tb = thread::spawn(move || while ring_b.push(0x2000, 222).is_err() {});
+        let tb = thread::spawn(move || while ring_b.push(0x2000 as *mut u8, 222).is_err() {});
 
         ta.join().unwrap();
         tb.join().unwrap();
@@ -183,14 +183,14 @@ fn correct_overflow_never_tears_loses_or_duplicates() {
         let mut got_a = 0u32;
         let mut got_b = 0u32;
         ring.drain(|base, packed| {
-            if base == 0x1000 {
+            if base == 0x1000 as *mut u8 {
                 // UNTORN check: this base must carry ITS OWN packed value.
                 assert_eq!(
                     packed, 111,
                     "torn read: base 0x1000 paired with wrong packed"
                 );
                 got_a += 1;
-            } else if base == 0x2000 {
+            } else if base == 0x2000 as *mut u8 {
                 assert_eq!(
                     packed, 222,
                     "torn read: base 0x2000 paired with wrong packed"
@@ -238,7 +238,10 @@ fn counterfactual_wrong_publish_order_tears_entry() {
         let ring_p = Arc::clone(&ring);
         let pushed_p = Arc::clone(&pushed);
         let tp = thread::spawn(move || {
-            if ring_p.push_broken_wrong_publish_order(0xABCD, 999).is_ok() {
+            if ring_p
+                .push_broken_wrong_publish_order(0xABCD as *mut u8, 999)
+                .is_ok()
+            {
                 pushed_p.fetch_add(1, Ordering::Release);
             }
         });
@@ -250,7 +253,7 @@ fn counterfactual_wrong_publish_order_tears_entry() {
             loop {
                 let mut torn = false;
                 ring_c.drain(|base, packed| {
-                    if base == 0xABCD && packed != 999 {
+                    if base == 0xABCD as *mut u8 && packed != 999 {
                         torn = true;
                     }
                 });
@@ -275,7 +278,7 @@ fn counterfactual_wrong_publish_order_tears_entry() {
         // across the full exploration.
         let mut torn = false;
         ring.drain(|base, packed| {
-            if base == 0xABCD && packed != 999 {
+            if base == 0xABCD as *mut u8 && packed != 999 {
                 torn = true;
             }
         });

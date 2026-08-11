@@ -44,13 +44,13 @@
 
 #![cfg(loom)]
 
-use loom::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use loom::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
 /// Sentinel `base` value meaning "no entry" — matches `ENTRY_EMPTY_BASE` (0)
 /// in the real `HeapOverflow`.
-const ENTRY_EMPTY_BASE: usize = 0;
+const ENTRY_EMPTY_BASE: *mut u8 = core::ptr::null_mut();
 
 /// A small ring capacity so the wrap path stays within loom's bounded
 /// exploration. The real `HeapOverflow` uses `HEAP_OVERFLOW_CAP = 2048`.
@@ -62,7 +62,7 @@ const CAP: usize = 4;
 struct OverflowModel {
     head: AtomicUsize,
     tail: AtomicUsize,
-    bases: [AtomicUsize; CAP],
+    bases: [AtomicPtr<u8>; CAP],
     packed: [AtomicU32; CAP],
 }
 
@@ -71,7 +71,7 @@ impl OverflowModel {
         OverflowModel {
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            bases: std::array::from_fn(|_| AtomicUsize::new(ENTRY_EMPTY_BASE)),
+            bases: std::array::from_fn(|_| AtomicPtr::new(ENTRY_EMPTY_BASE)),
             packed: std::array::from_fn(|_| AtomicU32::new(0)),
         }
     }
@@ -81,7 +81,7 @@ impl OverflowModel {
     /// `base` (Release). Crucially the CAS and the `base` store are SEPARATE
     /// atomics, so loom can interleave a concurrent `drain` between them —
     /// exactly the R2-4 reserve→publish gap.
-    fn push(&self, base: usize, packed: u32) -> Result<(), ()> {
+    fn push(&self, base: *mut u8, packed: u32) -> Result<(), ()> {
         debug_assert_ne!(base, ENTRY_EMPTY_BASE);
         loop {
             let t = self.tail.load(Ordering::Relaxed);
@@ -109,7 +109,7 @@ impl OverflowModel {
     /// The CORRECT drain (mirrors the FIXED `HeapOverflow::drain`): returns
     /// `h`, the actual stop position published to `head` — NOT the entry-time
     /// `tail` snapshot.
-    fn drain<F: FnMut(usize, u32)>(&self, mut reclaim: F) -> usize {
+    fn drain<F: FnMut(*mut u8, u32)>(&self, mut reclaim: F) -> usize {
         let t = self.tail.load(Ordering::Acquire);
         let mut h = self.head.load(Ordering::Relaxed);
         while h != t {
@@ -131,7 +131,7 @@ impl OverflowModel {
     /// snapshot `t` instead of the actual stop position `h`. Used ONLY by the
     /// `#[should_panic]` counterfactual test below to demonstrate that
     /// `return t` sticks the entry under the guard.
-    fn drain_buggy_return_tail<F: FnMut(usize, u32)>(&self, mut reclaim: F) -> usize {
+    fn drain_buggy_return_tail<F: FnMut(*mut u8, u32)>(&self, mut reclaim: F) -> usize {
         let t = self.tail.load(Ordering::Acquire);
         let mut h = self.head.load(Ordering::Relaxed);
         while h != t {
@@ -185,7 +185,7 @@ impl Owner {
     /// FIXED `drain`): skip the real drain when `is_likely_empty(cached)`;
     /// otherwise drain for real and refresh the cache from the drain's own
     /// return value (the actual stop position).
-    fn guarded_drain(&self) -> Vec<(usize, u32)> {
+    fn guarded_drain(&self) -> Vec<(*mut u8, u32)> {
         if self.ring.is_likely_empty(self.cached_tail.get()) {
             return Vec::new();
         }
@@ -198,7 +198,7 @@ impl Owner {
     /// COUNTERFACTUAL guarded drain: same as `guarded_drain` but refreshes the
     /// cache from the BUGGY `drain_buggy_return_tail` (returns `t`). Used only
     /// by the `#[should_panic]` test.
-    fn guarded_drain_buggy(&self) -> Vec<(usize, u32)> {
+    fn guarded_drain_buggy(&self) -> Vec<(*mut u8, u32)> {
         if self.ring.is_likely_empty(self.cached_tail.get()) {
             return Vec::new();
         }
@@ -234,7 +234,8 @@ fn guard_reclaims_entry_despite_unpublished_slot_gap() {
         let reclaimed_total = Arc::new(AtomicUsize::new(0));
 
         let owner_p = Arc::clone(&owner);
-        let producer = thread::spawn(move || while owner_p.ring.push(0x1000, 111).is_err() {});
+        let producer =
+            thread::spawn(move || while owner_p.ring.push(0x1000 as *mut u8, 111).is_err() {});
 
         let owner_c = Arc::clone(&owner);
         let reclaimed_c = Arc::clone(&reclaimed_total);
@@ -304,7 +305,8 @@ fn counterfactual_return_tail_sticks_the_entry() {
         let reclaimed_total = Arc::new(AtomicUsize::new(0));
 
         let owner_p = Arc::clone(&owner);
-        let producer = thread::spawn(move || while owner_p.ring.push(0x1000, 111).is_err() {});
+        let producer =
+            thread::spawn(move || while owner_p.ring.push(0x1000 as *mut u8, 111).is_err() {});
 
         let owner_c = Arc::clone(&owner);
         let reclaimed_c = Arc::clone(&reclaimed_total);

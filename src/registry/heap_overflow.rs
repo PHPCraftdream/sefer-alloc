@@ -214,7 +214,7 @@ use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 /// pathological-starvation judge
 /// (`remote_fanin_owner_starved_residual_is_bounded`, N=1000 blocks across 8
 /// producers) with 2× headroom over the test's own burst size, while each
-/// entry is only 12 bytes (`AtomicUsize` base + `AtomicU32` packed) so the
+/// entry is only 12 bytes (`AtomicPtr<u8>` base + `AtomicU32` packed) so the
 /// FULL two-tier array costs `2048 * 12 = 24 KiB` of logical capacity per
 /// slot — as of round 2, split into a `INLINE_CAP`-entry ALWAYS-inline tier
 /// (paid by every claimed slot) plus a lazily-materialised sidecar covering
@@ -320,11 +320,11 @@ pub(crate) const INLINE_CAP: usize = {
 pub(crate) const SIDECAR_CAP: usize = HEAP_OVERFLOW_CAP - INLINE_CAP;
 
 /// Sentinel `base` value meaning "this slot carries no entry" (matches the
-/// OS-zeroed initial state — see [`HEAP_OVERFLOW_CAP`]'s doc comment). `0` is
-/// never a real segment base (every segment is a `SEGMENT`-aligned OS
-/// reservation, `SEGMENT = 4 MiB`, so a real base's low 22 bits are all
-/// zero but the address itself is never the null page).
-const ENTRY_EMPTY_BASE: usize = 0;
+/// OS-zeroed initial state — see [`HEAP_OVERFLOW_CAP`]'s doc comment). The null
+/// pointer is never a real segment base — every segment is a `SEGMENT`-aligned OS
+/// reservation, `SEGMENT = 4 MiB`, so a real base's low 22 bits are all zero
+/// but the address itself is never null.
+const ENTRY_EMPTY_BASE: *mut u8 = core::ptr::null_mut();
 
 /// R6-OPT-P0-2 (round 2): the lazily-materialised sidecar backing indices
 /// `INLINE_CAP..HEAP_OVERFLOW_CAP` of a [`HeapOverflow`] ring. Reserved via
@@ -339,7 +339,7 @@ const ENTRY_EMPTY_BASE: usize = 0;
 /// already a fully valid state, matching `RegistryChunk`'s own "nothing to
 /// write" argument), while staying opaque to everything outside the registry.
 pub(crate) struct HeapOverflowSidecar {
-    pub(crate) bases: [AtomicUsize; SIDECAR_CAP],
+    pub(crate) bases: [AtomicPtr<u8>; SIDECAR_CAP],
     pub(crate) packed: [AtomicU32; SIDECAR_CAP],
 }
 
@@ -360,9 +360,9 @@ pub struct HeapOverflow {
     /// Consumer drain cursor (single consumer — the owning thread's drain
     /// loop — mirrors `RemoteFreeRing::head`). Spans BOTH tiers.
     head: AtomicUsize,
-    /// Inline tier: per-slot segment base, `0` (== [`ENTRY_EMPTY_BASE`]) when
+    /// Inline tier: per-slot segment base, `null` (== [`ENTRY_EMPTY_BASE`]) when
     /// the slot carries no entry. Indices `0..INLINE_CAP`.
-    bases: [AtomicUsize; INLINE_CAP],
+    bases: [AtomicPtr<u8>; INLINE_CAP],
     /// Inline tier: per-slot packed `(offset, class)` word — see the
     /// pre-round-2 doc below for the field's semantics (unchanged). Indices
     /// `0..INLINE_CAP`.
@@ -403,7 +403,7 @@ impl HeapOverflow {
     /// initialiser would (RAD-1's `next_free = NEXT_FREE_TAIL` lesson,
     /// referenced in `bootstrap.rs`'s module doc).
     #[allow(clippy::declare_interior_mutable_const)]
-    const ENTRY_BASE_ZERO: AtomicUsize = AtomicUsize::new(ENTRY_EMPTY_BASE);
+    const ENTRY_BASE_ZERO: AtomicPtr<u8> = AtomicPtr::new(ENTRY_EMPTY_BASE);
     #[allow(clippy::declare_interior_mutable_const)]
     const ENTRY_PACKED_ZERO: AtomicU32 = AtomicU32::new(0);
 
@@ -476,7 +476,7 @@ impl HeapOverflow {
 
     /// Resolve a raw (unwrapped) cursor value `raw` — a `tail`/`head` value
     /// as stored in the cursor fields, NOT yet reduced mod `HEAP_OVERFLOW_CAP`
-    /// — to its backing slot pair of `(&AtomicUsize, &AtomicU32)`: the inline
+    /// — to its backing slot pair of `(&AtomicPtr<u8>, &AtomicU32)`: the inline
     /// arrays if the wrapped index falls in `0..INLINE_CAP`, or the
     /// materialised sidecar otherwise. Mirrors `Registry::slot`'s "one
     /// accessor resolves an index across a possibly-lazy backing store" shape
@@ -490,7 +490,7 @@ impl HeapOverflow {
     /// call for THAT same push, or on the drain side, only for an index a
     /// producer already proved reachable by successfully publishing into it).
     #[inline]
-    fn slot(&self, raw: usize) -> (&AtomicUsize, &AtomicU32) {
+    fn slot(&self, raw: usize) -> (&AtomicPtr<u8>, &AtomicU32) {
         let idx = raw % HEAP_OVERFLOW_CAP;
         if idx < INLINE_CAP {
             (&self.bases[idx], &self.packed[idx])
@@ -600,8 +600,7 @@ impl HeapOverflow {
     /// source of drift risk between the two methods.
     #[inline]
     fn push_impl(&self, base: *mut u8, packed: u32, counted: bool) -> bool {
-        let base_addr = base as usize;
-        debug_assert_ne!(base_addr, ENTRY_EMPTY_BASE, "segment base must not be null");
+        debug_assert_ne!(base, ENTRY_EMPTY_BASE, "segment base must not be null");
         loop {
             let t = self.tail.load(Ordering::Relaxed);
             let h = self.head.load(Ordering::Acquire);
@@ -655,7 +654,7 @@ impl HeapOverflow {
                     // half of the pair — see `drain`'s read order below for
                     // the matching half of this Release/Acquire handshake.
                     packed_slot.store(packed, Ordering::Relaxed);
-                    base_slot.store(base_addr, Ordering::Release);
+                    base_slot.store(base, Ordering::Release);
                     return true;
                 }
                 Err(_) => continue,
@@ -767,7 +766,7 @@ impl HeapOverflow {
                 break;
             }
             let packed = packed_slot.load(Ordering::Relaxed);
-            reclaim(base_addr as *mut u8, packed);
+            reclaim(base_addr, packed);
             // Clear for the next wrap. Relaxed: the next producer to reserve
             // this slot will Release-store `base` again; our drain reads
             // Acquire.

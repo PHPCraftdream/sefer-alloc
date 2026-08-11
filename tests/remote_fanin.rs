@@ -689,13 +689,27 @@ fn remote_fanin_miri_minimal_retry_ub_check() {
         ptrs.push(p);
     }
 
-    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    // Send the raw pointers across the thread boundary directly, rather than
+    // round-tripping through `usize` (`p as usize` / `addr as *mut u8`) --
+    // under `-Zmiri-strict-provenance`, an int-to-pointer cast is an
+    // unsupported operation (exposed-provenance APIs are also disallowed in
+    // strict mode), so the round-trip is a genuine miri UB-detection
+    // failure, not just a style nit. `*mut u8` isn't `Send`; wrap it in the
+    // same `SendPtr` newtype pattern already established elsewhere in this
+    // test suite (see `tests/race_norecycle.rs`, `tests/race_repro.rs`,
+    // `tests/heap_core_bulk_bypass.rs`) -- sound here because the pointers
+    // are handed off once via `move` and never touched by the origin thread
+    // again before `remote.join()`.
+    struct SendPtr(*mut u8);
+    unsafe impl Send for SendPtr {}
+
+    let send_ptrs: Vec<SendPtr> = ptrs.into_iter().map(SendPtr).collect();
     let remote = thread::spawn(move || {
         let _ = bootstrap::ensure();
         let remote_heap = HeapRegistry::claim();
         assert!(!remote_heap.is_null());
-        for addr in addrs {
-            unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+        for SendPtr(p) in send_ptrs {
+            unsafe { (*remote_heap).dealloc(p, layout) };
         }
         unsafe { HeapRegistry::recycle(remote_heap) };
     });

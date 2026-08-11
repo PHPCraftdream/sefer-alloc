@@ -39,7 +39,7 @@
 //! ## R6-OPT-P0-2 (round 2) — lazy `HeapOverflow` sidecar
 //!
 //! Round 1 left one dominant cost per materialised chunk: `HeapOverflow`
-//! (`heap_overflow.rs`), a `[AtomicUsize; HEAP_OVERFLOW_CAP] +
+//! (`heap_overflow.rs`), a `[AtomicPtr<u8>; HEAP_OVERFLOW_CAP] +
 //! [AtomicU32; HEAP_OVERFLOW_CAP]` pair inline in EVERY `HeapSlot`
 //! (`HEAP_OVERFLOW_CAP = 2048` native), 24 KiB/slot. Round 2 shrinks this by
 //! splitting `HeapOverflow`'s storage into a small always-inline "emergency"
@@ -1154,8 +1154,8 @@ mod overflow_sidecar {
 
                 // In-place initialisation: no field writes needed at all —
                 // OS-zeroed pages already form a fully valid
-                // `HeapOverflowSidecar` (every `AtomicUsize`/`AtomicU32` at
-                // its zero/`ENTRY_EMPTY_BASE` initial value), identical
+                // `HeapOverflowSidecar` (every `AtomicPtr<u8>`/`AtomicU32` at
+                // its null/`ENTRY_EMPTY_BASE` initial value), identical
                 // reasoning to `ensure_chunk_slow`'s "nothing to write" case.
                 //
                 // SAFETY: `base` is non-null, aligned to `SIDECAR_ALIGN`
