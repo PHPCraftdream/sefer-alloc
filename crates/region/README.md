@@ -189,23 +189,21 @@ history — same ~5 ns/op order of magnitude).
 ### Region::new() under thread contention
 
 `Region::new()` mints its `region_id` from one process-wide `AtomicUsize` counter
-(`NEXT_REGION_ID`, `fetch_update` — a CAS retry loop since task #813's exhaustion fix;
-was a plain `fetch_add` when the number below was measured) — the only state the F2
-redesign added that is shared across threads. Measured manually (`std::thread::scope`,
-not `bench-scale-tool`, which is single-threaded only): 8 threads, 1 second each, each
-thread constructing and immediately dropping `Region::<u64>::new()` in a tight loop.
-Same commit (`0c83f14`), one representative run, against the **pre-#813 `fetch_add`
-mechanism**: **13.9M `Region::new()` calls/sec aggregate** across 8 threads (~1.7M/thread,
-threads evenly balanced — see `benches/region_bench.rs`'s "Multi-threaded contention"
-section for the per-thread breakdown). This harness also has known fidelity gaps
-(no barrier-aligned start, no no-contention baseline, `Instant::elapsed()` inside the
-hot loop — see `docs/reviews/2026-08-11-sefer-region-static-release-audit.md` §P-perf-3)
-and is scheduled for a rebuild against the new `fetch_update` mechanism in task #827;
-treat the number above as historical, not a current guarantee. The counter was a single
-atomic RMW per call under the old mechanism and did not visibly bottleneck at this
-thread count on this host.
-Reproduce: `cargo bench -p sefer-region --bench region_bench` (the contention section prints
-after the fixed-iteration `bench-scale-tool` run completes).
+(`NEXT_REGION_ID`, `fetch_update` — a CAS retry loop since task #813's exhaustion fix) —
+the only state the F2 redesign added that is shared across threads. Measured with a
+barrier-aligned fixed-work harness (5 samples, 200k iterations/thread):
+
+- **8 threads:** **6.68M `Region::new()` calls/sec (median)**, **~85% throughput penalty**
+  vs. a no-contention baseline (see `docs/perf/R827_REGION_NEW_CONTENTION_GATE.md` for full
+  methodology and all thread counts). The baseline arm (which isolates the SlotMap allocation
+  and handle-minting work from the shared atomic) scales near-linearly to 43.4M ops/sec at 8
+  threads, while the real `Region::new()` arm stays flat (6.6M-7.0M ops/sec) regardless of
+  thread count — the `NEXT_REGION_ID` contention bottleneck saturates almost immediately.
+- The historical pre-#813 harness (measuring the old `fetch_add` mechanism) reported ~13.9M
+  ops/sec at 8 threads, but that measurement had fidelity gaps (no barrier-aligned start,
+  no baseline, `Instant::elapsed()` inside the hot loop — see
+  `docs/reviews/2026-08-11-sefer-region-static-release-audit.md` §P-perf-3).
+Reproduce: `cargo bench -p sefer-region --bench region_new_contention_gate`
 
 ### Contended reads
 
