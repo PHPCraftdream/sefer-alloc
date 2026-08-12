@@ -742,9 +742,9 @@ impl ReservationParts {
 /// kernel happened to place it at an `align`-aligned address (fast path;
 /// hit rate depends on the OS's placement heuristics, not on any hint this
 /// crate passes). On a miss (wrong alignment), over-reserves `size + align`
-/// bytes and keeps the full mapping. On Windows,
-/// unconditionally over-reserves `size + align` bytes and keeps the full
-/// mapping. The `Reservation::reservation_ptr` / `reservation_len` fields
+/// bytes and keeps the full mapping. On Windows, uses one syscall (fast path
+/// for `align <= 64 KiB`, over-reserving nothing — base == region) or two
+/// syscalls (over-reserving `size + align` and keeping the full mapping). The `Reservation::reservation_ptr` / `reservation_len` fields
 /// expose the full reservation; `Reservation::as_ptr` / `len` expose the
 /// aligned usable span.
 ///
