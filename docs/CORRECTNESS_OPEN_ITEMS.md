@@ -1828,7 +1828,7 @@ resolved" below.)_
            `cargo +nightly miri test` re-run of this crate's suite this
            round (see `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`
            §0, which ran the file under miri and reported it green).
-        3. **CLOSED by task #851** (commit pending). E0308 tuple-arity mismatch:
+        3. **CLOSED by task #851** (commit `78ecc81`). E0308 tuple-arity mismatch:
            `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --features
            lazy-commit,huge-pages` failed compilation because two miri-gated
            `.map()` closures still destructured a 4-element tuple
