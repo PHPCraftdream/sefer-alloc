@@ -20,6 +20,64 @@ const MIB: usize = 1024 * 1024;
 const fn assert_send<T: Send>() {}
 const _: () = assert_send::<Reservation>();
 
+/// V7 fix: Reservation now has a Debug impl.
+#[test]
+fn reservation_has_debug_output() {
+    let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+    let debug_str = format!("{:?}", r);
+    assert!(
+        debug_str.contains("Reservation"),
+        "Debug output should contain type name"
+    );
+    assert!(
+        debug_str.contains("base"),
+        "Debug output should contain base field"
+    );
+    assert!(
+        debug_str.contains("len"),
+        "Debug output should contain len field"
+    );
+    assert!(
+        debug_str.contains("reservation_len"),
+        "Debug output should contain reservation_len field"
+    );
+    assert!(
+        debug_str.contains("align"),
+        "Debug output should contain align field"
+    );
+    assert!(
+        debug_str.contains("granted_huge"),
+        "Debug output should contain granted_huge field"
+    );
+}
+
+/// V8 fix: ReservationParts prevents swapping len and align.
+#[test]
+fn reservation_parts_prevents_parameter_swap() {
+    let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+    let parts = r.into_reservation_parts();
+
+    // Verify the struct fields are correctly populated.
+    assert!(!parts.ptr.is_null());
+    // reservation_len may be larger than requested due to over-reserve for alignment.
+    assert!(parts.len >= 4 * MIB);
+    assert_eq!(parts.align, 4 * MIB);
+
+    // Verify we can release via release_parts.
+    unsafe { aligned_vmem::release_parts(parts) };
+
+    // Verify the old tuple path still works (backwards compatibility).
+    let r2 = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve 2 MiB");
+    let (raw, raw_len, raw_align) = r2.into_parts();
+    unsafe { aligned_vmem::release(raw, raw_len, raw_align) };
+
+    // Verify ReservationParts::as_tuple bridges the two.
+    let r3 = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve 2 MiB");
+    let parts3 = r3.into_reservation_parts();
+    let (raw2, raw_len2, raw_align2) = parts3.as_tuple();
+    unsafe { aligned_vmem::release(raw2, raw_len2, raw_align2) };
+}
+
 #[test]
 fn reserve_is_aligned_and_writable() {
     let span = 4 * MIB;

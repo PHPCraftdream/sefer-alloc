@@ -131,6 +131,64 @@ pub enum Call {
     },
 }
 
+// Constructors for external crates to build expected call vectors.
+impl Call {
+    /// Create a [`Call::Reserve`] variant.
+    #[must_use]
+    pub fn reserve(size: usize, align: usize) -> Self {
+        Call::Reserve { size, align }
+    }
+
+    /// Create a [`Call::ReserveLazy`] variant.
+    #[must_use]
+    pub fn reserve_lazy(size: usize, align: usize, initial_commit: usize) -> Self {
+        Call::ReserveLazy {
+            size,
+            align,
+            initial_commit,
+        }
+    }
+
+    /// Create a [`Call::ReserveHuge`] variant.
+    #[must_use]
+    pub fn reserve_huge(size: usize, align: usize) -> Self {
+        Call::ReserveHuge { size, align }
+    }
+
+    /// Create a [`Call::Release`] variant.
+    #[must_use]
+    pub fn release(reservation: usize, reservation_len: usize) -> Self {
+        Call::Release {
+            reservation,
+            reservation_len,
+        }
+    }
+
+    /// Create a [`Call::Decommit`] variant.
+    #[must_use]
+    pub fn decommit(base: usize, start: usize, end: usize) -> Self {
+        Call::Decommit { base, start, end }
+    }
+
+    /// Create a [`Call::DecommitLazy`] variant.
+    #[must_use]
+    pub fn decommit_lazy(base: usize, start: usize, end: usize) -> Self {
+        Call::DecommitLazy { base, start, end }
+    }
+
+    /// Create a [`Call::Recommit`] variant.
+    #[must_use]
+    pub fn recommit(base: usize, start: usize, end: usize) -> Self {
+        Call::Recommit { base, start, end }
+    }
+
+    /// Create a [`Call::CommitRange`] variant.
+    #[must_use]
+    pub fn commit_range(base: usize, start: usize, end: usize) -> Self {
+        Call::CommitRange { base, start, end }
+    }
+}
+
 std::thread_local! {
     /// Calls recorded since the last [`drain`].
     static CALLS: RefCell<Vec<Call>> = const { RefCell::new(Vec::new()) };

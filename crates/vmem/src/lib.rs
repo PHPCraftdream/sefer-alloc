@@ -330,6 +330,19 @@ pub struct Reservation {
     granted_huge: bool,
 }
 
+impl core::fmt::Debug for Reservation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Reservation")
+            .field("base", &self.base.as_ptr())
+            .field("len", &self.len)
+            .field("reservation", &self.reservation.as_ptr())
+            .field("reservation_len", &self.reservation_len)
+            .field("align", &self.align)
+            .field("granted_huge", &self.granted_huge)
+            .finish()
+    }
+}
+
 impl Reservation {
     /// The aligned usable base of this span. Non-null, valid for [`len`](Self::len)
     /// bytes, aligned to the `align` requested at reservation time.
@@ -409,9 +422,42 @@ impl Reservation {
     /// ignore it, but it is required for the miri fallback to reconstruct the
     /// exact `Layout`. A self-hosting allocator that always uses one alignment
     /// can pass that constant to [`release`] instead of storing this value.
+    ///
+    /// **Warning:** This method returns a raw tuple. Consider using
+    /// [`into_reservation_parts`](Self::into_reservation_parts) instead, which
+    /// returns a named struct that prevents accidentally swapping `len` and `align`.
     #[must_use]
     pub fn into_parts(self) -> (*mut u8, usize, usize) {
         let parts = (self.reservation.as_ptr(), self.reservation_len, self.align);
+        core::mem::forget(self);
+        parts
+    }
+
+    /// Consume the handle WITHOUT releasing the OS reservation, returning the
+    /// [`ReservationParts`] struct the caller must later hand to [`release_parts`]
+    /// exactly once. Use this when your allocator records the reservation in its
+    /// own self-hosted metadata instead of relying on `Drop`.
+    ///
+    /// This method is the typed, named alternative to [`into_parts`](Self::into_parts);
+    /// it prevents the footgun of accidentally swapping `len` and `align`, which
+    /// would be undefined behavior on the native backend and cause leaks or crashes
+    /// on the Unix backend.
+    ///
+    /// For backwards compatibility with code that already uses the tuple form,
+    /// you can call [`ReservationParts::as_tuple`] to get a raw tuple.
+    #[must_use]
+    pub fn into_reservation_parts(self) -> ReservationParts {
+        let parts = ReservationParts {
+            ptr: self.reservation.as_ptr(),
+            len: self.reservation_len,
+            align: self.align,
+        };
+        // Same suppression as `into_parts` -- without this, `self` would run
+        // its normal `Drop` (which now also releases the OS reservation) at
+        // the end of this function, and the returned `ReservationParts`
+        // would describe already-freed memory: a guaranteed double-free the
+        // moment the caller follows this method's own contract and passes
+        // it to `release_parts`.
         core::mem::forget(self);
         parts
     }
@@ -526,6 +572,12 @@ impl Reservation {
 
 impl Drop for Reservation {
     fn drop(&mut self) {
+        // Record the release for mock observers (RAII path visibility).
+        #[cfg(feature = "mock")]
+        mock::record(mock::Call::Release {
+            reservation: self.reservation.as_ptr() as usize,
+            reservation_len: self.reservation_len,
+        });
         // SAFETY: `self.reservation` was returned by `reserve_aligned` and is
         // valid for `self.reservation_len` bytes; this handle owns it
         // exclusively (no aliasing — `Reservation` is `Send` but not `Sync`).
@@ -539,6 +591,35 @@ impl Drop for Reservation {
 // origin thread. The memory is plain uninitialised bytes (no `Rc`/`Cell`/TLS
 // affinity).
 unsafe impl Send for Reservation {}
+
+/// The components returned by [`Reservation::into_reservation_parts`].
+///
+/// A named structure (instead of a raw tuple) prevents the footgun of
+/// accidentally swapping the `len` and `align` fields, which would be
+/// undefined behavior on the native backend and cause leaks or crashes
+/// on the Unix backend.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservationParts {
+    /// The base pointer of the reservation (from [`Reservation::reservation_ptr`]).
+    pub ptr: *mut u8,
+    /// The length of the reservation in bytes (from [`Reservation::reservation_len`]).
+    pub len: usize,
+    /// The alignment requested at reservation time.
+    pub align: usize,
+}
+
+impl ReservationParts {
+    /// Convert this struct back into a raw tuple compatible with [`release`].
+    ///
+    /// This method exists only for backwards compatibility with code that
+    /// already uses the tuple form. New code should use [`release_parts`] instead.
+    #[must_use]
+    #[inline]
+    pub const fn as_tuple(self) -> (*mut u8, usize, usize) {
+        (self.ptr, self.len, self.align)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Reserve
@@ -612,6 +693,32 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
     });
     // SAFETY: forwarded from the caller's contract above.
     unsafe { release_reservation(nn, reservation_len, align) };
+}
+
+/// Release a reservation obtained from [`Reservation::into_reservation_parts`].
+///
+/// This is the typed alternative to [`release`]: it takes a [`ReservationParts`]
+/// struct instead of raw parameters, preventing accidental swapping of `len` and
+/// `align` (which would cause undefined behavior on the native backend and leaks
+/// or crashes on Unix).
+///
+/// For backwards compatibility with code that uses the raw tuple form, you can
+/// convert a `ReservationParts` to a tuple via [`ReservationParts::as_tuple`] and
+/// call [`release`].
+///
+/// # Safety
+///
+/// `parts.ptr` must be a reservation obtained from [`Reservation::into_reservation_parts`]
+/// (or the raw [`Reservation::into_parts`]) and must be live. The reservation must be released
+/// exactly once.
+pub unsafe fn release_parts(parts: ReservationParts) {
+    let ReservationParts {
+        ptr: reservation,
+        len: reservation_len,
+        align,
+    } = parts;
+    // Delegate to the existing release function.
+    unsafe { release(reservation, reservation_len, align) };
 }
 
 // ---------------------------------------------------------------------------
