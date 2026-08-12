@@ -125,6 +125,30 @@ jobs:
           fi
           echo "OK: sefer-region $version is not yet on crates.io."
 
+  aligned-vmem-gates:
+    # Task #847/V18: clippy coverage for the aligned-vmem crate. Previously
+    # only `cargo test -p aligned-vmem --no-run` compiled library + integration
+    # tests; `benches/vmem_bench.rs` was never compiled in CI, so renaming any
+    # public API used by the bench left CI green. Task #846 proved two clippy
+    # rows are required: --all-features (covers all optional features) and
+    # default (caught the inverted #[cfg_attr] dead_code bug that #846 fixed).
+    name: aligned-vmem package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Task #846 proved this combination catches the inverted #[cfg_attr]
+      # dead_code bug that shipped undetected when only --all-features ran.
+      - run: cargo clippy -p aligned-vmem --all-targets -- -D warnings
+      # Full feature set: lazy-commit, huge-pages, fault-injection, mock,
+      # bench-internals (all "off by default", so --all-features is the union).
+      - run: cargo clippy -p aligned-vmem --all-features --all-targets -- -D warnings
+      # Basic sanity check that the crate's tests pass (library + integration
+      # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
+      - run: cargo test -p aligned-vmem --all-features
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
