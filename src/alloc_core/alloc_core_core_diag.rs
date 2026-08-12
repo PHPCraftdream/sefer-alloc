@@ -144,8 +144,8 @@ impl AllocCore {
 
     /// MEASUREMENT-ONLY (task #859): process-wide count of `aligned_vmem::win_reserve_commit`
     /// fast-path calls that used a single syscall (Windows only — always 0 on
-    /// Unix/miri). The fast path applies when `align <= 64 KiB` (the OS page size),
-    /// so `VirtualAlloc(MEM_RESERVE | MEM_COMMIT)` issues one syscall with both
+    /// Unix/miri). The fast path applies when `align <= 64 KiB` (the Windows allocation granularity — the Windows page size is 4 KiB)
+    /// and `commit_len == size`, so `VirtualAlloc(MEM_RESERVE | MEM_COMMIT)` issues one syscall with both
     /// flags. Reads 0 unless `bench-internals` is on.
     #[doc(hidden)]
     #[cfg(feature = "bench-internals")]
@@ -156,7 +156,7 @@ impl AllocCore {
 
     /// MEASUREMENT-ONLY (task #859): process-wide count of `aligned_vmem::win_reserve_commit`
     /// two-call-path calls (Windows only — always 0 on Unix/miri). The traditional path
-    /// applies when `align > 64 KiB`, requiring two syscalls: one `VirtualAlloc(MEM_RESERVE)`
+    /// applies when `align > 64 KiB` or `commit_len != size`, requiring two syscalls: one `VirtualAlloc(MEM_RESERVE)`
     /// followed by `VirtualAlloc(MEM_COMMIT)` on the aligned region. Reads 0 unless
     /// `bench-internals` is on.
     #[doc(hidden)]
@@ -170,7 +170,6 @@ impl AllocCore {
     /// `aligned_vmem` bench-internals counters
     /// ([`dbg_unix_exact_reserve_attempts`](Self::dbg_unix_exact_reserve_attempts),
     /// [`dbg_unix_exact_reserve_hits`](Self::dbg_unix_exact_reserve_hits),
-    /// [`dbg_windows_reserve_commit_calls`](Self::dbg_windows_reserve_commit_calls),
     /// [`dbg_windows_reserve_commit_single_calls`](Self::dbg_windows_reserve_commit_single_calls),
     /// [`dbg_windows_reserve_commit_two_call_pairs`](Self::dbg_windows_reserve_commit_two_call_pairs))
     /// to 0. Test/bench hook only — mirrors
