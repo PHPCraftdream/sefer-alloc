@@ -170,14 +170,14 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   fast path is a net syscall LOSS below a 50% hit rate but noted "nothing
 //   anywhere counts this" — `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle it
 //   with a real number instead of the theoretical bound.
-// - Windows: `win_reserve_commit` unconditionally issues 2 syscalls per
-//   segment (one `MEM_RESERVE` + one `MEM_COMMIT`), over-reserving `size +
-//   align` and keeping the full mapping (Windows cannot partially release a
-//   `MEM_RESERVE` region). `WINDOWS_RESERVE_COMMIT_CALLS` counts these call
-//   PAIRS for parity/comparison against the Unix hit-rate story — there is no
-//   fast/slow-path split to measure on Windows today (that is exactly what
-//   step 3, a `VirtualAlloc2` prototype, would introduce), so this is a
-//   simple activation count, not a hit rate.
+// - Windows: `win_reserve_commit` issues reserve+commit in either
+//   one syscall (the fast path for `align <= 64 KiB`, over-reserving nothing —
+//   base == region) or two syscalls (the traditional path for larger
+//   alignments, over-reserving `size + align` and keeping the full mapping —
+//   Windows cannot partially release a `MEM_RESERVE` region).
+//   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
+//   count each path separately for parity/comparison against the Unix
+//   hit-rate story.
 //
 // `AtomicU64` storage, always compiled (like sefer-alloc's own `dbg_*`
 // counters); increments gated on `bench-internals` so a plain build carries
@@ -192,7 +192,7 @@ use core::sync::atomic::AtomicU64;
 /// Denominator for [`UNIX_EXACT_RESERVE_HITS`]. See the module-level
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
-#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[doc(hidden)]
 pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
@@ -201,20 +201,31 @@ pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
 /// section doc above.
 #[cfg(feature = "bench-internals")]
-#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[doc(hidden)]
 pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// `bench-internals`: total number of `win_reserve_commit` calls (Windows
-/// only — always 0 on Unix/miri; that internal helper is private and
-/// platform-gated, so it is named here in code font rather than linked).
+/// `bench-internals`: total number of `win_reserve_commit` calls that took the
+/// single-call fast path (Windows only — always 0 on Unix/miri; that internal helper
+/// is private and platform-gated, so it is named here in code font rather than linked).
+/// Each call issues exactly 1 syscall (`VirtualAlloc(MEM_RESERVE | MEM_COMMIT)`),
+/// which the fast path uses when `align <= 64 KiB` and `commit_len == size`.
+/// See the module-level "bench-internals" section doc above.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: total number of `win_reserve_commit` calls that took the
+/// two-call path (Windows only — always 0 on Unix/miri; that internal helper
+/// is private and platform-gated, so it is named here in code font rather than linked).
 /// Each call issues exactly 2 syscalls
 /// (`VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`, plus a possible
 /// third best-effort retry on a `huge-pages` commit failure — not counted
-/// here, see that call site). See the module-level "bench-internals" section
-/// doc above.
+/// here, see that call site). This path is used when `align > 64 KiB` or when
+/// `commit_len != size` (the lazy-commit case). See the module-level
+/// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
-#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
-pub static WINDOWS_RESERVE_COMMIT_CALLS: AtomicU64 = AtomicU64::new(0);
+#[doc(hidden)]
+pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
 /// Diagnostic only.
@@ -234,18 +245,42 @@ pub fn unix_exact_reserve_hits() -> u64 {
     UNIX_EXACT_RESERVE_HITS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_CALLS`].
+/// `bench-internals`: relaxed snapshot of the sum of
+/// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`] and
+/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`] (both paths combined).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
 pub fn windows_reserve_commit_calls() -> u64 {
-    WINDOWS_RESERVE_COMMIT_CALLS.load(Ordering::Relaxed)
+    WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.load(Ordering::Relaxed)
+        + WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all three counters
+/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`]
+/// (single-call path count).
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_reserve_commit_single_calls() -> u64 {
+    WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`]
+/// (two-call path count).
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_reserve_commit_two_call_pairs() -> u64 {
+    WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all four counters
 /// ([`UNIX_EXACT_RESERVE_ATTEMPTS`], [`UNIX_EXACT_RESERVE_HITS`],
-/// [`WINDOWS_RESERVE_COMMIT_CALLS`]) to 0. Test/bench hook only — lets a
+/// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`],
+/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`]) to 0. Test/bench hook only — lets a
 /// measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
@@ -254,7 +289,8 @@ pub fn windows_reserve_commit_calls() -> u64 {
 pub fn reset_bench_internals_counters() {
     UNIX_EXACT_RESERVE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_EXACT_RESERVE_HITS.store(0, Ordering::Relaxed);
-    WINDOWS_RESERVE_COMMIT_CALLS.store(0, Ordering::Relaxed);
+    WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.store(0, Ordering::Relaxed);
+    WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
 }
 
 /// Return the OS page size in bytes, querying the OS once and caching the
@@ -1348,7 +1384,12 @@ fn win_reserve_commit(
     // call instead of two calls. VirtualAlloc(NULL, ...) already returns
     // a base aligned to WIN_ALLOCATION_GRANULARITY (64 KiB on all supported
     // Windows targets), so the alignment contract is satisfied by construction.
-    // This saves ~4.6 µs of a ~13.7 µs reserve+commit pair (~33% reduction).
+    //
+    // Historical note: a ~4.6 µs / ~33% reduction claim was made in the original
+    // V21 commit, inherited from pre-#848 measurement (R32_13) of the OLD two-call
+    // path. That claim has NOT been re-measured for the current single-call fast
+    // path code. The claim should be treated as an unverified hypothesis, not a
+    // validated benchmark result.
     //
     // `commit_len == size` is REQUIRED, not just an optimization detail: a
     // single VirtualAlloc(.., MEM_RESERVE | MEM_COMMIT, ..) call reserves AND
@@ -1395,7 +1436,7 @@ fn win_reserve_commit(
                         match NonNull::new(plain as *mut u8) {
                             Some(n) => {
                                 #[cfg(feature = "bench-internals")]
-                                WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
+                                WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
                                 return Ok((n, n, commit_len, false)); // Fallback to ordinary pages
                             }
                             None => return Err(VmemError::last_os_error()),
@@ -1406,7 +1447,7 @@ fn win_reserve_commit(
             }
         };
         #[cfg(feature = "bench-internals")]
-        WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
+        WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
         // Single-call path: base == region (no over-reserve).
         // Return (base, base, commit_len, granted_huge).
         Ok((base, base, commit_len, extra_commit_flags != 0))
@@ -1477,7 +1518,7 @@ fn win_reserve_commit(
                 };
                 if !plain.is_null() {
                     #[cfg(feature = "bench-internals")]
-                    WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
+                    WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
                     return Ok((base, region, over, false)); // Fallback to ordinary pages
                 }
                 // Capture immediately after the FINAL failing syscall (the plain
@@ -1494,7 +1535,7 @@ fn win_reserve_commit(
             return Err(err);
         }
         #[cfg(feature = "bench-internals")]
-        WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
+        WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
         // extra_commit_flags were applied successfully (committed != NULL)
         Ok((base, region, over, extra_commit_flags != 0))
     }
