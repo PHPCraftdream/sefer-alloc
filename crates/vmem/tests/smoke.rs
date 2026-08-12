@@ -51,6 +51,17 @@ fn reservation_has_debug_output() {
     );
 }
 
+/// Non-huge reservation never reports huge (regression for W2 fix:
+/// non-Linux Unix used to return true for ordinary-page reservations).
+#[test]
+fn ordinary_reservation_never_reports_huge() {
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("ordinary reservation");
+    assert!(
+        !r.is_huge(),
+        "an ordinary reservation must never report huge"
+    );
+}
+
 /// V8 fix: ReservationParts prevents swapping len and align.
 #[test]
 fn reservation_parts_prevents_parameter_swap() {
