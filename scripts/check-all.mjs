@@ -233,10 +233,21 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-commit-prefixes.mjs'],
   },
+  {
+    // R4 (task #854/R6): grep-based guard against the doc-comment drift class
+    // that has recurred 5 times (unconditional "over-reserve size + align" /
+    // "trim" statements without qualifying context). Heuristic: every doc
+    // comment mentioning "over-reserv" or "trim" must also mention "align",
+    // "conditional", or "Windows" to indicate the statement is conditional.
+    // See scripts/vmem-doc-drift-guard.mjs's header for the full history.
+    name: 'vmem-doc-drift-guard (unconditional over-reserve/trim detection)',
+    cmd: 'node',
+    args: ['scripts/vmem-doc-drift-guard.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
