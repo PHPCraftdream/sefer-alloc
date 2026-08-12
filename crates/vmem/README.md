@@ -39,12 +39,16 @@ unsafe { release(raw, raw_len, raw_align) };
 |---|---|
 | `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (exact-size mmap fast path on Unix; on fast-path miss, over-reserve size+align and keep the full mapping). On Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB). |
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the underlying OS reservation. |
-| `Reservation::into_parts() -> (ptr, len, align)` | Take the raw reservation, suppress `Drop`, for self-hosted release. |
-| `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once. |
+| `Reservation::into_parts() -> ReservationParts` | Take the raw reservation, suppress `Drop`, for self-hosted release (typed form). |
+| `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once (legacy tuple form). |
+| `release_parts(ReservationParts)` (unsafe) | Release a reservation taken via `into_reservation_parts`, exactly once (typed form). |
+| `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
+| `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Return page-granular physical backing to the OS / re-commit it. |
 | `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux `MADV_FREE`, macOS `MADV_FREE_REUSABLE`, Windows falls back to `decommit`. |
 | `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
-| `PAGE` | Minimum decommit/recommit granularity constant (4 KiB). |
+| `PAGE` | Minimum decommit granularity constant (4 KiB) — superseded by `page_size()` on hosts with larger pages (see `MIN_PAGE` for the underlying constant). |
+| `MIN_PAGE` | Underlying minimum page size constant (4 KiB). |
 | `leak_zeroed_pages(size) -> Option<NonNull<u8>>` | Reserve zeroed, process-lifetime-leaked pages (for pre-main / `GlobalAlloc` bookkeeping). |
 | `try_reserve_aligned` / `try_recommit` / `try_commit_range` … `-> Result<_, VmemError>` | Fallible forms carrying the OS `errno`/`GetLastError` cause. |
 
@@ -92,7 +96,13 @@ reservation"), and what the file-mapping crates don't directly offer.
 
 - `align` must be a power of two `>=` `PAGE` (4 KiB).
 - `size` must be a non-zero multiple of `PAGE`.
-- `decommit`/`recommit`/`commit_range` offsets must be multiples of `PAGE`.
+- `decommit`/`decommit_lazy` offsets must be multiples of `page_size()`.
+- `recommit`/`commit_range` offsets must be multiples of `PAGE`.
+
+Note: this asymmetry is intentional. `decommit`/`decommit_lazy` have an infallible
+`()` return with no write-permitting sentinel to misuse, so silently skipping on
+a violated range is safe; `recommit`/`commit_range`'s boolean/`Result` return
+means a silent no-op could hide a real OOM, so they reject violations instead.
 - On Linux with `huge-pages` enabled, `reserve_aligned_huge`/
   `try_reserve_aligned_huge` additionally require `size` and `align` to both
   be multiples of the huge-page size (2 MiB) — see that function's own

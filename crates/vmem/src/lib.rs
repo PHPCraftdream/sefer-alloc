@@ -303,8 +303,11 @@ pub fn reset_bench_internals_counters() {
 ///
 /// **Correctness:** on Apple Silicon macOS the page size is 16 KiB, and on some
 /// Linux configurations 64 KiB. A caller that decommits at 4 KiB-but-not-page
-/// multiples would silently do partial work; use this value (not [`PAGE`]) to
-/// round decommit offsets.
+/// multiples gets a crate-level silent skip (the call returns without any
+/// effect), because `decommit`/`decommit_lazy` validate against `page_size()`
+/// before reaching the OS. Even at the OS level, madvise(2) rejects the entire
+/// call (all-or-nothing) when `addr` is not a multiple of the real page size.
+/// Use this value (not [`PAGE`]) to round decommit offsets.
 #[must_use]
 pub fn page_size() -> usize {
     let cached = PAGE_SIZE_CACHE.load(Ordering::Relaxed);
@@ -677,6 +680,13 @@ unsafe impl Send for Reservation {}
 /// accidentally swapping the `len` and `align` fields, which would be
 /// undefined behavior on the native backend and cause leaks or crashes
 /// on the Unix backend.
+///
+/// **Note:** there is no public constructor for this type. The only way to
+/// obtain a `ReservationParts` instance is via [`Reservation::into_reservation_parts`].
+/// The motivating use case ("self-hosted metadata") cannot currently be
+/// realized because you need to *construct* a `ReservationParts` from already-saved
+/// fields, not just destructure an existing reservation. Adding a public
+/// `ReservationParts::new` constructor is a future additive API decision.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReservationParts {
@@ -732,12 +742,8 @@ pub fn reserve_aligned(size: usize, align: usize) -> Option<Reservation> {
     try_reserve_aligned(size, align).ok()
 }
 
-/// Fallible [`reserve_aligned`]: returns a [`VmemError`] carrying the OS cause
-/// (`errno` / `GetLastError`) on failure instead of a bare `None`.
-///
 /// A contract violation (bad `size`/`align`) returns
 /// [`VmemError::invalid_argument`] without touching the OS.
-/// Private helper: validate `size`/`align` for reservation.
 fn validate_size_align(size: usize, align: usize) -> Result<(), VmemError> {
     if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
         return Err(VmemError::invalid_argument());
@@ -756,9 +762,14 @@ fn validate_initial_commit(initial_commit: usize, size: usize) -> Result<(), Vme
     Ok(())
 }
 
-/// Private helper: finish a reservation from a raw backend result.
 /// Private struct for raw reservation results from backend functions.
 /// Named to prevent transposing `base` and `reservation` (both `NonNull<u8>`).
+///
+/// This is call-site convenience only: the backend functions themselves still
+/// return unnamed tuples, and the struct is constructed only at the call sites
+/// via `.map()`. This helps at the call site but does NOT eliminate the
+/// transposition risk entirely — the two `NonNull<u8>` tuple elements are still
+/// unnamed at the backend layer.
 struct RawReservation {
     /// The aligned usable base of the reservation.
     base: NonNull<u8>,
@@ -770,6 +781,7 @@ struct RawReservation {
     granted_huge: bool,
 }
 
+/// Private helper: finish a reservation from a raw backend result.
 fn finish_reservation(
     size: usize,
     align: usize,
@@ -907,6 +919,12 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// and `[base+start, base+end)` must contain no data the caller still needs —
 /// its contents are discarded.
 ///
+/// **No fallible form:** this entry point is intentionally infallible. The `()`
+/// return carries no write-permitting sentinel to misuse, so silently skipping
+/// on a contract violation is safe. A `try_decommit` return could be added in a
+/// future additive API decision if consumers need error propagation, but the
+/// README already argues for the safety of silent no-op on this shape.
+///
 /// **Platform divergence, not just a data-loss concern:** on Windows,
 /// `MEM_DECOMMIT` genuinely unmaps the pages, so a **write to `[base+start,
 /// base+end)` before [`recommit`] is a hard `STATUS_ACCESS_VIOLATION`
@@ -928,7 +946,8 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
 /// instead if you need decommit functionality.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
-    if start >= end || !start.is_multiple_of(page_size()) || !end.is_multiple_of(page_size()) {
+    let ps = page_size();
+    if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }
     #[cfg(feature = "mock")]
@@ -956,13 +975,19 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// for memory whose contents the caller no longer needs but has not yet
 /// overwritten. Cheaper reclaim; the kernel takes pages only under pressure.
 ///
+/// **No fallible form:** this entry point is intentionally infallible, for the
+/// same safety rationale as [`decommit`]. The `()` return carries no
+/// write-permitting sentinel, so silently skipping on a contract violation is
+/// safe. A `try_decommit_lazy` could be added as a future additive API decision.
+///
 /// `start`/`end` contract and safety are identical to [`decommit`].
 ///
 /// # Safety
 ///
 /// Same as [`decommit`].
 pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
-    if start >= end || !start.is_multiple_of(page_size()) || !end.is_multiple_of(page_size()) {
+    let ps = page_size();
+    if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }
     #[cfg(feature = "mock")]
