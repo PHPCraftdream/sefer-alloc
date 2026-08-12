@@ -763,6 +763,10 @@ jobs:
       # before. Requires `exact-span-large` transitively (Cargo feature
       # dependency).
       - run: cargo test --features "production exact-span-large large-reserved-capacity internals" --no-fail-fast
+      # Task #858/F2: aligned-vmem crate Windows test coverage. Exercises the
+      # Windows vmem backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real
+      # Windows hardware, not just miri or the Linux/macOS jobs.
+      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
