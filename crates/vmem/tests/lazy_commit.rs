@@ -68,6 +68,54 @@ fn lazy_reserve_then_commit_range_grows_accessible() {
 }
 
 #[test]
+fn lazy_reserve_small_align_still_reserves_full_span() {
+    // Regression test for task #848 (V21/P18): the Windows single-call
+    // VirtualAlloc(MEM_RESERVE | MEM_COMMIT) optimization for align <= 64 KiB
+    // must NOT apply when initial_commit < size -- a single combined call
+    // can only reserve and commit the SAME byte range, so taking that path
+    // here would silently shrink the actual reservation down to
+    // `initial_commit` bytes, breaking every later `commit_range` call past
+    // that point. Concretely reproduced during zero-trust review of #848's
+    // delegated diff: align=4 KiB (well under the 64 KiB threshold),
+    // size=64 KiB, initial_commit=4 KiB -- the buggy version returned a
+    // 4 KiB reservation instead of a >=64 KiB one, and `commit_range` past
+    // the first page failed.
+    let align = PAGE; // 4 KiB -- well under the 64 KiB single-call threshold
+    let size = 16 * PAGE; // 64 KiB
+    let initial = PAGE; // commit only the first page now
+    let r = reserve_aligned_lazy(size, align, initial).expect("lazy reserve, small align");
+    let base = r.as_ptr();
+    assert_eq!(
+        r.len(),
+        size,
+        "the reservation must cover the full requested span"
+    );
+
+    // The initially committed page is writable.
+    // SAFETY: the first `initial` bytes are committed.
+    unsafe {
+        base.write(0x33);
+        assert_eq!(base.read(), 0x33);
+    }
+
+    // commit_range past `initial` must succeed -- this is the exact call
+    // the single-call fast path broke when it shrank the reservation.
+    // SAFETY: `[initial, size)` is within the live reservation's span.
+    let ok = unsafe { commit_range(base, initial, size) };
+    assert!(
+        ok,
+        "commit_range beyond initial_commit must succeed even when align <= 64 KiB"
+    );
+
+    // SAFETY: [initial, size) is now committed.
+    unsafe {
+        base.add(size - PAGE).write(0x44);
+        assert_eq!(base.add(size - PAGE).read(), 0x44);
+    }
+    // Drop releases everything.
+}
+
+#[test]
 fn lazy_reserve_commit_entire_remainder() {
     // Reserve 2 MiB, commit first 64 KiB, then commit the entire remainder
     // in one commit_range call. Proves that commit_range handles large ranges.
