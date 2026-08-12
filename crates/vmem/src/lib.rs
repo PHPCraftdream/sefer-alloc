@@ -70,7 +70,9 @@
 //! validation constant. [`page_size`] returns the **actual OS page size**
 //! queried once via `sysconf(_SC_PAGESIZE)` (Unix) / `GetSystemInfo` (Windows).
 //! On Apple Silicon macOS this is 16 KiB; callers computing decommit offsets
-//! must round to `page_size()`, not `PAGE`, to avoid partial decommits.
+//! must round to `page_size()`, not `PAGE`, because `madvise(2)` rejects
+//! the entire call (all-or-nothing) when `addr` is not a multiple of the
+//! real page size.
 
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
@@ -577,8 +579,8 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
 /// `MADV_DONTNEED`, Windows `MEM_DECOMMIT`). Re-access after decommit produces
 /// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on Unix).
 ///
-/// `start` and `end` must be multiples of [`PAGE`] and within the span. A
-/// no-op if the range is empty.
+/// `start` and `end` must be multiples of [`page_size()`] and within the span.
+/// A no-op if the range is empty.
 ///
 /// # Safety
 ///
@@ -596,7 +598,7 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
 /// semantics — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 (filed 2026-07-30)
 /// for the incident record and status.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    if start >= end || !start.is_multiple_of(page_size()) || !end.is_multiple_of(page_size()) {
         return;
     }
     #[cfg(feature = "mock")]
@@ -630,7 +632,7 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 ///
 /// Same as [`decommit`].
 pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    if start >= end || !start.is_multiple_of(page_size()) || !end.is_multiple_of(page_size()) {
         return;
     }
     #[cfg(feature = "mock")]
@@ -1393,24 +1395,19 @@ fn unix_reserve(
     // carries `region_ptr`'s provenance (valid for the whole `over`-byte
     // mapping) to the computed address.
     let base = unsafe { NonNull::new_unchecked(region_ptr.with_addr(base_addr).cast::<u8>()) };
-    let head = base_addr - region_addr;
-    let tail_len = region_end - tail_start;
-    if head > 0 {
-        // SAFETY: `[region_addr, region_addr+head)` is within the mapping.
-        unsafe { libc_munmap(region_ptr.cast(), head) };
-    }
-    if tail_len > 0 {
-        // SAFETY: `[tail_start, tail_start+tail_len)` is within the mapping;
-        // `with_addr` carries `region_ptr`'s provenance to `tail_start`.
-        unsafe { libc_munmap(region_ptr.with_addr(tail_start).cast(), tail_len) };
-    }
+    // Keep the entire over-reserve mapping as the reservation, exactly as
+    // the Windows backend does. This removes the `munmap` trim calls and
+    // makes V1's alignment bug structurally impossible: there is exactly one
+    // `munmap` at `region_ptr` (provably page-aligned by `mmap`'s contract)
+    // instead of two at potentially misaligned offsets. Cost: up to `align`
+    // bytes of untouched VA held for the reservation's lifetime (no RSS).
     #[cfg(feature = "huge-pages")]
     if huge {
         // SAFETY: `base` is the start of a live `size`-byte mapping; a
         // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Ok((base, base, size))
+    Ok((base, region_ptr, over))
 }
 
 /// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
