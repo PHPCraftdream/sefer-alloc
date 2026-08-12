@@ -96,23 +96,31 @@ jobs:
       # that this tool reported as "no change; assume minor" / "no semver
       # update required", because the public signatures involved did not
       # change shape). It also does NOT check whether the version in
-      # Cargo.toml has already been published -- that is a distinct failure
-      # mode (a `cargo publish` of an already-taken version number just
-      # fails at publish time, but by then CI has already reported green on
-      # this step) and is guarded separately by the named step below so the
-      # two failure classes are distinguishable in the Actions UI. A real
-      # failure from this step is still a real gate for the class of bug it
-      # DOES cover -- no `|| true` swallowing it.
+      # Cargo.toml has already been published -- that is a distinct concern
+      # checked separately by the named step below so the two failure
+      # classes are distinguishable in the Actions UI. A real failure from
+      # this step is still a real gate for the class of bug it DOES cover --
+      # no `|| true` swallowing it.
       - run: cargo semver-checks check-release --package sefer-region
-      - name: Guard against publishing an already-taken version
-        # Distinct failure mode from cargo-semver-checks above (see that
-        # step's comment): this checks whether the version currently in
+      - name: Check whether this version is already published
+        # Distinct concern from cargo-semver-checks above (see that step's
+        # comment): this checks whether the version currently in
         # crates/region/Cargo.toml is already present in the crates.io
         # sparse index, which cargo-semver-checks does not check and a
-        # rustdoc-shape-only "no change" verdict can coexist with. Named
-        # separately so a failure here (version collision) is visually
-        # distinguishable in the CI log from a semver-checks failure
-        # (API-shape regression).
+        # rustdoc-shape-only "no change" verdict can coexist with.
+        #
+        # Non-blocking by design (task #865-followup): sefer-region 0.2.0
+        # was published between rounds, and this job runs on every push to
+        # `main`, not just on a release commit -- a hard `exit 1` here made
+        # every ordinary post-release push permanently red until the next
+        # intentional version bump, which is the expected steady state, not
+        # a regression. Downgraded to a `::warning::` annotation: the actual
+        # backstop against publishing an already-taken version still exists
+        # independent of this step -- `cargo publish` itself rejects an
+        # already-taken version at crates.io, so nothing is unguarded by
+        # making this informational. Bump the version in
+        # crates/region/Cargo.toml only when actually preparing a new
+        # release, not to silence this warning.
         run: |
           set -euo pipefail
           version=$(cargo metadata --format-version=1 --no-deps \
@@ -120,10 +128,10 @@ jobs:
           echo "Local sefer-region version: $version"
           index_json=$(curl -sSf https://index.crates.io/se/fe/sefer-region)
           if echo "$index_json" | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
-            echo "::error::sefer-region $version is already published on crates.io -- bump the version in crates/region/Cargo.toml before publishing."
-            exit 1
+            echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/region/Cargo.toml only when preparing an actual new release."
+          else
+            echo "OK: sefer-region $version is not yet on crates.io."
           fi
-          echo "OK: sefer-region $version is not yet on crates.io."
 
   aligned-vmem-gates:
     # Task #847/V18: clippy coverage for the aligned-vmem crate. Previously
