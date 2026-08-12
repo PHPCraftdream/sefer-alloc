@@ -67,7 +67,7 @@ const LINUX_HUGE_PAGE_SIZE: usize = 2 * MIB;
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
     // task #714 (rust-intel audit MEDIUM §F1): on Linux, `mmap(2)`'s Huge TLB
     // rule requires munmap's addr AND length to be huge-page-aligned; the
-    // over-reserve/trim path used to silently leak the whole mapping (EINVAL
+    // over-reserve path used to silently leak the whole mapping (EINVAL
     // from munmap, discarded) when `size` was not a multiple of the huge
     // page size. Fixed by rejecting such a request up front with
     // VmemError::invalid_argument() instead of leaking.
@@ -85,7 +85,7 @@ fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
 #[cfg(target_os = "linux")]
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_align() {
     // Same rule, the `align` half: `over = size + align` must also be
-    // huge-page-aligned for the trim math to stay provably conformant (see
+    // huge-page-aligned for the release to stay provably conformant (see
     // `unix_reserve`'s own doc for the full reasoning).
     let good_size = LINUX_HUGE_PAGE_SIZE;
     let bad_align = PAGE; // page-aligned but NOT huge-page-aligned
