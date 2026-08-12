@@ -306,6 +306,24 @@ pub struct Reservation {
     /// [`release`] path can reconstruct the exact `Layout` under miri (the
     /// native `munmap` / `VirtualFree` paths ignore it). See [`into_parts`].
     align: usize,
+    /// Whether OS large/huge pages were actually granted for this reservation.
+    /// True if `reserve_aligned_huge` succeeded in obtaining large pages on
+    /// Linux (`MAP_HUGETLB`) or Windows (`MEM_LARGE_PAGES` when the OS grants
+    /// the request). False if the request fell back to ordinary pages.
+    ///
+    /// This flag is the "best-effort" observable: a caller can detect whether
+    /// the huge-page feature actually engaged, rather than receiving only an
+    /// indistinguishable `Ok(Reservation)` on every fallback path.
+    ///
+    /// **Windows limitation (task #843 V3):** `MEM_LARGE_PAGES` requires the
+    /// flag to be specified together with `MEM_RESERVE | MEM_COMMIT` in a
+    /// single combined call, but this crate's Windows backend splits reserve
+    /// and commit into two calls for alignment reasons. The Windows large-page
+    /// path is therefore **not currently functional** — on Windows, this flag
+    /// will always be `false`, and the reservation always uses ordinary pages.
+    /// The Windows implementation is kept as an aspirational placeholder for
+    /// a future refactoring that would issue a single combined call.
+    granted_huge: bool,
 }
 
 impl Reservation {
@@ -355,6 +373,26 @@ impl Reservation {
     #[inline]
     pub const fn reservation_len(&self) -> usize {
         self.reservation_len
+    }
+
+    /// Whether OS large/huge pages were actually granted for this reservation.
+    ///
+    /// Returns `true` if the reservation successfully obtained large/huge pages
+    /// from the OS (Linux `MAP_HUGETLB` or Windows `MEM_LARGE_PAGES`), and `false`
+    /// if it fell back to ordinary pages or was not a huge-page request.
+    ///
+    /// This is the \"best-effort\" observable: a caller using `reserve_aligned_huge`
+    /// can now detect whether the huge-page feature actually engaged, rather than
+    /// receiving only an indistinguishable `Ok(Reservation)` on every fallback.
+    ///
+    /// **Windows limitation (task #843 V3):** on Windows, this method always
+    /// returns `false`. The Windows `MEM_LARGE_PAGES` implementation is not
+    /// functional in the current release — see [`reserve_aligned_huge`]'s
+    /// rustdoc for the full technical explanation.
+    #[must_use]
+    #[inline]
+    pub const fn is_huge(&self) -> bool {
+        self.granted_huge
     }
 
     /// Consume the handle WITHOUT releasing the OS reservation, returning the
@@ -477,6 +515,7 @@ impl Reservation {
             reservation: res_nn,
             reservation_len,
             align,
+            granted_huge: false, // Caller cannot know; conservatively assume false
         }
     }
 }
@@ -543,6 +582,7 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
         reservation,
         reservation_len,
         align,
+        granted_huge: false,
     })
 }
 
@@ -597,6 +637,17 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
 /// divergence already crashed an in-repo consumer that assumed the Linux
 /// semantics — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 (filed 2026-07-30)
 /// for the incident record and status.
+///
+/// **Huge-page incompatibility (task #843 V4):** on both Windows and Linux,
+/// decommit **does not work** on huge-page reservations (those returned by
+/// [`reserve_aligned_huge`] with [`Reservation::is_huge`] == `true`).
+/// On Windows, `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions.
+/// On Linux, `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted
+/// only at huge-page granularity, so any [`page_size()`]-granular offset gets
+/// `EINVAL` and does nothing. The behavior is therefore indistinguishable from
+/// a silent no-op: the caller's RSS does not decrease, and subsequent reads
+/// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
+/// instead if you need decommit functionality.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     if start >= end || !start.is_multiple_of(page_size()) || !end.is_multiple_of(page_size()) {
         return;
@@ -882,6 +933,7 @@ pub fn try_reserve_aligned_lazy(
         reservation,
         reservation_len,
         align,
+        granted_huge: false,
     })
 }
 
@@ -900,6 +952,10 @@ pub fn try_reserve_aligned_lazy(
 /// this never fails purely because huge pages are unavailable — it fails only
 /// on a genuine reservation error (OOM) or a contract violation.
 ///
+/// To detect whether huge pages were actually granted (as opposed to having
+/// fallen back to ordinary pages), use the returned [`Reservation::is_huge`]
+/// method.
+///
 /// Base/align/size contract is otherwise identical to [`reserve_aligned`],
 /// **except on Linux with `huge-pages` enabled** (task #776, F3): `size` and
 /// `align` must BOTH additionally be multiples of the Linux huge-page size
@@ -911,6 +967,25 @@ pub fn try_reserve_aligned_lazy(
 /// own commit for the full reasoning; the trade-off is a stricter contract
 /// in exchange for a provably-correct trim). For the failure cause use
 /// [`try_reserve_aligned_huge`].
+///
+/// **Windows limitation (task #843 V3):** on Windows, this function always
+/// returns a reservation with [`Reservation::is_huge`] == `false`. The
+/// Windows `MEM_LARGE_PAGES` implementation is not functional in the current
+/// release: Win32's `MEM_LARGE_PAGES` contract requires the flag to be specified
+/// together with `MEM_RESERVE | MEM_COMMIT` in a single combined call, but this
+/// crate's Windows backend splits reserve and commit for alignment reasons.
+/// The Windows implementation is kept as an aspirational placeholder for a
+/// future refactoring that would issue a single combined call.
+///
+/// **Decommit incompatibility (task #843 V4):** on both Windows and Linux,
+/// [`decommit`] and [`decommit_lazy`] **do not work** on huge-page reservations.
+/// On Windows, `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions.
+/// On Linux, `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted
+/// only at huge-page granularity, so any [`page_size()`]-granular offset gets
+/// `EINVAL` and does nothing. The behavior is therefore indistinguishable from
+/// a silent no-op: the caller's RSS does not decrease, and subsequent reads
+/// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
+/// instead if you need decommit functionality.
 #[must_use]
 #[cfg(feature = "huge-pages")]
 pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
@@ -933,13 +1008,16 @@ pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation
 
     // task #713: `reserve_aligned_huge_raw` now captures its own `VmemError`
     // immediately at the point of failure; this just propagates it.
-    reserve_aligned_huge_raw(size, align).map(|(base, reservation, reservation_len)| Reservation {
-        base,
-        len: size,
-        reservation,
-        reservation_len,
-        align,
-    })
+    reserve_aligned_huge_raw(size, align).map(
+        |(base, reservation, reservation_len, granted_huge)| Reservation {
+            base,
+            len: size,
+            reservation,
+            reservation_len,
+            align,
+            granted_huge,
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,15 +1081,19 @@ fn reserve_aligned_raw(
     size: usize,
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    win_reserve_commit(size, align, size, 0)
+    win_reserve_commit(size, align, size, 0).map(
+        |(base, reservation, reservation_len, _granted_huge)| (base, reservation, reservation_len),
+    )
 }
 
 /// Windows over-reserve + commit helper shared by the eager, lazy and huge
 /// paths. Reserves `size + align` bytes, finds the aligned base, and commits
 /// `commit_len` bytes (with `extra_flags` OR-ed into `MEM_COMMIT`, e.g.
-/// `MEM_LARGE_PAGES`). Returns the aligned base, the reservation base and the
-/// full reservation length. On commit failure the whole reservation is
-/// released and `Err` returned.
+/// `MEM_LARGE_PAGES`). Returns the aligned base, the reservation base, the
+/// full reservation length, and whether the extra_flags were successfully
+/// applied (i.e., `true` only if `extra_flags != 0` and the commit with those
+/// flags succeeded). On commit failure the whole reservation is released and
+/// `Err` returned.
 ///
 /// task #713: every `Err` here carries a [`VmemError`] captured IMMEDIATELY
 /// after the syscall that produced it, before any cleanup FFI call that could
@@ -1024,7 +1106,7 @@ fn win_reserve_commit(
     align: usize,
     commit_len: usize,
     extra_commit_flags: u32,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     let over = size
         .checked_add(align)
         .ok_or_else(VmemError::invalid_argument)?;
@@ -1091,7 +1173,7 @@ fn win_reserve_commit(
             if !plain.is_null() {
                 #[cfg(feature = "bench-internals")]
                 WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
-                return Ok((base, region, over));
+                return Ok((base, region, over, false)); // Fallback to ordinary pages
             }
             // Capture immediately after the FINAL failing syscall (the plain
             // retry), before the cleanup release below.
@@ -1108,7 +1190,8 @@ fn win_reserve_commit(
     }
     #[cfg(feature = "bench-internals")]
     WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
-    Ok((base, region, over))
+    // extra_commit_flags were applied successfully (committed != NULL)
+    Ok((base, region, over, extra_commit_flags != 0))
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -1176,14 +1259,22 @@ fn reserve_aligned_lazy_raw(
     align: usize,
     initial_commit: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    win_reserve_commit(size, align, initial_commit, 0)
+    win_reserve_commit(size, align, initial_commit, 0).map(
+        |(base, reservation, reservation_len, _granted_huge)| (base, reservation, reservation_len),
+    )
 }
 
 #[cfg(all(windows, not(miri), feature = "huge-pages"))]
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
+    // Windows large pages are not currently functional (task #843 V3):
+    // MEM_LARGE_PAGES must be specified together with MEM_RESERVE | MEM_COMMIT
+    // in a single combined call, but this backend splits reserve and commit
+    // for alignment reasons. We call the combined path anyway for the fallback
+    // behavior, but the flag will always be false because the large-page request
+    // always fails and we fall back to ordinary pages.
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
@@ -1283,13 +1374,19 @@ fn reserve_aligned_raw(
     size: usize,
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    unix_reserve(size, align, false)
+    unix_reserve(size, align, false).map(|(base, reservation, reservation_len, _granted_huge)| {
+        (base, reservation, reservation_len)
+    })
 }
 
 /// Unix reservation shared by the eager and huge paths. When `huge` is `true`
 /// the exact-size fast path and over-reserve fallback both request
 /// `MAP_HUGETLB` (Linux) and fall back to ordinary pages if the huge mapping
 /// fails.
+///
+/// Returns `(base, reservation, reservation_len, granted_huge)` where
+/// `granted_huge` is `true` iff `huge` was `true` and the huge-page request
+/// actually succeeded.
 ///
 /// task #713: every `Err` here carries a [`VmemError`] captured IMMEDIATELY
 /// after the syscall that produced it, before any cleanup `munmap` call that
@@ -1334,7 +1431,7 @@ fn unix_reserve(
     size: usize,
     align: usize,
     huge: bool,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     #[cfg(all(target_os = "linux", feature = "huge-pages"))]
     if huge
         && (!size.is_multiple_of(LINUX_HUGE_PAGE_SIZE)
@@ -1342,8 +1439,10 @@ fn unix_reserve(
     {
         return Err(VmemError::invalid_argument());
     }
-    if let Ok(exact) = try_reserve_aligned_exact(size, align, huge) {
-        return Ok(exact);
+    if let Ok((base, reservation, reservation_len, granted_huge)) =
+        try_reserve_aligned_exact(size, align, huge)
+    {
+        return Ok((base, reservation, reservation_len, granted_huge));
     }
     let over = size
         .checked_add(align)
@@ -1353,6 +1452,7 @@ fn unix_reserve(
         // private mapping; the kernel chooses the address or returns MAP_FAILED
         // (mapped to null by `libc_mmap`).
         let p = libc_mmap(over, huge);
+        let granted_huge; // Track whether huge pages were actually granted
         if p.is_null() {
             // Retry without huge pages if the huge request was the cause.
             if huge {
@@ -1363,12 +1463,12 @@ fn unix_reserve(
                     // here is already the immediate-capture the task requires.
                     return Err(VmemError::last_os_error());
                 }
-                p2
+                (p2, false) // Fallback to ordinary pages
             } else {
                 return Err(VmemError::last_os_error());
             }
         } else {
-            p
+            (p, huge) // Huge pages requested and succeeded
         }
     };
     // task #717: `.addr()`/`.with_addr()` (strict-provenance) replace the
@@ -1407,11 +1507,14 @@ fn unix_reserve(
         // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Ok((base, region_ptr, over))
+    Ok((base, region_ptr, over, granted_huge))
 }
 
 /// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
 /// `MAP_HUGETLB`.
+///
+/// Returns `(base, reservation, reservation_len, granted_huge)` where
+/// `granted_huge` is `true` iff `huge` was `true` and the mapping succeeded.
 ///
 /// task #713: a genuine `mmap` failure captures its [`VmemError`]
 /// IMMEDIATELY, before returning. An alignment miss (the exact address `mmap`
@@ -1427,7 +1530,7 @@ fn try_reserve_aligned_exact(
     size: usize,
     align: usize,
     huge: bool,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     #[cfg(feature = "bench-internals")]
     UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let region_ptr = unsafe {
@@ -1459,7 +1562,7 @@ fn try_reserve_aligned_exact(
         // SAFETY: `base` is a live `size`-byte mapping; hint-only.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Ok((base, base, size))
+    Ok((base, base, size, huge))
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -1522,7 +1625,7 @@ fn reserve_aligned_lazy_raw(
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     unix_reserve(size, align, true)
 }
 
@@ -1782,14 +1885,14 @@ unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
 fn reserve_aligned_raw(
     size: usize,
     align: usize,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     use std::alloc::Layout;
     let layout = Layout::from_size_align(size, align).map_err(|_| VmemError::invalid_argument())?;
     // SAFETY: `layout` has non-zero size and pow2 align; under miri the consumer
     // is not the global allocator, so no reentrancy.
     let ptr = unsafe { std::alloc::alloc(layout) };
     match NonNull::new(ptr) {
-        Some(base) => Ok((base, base, size)),
+        Some(base) => Ok((base, base, size, false)), // Never huge under miri
         None => Err(VmemError::last_os_error()),
     }
 }
@@ -1835,16 +1938,20 @@ fn reserve_aligned_lazy_raw(
     align: usize,
     _initial_commit: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    reserve_aligned_raw(size, align)
+    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len, _granted_huge)| {
+        (base, reservation, reservation_len)
+    })
 }
 
 #[cfg(all(miri, feature = "huge-pages"))]
 fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     // Miri has no huge pages; ordinary allocation is observably identical.
-    reserve_aligned_raw(size, align)
+    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len, _granted_huge)| {
+        (base, reservation, reservation_len, false) // Never huge under miri
+    })
 }
 
 // ---------------------------------------------------------------------------

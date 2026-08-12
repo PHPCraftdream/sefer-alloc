@@ -54,7 +54,11 @@ discards the cause. Optional features: `lazy-commit` (incremental commit:
 accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
 must both additionally be multiples of the huge-page size (2 MiB), or the
-request is rejected up front**; see the function's own rustdoc), `mock`
+request is rejected up front**; **on Windows the `MEM_LARGE_PAGES` request is
+not currently functional and always falls back to ordinary pages** — see the
+function's own rustdoc for why; use `Reservation::is_huge` to detect
+whether a reservation actually got large/huge pages on either platform),
+`mock`
 (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
