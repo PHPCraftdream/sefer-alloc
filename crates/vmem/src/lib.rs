@@ -207,9 +207,12 @@ pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 /// `bench-internals`: total number of `win_reserve_commit` calls that took the
 /// single-call fast path (Windows only — always 0 on Unix/miri; that internal helper
 /// is private and platform-gated, so it is named here in code font rather than linked).
-/// Each call issues exactly 1 syscall (`VirtualAlloc(MEM_RESERVE | MEM_COMMIT)`),
+/// Each call issues 1 syscall (`VirtualAlloc(MEM_RESERVE | MEM_COMMIT)`),
 /// which the fast path uses when `align <= 64 KiB` and `commit_len == size`.
-/// See the module-level "bench-internals" section doc above.
+/// When a large-page request fails, a best-effort retry with ordinary pages
+/// issues a second syscall but is still counted as 1 in this counter — see the
+/// retry fallback code in `win_reserve_commit`. See the module-level
+/// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -351,6 +354,13 @@ fn query_os_page_size() -> usize {
     // struct is stack-allocated and fully written by the call.
     let mut info = SystemInfo::default();
     unsafe { GetSystemInfo(&mut info) };
+    debug_assert!(
+        info.dw_allocation_granularity as usize >= WIN_ALLOCATION_GRANULARITY,
+        "OS-reported allocation granularity ({}) is smaller than the hardcoded constant ({}); \
+         this would break the single-call fast path's alignment guarantee",
+        info.dw_allocation_granularity,
+        WIN_ALLOCATION_GRANULARITY
+    );
     info.dw_page_size as usize
 }
 
