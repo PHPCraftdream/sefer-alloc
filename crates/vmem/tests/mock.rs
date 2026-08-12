@@ -32,7 +32,7 @@ fn records_reserve_and_decommit() {
         } if size == 2 * MIB && align == 2 * MIB
     ));
     assert!(matches!(calls[1], Call::Decommit { start: 0, .. }));
-    assert!(matches!(calls[2], Call::DecommitLazy { start, .. } if start == PAGE));
+    assert!(matches!(calls[2], Call::DecommitLazy { start, .. } if start == page_size()));
     // V9: Drop records Release, so after this point r will drop and we'll see Release.
     // For this test, explicitly drop r to see the Release before checking.
     drop(r);
