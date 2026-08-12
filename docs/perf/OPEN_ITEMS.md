@@ -1127,6 +1127,16 @@ for completeness.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
+46. **R-V20-849 — Unix exact-reserve hit rate (aligned-vmem, WSL2 only).**
+
+   > **Current state**
+   > - **Status:** measured, requires bare-metal Linux remeasurement before decision is definitive.
+   > - **Current number/verdict:** 30-run aggregate on WSL2 (Hyper-V-backed kernel) found 4 MiB alignment hit rate = 272/480 = **56.6667%**, not the ~0.1% the review predicted. Other regimes: 4 KiB = 480/480 (100%), 64 KiB = 165/480 (34.375%), 1 MiB = 224/480 (46.6667%). The ~57% hit rate means the exact-mmap fast path is very likely still a net win even for large aligns on this platform+kernel, so the V20/P17 align-threshold guard's premise does not hold here.
+   > - **Next trigger:** bare-metal Linux re-measurement — this measurement was on WSL2/Hyper-V, and a native Linux kernel's VA layout/ASLR entropy may differ. The WSL2-only number is not strong enough evidence to close V20/P17 outright in either direction.
+   > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`.
+   > - **Cross-reference (origin):** task #849 (commit `35d51e6`), `docs/reviews/2026-08-12-aligned-vmem-post-campaign-closing-review.md` finding W15.
+   Full history: task #857 (this entry).
+
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
 
