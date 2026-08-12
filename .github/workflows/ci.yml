@@ -132,6 +132,8 @@ jobs:
     # public API used by the bench left CI green. Task #846 proved two clippy
     # rows are required: --all-features (covers all optional features) and
     # default (caught the inverted #[cfg_attr] dead_code bug that #846 fixed).
+    # Task #851: miri compilation check — catches E0308 tuple-arity mismatches
+    # that block publication but are invisible to the other checks.
     name: aligned-vmem package gates
     runs-on: ubuntu-latest
     steps:
@@ -148,6 +150,10 @@ jobs:
       # Basic sanity check that the crate's tests pass (library + integration
       # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
       - run: cargo test -p aligned-vmem --all-features
+      # Task #851: miri compilation gate. NO miri interpreter required — this
+      # is just `cargo check` with the `miri` cfg set, which catches the
+      # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.
+      - run: RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
