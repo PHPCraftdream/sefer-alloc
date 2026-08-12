@@ -34,8 +34,9 @@ the respective BSD `mmap(2)` man pages.
 
 **Windows `VirtualAlloc2` + `MEM_EXTENDED_PARAMETER_ADDRESS_REQUIREMENTS`** would
 eliminate both inefficiencies of the current `align > 64 KiB` path:
-* **Syscalls:** 2 → 1 (no separate `VirtualAlloc(MEM_RESERVE)` + alignment-finding
-  `VirtualFree` + `VirtualAlloc(MEM_COMMIT)` dance)
+* **Syscalls:** 2 → 1 (no separate `VirtualAlloc(MEM_RESERVE)` then
+  `VirtualAlloc(MEM_COMMIT)` on the aligned sub-window — the current path has
+  no `VirtualFree` call on its success path)
 * **Virtual address space:** `size + align` → `size` (no over-reserve to find an
   aligned window)
 

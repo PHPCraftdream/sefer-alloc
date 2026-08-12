@@ -1828,9 +1828,9 @@ fn reserve_aligned_raw(
 /// size (`man 2 mmap`: "the length ... must also be huge page aligned" for
 /// `MAP_HUGETLB`; the kernel additionally guarantees an anonymous
 /// `MAP_HUGETLB` mapping with `addr == NULL` starts at a huge-page-aligned
-/// address). A non-huge-aligned `size` would cause `munmap` calls on the
-/// over-reserved tail to fail `EINVAL` (silently discarded by this function's
-/// own `let _ = munmap(...)` cleanup calls), leaking the ENTIRE mapping
+/// address). A non-huge-aligned `size` makes `over = size + align`
+/// non-huge-aligned too, so the whole-mapping `munmap` in
+/// `release_reservation` would fail `EINVAL`, leaking the ENTIRE mapping
 /// (plus its pinned physical huge pages) on every affected reservation AND
 /// on every subsequent [`release`].
 ///

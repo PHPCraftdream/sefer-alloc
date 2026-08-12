@@ -234,7 +234,8 @@ const steps = [
     args: ['scripts/verify-commit-prefixes.mjs'],
   },
   {
-    // R4 (task #854/R6): grep-based guard against the doc-comment drift class
+    // R6 (task #871; the guard W5/task #854 asked for two rounds ago):
+    // grep-based guard against the doc-comment drift class
     // that has recurred 5 times (unconditional "over-reserve size + align" /
     // "trim" statements without qualifying context). Heuristic: every doc
     // comment mentioning "over-reserv" or "trim" must also mention "align",

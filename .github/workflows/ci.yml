@@ -782,6 +782,7 @@ jobs:
       # Task #858/F2: aligned-vmem crate mock coverage. Tests the mock recording
       # backend itself (NOT the real VirtualAlloc/MEM_DECOMMIT backend) with all
       # optional features enabled. This is the only row that runs tests/mock.rs.
+      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -815,6 +816,7 @@ jobs:
       # recording backend itself (NOT the real mmap/madvise/MADV_DONTNEED backend)
       # with all optional features enabled. This is the only row that runs
       # tests/mock.rs on macOS.
+      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
 
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
