@@ -21,8 +21,8 @@
 //! Those crates are oriented around **file mappings** and **page-protection**.
 //! `aligned-vmem` does one different thing: hand you an *anonymous* span whose
 //! **base is aligned to a power of two you choose** (e.g. 2 MiB / 4 MiB for an
-//! allocator's segments) via the classic over-reserve + trim technique, plus
-//! page-granularity decommit/recommit so you can return physical memory to the
+//! allocator's segments) by over-reserving `size + align` bytes and keeping the
+//! full mapping, plus page-granularity decommit/recommit so you can return physical memory to the
 //! OS while keeping the address-space reservation. If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
@@ -165,14 +165,14 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //
 // - Unix: `unix_reserve` tries an EXACT-size `mmap` first
 //   (`try_reserve_aligned_exact`) and only falls through to the over-reserve
-//   + trim path on a miss (wrong alignment). The survey
-//   (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11) computed this
+//   path on a miss (wrong alignment), keeping the full `size + align` mapping.
+//   The survey (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11) computed this
 //   fast path is a net syscall LOSS below a 50% hit rate but noted "nothing
 //   anywhere counts this" — `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle it
 //   with a real number instead of the theoretical bound.
 // - Windows: `win_reserve_commit` unconditionally issues 2 syscalls per
 //   segment (one `MEM_RESERVE` + one `MEM_COMMIT`), over-reserving `size +
-//   align` and never trimming (Windows cannot partially release a
+//   align` and keeping the full mapping (Windows cannot partially release a
 //   `MEM_RESERVE` region). `WINDOWS_RESERVE_COMMIT_CALLS` counts these call
 //   PAIRS for parity/comparison against the Unix hit-rate story — there is no
 //   fast/slow-path split to measure on Windows today (that is exactly what
@@ -196,8 +196,8 @@ use core::sync::atomic::AtomicU64;
 pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
-/// succeeded (the `mmap` landed already `align`-aligned, no fallback
-/// over-reserve+trim needed). Numerator over
+/// succeeded (the `mmap` landed already `align`-aligned, so no over-reserve
+/// fallback was needed). Numerator over
 /// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
 /// section doc above.
 #[cfg(feature = "bench-internals")]
@@ -413,7 +413,8 @@ impl Reservation {
     }
 
     /// The start of the underlying OS reservation (may sit below
-    /// [`as_ptr`](Self::as_ptr) due to the over-reserve + trim technique).
+    /// [`as_ptr`](Self::as_ptr) because the reservation is over-reserved
+    /// to achieve alignment and the full mapping is kept).
     #[must_use]
     #[inline]
     pub fn reservation_ptr(&self) -> *mut u8 {
@@ -523,8 +524,8 @@ impl Reservation {
     /// that `aligned-vmem` itself does not wrap, then adopts the result via
     /// this constructor — it needs `base`/`len` too because the adopted
     /// reservation's usable span need not start at the OS reservation's own
-    /// base (the over-reserve + trim technique this crate itself uses
-    /// internally is exactly that shape).
+    /// base (this crate itself over-reserves `size + align` and keeps the
+    /// full mapping, which is exactly that shape).
     ///
     /// # Safety
     ///
@@ -535,7 +536,8 @@ impl Reservation {
     ///   aligned to `align`.
     /// - `len` is the usable span size, a non-zero multiple of [`PAGE`].
     /// - `reservation` is the *underlying OS reservation* start (often equal
-    ///   to `base`, but may be lower under the over-reserve + trim technique).
+    ///   to `base`, but may be lower because the reservation is over-reserved
+    ///   to achieve alignment and the full mapping is kept).
     /// - `reservation_len` is the full size of the OS reservation, a non-zero
     ///   multiple of [`PAGE`], `reservation_len >= len + (base - reservation)`.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
@@ -661,11 +663,24 @@ impl ReservationParts {
 // ---------------------------------------------------------------------------
 
 /// Reserve `size` bytes of anonymous virtual memory whose base is aligned to
-/// `align` (exact-size mmap fast path on Unix, over-reserve + trim fallback
-/// on an alignment miss; Windows always over-reserves and never trims).
+/// `align`.
 ///
 /// - `align` must be a power of two `>=` [`PAGE`].
 /// - `size` must be a non-zero multiple of [`PAGE`].
+///
+/// On Unix, first tries an ordinary exact-size `mmap` and checks whether the
+/// kernel happened to place it at an `align`-aligned address (fast path;
+/// hit rate depends on the OS's placement heuristics, not on any hint this
+/// crate passes). On a miss (wrong alignment), over-reserves `size + align`
+/// bytes and keeps the full mapping. On Windows,
+/// unconditionally over-reserves `size + align` bytes and keeps the full
+/// mapping. The `Reservation::reservation_ptr` / `reservation_len` fields
+/// expose the full reservation; `Reservation::as_ptr` / `len` expose the
+/// aligned usable span.
+///
+/// **Cost on Unix fast-path miss:** the reservation holds `size + align` bytes
+/// of virtual address space for its lifetime (measured hit rate: 34.4% at 64 KiB
+/// align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849).
 ///
 /// Returns `None` on a contract violation or if the OS refuses the reservation
 /// (OOM) — never panics, so it is safe to call from inside a `GlobalAlloc`
@@ -1185,7 +1200,7 @@ pub fn try_reserve_aligned_lazy(
 /// succeed there via the documented ordinary-page fallback (task #714 added
 /// this rejection to close a real `munmap` mapping leak — see that task's
 /// own commit for the full reasoning; the trade-off is a stricter contract
-/// in exchange for a provably-correct trim). For the failure cause use
+/// in exchange for provable correctness). For the failure cause use
 /// [`try_reserve_aligned_huge`].
 ///
 /// **Windows limitation (task #843 V3):** on Windows, this function always
@@ -1687,14 +1702,11 @@ fn reserve_aligned_raw(
 /// size (`man 2 mmap`: "the length ... must also be huge page aligned" for
 /// `MAP_HUGETLB`; the kernel additionally guarantees an anonymous
 /// `MAP_HUGETLB` mapping with `addr == NULL` starts at a huge-page-aligned
-/// address). This function's over-reserve/head-tail-trim path (below)
-/// previously trimmed a hugetlb mapping down to a caller-supplied `size` at
-/// ordinary [`PAGE`] granularity, which is misaligned for a hugetlb mapping
-/// unless `size` happens to already be huge-page-aligned — the resulting
-/// `munmap` calls fail `EINVAL` (silently discarded by this function's own
-/// `let _ = munmap(...)` cleanup calls), leaking the ENTIRE untrimmed
-/// mapping (plus its pinned physical huge pages) on every affected
-/// reservation AND on every subsequent [`release`].
+/// address). A non-huge-aligned `size` would cause `munmap` calls on the
+/// over-reserved tail to fail `EINVAL` (silently discarded by this function's
+/// own `let _ = munmap(...)` cleanup calls), leaking the ENTIRE mapping
+/// (plus its pinned physical huge pages) on every affected reservation AND
+/// on every subsequent [`release`].
 ///
 /// REASONED-FROM-SPEC, NOT empirically verified (per this task's own
 /// instruction: no hugetlb-configured host is in this project's CI). Fixed
