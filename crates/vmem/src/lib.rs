@@ -354,14 +354,16 @@ pub struct Reservation {
     /// the huge-page feature actually engaged, rather than receiving only an
     /// indistinguishable `Ok(Reservation)` on every fallback path.
     ///
-    /// **Windows limitation (task #843 V3):** `MEM_LARGE_PAGES` requires the
-    /// flag to be specified together with `MEM_RESERVE | MEM_COMMIT` in a
-    /// single combined call, but this crate's Windows backend splits reserve
-    /// and commit into two calls for alignment reasons. The Windows large-page
-    /// path is therefore **not currently functional** — on Windows, this flag
-    /// will always be `false`, and the reservation always uses ordinary pages.
-    /// The Windows implementation is kept as an aspirational placeholder for
-    /// a future refactoring that would issue a single combined call.
+    /// **Windows limitation (task #848 single-call fast path):** on Windows,
+    /// this flag is `true` only when ALL of the following hold:
+    /// 1. `align <= 64 KiB` (the single-call fast path requirement)
+    /// 2. `size` is a multiple of the system's large-page minimum
+    /// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
+    ///    allocation fails and falls back to ordinary pages)
+    ///
+    /// If any of these conditions fail, the function falls back to ordinary
+    /// pages and this flag is `false`. For `align > 64 KiB` the two-call path
+    /// is used, which does not support `MEM_LARGE_PAGES` at all.
     granted_huge: bool,
 }
 
@@ -438,10 +440,14 @@ impl Reservation {
     /// can now detect whether the huge-page feature actually engaged, rather than
     /// receiving only an indistinguishable `Ok(Reservation)` on every fallback.
     ///
-    /// **Windows limitation (task #843 V3):** on Windows, this method always
-    /// returns `false`. The Windows `MEM_LARGE_PAGES` implementation is not
-    /// functional in the current release — see [`reserve_aligned_huge`]'s
-    /// rustdoc for the full technical explanation.
+    /// **Windows limitation (task #848 single-call fast path):** on Windows,
+    /// this returns `true` only when ALL of the following hold:
+    /// 1. `align <= 64 KiB` (the single-call fast path requirement)
+    /// 2. `size` is a multiple of the system's large-page minimum
+    /// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
+    ///    allocation fails and falls back to ordinary pages)
+    ///    For `align > 64 KiB` the two-call path is used, which does not support
+    ///    `MEM_LARGE_PAGES` at all. See [`reserve_aligned_huge`]'s rustdoc for details.
     #[must_use]
     #[inline]
     pub const fn is_huge(&self) -> bool {
@@ -1203,14 +1209,18 @@ pub fn try_reserve_aligned_lazy(
 /// in exchange for provable correctness). For the failure cause use
 /// [`try_reserve_aligned_huge`].
 ///
-/// **Windows limitation (task #843 V3):** on Windows, this function always
-/// returns a reservation with [`Reservation::is_huge`] == `false`. The
-/// Windows `MEM_LARGE_PAGES` implementation is not functional in the current
-/// release: Win32's `MEM_LARGE_PAGES` contract requires the flag to be specified
-/// together with `MEM_RESERVE | MEM_COMMIT` in a single combined call, but this
-/// crate's Windows backend splits reserve and commit for alignment reasons.
-/// The Windows implementation is kept as an aspirational placeholder for a
-/// future refactoring that would issue a single combined call.
+/// **Windows limitation (task #848 single-call fast path):** on Windows,
+/// this function returns a reservation with [`Reservation::is_huge`] == `true`
+/// only when ALL of the following hold:
+/// 1. `align <= 64 KiB` (the single-call fast path requirement)
+/// 2. `size` is a multiple of the system's large-page minimum
+/// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
+///    allocation fails and falls back to ordinary pages)
+///
+/// If any of these conditions fail, the function falls back to ordinary
+/// pages and returns a reservation with [`Reservation::is_huge`] == `false`.
+/// For `align > 64 KiB` the two-call path is used, which does not support
+/// `MEM_LARGE_PAGES` at all.
 ///
 /// **Decommit incompatibility (task #843 V4):** on both Windows and Linux,
 /// [`decommit`] and [`decommit_lazy`] **do not work** on huge-page reservations.
@@ -1565,12 +1575,15 @@ fn reserve_aligned_huge_raw(
     size: usize,
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
-    // Windows large pages are not currently functional (task #843 V3):
-    // MEM_LARGE_PAGES must be specified together with MEM_RESERVE | MEM_COMMIT
-    // in a single combined call, but this backend splits reserve and commit
-    // for alignment reasons. We call the combined path anyway for the fallback
-    // behavior, but the flag will always be false because the large-page request
-    // always fails and we fall back to ordinary pages.
+    // Windows large pages work via the single-call fast path (task #848):
+    // MEM_LARGE_PAGES is now issued in a combined MEM_RESERVE | MEM_COMMIT call,
+    // but only when align <= 64 KiB (the fast path condition). For align > 64 KiB
+    // the two-call path is used, which does not support large pages at all.
+    // Even when align <= 64 KiB, large-page allocation requires:
+    // 1. size is a multiple of the system's large-page minimum
+    // 2. The process has SeLockMemoryPrivilege
+    // If either fails, the allocation falls back to ordinary pages and
+    // granted_huge is false.
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
@@ -1767,7 +1780,7 @@ fn unix_reserve(
                 return Err(VmemError::last_os_error());
             }
         } else {
-            granted_huge = huge; // Huge pages requested and succeeded
+            granted_huge = HUGE_SUPPORTED && huge; // Huge pages requested and actually supported
             p
         }
     };
@@ -1858,7 +1871,12 @@ fn try_reserve_aligned_exact(
     // applied to `unix_reserve`'s slow path -- this is the Unix FAST path
     // (tried first by every reservation), so it is the higher-traffic site.
     let region_addr = region_ptr.addr();
-    if !region_addr.is_multiple_of(align) {
+    // Invariant: when `align <= page_size()`, the check below is always
+    // false because `mmap` always returns page-aligned addresses. Skip the
+    // check entirely in that case to eliminate a dead branch and document
+    // the invariant explicitly. Confirmed by measurement #849: 480/480 hits
+    // on page-size mode (no syscalls saved, just removes dead code).
+    if align > page_size() && !region_addr.is_multiple_of(align) {
         // SAFETY: `region_ptr` was just mapped with length `size`; unmap once.
         unsafe { libc_munmap(region_ptr.cast(), size) };
         return Err(VmemError::invalid_argument());
@@ -1872,7 +1890,9 @@ fn try_reserve_aligned_exact(
         // SAFETY: `base` is a live `size`-byte mapping; hint-only.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Ok((base, base, size, huge))
+    // `granted_huge` reflects what was actually requested AND what the OS supports.
+    // On non-Linux Unix the `huge` flag is silently ignored, so we report false.
+    Ok((base, base, size, HUGE_SUPPORTED && huge))
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -1987,6 +2007,16 @@ const MAP_ANON: i32 = 0x1000;
 /// Linux `MAP_HUGETLB` (request huge pages at mmap time).
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MAP_HUGETLB: i32 = 0x40000;
+
+/// task #852 (W2): `HUGE_SUPPORTED` is true only on Linux with the `huge-pages` feature enabled.
+/// Non-Linux Unix (macOS, iOS, BSD, etc.) do NOT support `MAP_HUGETLB` — the `libc_mmap`
+/// function silently ignores the `huge` parameter on those platforms. This constant is used
+/// to ensure `granted_huge` reports the ACTUAL grant, not just the request.
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+const HUGE_SUPPORTED: bool = true;
+#[cfg(all(unix, not(miri), not(all(target_os = "linux", feature = "huge-pages"))))]
+const HUGE_SUPPORTED: bool = false;
+
 /// task #714: the default Linux huge page size (`mmap(2)`'s "Huge TLB
 /// mappings" section; `/proc/meminfo`'s `Hugepagesize:` on a default
 /// configuration). `MAP_HUGETLB` without an explicit size-encoding flag
