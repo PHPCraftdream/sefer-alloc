@@ -1689,12 +1689,15 @@ fn unix_reserve(
     let over = size
         .checked_add(align)
         .ok_or_else(VmemError::invalid_argument)?;
+    // Track whether huge pages were actually granted; assigned in each branch
+    // below (a bare pointer, not a tuple, must be the unsafe block's own tail
+    // expression -- `region_ptr` is used as a raw pointer immediately after).
+    let granted_huge;
     let region_ptr = unsafe {
         // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` — anonymous
         // private mapping; the kernel chooses the address or returns MAP_FAILED
         // (mapped to null by `libc_mmap`).
         let p = libc_mmap(over, huge);
-        let granted_huge; // Track whether huge pages were actually granted
         if p.is_null() {
             // Retry without huge pages if the huge request was the cause.
             if huge {
@@ -1705,12 +1708,14 @@ fn unix_reserve(
                     // here is already the immediate-capture the task requires.
                     return Err(VmemError::last_os_error());
                 }
-                (p2, false) // Fallback to ordinary pages
+                granted_huge = false; // Fallback to ordinary pages
+                p2
             } else {
                 return Err(VmemError::last_os_error());
             }
         } else {
-            (p, huge) // Huge pages requested and succeeded
+            granted_huge = huge; // Huge pages requested and succeeded
+            p
         }
     };
     // task #717: `.addr()`/`.with_addr()` (strict-provenance) replace the
@@ -1720,10 +1725,10 @@ fn unix_reserve(
     let fits = align_up_addr(region_addr, align).and_then(|a| {
         let tail_start = a.checked_add(size)?;
         let region_end = region_addr.checked_add(over)?;
-        (tail_start <= region_end).then_some((a, tail_start, region_end))
+        (tail_start <= region_end).then_some(a)
     });
-    let (base_addr, tail_start, region_end) = match fits {
-        Some(t) => t,
+    let base_addr = match fits {
+        Some(a) => a,
         None => {
             // Not an OS refusal — an internal fit-computation failure (should
             // not occur given `over = size + align`); do not read errno here.
@@ -1749,7 +1754,17 @@ fn unix_reserve(
         // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
-    Ok((base, region_ptr, over, granted_huge))
+    Ok((
+        base,
+        // SAFETY: `region_ptr` is confirmed non-null above (both the `p` and
+        // `p2` paths null-check before reaching here); this cast preserves
+        // `region_ptr`'s own provenance (valid for the whole `over`-byte
+        // mapping), unlike `base` above which is `with_addr`'d to a
+        // sub-range of it.
+        unsafe { NonNull::new_unchecked(region_ptr.cast::<u8>()) },
+        over,
+        granted_huge,
+    ))
 }
 
 /// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
