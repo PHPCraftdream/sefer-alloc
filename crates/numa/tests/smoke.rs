@@ -261,7 +261,10 @@ fn reserve_on_node_commits_only_the_requested_span_not_the_whole_over_reservatio
 
     let page = aligned_vmem::page_size();
     let size = page * 4;
-    let align = page * 8; // align > size guarantees real slack to probe.
+    // 128 KiB > WIN_ALLOCATION_GRANULARITY (64 KiB) guarantees the Windows two-call
+    // path actually over-reserves (aligned-vmem task #848 changed this to be conditional
+    // on align > 64 KiB). This keeps the test's purpose (probing tail slack) intact.
+    let align = 128 * 1024;
     let node = current_node().unwrap_or(0);
 
     let r = reserve_on_node(size, align, node)
@@ -273,9 +276,9 @@ fn reserve_on_node_commits_only_the_requested_span_not_the_whole_over_reservatio
     let over = r.reservation_len();
     assert_eq!(committed_len, size);
 
-    // `over - size == align > 0` always (see `reserve_aligned_numa`'s own
-    // arithmetic: `over = size + align`), so `[base + size, raw + over)` is
-    // ALWAYS non-empty -- no branching needed to find a probe point.
+    // With align fixed at 128 KiB (above WIN_ALLOCATION_GRANULARITY), the
+    // Windows two-call path over-reserves (over = size + align), making
+    // [base + size, raw + over) non-empty. This is the condition the test probes.
     let front_slack = (base as usize) - (raw as usize);
     let tail_slack = over - front_slack - committed_len;
     assert!(
