@@ -82,7 +82,9 @@ pub enum Call {
         /// Requested alignment in bytes.
         align: usize,
     },
-    /// [`crate::release`] (from `into_parts` + manual release).
+    /// [`crate::release`] (from `into_parts` + manual release) AND RAII drop
+    /// (via `Reservation`'s `Drop` implementation). Both sources record this
+    /// variant when a reservation is released.
     #[non_exhaustive]
     Release {
         /// Reservation base address, as `usize`.

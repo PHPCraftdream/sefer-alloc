@@ -475,7 +475,7 @@ impl Reservation {
     /// from the OS (Linux `MAP_HUGETLB` or Windows `MEM_LARGE_PAGES`), and `false`
     /// if it fell back to ordinary pages or was not a huge-page request.
     ///
-    /// This is the \"best-effort\" observable: a caller using `reserve_aligned_huge`
+    /// This is the "best-effort" observable: a caller using `reserve_aligned_huge`
     /// can now detect whether the huge-page feature actually engaged, rather than
     /// receiving only an indistinguishable `Ok(Reservation)` on every fallback.
     ///
@@ -485,8 +485,16 @@ impl Reservation {
     /// 2. `size` is a multiple of the system's large-page minimum
     /// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
     ///    allocation fails and falls back to ordinary pages)
-    ///    For `align > 64 KiB` the two-call path is used, which does not support
-    ///    `MEM_LARGE_PAGES` at all. See [`reserve_aligned_huge`]'s rustdoc for details.
+    ///
+    /// If any of these conditions fail, the function falls back to ordinary pages
+    /// and this flag is `false`. For `align > 64 KiB` the two-call path is used,
+    /// which does not support `MEM_LARGE_PAGES` at all. See
+    /// [`reserve_aligned_huge`]'s rustdoc for details.
+    ///
+    /// **Note:** reservations adopted via [`from_raw_parts`](Self::from_raw_parts)
+    /// always report `false` for this method regardless of how the reservation
+    /// was actually created (the caller-supplied metadata cannot reliably convey
+    /// the OS's grant decision).
     #[must_use]
     #[inline]
     pub const fn is_huge(&self) -> bool {
@@ -1562,6 +1570,10 @@ fn win_reserve_commit(
         #[cfg(feature = "bench-internals")]
         WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
         // extra_commit_flags were applied successfully (committed != NULL)
+        // NOTE: This uses the requested flag, not the observed grant (no
+        // HUGE_SUPPORTED-style query on Windows). Per this crate's docs, the
+        // two-call path (align > 64 KiB) is currently unreachable in practice
+        // for MEM_LARGE_PAGES, so this is a documented-but-not-enforced invariant.
         Ok((base, region, over, extra_commit_flags != 0))
     }
 }
