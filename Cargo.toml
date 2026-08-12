@@ -561,9 +561,9 @@ alloc-stats = ["alloc-core"]
 # gated hooks is actually exercised (see `.github/workflows/perf-gate.yml`'s
 # `perf_gate_iai` invocation). From task #504 (F11 step 1) this feature also
 # forwards to `aligned-vmem/bench-internals`, gating that crate's own
-# `UNIX_EXACT_RESERVE_*`/`WINDOWS_RESERVE_COMMIT_CALLS` path-activation
-# counters (surfaced here via `AllocCore::dbg_unix_exact_reserve_*`/
-# `dbg_windows_reserve_commit_calls` in `src/alloc_core/alloc_core_core_diag.rs`),
+# `UNIX_EXACT_RESERVE_*`/`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
+# path-activation counters (surfaced here via `AllocCore::dbg_unix_exact_reserve_*`/
+# `dbg_windows_reserve_commit_*` in `src/alloc_core/alloc_core_core_diag.rs`),
 # plus `aligned-vmem/lazy-commit` — the crate-level reserve/commit-SPLIT
 # primitive (`reserve_aligned_lazy` + `commit_range`) the R32-13 Windows
 # decomposition gate's `dbg_decomp_win_reserve_only`/`dbg_decomp_win_commit_only`
@@ -2264,13 +2264,13 @@ required-features = ["alloc-global", "alloc-xthread", "internals"]
 # `VirtualAlloc(MEM_COMMIT)` — R29-3's own decomposition lumped these into
 # ONE "OS roundtrip" figure, adequate for the Linux question but too coarse
 # for Windows, where they are two syscalls with potentially different cost.
-# Also reads back the step-1 `WINDOWS_RESERVE_COMMIT_CALLS`/
-# `UNIX_EXACT_RESERVE_*` path-activation counters as the oracle proving each
-# arm actually hit the code path it claims to measure. Runs on any platform
-# (the decomposition is meaningful everywhere; the reserve/commit SPLIT
-# collapses to ~0 ns on Unix, honestly, since Unix has no separate commit
-# syscall) but is written for and primarily measured on native Windows — see
-# docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md.
+# Also reads back the step-1 `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/
+# `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`/`UNIX_EXACT_RESERVE_*` path-activation
+# counters as the oracle proving each arm actually hit the code path it claims
+# to measure. Runs on any platform (the decomposition is meaningful everywhere;
+# the reserve/commit SPLIT collapses to ~0 ns on Unix, honestly, since Unix has
+# no separate commit syscall) but is written for and primarily measured on native
+# Windows — see docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md.
 [[example]]
 name = "r32_13_windows_reserve_commit_decomposition_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals", "internals"]

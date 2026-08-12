@@ -98,12 +98,15 @@ fault-injection = []
 # Diagnostic-only path-activation counters (task #504, F11 step 1): a Unix
 # hit/total pair around `try_reserve_aligned_exact` (settles the "coin flip"
 # question from `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11 with
-# a real number) plus a Windows-side count of `win_reserve_commit` calls (2
-# syscalls each: one `MEM_RESERVE` + one `MEM_COMMIT`), for cross-platform
-# comparison. Mirrors sefer-alloc's own `bench-internals` convention
-# (`AtomicU64` storage, always compiled; `#[doc(hidden)]` accessors) — this
-# crate has no such feature of its own yet, so it is introduced here with the
-# same name for the sefer-alloc `bench-internals` feature to forward into via
+# a real number) plus Windows-side counters for `win_reserve_commit` calls
+# split by fast/slow path (`aligned_vmem::windows_reserve_commit_single_calls()` /
+# `aligned_vmem::windows_reserve_commit_two_call_pairs()` — the fast path
+# issues a single syscall for `align <= 64 KiB`, the traditional path issues
+# two syscalls for `align > 64 KiB`), for cross-platform comparison. Mirrors
+# sefer-alloc's own `bench-internals` convention (`AtomicU64` storage,
+# always compiled; `#[doc(hidden)]` statics) — this crate has no such feature
+# of its own yet, so it is introduced here with the same name for the
+# sefer-alloc `bench-internals` feature to forward into via
 # `aligned-vmem/bench-internals`. Off by default; NOT part of any bundle;
 # zero cost when disabled (increments compiled out entirely).
 bench-internals = []
