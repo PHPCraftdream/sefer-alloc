@@ -58,6 +58,24 @@ scoping decision is the pending step, not implementation).
 
 ## Open items
 
+### [A] Active — next steps for an in-progress or imminent round
+
+1. **Recurring process gap: every review-campaign round must get a CHANGELOG.md entry before the round is considered closed.** This has recurred THREE times across the aligned-vmem campaign alone:
+   - Round 1 (tasks #842-850, closed by task #855): W16 flagged the missing CHANGELOG entry — the round's own CHANGELOG text said "that follow-up round (tasks #851-857) is tracked separately and will get its own CHANGELOG entry once complete," but the entry itself was never written. F11 (task #863) documented the recurrence: "The #851–#857 round has no CHANGELOG entry. `CHANGELOG.md:275` states it explicitly... This is W16's finding recurring one round later; nothing in `docs/perf/OPEN_ITEMS.md` or `docs/CORRECTNESS_OPEN_ITEMS.md` tracks it, so a fresh session inherits no memory of it."
+   - Round 2 (tasks #851-857): The exact same gap reproduced immediately after F11 was filed. Task #863 eventually closed it by writing the entry, but only because a round-3 review (F11) caught it again.
+   - Round 3 (tasks #858-864): The gap reproduced a THIRD time — this index entry exists BECAUSE the task description that spawned it explicitly flags it: "Round 3 (tasks #858-864, the previous round of this same aligned-vmem review campaign) has NO CHANGELOG.md entry — this is the THIRD consecutive round with this exact gap: W16 flagged it for the #842-850 campaign (round 1) and it was eventually closed; F11 flagged it again for #851-857 (round 2) and closed it (CHANGELOG.md:304-312, written by task #863); #858-864 (round 3) reproduced the SAME gap immediately, and nobody caught it until this round-4 review."
+
+   **The gap is a process hygiene failure, not a correctness defect:** no code is broken, but a historical record that CLAUDE.md's own "Round start: check BOTH open-items indexes" rule depends on for cross-round continuity is missing. The fix is a standing rule, not a one-off entry.
+
+   **Proposed standing rule addition to CLAUDE.md under "Phased delivery":** add a new bullet after the existing "Every phase is delivered with tests" / "Between phases: run tests and commit" / "After each phase — ZERO-TRUST review" sequence: **"Every round that lands ≥ 1 commit and is closed by a review must have a CHANGELOG.md entry written in the same closing task (or an immediate follow-up commit) before the round is considered complete. The entry must cite real, verified commit SHAs from `git log` and describe what actually shipped — do not defer it to a later round. This is the same discipline that prevents the recurring 'missing CHANGELOG' gap that occurred three times across the aligned-vmem review campaign (tasks #842-850 / #851-857 / #858-864), where each round's own closing text said 'a follow-up CHANGELOG entry is owed' but the entry was never written until the NEXT round's review caught the gap again."**
+
+   If this rule is accepted, this index entry moves to "Recently resolved" with the closing citation being the CLAUDE.md commit that added the bullet. If rejected, this entry stays open and serves as the recurring reminder the existing "Round start: check BOTH open-items indexes" rule assumes exists but does not.
+
+   - **Status:** OPEN — awaiting human decision on whether to add the standing rule to CLAUDE.md
+   - **Current number:** 3 confirmed recurrences (aligned-vmem rounds 1, 2, and 3)
+   - **Next trigger:** Any round that closes with ≥ 1 commit and no CHANGELOG.md entry — if the standing rule is NOT adopted, this item stays open as the durable reminder; if adopted, the rule itself prevents recurrence
+   - **Evidence:** F11 in `docs/reviews/2026-08-12-aligned-vmem-round3-review.md` (lines 370-392); the task description for the current task citing "this is the THIRD consecutive round with this exact gap"; commit 7663811 (task #857) which itself closed the round-2 gap after it was caught by round-3's review
+
 ### [T] Tracked, not yet actioned
 
 _(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
