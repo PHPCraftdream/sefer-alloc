@@ -5,7 +5,9 @@
 #![cfg(feature = "mock")]
 
 use aligned_vmem::mock::{self, Call};
-use aligned_vmem::{decommit, decommit_lazy, recommit, reserve_aligned, try_reserve_aligned, PAGE};
+use aligned_vmem::{
+    decommit, decommit_lazy, page_size, recommit, reserve_aligned, try_reserve_aligned, PAGE,
+};
 
 const MIB: usize = 1024 * 1024;
 
@@ -16,8 +18,8 @@ fn records_reserve_and_decommit() {
     let base = r.as_ptr();
     // SAFETY: base is a live reservation; decommit records only under mock.
     unsafe {
-        decommit(base, 0, PAGE);
-        decommit_lazy(base, PAGE, 2 * PAGE);
+        decommit(base, 0, page_size());
+        decommit_lazy(base, page_size(), 2 * page_size());
     }
     let calls = mock::drain();
     assert_eq!(calls.len(), 3, "reserve + decommit + decommit_lazy");
