@@ -135,14 +135,7 @@ impl fmt::Display for VmemError {
 
 impl std::error::Error for VmemError {}
 
-#[cfg(all(unix, not(miri)))]
-fn last_os_error_code() -> Option<u32> {
-    std::io::Error::last_os_error()
-        .raw_os_error()
-        .map(|c| c as u32)
-}
-
-#[cfg(all(windows, not(miri)))]
+#[cfg(not(miri))]
 fn last_os_error_code() -> Option<u32> {
     std::io::Error::last_os_error()
         .raw_os_error()

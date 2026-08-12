@@ -215,7 +215,7 @@ pub fn reset() {
 
 /// Arm the reserve fault injector: the next `n` reservation attempts
 /// ([`crate::try_reserve_aligned`] and its `lazy`/`huge` variants) return
-/// `Err(VmemError::last_os_error())` without allocating. `n == 0` disarms.
+/// `Err(VmemError::os_refusal_unknown_code())` without allocating. `n == 0` disarms.
 pub fn fail_next_reserve(n: u32) {
     RESERVE_FAILS.with(|c| *c.borrow_mut() = n);
 }

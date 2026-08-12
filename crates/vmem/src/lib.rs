@@ -645,10 +645,82 @@ pub fn reserve_aligned(size: usize, align: usize) -> Option<Reservation> {
 ///
 /// A contract violation (bad `size`/`align`) returns
 /// [`VmemError::invalid_argument`] without touching the OS.
-pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, VmemError> {
+/// Private helper: validate `size`/`align` for reservation.
+fn validate_size_align(size: usize, align: usize) -> Result<(), VmemError> {
     if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
         return Err(VmemError::invalid_argument());
     }
+    Ok(())
+}
+
+/// Private helper: validate `initial_commit` for lazy reservations.
+/// Only called from `try_reserve_aligned_lazy`, which is itself gated on
+/// `lazy-commit` -- dead code when that feature is off.
+#[cfg_attr(not(feature = "lazy-commit"), allow(dead_code))]
+fn validate_initial_commit(initial_commit: usize, size: usize) -> Result<(), VmemError> {
+    if initial_commit == 0 || !initial_commit.is_multiple_of(PAGE) || initial_commit > size {
+        return Err(VmemError::invalid_argument());
+    }
+    Ok(())
+}
+
+/// Private helper: finish a reservation from a raw backend result.
+/// Private struct for raw reservation results from backend functions.
+/// Named to prevent transposing `base` and `reservation` (both `NonNull<u8>`).
+struct RawReservation {
+    /// The aligned usable base of the reservation.
+    base: NonNull<u8>,
+    /// The underlying OS reservation start (may be lower than `base`).
+    reservation: NonNull<u8>,
+    /// Full reservation length in bytes.
+    reservation_len: usize,
+    /// Whether large/huge pages were granted (Linux `MAP_HUGETLB` / Windows `MEM_LARGE_PAGES`).
+    granted_huge: bool,
+}
+
+fn finish_reservation(
+    size: usize,
+    align: usize,
+    raw: Result<RawReservation, VmemError>,
+) -> Result<Reservation, VmemError> {
+    raw.map(|r| Reservation {
+        base: r.base,
+        len: size,
+        reservation: r.reservation,
+        reservation_len: r.reservation_len,
+        align,
+        granted_huge: r.granted_huge,
+    })
+}
+
+/// Private helper: finish a reservation from a raw backend result (4-tuple).
+/// Only called from `try_reserve_aligned_huge`, which is itself gated on
+/// `huge-pages` -- dead code when that feature is off.
+#[cfg_attr(not(feature = "huge-pages"), allow(dead_code))]
+fn finish_reservation_huge(
+    size: usize,
+    align: usize,
+    raw: Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError>,
+) -> Result<Reservation, VmemError> {
+    raw.map(
+        |(base, reservation, reservation_len, granted_huge)| Reservation {
+            base,
+            len: size,
+            reservation,
+            reservation_len,
+            align,
+            granted_huge,
+        },
+    )
+}
+
+/// Fallible [`reserve_aligned`]: returns a [`VmemError`] carrying the OS cause
+/// (`errno` / `GetLastError`) on failure instead of a bare `None`.
+///
+/// A contract violation (bad `size`/`align`) returns
+/// [`VmemError::invalid_argument`] without touching the OS.
+pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, VmemError> {
+    validate_size_align(size, align)?;
     // Mock fault-injection: honour a scripted reserve failure first.
     #[cfg(feature = "mock")]
     if let Some(e) = mock::take_reserve_fault() {
@@ -661,14 +733,18 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
     // task #713: `reserve_aligned_raw` now captures its own `VmemError`
     // immediately at the point of failure (before any cleanup FFI); this
     // just propagates it rather than re-deriving a possibly-stale one here.
-    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len)| Reservation {
-        base,
-        len: size,
-        reservation,
-        reservation_len,
+    finish_reservation(
+        size,
         align,
-        granted_huge: false,
-    })
+        reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len)| {
+            RawReservation {
+                base,
+                reservation,
+                reservation_len,
+                granted_huge: false,
+            }
+        }),
+    )
 }
 
 /// Release a whole OS reservation obtained from [`Reservation::into_parts`].
@@ -999,16 +1075,8 @@ pub fn try_reserve_aligned_lazy(
     align: usize,
     initial_commit: usize,
 ) -> Result<Reservation, VmemError> {
-    if size == 0
-        || !align.is_power_of_two()
-        || align < PAGE
-        || !size.is_multiple_of(PAGE)
-        || initial_commit == 0
-        || !initial_commit.is_multiple_of(PAGE)
-        || initial_commit > size
-    {
-        return Err(VmemError::invalid_argument());
-    }
+    validate_size_align(size, align)?;
+    validate_initial_commit(initial_commit, size)?;
     #[cfg(feature = "mock")]
     if let Some(e) = mock::take_reserve_fault() {
         mock::record(mock::Call::ReserveLazy {
@@ -1038,14 +1106,16 @@ pub fn try_reserve_aligned_lazy(
 
     // task #713: both `raw` branches now capture their own `VmemError`
     // immediately at the point of failure; this just propagates it.
-    raw.map(|(base, reservation, reservation_len)| Reservation {
-        base,
-        len: size,
-        reservation,
-        reservation_len,
+    finish_reservation(
+        size,
         align,
-        granted_huge: false,
-    })
+        raw.map(|(base, reservation, reservation_len)| RawReservation {
+            base,
+            reservation,
+            reservation_len,
+            granted_huge: false,
+        }),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,9 +1176,7 @@ pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
 /// Fallible [`reserve_aligned_huge`].
 #[cfg(feature = "huge-pages")]
 pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation, VmemError> {
-    if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
-        return Err(VmemError::invalid_argument());
-    }
+    validate_size_align(size, align)?;
     #[cfg(feature = "mock")]
     if let Some(e) = mock::take_reserve_fault() {
         mock::record(mock::Call::ReserveHuge { size, align });
@@ -1119,16 +1187,7 @@ pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation
 
     // task #713: `reserve_aligned_huge_raw` now captures its own `VmemError`
     // immediately at the point of failure; this just propagates it.
-    reserve_aligned_huge_raw(size, align).map(
-        |(base, reservation, reservation_len, granted_huge)| Reservation {
-            base,
-            len: size,
-            reservation,
-            reservation_len,
-            align,
-            granted_huge,
-        },
-    )
+    finish_reservation_huge(size, align, reserve_aligned_huge_raw(size, align))
 }
 
 // ---------------------------------------------------------------------------

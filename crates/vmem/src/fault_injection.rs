@@ -86,7 +86,8 @@ pub fn arm_fail_next(n: u32) {
 }
 
 /// Arm the "fail the k-th real commit from now" hook (1-based, one-shot).
-/// The k-th call to the real commit path from now fails; all other calls
+/// The k-th call to the real commit path from now fails; calls already
+/// consumed by [`arm_fail_next`] are not counted. All other calls
 /// (before and after) succeed normally. After firing, the hook disarms
 /// itself. `k == 0` disarms without ever firing.
 ///
