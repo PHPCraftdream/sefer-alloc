@@ -5,6 +5,7 @@ use aligned_vmem::{
     decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
     try_reserve_aligned, Reservation, VmemError, PAGE,
 };
+use std::panic;
 
 const MIB: usize = 1024 * 1024;
 
@@ -254,14 +255,23 @@ fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
     // the panic under test is specifically about the `align` contract, not
     // the already-tested null checks.
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
-    let (raw, raw_len, _align) = r.into_parts();
+    let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len` are a genuinely live reservation from the line
     // above; `align = 3` is deliberately NOT a power of two, which is exactly
     // the contract violation this test proves panics immediately instead of
     // being silently accepted and deferred to `Drop`. The process never
     // reaches a point where this "reservation" is used unsoundly -- the
     // `assert!` fires before `Self` is even constructed.
-    let _ = unsafe { Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3) };
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
 }
 
 /// task #776 (F7): the original `assert!` validated only `align`, leaving
@@ -274,13 +284,22 @@ fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
 #[should_panic(expected = "must form a valid Layout")]
 fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
-    let (raw, _raw_len, align) = r.into_parts();
+    let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`align` come from a genuinely live reservation above;
     // `reservation_len = usize::MAX` deliberately overflows `isize::MAX` when
     // `Layout::from_size_align` rounds it up to `align` -- exactly the
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
-    let _ = unsafe { Reservation::from_raw_parts(raw, PAGE, raw, usize::MAX, align) };
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, PAGE, raw, usize::MAX, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
 }
 
 /// The positive-path complement to the panic test above: a genuinely valid

@@ -5,7 +5,11 @@
 //! through the OS (`mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/
 //! `VirtualFree` on Windows), with **no file-mapping machinery** and **no
 //! dependencies**. Under [miri](https://github.com/rust-lang/miri) it falls
-//! back to `std::alloc` so consumers stay miri-testable.
+//! back to `std::alloc` so consumers stay miri-testable. A consumer that
+//! installs itself as `#[global_allocator]` cannot use this crate under miri,
+//! because the miri backend routes allocations through the global allocator and
+//! would create a reentrancy hazard (the same class of issue `numa-shim` hit
+//! in #777).
 //!
 //! This is the OS aperture extracted from
 //! [`sefer-alloc`](https://crates.io/crates/sefer-alloc). It is the one crate
@@ -1885,14 +1889,14 @@ unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
 fn reserve_aligned_raw(
     size: usize,
     align: usize,
-) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
+) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
     use std::alloc::Layout;
     let layout = Layout::from_size_align(size, align).map_err(|_| VmemError::invalid_argument())?;
     // SAFETY: `layout` has non-zero size and pow2 align; under miri the consumer
     // is not the global allocator, so no reentrancy.
     let ptr = unsafe { std::alloc::alloc(layout) };
     match NonNull::new(ptr) {
-        Some(base) => Ok((base, base, size, false)), // Never huge under miri
+        Some(base) => Ok((base, base, size)), // Never huge under miri
         None => Err(VmemError::last_os_error()),
     }
 }
