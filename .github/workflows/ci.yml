@@ -771,10 +771,17 @@ jobs:
       # before. Requires `exact-span-large` transitively (Cargo feature
       # dependency).
       - run: cargo test --features "production exact-span-large large-reserved-capacity internals" --no-fail-fast
-      # Task #858/F2: aligned-vmem crate Windows test coverage. Exercises the
-      # Windows vmem backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real
-      # Windows hardware, not just miri or the Linux/macOS jobs.
-      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # Task #858/F2: aligned-vmem crate Windows test coverage for the REAL
+      # backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real Windows hardware.
+      # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
+      # non-additive backend-replacing feature (see crates/vmem/Cargo.toml:55-84),
+      # so `--all-features` would test the mock recording stub, not the real
+      # Windows backend. The step below (also from F2) runs with `--all-features`
+      # for the mock's own coverage, but it is NOT a Windows-backend test.
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+      # Task #858/F2: aligned-vmem crate mock coverage. Tests the mock recording
+      # backend itself (NOT the real VirtualAlloc/MEM_DECOMMIT backend) with all
+      # optional features enabled. This is the only row that runs tests/mock.rs.
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -796,10 +803,18 @@ jobs:
       # `internals` added (R34-3/task #522): both test files reach
       # `sefer_alloc::alloc_core::AllocCore` directly.
       - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --test decommit_soak --test decommit_stale_ring --no-fail-fast
-      # Task #856/W14-2: aligned-vmem crate macOS test coverage. Exercises
-      # the Darwin vmem backend (mmap/madvise/MADV_DONTNEED) on real macOS
-      # hardware, not just miri or the Linux/Windows jobs.
-      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
+      # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
+      # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
+      # non-additive backend-replacing feature (see crates/vmem/Cargo.toml:55-84),
+      # so `--all-features` would test the mock recording stub, not the real
+      # Darwin backend. The step below (also from W14-2) runs with `--all-features`
+      # for the mock's own coverage, but it is NOT a Darwin-backend test.
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+      # Task #856/W14-2: aligned-vmem crate mock coverage on macOS. Tests the mock
+      # recording backend itself (NOT the real mmap/madvise/MADV_DONTNEED backend)
+      # with all optional features enabled. This is the only row that runs
+      # tests/mock.rs on macOS.
 
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
