@@ -1799,12 +1799,10 @@ resolved" below.)_
     running the suite under miri, as that task's own instruction required,
     was the first time in this crate's history it happened.)
 
-    - **Status:** OPEN — the CI step itself is still missing. 1 of the 2
-      originally-listed miri blockers is now CLOSED (updated 2026-08-09,
-      task #776/F11 — task #716's own fix closed sub-item 2 below two
-      commits after this item was filed, and the update was missed at the
-      time per CLAUDE.md's "update the card in the SAME commit" rule; this
-      is that correction).
+    - **Status:** OPEN — the CI step itself is still missing. 2 of the 3
+      miri blockers are now CLOSED (updated 2026-08-12, task #851/W1 — the
+      compilation error that blocked publication is now fixed, see sub-item
+      #3 below; the remaining blocker is still sub-item #1).
     - **Evidence, current as of this update:**
       - `.github/workflows/ci.yml`'s only miri invocation touching this
         crate at all is `cargo miri test -p numa-shim --features
@@ -1812,7 +1810,7 @@ resolved" below.)_
         `aligned-vmem` code paths through `numa-shim`'s own integration
         tests, not this crate's own `tests/*.rs` suite directly. This is
         still true — the missing CI step is the item's live blocker.
-      - Of the two miri-incompatibilities originally found by running
+      - Of the three miri-incompatibilities originally found by running
         `cargo +nightly miri test -p aligned-vmem --all-features`:
         1. **Still OPEN.** `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`
            intentionally leaks (the function under test,
@@ -1830,6 +1828,19 @@ resolved" below.)_
            `cargo +nightly miri test` re-run of this crate's suite this
            round (see `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`
            §0, which ran the file under miri and reported it green).
+        3. **CLOSED by task #851** (commit pending). E0308 tuple-arity mismatch:
+           `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --features
+           lazy-commit,huge-pages` failed compilation because two miri-gated
+           `.map()` closures still destructured a 4-element tuple
+           `(base, reservation, reservation_len, _granted_huge)` after
+           task #844 had changed `reserve_aligned_raw` under miri to return
+           a 3-element tuple `(NonNull<u8>, NonNull<u8>, usize)`. Fixed by
+           removing `_granted_huge` from both destructuring patterns
+           (`crates/vmem/src/lib.rs:2239` and `:2250`). A miri compilation
+           gate (`RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`)
+           has been added to `aligned-vmem-gates` job in `.github/workflows/ci.yml`
+           to catch this class of error in future (does NOT require miri
+           interpreter, only the cfg flag).
       - Verified NOT a regression from task #713's own changes: `git stash`
         (reverting all of #713's edits) reproduces both original failures
         identically on the pre-#713 tree.
@@ -1840,10 +1851,13 @@ resolved" below.)_
       time, whether to scope it to specific test files to dodge #1 until
       it's separately fixed) that deserves its own task rather than a
       drive-by inside #713 or #776.
-    - **Next trigger:** a future task should add a
-      `cargo miri test -p aligned-vmem` CI step, using
+    - **Next trigger:** a future task should add a `cargo miri test -p
+      aligned-vmem` CI step (miri execution, not just compilation check), using
       `MIRIFLAGS=-Zmiri-ignore-leaks` (or a test restructure) to route
-      around sub-item #1 above, which is the only remaining blocker.
+      around sub-item #1 above, which is the only remaining runtime blocker.
+      The compilation blocker (sub-item #3) is now guarded by a
+      `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`
+      gate in the `aligned-vmem-gates` job.
 
 42. **Deferred decision — `aligned-vmem`'s `mock` Cargo-feature-unification
     hazard was resolved with a doc-only fix, explicitly deferring a

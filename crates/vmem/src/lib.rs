@@ -2236,9 +2236,8 @@ fn reserve_aligned_lazy_raw(
     align: usize,
     _initial_commit: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize), VmemError> {
-    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len, _granted_huge)| {
-        (base, reservation, reservation_len)
-    })
+    reserve_aligned_raw(size, align)
+        .map(|(base, reservation, reservation_len)| (base, reservation, reservation_len))
 }
 
 #[cfg(all(miri, feature = "huge-pages"))]
@@ -2247,7 +2246,7 @@ fn reserve_aligned_huge_raw(
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     // Miri has no huge pages; ordinary allocation is observably identical.
-    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len, _granted_huge)| {
+    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len)| {
         (base, reservation, reservation_len, false) // Never huge under miri
     })
 }
