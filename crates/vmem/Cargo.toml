@@ -114,3 +114,7 @@ bench-scale-tool = "0.1"
 [[bench]]
 name = "vmem_bench"
 harness = false
+
+[[example]]
+name = "v20_849_unix_exact_reserve_hit_rate"
+required-features = ["bench-internals"]
