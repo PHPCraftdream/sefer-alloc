@@ -15,6 +15,18 @@
 //!
 //! Each iteration is a complete self-contained cycle (reserve → ... → release)
 //! to avoid VA space exhaustion during the millions-of-iterations calibration.
+//!
+//! # Iteration count manifest gap (task #850, V19)
+//!
+//! This crate's iteration counts are stored in `<workspace-root>/bench-iters.txt`,
+//! not within `crates/vmem/`. When running from a published tarball (e.g., after
+//! `cargo install aligned-vmem` then `cargo bench -p aligned-vmem`), the harness
+//! cannot find the workspace-level manifest and falls back to JIT-calibrating
+//! each workload at 1 second. This produces different iteration counts than the
+//! in-repo run that uses the cached manifest entries. Within the workspace,
+//! the workspace-level `bench-iters.txt` is canonical — see sefer-region's own
+//! documentation (`crates/region/benches/region_bench.rs`) for the same pattern
+//! and its history (task #820).
 
 use std::hint::black_box;
 

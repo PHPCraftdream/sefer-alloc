@@ -80,6 +80,7 @@
 
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 // Under `mock` the real platform syscalls (decommit/recommit/commit_range) are
 // bypassed by the recording backend, so their per-OS `*_impl` helpers become
 // legitimately unused. This used to be a crate-wide `allow(dead_code)`, which
@@ -99,6 +100,15 @@
 // without `lazy-commit` gets a compiled-but-unreachable hook (harmless — the
 // feature is additive and test-only); suppress dead-code only in that
 // specific combination.
+//
+// Structural alternative considered and deferred for a future major release:
+// reorganize the three backends as separate `#[cfg]`-selected private modules
+// (`os_windows` / `os_unix` / `os_miri`) with one shared private signature,
+// allowing `mock` to be a fourth module selected by the same `#[cfg]` mechanism.
+// That would eliminate every `#[cfg_attr(feature = "mock", allow(dead_code))]`
+// attribute, but is a larger refactor than this crate's 0.2.0 release should
+// carry. The current partial-replacement shape (mock replaces decommit/recommit/
+// commit_range but not reserve/release) is explicitly chosen.
 #![cfg_attr(
     all(feature = "fault-injection", not(feature = "lazy-commit")),
     allow(dead_code)
@@ -111,9 +121,11 @@ pub mod error;
 pub use error::VmemError;
 
 #[cfg(feature = "mock")]
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub mod mock;
 
 #[cfg(feature = "fault-injection")]
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub mod fault_injection;
 
 /// The minimum page size this crate assumes for decommit/recommit granularity:
@@ -121,9 +133,25 @@ pub mod fault_injection;
 /// on the platforms this crate targets. Decommit/recommit offsets passed to the
 /// validation in [`decommit`] / [`recommit`] must be multiples of this value.
 ///
-/// This is a compile-time constant (the *minimum*); the real OS page size may
-/// be larger — query it with [`page_size`].
+/// **Note:** this is a compile-time constant (the *minimum*); the real OS page
+/// size may be larger — query it with [`page_size`].
+///
+/// # Naming
+///
+/// This constant was named `PAGE` in the 0.1.0 release. The name is misleading
+/// because it is not the actual page size on all platforms (e.g., 16 KiB on Apple
+/// Silicon macOS, 64 KiB on some Linux configurations). For new code, prefer
+/// [`MIN_PAGE`] instead, which more accurately describes what this constant
+/// represents: the *minimum* granularity the crate assumes, not the platform's
+/// page size.
 pub const PAGE: usize = 1 << 12;
+
+/// Alias for [`PAGE`] under a name that doesn't imply "the OS page size".
+///
+/// Prefer this name in new code — it makes explicit that the value is the
+/// *minimum* decommit/recommit granularity, not necessarily the actual OS page
+/// size (which may be larger — see [`page_size`]).
+pub const MIN_PAGE: usize = PAGE;
 
 /// Cache for [`page_size`]. `0` means "not yet queried"; a real page size is
 /// always a non-zero power of two so `0` is an unambiguous sentinel.
@@ -164,6 +192,7 @@ use core::sync::atomic::AtomicU64;
 /// Denominator for [`UNIX_EXACT_RESERVE_HITS`]. See the module-level
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
@@ -172,6 +201,7 @@ pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
 /// section doc above.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: total number of `win_reserve_commit` calls (Windows
@@ -183,11 +213,13 @@ pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 /// here, see that call site). See the module-level "bench-internals" section
 /// doc above.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 pub static WINDOWS_RESERVE_COMMIT_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
 pub fn unix_exact_reserve_attempts() -> u64 {
     UNIX_EXACT_RESERVE_ATTEMPTS.load(Ordering::Relaxed)
@@ -196,6 +228,7 @@ pub fn unix_exact_reserve_attempts() -> u64 {
 /// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_HITS`].
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
 pub fn unix_exact_reserve_hits() -> u64 {
     UNIX_EXACT_RESERVE_HITS.load(Ordering::Relaxed)
@@ -204,6 +237,7 @@ pub fn unix_exact_reserve_hits() -> u64 {
 /// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_CALLS`].
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
 pub fn windows_reserve_commit_calls() -> u64 {
     WINDOWS_RESERVE_COMMIT_CALLS.load(Ordering::Relaxed)
@@ -216,6 +250,7 @@ pub fn windows_reserve_commit_calls() -> u64 {
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
 #[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 pub fn reset_bench_internals_counters() {
     UNIX_EXACT_RESERVE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_EXACT_RESERVE_HITS.store(0, Ordering::Relaxed);
@@ -994,6 +1029,7 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// hazard.
 #[must_use]
 #[cfg(feature = "lazy-commit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
     // SAFETY: forwarded from the caller's contract.
     unsafe { try_commit_range(base, start, end).is_ok() }
@@ -1008,6 +1044,7 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
 ///
 /// Same as [`commit_range`].
 #[cfg(feature = "lazy-commit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
     if start == end {
         return Ok(());
@@ -1060,6 +1097,7 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
 /// [`try_reserve_aligned_lazy`].
 #[must_use]
 #[cfg(feature = "lazy-commit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub fn reserve_aligned_lazy(
     size: usize,
     align: usize,
@@ -1070,6 +1108,7 @@ pub fn reserve_aligned_lazy(
 
 /// Fallible [`reserve_aligned_lazy`].
 #[cfg(feature = "lazy-commit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub fn try_reserve_aligned_lazy(
     size: usize,
     align: usize,
@@ -1169,12 +1208,14 @@ pub fn try_reserve_aligned_lazy(
 /// instead if you need decommit functionality.
 #[must_use]
 #[cfg(feature = "huge-pages")]
+#[cfg_attr(docsrs, doc(cfg(feature = "huge-pages")))]
 pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
     try_reserve_aligned_huge(size, align).ok()
 }
 
 /// Fallible [`reserve_aligned_huge`].
 #[cfg(feature = "huge-pages")]
+#[cfg_attr(docsrs, doc(cfg(feature = "huge-pages")))]
 pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation, VmemError> {
     validate_size_align(size, align)?;
     #[cfg(feature = "mock")]

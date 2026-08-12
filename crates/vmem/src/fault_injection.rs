@@ -81,6 +81,7 @@ static FAIL_AT_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// return `Err`/`false` without touching the OS. `n == 0` disarms.
 ///
 /// Checked BEFORE [`arm_fail_at`]'s hook (this hook has priority).
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub fn arm_fail_next(n: u32) {
     FAIL_NEXT.store(n, Ordering::Relaxed);
 }
@@ -101,6 +102,7 @@ pub fn arm_fail_next(n: u32) {
 /// reader that observes a freshly-armed target also observes the zeroed
 /// counter, even when the arming and committing calls run on different
 /// threads.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub fn arm_fail_at(k: u32) {
     FAIL_AT_COUNTER.store(0, Ordering::Relaxed);
     FAIL_AT_TARGET.store(k, Ordering::Release);

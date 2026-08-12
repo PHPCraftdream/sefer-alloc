@@ -135,6 +135,18 @@ impl fmt::Display for VmemError {
 
 impl std::error::Error for VmemError {}
 
+impl From<VmemError> for std::io::Error {
+    fn from(e: VmemError) -> Self {
+        match e.os_code() {
+            Some(code) => std::io::Error::from_raw_os_error(code as i32),
+            None if e.is_invalid_argument() => {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+            }
+            None => std::io::Error::other(e),
+        }
+    }
+}
+
 #[cfg(not(miri))]
 fn last_os_error_code() -> Option<u32> {
     std::io::Error::last_os_error()

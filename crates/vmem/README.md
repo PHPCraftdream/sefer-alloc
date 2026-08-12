@@ -50,8 +50,9 @@ unsafe { release(raw, raw_len, raw_align) };
 
 Every fallible entry point has an infallible `Option`/`bool` counterpart that
 discards the cause. Optional features: `lazy-commit` (incremental commit:
-`reserve_aligned_lazy` + `commit_range`; formerly `alloc-lazy-commit`, still
-accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
+`reserve_aligned_lazy` + `commit_range`; the `alloc-lazy-commit` name is kept
+as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
+to `lazy-commit` now), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
 must both additionally be multiples of the huge-page size (2 MiB), or the
 request is rejected up front**; **on Windows the `MEM_LARGE_PAGES` request is

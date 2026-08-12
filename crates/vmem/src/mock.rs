@@ -54,6 +54,7 @@ use crate::error::VmemError;
 /// breaking change this is meant to prevent.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub enum Call {
     /// [`crate::try_reserve_aligned`] / [`crate::reserve_aligned`].
     #[non_exhaustive]
@@ -201,12 +202,14 @@ std::thread_local! {
 /// Drain and return every recorded [`Call`] since the last drain (or test
 /// start). Clears the log.
 #[must_use]
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub fn drain() -> Vec<Call> {
     CALLS.with(|c| c.borrow_mut().drain(..).collect())
 }
 
 /// Clear the recorded call log AND both fault counters — call at the start of a
 /// test to isolate it from any residue on the current thread.
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub fn reset() {
     CALLS.with(|c| c.borrow_mut().clear());
     RESERVE_FAILS.with(|c| *c.borrow_mut() = 0);
@@ -216,6 +219,7 @@ pub fn reset() {
 /// Arm the reserve fault injector: the next `n` reservation attempts
 /// ([`crate::try_reserve_aligned`] and its `lazy`/`huge` variants) return
 /// `Err(VmemError::os_refusal_unknown_code())` without allocating. `n == 0` disarms.
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub fn fail_next_reserve(n: u32) {
     RESERVE_FAILS.with(|c| *c.borrow_mut() = n);
 }
@@ -223,6 +227,7 @@ pub fn fail_next_reserve(n: u32) {
 /// Arm the commit fault injector: the next `n` commit attempts
 /// ([`crate::recommit`] / [`crate::commit_range`]) return failure without
 /// touching the OS, simulating commit-charge exhaustion. `n == 0` disarms.
+#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub fn fail_next_commit(n: u32) {
     COMMIT_FAILS.with(|c| *c.borrow_mut() = n);
 }

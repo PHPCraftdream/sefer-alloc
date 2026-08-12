@@ -25,6 +25,7 @@ categories = ["memory-management", "os"]
 # same decision made for `numa-shim` (`crates/numa/Cargo.toml`).
 [package.metadata.docs.rs]
 features = ["lazy-commit", "huge-pages", "fault-injection"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Incremental-commit primitives: `reserve_aligned_lazy` (reserve VA + commit
@@ -35,9 +36,10 @@ features = ["lazy-commit", "huge-pages", "fault-injection"]
 # of any default bundle. Feature-OFF builds are byte-for-byte identical.
 #
 # 0.2: renamed from the sefer-internal `alloc-lazy-commit` (allocator feature-
-# bundle vocabulary) to the crate-local `lazy-commit`. `alloc-lazy-commit` is
-# kept as a thin alias for one release so downstream consumers pinning the old
-# name keep building.
+# bundle vocabulary) to the crate-local `lazy-commit`. The `alloc-lazy-commit`
+# alias below is kept for one release to allow downstream consumers pinning the
+# old name to continue building. It will be removed in the next semver-major
+# release (0.3.0 or 1.0.0). Consumers should migrate to `lazy-commit` now.
 lazy-commit = []
 alloc-lazy-commit = ["lazy-commit"]
 
