@@ -706,7 +706,7 @@ unsafe impl Send for Reservation {}
 /// fields, not just destructure an existing reservation. Adding a public
 /// `ReservationParts::new` constructor is a future additive API decision.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReservationParts {
     /// The base pointer of the reservation (from [`Reservation::reservation_ptr`]).
     pub ptr: *mut u8,
