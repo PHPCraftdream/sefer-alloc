@@ -179,9 +179,9 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   count each path separately for parity/comparison against the Unix
 //   hit-rate story.
 //
-// `AtomicU64` storage, always compiled (like sefer-alloc's own `dbg_*`
-// counters); increments gated on `bench-internals` so a plain build carries
-// zero extra instructions. Relaxed — diagnostic only, no ordering obligation.
+// `AtomicU64` storage, increments gated on `bench-internals` so a plain build
+// carries zero extra instructions (storage itself is also gated, not compiled
+// without the feature). Relaxed — diagnostic only, no ordering obligation.
 
 #[cfg(feature = "bench-internals")]
 use core::sync::atomic::AtomicU64;
@@ -189,6 +189,10 @@ use core::sync::atomic::AtomicU64;
 /// `bench-internals`: total number of `try_reserve_aligned_exact` attempts
 /// (Unix only — always 0 on Windows/miri; that internal helper is private and
 /// platform-gated, so it is named here in code font rather than linked).
+/// This counter increments BEFORE the `mmap` call, so it includes both alignment
+/// misses and OS-level failures (e.g., OOM, MAP_HUGETLB refused). The hit-rate
+/// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
+/// measures the combined success rate of both alignment and OS availability.
 /// Denominator for [`UNIX_EXACT_RESERVE_HITS`]. See the module-level
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
@@ -204,7 +208,7 @@ pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// `bench-internals`: total number of `win_reserve_commit` calls that took the
+/// `bench-internals`: number of successful `win_reserve_commit` calls that took the
 /// single-call fast path (Windows only — always 0 on Unix/miri; that internal helper
 /// is private and platform-gated, so it is named here in code font rather than linked).
 /// Each call issues 1 syscall (`VirtualAlloc(MEM_RESERVE | MEM_COMMIT)`),
@@ -217,7 +221,7 @@ pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
 
-/// `bench-internals`: total number of `win_reserve_commit` calls that took the
+/// `bench-internals`: number of successful `win_reserve_commit` calls that took the
 /// two-call path (Windows only — always 0 on Unix/miri; that internal helper
 /// is private and platform-gated, so it is named here in code font rather than linked).
 /// Each call issues exactly 2 syscalls
@@ -361,6 +365,10 @@ fn query_os_page_size() -> usize {
         info.dw_allocation_granularity,
         WIN_ALLOCATION_GRANULARITY
     );
+    // NOTE: This debug_assert fires only when `query_os_page_size()` is called,
+    // which happens on the cold path (decommit/decommit_lazy) or the Unix-only
+    // `try_reserve_aligned_exact`. It does NOT fire on the Windows single-call
+    // reservation fast path, which uses `WIN_ALLOCATION_GRANULARITY` directly.
     info.dw_page_size as usize
 }
 

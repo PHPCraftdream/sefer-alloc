@@ -104,7 +104,7 @@ fault-injection = []
 # issues a single syscall for `align <= 64 KiB`, the traditional path issues
 # two syscalls for `align > 64 KiB`), for cross-platform comparison. Mirrors
 # sefer-alloc's own `bench-internals` convention (`AtomicU64` storage,
-# always compiled; `#[doc(hidden)]` statics) — this crate has no such feature
+# statics gated on `bench-internals` with `#[doc(hidden)]` accessors) — this crate has no such feature
 # of its own yet, so it is introduced here with the same name for the
 # sefer-alloc `bench-internals` feature to forward into via
 # `aligned-vmem/bench-internals`. Off by default; NOT part of any bundle;
