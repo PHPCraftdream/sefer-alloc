@@ -55,6 +55,11 @@ fn reserve_aligned_huge_ordinary_page_sized_request_succeeds() {
         base.write(0xAB);
         assert_eq!(base.read(), 0xAB);
     }
+    // Regression for W2 fix: on non-Linux Unix and Windows, huge pages are
+    // a documented no-op, so is_huge() must always return false even when
+    // reserve_aligned_huge is called.
+    #[cfg(not(target_os = "linux"))]
+    assert!(!r.is_huge(), "non-Linux Unix and Windows never report huge");
 }
 
 // ── task #714: hugetlb-alignment rejection (Linux + huge-pages only) ───────
