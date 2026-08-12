@@ -21,8 +21,16 @@
 //! Those crates are oriented around **file mappings** and **page-protection**.
 //! `aligned-vmem` does one different thing: hand you an *anonymous* span whose
 //! **base is aligned to a power of two you choose** (e.g. 2 MiB / 4 MiB for an
-//! allocator's segments) by over-reserving `size + align` bytes and keeping the
-//! full mapping, plus page-granularity decommit/recommit so you can return physical memory to the
+//! allocator's segments). On Unix, first tries an ordinary exact-size `mmap` and
+//! checks whether the kernel happened to place it at an `align`-aligned address
+//! (fast path; hit rate depends on the OS's placement heuristics, not on any
+//! hint this crate passes). On a miss (wrong alignment), over-reserves `size + align`
+//! bytes and keeps the full mapping. On Windows, uses one syscall (fast path
+//! for `align <= 64 KiB`, over-reserving nothing — base == region) or two
+//! syscalls (over-reserving `size + align` and keeping the full mapping). The
+//! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
+//! reservation; `Reservation::as_ptr` / `len` expose the aligned usable span,
+//! plus page-granularity decommit/recommit so you can return physical memory to the
 //! OS while keeping the address-space reservation. If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
@@ -473,6 +481,15 @@ impl Reservation {
     }
 
     /// The full size of the underlying OS reservation.
+    ///
+    /// On the Windows single-call fast path (task #848, `align <= 64 KiB`), this
+    /// returns `commit_len` (which equals `size`), not the rounded-up VA
+    /// reservation size. Windows rounds VA reservations up to the 64 KiB
+    /// allocation granularity internally, so `reserve_aligned(4096, 4096)` reports
+    /// `reservation_len() == 4096` while actually consuming 64 KiB of address
+    /// space. This is harmless for correctness (VirtualFree(base, 0,
+    /// MEM_RELEASE) ignores the length argument), but the return value is not
+    /// the true reservation size on that path.
     #[must_use]
     #[inline]
     pub const fn reservation_len(&self) -> usize {
@@ -1814,14 +1831,16 @@ fn reserve_aligned_raw(
 /// by requiring `size` AND `align` to both be multiples of
 /// [`LINUX_HUGE_PAGE_SIZE`] before attempting a Linux huge-page reservation
 /// at all — with both huge-page-aligned, `over = size + align` is also
-/// huge-page-aligned, the kernel-guaranteed huge-page-aligned `region_addr`
-/// makes `head` provably `0` (`align_up_addr` of an already-aligned address
-/// to an aligned `align` is a no-op), and `tail_len` (the difference of two
-/// huge-page-aligned addresses) is provably huge-page-aligned too — so every
-/// `munmap` this function can still reach is provably conformant, not merely
-/// less likely to misalign. A caller that does not supply huge-page-aligned
-/// `size`/`align` gets a clean, documented [`VmemError::invalid_argument`]
-/// instead of a silent leak.
+/// huge-page-aligned, so the whole-mapping `munmap` calls this function makes
+/// (release_reservation unmaps the entire `reservation_len` span) are
+/// provably conformant. The head offset `align_up_addr(region_addr, align) -
+/// region_addr` is NOT zero in general for `align > LINUX_HUGE_PAGE_SIZE`
+/// (e.g. with `align = 4 MiB` and a kernel-guaranteed 2-MiB-aligned region,
+/// the offset is 2 MiB), but this no longer matters for correctness because
+/// the entire over-reserve mapping is kept and released as a single unit
+/// rather than being trimmed with head/tail munmap calls (task #842).
+/// A caller that does not supply huge-page-aligned `size`/`align` gets a
+/// clean, documented [`VmemError::invalid_argument`] instead of a silent leak.
 #[cfg(all(unix, not(miri)))]
 fn unix_reserve(
     size: usize,
