@@ -848,7 +848,7 @@ virgin-zero-skip = ["alloc-decommit"]
 # `default-features = false`: sefer-region gates its std-dependent SyncRegion on
 # its own `std` feature, which we re-enable via our own `std` feature so the
 # no_std core compiles without it and the default build gets SyncRegion as before.
-sefer-region = { path = "crates/region", version = "0.1", default-features = false }
+sefer-region = { path = "crates/region", version = "0.2", default-features = false }
 # Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
