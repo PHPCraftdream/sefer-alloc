@@ -145,7 +145,7 @@ fn reserve_is_aligned_and_writable() {
     let r = reserve_aligned(span, span).expect("reserve 4 MiB aligned 4 MiB");
     let base = r.as_ptr();
     assert!(!base.is_null());
-    assert_eq!(base as usize % span, 0, "base must be span-aligned");
+    assert_eq!(base.addr() % span, 0, "base must be span-aligned");
     assert_eq!(r.len(), span);
 
     // Write/readback the whole span at page stride to fault pages in.
