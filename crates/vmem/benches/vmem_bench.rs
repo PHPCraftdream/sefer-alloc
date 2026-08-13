@@ -47,17 +47,16 @@ const RESERVE_SIZE: usize = 64 * 1024;
 const RESERVE_ALIGN: usize = RESERVE_SIZE;
 
 /// Helper: perform a complete reserve → release cycle.
-///
-/// Returns true on success, false on OOM (rare during a bench run but
-/// handled to avoid panics).
-fn reserve_release_cycle() -> bool {
+fn reserve_release_cycle() {
     let r = black_box(reserve_aligned(
         black_box(RESERVE_SIZE),
         black_box(RESERVE_ALIGN),
     ));
     match r {
-        Some(_reservation) => true, // Reservation dropped via RAII -> release
-        None => false,              // OOM or contract violation
+        Some(_reservation) => {} // Reservation dropped via RAII -> release
+        None => panic!(
+            "reserve_release_cycle: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+        ),
     }
 }
 
@@ -65,7 +64,7 @@ fn reserve_release_cycle() -> bool {
 ///
 /// Decomits the entire range immediately after reservation, measuring the
 /// full lifecycle including decommit.
-fn reserve_decommit_release_cycle() -> bool {
+fn reserve_decommit_release_cycle() {
     let r = reserve_aligned(RESERVE_SIZE, RESERVE_ALIGN);
     match r {
         Some(reservation) => {
@@ -77,9 +76,10 @@ fn reserve_decommit_release_cycle() -> bool {
                 decommit(base, 0, len);
             }
             // Reservation dropped -> release.
-            true
         }
-        None => false,
+        None => panic!(
+            "reserve_decommit_release_cycle: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+        ),
     }
 }
 
@@ -87,7 +87,7 @@ fn reserve_decommit_release_cycle() -> bool {
 ///
 /// Measures the full churn pattern: allocate, decommit to return physical
 /// memory to the OS, then recommit when the memory is needed again.
-fn reserve_decommit_recommit_release_cycle() -> bool {
+fn reserve_decommit_recommit_release_cycle() {
     let r = reserve_aligned(RESERVE_SIZE, RESERVE_ALIGN);
     match r {
         Some(reservation) => {
@@ -100,15 +100,18 @@ fn reserve_decommit_recommit_release_cycle() -> bool {
                 // Recommit it (no-op on Unix/miri, but measured on Windows).
                 let ok = recommit(base, 0, len);
                 // On Windows, recommit can fail due to commit-charge exhaustion.
-                // We treat it as a failed iteration rather than panicking.
+                // This is a failure worth aborting the benchmark for.
                 if !ok {
-                    return false;
+                    panic!(
+                        "reserve_decommit_recommit_release_cycle: recommit failed (commit-charge exhaustion) -- benchmark aborted, not measuring a failed recommit"
+                    );
                 }
             }
             // Reservation dropped -> release.
-            true
         }
-        None => false,
+        None => panic!(
+            "reserve_decommit_recommit_release_cycle: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+        ),
     }
 }
 
@@ -118,23 +121,19 @@ fn main() {
     // ── Reserve only ─────────────────────────────────────────────────────
 
     h.bench("reserve_release", || {
-        let ok = black_box(reserve_release_cycle());
-        // Prevent the result from being optimized away.
-        black_box(ok);
+        reserve_release_cycle();
     });
 
     // ── Reserve → Decommit → Release ──────────────────────────────────────
 
     h.bench("reserve_decommit_release", || {
-        let ok = black_box(reserve_decommit_release_cycle());
-        black_box(ok);
+        reserve_decommit_release_cycle();
     });
 
     // ── Reserve → Decommit → Recommit → Release ───────────────────────────
 
     h.bench("reserve_decommit_recommit_release", || {
-        let ok = black_box(reserve_decommit_recommit_release_cycle());
-        black_box(ok);
+        reserve_decommit_recommit_release_cycle();
     });
 
     // ── Larger allocation (1 MiB) — reserve only ──────────────────────────
@@ -151,12 +150,10 @@ fn main() {
             black_box(LARGE_ALIGN),
         ));
         match r {
-            Some(_reservation) => {
-                black_box(true);
-            }
-            None => {
-                black_box(false);
-            }
+            Some(_reservation) => {}
+            None => panic!(
+                "reserve_release_1mb: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+            ),
         }
     });
 
