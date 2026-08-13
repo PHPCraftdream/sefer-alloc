@@ -2318,6 +2318,22 @@ const MAP_ANON: i32 = 0x1000;
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MAP_HUGETLB: i32 = 0x40000;
 
+/// Linux `MAP_HUGE_2MB` (request 2 MiB huge pages at mmap time).
+///
+/// This flag explicitly requests the 2 MiB huge page size, overriding the
+/// system's configured default huge-page size (set via the kernel boot
+/// parameter `default_hugepagesz=`). Without this flag, plain `MAP_HUGETLB`
+/// requests the system's default huge page size, which can be 1 GiB on
+/// HPC/database-tuned hosts — a mismatch that would cause a silent leak
+/// because this crate's `LINUX_HUGE_PAGE_SIZE` constant and validation logic
+/// assume 2 MiB. The value is taken from the Linux kernel's
+/// `include/uapi/linux/mman.h`: `MAP_HUGE_2MB = (21 << MAP_HUGE_SHIFT)` where
+/// `MAP_HUGE_SHIFT = 26`. (REASONED-FROM-SPEC: this fix has NOT been empirically
+/// verified on a real host with a non-2-MiB default `default_hugepagesz`, because
+/// no such host exists in this project's CI.)
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+const MAP_HUGE_2MB: i32 = 21 << 26;
+
 /// task #852 (W2): `HUGE_SUPPORTED` is true only on Linux with the `huge-pages` feature enabled.
 /// Non-Linux Unix (macOS, iOS, BSD, etc.) do NOT support `MAP_HUGETLB` — the `libc_mmap`
 /// function silently ignores the `huge` parameter on those platforms. This constant is used
@@ -2327,17 +2343,23 @@ const HUGE_SUPPORTED: bool = true;
 #[cfg(all(unix, not(miri), not(all(target_os = "linux", feature = "huge-pages"))))]
 const HUGE_SUPPORTED: bool = false;
 
-/// task #714: the default Linux huge page size (`mmap(2)`'s "Huge TLB
-/// mappings" section; `/proc/meminfo`'s `Hugepagesize:` on a default
-/// configuration). `MAP_HUGETLB` without an explicit size-encoding flag
-/// (`MAP_HUGE_2MB`/`MAP_HUGE_1GB` etc., which this crate does not use) always
-/// requests the system's DEFAULT huge page size, which is 2 MiB on every
-/// mainstream x86_64/aarch64 Linux configuration this crate's own platform
-/// support targets. `unix_reserve` requires `size`/`align` to be multiples of
-/// this before attempting a huge-page reservation at all, so every `munmap`
-/// it can still reach is provably huge-page-aligned (see `unix_reserve`'s own
-/// doc for the full reasoning) — REASONED-FROM-SPEC, not empirically
-/// verified on a real hugetlb-configured host (none is in this project's CI).
+/// task #909: the Linux huge page size this crate explicitly requests via
+/// `MAP_HUGE_2MB` (not the system's configured default). Before this fix,
+/// the crate used plain `MAP_HUGETLB` and relied on a now-falsified premise
+/// that "the default is always 2 MiB on mainstream x86_64/aarch64 Linux" —
+/// that premise was proved wrong by task #909's independent review finding H1,
+/// which showed the default is independently configurable via the kernel boot
+/// parameter `default_hugepagesz=` and can be 1 GiB on HPC/database-tuned hosts.
+/// The fix (task #909) makes the crate explicitly request 2 MiB huge pages via
+/// `MAP_HUGE_2MB`, making this constant correct by construction — if 2 MiB
+/// huge pages are not configured/available on the host, the mmap call fails
+/// cleanly (returns null → the crate's normal OOM/error path), rather than
+/// silently succeeding with a mismatched size and leaking on munmap. `unix_reserve`
+/// requires `size`/`align` to be multiples of this before attempting a huge-page
+/// reservation at all, so every `munmap` it can still reach is provably
+/// huge-page-aligned (see `unix_reserve`'s own doc for the full reasoning) —
+/// REASONED-FROM-SPEC, not empirically verified on a real hugetlb-configured host
+/// with a non-2-MiB default `default_hugepagesz` (none is in this project's CI).
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const LINUX_HUGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
 #[cfg(all(unix, not(miri)))]
@@ -2454,7 +2476,7 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
     let mut flags = MAP_PRIVATE | MAP_ANON;
     #[cfg(all(target_os = "linux", feature = "huge-pages"))]
     if huge {
-        flags |= MAP_HUGETLB;
+        flags |= MAP_HUGETLB | MAP_HUGE_2MB;
     }
     let _ = huge; // silence unused on non-linux / no huge-pages builds
 
