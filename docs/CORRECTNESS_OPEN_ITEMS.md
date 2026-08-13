@@ -1916,7 +1916,21 @@ resolved" below.)_
       power of two && >= PAGE`) would NOT have caught a wrong macOS
       constant either, since the fallback value passes that check too;
       this is exactly why the (now-resolved) macOS test asserted the
-      exact 16 KiB value rather than the generic invariant.
+      exact 16 KiB value rather than the generic invariant. A second,
+      distinct consequence of this same unverified-constant gap was found
+      and fixed in round 8 (task #897, finding U1):
+      `try_reserve_aligned_exact` (`crates/vmem/src/lib.rs`) used to skip
+      its own alignment-of-the-returned-base check whenever
+      `align <= page_size()`, reasoning that `mmap` always returns
+      page-aligned addresses in that range — true only if `page_size()`
+      is itself <= the real OS page size. A wrong `_SC_PAGESIZE` constant
+      returning a power-of-two ABOVE the real page size on one of the
+      still-open BSD targets would have made that skip silently return a
+      base NOT aligned to the requested `align`, violating
+      `Reservation::as_ptr()`'s documented alignment guarantee with no
+      error and no diagnostic. Fixed by making the check unconditional
+      (the `align > page_size()` conjunct measured zero syscalls saved —
+      see the fix's own comment in `lib.rs` — so removing it is free).
     - **Evidence:** `crates/vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
       definition and its own doc comment cite the per-OS header values
       directly; no BSD runner exists in `.github/workflows/ci.yml`'s

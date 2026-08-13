@@ -2106,12 +2106,31 @@ fn try_reserve_aligned_exact(
     // applied to `unix_reserve`'s slow path -- this is the Unix FAST path
     // (tried first by every reservation), so it is the higher-traffic site.
     let region_addr = region_ptr.addr();
-    // Invariant: when `align <= page_size()`, the check below is always
-    // false because `mmap` always returns page-aligned addresses. Skip the
-    // check entirely in that case to eliminate a dead branch and document
-    // the invariant explicitly. Confirmed by measurement #849: 480/480 hits
-    // on page-size mode (no syscalls saved, just removes dead code).
-    if align > page_size() && !region_addr.is_multiple_of(align) {
+    // task #897 (finding U1): this check is UNCONDITIONAL -- it used to be
+    // guarded by `align > page_size() &&`, reasoned as follows: when
+    // `align <= page_size()`, `mmap` always returns page-aligned addresses,
+    // so the check below is provably false and can be skipped. That
+    // reasoning is correct only if `page_size()` is <= the REAL OS page
+    // size. `page_size()` accepts any power-of-two value >= `PAGE` read
+    // from `sysconf(_SC_PAGESIZE)` (see its own guard comment above,
+    // "a plausible-looking power-of-two answer to a DIFFERENT question") --
+    // a wrong `_SC_PAGESIZE` constant that happens to return a power-of-two
+    // ABOVE the real page size would be silently accepted and cached
+    // process-wide (docs/CORRECTNESS_OPEN_ITEMS.md item 43's still-open BSD
+    // half: FreeBSD/DragonFly/NetBSD/OpenBSD constants are REASONED-FROM-SPEC,
+    // not hardware-verified). If that ever happens, every `align` in
+    // `(real_page_size, page_size()]` would silently skip this check, and
+    // `try_reserve_aligned_exact` could return a base that is NOT aligned to
+    // `align` -- violating `Reservation::as_ptr()`'s documented alignment
+    // guarantee with no error and no diagnostic. The `align > page_size()`
+    // conjunct measured zero syscalls saved (measurement #849: 480/480 hits
+    // in page-size mode, i.e. it only ever removed a dead branch, never
+    // avoided real work), so there is no performance cost to always running
+    // the check. Deliberately a real runtime check, not a `debug_assert!`:
+    // release builds are exactly where an unverified `_SC_PAGESIZE` constant
+    // would matter (CLAUDE.md's R26-4 rule: `debug_assert!` compiles out of
+    // `--release`).
+    if !region_addr.is_multiple_of(align) {
         // SAFETY: `region_ptr` was just mapped with length `size`; unmap once.
         unsafe { libc_munmap(region_ptr.cast(), size) };
         return Err(VmemError::invalid_argument());
