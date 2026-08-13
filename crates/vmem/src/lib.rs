@@ -1621,7 +1621,8 @@ fn win_reserve_commit(
                         // Best-effort retry: try without extra_commit_flags (e.g.
                         // MEM_LARGE_PAGES). This matches the two-call path's fallback
                         // behavior.
-                        // SAFETY: same range within the same live reservation.
+                        // SAFETY: fresh anonymous reserve+commit at a kernel-chosen
+                        // address; NULL is checked below.
                         let plain = VirtualAlloc(
                             core::ptr::null_mut(),
                             commit_len,

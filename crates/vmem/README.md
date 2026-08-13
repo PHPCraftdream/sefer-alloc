@@ -169,10 +169,12 @@ Every `unsafe` block carries a `// SAFETY:` proof. The crate is the OS aperture
 extracted from [`sefer-alloc`](https://crates.io/crates/sefer-alloc); it is
 deliberately the one place where the raw OS calls live, so consumers can stay
 `#![forbid(unsafe_code)]` above it. The returned pointers preserve provenance
-(no exposed-address `as usize` casts anywhere in the crate — the mock
-backend's diagnostic-only call recorder stores addresses as `usize` for
+(no exposed-address `as usize` casts in the public API — the mock backend's
+diagnostic-only call recorder stores addresses as `usize` for
 comparison/logging, obtained via the non-exposing `.addr()`, and none of
-those values is ever cast back into a pointer).
+those values is ever cast back into a pointer; this crate's own `tests/`
+files, which are not part of the public API, still use `as usize` at a
+few sites).
 
 ## License
 
