@@ -29,7 +29,11 @@ in full before writing a single line here:**
   explicitly rebuts point-by-point, crediting the rebuttal to a substrate
   change (R8-10, task #223, commit `852828e`, 2026-07-20) that removed the
   only production code path that could have made the optimization unsound
-  on macOS/XNU/*BSD (`MADV_DONTNEED` laziness).
+  on macOS/XNU/*BSD (`MADV_DONTNEED` laziness). (Round 6/task #883 citation
+  check: R9-5's own citation of this fact to "`crates/vmem/src/lib.rs`
+  §decommit note" was unverifiable when R9-5 was written — that note was
+  added later, by commit `9c777bc` on 2026-08-13; now accurate. See
+  `docs/CORRECTNESS_OPEN_ITEMS.md` item 48 and R9-5's own corrected note.)
 - `25ae4a5` (`perf(alloc-core): elide fresh-segment AllocBitmap virgin-init`)
   — a DIFFERENT, already-**shipped** optimization that looks superficially
   related (it also uses the word "virgin" and also elides an init pass on a
