@@ -2425,11 +2425,29 @@ const _SC_PAGESIZE: i32 = {
 // all 64-bit-off_t targets) -- narrowing this further (e.g. per-OS
 // `target_pointer_width`-conditional typing) is deferred until this crate
 // gains a real 32-bit Unix target in its own supported/tested set, per
-// CLAUDE.md's "don't design for hypothetical future requirements". `mmap`
-// is ALWAYS called with a literal `0` offset here (anonymous mappings only,
-// no file descriptor) -- there is no code path where a wrong-width `off_t`
-// could silently truncate a real value; the residual risk is purely an ABI
-// shape mismatch on a target this crate does not currently support.
+// CLAUDE.md's "don't design for hypothetical future requirements".
+//
+// **IMPORTANT:** This restriction is now ENFORCED at compile time by the
+// `compile_error!` below for all `unix + 32-bit-pointer-width` targets.
+// Adding support for a 32-bit Unix target requires first verifying that
+// target's actual `off_t` width (and if necessary, per-target-conditionally
+// typing the offset parameter) before removing or widening the exclusion.
+//
+// `mmap` is ALWAYS called with a literal `0` offset here (anonymous mappings
+// only, no file descriptor) -- there is no code path where a wrong-width
+// `off_t` could silently truncate a real value; the residual risk is purely
+// an ABI shape mismatch on a target this crate does not currently support.
+#[cfg(all(unix, not(miri), target_pointer_width = "32"))]
+compile_error!(
+    "aligned-vmem's hand-written `mmap` FFI declaration assumes a 64-bit `off_t`, \
+     which is not guaranteed on 32-bit Unix targets without confirming the \
+     platform's actual off_t width (glibc i686 and traditional 32-bit ARM default \
+     to a 32-bit off_t without _FILE_OFFSET_BITS=64). Supporting a 32-bit Unix \
+     target requires first verifying (and if necessary, per-target-conditionally \
+     typing) the off_t width -- see the comment above the `mmap`/`munmap`/`madvise` \
+     extern block in this file."
+);
+
 #[cfg(all(unix, not(miri)))]
 extern "C" {
     fn mmap(
