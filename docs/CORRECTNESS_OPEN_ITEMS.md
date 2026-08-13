@@ -1890,28 +1890,15 @@ resolved" below.)_
     targets, never empirically executed.** (Filed 2026-08-09, task
     #776/F13, round-closing review of the aligned-vmem round.)
 
-    - **Status:** PARTIALLY OPEN — macOS half: assertion added, awaiting
-      real CI confirmation (round 6 / task #884). The other 3 targets
-      (FreeBSD, NetBSD/OpenBSD, DragonFly) remain OPEN — no action needed
-      unless a runner becomes available; filed so the gap is visible
-      rather than silently load-bearing on an unverified constant.
-    - **Current-number-or-verdict:** `crates/vmem/src/lib.rs`'s
-      `_SC_PAGESIZE` cfg table (task #714, commit `2e7f4f5`) sets: macOS
-      family = 29 — this entry previously claimed "verified" on the
-      strength of a cross-compile check on a Windows host, which only
-      proves the code COMPILES for that target, not that the numeric
-      constant is correct; that claim is corrected here. Round 6 (task
-      #884) instead added a real hardware assertion,
-      `apple_silicon_page_size_is_16_kib` (`crates/vmem/tests/smoke.rs`,
-      `#[cfg(all(target_os = "macos", target_arch = "aarch64"))]`),
-      asserting `page_size() == 16 * 1024` — a hard, architecturally fixed
-      expected value on Apple Silicon. This crate's macOS CI runner is
-      `macos-26-arm64` (Apple Silicon, aarch64), so the NEXT macOS CI run
-      that includes this test will be the first genuine empirical
-      confirmation (or refutation) of the macOS `_SC_PAGESIZE = 29`
-      constant — this has not happened yet as of this filing (no macOS
-      hardware was available to this session either); FreeBSD/DragonFly =
-      47 and NetBSD/OpenBSD = 28 (still NOT independently executed on real
+    - **Status:** PARTIALLY OPEN — macOS half CLOSED (see "Recently
+      resolved" #43 for the closure narrative and CI citation). The other
+      3 targets (FreeBSD, NetBSD/OpenBSD, DragonFly) remain OPEN — no
+      action needed unless a runner becomes available; filed so the gap
+      is visible rather than silently load-bearing on an unverified
+      constant.
+    - **Current-number-or-verdict:** macOS family = 29, empirically
+      confirmed correct (see "Recently resolved" #43). FreeBSD/DragonFly =
+      47 and NetBSD/OpenBSD = 28 remain NOT independently executed on real
       hardware — reasoned from each OS's own `sys/unistd.h` header value,
       cross-compile-checked via `cargo check --target
       x86_64-unknown-{freebsd,netbsd}` only, which confirms the code
@@ -1919,7 +1906,7 @@ resolved" below.)_
       `x86_64-unknown-dragonfly`/`x86_64-unknown-openbsd` have no prebuilt
       rustup std component on this session's Windows host, so those two are
       not even cross-compile-checked, only reasoned by sharing the
-      identical cfg arm as their verified-by-citation siblings). A wrong
+      identical cfg arm as their verified-by-citation siblings. A wrong
       `_SC_PAGESIZE` value would cause `page_size()` to query the WRONG
       name via `sysconf`, silently returning garbage (or an unrelated
       system parameter's value) on any of these targets if the
@@ -1928,27 +1915,21 @@ resolved" below.)_
       the crate's OWN generic test (`page_size_is_a_valid_os_page`, `is
       power of two && >= PAGE`) would NOT have caught a wrong macOS
       constant either, since the fallback value passes that check too;
-      this is exactly why the new test asserts the exact 16 KiB value
-      rather than the generic invariant. Note: task #867/R1 added the
-      macOS CI row two rounds before this test existed; round 6 (task
-      #884) closes that gap.
+      this is exactly why the (now-resolved) macOS test asserted the
+      exact 16 KiB value rather than the generic invariant.
     - **Evidence:** `crates/vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
       definition and its own doc comment cite the per-OS header values
-      directly; `crates/vmem/tests/smoke.rs`'s
-      `apple_silicon_page_size_is_16_kib` (new, round 6 / task #884); no
-      BSD runner exists in `.github/workflows/ci.yml`'s current matrix for
-      this crate.
-    - **Next trigger:** macOS half — the next `macos-26-arm64` CI run of
-      `aligned-vmem`'s test suite; if `apple_silicon_page_size_is_16_kib`
-      passes, move the macOS half of this item to "Recently resolved" with
-      the run's citation. BSD half — if/when a FreeBSD, NetBSD, DragonFly,
-      or OpenBSD CI runner becomes available for this crate (or this repo
-      gains one for any purpose), run `page_size()` on it and assert the
-      returned value matches the platform's actual page size (typically
-      4 KiB on all four, making a silent wrong-constant bug hard to notice
-      without an explicit assertion against the OS's own reported value
-      via a DIFFERENT API, e.g. comparing against `/proc/self/status` or
-      equivalent, not just checking the result is a power of two).
+      directly; no BSD runner exists in `.github/workflows/ci.yml`'s
+      current matrix for this crate.
+    - **Next trigger:** BSD half only — if/when a FreeBSD, NetBSD,
+      DragonFly, or OpenBSD CI runner becomes available for this crate (or
+      this repo gains one for any purpose), run `page_size()` on it and
+      assert the returned value matches the platform's actual page size
+      (typically 4 KiB on all four, making a silent wrong-constant bug
+      hard to notice without an explicit assertion against the OS's own
+      reported value via a DIFFERENT API, e.g. comparing against
+      `/proc/self/status` or equivalent, not just checking the result is a
+      power of two).
 
 44. **Deferred verification — `numa-shim`'s mbind path (`lib.rs:531`, the
     crate's key selling point) has no behavioral oracle anywhere.** (Filed
@@ -2115,9 +2096,9 @@ resolved" below.)_
 48. **`aligned-vmem`'s `decommit()` silently fails to release physical memory (or zero-fill on `recommit`) on macOS — `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, unlike Linux.** First confirmed as a REAL, failing test (not just a documented risk) by CI on 2026-08-13, the FIRST time this crate's real (non-mock, non-miri) test suite ever ran against real macOS CI — round 4 (task #867/R1) added the CI row that finally exercises the real macOS backend instead of the `mock` stub, but the push to `origin/main` was deferred for two more rounds, so this is the first time the row actually executed. `decommit_recommit_roundtrip` (`crates/vmem/tests/smoke.rs`) failed: a byte written before `decommit`+`recommit` (`0x77` = 119) was still present after the cycle, where Linux/Windows both correctly read back `0`. **The underlying hazard itself was NOT newly discovered — it was already known repo-wide since Round 9** (see "Prior knowledge" below); only this extracted crate's own docs/tests had never reflected it until the fix commit below. `9c777bc`'s commit message calling this "a real, previously-undiscovered functional gap" is accurate only about this crate's own docs/tests, not about the repository as a whole — corrected here (round 6, task #883) after an independent review flagged the overstatement.
     - **Prior knowledge (repo-wide, pre-dating this "discovery" by multiple rounds):** the exact same hazard — Darwin `MADV_DONTNEED` being advisory/lazy with no zero-fill guarantee — was already documented in at least four places before this item was filed: `.github/workflows/ci.yml` (the `test-macos` job's own comment, a few lines above the step that went red, currently around line 810: "MADV_DONTNEED on Darwin is advisory/lazy (no zero-fill guarantee)"); `src/alloc_core/alloc_core_small_pool.rs` (a production code comment, currently around lines 1002-1021, stating the same fact as the load-bearing risk area for the `virgin-zero-skip` feature); and two `virgin-zero-skip` design docs, `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` (around lines 115-116 and 358) and `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` (around line 32), whose entire safety argument is built on this fact. The honest story is: the repo knew this when `aligned-vmem` was extracted from `src/alloc_core/os.rs`, the extraction lost that knowledge, and CI finally made the gap fail loudly rather than "discovering" something new.
     - **R9_5 mis-citation, also corrected here:** `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md:115-116` cites "`crates/vmem/src/lib.rs` §decommit note" as its source for this fact. `git log --oneline -S "advisory" -- crates/vmem/src/lib.rs` shows that note was created BY commit `9c777bc` (dated 2026-08-13) — i.e. R9_5's citation was unverifiable/forward-referencing a note that did not exist when R9_5 was written (2026-07-20). It is now accurate as of `9c777bc`, purely by coincidence of the fix landing there. See the one-line notes added to both design docs (R9_5 near lines 115-116/358, R11_8 near line 32) in this same task.
-    - **Status:** OPEN — mitigated across more surface than the original `9c777bc` fix covered. As of round 6 (tasks #880-886): the test is scoped to not assert the false guarantee on the Darwin family (macOS/iOS/tvOS/watchOS); `decommit()`'s rustdoc, `recommit()`'s rustdoc, `decommit_lazy()`'s rustdoc, the crate-root module doc, `recommit_pages_impl`'s code comment, AND `README.md`'s new "Platform caveats" section all carry a consistent Darwin-scoped caveat (task #880/S1, task #881/S5, task #885/S7); an empirical root-cause oracle exists (task #882/S2, pending its first real macOS CI run); `decommit_lazy_roundtrip`'s own vacuousness (S4's second limb) is recorded below, not yet fixed. The underlying functional gap itself is NOT fixed. `decommit()`'s core purpose — "return page-granular physical backing to the OS" — is silently unmet on the Darwin family for ordinary (non-huge) reservations: RSS does not decrease, and re-access after `recommit` returns stale data instead of a fresh zero page.
+    - **Status:** OPEN — mitigated across more surface than the original `9c777bc` fix covered. As of round 6 (tasks #880-886): the test is scoped to not assert the false guarantee on the Darwin family (macOS/iOS/tvOS/watchOS); `decommit()`'s rustdoc, `recommit()`'s rustdoc, `decommit_lazy()`'s rustdoc, the crate-root module doc, `recommit_pages_impl`'s code comment, AND `README.md`'s new "Platform caveats" section all carry a consistent Darwin-scoped caveat (task #880/S1, task #881/S5, task #885/S7); the empirical root-cause oracle (task #882/S2) has now run on real macOS CI and settled the H1-vs-H2 question (see Root cause below, updated round 7 / task #888); `decommit_lazy_roundtrip`'s own vacuousness (S4's second limb) is recorded below, not yet fixed. The underlying functional gap itself is NOT fixed. `decommit()`'s core purpose — "return page-granular physical backing to the OS" — is silently unmet on the Darwin family for ordinary (non-huge) reservations: RSS does not decrease, and re-access after `recommit` returns stale data instead of a fresh zero page.
     - **Current-number-or-verdict:** confirmed via real CI (`test macos (production)` job, run `31676133649`, landing SHA `e60e46a`) — deterministic, not flaky (byte value matches exactly what was written before decommit). Linux (`aligned-vmem package gates`, `test workspace members`) and Windows (`test windows (production)`) both passed the same assertion in the same run, confirming the guarantee genuinely holds on those two platforms and the gap is Darwin-specific.
-    - **Root cause:** `recommit_pages_impl`'s Unix implementation (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) is an unconditional no-op for ALL Unix platforms, justified by a comment claiming "re-access after MADV_DONTNEED is implicit — fresh zeroed pages on demand" — true on Linux, false on the Darwin family. `decommit`'s own eager path calls `madvise(MADV_DONTNEED)` uniformly across all Unix too. **This explanation is ASSERTED, not yet ESTABLISHED (added task #882):** it was inferred from a single failing byte, which is equally consistent with a different hypothesis — the `madvise(2)` syscall itself FAILING on that CI runner for an unrelated reason (H2), since `libc_madvise` discards `madvise`'s return value by design (task #719) and nothing in the crate could previously distinguish "syscall succeeded but Darwin's semantics didn't reclaim the pages" (H1) from "syscall itself failed" (H2). Task #882 added an empirical oracle: under the `bench-internals` feature, `libc_madvise` now also records attempt/success counts into two new `#[doc(hidden)]` statics, `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` (accessors `aligned_vmem::unix_madvise_attempts()`/`unix_madvise_successes()`, reset via the existing `reset_bench_internals_counters()`), and a new macOS-gated test, `macos_decommit_madvise_syscall_actually_succeeds` (`crates/vmem/tests/smoke.rs`), that asserts the `madvise` syscall itself returns success (`0`) for BOTH the eager (`decommit`, `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call sites. This oracle is compiled and gated correctly (verified on Windows: `#[cfg(all(target_os = "macos", ...))]` correctly excludes it, 20/20 other `smoke.rs` tests still pass) but **has NOT yet run on real macOS hardware** — this repo has none available. **The H1-vs-H2 question is therefore still OPEN**; do NOT read this note as confirming H1. Verification of H1 vs. H2 is pending the next real macOS CI run using the `bench-internals` feature — if `macos_decommit_madvise_syscall_actually_succeeds` passes there, H2 is ruled out and H1 (advisory-only semantics) stands as the only remaining explanation; if it fails, H2 (syscall failure) is the real cause and the "advisory-only" framing above needs correcting.
+    - **Root cause:** `recommit_pages_impl`'s Unix implementation (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) is an unconditional no-op for ALL Unix platforms, justified by a comment claiming "re-access after MADV_DONTNEED is implicit — fresh zeroed pages on demand" — true on Linux, false on the Darwin family. `decommit`'s own eager path calls `madvise(MADV_DONTNEED)` uniformly across all Unix too. **This explanation was ASSERTED, not ESTABLISHED, when first written (task #882):** it was inferred from a single failing byte, which was equally consistent with a different hypothesis — the `madvise(2)` syscall itself FAILING on that CI runner for an unrelated reason (H2), since `libc_madvise` discards `madvise`'s return value by design (task #719) and nothing in the crate could previously distinguish "syscall succeeded but Darwin's semantics didn't reclaim the pages" (H1) from "syscall itself failed" (H2). Task #882 added an empirical oracle: under the `bench-internals` feature, `libc_madvise` now also records attempt/success counts into two new `#[doc(hidden)]` statics, `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` (accessors `aligned_vmem::unix_madvise_attempts()`/`unix_madvise_successes()`, reset via the existing `reset_bench_internals_counters()`), and a new macOS-gated test, `macos_decommit_madvise_syscall_actually_succeeds` (`crates/vmem/tests/smoke.rs`), that asserts the `madvise` syscall itself returns success (`0`) for BOTH the eager (`decommit`, `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call sites. **Updated round 7 (task #888, finding T1):** commit `1dbd6b4` was pushed and CI run `31692217669` (job `94421845398`, `test macos (production)`, image `macos-26-arm64`) ran green — `macos_decommit_madvise_syscall_actually_succeeds` passed, with `unix_madvise_attempts() == 2 && unix_madvise_successes() == 2`, ruling out H2 (the syscall itself did not fail). **This does NOT by itself confirm H1** — the H1 argument has two halves observed in TWO DIFFERENT CI runs: the stale-byte evidence (`decommit_recommit_roundtrip`'s pre-scoping failure) comes from run `31676133649`/commit `e60e46a`, before that assertion was scoped off Darwin, while the madvise-success evidence above comes from run `31692217669`/commit `1dbd6b4`; no single run has observed both the stale byte AND the successful `madvise` syscall in the same process. **Correct wording: H2 is ruled out by run `31692217669`; combined with run `31676133649`'s stale byte, H1 (advisory-only semantics) is the only remaining explanation** — NOT "H1 confirmed by CI".
     - **Darwin lazy-path alternative fix (round-6 review S9, spec-read, not verified on hardware, not a recommendation to implement without further review):** three connected observations. (1) On Darwin, `decommit_lazy` issues `MADV_FREE_REUSABLE` but nothing in this crate ever issues the paired `MADV_FREE_REUSE` before re-touching pages (`recommit_pages_impl`'s Unix implementation is an unconditional `Ok(())`, confirmed by reading it) — Apple documents these as a required pair, so this is a physical-footprint-accounting-drift concern (not a memory-safety issue), distinct from this item's own eager-`decommit` finding. (2) `decommit_lazy`'s own rustdoc describes the general "lazy is cheaper, reclaimed only under pressure" ordering (Linux `MADV_FREE` semantics), but on macOS/iOS specifically that ordering is INVERTED on the RSS axis: `MADV_FREE_REUSABLE` drops footprint immediately there, while eager `decommit`'s `MADV_DONTNEED` drops nothing at all — the opposite of the general case (on tvOS/watchOS, `decommit_lazy` falls back to the same `MADV_DONTNEED` as the eager path, so there both are equally no-ops). (3) Because of (2), a cheaper but PARTIAL alternative to the `MAP_FIXED` re-map idea below exists and is worth recording: route macOS/iOS's eager `decommit` to `MADV_FREE_REUSABLE` and issue `MADV_FREE_REUSE` from `recommit` — this would close the "return physical backing to the OS" half of `decommit`'s promise on macOS/iOS but NOT the "reads as zero" half (since `MADV_FREE_REUSABLE` preserves contents if the pages are re-touched before reclaim), and would not help tvOS/watchOS at all (no `MADV_FREE_REUSABLE` there); only re-mapping closes both halves on all four targets.
     - **Next trigger:** a future round should implement a real Darwin fix — the standard technique is re-`mmap`(`MAP_FIXED | MAP_ANONYMOUS`) over the decommitted range instead of (or in addition to) `madvise`, which forces the kernel to actually replace the mapping with fresh zero pages; needs its own safety analysis (interaction with concurrent access to the same reservation, `is_huge()` state, the existing `huge_pages` feature's `MAP_HUGETLB` path) and its own review round rather than a rushed fix under a CI-green-checking task. Until then, `decommit()`'s Darwin-family behavior should be treated as "hint only, no RSS/zero-fill guarantee" — the same posture already documented for the huge-page case.
     - **S4 remainder (round-6 closing review SC1, partially fixed):** the round-6 review's S4 finding had two limbs — "macOS lost its only decommit effect-oracle" (closed by task #882's new counters/test above) and "`decommit_lazy_roundtrip` (`crates/vmem/tests/smoke.rs`) is vacuous on EVERY platform, not just macOS" (still not fixed — that test only checks a post-recommit write/read round-trips, never whether `madvise` had any effect; its rustdoc previously claimed otherwise, corrected in the closing pass). The new oracle's counters are `unix`-wide, not macOS-specific (`libc_madvise` is `#[cfg(all(unix, not(miri)))]`), so the same assertion style would close the Linux half too — but no CI row currently runs `bench-internals` against the real (non-mock) Unix backend on Linux (the Linux rows in `ci.yml` are default-features, `--all-features` which turns `mock` on, or `fault-injection lazy-commit` without `bench-internals`). Closing this fully needs either a new Linux CI row or accepting the gap stays macOS-only for now.
@@ -3344,3 +3325,27 @@ resolved" below.)_
      format (`st/insert`) used by the bench harness. No functionality is lost;
      the workspace-level `bench-iters.txt` is the canonical source when running
      within a workspace, and JIT calibration self-heals on fresh runs.
+
+43. **Item 43 (macOS half only) — `aligned-vmem`'s macOS `_SC_PAGESIZE = 29`
+    constant, previously only REASONED-FROM-SPEC, is now empirically
+    confirmed on real Apple Silicon hardware.** — **RESOLVED** (macOS half
+    only; the BSD half of item 43 stays OPEN in the main index above — no
+    BSD CI runner exists for this crate).
+
+    - **Confirmation:** commit `1dbd6b4` was pushed and CI run `31692217669`
+      (job `94421845398`, `test macos (production)`, image
+      `macos-26-arm64`) ran green, executing
+      `apple_silicon_page_size_is_16_kib` (`crates/vmem/tests/smoke.rs`) —
+      `ok`. `page_size()` returned exactly `16384` on real aarch64 Darwin
+      hardware, confirming the `_SC_PAGESIZE = 29` cfg-table entry
+      (`crates/vmem/src/lib.rs`, task #714) is the correct constant for the
+      macOS family, not merely a value that compiles.
+    - **Task/round:** task #888 (round 7, finding T1 of
+      `docs/reviews/2026-08-13-aligned-vmem-round7-review.md`), following
+      the exact action item's own "Next trigger" text (filed round-closing
+      review, task #776/F13): "if `apple_silicon_page_size_is_16_kib`
+      passes, move the macOS half of this item to 'Recently resolved' with
+      the run's citation."
+    - **Remaining scope:** FreeBSD, NetBSD/OpenBSD, and DragonFly remain
+      unverified on real hardware — tracked as the BSD half of item 43 in
+      the main index above, unchanged by this closure.
