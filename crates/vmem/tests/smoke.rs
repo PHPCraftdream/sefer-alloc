@@ -579,7 +579,10 @@ fn decommit_contract_violation_never_reaches_madvise() {
     // under `PAGE`. That offset exists only when `page_size() > PAGE` (e.g.
     // 16 KiB Apple Silicon); on every other host (4 KiB pages) the two bases
     // are the same value and no offset can tell them apart, so this arm is a
-    // no-op there and lives only on the macOS CI runner.
+    // no-op there and lives only on the macOS CI runner. Both `decommit`'s
+    // and `decommit_lazy`'s guards get their own discriminating call below
+    // (task #906, V2-1) -- a single call cannot cover both, since each
+    // function validates independently.
     if page_size() > PAGE {
         // SAFETY: same live reservation; `PAGE` is a genuine multiple of
         // `PAGE` but (by the `if` above) NOT a multiple of `page_size()`, so
@@ -587,6 +590,18 @@ fn decommit_contract_violation_never_reaches_madvise() {
         // validation base and must be rejected the same way.
         unsafe {
             aligned_vmem::decommit(base, PAGE, 2 * PAGE);
+        }
+        // SAFETY: same live reservation; same contract argument as the
+        // `decommit` call immediately above -- `PAGE` is a genuine multiple
+        // of `PAGE` but (by the `if` above) NOT a multiple of `page_size()`,
+        // so this is a contract violation under `decommit_lazy`'s own real
+        // validation base too. Without this call, a future edit that swaps
+        // `decommit_lazy`'s guard from `page_size()` to `PAGE` (lib.rs) is
+        // NOT caught here: the only `decommit_lazy` call above
+        // (`decommit_lazy(base, PAGE, 0)`) is rejected under EITHER base by
+        // `start >= end` alone, so it cannot discriminate.
+        unsafe {
+            decommit_lazy(base, PAGE, 2 * PAGE);
         }
     }
 
@@ -600,9 +615,9 @@ fn decommit_contract_violation_never_reaches_madvise() {
          the validation base was changed from page_size() to PAGE)"
     );
 
-    // `base` was never actually decommitted (both calls were rejected before
-    // any OS effect) -- still a live reservation, released exactly once via
-    // `r`'s own Drop here.
+    // `base` was never actually decommitted (all calls above were rejected
+    // before any OS effect) -- still a live reservation, released exactly
+    // once via `r`'s own Drop here.
     drop(r);
 }
 

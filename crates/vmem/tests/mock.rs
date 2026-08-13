@@ -284,6 +284,32 @@ fn decommit_silently_skips_contract_violating_offsets() {
         "a contract-violating decommit_lazy() call must record NO \
          Call::DecommitLazy at all: {calls:?}"
     );
+
+    // task #906 (round-9 review, V2-1 bonus): the two decommit_lazy shapes
+    // above are rejected under EITHER validation base (`page_size()` or
+    // `PAGE`), so neither discriminates a future `page_size()` -> `PAGE`
+    // swap at `decommit_lazy`'s own guard. A `PAGE`-aligned-but-not-
+    // `page_size()`-aligned offset does discriminate, but only exists when
+    // `page_size() > PAGE` (e.g. 16 KiB Apple Silicon); this arm is a no-op
+    // everywhere else and lives only on the macOS CI runner. Mirrors the
+    // same call added to `decommit_contract_violation_never_reaches_madvise`
+    // in `smoke.rs`, giving the lazy guard a second, mock-layer oracle.
+    if page_size() > PAGE {
+        mock::reset();
+        // SAFETY: same live reservation; `PAGE` is a genuine multiple of
+        // `PAGE` but (by the `if` above) NOT a multiple of `page_size()`, so
+        // this is still a contract violation under the crate's real
+        // validation base and must be silently skipped the same way.
+        unsafe {
+            decommit_lazy(base, PAGE, 2 * PAGE);
+        }
+        let calls = mock::drain();
+        assert!(
+            !calls.iter().any(|c| matches!(c, Call::DecommitLazy { .. })),
+            "a contract-violating decommit_lazy() call must record NO \
+             Call::DecommitLazy at all (validation base check): {calls:?}"
+        );
+    }
 }
 
 #[test]
