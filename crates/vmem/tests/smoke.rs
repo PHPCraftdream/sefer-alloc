@@ -525,6 +525,65 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
     drop(r);
 }
 
+/// task #902 (review finding U7, LOW): mirrors
+/// `decommit_silently_skips_contract_violating_offsets` in `mock.rs`, but at
+/// the real-syscall layer instead of the mock call-log layer -- proves a
+/// contract-violating `decommit`/`decommit_lazy` call never even reaches
+/// `libc_madvise` (the counters it increments stay untouched), not merely
+/// that the crate's own mock recorder saw nothing. Without this, a future
+/// "simplification" that changed the validation base in `lib.rs`'s
+/// `decommit`/`decommit_lazy` from `page_size()` to the crate's smaller
+/// `PAGE` constant (both guards currently read `let ps = page_size();`) would
+/// forward a `PAGE`-aligned-but-not-`page_size()`-aligned offset straight to
+/// `madvise(2)` on any host where the OS page size exceeds `PAGE` (e.g. a 16
+/// KiB-page Apple Silicon host) -- `madvise` rejects the WHOLE call in that
+/// case (see `decommit`'s own rustdoc on the all-or-nothing failure mode),
+/// which this crate's `mock`-feature test suite has no way to observe at
+/// all, and which would go undetected on any CI runner whose OS page size
+/// happens to equal `PAGE` (the common case). Gated on any Unix (not just
+/// macOS): `unix_madvise_attempts()`'s counters are `unix`-wide, matching
+/// `macos_decommit_madvise_syscall_actually_succeeds` above's own note that a
+/// Linux instance of this style of assertion was a known gap.
+#[cfg(all(unix, feature = "bench-internals", not(feature = "mock"), not(miri)))]
+#[test]
+fn decommit_contract_violation_never_reaches_madvise() {
+    use aligned_vmem::{reset_bench_internals_counters, unix_madvise_attempts};
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let span = 4 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+
+    // Clean slate: see the identical rationale in
+    // `macos_decommit_madvise_syscall_actually_succeeds` above (this file
+    // runs tests on parallel threads by default; SERIAL plus a reset keeps
+    // this measurement window uncontaminated by any other test in this
+    // binary that also calls `decommit`/`decommit_lazy`).
+    reset_bench_internals_counters();
+
+    // SAFETY: base is a live reservation for `span` bytes; both calls below
+    // are contract VIOLATIONS (misaligned start; inverted start > end) that
+    // the crate's own guard must reject before any real syscall is issued.
+    unsafe {
+        aligned_vmem::decommit(base, 1, PAGE);
+        decommit_lazy(base, PAGE, 0);
+    }
+
+    let attempts = unix_madvise_attempts();
+    assert_eq!(
+        attempts, 0,
+        "a contract-violating decommit()/decommit_lazy() call must never \
+         reach libc_madvise (the real madvise(2) syscall) at all -- got \
+         {attempts} attempt(s), meaning the crate's validation guard was \
+         bypassed or removed"
+    );
+
+    // `base` was never actually decommitted (both calls were rejected before
+    // any OS effect) -- still a live reservation, released exactly once via
+    // `r`'s own Drop here.
+    drop(r);
+}
+
 #[test]
 fn leak_zeroed_pages_is_zeroed_and_static() {
     // 0.2 helper: reserve zeroed pages leaked for the process lifetime.
