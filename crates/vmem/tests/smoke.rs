@@ -62,6 +62,26 @@ fn ordinary_reservation_never_reports_huge() {
     );
 }
 
+/// Round-5 closing review (QC8): on the Windows single-call fast path
+/// (`align <= 64 KiB`, `commit_len == size`, task #848), `reservation_len()`
+/// is documented (`lib.rs:493-500`) to report `commit_len`, NOT the true OS
+/// reservation size — Windows internally rounds VA reservations up to the
+/// 64 KiB allocation granularity. This is the one path in the crate where
+/// `reservation_len()` deliberately does NOT report the true reservation
+/// size, and until now nothing asserted it.
+#[cfg(windows)]
+#[test]
+fn windows_single_call_fast_path_reservation_len_reports_commit_len_not_true_size() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve 4 KiB, aligned to 4 KiB");
+    assert_eq!(
+        r.reservation_len(),
+        r.len(),
+        "on the Windows single-call fast path, reservation_len() reports \
+         commit_len (== requested size), not the true (64 KiB-rounded) OS \
+         reservation"
+    );
+}
+
 /// V8 fix: ReservationParts prevents swapping len and align.
 #[test]
 fn reservation_parts_prevents_parameter_swap() {

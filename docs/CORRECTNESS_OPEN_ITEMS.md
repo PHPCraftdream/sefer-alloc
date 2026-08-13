@@ -71,10 +71,10 @@ scoping decision is the pending step, not implementation).
 
    If this rule is accepted, this index entry moves to "Recently resolved" with the closing citation being the CLAUDE.md commit that added the bullet. If rejected, this entry stays open and serves as the recurring reminder the existing "Round start: check BOTH open-items indexes" rule assumes exists but does not.
 
-   - **Status:** OPEN — awaiting human decision on whether to add the standing rule to CLAUDE.md. Round 4 (tasks #867-874) is the first round in this campaign where the entry was written in the round's own closing pass (task #872) rather than being caught by the NEXT round's review — the pattern held for one more round (round 4's own closing review, `docs/reviews/2026-08-12-aligned-vmem-round4-closing-review.md` CR10, noted the entry was still missing mid-pass) but did not recur past the point of being caught, because the closing-review step this campaign now runs every round surfaced it before the round was considered done.
-   - **Current number:** 3 confirmed recurrences that went uncaught until the NEXT round (aligned-vmem rounds 1, 2, and 3); round 4 (tasks #867-874) is a 4th instance of the underlying gap but was caught and closed within the same round via CR10, not left for round 5 to find — so it does not add to the "recurred N times uncaught" count the way rounds 1-3 did, but it is evidence the standing rule is still needed (the gap keeps happening; only the catch mechanism improved).
+   - **Status:** OPEN — awaiting human decision on whether to add the standing rule to CLAUDE.md. Round 4 (tasks #867-874) and round 5 (tasks #875-879) are now both rounds where the entry was written in the round's own closing pass rather than being caught by the NEXT round's review — the underlying gap (the entry is not written by the task that should own it) still occurs every round, but the catch-and-close-within-round mechanism (a dedicated closing review every round) has now held for two consecutive rounds.
+   - **Current number:** 3 confirmed recurrences that went uncaught until the NEXT round (aligned-vmem rounds 1, 2, and 3); round 4 (tasks #867-874, caught by CR10) and round 5 (tasks #875-879, caught by QC9) are a 4th and 5th instance of the underlying gap, both caught and closed within their own round rather than left for the next round to find — so neither adds to the "recurred N times uncaught" count the way rounds 1-3 did, but two consecutive within-round catches is evidence the standing rule would still close a gap the closing-review step only patches after the fact (the gap keeps happening; only the catch mechanism improved, and it depends on a closing review actually running every round rather than being skipped).
    - **Next trigger:** Any round that closes with ≥ 1 commit and no CHANGELOG.md entry — if the standing rule is NOT adopted, this item stays open as the durable reminder; if adopted, the rule itself prevents recurrence
-   - **Evidence:** F11 in `docs/reviews/2026-08-12-aligned-vmem-round3-review.md` (lines 370-392); the task description for the current task citing "this is the THIRD consecutive round with this exact gap"; commit `c14bd3a` (task #863) closed the round-2 gap after round-3's F11 caught it; commit `7663811` (task #857) closed the round-1 gap after round-2's own W16 caught it; CR10 in `docs/reviews/2026-08-12-aligned-vmem-round4-closing-review.md` caught round 4's own instance before the round was considered closed
+   - **Evidence:** F11 in `docs/reviews/2026-08-12-aligned-vmem-round3-review.md` (lines 370-392); the task description for the current task citing "this is the THIRD consecutive round with this exact gap"; commit `c14bd3a` (task #863) closed the round-2 gap after round-3's F11 caught it; commit `7663811` (task #857) closed the round-1 gap after round-2's own W16 caught it; CR10 in `docs/reviews/2026-08-12-aligned-vmem-round4-closing-review.md` caught round 4's own instance before the round was considered closed; QC9 in `docs/reviews/2026-08-13-aligned-vmem-round5-closing-review.md` caught round 5's own instance the same way
 
 ### [T] Tracked, not yet actioned
 
@@ -2309,10 +2309,14 @@ resolved" below.)_
      rewrite of the whole test-invocation surface and CI matrix for
      EITHER crate. Task #726 (commit `53b3ca2`) applied the identical
      reasoning to `numa-shim`.
-   - **Evidence:** `crates/vmem/Cargo.toml:60-81` and
-     `crates/numa/Cargo.toml`'s `mock = []` feature comments both state
+   - **Evidence:** `crates/vmem/Cargo.toml`'s `mock = []` feature comment
+     (the "CARGO FEATURE-UNIFICATION HAZARD" block) and
+     `crates/numa/Cargo.toml`'s `mock = []` feature comment both state
      the deferral explicitly: "Revisit if/when this crate gains external
-     consumers and the hazard is reported for real."
+     consumers and the hazard is reported for real." (Cited by feature
+     name, not line range — round-5 closing review QC6 found a line-range
+     citation into this exact block go stale within the same round that
+     wrote it.)
    - **Revisit condition (both crates jointly):** if EITHER crate gains a
      real external consumer that reports this hazard for real, re-open
      this item and revisit BOTH crates' resolution together — do not let

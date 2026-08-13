@@ -235,12 +235,13 @@ const steps = [
   },
   {
     // R6 (task #871; the guard W5/task #854 asked for two rounds ago):
-    // grep-based guard against the doc-comment drift class
-    // that has recurred 5 times (unconditional "over-reserve size + align" /
-    // "trim" statements without qualifying context). Heuristic: every doc
-    // comment mentioning "over-reserv" or "trim" must also mention "align",
-    // "conditional", or "Windows" to indicate the statement is conditional.
-    // See scripts/vmem-doc-drift-guard.mjs's header for the full history.
+    // guard against the doc-comment drift class that has recurred 5 times
+    // (unconditional "over-reserve size + align" / "trim" statements without
+    // qualifying context). Heuristic: every SENTENCE mentioning
+    // "over-reserv"/"trim" must contain a scope word (if/when/fast-path/
+    // <=/>=/etc) in that same sentence; "unconditional" is an outright
+    // failure regardless. See scripts/vmem-doc-drift-guard.mjs's header for
+    // the full history and the per-sentence rewrite (task #878/Q8).
     name: 'vmem-doc-drift-guard (unconditional over-reserve/trim detection)',
     cmd: 'node',
     args: ['scripts/vmem-doc-drift-guard.mjs'],

@@ -139,7 +139,10 @@ jobs:
     # tests; `benches/vmem_bench.rs` was never compiled in CI, so renaming any
     # public API used by the bench left CI green. Task #846 proved two clippy
     # rows are required: --all-features (covers all optional features) and
-    # default (caught the inverted #[cfg_attr] dead_code bug that #846 fixed).
+    # default (caught the inverted #[cfg_attr] dead_code bug that #846 fixed);
+    # since Q3/task #877, a third: an explicit everything-except-`mock` list,
+    # because `--all-features` turns on `mock`, which REPLACES the backend and
+    # #[cfg]-erases the real-backend branches from clippy's view.
     # Task #851: miri compilation check — catches E0308 tuple-arity mismatches
     # that block publication but are invisible to the other checks.
     name: aligned-vmem package gates
@@ -778,7 +781,8 @@ jobs:
       # Task #858/F2: aligned-vmem crate Windows test coverage for the REAL
       # backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real Windows hardware.
       # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
-      # non-additive backend-replacing feature (see crates/vmem/Cargo.toml:55-84),
+      # non-additive backend-replacing feature (see the "CARGO FEATURE-UNIFICATION
+      # HAZARD" comment on crates/vmem/Cargo.toml's `mock` feature),
       # so `--all-features` would test the mock recording stub, not the real
       # Windows backend. The step below (also from F2) runs with `--all-features`
       # for the mock's own coverage, but it is NOT a Windows-backend test.
@@ -811,7 +815,8 @@ jobs:
       # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
       # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
       # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
-      # non-additive backend-replacing feature (see crates/vmem/Cargo.toml:55-84),
+      # non-additive backend-replacing feature (see the "CARGO FEATURE-UNIFICATION
+      # HAZARD" comment on crates/vmem/Cargo.toml's `mock` feature),
       # so `--all-features` would test the mock recording stub, not the real
       # Darwin backend. The step below (also from W14-2) runs with `--all-features`
       # for the mock's own coverage, but it is NOT a Darwin-backend test.

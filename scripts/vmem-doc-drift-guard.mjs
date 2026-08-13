@@ -6,12 +6,14 @@
 // task #878/Q8 for the full history and the per-sentence rewrite that
 // closes CR2.
 //
-// Heuristic (per-sentence, not per-block): every sentence in rustdoc
-// comments mentioning "over-reserv" or "trim" must ALSO, in the same
-// sentence, either:
-//   (a) be clearly conditional (contains "unconditional" as a HARD_FAIL), OR
-//   (b) contain a scope word indicating path-specific or conditional
-//       behavior (if/when/unless/may/miss/fast-path/slow-path/fallback/etc)
+// Heuristic (per-sentence, not per-block): a sentence in a rustdoc comment
+// (`.rs`) or on any non-blank line (Cargo.toml/README.md) mentioning
+// "over-reserv" or "trim" is a VIOLATION if EITHER:
+//   (a) it contains "unconditional" (an outright conviction — the sentence
+//       itself says the behavior has no conditions), OR
+//   (b) it contains NO scope word indicating path-specific or conditional
+//       behavior in that same sentence (if/when/unless/may/miss/fast-path/
+//       slow-path/fallback/<=/>=/etc)
 //
 // This is intentionally not a blunt "this string must never appear" check:
 // "over-reserve" and "trim" legitimately appear in correctly-conditional
@@ -22,9 +24,7 @@
 //   1. In lib.rs, this guard scans only ///  /  //! rustdoc comments, not
 //      regular // implementation comments. The dispatch-condition drift
 //      class (Q2) lives in // comments and is a separate tooling problem
-//      - this guard's per-sentence predicate is not suited to it. (In
-//      Cargo.toml/README.md, which have no doc-comment marker at all, every
-//      non-blank line is scanned instead — see the per-file branch below.)
+//      - this guard's per-sentence predicate is not suited to it.
 //   2. The SCOPE list is a heuristic that will require point additions as
 //      the text evolves. It was derived from actual historical drifts and
 //      verified against the current tree, but is not exhaustive.
@@ -168,7 +168,16 @@ function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
 
     if (hasTrigger) {
       const hasHardFail = HARD_FAIL.test(sentence);
-      const hasScope = SCOPE.test(sentence);
+      // Strip inline code spans (`...`) before checking SCOPE — a Rust
+      // signature's `-> Option<T>` return arrow / generic brackets satisfy
+      // the bare `<`/`>` alternative without being a real qualifier
+      // (round-5 closing review QC2: README.md's API table was invisible to
+      // this guard because every row's `-> T` arrow "rescued" it). TRIGGER
+      // and HARD_FAIL stay on the full sentence — this crate's real
+      // qualifiers (`align <= 64 KiB`) DO legitimately live inside
+      // backticks in rustdoc, so only SCOPE strips code spans.
+      const scopeText = sentence.replace(/`[^`]*`/g, ' ');
+      const hasScope = SCOPE.test(scopeText);
 
       // Violation iff: TRIGGER && (HARD_FAIL || !SCOPE)
       if (hasHardFail || !hasScope) {

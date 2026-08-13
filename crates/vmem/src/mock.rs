@@ -35,9 +35,11 @@
 //! build target in the same workspace.** See the `mock` feature's own doc
 //! comment in `Cargo.toml` for the full reasoning and the stronger
 //! alternative (a `--cfg` flag instead of a Cargo feature) considered and
-//! deferred (0.1.0 is already on crates.io, so removing `mock` as a Cargo
-//! feature is already a breaking change; the deferral now rests on the
-//! absence of real external consumers, not on the absence of a publish).
+//! deferred (`mock` is new in 0.2.0 and has never been published — removing
+//! or converting it is free until 0.2.0 ships, task #658; the deferral
+//! rests on the mechanical cost of the conversion plus the absence of real
+//! external consumers today, not on any already-incurred breaking-change
+//! cost).
 
 use core::cell::RefCell;
 
@@ -51,9 +53,11 @@ use crate::error::VmemError;
 /// variant is still semver-major for every downstream `Call::Reserve { size,
 /// align }` match without the variant-level marker too; `ReserveLazy` already
 /// grew `initial_commit` after `Reserve`/`ReserveHuge` were designed, so this
-/// is not a hypothetical). Decided now, before 0.2.0 (0.1.0 is already on
-/// crates.io, so not adding this now would mean adding it later after 0.1.0
-/// is already shipped, which would itself be a breaking change).
+/// is not a hypothetical). `Call` is new in 0.2.0 (0.1.0 had no `mock`
+/// feature at all) and 0.2.0 has not shipped yet (task #658), so this is
+/// decided now, before its own first publish — adding the marker
+/// retroactively after 0.2.0 ships would itself be the breaking change this
+/// is meant to prevent.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(docsrs, doc(cfg(feature = "mock")))]

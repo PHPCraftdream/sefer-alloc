@@ -615,7 +615,8 @@ impl Reservation {
     /// reservation's usable span need not start at the OS reservation's own
     /// base (this crate over-reserves `size + align` and keeps the full mapping
     /// whenever the exact-size fast path misses, or on Windows when
-    /// `align > 64 KiB`, which is exactly that shape).
+    /// `align > 64 KiB` or the initial commit is partial (`commit_len !=
+    /// size`), which is exactly that shape).
     ///
     /// # Safety
     ///
@@ -1522,7 +1523,7 @@ fn win_reserve_commit(
         // Return (base, base, commit_len, granted_huge).
         Ok((base, base, commit_len, extra_commit_flags != 0))
     } else {
-        // Two-call path for align > 64 KiB (original behavior preserved).
+        // Two-call path (align > 64 KiB, or a partial initial commit).
         let over = size
             .checked_add(align)
             .ok_or_else(VmemError::invalid_argument)?;
