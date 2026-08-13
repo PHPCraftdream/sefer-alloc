@@ -179,10 +179,11 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   anywhere counts this" — `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle it
 //   with a real number instead of the theoretical bound.
 // - Windows: `win_reserve_commit` issues reserve+commit in either
-//   one syscall (the fast path for `align <= 64 KiB`, over-reserving nothing —
-//   base == region) or two syscalls (the traditional path for larger
-//   alignments, over-reserving `size + align` and keeping the full mapping —
-//   Windows cannot partially release a `MEM_RESERVE` region).
+//   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
+//   (`commit_len == size`), over-reserving nothing — base == region)
+//   or two syscalls (the traditional path for larger alignments or a
+//   partial initial commit, over-reserving `size + align` and keeping the
+//   full mapping — Windows cannot partially release a `MEM_RESERVE` region).
 //   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 //   count each path separately for parity/comparison against the Unix
 //   hit-rate story.
