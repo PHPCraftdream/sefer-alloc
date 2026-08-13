@@ -23,7 +23,7 @@ use aligned_vmem::{reserve_aligned, release};
 let span = 4 * 1024 * 1024;
 let r = reserve_aligned(span, span).expect("OOM");
 let base = r.as_ptr();
-assert_eq!(base as usize % span, 0);
+assert_eq!(base.addr() % span, 0);
 
 // SAFETY: base is valid for r.len() bytes, owned exclusively.
 unsafe { base.write(0xAB); assert_eq!(base.read(), 0xAB); }
@@ -169,7 +169,10 @@ Every `unsafe` block carries a `// SAFETY:` proof. The crate is the OS aperture
 extracted from [`sefer-alloc`](https://crates.io/crates/sefer-alloc); it is
 deliberately the one place where the raw OS calls live, so consumers can stay
 `#![forbid(unsafe_code)]` above it. The returned pointers preserve provenance
-(no exposed-address `as usize` round-trips in the public API).
+(no exposed-address `as usize` round-trips in the public API — the mock
+backend's diagnostic-only call recorder does expose addresses as `usize` for
+comparison/logging, but none of those values is ever cast back into a
+pointer).
 
 ## License
 

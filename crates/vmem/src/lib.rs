@@ -58,7 +58,7 @@
 //! let span = 4 * 1024 * 1024;
 //! let r = reserve_aligned(span, span).expect("OOM");
 //! let base = r.as_ptr();
-//! assert_eq!(base as usize % span, 0); // base is `span`-aligned
+//! assert_eq!(base.addr() % span, 0); // base is `span`-aligned
 //!
 //! // SAFETY: `base` is valid for `r.len()` bytes; we own it exclusively.
 //! unsafe { base.write(0xAB); assert_eq!(base.read(), 0xAB); }
@@ -772,7 +772,7 @@ impl Drop for Reservation {
         // Record the release for mock observers (RAII path visibility).
         #[cfg(feature = "mock")]
         mock::record(mock::Call::Release {
-            reservation: self.reservation.as_ptr() as usize,
+            reservation: self.reservation.as_ptr().addr(),
             reservation_len: self.reservation_len,
         });
         // SAFETY: `self.reservation` was returned by `reserve_aligned` and is
@@ -983,7 +983,7 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
     };
     #[cfg(feature = "mock")]
     mock::record(mock::Call::Release {
-        reservation: reservation as usize,
+        reservation: reservation.addr(),
         reservation_len,
     });
     // SAFETY: forwarded from the caller's contract above.
@@ -1086,7 +1086,7 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     }
     #[cfg(feature = "mock")]
     mock::record(mock::Call::Decommit {
-        base: base as usize,
+        base: base.addr(),
         start,
         end,
     });
@@ -1142,7 +1142,7 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
     }
     #[cfg(feature = "mock")]
     mock::record(mock::Call::DecommitLazy {
-        base: base as usize,
+        base: base.addr(),
         start,
         end,
     });
@@ -1201,7 +1201,7 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
     #[cfg(feature = "mock")]
     {
         mock::record(mock::Call::Recommit {
-            base: base as usize,
+            base: base.addr(),
             start,
             end,
         });
@@ -1291,7 +1291,7 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
     #[cfg(feature = "mock")]
     {
         mock::record(mock::Call::CommitRange {
-            base: base as usize,
+            base: base.addr(),
             start,
             end,
         });
@@ -1606,6 +1606,7 @@ fn win_reserve_commit(
                         // Best-effort retry: try without extra_commit_flags (e.g.
                         // MEM_LARGE_PAGES). This matches the two-call path's fallback
                         // behavior.
+                        // SAFETY: same range within the same live reservation.
                         let plain = VirtualAlloc(
                             core::ptr::null_mut(),
                             commit_len,
@@ -2413,15 +2414,18 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
         flags |= MAP_HUGETLB;
     }
     let _ = huge; // silence unused on non-linux / no huge-pages builds
-                  // SAFETY: anonymous private mapping; kernel chooses the address.
-    let p = mmap(
-        core::ptr::null_mut(),
-        len,
-        PROT_READ | PROT_WRITE,
-        flags,
-        -1,
-        0,
-    );
+
+    // SAFETY: anonymous private mapping; kernel chooses the address.
+    let p = unsafe {
+        mmap(
+            core::ptr::null_mut(),
+            len,
+            PROT_READ | PROT_WRITE,
+            flags,
+            -1,
+            0,
+        )
+    };
     // task #776 (F8): `.addr()` for the same reason as the fast-path fix
     // above -- a comparison-only read, not a round-trip.
     if p.addr() == MAP_FAILED {
