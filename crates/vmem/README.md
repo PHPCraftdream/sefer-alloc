@@ -140,7 +140,8 @@ technical explanation of each:
   mapping resident and transparently re-faults a fresh zero page on the next
   write, so code that is safe on Linux can crash on Windows. This exact
   divergence has already crashed an in-repo consumer — see
-  `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 for the incident record.
+  <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+  item 6 for the incident record.
 - **Huge pages: decommit does nothing, on either OS.** When a reservation
   came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
   `decommit` does not work on it on either Windows or Linux: `VirtualFree`
@@ -158,7 +159,9 @@ technical explanation of each:
   failing-test-level gap by this crate's first real-macOS CI run on
   2026-08-13 (the underlying hazard was already documented elsewhere in this
   repository since Round 9, before this crate was extracted); no fix is
-  implemented yet — see `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item.
+  implemented yet — see
+  <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+  for the open item.
 
 ## Provenance & safety
 

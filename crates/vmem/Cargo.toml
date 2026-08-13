@@ -110,7 +110,9 @@ fault-injection = []
 # plus (round-6, task #882) a Unix `madvise(2)` attempt/success pair
 # (`aligned_vmem::unix_madvise_attempts()` / `unix_madvise_successes()`) that
 # settles whether a `decommit`/`decommit_lazy` call's underlying syscall
-# actually succeeded — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 48. Mirrors
+# actually succeeded — see
+# https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md
+# item 48. Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the
