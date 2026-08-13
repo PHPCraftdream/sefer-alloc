@@ -848,7 +848,9 @@ impl ReservationParts {
 ///
 /// **Cost on Unix fast-path miss:** the reservation holds `size + align` bytes
 /// of virtual address space for its lifetime (measured hit rate: 34.4% at 64 KiB
-/// align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849).
+/// align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured
+/// on WSL2/Linux, x86_64; 30-run aggregate — the hit rate is kernel- and
+/// ASLR-dependent and is not expected to transfer to other Unix platforms).
 ///
 /// Returns `None` on a contract violation or if the OS refuses the reservation
 /// (OOM) — never panics, so it is safe to call from inside a `GlobalAlloc`
