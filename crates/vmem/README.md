@@ -153,8 +153,10 @@ technical explanation of each:
   `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, so unlike
   Linux it does not reliably unmap the physical pages: a decommit +
   `recommit` round trip on macOS can still observe the old data instead of a
-  fresh zero page, even for a non-huge reservation. Discovered 2026-08-13 on
-  the first real-macOS CI run of this crate's non-mock suite; no fix is
+  fresh zero page, even for a non-huge reservation. Confirmed as a real,
+  failing-test-level gap by this crate's first real-macOS CI run on
+  2026-08-13 (the underlying hazard was already documented elsewhere in this
+  repository since Round 9, before this crate was extracted); no fix is
   implemented yet — see `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item.
 
 ## Provenance & safety
