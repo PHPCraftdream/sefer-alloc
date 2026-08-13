@@ -68,8 +68,18 @@ fn reservation_has_debug_output() {
     );
 }
 
-/// Non-huge reservation never reports huge (regression for W2 fix:
-/// non-Linux Unix used to return true for ordinary-page reservations).
+/// Pins `Reservation::is_huge()` to read the `granted_huge` field: the
+/// ordinary (non-huge) path hard-codes `granted_huge: false` as a literal
+/// two call frames up (`reserve_aligned` -> `try_reserve_aligned` ->
+/// `reserve_aligned_raw(..).map(...)`, `lib.rs:955-967`, the literal at
+/// `:963`), so this assertion is unconditionally true on every
+/// platform/feature combo and cannot fail against a regression on this
+/// path -- it is NOT a W2 regression guard. The real W2 regression test
+/// (non-Linux Unix used to return true for `reserve_aligned_huge`
+/// reservations) is `huge_pages.rs:61-62`'s
+/// `#[cfg(not(target_os = "linux"))] assert!(!r.is_huge())`, which calls
+/// the huge path and does fail if `HUGE_SUPPORTED` is reverted to an
+/// unconditional `true`.
 #[test]
 fn ordinary_reservation_never_reports_huge() {
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("ordinary reservation");
