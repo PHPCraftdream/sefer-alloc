@@ -37,7 +37,7 @@ unsafe { release(raw, raw_len, raw_align) };
 
 | API | Purpose |
 |---|---|
-| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (exact-size mmap fast path on Unix; on fast-path miss or Windows with align > 64 KiB, over-reserve size+align and keep the full mapping; Windows with align <= 64 KiB uses single-call fast path with no over-reserve). On Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB). |
+| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (exact-size mmap fast path on Unix; on fast-path miss or Windows with align > 64 KiB, over-reserve size+align and keep the full mapping; Windows with align <= 64 KiB uses single-call fast path with no over-reserve). On Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). |
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the underlying OS reservation. |
 | `Reservation::into_parts() -> (*mut u8, usize, usize)` | Take the raw reservation, suppress `Drop`, for self-hosted release (legacy tuple form). |
 | `Reservation::into_reservation_parts() -> ReservationParts` | Take the raw reservation, suppress `Drop`, for self-hosted release (typed form). |
