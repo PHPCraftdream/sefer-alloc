@@ -17,10 +17,12 @@
 // correctly describes the conditional fast-path vs slow-path behavior).
 //
 // KNOWN LIMITATION:
-//   1. This guard scans only //////! rustdoc comments in .rs files, not
+//   1. In lib.rs, this guard scans only ///  /  //! rustdoc comments, not
 //      regular // implementation comments. The dispatch-condition drift
 //      class (Q2) lives in // comments and is a separate tooling problem
-//      - this guard's per-sentence predicate is not suited to it.
+//      - this guard's per-sentence predicate is not suited to it. (In
+//      Cargo.toml/README.md, which have no doc-comment marker at all, every
+//      non-blank line is scanned instead — see the per-file branch below.)
 //   2. The SCOPE list is a heuristic that will require point additions as
 //      the text evolves. It was derived from actual historical drifts and
 //      verified against the current tree, but is not exhaustive.
@@ -46,33 +48,47 @@ async function main() {
     const content = readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
     const relativePath = filePath.replace(`${REPO_ROOT}/`, '');
+    const isRsFile = filePath.endsWith('.rs');
 
-    let currentDoc = [];
-    let currentDocStartLine = 0;
+    if (isRsFile) {
+      let currentDoc = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
 
-      // Check if this is a rustdoc comment line (only in .rs files)
-      const isRsFile = filePath.endsWith('.rs');
-      if (isRsFile && (trimmed.startsWith('///') || trimmed.startsWith('//!'))) {
-        if (currentDoc.length === 0) {
-          currentDocStartLine = i + 1; // 1-indexed line number
-        }
-        currentDoc.push({ lineNum: i + 1, content: trimmed });
-      } else {
-        // End of a doc comment - check it
-        if (currentDoc.length > 0) {
-          checkDocComment(currentDoc, violations, relativePath);
-          currentDoc = [];
+        if (trimmed.startsWith('///') || trimmed.startsWith('//!')) {
+          currentDoc.push({ lineNum: i + 1, content: trimmed });
+        } else {
+          // End of a doc comment - check it
+          if (currentDoc.length > 0) {
+            checkDocComment(currentDoc, violations, relativePath, true);
+            currentDoc = [];
+          }
         }
       }
-    }
 
-    // Check the last doc comment if the file ends with one
-    if (currentDoc.length > 0) {
-      checkDocComment(currentDoc, violations, relativePath);
+      // Check the last doc comment if the file ends with one
+      if (currentDoc.length > 0) {
+        checkDocComment(currentDoc, violations, relativePath, true);
+      }
+    } else {
+      // Non-.rs files (Cargo.toml, README.md) have no `///`/`//!` doc-comment
+      // marker, so there is no reliable "doc block" boundary the way there is
+      // in .rs files. Both known drift sites here (Cargo.toml's `description`
+      // string, README.md's feature table row) are single physical lines, so
+      // scanning every non-blank line independently is sufficient and keeps
+      // reported line numbers exact. (round-5/Q8: an earlier version of this
+      // widening read these two files' content but never actually scanned it —
+      // doc-block accumulation was gated on `///`/`//!`, which TOML/Markdown
+      // never contain, so Cargo.toml/README.md were read and silently ignored.
+      // Verified via an injected counterfactual: an unconditional over-reserve
+      // sentence spliced into Cargo.toml's `description` passed clean under
+      // that version.)
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (!trimmed) continue;
+        checkDocComment([{ lineNum: i + 1, content: trimmed }], violations, relativePath, false);
+      }
     }
   }
 
@@ -135,8 +151,10 @@ function splitIntoSentences(text) {
   return sentences;
 }
 
-function checkDocComment(docLines, violations, filePath) {
-  const docText = docLines.map(l => l.content.slice(3).trim()).join(' ');
+function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
+  const docText = docLines
+    .map(l => (stripDocPrefix ? l.content.slice(3).trim() : l.content))
+    .join(' ');
   const sentences = splitIntoSentences(docText);
 
   const TRIGGER   = /over-reserv|\btrim(s|med|ming)?\b/i;
