@@ -1099,9 +1099,10 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 }
 
 /// Lazy decommit variant: hint the OS it MAY reclaim `[base+start, base+end)`
-/// under memory pressure, cheaper than [`decommit`] (Linux `MADV_FREE`, macOS
-/// `MADV_FREE_REUSABLE`, other Unix falls back to `MADV_DONTNEED`; Windows falls
-/// back to the eager [`decommit`] path, which has no lazy equivalent).
+/// under memory pressure, cheaper than [`decommit`] (Linux `MADV_FREE`,
+/// macOS/iOS `MADV_FREE_REUSABLE`, other Unix (including tvOS/watchOS) falls
+/// back to `MADV_DONTNEED`; Windows falls back to the eager [`decommit`]
+/// path, which has no lazy equivalent).
 ///
 /// Unlike [`decommit`], on Linux the pages are NOT necessarily zeroed on next
 /// access if the kernel has not yet reclaimed them (a write before reclamation
@@ -1116,8 +1117,13 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// "under pressure"). Neither call zero-fills on next access on macOS/iOS —
 /// that half of the non-guarantee is unchanged from the eager path. On
 /// tvOS/watchOS this function falls back to the same `MADV_DONTNEED` as
-/// [`decommit`] (see the `other Unix` arm above), so there it IS a true no-op
-/// like the eager path, on both axes.
+/// [`decommit`] (see the "other Unix" case in the summary above — the arm
+/// that excludes macOS/iOS specifically, not "other Unix" in a general
+/// sense), so there it IS a true no-op like the eager path, on both axes.
+/// This tvOS/watchOS fallback is a limitation of this crate's current
+/// `madv_free_advice` cfg coverage, not a platform limitation:
+/// `MADV_FREE_REUSABLE` is XNU-wide, so all four Darwin targets could in
+/// principle use it (see `madv_free_advice`'s doc).
 ///
 /// **No fallible form:** this entry point is intentionally infallible, for the
 /// same safety rationale as [`decommit`]. The `()` return carries no
@@ -2195,7 +2201,10 @@ fn reserve_aligned_huge_raw(
 }
 
 /// Select the lazy-decommit `madvise` advice for this platform.
-/// Linux: `MADV_FREE`; macOS: `MADV_FREE_REUSABLE`; other Unix: `MADV_DONTNEED`.
+/// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; other Unix
+/// (including tvOS/watchOS, because this crate's `madv_free_advice`
+/// currently only names macOS and iOS — `MADV_FREE_REUSABLE` is XNU-wide,
+/// not a macOS/iOS-only capability): `MADV_DONTNEED`.
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
@@ -2277,7 +2286,7 @@ const MADV_DONTNEED: i32 = 4;
 // mock (task #646/F8): see MADV_DONTNEED above.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 const MADV_FREE: i32 = 8;
-/// macOS `MADV_FREE_REUSABLE` (lazy reclaim; page reusable).
+/// macOS/iOS `MADV_FREE_REUSABLE` (lazy reclaim; page reusable).
 #[cfg(all(unix, not(miri), any(target_os = "macos", target_os = "ios")))]
 const MADV_FREE_REUSABLE: i32 = 7;
 /// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
