@@ -750,20 +750,44 @@ impl Reservation {
         // successfully and still panicked inside `Drop` under miri). The
         // explicit `reservation_len != 0 && reservation_len.is_multiple_of(PAGE)`
         // checks enforce the documented nonzero/page-multiple invariants, while
-        // `Layout::from_size_align(...).is_ok()` catches overflow cases -- together
-        // they cover all documented contract violations immediately at the call
-        // site, matching what `release_reservation`'s miri backend will later
-        // attempt.
+        // `Layout::from_size_align(...).is_ok()` catches overflow cases.
+        //
+        // task #916 (H2C3): the comment above previously claimed these checks
+        // "cover all documented contract violations immediately at the call site"
+        // -- this was false. Four documented invariants were uncheckable from
+        // the arguments alone (pointer validity, liveness, exclusivity, and
+        // exact-once release), but three MORE were cheaply checkable and were
+        // NOT checked:
+        // - `len` must be a non-zero multiple of `PAGE` (documented, not checked)
+        // - `base` must be aligned to `align` (documented, not checked)
+        // - `reservation_len >= len + (base - reservation)` (documented, not checked)
+        // All three are now checked explicitly below, leaving only the genuinely
+        // uncheckable invariants (pointer validity, liveness, exclusivity) as
+        // unchecked caller responsibilities.
+        let base_addr = base.addr();
+        let res_addr = reservation.addr();
+        let offset = base_addr.saturating_sub(res_addr);
         assert!(
             align.is_power_of_two()
                 && align >= PAGE
                 && reservation_len != 0
                 && reservation_len.is_multiple_of(PAGE)
+                && len != 0
+                && len.is_multiple_of(PAGE)
+                && base_addr.is_multiple_of(align)
+                && len
+                    .checked_add(offset)
+                    .is_some_and(|required| reservation_len >= required)
                 && std::alloc::Layout::from_size_align(reservation_len, align).is_ok(),
-            "Reservation::from_raw_parts: align must be a power of two >= PAGE, \
-             reservation_len must be non-zero and a multiple of PAGE, and \
+            "Reservation::from_raw_parts: \
+             align must be a power of two >= PAGE; \
+             reservation_len must be non-zero and a multiple of PAGE; \
+             len must be non-zero and a multiple of PAGE; \
+             base must be aligned to align; \
+             reservation_len must be >= len + (base - reservation); \
              (reservation_len, align) must form a valid Layout; \
-             got align={align}, reservation_len={reservation_len}"
+             got align={align}, reservation_len={reservation_len}, len={len}, \
+             base={base:?}, reservation={reservation:?}"
         );
         Self {
             base: base_nn,
