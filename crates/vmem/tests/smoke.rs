@@ -174,9 +174,11 @@ fn decommit_recommit_roundtrip() {
         // written byte legally persists — this zero-fill guarantee is a
         // real-OS property.
         //
-        // ALSO skipped on the Darwin family (discovered 2026-08-13, first
-        // real-macOS CI run of this crate's non-mock test suite -- see
-        // docs/CORRECTNESS_OPEN_ITEMS.md and decommit()'s own rustdoc):
+        // ALSO skipped on the Darwin family (confirmed as a real,
+        // failing-test-level gap by this crate's first real-macOS CI run,
+        // 2026-08-13 -- the underlying hazard was already known repo-wide
+        // since Round 9, see docs/CORRECTNESS_OPEN_ITEMS.md item 48 and
+        // decommit()'s own rustdoc):
         // `MADV_DONTNEED` is advisory-only for anonymous memory on all XNU-
         // based targets (macOS/iOS/tvOS/watchOS share the same kernel and
         // MADV_DONTNEED semantics, not just macOS) and does NOT reliably

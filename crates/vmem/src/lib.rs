@@ -1005,8 +1005,10 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
 /// instead if you need decommit functionality.
 ///
-/// **Darwin zero-fill gap (discovered 2026-08-13, first real-macOS CI run of
-/// this crate's non-mock test suite):** `MADV_DONTNEED` on Darwin is
+/// **Darwin zero-fill gap (confirmed as a real, failing-test-level gap by
+/// this crate's first real-macOS CI run, 2026-08-13 — the underlying hazard
+/// was already known repo-wide since Round 9, see
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48):** `MADV_DONTNEED` on Darwin is
 /// advisory-only for anonymous memory — unlike Linux, it does not reliably
 /// unmap the physical pages, so a decommit + [`recommit`] roundtrip on the
 /// Darwin family (macOS/iOS/tvOS/watchOS — all share XNU and the same
@@ -2073,8 +2075,10 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Res
     // actually unmaps the physical pages, so the next write re-faults a
     // fresh zero page. No syscall, cannot fail, on Linux.
     //
-    // CAVEAT (discovered 2026-08-13, first real-macOS CI run of this crate's
-    // non-mock test suite — see docs/CORRECTNESS_OPEN_ITEMS.md): this does
+    // CAVEAT (confirmed as a real, failing-test-level gap by this crate's
+    // first real-macOS CI run, 2026-08-13 -- the underlying hazard was
+    // already known repo-wide since Round 9, see
+    // docs/CORRECTNESS_OPEN_ITEMS.md item 48): this does
     // NOT hold on macOS. `madvise(MADV_DONTNEED)` on Darwin is advisory only
     // for anonymous memory and does not reliably unmap/zero the pages, so a
     // `decommit` + `recommit` roundtrip on macOS can observe the OLD data
