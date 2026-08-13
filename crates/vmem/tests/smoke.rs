@@ -353,12 +353,17 @@ fn page_size_is_a_valid_os_page() {
 /// `not(miri)` exclusion this crate's other real-OS-property assertions
 /// already use (e.g. the zero-fill assertion above, the madvise oracle
 /// below, and this file's own
-/// `recommit_is_fallible_and_reports_success_on_the_happy_path`, whose
+/// `decommit_recommit_roundtrip`, whose
 /// `not(miri)`-gated zero-fill read is mirrored by
 /// `lazy_commit.rs`'s `sequential_commit_range_grows_incrementally` for the
-/// identical real-OS-zero-fill-vs-miri distinction -- corrected round 7,
-/// task #895/TC5, from a prior version of this comment that misnamed the
-/// precedent as `decommit_lazy_roundtrip`'s sibling, which does not exist).
+/// identical real-OS-zero-fill-vs-miri distinction -- corrected round 8,
+/// task #900/U2, from a prior version of this comment that misnamed the
+/// precedent as `recommit_is_fallible_and_reports_success_on_the_happy_path`,
+/// which has no `#[cfg]` gate and no zero-fill read at all (its only
+/// post-recommit assertion is a write-then-read-back true on every backend
+/// including miri and mock) -- itself a correction of an even earlier
+/// version (round 7, task #895/TC5) that misnamed the precedent as
+/// `decommit_lazy_roundtrip`'s sibling, which does not exist).
 #[cfg(all(target_os = "macos", target_arch = "aarch64", not(miri)))]
 #[test]
 fn apple_silicon_page_size_is_16_kib() {
