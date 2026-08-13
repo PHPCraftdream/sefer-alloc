@@ -167,13 +167,17 @@ impl AllocCore {
         aligned_vmem::windows_reserve_commit_two_call_pairs()
     }
 
-    /// MEASUREMENT-ONLY (task #504, F11 step 1): reset all four
-    /// `aligned_vmem` bench-internals counters
+    /// MEASUREMENT-ONLY (task #504, F11 step 1): forwards to
+    /// `aligned_vmem::reset_bench_internals_counters()`, which as of round-6
+    /// (task #882) resets SIX counters total, not four: the four this crate
+    /// exposes its own forwarders for
     /// ([`dbg_unix_exact_reserve_attempts`](Self::dbg_unix_exact_reserve_attempts),
     /// [`dbg_unix_exact_reserve_hits`](Self::dbg_unix_exact_reserve_hits),
     /// [`dbg_windows_reserve_commit_single_calls`](Self::dbg_windows_reserve_commit_single_calls),
-    /// [`dbg_windows_reserve_commit_two_call_pairs`](Self::dbg_windows_reserve_commit_two_call_pairs))
-    /// to 0. Test/bench hook only — mirrors
+    /// [`dbg_windows_reserve_commit_two_call_pairs`](Self::dbg_windows_reserve_commit_two_call_pairs)),
+    /// plus two macOS-decommit-oracle counters
+    /// (`aligned_vmem::unix_madvise_attempts`/`unix_madvise_successes`) this
+    /// crate does not currently forward. Test/bench hook only — mirrors
     /// [`dbg_reset_contains_base_tier1_counters`](Self::dbg_reset_contains_base_tier1_counters)'s
     /// established reset-hook convention.
     #[doc(hidden)]

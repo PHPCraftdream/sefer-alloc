@@ -401,10 +401,19 @@ fn decommit_lazy_roundtrip() {
 ///
 /// `bench-internals`-gated (diagnostic-only counters, matches this crate's
 /// established `bench-internals` convention -- see `UNIX_EXACT_RESERVE_HITS`
-/// et al. in `lib.rs`) and `target_os = "macos"`-gated (the H1-vs-H2 question
-/// is macOS-specific; Linux/Windows already have a passing zero-fill
-/// assertion in `decommit_recommit_roundtrip`/`decommit_lazy_roundtrip`
-/// above, so this test would be redundant, not wrong, on those platforms).
+/// et al. in `lib.rs`) and `target_os = "macos"`-gated for the H1-vs-H2
+/// question specifically. NOTE (round-6 closing review, SC1): this test's
+/// eager-`decommit` half would be redundant on Linux/Windows, which already
+/// have a passing zero-fill assertion in `decommit_recommit_roundtrip`
+/// above -- but `decommit_lazy_roundtrip` below has NO effect-observing
+/// assertion on ANY platform (it only checks that a write after
+/// decommit_lazy+recommit reads back, which is true whether `madvise`
+/// succeeded, failed, or was never called). This oracle's `madvise`-success
+/// counters are `unix`-wide (`libc_madvise` is `#[cfg(all(unix, not(miri)))]`,
+/// not macOS-specific), so a Linux instance of the same assertion would
+/// close that gap too -- not done here because no CI row runs
+/// `bench-internals` against the real (non-mock) Unix backend on Linux; see
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48's S4 sub-note.
 /// Also excluded under `mock` (the recording backend never calls the real
 /// `madvise(2)`, so the counters would stay at 0 by construction, not by
 /// answering the question) and `miri` (no real FFI).
@@ -431,6 +440,14 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
     // (e.g. `decommit_recommit_roundtrip`/`decommit_lazy_roundtrip` above,
     // which run in the same process under `cargo test`'s default
     // multi-threaded-but-shared-process test execution).
+    //
+    // Round-6 closing review SC9: this also zeroes UNIX_EXACT_RESERVE_ATTEMPTS/
+    // _HITS and the Windows counters, which every `reserve_aligned` call in
+    // this file's ~14 other tests also increments -- none of them holds
+    // SERIAL or asserts on those counters today, so there is no live race,
+    // but a future test that does add such an assertion would get a
+    // silently flaky result rather than a compile error unless it also
+    // joins SERIAL's contract.
     reset_bench_internals_counters();
 
     // SAFETY: base is a live, exclusively-owned reservation for `span` bytes;
@@ -440,6 +457,14 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
         decommit_lazy(base, span / 2, span);
     }
 
+    // Round-6 closing review SC10: this exact-count assertion is correct
+    // TODAY (verified: libc_madvise is the sole incrementer, called only
+    // from decommit_pages_impl's two arms) but item 48's Darwin lazy-path
+    // alternative fix note (S9) records a candidate future change that
+    // would add a second call per cycle (MADV_FREE_REUSE from `recommit`).
+    // If that lands, update this count and the message below in the same
+    // commit -- otherwise this test starts failing with a message that
+    // reads like an H2 confirmation when only the call count changed.
     let attempts = unix_madvise_attempts();
     let successes = unix_madvise_successes();
     assert_eq!(

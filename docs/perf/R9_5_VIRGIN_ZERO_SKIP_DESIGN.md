@@ -117,8 +117,14 @@ since."
   is the P4(b) killer — and it is the reason the design hinges on §4.3.
   (Round 6/task #883 citation check: this note did not exist in `crates/vmem/src/lib.rs`
   when this document was written on 2026-07-20 — it was added by commit
-  `9c777bc` on 2026-08-13, so the citation was unverifiable at the time. It is
-  now accurate; see `docs/CORRECTNESS_OPEN_ITEMS.md` item 48.)
+  `9c777bc` on 2026-08-13, so the citation was unverifiable at the time.
+  Round-6 closing review SC5: "now accurate" overstated this — the vmem note
+  covers `decommit` and scopes itself to "the Darwin family
+  (macOS/iOS/tvOS/watchOS)"; it says nothing about `*BSD`, and it is
+  attached to `decommit`, not `decommit_lazy`. So the citation is accurate
+  for the macOS/iOS/tvOS/watchOS + `decommit` slice of this bullet's claim
+  and still uncited for the `*BSD` and `decommit_lazy` slices; see
+  `docs/CORRECTNESS_OPEN_ITEMS.md` item 48.)
 - **NOT guaranteed under `cfg!(miri)`**: miri's `std::alloc` fallback does not
   zero (`crates/vmem`'s miri aperture), exactly as R9-1 documented for the Large
   path. The Small design withholds the signal identically (§5).

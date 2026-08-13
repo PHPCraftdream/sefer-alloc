@@ -149,11 +149,12 @@ technical explanation of each:
   `page_size()`-granular call gets `EINVAL` and does nothing. The effect is
   indistinguishable from a silent no-op — RSS does not drop and reads return
   the old data. Use `reserve_aligned` instead if you need working decommit.
-- **macOS: no zero-fill, no RSS return, on ordinary reservations too.**
+- **Darwin (macOS/iOS/tvOS/watchOS): no zero-fill, no RSS return, on ordinary
+  reservations too.**
   `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, so unlike
   Linux it does not reliably unmap the physical pages: a decommit +
-  `recommit` round trip on macOS can still observe the old data instead of a
-  fresh zero page, even for a non-huge reservation. Confirmed as a real,
+  `recommit` round trip on any Darwin target can still observe the old data
+  instead of a fresh zero page, even for a non-huge reservation. Confirmed as a real,
   failing-test-level gap by this crate's first real-macOS CI run on
   2026-08-13 (the underlying hazard was already documented elsewhere in this
   repository since Round 9, before this crate was extracted); no fix is

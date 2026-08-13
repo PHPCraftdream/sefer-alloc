@@ -31,8 +31,9 @@
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
 //! reservation; `Reservation::as_ptr` / `len` expose the aligned usable span,
 //! plus page-granularity decommit/recommit so you can return physical memory to the
-//! OS while keeping the address-space reservation (on macOS this reclaim is
-//! advisory-only — see [`decommit`]'s macOS caveat). If you are building an
+//! OS while keeping the address-space reservation (on the Darwin family —
+//! macOS/iOS/tvOS/watchOS — this reclaim is advisory-only, see [`decommit`]'s
+//! Darwin caveat). If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
 //!
@@ -170,7 +171,7 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 // bench-internals: path-activation counters (task #504, F11 step 1).
 // ---------------------------------------------------------------------------
 //
-// Two independent questions, one instrument each:
+// Three independent questions, one instrument family each:
 //
 // - Unix: `unix_reserve` tries an EXACT-size `mmap` first
 //   (`try_reserve_aligned_exact`) and only falls through to the over-reserve
@@ -188,6 +189,12 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 //   count each path separately for parity/comparison against the Unix
 //   hit-rate story.
+// - macOS decommit oracle (round-6, task #882): `libc_madvise` discards
+//   `madvise`'s return value by design (task #719), so nothing distinguished
+//   "the syscall succeeded but Darwin's semantics didn't reclaim the pages"
+//   from "the syscall itself failed" for item 48's root-cause question.
+//   `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` settle it with a real
+//   number — see those statics' own docs.
 //
 // `AtomicU64` storage, increments gated on `bench-internals` so a plain build
 // carries zero extra instructions (storage itself is also gated, not compiled
@@ -245,11 +252,11 @@ pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: total number of `madvise(2)` calls issued by
-/// [`libc_madvise`] (Unix only — always 0 on Windows/miri; that internal
+/// `libc_madvise` (Unix only — always 0 on Windows/miri; that internal
 /// helper is private, so it is named here in code font rather than linked).
 /// Covers every `madvise` call site reachable through `decommit_pages_impl`
-/// (both [`DecommitKind::Eager`] — `MADV_DONTNEED` — and
-/// [`DecommitKind::Lazy`] — `MADV_FREE`/`MADV_FREE_REUSABLE`/`MADV_DONTNEED`
+/// (both `DecommitKind::Eager` — `MADV_DONTNEED` — and
+/// `DecommitKind::Lazy` — `MADV_FREE`/`MADV_FREE_REUSABLE`/`MADV_DONTNEED`
 /// fallback), NOT the separate `MADV_HUGEPAGE` hint call in
 /// `libc_madvise_hugepage`. Added by task #882 as the empirical oracle for
 /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48: `libc_madvise` itself discards
@@ -1017,7 +1024,7 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// to the OS while keeping the address-space reservation alive (Linux
 /// `MADV_DONTNEED`, Windows `MEM_DECOMMIT`). Re-access after decommit produces
 /// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on
-/// Linux — see the macOS caveat below).
+/// Linux — see the Darwin caveat below).
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
 /// A no-op if the range is empty.
@@ -1098,8 +1105,16 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// keeps the old contents and cancels the free) — so this is appropriate only
 /// for memory whose contents the caller no longer needs but has not yet
 /// overwritten. Cheaper reclaim; the kernel takes pages only under pressure.
-/// (On macOS, [`decommit`] itself is only advisory too — see its macOS
-/// caveat — so this lazy variant inherits the same non-guarantee there.)
+///
+/// **On macOS/iOS specifically, the cost ordering above is INVERTED, on the
+/// RSS axis only** — see [`decommit`]'s Darwin caveat: eager `decommit`'s
+/// `MADV_DONTNEED` is a no-op there (drops nothing), while this lazy variant's
+/// `MADV_FREE_REUSABLE` DOES drop the physical footprint immediately (not just
+/// "under pressure"). Neither call zero-fills on next access on macOS/iOS —
+/// that half of the non-guarantee is unchanged from the eager path. On
+/// tvOS/watchOS this function falls back to the same `MADV_DONTNEED` as
+/// [`decommit`] (see the `other Unix` arm above), so there it IS a true no-op
+/// like the eager path, on both axes.
 ///
 /// **No fallible form:** this entry point is intentionally infallible, for the
 /// same safety rationale as [`decommit`]. The `()` return carries no
@@ -1133,9 +1148,9 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
 /// Recommit pages `[base + start, base + end)` previously passed to
 /// [`decommit`]. On Windows this re-commits physical pages
 /// (`VirtualAlloc(MEM_COMMIT)`); on Unix re-access is implicit so this is a
-/// no-op. On macOS specifically, whether re-access reads back zeroed pages
-/// or the pre-decommit contents is not guaranteed either way — see
-/// [`decommit`]'s macOS caveat for why.
+/// no-op. On the Darwin family (macOS/iOS/tvOS/watchOS) specifically, whether
+/// re-access reads back zeroed pages or the pre-decommit contents is not
+/// guaranteed either way — see [`decommit`]'s Darwin caveat for why.
 ///
 /// Returns `true` if the range is now committed (or the call was a well-formed
 /// no-op — empty range, `start == end`), and `false` if the OS refused to
@@ -2133,14 +2148,14 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Res
     // first real-macOS CI run, 2026-08-13 -- the underlying hazard was
     // already known repo-wide since Round 9, see
     // docs/CORRECTNESS_OPEN_ITEMS.md item 48): this does
-    // NOT hold on macOS. `madvise(MADV_DONTNEED)` on Darwin is advisory only
-    // for anonymous memory and does not reliably unmap/zero the pages, so a
-    // `decommit` + `recommit` roundtrip on macOS can observe the OLD data
-    // still resident — `decommit`'s "return physical backing to the OS"
-    // promise is silently unmet on macOS, the same shape as the already-
-    // documented huge-page no-op above `decommit`'s own doc comment. No fix
-    // implemented here (a real fix needs re-`mmap`(MAP_FIXED) over the range
-    // on macOS, a bigger change deserving its own review round); this
+    // NOT hold on the Darwin family (macOS/iOS/tvOS/watchOS). `madvise(MADV_DONTNEED)`
+    // on Darwin is advisory only for anonymous memory and does not reliably
+    // unmap/zero the pages, so a `decommit` + `recommit` roundtrip on Darwin
+    // can observe the OLD data still resident — `decommit`'s "return physical
+    // backing to the OS" promise is silently unmet on Darwin, the same shape
+    // as the already-documented huge-page no-op above `decommit`'s own doc
+    // comment. No fix implemented here (a real fix needs re-`mmap`(MAP_FIXED)
+    // over the range on Darwin, a bigger change deserving its own review round); this
     // comment and the test scoping below are the honest interim state.
     Ok(())
 }

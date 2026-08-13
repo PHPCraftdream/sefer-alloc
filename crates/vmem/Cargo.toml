@@ -106,7 +106,11 @@ fault-injection = []
 # `aligned_vmem::windows_reserve_commit_two_call_pairs()` — the fast path
 # issues a single syscall for `align <= 64 KiB` on a full-span commit
 # (`commit_len == size`), the traditional path issues two syscalls for
-# larger alignments or a partial initial commit), for cross-platform comparison. Mirrors
+# larger alignments or a partial initial commit), for cross-platform comparison,
+# plus (round-6, task #882) a Unix `madvise(2)` attempt/success pair
+# (`aligned_vmem::unix_madvise_attempts()` / `unix_madvise_successes()`) that
+# settles whether a `decommit`/`decommit_lazy` call's underlying syscall
+# actually succeeded — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 48. Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the

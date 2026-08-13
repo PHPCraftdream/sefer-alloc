@@ -32,7 +32,10 @@ in full before writing a single line here:**
   on macOS/XNU/*BSD (`MADV_DONTNEED` laziness). (Round 6/task #883 citation
   check: R9-5's own citation of this fact to "`crates/vmem/src/lib.rs`
   §decommit note" was unverifiable when R9-5 was written — that note was
-  added later, by commit `9c777bc` on 2026-08-13; now accurate. See
+  added later, by commit `9c777bc` on 2026-08-13. Round-6 closing review
+  SC5: it is now accurate for macOS/iOS/tvOS/watchOS and for `decommit`
+  specifically — the note says nothing about `*BSD` or `decommit_lazy`, so
+  those halves of this bullet's own claim remain uncited. See
   `docs/CORRECTNESS_OPEN_ITEMS.md` item 48 and R9-5's own corrected note.)
 - `25ae4a5` (`perf(alloc-core): elide fresh-segment AllocBitmap virgin-init`)
   — a DIFFERENT, already-**shipped** optimization that looks superficially
