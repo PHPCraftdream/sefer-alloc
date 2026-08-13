@@ -1155,7 +1155,20 @@ for completeness.
    > `UNIX_EXACT_RESERVE_HITS` and `examples/v20_849_unix_exact_reserve_hit_rate.rs`
    > already run the 30-independent-process methodology this item used; a third
    > counter for "hint retry hit" would produce a real number from the same harness.
-   Full history: task #857 (this entry); S12 mechanism added task #883.
+   > **Plumbing gap (round 7/task #894, review finding T10 — not implemented,
+   > recorded so a future implementer does not re-derive it on contact):** the
+   > hint address `p` this mechanism wants to retry from is currently discarded
+   > before the caller can see it — `try_reserve_aligned_exact`
+   > (`crates/vmem/src/lib.rs`), on an alignment miss, munmaps the region and
+   > returns `Err(VmemError::invalid_argument())` with no address, so its
+   > caller `unix_reserve` has nothing to hint from; implementing S12 first
+   > requires widening `try_reserve_aligned_exact`'s error channel (or return
+   > type) to carry the missed address. The current munmap-before-return
+   > ordering is fine/intentional (any future hint would necessarily target an
+   > already-freed range) — worth stating explicitly so a future implementer
+   > does not instead try to read the address before the munmap.
+   Full history: task #857 (this entry); S12 mechanism added task #883; T10
+   plumbing note added task #894.
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
