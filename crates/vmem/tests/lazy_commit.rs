@@ -338,8 +338,12 @@ fn sequential_commit_range_grows_incrementally() {
         // under miri's `std::alloc`-based fallback (documented as NOT
         // zeroing, unlike a real OS) reading it is a genuine uninitialized-
         // memory read. Mirrors the identical, already-established gate in
-        // tests/smoke.rs's `recommit_is_fallible_and_reports_success_on_the_happy_path`
-        // for the exact same real-OS-zero-fill-vs-miri distinction.
+        // tests/smoke.rs's `decommit_recommit_roundtrip`
+        // for the exact same real-OS-zero-fill-vs-miri distinction
+        // (corrected round 8, task #900/U2: a prior version of this comment
+        // misnamed the precedent as
+        // `recommit_is_fallible_and_reports_success_on_the_happy_path`,
+        // which has no `#[cfg]` gate and no zero-fill read at all).
         #[cfg(not(miri))]
         assert_eq!(base.read(), 0, "initial region byte not overwritten");
         for step in 0..5u8 {
