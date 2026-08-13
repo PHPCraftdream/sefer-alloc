@@ -31,7 +31,8 @@
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
 //! reservation; `Reservation::as_ptr` / `len` expose the aligned usable span,
 //! plus page-granularity decommit/recommit so you can return physical memory to the
-//! OS while keeping the address-space reservation. If you are building an
+//! OS while keeping the address-space reservation (on macOS this reclaim is
+//! advisory-only — see [`decommit`]'s macOS caveat). If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
 //!
@@ -954,7 +955,8 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// Decommit pages `[base + start, base + end)`: return their physical backing
 /// to the OS while keeping the address-space reservation alive (Linux
 /// `MADV_DONTNEED`, Windows `MEM_DECOMMIT`). Re-access after decommit produces
-/// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on Unix).
+/// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on
+/// Linux — see the macOS caveat below).
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
 /// A no-op if the range is empty.
@@ -1031,6 +1033,8 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// keeps the old contents and cancels the free) — so this is appropriate only
 /// for memory whose contents the caller no longer needs but has not yet
 /// overwritten. Cheaper reclaim; the kernel takes pages only under pressure.
+/// (On macOS, [`decommit`] itself is only advisory too — see its macOS
+/// caveat — so this lazy variant inherits the same non-guarantee there.)
 ///
 /// **No fallible form:** this entry point is intentionally infallible, for the
 /// same safety rationale as [`decommit`]. The `()` return carries no
@@ -1064,7 +1068,9 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
 /// Recommit pages `[base + start, base + end)` previously passed to
 /// [`decommit`]. On Windows this re-commits physical pages
 /// (`VirtualAlloc(MEM_COMMIT)`); on Unix re-access is implicit so this is a
-/// no-op.
+/// no-op. On macOS specifically, whether re-access reads back zeroed pages
+/// or the pre-decommit contents is not guaranteed either way — see
+/// [`decommit`]'s macOS caveat for why.
 ///
 /// Returns `true` if the range is now committed (or the call was a well-formed
 /// no-op — empty range, `start == end`), and `false` if the OS refused to
