@@ -432,9 +432,11 @@ fn query_os_page_size() -> usize {
         WIN_ALLOCATION_GRANULARITY
     );
     // NOTE: This debug_assert fires only when `query_os_page_size()` is called,
-    // which happens on the cold path (decommit/decommit_lazy) or the Unix-only
-    // `try_reserve_aligned_exact`. It does NOT fire on the Windows single-call
-    // reservation fast path, which uses `WIN_ALLOCATION_GRANULARITY` directly.
+    // which happens on the cold path (decommit/decommit_lazy) — since task #897
+    // removed the `align > page_size() &&` conjunct, the reserve fast path no
+    // longer consults `page_size()` at all. It does NOT fire on the Windows
+    // single-call reservation fast path, which uses `WIN_ALLOCATION_GRANULARITY`
+    // directly.
     info.dw_page_size as usize
 }
 
