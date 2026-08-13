@@ -2315,6 +2315,45 @@ const MAP_ANON: i32 = 0x20;
     )
 ))]
 const MAP_ANON: i32 = 0x1000;
+
+/// task #918 (finding H2C7): Compile-time error for Unix targets without a
+/// `MAP_ANON` definition. Several real `cfg(unix)` targets (e.g. Android
+/// `aarch64-linux-android`, illumos `x86_64-unknown-illumos`, Solaris
+/// `x86_64-pc-solaris`) set `unix` but do NOT match either of the two
+/// `MAP_ANON` cfg arms above (Linux or Darwin/BSD). Without this guard,
+/// `libc_mmap` fails with a bare `error[E0425]: cannot find value MAP_ANON
+/// in this scope` — fails closed (no unsoundness), but with an unattributable
+/// compiler error rather than a clear diagnostic naming the actual reason
+/// (unsupported target) and pointing at how to add support.
+///
+/// Adding support for a new Unix target requires:
+/// 1. Confirming the target's `MAP_ANON` (or `MAP_ANONYMOUS`) constant value
+///    from its libc headers or OS documentation.
+/// 2. Adding a new `#[cfg(...)]` arm for that `target_os` with the correct
+///    constant value, following the pattern of the two existing arms above.
+#[cfg(all(
+    unix,
+    not(miri),
+    not(target_os = "linux"),
+    not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ))
+))]
+compile_error!(
+    "aligned-vmem does not currently support this Unix target because its \
+     `MAP_ANON` constant is not defined. Adding support requires confirming \
+     the target's `MAP_ANON` (or `MAP_ANONYMOUS`) value and adding a new \
+     `#[cfg(...)]` arm for this `target_os` following the pattern in the file. \
+     See the comment above this compile_error! for details."
+);
+
 /// Linux `MAP_HUGETLB` (request huge pages at mmap time).
 ///
 /// Same architecture caveat as `MAP_ANON` above: `0x40000` is correct on
