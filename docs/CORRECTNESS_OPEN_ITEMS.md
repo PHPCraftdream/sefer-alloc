@@ -1890,36 +1890,64 @@ resolved" below.)_
     targets, never empirically executed.** (Filed 2026-08-09, task
     #776/F13, round-closing review of the aligned-vmem round.)
 
-    - **Status:** OPEN — no action needed unless a runner becomes
-      available; filed so the gap is visible rather than silently
-      load-bearing on an unverified constant.
+    - **Status:** PARTIALLY OPEN — macOS half: assertion added, awaiting
+      real CI confirmation (round 6 / task #884). The other 3 targets
+      (FreeBSD, NetBSD/OpenBSD, DragonFly) remain OPEN — no action needed
+      unless a runner becomes available; filed so the gap is visible
+      rather than silently load-bearing on an unverified constant.
     - **Current-number-or-verdict:** `crates/vmem/src/lib.rs`'s
       `_SC_PAGESIZE` cfg table (task #714, commit `2e7f4f5`) sets: macOS
-      family = 29 (verified — this session ran on/cross-compiled for a
-      Darwin-adjacent config); FreeBSD/DragonFly = 47 and NetBSD/OpenBSD =
-      28 (NOT independently executed on real hardware — reasoned from each
-      OS's own `sys/unistd.h` header value, cross-compile-checked via
-      `cargo check --target x86_64-unknown-{freebsd,netbsd}` only, which
-      confirms the code COMPILES but not that the numeric constant is
-      correct; `x86_64-unknown-dragonfly`/`x86_64-unknown-openbsd` have no
-      prebuilt rustup std component on this session's Windows host, so
-      those two are not even cross-compile-checked, only reasoned by
-      sharing the identical cfg arm as their verified-by-citation
-      siblings). A wrong `_SC_PAGESIZE` value would cause `page_size()` to
-      query the WRONG name via `sysconf`, silently returning garbage (or
-      an unrelated system parameter's value) on any of these 4 targets if
-      the header-citation reasoning is wrong.
+      family = 29 — this entry previously claimed "verified" on the
+      strength of a cross-compile check on a Windows host, which only
+      proves the code COMPILES for that target, not that the numeric
+      constant is correct; that claim is corrected here. Round 6 (task
+      #884) instead added a real hardware assertion,
+      `apple_silicon_page_size_is_16_kib` (`crates/vmem/tests/smoke.rs`,
+      `#[cfg(all(target_os = "macos", target_arch = "aarch64"))]`),
+      asserting `page_size() == 16 * 1024` — a hard, architecturally fixed
+      expected value on Apple Silicon. This crate's macOS CI runner is
+      `macos-26-arm64` (Apple Silicon, aarch64), so the NEXT macOS CI run
+      that includes this test will be the first genuine empirical
+      confirmation (or refutation) of the macOS `_SC_PAGESIZE = 29`
+      constant — this has not happened yet as of this filing (no macOS
+      hardware was available to this session either); FreeBSD/DragonFly =
+      47 and NetBSD/OpenBSD = 28 (still NOT independently executed on real
+      hardware — reasoned from each OS's own `sys/unistd.h` header value,
+      cross-compile-checked via `cargo check --target
+      x86_64-unknown-{freebsd,netbsd}` only, which confirms the code
+      COMPILES but not that the numeric constant is correct;
+      `x86_64-unknown-dragonfly`/`x86_64-unknown-openbsd` have no prebuilt
+      rustup std component on this session's Windows host, so those two are
+      not even cross-compile-checked, only reasoned by sharing the
+      identical cfg arm as their verified-by-citation siblings). A wrong
+      `_SC_PAGESIZE` value would cause `page_size()` to query the WRONG
+      name via `sysconf`, silently returning garbage (or an unrelated
+      system parameter's value) on any of these targets if the
+      header-citation reasoning is wrong — note also that `page_size()`'s
+      own silent fallback to `PAGE` (4 KiB) on an implausible value means
+      the crate's OWN generic test (`page_size_is_a_valid_os_page`, `is
+      power of two && >= PAGE`) would NOT have caught a wrong macOS
+      constant either, since the fallback value passes that check too;
+      this is exactly why the new test asserts the exact 16 KiB value
+      rather than the generic invariant. Note: task #867/R1 added the
+      macOS CI row two rounds before this test existed; round 6 (task
+      #884) closes that gap.
     - **Evidence:** `crates/vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
       definition and its own doc comment cite the per-OS header values
-      directly; no BSD runner exists in `.github/workflows/ci.yml`'s
-      current matrix for this crate.
-    - **Next trigger:** if/when a FreeBSD, NetBSD, DragonFly, or OpenBSD
-      CI runner becomes available for this crate (or this repo gains one
-      for any purpose), run `page_size()` on it and assert the returned
-      value matches the platform's actual page size (typically 4 KiB on
-      all four, making a silent wrong-constant bug hard to notice without
-      an explicit assertion against the OS's own reported value via a
-      DIFFERENT API, e.g. comparing against `/proc/self/status` or
+      directly; `crates/vmem/tests/smoke.rs`'s
+      `apple_silicon_page_size_is_16_kib` (new, round 6 / task #884); no
+      BSD runner exists in `.github/workflows/ci.yml`'s current matrix for
+      this crate.
+    - **Next trigger:** macOS half — the next `macos-26-arm64` CI run of
+      `aligned-vmem`'s test suite; if `apple_silicon_page_size_is_16_kib`
+      passes, move the macOS half of this item to "Recently resolved" with
+      the run's citation. BSD half — if/when a FreeBSD, NetBSD, DragonFly,
+      or OpenBSD CI runner becomes available for this crate (or this repo
+      gains one for any purpose), run `page_size()` on it and assert the
+      returned value matches the platform's actual page size (typically
+      4 KiB on all four, making a silent wrong-constant bug hard to notice
+      without an explicit assertion against the OS's own reported value
+      via a DIFFERENT API, e.g. comparing against `/proc/self/status` or
       equivalent, not just checking the result is a power of two).
 
 44. **Deferred verification — `numa-shim`'s mbind path (`lib.rs:531`, the

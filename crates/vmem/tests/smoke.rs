@@ -289,6 +289,24 @@ fn page_size_is_a_valid_os_page() {
     assert_eq!(PAGE, 4096);
 }
 
+/// Round-6 review (S6) / `docs/CORRECTNESS_OPEN_ITEMS.md` item 43: the
+/// generic `is_power_of_two() && >= PAGE` check above cannot catch a wrong
+/// `_SC_PAGESIZE` constant on a real OS, because `page_size()`'s own silent
+/// fallback (`lib.rs`'s `page_size()`, the `queried >= PAGE &&
+/// queried.is_power_of_two()` guard) returns `PAGE` (4 KiB) whenever the
+/// queried value is garbage -- and 4 KiB is itself a power of two `>= PAGE`,
+/// so a broken macOS `_SC_PAGESIZE` constant would pass the generic test
+/// silently instead of failing it. This crate's macOS CI runner is
+/// `macos-26-arm64` (Apple Silicon, aarch64), where the page size is
+/// architecturally, unconditionally 16 KiB -- a hard expected value on
+/// hardware this crate's CI already runs. Assert it exactly, closing the
+/// gap the generic test structurally cannot.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[test]
+fn apple_silicon_page_size_is_16_kib() {
+    assert_eq!(page_size(), 16 * 1024);
+}
+
 #[test]
 fn try_reserve_reports_invalid_argument() {
     // 0.2 fallible API: a contract violation yields InvalidArgument (no OS call).
