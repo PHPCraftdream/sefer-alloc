@@ -244,6 +244,33 @@ pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: total number of `madvise(2)` calls issued by
+/// [`libc_madvise`] (Unix only — always 0 on Windows/miri; that internal
+/// helper is private, so it is named here in code font rather than linked).
+/// Covers every `madvise` call site reachable through `decommit_pages_impl`
+/// (both [`DecommitKind::Eager`] — `MADV_DONTNEED` — and
+/// [`DecommitKind::Lazy`] — `MADV_FREE`/`MADV_FREE_REUSABLE`/`MADV_DONTNEED`
+/// fallback), NOT the separate `MADV_HUGEPAGE` hint call in
+/// `libc_madvise_hugepage`. Added by task #882 as the empirical oracle for
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48: `libc_madvise` itself discards
+/// `madvise`'s return value by design (task #719 — a failure there is not a
+/// memory-safety concern), so nothing else in the crate can currently tell
+/// apart "the syscall itself failed" from "the syscall succeeded but Darwin's
+/// advisory-only `MADV_DONTNEED` semantics did not reclaim the pages" — the
+/// two competing root-cause hypotheses for item 48's macOS zero-fill gap.
+/// Denominator for [`UNIX_MADVISE_SUCCESSES`].
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub static UNIX_MADVISE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: number of [`UNIX_MADVISE_ATTEMPTS`] that returned `0`
+/// (success) from `madvise(2)`, as opposed to `-1` (failure, `errno` set).
+/// See [`UNIX_MADVISE_ATTEMPTS`]'s doc for the root-cause question this
+/// settles. Numerator over [`UNIX_MADVISE_ATTEMPTS`].
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
@@ -294,10 +321,29 @@ pub fn windows_reserve_commit_two_call_pairs() -> u64 {
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all four counters
+/// `bench-internals`: relaxed snapshot of [`UNIX_MADVISE_ATTEMPTS`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn unix_madvise_attempts() -> u64 {
+    UNIX_MADVISE_ATTEMPTS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of [`UNIX_MADVISE_SUCCESSES`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn unix_madvise_successes() -> u64 {
+    UNIX_MADVISE_SUCCESSES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all six counters
 /// ([`UNIX_EXACT_RESERVE_ATTEMPTS`], [`UNIX_EXACT_RESERVE_HITS`],
 /// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`],
-/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`]) to 0. Test/bench hook only — lets a
+/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`], [`UNIX_MADVISE_ATTEMPTS`],
+/// [`UNIX_MADVISE_SUCCESSES`]) to 0. Test/bench hook only — lets a
 /// measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
@@ -308,6 +354,8 @@ pub fn reset_bench_internals_counters() {
     UNIX_EXACT_RESERVE_HITS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
+    UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
+    UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
 }
 
 /// Return the OS page size in bytes, querying the OS once and caching the
@@ -2343,7 +2391,26 @@ unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     // contracts already document decommit as an OS-cooperative hint whose
     // failure mode is "the physical pages were not actually returned", never
     // a dangling/invalid mapping.
-    let _ = madvise(addr as *mut core::ffi::c_void, len, advice);
+    //
+    // task #882: under `bench-internals` ONLY, also record whether the
+    // syscall itself succeeded (returned `0`) or failed (returned `-1`) into
+    // `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` -- see those statics'
+    // docs for why (settling item 48's H1-vs-H2 root-cause question). The
+    // discard above is unconditional and unchanged for every non-bench build;
+    // this is a read of the same return value the plain build throws away,
+    // not a new syscall or a change to what `libc_madvise` returns to its
+    // caller (still `()` either way), so it is zero-cost when the feature is
+    // off.
+    let ret = madvise(addr as *mut core::ffi::c_void, len, advice);
+    #[cfg(feature = "bench-internals")]
+    {
+        UNIX_MADVISE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+        if ret == 0 {
+            UNIX_MADVISE_SUCCESSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = ret;
 }
 
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]

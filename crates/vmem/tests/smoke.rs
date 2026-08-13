@@ -6,8 +6,25 @@ use aligned_vmem::{
     try_reserve_aligned, Reservation, VmemError, PAGE,
 };
 use std::panic;
+use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
+
+/// Zero-trust review of task #882: under `bench-internals`, every
+/// `decommit`/`decommit_lazy` call increments the PROCESS-GLOBAL
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` counters (see
+/// `libc_madvise` in `lib.rs`). libtest runs this file's tests on parallel
+/// threads by default, so any test that both resets those counters and then
+/// asserts an EXACT count on them would otherwise race against every other
+/// test in this same binary that also calls `decommit`/`decommit_lazy`
+/// concurrently — mirroring the exact hazard `tests/fault_injection.rs`'s own
+/// `SERIAL` mutex already exists to prevent for its process-global hooks.
+/// Every test in this file that calls `decommit`/`decommit_lazy` takes this
+/// lock for its whole body so the shared counters are exercised
+/// single-threaded when it matters (`bench-internals` builds); the lock
+/// itself is cheap enough to hold unconditionally even when the feature is
+/// off, so no `#[cfg]` branching is needed here.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 // task #719: `unsafe impl Send for Reservation {}` had no test at all pinning
 // the claim. `assert_send` intentionally checks ONLY `Send`, not `Sync` --
@@ -147,6 +164,7 @@ fn manual_release_via_into_parts() {
 
 #[test]
 fn decommit_recommit_roundtrip() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -205,6 +223,7 @@ fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
     // used to also return `true` here, clamped to the WRITE-PERMITTING
     // sentinel — see `recommit_rejects_contract_violating_offsets` below for
     // the corrected (and separately regression-tested) behavior.
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -306,6 +325,7 @@ fn try_reserve_reports_invalid_argument() {
 
 #[test]
 fn decommit_lazy_roundtrip() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // 0.2 MADV_FREE variant: decommit_lazy then recommit and write.
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
@@ -321,6 +341,91 @@ fn decommit_lazy_roundtrip() {
         base.add(span / 2).write(0x3C);
         assert_eq!(base.add(span / 2).read(), 0x3C);
     }
+}
+
+/// task #882 (S2+S4): item 48's root cause ("`MADV_DONTNEED` is
+/// advisory-only for anonymous memory on Darwin") was ASSERTED from a single
+/// failing byte, not established -- the failure (a byte survived a
+/// decommit+recommit cycle) is equally consistent with a totally different
+/// hypothesis (H2: the `madvise(2)` syscall itself FAILED on that CI runner
+/// for an unrelated reason), because `libc_madvise` discards `madvise`'s
+/// return value BY DESIGN (task #719) and nothing else in the crate could
+/// tell the two hypotheses apart. This test is the empirical oracle: under
+/// `bench-internals`, `libc_madvise` also records success/failure into
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES`. Asserting
+/// `unix_madvise_successes() == unix_madvise_attempts() > 0` here proves the
+/// `madvise` SYSCALL ITSELF succeeded for both the eager (`decommit`,
+/// `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call
+/// sites on the next real macOS CI run -- ruling OUT H2 if it passes (the
+/// syscall did return 0), which then leaves H1 (advisory-only semantics) as
+/// the only remaining explanation for the stale byte, WITHOUT this crate
+/// having macOS hardware to run the confirmation on directly. Also restores
+/// the effect-observing coverage lost when commit 9c777bc scoped the
+/// zero-fill assertion off macOS in `decommit_recommit_roundtrip` above: that
+/// scoping meant NO test on any platform still observed whether macOS
+/// decommit/recommit has any real effect at all -- this test at least proves
+/// the syscall path is exercised and reports success, even though it cannot
+/// prove the OS-level RSS/zero-fill outcome without real hardware.
+///
+/// `bench-internals`-gated (diagnostic-only counters, matches this crate's
+/// established `bench-internals` convention -- see `UNIX_EXACT_RESERVE_HITS`
+/// et al. in `lib.rs`) and `target_os = "macos"`-gated (the H1-vs-H2 question
+/// is macOS-specific; Linux/Windows already have a passing zero-fill
+/// assertion in `decommit_recommit_roundtrip`/`decommit_lazy_roundtrip`
+/// above, so this test would be redundant, not wrong, on those platforms).
+/// Also excluded under `mock` (the recording backend never calls the real
+/// `madvise(2)`, so the counters would stay at 0 by construction, not by
+/// answering the question) and `miri` (no real FFI).
+#[cfg(all(
+    target_os = "macos",
+    feature = "bench-internals",
+    not(feature = "mock"),
+    not(miri)
+))]
+#[test]
+fn macos_decommit_madvise_syscall_actually_succeeds() {
+    use aligned_vmem::{
+        decommit, decommit_lazy, reset_bench_internals_counters, unix_madvise_attempts,
+        unix_madvise_successes,
+    };
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let span = 4 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+
+    // Clean counters so this measurement window is not polluted by any
+    // earlier test in the same binary that also exercised `libc_madvise`
+    // (e.g. `decommit_recommit_roundtrip`/`decommit_lazy_roundtrip` above,
+    // which run in the same process under `cargo test`'s default
+    // multi-threaded-but-shared-process test execution).
+    reset_bench_internals_counters();
+
+    // SAFETY: base is a live, exclusively-owned reservation for `span` bytes;
+    // both decommit calls target disjoint page-aligned halves.
+    unsafe {
+        decommit(base, 0, span / 2);
+        decommit_lazy(base, span / 2, span);
+    }
+
+    let attempts = unix_madvise_attempts();
+    let successes = unix_madvise_successes();
+    assert_eq!(
+        attempts, 2,
+        "exactly one madvise(2) call expected per decommit()/decommit_lazy() \
+         call above (eager MADV_DONTNEED + lazy MADV_FREE_REUSABLE), got {attempts}"
+    );
+    assert_eq!(
+        successes, attempts,
+        "the madvise(2) SYSCALL ITSELF must succeed (return 0) for both the \
+         eager and lazy decommit call sites on macOS -- if this fails, item \
+         48's root cause is H2 (the syscall failed), not H1 (advisory-only \
+         semantics); {successes}/{attempts} succeeded"
+    );
+
+    // `base` was decommitted, not deallocated -- still a live reservation
+    // that must be released exactly once, via `r`'s own Drop here.
+    drop(r);
 }
 
 #[test]
