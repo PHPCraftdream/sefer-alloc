@@ -334,7 +334,16 @@ fn page_size_is_a_valid_os_page() {
 /// architecturally, unconditionally 16 KiB -- a hard expected value on
 /// hardware this crate's CI already runs. Assert it exactly, closing the
 /// gap the generic test structurally cannot.
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+///
+/// Excluded under `miri` (task #890, review finding T3): `lib.rs`'s
+/// `query_os_page_size()` has a `#[cfg(miri)]` arm that unconditionally
+/// returns `PAGE` (4 KiB) -- miri has no real OS page to query -- so under
+/// miri on aarch64 Darwin `page_size()` is always 4096, and this assertion
+/// would fail by construction, not because of a real bug. Matches the
+/// `not(miri)` exclusion this crate's other real-OS-property assertions
+/// already use (e.g. the zero-fill assertion above, the madvise oracle
+/// below, `decommit_lazy_roundtrip`'s sibling in `lazy_commit.rs`).
+#[cfg(all(target_os = "macos", target_arch = "aarch64", not(miri)))]
 #[test]
 fn apple_silicon_page_size_is_16_kib() {
     assert_eq!(page_size(), 16 * 1024);
