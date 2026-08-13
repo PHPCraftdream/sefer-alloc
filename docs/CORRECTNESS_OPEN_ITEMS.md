@@ -2090,6 +2090,29 @@ resolved" below.)_
     - **Current-number-or-verdict:** confirmed via real CI (`test macos (production)` job, run `31676133649`, landing SHA `e60e46a`) — deterministic, not flaky (byte value matches exactly what was written before decommit). Linux (`aligned-vmem package gates`, `test workspace members`) and Windows (`test windows (production)`) both passed the same assertion in the same run, confirming the guarantee genuinely holds on those two platforms and the gap is macOS-specific.
     - **Root cause:** `recommit_pages_impl`'s Unix implementation (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) is an unconditional no-op for ALL Unix platforms, justified by a comment claiming "re-access after MADV_DONTNEED is implicit — fresh zeroed pages on demand" — true on Linux, false on macOS. `decommit`'s own eager path calls `madvise(MADV_DONTNEED)` uniformly across all Unix too.
     - **Next trigger:** a future round should implement a real macOS fix — the standard technique is re-`mmap`(`MAP_FIXED | MAP_ANONYMOUS`) over the decommitted range instead of (or in addition to) `madvise`, which forces the kernel to actually replace the mapping with fresh zero pages; needs its own safety analysis (interaction with concurrent access to the same reservation, `is_huge()` state, the existing `huge_pages` feature's `MAP_HUGETLB` path) and its own review round rather than a rushed fix under a CI-green-checking task. Until then, `decommit()`'s macOS behavior should be treated as "hint only, no RSS/zero-fill guarantee" — the same posture already documented for the huge-page case.
+      Round-6 review (S9) additionally recorded three observations here for a
+      future round to weigh — **unverified on real hardware, not a
+      recommendation to implement without further review**, spec-reads only:
+      (1) on Darwin, `decommit_lazy` issues `MADV_FREE_REUSABLE` but nothing
+      in this crate ever issues the paired `MADV_FREE_REUSE` before
+      re-touching pages (`recommit_pages_impl`'s Unix implementation is an
+      unconditional `Ok(())`, confirmed by reading it) — Apple documents
+      these as a required pair, so this is a SPEC-READ physical-footprint-
+      accounting-drift concern (not a memory-safety issue) distinct from this
+      item's own eager-`decommit` finding. (2) `decommit_lazy`'s own rustdoc
+      describes the general "lazy is cheaper, reclaimed only under pressure"
+      ordering (Linux `MADV_FREE` semantics), but that ordering is INVERTED
+      on Darwin specifically: `MADV_FREE_REUSABLE` drops footprint
+      immediately there, while eager `decommit`'s `MADV_DONTNEED` (per this
+      item's own finding) drops nothing at all — the opposite of what the
+      docs describe for the general case. (3) Because of (2), a cheaper but
+      PARTIAL alternative to the `MAP_FIXED` re-map idea above exists and is
+      worth recording: route Darwin's eager `decommit` to
+      `MADV_FREE_REUSABLE` and issue `MADV_FREE_REUSE` from `recommit` — this
+      would close the "return physical backing to the OS" half of
+      `decommit`'s promise on Darwin but NOT the "reads as zero" half (since
+      `MADV_FREE_REUSABLE` preserves contents if the pages are re-touched
+      before reclaim); only re-mapping closes both halves.
     - **Evidence:** CI run `31676133649` (`gh run view 31676133649 --json jobs`), job `test macos (production)`, step "Run cargo test -p aligned-vmem --features ... --no-fail-fast", failure at `crates/vmem/tests/smoke.rs:174` (pre-fix line number) — `assertion left == right failed: recommitted page must be zeroed / left: 119 / right: 0`; fixed in commit (this task's own commit, landing after `e60e46a`).
 
 ---

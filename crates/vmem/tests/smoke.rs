@@ -64,11 +64,14 @@ fn ordinary_reservation_never_reports_huge() {
 
 /// Round-5 closing review (QC8): on the Windows single-call fast path
 /// (`align <= 64 KiB`, `commit_len == size`, task #848), `reservation_len()`
-/// is documented (`lib.rs:493-500`) to report `commit_len`, NOT the true OS
-/// reservation size — Windows internally rounds VA reservations up to the
-/// 64 KiB allocation granularity. This is the one path in the crate where
-/// `reservation_len()` deliberately does NOT report the true reservation
-/// size, and until now nothing asserted it.
+/// is documented (`lib.rs`'s `reservation_len` rustdoc) to report
+/// `commit_len`, NOT the true OS reservation size — Windows internally
+/// rounds VA reservations up to the 64 KiB allocation granularity. This is
+/// at least two paths in the crate where `reservation_len()` deliberately
+/// does NOT report the true reservation size — the other being any
+/// page-rounding `mmap` where the OS page size exceeds the requested
+/// granularity (e.g. Apple-Silicon macOS's 16 KiB pages) — and until now
+/// nothing asserted this (Windows) one.
 #[cfg(windows)]
 #[test]
 fn windows_single_call_fast_path_reservation_len_reports_commit_len_not_true_size() {
@@ -171,17 +174,26 @@ fn decommit_recommit_roundtrip() {
         // written byte legally persists — this zero-fill guarantee is a
         // real-OS property.
         //
-        // ALSO skipped on macOS (discovered 2026-08-13, first real-macOS CI
-        // run of this crate's non-mock test suite -- see
+        // ALSO skipped on the Darwin family (discovered 2026-08-13, first
+        // real-macOS CI run of this crate's non-mock test suite -- see
         // docs/CORRECTNESS_OPEN_ITEMS.md and decommit()'s own rustdoc):
-        // `MADV_DONTNEED` on Darwin is advisory-only for anonymous memory
-        // and does NOT reliably unmap/zero the pages the way it does on
-        // Linux, so this assertion is not a platform bug in the crate under
-        // test -- it is a real, confirmed gap in decommit()'s "return
-        // physical backing to the OS" promise on macOS specifically. The
-        // guarantee genuinely holds on Linux (MADV_DONTNEED) and Windows
-        // (VirtualFree(MEM_DECOMMIT) + VirtualAlloc(MEM_COMMIT)).
-        #[cfg(not(any(miri, feature = "mock", target_os = "macos")))]
+        // `MADV_DONTNEED` is advisory-only for anonymous memory on all XNU-
+        // based targets (macOS/iOS/tvOS/watchOS share the same kernel and
+        // MADV_DONTNEED semantics, not just macOS) and does NOT reliably
+        // unmap/zero the pages the way it does on Linux, so this assertion
+        // is not a platform bug in the crate under test -- it is a real,
+        // confirmed gap in decommit()'s "return physical backing to the OS"
+        // promise on the Darwin family specifically. The guarantee genuinely
+        // holds on Linux (MADV_DONTNEED) and Windows (VirtualFree(MEM_DECOMMIT)
+        // + VirtualAlloc(MEM_COMMIT)).
+        #[cfg(not(any(
+            miri,
+            feature = "mock",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos"
+        )))]
         assert_eq!(
             base.add(span / 2).read(),
             0,

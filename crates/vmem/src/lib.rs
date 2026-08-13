@@ -491,14 +491,27 @@ impl Reservation {
 
     /// The full size of the underlying OS reservation.
     ///
-    /// On the Windows single-call fast path (task #848, `align <= 64 KiB`), this
-    /// returns `commit_len` (which equals `size`), not the rounded-up VA
-    /// reservation size. Windows rounds VA reservations up to the 64 KiB
-    /// allocation granularity internally, so `reserve_aligned(4096, 4096)` reports
-    /// `reservation_len() == 4096` while actually consuming 64 KiB of address
-    /// space. This is harmless for correctness (VirtualFree(base, 0,
-    /// MEM_RELEASE) ignores the length argument), but the return value is not
-    /// the true reservation size on that path.
+    /// **At least two paths under-report the true OS reservation size** — this
+    /// value is not a portable guarantee of the actual bytes the OS mapped:
+    ///
+    /// - **Windows single-call fast path** (task #848, `align <= 64 KiB`): this
+    ///   returns `commit_len` (which equals `size`), not the rounded-up VA
+    ///   reservation size. Windows rounds VA reservations up to the 64 KiB
+    ///   allocation granularity internally, so `reserve_aligned(4096, 4096)`
+    ///   reports `reservation_len() == 4096` while actually consuming 64 KiB of
+    ///   address space.
+    /// - **Any page-rounding `mmap` where the OS page size exceeds the
+    ///   requested granularity** — e.g. Apple-Silicon macOS's 16 KiB pages, or
+    ///   64 KiB on some Linux configurations (see [`MIN_PAGE`]'s doc above):
+    ///   `mmap` rounds `length` up to the page size, so
+    ///   `reserve_aligned(PAGE, PAGE)` on a 16 KiB-page host actually maps a
+    ///   full 16 KiB page while this returns `4096`.
+    ///
+    /// Both cases are harmless for correctness (`VirtualFree(base, 0,
+    /// MEM_RELEASE)` ignores the length argument; `munmap` rounds its length
+    /// argument up to the page size the same way `mmap` did, so `release`
+    /// still unmaps the whole underlying mapping) — but the return value is
+    /// not a portable measure of the true reservation size.
     #[must_use]
     #[inline]
     pub const fn reservation_len(&self) -> usize {
@@ -992,16 +1005,18 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
 /// instead if you need decommit functionality.
 ///
-/// **macOS zero-fill gap (discovered 2026-08-13, first real-macOS CI run of
+/// **Darwin zero-fill gap (discovered 2026-08-13, first real-macOS CI run of
 /// this crate's non-mock test suite):** `MADV_DONTNEED` on Darwin is
 /// advisory-only for anonymous memory — unlike Linux, it does not reliably
-/// unmap the physical pages, so a decommit + [`recommit`] roundtrip on macOS
-/// can observe the OLD data still resident instead of a fresh zero page.
-/// This is the same "indistinguishable from a silent no-op" shape as the
-/// huge-page case above, but for ORDINARY (non-huge) reservations on macOS
-/// specifically. See `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item; no
-/// fix is implemented yet (the real fix needs re-`mmap`(`MAP_FIXED`) over
-/// the range on macOS, a larger change deserving its own review round).
+/// unmap the physical pages, so a decommit + [`recommit`] roundtrip on the
+/// Darwin family (macOS/iOS/tvOS/watchOS — all share XNU and the same
+/// `MADV_DONTNEED` semantics, not just macOS) can observe the OLD data still
+/// resident instead of a fresh zero page. This is the same "indistinguishable
+/// from a silent no-op" shape as the huge-page case above, but for ORDINARY
+/// (non-huge) reservations on the Darwin family specifically. See
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item; no fix is implemented
+/// yet (the real fix needs re-`mmap`(`MAP_FIXED`) over the range on Darwin, a
+/// larger change deserving its own review round).
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     let ps = page_size();
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
