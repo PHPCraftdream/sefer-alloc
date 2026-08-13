@@ -569,13 +569,35 @@ fn decommit_contract_violation_never_reaches_madvise() {
         decommit_lazy(base, PAGE, 0);
     }
 
+    // task #904 (round-8 closing review, UC4): the two calls above are
+    // rejected under EITHER validation base (`page_size()` or `PAGE`), so by
+    // themselves they cannot detect the specific mistake this test's own doc
+    // comment names -- a future `let ps = page_size();` -> `let ps = PAGE;`
+    // edit at the `decommit`/`decommit_lazy` guards. Only a
+    // `PAGE`-aligned-but-not-`page_size()`-aligned offset discriminates the
+    // two bases: rejected under `page_size()`, forwarded to `madvise(2)`
+    // under `PAGE`. That offset exists only when `page_size() > PAGE` (e.g.
+    // 16 KiB Apple Silicon); on every other host (4 KiB pages) the two bases
+    // are the same value and no offset can tell them apart, so this arm is a
+    // no-op there and lives only on the macOS CI runner.
+    if page_size() > PAGE {
+        // SAFETY: same live reservation; `PAGE` is a genuine multiple of
+        // `PAGE` but (by the `if` above) NOT a multiple of `page_size()`, so
+        // this is still a contract violation under the crate's real
+        // validation base and must be rejected the same way.
+        unsafe {
+            aligned_vmem::decommit(base, PAGE, 2 * PAGE);
+        }
+    }
+
     let attempts = unix_madvise_attempts();
     assert_eq!(
         attempts, 0,
         "a contract-violating decommit()/decommit_lazy() call must never \
          reach libc_madvise (the real madvise(2) syscall) at all -- got \
          {attempts} attempt(s), meaning the crate's validation guard was \
-         bypassed or removed"
+         bypassed or removed (or, on a host where page_size() > PAGE, that \
+         the validation base was changed from page_size() to PAGE)"
     );
 
     // `base` was never actually decommitted (both calls were rejected before
