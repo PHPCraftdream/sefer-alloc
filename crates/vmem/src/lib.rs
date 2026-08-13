@@ -1110,6 +1110,11 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// keeps the old contents and cancels the free) — so this is appropriate only
 /// for memory whose contents the caller no longer needs but has not yet
 /// overwritten. Cheaper reclaim; the kernel takes pages only under pressure.
+/// **This benign-re-fault story is Linux-only: on Windows this call is the
+/// eager [`decommit`] path (see the summary above), where a write into the
+/// range before [`recommit`] is a hard `STATUS_ACCESS_VIOLATION` crash, not a
+/// re-fault** — see [`decommit`]'s platform-divergence paragraph above for the
+/// incident this already caused.
 ///
 /// **On macOS/iOS specifically, the cost ordering above is INVERTED, on the
 /// RSS axis only** — see [`decommit`]'s Darwin caveat: eager `decommit`'s
