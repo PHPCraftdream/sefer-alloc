@@ -1,31 +1,29 @@
 // Guard against the doc-comment drift class that has recurred 5 times:
 // unconditional "over-reserve size + align" / "trim" statements that
 // don't mention the actual conditional behavior (Unix exact-size fast
-// path, Windows align <= 64 KiB fast path). See task #854/R6 for the full
-// history.
+// path, Windows align <= 64 KiB fast path). See task #878/Q8 for the full
+// history and the per-sentence rewrite that closes CR2.
 //
-// Heuristic: every rustdoc comment mentioning "over-reserv" or "trim" must
-// also, within the same doc comment, mention one of "align", "conditional",
-// or "Windows" to indicate the statement is conditional or path-specific.
+// Heuristic (per-sentence, not per-block): every sentence in rustdoc
+// comments mentioning "over-reserv" or "trim" must ALSO, in the same
+// sentence, either:
+//   (a) be clearly conditional (contains "unconditional" as a HARD_FAIL), OR
+//   (b) contain a scope word indicating path-specific or conditional
+//       behavior (if/when/unless/may/miss/fast-path/slow-path/fallback/etc)
 //
 // This is intentionally not a blunt "this string must never appear" check:
 // "over-reserve" and "trim" legitimately appear in correctly-conditional
 // sentences (e.g. reserve_aligned's own rustdoc at lib.rs:741-749, which
 // correctly describes the conditional fast-path vs slow-path behavior).
 //
-// KNOWN LIMITATION: checkDocComment() joins an entire *contiguous* run of
-// `///`/`//!` lines into one block before testing it, so a qualifying word
-// ANYWHERE in a large block (e.g. the crate's top-of-file `//!` module doc,
-// which is one continuous ~70-line block) satisfies the check for every
-// sentence in that block -- including an unrelated, genuinely unconditional
-// one. This guard therefore does not catch a drift reintroduced inside a
-// large multi-paragraph block that also happens to say "align"/"Windows"/
-// "conditional" somewhere else in the same block. It reliably catches drift
-// in the SHORT, single-purpose doc comments (individual method/function
-// docs) that were the site of 4 of the 5 historical recurrences; the module
-// top-doc (the 5th, R6's own fix) is the weak spot. A per-sentence (not
-// per-block) rewrite would close this, but was not attempted here -- flagged
-// for a future pass rather than risking a rushed rewrite of the heuristic.
+// KNOWN LIMITATION:
+//   1. This guard scans only //////! rustdoc comments in .rs files, not
+//      regular // implementation comments. The dispatch-condition drift
+//      class (Q2) lives in // comments and is a separate tooling problem
+//      - this guard's per-sentence predicate is not suited to it.
+//   2. The SCOPE list is a heuristic that will require point additions as
+//      the text evolves. It was derived from actual historical drifts and
+//      verified against the current tree, but is not exhaustive.
 //
 // Usage (from repo root):
 //   node scripts/vmem-doc-drift-guard.mjs
@@ -36,45 +34,54 @@ import { readFileSync } from 'fs';
 async function main() {
   const vmemDir = `${REPO_ROOT}/crates/vmem`;
 
-  // Read the entire lib.rs file to properly group doc comments
-  const libRsPath = `${vmemDir}/src/lib.rs`;
-  const content = readFileSync(libRsPath, 'utf-8');
-  const lines = content.split('\n');
+  const filePaths = [
+    `${vmemDir}/src/lib.rs`,
+    `${vmemDir}/Cargo.toml`,
+    `${vmemDir}/README.md`,
+  ];
 
   let violations = [];
-  let currentDoc = [];
-  let currentDocStartLine = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+  for (const filePath of filePaths) {
+    const content = readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+    const relativePath = filePath.replace(`${REPO_ROOT}/`, '');
 
-    // Check if this is a rustdoc comment line
-    if (trimmed.startsWith('///') || trimmed.startsWith('//!')) {
-      if (currentDoc.length === 0) {
-        currentDocStartLine = i + 1; // 1-indexed line number
+    let currentDoc = [];
+    let currentDocStartLine = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Check if this is a rustdoc comment line (only in .rs files)
+      const isRsFile = filePath.endsWith('.rs');
+      if (isRsFile && (trimmed.startsWith('///') || trimmed.startsWith('//!'))) {
+        if (currentDoc.length === 0) {
+          currentDocStartLine = i + 1; // 1-indexed line number
+        }
+        currentDoc.push({ lineNum: i + 1, content: trimmed });
+      } else {
+        // End of a doc comment - check it
+        if (currentDoc.length > 0) {
+          checkDocComment(currentDoc, violations, relativePath);
+          currentDoc = [];
+        }
       }
-      currentDoc.push({ lineNum: i + 1, content: trimmed });
-    } else {
-      // End of a doc comment - check it
-      if (currentDoc.length > 0) {
-        checkDocComment(currentDoc, violations);
-        currentDoc = [];
-      }
+    }
+
+    // Check the last doc comment if the file ends with one
+    if (currentDoc.length > 0) {
+      checkDocComment(currentDoc, violations, relativePath);
     }
   }
 
-  // Check the last doc comment if the file ends with one
-  if (currentDoc.length > 0) {
-    checkDocComment(currentDoc, violations);
-  }
-
   if (violations.length > 0) {
-    console.log('\n[vmem-doc-drift-guard] FAIL: Found doc comments with "over-reserv" or "trim" but without qualifying context:');
+    console.log('\n[vmem-doc-drift-guard] FAIL: Found sentences with "over-reserv" or "trim" but without qualifying context:');
     violations.forEach(v => {
-      console.log(`\n  crates/vmem/src/lib.rs:${v.lineNum}`);
-      console.log(`  ${v.line}`);
-      console.log(`  Missing one of: "align", "conditional", "Windows"`);
+      console.log(`\n  ${v.path}:${v.lineNum}`);
+      console.log(`  ${v.sentence}`);
+      console.log(`  Missing scope or contains "unconditional"`);
     });
     process.exit(1);
   }
@@ -82,25 +89,77 @@ async function main() {
   console.log('[vmem-doc-drift-guard] OK: no unconditional over-reserve/trim statements found');
 }
 
-function checkDocComment(docLines, violations) {
-  const docText = docLines.map(l => l.content).join(' ');
-  const hasTrigger = /over-reserv|trim/.test(docText);
-  // "align"/"Windows" stay plain substring matches (so "alignment",
-  // "aligned", "Windows'" etc. still count). Only "conditional" is
-  // \b-anchored: "unconditionally" contains "conditional" as a bare
-  // substring, and the historical drift sentence this guard exists to
-  // catch is worded exactly "unconditionally over-reserves" -- an
-  // unanchored match would wrongly treat that as already-qualified.
-  const hasQualifier = /align|\bconditional\b|Windows/.test(docText);
+// Split text into sentences, treating headers (# and - at start of line) as sentence boundaries
+function splitIntoSentences(text) {
+  // First, split on actual sentence terminators (. ! ?)
+  let sentences = [];
+  let current = '';
+  let i = 0;
 
-  if (hasTrigger && !hasQualifier) {
-    // Find the specific line with the trigger
-    const triggerLine = docLines.find(l => /over-reserv|trim/.test(l.content));
-    if (triggerLine) {
-      violations.push({
-        lineNum: triggerLine.lineNum,
-        line: triggerLine.content.trim(),
-      });
+  while (i < text.length) {
+    const char = text[i];
+
+    // Check for sentence terminators
+    if (char === '.' || char === '!' || char === '?') {
+      current += char;
+      i++;
+
+      // Consume whitespace after the terminator
+      while (i < text.length && /\s/.test(text[i])) {
+        // If we hit a newline followed by # or -, that's a header boundary
+        if (text[i] === '\n' && i + 1 < text.length) {
+          const nextChar = text[i + 1];
+          if (nextChar === '#' || nextChar === '-') {
+            i++;
+            break; // End of sentence at header boundary
+          }
+        }
+        i++;
+      }
+
+      if (current.trim()) {
+        sentences.push(current.trim());
+      }
+      current = '';
+    } else {
+      current += char;
+      i++;
+    }
+  }
+
+  // Don't forget the last sentence if there is one
+  if (current.trim()) {
+    sentences.push(current.trim());
+  }
+
+  return sentences;
+}
+
+function checkDocComment(docLines, violations, filePath) {
+  const docText = docLines.map(l => l.content.slice(3).trim()).join(' ');
+  const sentences = splitIntoSentences(docText);
+
+  const TRIGGER   = /over-reserv|\btrim(s|med|ming)?\b/i;
+  const HARD_FAIL = /unconditional/i;
+  const SCOPE     = /\bif\b|\bwhen\b|\bunless\b|\bmay\b|\bmiss\b|fast[- ]path|slow[- ]path|fall(s|ing)?[- ]?(back|through)|fallback|<=|>=|<|>|\bonly\b|\beither\b|\bpaths?\b|rather than|no longer|instead/i;
+
+  for (const sentence of sentences) {
+    const hasTrigger = TRIGGER.test(sentence);
+
+    if (hasTrigger) {
+      const hasHardFail = HARD_FAIL.test(sentence);
+      const hasScope = SCOPE.test(sentence);
+
+      // Violation iff: TRIGGER && (HARD_FAIL || !SCOPE)
+      if (hasHardFail || !hasScope) {
+        // Find which line this sentence came from (approximate)
+        // For reporting, we use the first line of the doc block
+        violations.push({
+          path: filePath,
+          lineNum: docLines[0].lineNum,
+          sentence: sentence,
+        });
+      }
     }
   }
 }
