@@ -2231,6 +2231,23 @@ const PROT_READ: i32 = 0x1;
 const PROT_WRITE: i32 = 0x2;
 #[cfg(all(unix, not(miri)))]
 const MAP_PRIVATE: i32 = 0x02;
+// task #893 (T6, round-7 review): `MAP_ANON`/`MAP_HUGETLB` below are gated on
+// `target_os = "linux"` alone, but their numeric VALUES are `target_arch`-
+// dependent, not just OS-dependent — the same class of non-portability the
+// `_SC_PAGESIZE` table below (task #714) documents at length. `0x20` /
+// `0x40000` are `asm-generic/mman-common.h`'s values, correct on every
+// mainstream Linux architecture this crate targets (x86, x86_64, aarch64,
+// arm, riscv, powerpc — the tier-1/tier-2 targets). They are WRONG on MIPS:
+// `arch/mips/include/uapi/asm/mman.h` defines `MAP_ANONYMOUS = 0x0800` and
+// `MAP_HUGETLB = 0x80000`; `0x20` on MIPS is actually the IRIX-compat
+// `MAP_RENAME`, which Linux ignores — so on `mips*-unknown-linux-*` (tier 3;
+// no such target is installed here or in this project's CI) `libc_mmap`
+// would issue `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag set,
+// `fd = -1` causes `EBADF`, `mmap` returns `MAP_FAILED`, and every
+// `reserve_aligned` call fails closed with no diagnostic pointing at the
+// wrong constant (Alpha, PA-RISC and Xtensa diverge similarly, but none of
+// those is a current Rust target at all). REASONED-FROM-SPEC, not executed —
+// no MIPS target is available to verify this against real hardware.
 #[cfg(all(unix, not(miri), target_os = "linux"))]
 const MAP_ANON: i32 = 0x20;
 #[cfg(all(
@@ -2249,6 +2266,11 @@ const MAP_ANON: i32 = 0x20;
 ))]
 const MAP_ANON: i32 = 0x1000;
 /// Linux `MAP_HUGETLB` (request huge pages at mmap time).
+///
+/// Same architecture caveat as `MAP_ANON` above: `0x40000` is correct on
+/// x86/x86_64/aarch64/arm/riscv/powerpc, wrong on MIPS (`0x80000` per
+/// `arch/mips/include/uapi/asm/mman.h`) — see the note above `MAP_ANON` for
+/// the full rationale and failure mode.
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MAP_HUGETLB: i32 = 0x40000;
 
