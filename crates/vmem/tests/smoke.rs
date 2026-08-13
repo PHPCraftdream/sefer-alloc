@@ -762,6 +762,114 @@ fn from_raw_parts_rejects_non_page_multiple_reservation_len_immediately() {
     std::panic::resume_unwind(panic_info.unwrap());
 }
 
+/// task #916 (H2C3): `from_raw_parts`'s documented contract requires `len`
+/// to be a non-zero multiple of `PAGE`, but the original check did NOT validate
+/// this invariant. Proves the explicit `len != 0 && len.is_multiple_of(PAGE)` check
+/// catches this case immediately.
+#[test]
+#[should_panic(expected = "len must be non-zero and a multiple of PAGE")]
+fn from_raw_parts_rejects_zero_len_immediately() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
+    // `len = 0` is deliberately NOT a non-zero PAGE-multiple, exactly the
+    // contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, 0, raw, raw_len, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
+/// task #916 (H2C3): `from_raw_parts`'s documented contract requires `len`
+/// to be a non-zero multiple of `PAGE`, but the original check did NOT validate
+/// this invariant. Proves the explicit `len.is_multiple_of(PAGE)` check catches
+/// this case immediately.
+#[test]
+#[should_panic(expected = "len must be non-zero and a multiple of PAGE")]
+fn from_raw_parts_rejects_non_page_multiple_len_immediately() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
+    // `len = PAGE / 2` is deliberately NOT a PAGE-multiple, exactly the
+    // contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, PAGE / 2, raw, raw_len, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
+/// task #916 (H2C3): `from_raw_parts`'s documented contract requires `base`
+/// to be aligned to `align`, but the original check did NOT validate this
+/// invariant. Proves the explicit `base % align == 0` check catches this case
+/// immediately. The misaligned `base` is constructed via `.wrapping_add(1)`,
+/// which is safe because the pointer is never dereferenced in this test --
+/// `from_raw_parts` only reads its address via `.addr()`.
+#[test]
+#[should_panic(expected = "base must be aligned to align")]
+fn from_raw_parts_rejects_misaligned_base_immediately() {
+    let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // Construct a misaligned `base` by adding a small offset. `.wrapping_add(1)`
+    // is used instead of raw offset arithmetic because the pointer is never
+    // dereferenced -- `from_raw_parts` only reads its address via `.addr()`,
+    // and `.wrapping_add` never creates an out-of-bounds reference.
+    let misaligned_base = raw.wrapping_add(1);
+    // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
+    // `misaligned_base` is deliberately NOT aligned to `align`, exactly the
+    // contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(misaligned_base, PAGE, raw, raw_len, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
+/// task #916 (H2C3): `from_raw_parts`'s documented contract requires
+/// `reservation_len >= len + (base - reservation)`, but the original check
+/// did NOT validate this invariant. Proves the explicit check catches this
+/// case immediately.
+#[test]
+#[should_panic(expected = "reservation_len must be >= len + (base - reservation)")]
+fn from_raw_parts_rejects_insufficient_reservation_len_immediately() {
+    let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
+    // `reservation_len = PAGE` is deliberately too small for the requested
+    // `len = 2 * PAGE` (even with `base == reservation`), exactly the
+    // contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, 2 * PAGE, raw, PAGE, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
 /// The positive-path complement to the panic test above: a genuinely valid
 /// `align` must construct and behave normally (readable/writable, releases
 /// cleanly on drop) -- `from_raw_parts`'s validation must reject ONLY
