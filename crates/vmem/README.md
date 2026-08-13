@@ -126,6 +126,39 @@ should check the return value; and `Reservation::from_raw_parts` (an
 reservation flow) panics immediately on a contract-violating `align`/
 `reservation_len` pair.
 
+## Platform caveats
+
+`decommit`'s single-line table entry above ("Return page-granular physical
+backing to the OS / re-commit it") hides three platform divergences worth
+knowing before you rely on it — see `decommit`'s own rustdoc for the full
+technical explanation of each:
+
+- **Windows: a write before recommit is a hard crash, not a soft re-fault.**
+  `MEM_DECOMMIT` genuinely unmaps the pages, so writing into
+  `[base+start, base+end)` before calling `recommit` raises a
+  `STATUS_ACCESS_VIOLATION` on Windows. On Linux, `MADV_DONTNEED` keeps the
+  mapping resident and transparently re-faults a fresh zero page on the next
+  write, so code that is safe on Linux can crash on Windows. This exact
+  divergence has already crashed an in-repo consumer — see
+  `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 for the incident record.
+- **Huge pages: decommit does nothing, on either OS.** When a reservation
+  came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
+  `decommit` does not work on it on either Windows or Linux: `VirtualFree`
+  fails on large-page regions on Windows, and `madvise` on a `MAP_HUGETLB`
+  mapping only accepts huge-page-granular offsets on Linux, so a
+  `page_size()`-granular call gets `EINVAL` and does nothing. The effect is
+  indistinguishable from a silent no-op — RSS does not drop and reads return
+  the old data. Use `reserve_aligned` instead if you need working decommit.
+- **macOS: no zero-fill, no RSS return, on ordinary reservations too.**
+  `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, so unlike
+  Linux it does not reliably unmap the physical pages: a decommit +
+  `recommit` round trip on macOS can still observe the old data instead of a
+  fresh zero page, even for a non-huge reservation. Confirmed as a real,
+  failing-test-level gap by this crate's first real-macOS CI run on
+  2026-08-13 (the underlying hazard was already documented elsewhere in this
+  repository since Round 9, before this crate was extracted); no fix is
+  implemented yet — see `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item.
+
 ## Provenance & safety
 
 Every `unsafe` block carries a `// SAFETY:` proof. The crate is the OS aperture
