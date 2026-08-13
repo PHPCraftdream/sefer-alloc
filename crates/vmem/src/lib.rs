@@ -2337,6 +2337,11 @@ const MAP_HUGETLB: i32 = 0x40000;
 /// `MAP_HUGE_SHIFT = 26`. (REASONED-FROM-SPEC: this fix has NOT been empirically
 /// verified on a real host with a non-2-MiB default `default_hugepagesz`, because
 /// no such host exists in this project's CI.)
+///
+/// Note: The `MAP_HUGE_*` size encoding (the bits above `MAP_HUGE_SHIFT`)
+/// was introduced in Linux 3.8 (2013); on older kernels these bits are not
+/// interpreted by the `MAP_HUGETLB` path and the system's default huge-page size
+/// is used instead.
 #[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
 const MAP_HUGE_2MB: i32 = 21 << 26;
 
