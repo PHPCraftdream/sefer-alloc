@@ -85,10 +85,11 @@ fn lazy_reserve_small_align_still_reserves_full_span() {
     let initial = PAGE; // commit only the first page now
     let r = reserve_aligned_lazy(size, align, initial).expect("lazy reserve, small align");
     let base = r.as_ptr();
-    assert_eq!(
-        r.len(),
-        size,
-        "the reservation must cover the full requested span"
+    assert_eq!(r.len(), size, "len() echoes the requested size");
+    assert!(
+        r.reservation_len() >= size,
+        "the OS reservation must cover the full requested span (got {})",
+        r.reservation_len()
     );
 
     // The initially committed page is writable.
