@@ -2443,38 +2443,41 @@ const _SC_PAGESIZE: i32 = {
     }
 };
 
-// task #719: `offset`'s type hardcodes `i64` for POSIX `off_t`, which is
-// NOT a portable assumption in general -- `off_t`'s width is platform- (and
-// sometimes build-config-) dependent, e.g. 32-bit on some 32-bit Linux
-// targets without large-file-support flags, while BSDs/macOS define it as a
-// 64-bit `int64_t` even in 32-bit builds. `i64` is correct for every target
-// this crate actually builds/tests on today (this session verified
-// x86_64-unknown-{linux-gnu,freebsd,netbsd} plus native Windows/macOS are
-// all 64-bit-off_t targets) -- narrowing this further (e.g. per-OS
-// `target_pointer_width`-conditional typing) is deferred until this crate
-// gains a real 32-bit Unix target in its own supported/tested set, per
-// CLAUDE.md's "don't design for hypothetical future requirements".
+// task #719, #914: `offset`'s type is conditionally-typed based on the
+// target's actual `off_t` width. POSIX `off_t`'s width is platform-dependent:
+// - 32-bit Linux and Android (bionic) default to a 32-bit `off_t` without
+//   `_FILE_OFFSET_BITS=64`. Since this crate's `mmap` is ALWAYS called with
+//   offset=0 (anonymous mappings only, no file descriptor), a 32-bit `off_t`
+//   is correct on these targets -- there is no code path where a wrong-width
+//   `off_t` could silently truncate a real value.
+// - Every other Unix target (64-bit pointer width, OR 32-bit BSD/Darwin) uses
+//   a 64-bit `off_t`. BSDs and macOS define `off_t` as a 64-bit `int64_t` even
+//   in 32-bit builds; this includes x86_64-unknown-{freebsd,netbsd,openbsd},
+//   i686-unknown-{freebsd,openbsd}, and x86_64-apple-darwin.
+// - Android's bionic is REASONED-FROM-SPEC: not empirically verified in this
+//   project's CI, but bionic inherits the same 32-bit-off_t-on-32-bit-default
+//   behavior as glibc on 32-bit targets without large-file-support flags.
 //
-// **IMPORTANT:** This restriction is now ENFORCED at compile time by the
-// `compile_error!` below for all `unix + 32-bit-pointer-width` targets.
-// Adding support for a 32-bit Unix target requires first verifying that
-// target's actual `off_t` width (and if necessary, per-target-conditionally
-// typing the offset parameter) before removing or widening the exclusion.
-//
-// `mmap` is ALWAYS called with a literal `0` offset here (anonymous mappings
-// only, no file descriptor) -- there is no code path where a wrong-width
-// `off_t` could silently truncate a real value; the residual risk is purely
-// an ABI shape mismatch on a target this crate does not currently support.
-#[cfg(all(unix, not(miri), target_pointer_width = "32"))]
-compile_error!(
-    "aligned-vmem's hand-written `mmap` FFI declaration assumes a 64-bit `off_t`, \
-     which is not guaranteed on 32-bit Unix targets without confirming the \
-     platform's actual off_t width (glibc i686 and traditional 32-bit ARM default \
-     to a 32-bit off_t without _FILE_OFFSET_BITS=64). Supporting a 32-bit Unix \
-     target requires first verifying (and if necessary, per-target-conditionally \
-     typing) the off_t width -- see the comment above the `mmap`/`munmap`/`madvise` \
-     extern block in this file."
-);
+// The two-arm `OffT` type alias below correctly classifies EVERY `cfg(unix)`
+// target -- either it matches the 32-bit-linux-or-android arm, or it matches
+// the catch-all "not(...)" arm. No `unix` target is left unclassified.
+#[cfg(all(
+    unix,
+    not(miri),
+    target_pointer_width = "32",
+    any(target_os = "linux", target_os = "android")
+))]
+type OffT = i32;
+
+#[cfg(all(
+    unix,
+    not(miri),
+    not(all(
+        target_pointer_width = "32",
+        any(target_os = "linux", target_os = "android")
+    ))
+))]
+type OffT = i64;
 
 #[cfg(all(unix, not(miri)))]
 extern "C" {
@@ -2484,7 +2487,7 @@ extern "C" {
         prot: i32,
         flags: i32,
         fd: i32,
-        offset: i64,
+        offset: OffT,
     ) -> *mut core::ffi::c_void;
     fn munmap(addr: *mut core::ffi::c_void, length: usize) -> i32;
     fn madvise(addr: *mut core::ffi::c_void, length: usize, advice: i32) -> i32;
