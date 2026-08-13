@@ -168,15 +168,24 @@ function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
 
     if (hasTrigger) {
       const hasHardFail = HARD_FAIL.test(sentence);
-      // Strip inline code spans (`...`) before checking SCOPE — a Rust
-      // signature's `-> Option<T>` return arrow / generic brackets satisfy
-      // the bare `<`/`>` alternative without being a real qualifier
-      // (round-5 closing review QC2: README.md's API table was invisible to
-      // this guard because every row's `-> T` arrow "rescued" it). TRIGGER
-      // and HARD_FAIL stay on the full sentence — this crate's real
-      // qualifiers (`align <= 64 KiB`) DO legitimately live inside
-      // backticks in rustdoc, so only SCOPE strips code spans.
-      const scopeText = sentence.replace(/`[^`]*`/g, ' ');
+      // Strip only the specific tokens that falsely satisfy the bare
+      // `<`/`>` SCOPE alternative — a Rust signature's `->`/`=>` return
+      // arrow and generic angle-bracket pairs like `<Reservation>` — before
+      // checking SCOPE (round-5 closing review QC2: README.md's API table
+      // was invisible to this guard because every row's `-> T` arrow
+      // "rescued" it). TRIGGER and HARD_FAIL stay on the full sentence.
+      // Unlike an earlier version of this fix, this does NOT strip whole
+      // backtick-wrapped spans: this crate's real qualifiers (e.g.
+      // `align <= 64 KiB`) legitimately live inside backticks, and
+      // stripping every code span destroyed them too, convicting correctly
+      // qualified sentences whose only qualifier happened to be backticked
+      // (round-6 review S10). Stripping just the arrow/generic tokens keeps
+      // the arrow-rescue closed while leaving backticked qualifiers like
+      // `<=`/`>=` intact for SCOPE to see.
+      const scopeText = sentence
+        .replace(/->/g, ' ')
+        .replace(/=>/g, ' ')
+        .replace(/<[A-Za-z_][\w:<>, ]*>/g, ' ');
       const hasScope = SCOPE.test(scopeText);
 
       // Violation iff: TRIGGER && (HARD_FAIL || !SCOPE)
