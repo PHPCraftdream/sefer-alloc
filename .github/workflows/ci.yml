@@ -152,6 +152,10 @@ jobs:
       # Task #846 proved this combination catches the inverted #[cfg_attr]
       # dead_code bug that shipped undetected when only --all-features ran.
       - run: cargo clippy -p aligned-vmem --all-targets -- -D warnings
+      # R1/Q3: `--all-features` enables `mock`, which REPLACES the backend, so the
+      # row above does not lint try_commit_range's real-backend branch. Explicit
+      # everything-except-`mock` list, matching test-windows/test-macos.
+      - run: cargo clippy -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets -- -D warnings
       # Full feature set: lazy-commit, huge-pages, fault-injection, mock,
       # bench-internals (all "off by default", so --all-features is the union).
       - run: cargo clippy -p aligned-vmem --all-features --all-targets -- -D warnings
