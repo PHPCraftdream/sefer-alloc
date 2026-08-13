@@ -1048,8 +1048,9 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// resident and transparently re-faults a fresh zero page on next write, so
 /// the same code that is safe on Linux can crash on Windows. This exact
 /// divergence already crashed an in-repo consumer that assumed the Linux
-/// semantics — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 6 (filed 2026-07-30)
-/// for the incident record and status.
+/// semantics — see
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// item 6 (filed 2026-07-30) for the incident record and status.
 ///
 /// **Huge-page incompatibility (task #843 V4):** on both Windows and Linux,
 /// decommit **does not work** on huge-page reservations (those returned by
@@ -1065,7 +1066,8 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// **Darwin zero-fill gap (confirmed as a real, failing-test-level gap by
 /// this crate's first real-macOS CI run, 2026-08-13 — the underlying hazard
 /// was already known repo-wide since Round 9, see
-/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48):** `MADV_DONTNEED` on Darwin is
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// item 48):** `MADV_DONTNEED` on Darwin is
 /// advisory-only for anonymous memory — unlike Linux, it does not reliably
 /// unmap the physical pages, so a decommit + [`recommit`] roundtrip on the
 /// Darwin family (macOS/iOS/tvOS/watchOS — all share XNU and the same
@@ -1073,7 +1075,8 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// resident instead of a fresh zero page. This is the same "indistinguishable
 /// from a silent no-op" shape as the huge-page case above, but for ORDINARY
 /// (non-huge) reservations on the Darwin family specifically. See
-/// `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item; no fix is implemented
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// for the open item; no fix is implemented
 /// yet (the real fix needs re-`mmap`(`MAP_FIXED`) over the range on Darwin, a
 /// larger change deserving its own review round).
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
@@ -1165,7 +1168,8 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
 /// `start`/`end` must be multiples of [`PAGE`] with `start <= end` — a
 /// violation returns `false` (task #712: an earlier version of this function
 /// clamped a contract violation to the WRITE-PERMITTING `true` sentinel,
-/// which already caused a real crash — see `docs/CORRECTNESS_OPEN_ITEMS.md`
+/// which already caused a real crash — see
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// for the incident this class of bug produces on Windows).
 #[must_use]
 pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
@@ -1222,8 +1226,9 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// other contract violation (misaligned, or `start > end`) returns `false`
 /// (task #712: an earlier version of this function clamped a contract
 /// violation to the WRITE-PERMITTING `true` sentinel, which already caused a
-/// real crash — see `docs/CORRECTNESS_OPEN_ITEMS.md` for the incident this
-/// class of bug produces on Windows).
+/// real crash — see
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// for the incident this class of bug produces on Windows).
 ///
 /// Returns `true` if the range is now committed, `false` if the OS refused
 /// (commit-charge exhaustion / true OOM) OR the offsets violated the contract
