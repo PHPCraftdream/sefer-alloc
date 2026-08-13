@@ -1,8 +1,10 @@
 // Guard against the doc-comment drift class that has recurred 5 times:
 // unconditional "over-reserve size + align" / "trim" statements that
 // don't mention the actual conditional behavior (Unix exact-size fast
-// path, Windows align <= 64 KiB fast path). See task #878/Q8 for the full
-// history and the per-sentence rewrite that closes CR2.
+// path, Windows align <= 64 KiB fast path). Originally added by R6 / task
+// #871 (implementing what W5 / task #854 asked for two rounds earlier); see
+// task #878/Q8 for the full history and the per-sentence rewrite that
+// closes CR2.
 //
 // Heuristic (per-sentence, not per-block): every sentence in rustdoc
 // comments mentioning "over-reserv" or "trim" must ALSO, in the same

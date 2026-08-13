@@ -74,13 +74,14 @@ huge-pages = []
 # that could be reached from more than one build target in the same
 # workspace. A stronger fix (a build-time `--cfg` flag instead of a Cargo
 # feature, matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg
-# flags do not unify) was evaluated and DEFERRED: this crate has not yet had
-# its first `crates.io` publish (task #659), so removing `mock` as a Cargo
-# feature later remains possible without an immediate breaking-change cost,
-# and converting now would be a large mechanical change (every test file,
-# `ci.yml`, this crate's whole feature-powerset CI matrix) for a hazard that,
-# today, has zero real external consumers to protect. Revisit if/when this
-# crate gains external consumers and the hazard is reported for real.
+# flags do not unify) was evaluated and DEFERRED: 0.1.0 is already on
+# crates.io, so removing `mock` as a Cargo feature is already a breaking
+# change; the deferral now rests on the absence of real external consumers,
+# not on the absence of a publish. Converting now would still be a large
+# mechanical change (every test file, `ci.yml`, this crate's whole
+# feature-powerset CI matrix) for a hazard that, today, has zero real
+# external consumers to protect. Revisit if/when this crate gains external
+# consumers and the hazard is reported for real.
 mock = []
 
 # Real-path commit fault injection: an armed "fail the next N / fail exactly
