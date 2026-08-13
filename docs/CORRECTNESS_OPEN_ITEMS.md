@@ -1882,45 +1882,8 @@ resolved" below.)_
     stronger `--cfg`-flag conversion; the SAME finding recurs in
     `numa-shim` and the deferral is load-bearing for that crate's own
     upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
-    review of the aligned-vmem round.)
-
-    - **Status:** CLOSED (updated 2026-08-09, task #778/F5 — round-closing
-      review of the numa-shim round). `numa-shim`'s round reached its own
-      §C10 finding in task #726 (commit `53b3ca2`) and applied EXACTLY the
-      policy this item's "Next trigger" prescribed — a doc-only fix
-      (`crates/numa/Cargo.toml`'s `mock = []` feature comment, the `mock`
-      module's own rustdoc, and a new `README.md` section), citing task
-      #715's reasoning — but the review found this card was never updated
-      in that commit, the same "update the card in the SAME commit"
-      violation this file's own convention exists to catch (see item 41's
-      analogous correction above). Both crates now carry the SAME recorded
-      policy for the identical finding shape, so this item is closed
-      rather than left open with a stale forward-reference.
-    - **Current-number-or-verdict:** `aligned-vmem`'s `mock` feature
-      (`crates/vmem/Cargo.toml`) AND `numa-shim`'s `mock` feature
-      (`crates/numa/Cargo.toml`) are both Cargo features (not `--cfg`
-      flags), each documented with a Cargo-feature-unification warning in
-      three places (`Cargo.toml`, the `mock` module's own doc, `README.md`).
-      Task #715 (commit `e5f6700`) explicitly evaluated and DEFERRED the
-      stronger fix for `aligned-vmem` — converting `mock` from a Cargo
-      feature to a `--cfg`-style RUSTFLAGS flag, matching this repo's own
-      `cfg(loom)`/`cfg(kani)` precedent (cfg flags do not unify across a
-      build the way Cargo features do) — reasoning that neither crate has
-      real external consumers before its first publish (`aligned-vmem`:
-      task #658; `numa-shim`: task #657), so the doc-only fix closes the
-      realistic near-term risk at much lower cost than a mechanical
-      rewrite of the whole test-invocation surface and CI matrix for
-      EITHER crate. Task #726 (commit `53b3ca2`) applied the identical
-      reasoning to `numa-shim`.
-    - **Evidence:** `crates/vmem/Cargo.toml:60-81` and
-      `crates/numa/Cargo.toml`'s `mock = []` feature comments both state
-      the deferral explicitly: "Revisit if/when this crate gains external
-      consumers and the hazard is reported for real."
-    - **Revisit condition (both crates jointly):** if EITHER crate gains a
-      real external consumer that reports this hazard for real, re-open
-      this item and revisit BOTH crates' resolution together — do not let
-      one crate silently drift to a `--cfg`-flag conversion while the
-      other stays doc-only for the same finding shape.
+    review of the aligned-vmem round.) **Closed** — see "Recently resolved"
+    section for the full closure narrative.
 
 43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
     constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
@@ -2311,7 +2274,52 @@ resolved" below.)_
      `tests/regression_batch_flush.rs`, `.github/workflows/ci.yml`, and this
      index.
 
-3. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
+3. **Deferred decision — `aligned-vmem`'s `mock` Cargo-feature-unification
+   hazard was resolved with a doc-only fix, explicitly deferring a
+   stronger `--cfg`-flag conversion; the SAME finding recurs in
+   `numa-shim` and the deferral is load-bearing for that crate's own
+   upcoming round.** — **CLOSED** (updated 2026-08-09, task #778/F5 —
+   round-closing review of the numa-shim round). Filed 2026-08-09,
+   task #776/F13, round-closing review of the aligned-vmem round.
+
+   - **Closure narrative:** `numa-shim`'s round reached its own §C10 finding
+     in task #726 (commit `53b3ca2`) and applied EXACTLY the policy this
+     item's "Next trigger" prescribed — a doc-only fix
+     (`crates/numa/Cargo.toml`'s `mock = []` feature comment, the `mock`
+     module's own rustdoc, and a new `README.md` section), citing task
+     #715's reasoning — but the review found this card was never updated
+     in that commit, the same "update the card in the SAME commit"
+     violation this file's own convention exists to catch (see item 41's
+     analogous correction above). Both crates now carry the SAME recorded
+     policy for the identical finding shape, so this item is closed
+     rather than left open with a stale forward-reference.
+   - **Current-number-or-verdict:** `aligned-vmem`'s `mock` feature
+     (`crates/vmem/Cargo.toml`) AND `numa-shim`'s `mock` feature
+     (`crates/numa/Cargo.toml`) are both Cargo features (not `--cfg`
+     flags), each documented with a Cargo-feature-unification warning in
+     three places (`Cargo.toml`, the `mock` module's own doc, `README.md`).
+     Task #715 (commit `e5f6700`) explicitly evaluated and DEFERRED the
+     stronger fix for `aligned-vmem` — converting `mock` from a Cargo
+     feature to a `--cfg`-style RUSTFLAGS flag, matching this repo's own
+     `cfg(loom)`/`cfg(kani)` precedent (cfg flags do not unify across a
+     build the way Cargo features do) — reasoning that neither crate has
+     real external consumers before its first publish (`aligned-vmem`:
+     task #658; `numa-shim`: task #657), so the doc-only fix closes the
+     realistic near-term risk at much lower cost than a mechanical
+     rewrite of the whole test-invocation surface and CI matrix for
+     EITHER crate. Task #726 (commit `53b3ca2`) applied the identical
+     reasoning to `numa-shim`.
+   - **Evidence:** `crates/vmem/Cargo.toml:60-81` and
+     `crates/numa/Cargo.toml`'s `mock = []` feature comments both state
+     the deferral explicitly: "Revisit if/when this crate gains external
+     consumers and the hazard is reported for real."
+   - **Revisit condition (both crates jointly):** if EITHER crate gains a
+     real external consumer that reports this hazard for real, re-open
+     this item and revisit BOTH crates' resolution together — do not let
+     one crate silently drift to a `--cfg`-flag conversion while the
+     other stays doc-only for the same finding shape.
+
+4. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
    `--all-features` step** — **RESOLVED** by R23-6 (task #375). One
    independent read-only review first corrected the originally-proposed fix
    (a `TEST_LOCK`-style mutex): a mutex only serializes test FUNCTIONS
@@ -2414,7 +2422,7 @@ resolved" below.)_
      `tests/regression_segment_table_tombstone_rebuild.rs`,
      `tests/dealloc_sublinear.rs`, and this index.
 
-4. **`dealloc_batch_small` doc comment claimed the LAST `TCACHE_CAP` freed
+5. **`dealloc_batch_small` doc comment claimed the LAST `TCACHE_CAP` freed
    blocks stay magazine-warm; the implementation keeps the FIRST.** —
    **RESOLVED** by R24-7 (task #385), a doc-only policy decision (no `src/`
    behavior change, no numbers measured).
