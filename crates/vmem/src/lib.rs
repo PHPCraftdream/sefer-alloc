@@ -613,8 +613,9 @@ impl Reservation {
     /// that `aligned-vmem` itself does not wrap, then adopts the result via
     /// this constructor — it needs `base`/`len` too because the adopted
     /// reservation's usable span need not start at the OS reservation's own
-    /// base (this crate itself over-reserves `size + align` and keeps the
-    /// full mapping, which is exactly that shape).
+    /// base (this crate over-reserves `size + align` and keeps the full mapping
+    /// whenever the exact-size fast path misses, or on Windows when
+    /// `align > 64 KiB`, which is exactly that shape).
     ///
     /// # Safety
     ///
