@@ -115,6 +115,10 @@ since."
 - **NOT guaranteed** on decommit-then-recommit on macOS/XNU/*BSD (`MADV_DONTNEED`
   is advisory+lazy, no zero-fill — `crates/vmem/src/lib.rs` §decommit note). This
   is the P4(b) killer — and it is the reason the design hinges on §4.3.
+  (Round 6/task #883 citation check: this note did not exist in `crates/vmem/src/lib.rs`
+  when this document was written on 2026-07-20 — it was added by commit
+  `9c777bc` on 2026-08-13, so the citation was unverifiable at the time. It is
+  now accurate; see `docs/CORRECTNESS_OPEN_ITEMS.md` item 48.)
 - **NOT guaranteed under `cfg!(miri)`**: miri's `std::alloc` fallback does not
   zero (`crates/vmem`'s miri aperture), exactly as R9-1 documented for the Large
   path. The Small design withholds the signal identically (§5).
@@ -357,6 +361,10 @@ hold for THIS design; the third (narrow win) stands and is acknowledged.
 | **#1 — "No per-block virgin state exists; virgin-ness of a specific block inside an already-committed segment is a strictly finer question than any flag we keep."** | **Rebutted.** This design adds NO per-block metadata. It resolves the "is this specific block virgin" question via the **dispatch test** (carve vs `pop_free`, already distinguished at the call site, §2) plus ONE owner-only per-segment bit (§3). A carve-served block in a clean-lifetime segment is virgin; a `pop_free`-served block never is. No finer-than-segment metadata is needed because the bump cursor's monotonicity within a committed lifetime makes "is this carve past the frontier" trivially true, collapsing the per-block question to the per-segment lifetime question. |
 | **#2 — "The recycled path legitimately holds non-zero garbage on macOS/XNU/*BSD (`MADV_DONTNEED` is advisory+lazy, no zero-fill guarantee)."** | **Rebutted, by R8-10.** The macOS danger requires a decommit-then-reuse cycle on a *registered* segment. R8-10 (commit `852828e`, 2026-07-20) removed the B3 decommit-on-pool-admission path — the only production code that produced that state. Verified by grep (§4.3): `decommit_empty_segment_impl(release_follows=false)` has zero callers; `is_decommitted()` is never true on a live registered segment in production; `carve_block`'s recommit branch is dead code. A pooled segment is reused via `pop_free` (never virgin by dispatch); a released segment is fully returned to the OS and any re-reserve is a fresh `mmap` (zero-guaranteed even on macOS). The deep-audit P2-3 (`docs/reviews/2026-07-17-deep-audit/07-perf-optimizations.md`, landed 2026-07-19 00:12 UTC, one day BEFORE R8-10) re-proposed this exact design but flagged the macOS risk as unresolved — correctly, given the substrate *at that time*. R8-10 landed the next day and closed the gap. **This is the dated, verifiable contribution of this report over P2-3.** |
 | **#3 — "The extractable win is narrow (only the first `alloc_zeroed` touch of a genuinely fresh, never-reused bump slice)."** | **Stands.** Acknowledged in §0 and §8. The win is a cold/calloc-first-touch ceiling; steady-state churn reuses blocks and gets zero benefit. This is the second reason (after the production-plumbing cost, §10) no prototype is rushed. |
+
+(Round 6/task #883: row #2's macOS/XNU/\*BSD fact is the same one §4.3 above
+cites via `crates/vmem/src/lib.rs` §decommit note — see that note's own
+citation-accuracy correction above; nothing in this row needed to change.)
 
 The P4(b) "what would flip this to GO" criteria were: (i) a deterministic
 measurement proving the memset is a real cost (§8 supplies the analytical

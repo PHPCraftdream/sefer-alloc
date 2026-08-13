@@ -1135,7 +1135,27 @@ for completeness.
    > - **Next trigger:** bare-metal Linux re-measurement — this measurement was on WSL2/Hyper-V, and a native Linux kernel's VA layout/ASLR entropy may differ. The WSL2-only number is not strong enough evidence to close V20/P17 outright in either direction.
    > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`.
    > - **Cross-reference (origin):** task #849 (commit `35d51e6`), `docs/reviews/2026-08-12-aligned-vmem-post-campaign-closing-review.md` finding W15.
-   Full history: task #857 (this entry).
+   >
+   > **Mechanism to include in a future remeasurement (round 6/task #883, review finding S12 — unmeasured, not a recommendation to implement, recorded so a future bare-metal remeasurement includes this mechanism):**
+   > `docs/perf/ALIGNED_VMEM_VIRTUALALLOC2_VA_OPTIMIZATION_OPPORTUNITY.md` covers
+   > Windows `VirtualAlloc2` and BSD `MAP_ALIGNED(n)` as fast-path mechanisms, but
+   > neither covers Linux or macOS — the two platforms this item's own WSL2 numbers
+   > above actually measure, where the 43-66% miss rate outside the page-size regime
+   > (64 KiB = 34.375%, 1 MiB = 46.6667%, 4 MiB = 56.6667% hit) still costs 3 syscalls
+   > (`mmap(size)` → `munmap` → `mmap(size + align)`) plus a permanent `align` bytes of
+   > VA held for the reservation's lifetime on every miss. One mechanism not
+   > considered anywhere in the existing design note: on a miss, before falling back
+   > to over-reserve, retry `mmap(align_up(p, align), size, …)` with a
+   > non-`MAP_FIXED` hint address. Both Linux and Darwin honour a hint address when
+   > the range is free and silently ignore it otherwise, so the retry is sound by
+   > construction (the existing alignment check already validates the result); cost
+   > on a retry-hit is still 3 syscalls but the mapping is exact-size (no permanent
+   > `align`-byte VA overhead), and cost on a retry-miss is one extra `mmap`/`munmap`
+   > pair before the existing fallback. `UNIX_EXACT_RESERVE_ATTEMPTS`/
+   > `UNIX_EXACT_RESERVE_HITS` and `examples/v20_849_unix_exact_reserve_hit_rate.rs`
+   > already run the 30-independent-process methodology this item used; a third
+   > counter for "hint retry hit" would produce a real number from the same harness.
+   Full history: task #857 (this entry); S12 mechanism added task #883.
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.**~~
