@@ -6,8 +6,25 @@ use aligned_vmem::{
     try_reserve_aligned, Reservation, VmemError, PAGE,
 };
 use std::panic;
+use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
+
+/// Zero-trust review of task #882: under `bench-internals`, every
+/// `decommit`/`decommit_lazy` call increments the PROCESS-GLOBAL
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` counters (see
+/// `libc_madvise` in `lib.rs`). libtest runs this file's tests on parallel
+/// threads by default, so any test that both resets those counters and then
+/// asserts an EXACT count on them would otherwise race against every other
+/// test in this same binary that also calls `decommit`/`decommit_lazy`
+/// concurrently — mirroring the exact hazard `tests/fault_injection.rs`'s own
+/// `SERIAL` mutex already exists to prevent for its process-global hooks.
+/// Every test in this file that calls `decommit`/`decommit_lazy` takes this
+/// lock for its whole body so the shared counters are exercised
+/// single-threaded when it matters (`bench-internals` builds); the lock
+/// itself is cheap enough to hold unconditionally even when the feature is
+/// off, so no `#[cfg]` branching is needed here.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 // task #719: `unsafe impl Send for Reservation {}` had no test at all pinning
 // the claim. `assert_send` intentionally checks ONLY `Send`, not `Sync` --
@@ -147,6 +164,7 @@ fn manual_release_via_into_parts() {
 
 #[test]
 fn decommit_recommit_roundtrip() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -205,6 +223,7 @@ fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
     // used to also return `true` here, clamped to the WRITE-PERMITTING
     // sentinel — see `recommit_rejects_contract_violating_offsets` below for
     // the corrected (and separately regression-tested) behavior.
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -306,6 +325,7 @@ fn try_reserve_reports_invalid_argument() {
 
 #[test]
 fn decommit_lazy_roundtrip() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // 0.2 MADV_FREE variant: decommit_lazy then recommit and write.
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
@@ -369,6 +389,7 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
         unix_madvise_successes,
     };
 
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
