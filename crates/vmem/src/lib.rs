@@ -747,17 +747,23 @@ impl Reservation {
         // rounded up to `align` -- an `align`-only check left that half of
         // the SAME Drop-reachable-panic hazard open (e.g.
         // `from_raw_parts(b, PAGE, r, usize::MAX, PAGE)` still constructed
-        // successfully and still panicked inside `Drop` under miri). Checking
-        // `Layout::from_size_align(...).is_ok()` directly covers both halves
-        // of the documented contract in one call, matching exactly what
-        // `release_reservation`'s miri backend will later attempt.
+        // successfully and still panicked inside `Drop` under miri). The
+        // explicit `reservation_len != 0 && reservation_len.is_multiple_of(PAGE)`
+        // checks enforce the documented nonzero/page-multiple invariants, while
+        // `Layout::from_size_align(...).is_ok()` catches overflow cases -- together
+        // they cover all documented contract violations immediately at the call
+        // site, matching what `release_reservation`'s miri backend will later
+        // attempt.
         assert!(
             align.is_power_of_two()
                 && align >= PAGE
+                && reservation_len != 0
+                && reservation_len.is_multiple_of(PAGE)
                 && std::alloc::Layout::from_size_align(reservation_len, align).is_ok(),
-            "Reservation::from_raw_parts: align must be a power of two >= PAGE, and \
-             (reservation_len, align) must form a valid Layout; got align={align}, \
-             reservation_len={reservation_len}"
+            "Reservation::from_raw_parts: align must be a power of two >= PAGE, \
+             reservation_len must be non-zero and a multiple of PAGE, and \
+             (reservation_len, align) must form a valid Layout; \
+             got align={align}, reservation_len={reservation_len}"
         );
         Self {
             base: base_nn,

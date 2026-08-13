@@ -710,6 +710,58 @@ fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
     std::panic::resume_unwind(panic_info.unwrap());
 }
 
+/// task #910 (M1): `Layout::from_size_align` accepts zero-size layouts,
+/// so the original check silently accepted `reservation_len == 0`, violating
+/// the documented "non-zero multiple of PAGE" contract. Proves the explicit
+/// `reservation_len != 0` check catches this case immediately.
+#[test]
+#[should_panic(expected = "reservation_len must be non-zero")]
+fn from_raw_parts_rejects_zero_reservation_len_immediately() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`align` come from a genuinely live reservation above;
+    // `reservation_len = 0` is deliberately NOT a non-zero PAGE-multiple,
+    // exactly the contract violation this test proves panics immediately.
+    // The process never reaches a point where this "reservation" is used
+    // unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, PAGE, raw, 0, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
+/// task #910 (M1): `Layout::from_size_align` does NOT require size to be
+/// a multiple of align, so the original check silently accepted non-PAGE-multiple
+/// `reservation_len` values (e.g. `PAGE / 2`), violating the documented contract.
+/// Proves the explicit `reservation_len.is_multiple_of(PAGE)` check catches this
+/// case immediately.
+#[test]
+#[should_panic(expected = "reservation_len must be non-zero and a multiple of PAGE")]
+fn from_raw_parts_rejects_non_page_multiple_reservation_len_immediately() {
+    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`align` come from a genuinely live reservation above;
+    // `reservation_len = PAGE / 2` is deliberately NOT a PAGE-multiple, exactly
+    // the contract violation this test proves panics immediately. The process
+    // never reaches a point where this "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw, PAGE, raw, PAGE / 2, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
 /// The positive-path complement to the panic test above: a genuinely valid
 /// `align` must construct and behave normally (readable/writable, releases
 /// cleanly on drop) -- `from_raw_parts`'s validation must reject ONLY
