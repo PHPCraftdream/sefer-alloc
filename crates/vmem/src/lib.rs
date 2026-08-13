@@ -1650,103 +1650,124 @@ fn win_reserve_commit(
                 }
             }
         };
-        #[cfg(feature = "bench-internals")]
-        WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
-        // Single-call path: base == region (no over-reserve).
-        // Return (base, base, commit_len, granted_huge).
-        Ok((base, base, commit_len, extra_commit_flags != 0))
-    } else {
-        // Two-call path (align > 64 KiB, or a partial initial commit).
-        let over = size
-            .checked_add(align)
-            .ok_or_else(VmemError::invalid_argument)?;
-        let region = unsafe {
-            // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
-            // reserves (but does not commit) `over` bytes of address space,
-            // returning the base or NULL on OOM/refusal. NULL is checked below.
-            let p = winapi_virtual_reserve(over);
-            match NonNull::new(p as *mut u8) {
-                Some(n) => n,
-                // Nothing was reserved; no cleanup needed, so capturing here is
-                // already the immediate-capture the task requires.
-                None => return Err(VmemError::last_os_error()),
+        // task #917 (finding H2C6, Windows analogue of Unix task #897/finding U1):
+        // this check is UNCONDITIONAL. The fast-path's premise (VirtualAlloc(NULL, ...)
+        // returns a base aligned to WIN_ALLOCATION_GRANULARITY) is REASONED from Microsoft
+        // documentation but never verified at the point of use. The only verification is
+        // a debug_assert in query_os_page_size() which compiles out of --release and
+        // is not even called by this fast path (it lives on the cold decommit path).
+        // If WIN_ALLOCATION_GRANULARITY were wrong (unlikely but theoretically possible
+        // on a future Windows version), this check would catch it and fall through to
+        // the two-call path, guaranteeing the documented alignment contract. Deliberately
+        // a real runtime check, not a debug_assert: release builds are exactly where
+        // an unverified constant matters (CLAUDE.md's R26-4 rule: debug_assert compiles
+        // out of --release).
+        if !base.as_ptr().addr().is_multiple_of(align) {
+            // SAFETY: `base` was just allocated with VirtualAlloc(MEM_RESERVE | MEM_COMMIT)
+            // and has not been released yet; releasing before handing to a caller prevents
+            // a leak.
+            unsafe { winapi_virtual_release(base.as_ptr()) };
+            // Fall through to the two-call path below.
+        } else {
+            #[cfg(feature = "bench-internals")]
+            WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
+            // Single-call path: base == region (no over-reserve).
+            // Return (base, base, commit_len, granted_huge).
+            return Ok((base, base, commit_len, extra_commit_flags != 0));
+        }
+    }
+
+    // Two-call path (align > 64 KiB, or a partial initial commit, or single-call
+    // alignment check failed).
+    let over = size
+        .checked_add(align)
+        .ok_or_else(VmemError::invalid_argument)?;
+    let region = unsafe {
+        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
+        // reserves (but does not commit) `over` bytes of address space,
+        // returning the base or NULL on OOM/refusal. NULL is checked below.
+        let p = winapi_virtual_reserve(over);
+        match NonNull::new(p as *mut u8) {
+            Some(n) => n,
+            // Nothing was reserved; no cleanup needed, so capturing here is
+            // already the immediate-capture the task requires.
+            None => return Err(VmemError::last_os_error()),
+        }
+    };
+    let region_ptr = region.as_ptr();
+    // task #717: `.addr()` reads the address without exposing provenance
+    // (strict-provenance-legal); the paired `.with_addr()` below reconstructs
+    // `base` carrying `region_ptr`'s OWN provenance (valid for the whole
+    // `over`-byte reservation) at the computed aligned address, instead of
+    // the previous `base_addr as *mut u8` cast, which manufactured a pointer
+    // with no established provenance at all (contradicted the README's
+    // documented "no exposed-address `as usize` round-trips" guarantee).
+    let region_addr = region_ptr.addr();
+    let fits = align_up_addr(region_addr, align).and_then(|a| {
+        let end = a.checked_add(size)?;
+        let region_end = region_addr.checked_add(over)?;
+        (end <= region_end).then_some(a)
+    });
+    let base_addr = match fits {
+        Some(a) => a,
+        None => {
+            // Not an OS refusal — an internal fit-computation failure (should
+            // not occur given `over = size + align`); do not read errno here.
+            // SAFETY: `region` was returned by the `MEM_RESERVE` call above and
+            // has not been released yet; releasing before handing to a caller
+            // cannot double-free.
+            unsafe { winapi_virtual_release(region_ptr) };
+            return Err(VmemError::invalid_argument());
+        }
+    };
+    // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned;
+    // `region_ptr.with_addr` carries `region_ptr`'s provenance to the new
+    // address, so `base` is a valid derived pointer into the live reservation.
+    let base = unsafe { NonNull::new_unchecked(region_ptr.with_addr(base_addr)) };
+    // SAFETY: `[base_addr, base_addr+commit_len)` is within the just-reserved
+    // region (`commit_len <= size`, validated by callers); `MEM_COMMIT` commits
+    // exactly this aligned sub-range. NULL indicates commit-charge exhaustion.
+    let committed = unsafe {
+        VirtualAlloc(
+            base.as_ptr().cast(),
+            commit_len,
+            MEM_COMMIT | extra_commit_flags,
+            PAGE_READWRITE,
+        )
+    };
+    if committed.is_null() {
+        if extra_commit_flags != 0 {
+            // Best-effort large pages: retry the commit with ordinary pages.
+            // SAFETY: same range within the same live reservation.
+            let plain = unsafe {
+                VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE)
+            };
+            if !plain.is_null() {
+                #[cfg(feature = "bench-internals")]
+                WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
+                return Ok((base, region, over, false)); // Fallback to ordinary pages
             }
-        };
-        let region_ptr = region.as_ptr();
-        // task #717: `.addr()` reads the address without exposing provenance
-        // (strict-provenance-legal); the paired `.with_addr()` below reconstructs
-        // `base` carrying `region_ptr`'s OWN provenance (valid for the whole
-        // `over`-byte reservation) at the computed aligned address, instead of
-        // the previous `base_addr as *mut u8` cast, which manufactured a pointer
-        // with no established provenance at all (contradicted the README's
-        // documented "no exposed-address `as usize` round-trips" guarantee).
-        let region_addr = region_ptr.addr();
-        let fits = align_up_addr(region_addr, align).and_then(|a| {
-            let end = a.checked_add(size)?;
-            let region_end = region_addr.checked_add(over)?;
-            (end <= region_end).then_some(a)
-        });
-        let base_addr = match fits {
-            Some(a) => a,
-            None => {
-                // Not an OS refusal — an internal fit-computation failure (should
-                // not occur given `over = size + align`); do not read errno here.
-                // SAFETY: `region` was returned by the `MEM_RESERVE` call above and
-                // has not been released yet; releasing before handing to a caller
-                // cannot double-free.
-                unsafe { winapi_virtual_release(region_ptr) };
-                return Err(VmemError::invalid_argument());
-            }
-        };
-        // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned;
-        // `region_ptr.with_addr` carries `region_ptr`'s provenance to the new
-        // address, so `base` is a valid derived pointer into the live reservation.
-        let base = unsafe { NonNull::new_unchecked(region_ptr.with_addr(base_addr)) };
-        // SAFETY: `[base_addr, base_addr+commit_len)` is within the just-reserved
-        // region (`commit_len <= size`, validated by callers); `MEM_COMMIT` commits
-        // exactly this aligned sub-range. NULL indicates commit-charge exhaustion.
-        let committed = unsafe {
-            VirtualAlloc(
-                base.as_ptr().cast(),
-                commit_len,
-                MEM_COMMIT | extra_commit_flags,
-                PAGE_READWRITE,
-            )
-        };
-        if committed.is_null() {
-            if extra_commit_flags != 0 {
-                // Best-effort large pages: retry the commit with ordinary pages.
-                // SAFETY: same range within the same live reservation.
-                let plain = unsafe {
-                    VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE)
-                };
-                if !plain.is_null() {
-                    #[cfg(feature = "bench-internals")]
-                    WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
-                    return Ok((base, region, over, false)); // Fallback to ordinary pages
-                }
-                // Capture immediately after the FINAL failing syscall (the plain
-                // retry), before the cleanup release below.
-                let err = VmemError::last_os_error();
-                // SAFETY: `region` reserved above, not yet handed out — release once.
-                unsafe { winapi_virtual_release(region_ptr) };
-                return Err(err);
-            }
-            // Capture immediately after the failing commit, before cleanup.
+            // Capture immediately after the FINAL failing syscall (the plain
+            // retry), before the cleanup release below.
             let err = VmemError::last_os_error();
             // SAFETY: `region` reserved above, not yet handed out — release once.
             unsafe { winapi_virtual_release(region_ptr) };
             return Err(err);
         }
-        #[cfg(feature = "bench-internals")]
-        WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
-        // extra_commit_flags were applied successfully (committed != NULL)
-        // NOTE: This uses the requested flag, not the observed grant (no
-        // HUGE_SUPPORTED-style query on Windows). Per this crate's docs, the
-        // two-call path (align > 64 KiB) is currently unreachable in practice
-        // for MEM_LARGE_PAGES, so this is a documented-but-not-enforced invariant.
-        Ok((base, region, over, extra_commit_flags != 0))
+        // Capture immediately after the failing commit, before cleanup.
+        let err = VmemError::last_os_error();
+        // SAFETY: `region` reserved above, not yet handed out — release once.
+        unsafe { winapi_virtual_release(region_ptr) };
+        return Err(err);
     }
+    #[cfg(feature = "bench-internals")]
+    WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
+    // extra_commit_flags were applied successfully (committed != NULL)
+    // NOTE: This uses the requested flag, not the observed grant (no
+    // HUGE_SUPPORTED-style query on Windows). Per this crate's docs, the
+    // two-call path (align > 64 KiB) is currently unreachable in practice
+    // for MEM_LARGE_PAGES, so this is a documented-but-not-enforced invariant.
+    Ok((base, region, over, extra_commit_flags != 0))
 }
 
 #[cfg(all(windows, not(miri)))]
