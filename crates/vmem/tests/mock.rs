@@ -232,6 +232,60 @@ fn simulated_fault_reports_no_os_code() {
     );
 }
 
+/// task #902 (review finding U7, LOW): `decommit`/`decommit_lazy`'s contract
+/// is DELIBERATELY asymmetric with `recommit`/`commit_range` -- a
+/// contract-violating range (misaligned, or `start >= end`) is REJECTED with
+/// `false`/`Err` on the commit side (see `recommit_rejects_contract_violating_offsets`
+/// in `smoke.rs` and `commit_range_rejects_contract_violating_offsets` in
+/// `lazy_commit.rs`), but SILENTLY SKIPPED with no error at all on the
+/// decommit side (`lib.rs`'s `decommit`/`decommit_lazy`: `if start >= end ||
+/// !start.is_multiple_of(ps) || !end.is_multiple_of(ps) { return; }`) --
+/// intentional, documented in README.md as safe because `()` has no
+/// write-permitting sentinel to misuse. Nothing previously tested this
+/// silent-skip half at all: every decommit/decommit_lazy call site in this
+/// crate's tests/ passes a well-formed, `page_size()`-aligned range. A future
+/// contributor could "unify" the validation base from `page_size()` to the
+/// crate's `PAGE` constant (a plausible-looking simplification), or delete
+/// the guard outright, and the whole test suite would stay green with no
+/// test noticing -- this locks the silent-skip contract at the `mock`
+/// call-log layer: a misaligned, contract-violating `decommit` call must
+/// record NO `Call::Decommit` at all (not even a "rejected" variant -- true
+/// silence, matching the `()` return with no error channel).
+#[test]
+fn decommit_silently_skips_contract_violating_offsets() {
+    mock::reset();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let base = r.as_ptr();
+    // SAFETY: base is a live reservation; the call below is a contract
+    // VIOLATION (misaligned start, 1 is not a multiple of PAGE) that must be
+    // silently skipped before it reaches any recording/syscall path.
+    unsafe {
+        decommit(base, 1, PAGE);
+    }
+    let calls = mock::drain();
+    assert!(
+        !calls.iter().any(|c| matches!(c, Call::Decommit { .. })),
+        "a contract-violating decommit() call must record NO Call::Decommit \
+         at all (silent skip, not a recorded-then-rejected call): {calls:?}"
+    );
+
+    // Same assertion for the lazy variant, and also cover the `start >= end`
+    // (inverted/empty-looking but non-trivially-violating) shape alongside
+    // the misaligned-offset shape above.
+    mock::reset();
+    // SAFETY: same live reservation; `start > end` is also a contract
+    // violation per the same guard.
+    unsafe {
+        decommit_lazy(base, PAGE, 0);
+    }
+    let calls = mock::drain();
+    assert!(
+        !calls.iter().any(|c| matches!(c, Call::DecommitLazy { .. })),
+        "a contract-violating decommit_lazy() call must record NO \
+         Call::DecommitLazy at all: {calls:?}"
+    );
+}
+
 #[test]
 fn reset_clears_faults_and_log() {
     mock::reset();
