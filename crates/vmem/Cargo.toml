@@ -101,8 +101,9 @@ fault-injection = []
 # a real number) plus Windows-side counters for `win_reserve_commit` calls
 # split by fast/slow path (`aligned_vmem::windows_reserve_commit_single_calls()` /
 # `aligned_vmem::windows_reserve_commit_two_call_pairs()` — the fast path
-# issues a single syscall for `align <= 64 KiB`, the traditional path issues
-# two syscalls for `align > 64 KiB`), for cross-platform comparison. Mirrors
+# issues a single syscall for `align <= 64 KiB` on a full-span commit
+# (`commit_len == size`), the traditional path issues two syscalls for
+# larger alignments or a partial initial commit), for cross-platform comparison. Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the
