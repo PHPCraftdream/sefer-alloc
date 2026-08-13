@@ -100,7 +100,9 @@ fault-injection = []
 
 # Diagnostic-only path-activation counters (task #504, F11 step 1): a Unix
 # hit/total pair around `try_reserve_aligned_exact` (settles the "coin flip"
-# question from `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11 with
+# question from
+# https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md
+# F11 with
 # a real number) plus Windows-side counters for `win_reserve_commit` calls
 # split by fast/slow path (`aligned_vmem::windows_reserve_commit_single_calls()` /
 # `aligned_vmem::windows_reserve_commit_two_call_pairs()` — the fast path

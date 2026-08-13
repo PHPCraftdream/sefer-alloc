@@ -352,7 +352,13 @@ fn page_size_is_a_valid_os_page() {
 /// would fail by construction, not because of a real bug. Matches the
 /// `not(miri)` exclusion this crate's other real-OS-property assertions
 /// already use (e.g. the zero-fill assertion above, the madvise oracle
-/// below, `decommit_lazy_roundtrip`'s sibling in `lazy_commit.rs`).
+/// below, and this file's own
+/// `recommit_is_fallible_and_reports_success_on_the_happy_path`, whose
+/// `not(miri)`-gated zero-fill read is mirrored by
+/// `lazy_commit.rs`'s `sequential_commit_range_grows_incrementally` for the
+/// identical real-OS-zero-fill-vs-miri distinction -- corrected round 7,
+/// task #895/TC5, from a prior version of this comment that misnamed the
+/// precedent as `decommit_lazy_roundtrip`'s sibling, which does not exist).
 #[cfg(all(target_os = "macos", target_arch = "aarch64", not(miri)))]
 #[test]
 fn apple_silicon_page_size_is_16_kib() {
@@ -407,10 +413,20 @@ fn decommit_lazy_roundtrip() {
 /// `unix_madvise_successes() == unix_madvise_attempts() > 0` here proves the
 /// `madvise` SYSCALL ITSELF succeeded for both the eager (`decommit`,
 /// `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call
-/// sites on the next real macOS CI run -- ruling OUT H2 if it passes (the
-/// syscall did return 0), which then leaves H1 (advisory-only semantics) as
-/// the only remaining explanation for the stale byte, WITHOUT this crate
-/// having macOS hardware to run the confirmation on directly. Also restores
+/// sites -- ruling OUT H2 when it passes (the syscall did return 0), which
+/// then leaves H1 (advisory-only semantics) as the only remaining
+/// explanation for the stale byte, WITHOUT this crate having macOS hardware
+/// to run the confirmation on directly. **This test HAS now run and passed
+/// on real macOS CI** (round 7, task #895/TC6, correcting a prior version of
+/// this comment that still described the run as future work): CI run
+/// `31692217669`, job `94421845398` (`test macos (production)`, image
+/// `macos-26-arm64`), `unix_madvise_attempts() == unix_madvise_successes()
+/// == 2` -- H2 is ruled out. This does NOT by itself confirm H1: the
+/// stale-byte half of the H1 argument comes from a DIFFERENT CI run
+/// (`31676133649`, commit `e60e46a`, before this file's zero-fill assertion
+/// was scoped off Darwin); see `docs/CORRECTNESS_OPEN_ITEMS.md` item 48's
+/// Root-cause bullet for the full two-run wording -- keep this comment in
+/// sync with that bullet if either changes. Also restores
 /// the effect-observing coverage lost when commit 9c777bc scoped the
 /// zero-fill assertion off macOS in `decommit_recommit_roundtrip` above: that
 /// scoping meant NO test on any platform still observed whether macOS

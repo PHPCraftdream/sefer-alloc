@@ -259,7 +259,8 @@ pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 /// `DecommitKind::Lazy` — `MADV_FREE`/`MADV_FREE_REUSABLE`/`MADV_DONTNEED`
 /// fallback), NOT the separate `MADV_HUGEPAGE` hint call in
 /// `libc_madvise_hugepage`. Added by task #882 as the empirical oracle for
-/// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48: `libc_madvise` itself discards
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// item 48: `libc_madvise` itself discards
 /// `madvise`'s return value by design (task #719 — a failure there is not a
 /// memory-safety concern), so nothing else in the crate can currently tell
 /// apart "the syscall itself failed" from "the syscall succeeded but Darwin's
@@ -1120,10 +1121,17 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// [`decommit`] (see the "other Unix" case in the summary above — the arm
 /// that excludes macOS/iOS specifically, not "other Unix" in a general
 /// sense), so there it IS a true no-op like the eager path, on both axes.
-/// This tvOS/watchOS fallback is a limitation of this crate's current
-/// `madv_free_advice` cfg coverage, not a platform limitation:
-/// `MADV_FREE_REUSABLE` is XNU-wide, so all four Darwin targets could in
-/// principle use it (see `madv_free_advice`'s doc).
+/// This tvOS/watchOS fallback is this crate's current `madv_free_advice` cfg
+/// coverage (REASONED-FROM-SPEC, not verified on tvOS/watchOS hardware or a
+/// tvOS/watchOS build target -- neither is available to this crate's CI):
+/// `MADV_FREE_REUSABLE`'s numeric value is defined by XNU, the kernel all
+/// four Darwin targets share, so it MAY work identically there too; but
+/// tvOS/watchOS's userspace sandbox restrictions are unverified for this
+/// specific advice value, so this is a plausible widening candidate, not an
+/// established fact (see `madv_free_advice`'s doc and
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+/// item 48's S9 note, which must agree with this wording -- keep both in
+/// sync if either changes).
 ///
 /// **No fallible form:** this entry point is intentionally infallible, for the
 /// same safety rationale as [`decommit`]. The `()` return carries no
@@ -2203,9 +2211,11 @@ fn reserve_aligned_huge_raw(
 
 /// Select the lazy-decommit `madvise` advice for this platform.
 /// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; other Unix
-/// (including tvOS/watchOS, because this crate's `madv_free_advice`
-/// currently only names macOS and iOS — `MADV_FREE_REUSABLE` is XNU-wide,
-/// not a macOS/iOS-only capability): `MADV_DONTNEED`.
+/// (including tvOS/watchOS, because this crate's cfg coverage currently only
+/// names macOS and iOS -- `MADV_FREE_REUSABLE`'s value comes from XNU, the
+/// kernel all four Darwin targets share, so it MAY work identically on
+/// tvOS/watchOS too, but this is REASONED-FROM-SPEC and not verified on
+/// either target, see [`decommit_lazy`]'s doc): `MADV_DONTNEED`.
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
@@ -2238,7 +2248,11 @@ const MAP_PRIVATE: i32 = 0x02;
 // `_SC_PAGESIZE` table below (task #714) documents at length. `0x20` /
 // `0x40000` are `asm-generic/mman-common.h`'s values, correct on every
 // mainstream Linux architecture this crate targets (x86, x86_64, aarch64,
-// arm, riscv, powerpc — the tier-1/tier-2 targets). They are WRONG on MIPS:
+// arm, riscv, powerpc — every Linux architecture that uses
+// `asm-generic/mman-common.h`, which is all of them except MIPS, Alpha,
+// PA-RISC and Xtensa; NOT an exhaustive tier-1/tier-2 roster — s390x and
+// loongarch64 are tier-2 and also use `asm-generic/mman-common.h`, just not
+// named in this parenthetical -- round 7, task #895/TC9). They are WRONG on MIPS:
 // `arch/mips/include/uapi/asm/mman.h` defines `MAP_ANONYMOUS = 0x0800` and
 // `MAP_HUGETLB = 0x80000`; `0x20` on MIPS is actually the IRIX-compat
 // `MAP_RENAME`, which Linux ignores — so on `mips*-unknown-linux-*` (tier 3;
