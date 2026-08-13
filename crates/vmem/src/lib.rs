@@ -991,6 +991,17 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// a silent no-op: the caller's RSS does not decrease, and subsequent reads
 /// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
 /// instead if you need decommit functionality.
+///
+/// **macOS zero-fill gap (discovered 2026-08-13, first real-macOS CI run of
+/// this crate's non-mock test suite):** `MADV_DONTNEED` on Darwin is
+/// advisory-only for anonymous memory — unlike Linux, it does not reliably
+/// unmap the physical pages, so a decommit + [`recommit`] roundtrip on macOS
+/// can observe the OLD data still resident instead of a fresh zero page.
+/// This is the same "indistinguishable from a silent no-op" shape as the
+/// huge-page case above, but for ORDINARY (non-huge) reservations on macOS
+/// specifically. See `docs/CORRECTNESS_OPEN_ITEMS.md` for the open item; no
+/// fix is implemented yet (the real fix needs re-`mmap`(`MAP_FIXED`) over
+/// the range on macOS, a larger change deserving its own review round).
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     let ps = page_size();
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
@@ -2043,8 +2054,21 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: Dec
 // mock (task #646/F8): see decommit_pages_impl above.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
-    // On unix, re-access after MADV_DONTNEED is implicit — fresh zeroed pages on
-    // demand. No syscall, cannot fail.
+    // On Linux, re-access after MADV_DONTNEED is implicit — the kernel
+    // actually unmaps the physical pages, so the next write re-faults a
+    // fresh zero page. No syscall, cannot fail, on Linux.
+    //
+    // CAVEAT (discovered 2026-08-13, first real-macOS CI run of this crate's
+    // non-mock test suite — see docs/CORRECTNESS_OPEN_ITEMS.md): this does
+    // NOT hold on macOS. `madvise(MADV_DONTNEED)` on Darwin is advisory only
+    // for anonymous memory and does not reliably unmap/zero the pages, so a
+    // `decommit` + `recommit` roundtrip on macOS can observe the OLD data
+    // still resident — `decommit`'s "return physical backing to the OS"
+    // promise is silently unmet on macOS, the same shape as the already-
+    // documented huge-page no-op above `decommit`'s own doc comment. No fix
+    // implemented here (a real fix needs re-`mmap`(MAP_FIXED) over the range
+    // on macOS, a bigger change deserving its own review round); this
+    // comment and the test scoping below are the honest interim state.
     Ok(())
 }
 
