@@ -71,15 +71,20 @@ fn reservation_has_debug_output() {
 /// Pins `Reservation::is_huge()` to read the `granted_huge` field: the
 /// ordinary (non-huge) path hard-codes `granted_huge: false` as a literal
 /// two call frames up (`reserve_aligned` -> `try_reserve_aligned` ->
-/// `reserve_aligned_raw(..).map(...)`, `lib.rs:955-967`, the literal at
-/// `:963`), so this assertion is unconditionally true on every
-/// platform/feature combo and cannot fail against a regression on this
-/// path -- it is NOT a W2 regression guard. The real W2 regression test
-/// (non-Linux Unix used to return true for `reserve_aligned_huge`
-/// reservations) is `huge_pages.rs:61-62`'s
-/// `#[cfg(not(target_os = "linux"))] assert!(!r.is_huge())`, which calls
-/// the huge path and does fail if `HUGE_SUPPORTED` is reverted to an
-/// unconditional `true`.
+/// the `reserve_aligned_raw(..).map(..)` closure in `lib.rs` that builds
+/// `RawReservation`, where the `granted_huge: false` literal lives -- named
+/// by symbol rather than line number, task #908/V2C1, since two prior
+/// line-range citations here (`lib.rs:955-967`, `:963`) both drifted stale
+/// within one round of being written and were never caught until a third
+/// round's closing review), so this assertion is unconditionally true on
+/// every platform/feature combo and cannot fail against a regression on
+/// this path -- it is NOT a W2 regression guard. The real W2 regression
+/// test (non-Linux Unix used to return true for `reserve_aligned_huge`
+/// reservations) is `huge_pages.rs`'s
+/// `reserve_aligned_huge_ordinary_page_sized_request_succeeds`, whose
+/// `#[cfg(not(target_os = "linux"))] assert!(!r.is_huge())` calls the huge
+/// path and does fail if `HUGE_SUPPORTED` is reverted to an unconditional
+/// `true`.
 #[test]
 fn ordinary_reservation_never_reports_huge() {
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("ordinary reservation");
@@ -538,9 +543,14 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
 /// `madvise(2)` on any host where the OS page size exceeds `PAGE` (e.g. a 16
 /// KiB-page Apple Silicon host) -- `madvise` rejects the WHOLE call in that
 /// case (see `decommit`'s own rustdoc on the all-or-nothing failure mode),
-/// which this crate's `mock`-feature test suite has no way to observe at
-/// all, and which would go undetected on any CI runner whose OS page size
-/// happens to equal `PAGE` (the common case). Gated on any Unix (not just
+/// which this crate's `mock`-feature test suite cannot observe AS A REAL
+/// `madvise(2)` REJECTION (task #906/#908 added a mock-layer arm,
+/// `mock.rs`'s `decommit_silently_skips_contract_violating_offsets`, that
+/// observes the FORWARDING for both guards at the call-log layer instead --
+/// the syscall's own EINVAL failure remains observable only here, at the
+/// real-syscall layer), and which would go undetected on any CI runner
+/// whose OS page size happens to equal `PAGE` (the common case). Gated on
+/// any Unix (not just
 /// macOS): `unix_madvise_attempts()`'s counters are `unix`-wide, matching
 /// `macos_decommit_madvise_syscall_actually_succeeds` above's own note that a
 /// Linux instance of this style of assertion was a known gap.
