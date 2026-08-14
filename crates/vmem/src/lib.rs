@@ -1662,15 +1662,12 @@ fn win_reserve_commit(
                             PAGE_READWRITE,
                         );
                         match NonNull::new(plain as *mut u8) {
-                            Some(n) => {
-                                #[cfg(feature = "bench-internals")]
-                                WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
-                                return Ok((n, n, commit_len, false)); // Fallback to ordinary pages
-                            }
+                            Some(n) => n,
                             None => return Err(VmemError::last_os_error()),
                         }
+                    } else {
+                        return Err(VmemError::last_os_error());
                     }
-                    return Err(VmemError::last_os_error());
                 }
             }
         };
@@ -1686,6 +1683,9 @@ fn win_reserve_commit(
         // a real runtime check, not a debug_assert: release builds are exactly where
         // an unverified constant matters (CLAUDE.md's R26-4 rule: debug_assert compiles
         // out of --release).
+        // task #921/V-6: this check applies to BOTH the initial allocation AND any
+        // retry fallback - we never return without verifying alignment, even on the
+        // retry path that strips extra_commit_flags (e.g. MEM_LARGE_PAGES).
         if !base.as_ptr().addr().is_multiple_of(align) {
             // SAFETY: `base` was just allocated with VirtualAlloc(MEM_RESERVE | MEM_COMMIT)
             // and has not been released yet; releasing before handing to a caller prevents
@@ -1697,26 +1697,79 @@ fn win_reserve_commit(
             WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
             // Single-call path: base == region (no over-reserve).
             // Return (base, base, commit_len, granted_huge).
+            // NOTE: granted_huge is `extra_commit_flags != 0`, not a runtime check
+            // - this matches the fast path's assumption that MEM_COMMIT | extra_commit_flags
+            // succeeded. If Windows stripped the flag silently (unlikely for MEM_RESERVE |
+            // MEM_COMMIT + MEM_LARGE_PAGES, which fails hard), granted_huge would be wrong,
+            // but this matches the existing contract where we don't query the actual grant.
             return Ok((base, base, commit_len, extra_commit_flags != 0));
         }
     }
 
     // Two-call path (align > 64 KiB, or a partial initial commit, or single-call
     // alignment check failed).
-    let over = size
-        .checked_add(align)
-        .ok_or_else(VmemError::invalid_argument)?;
-    let region = unsafe {
-        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
-        // reserves (but does not commit) `over` bytes of address space,
-        // returning the base or NULL on OOM/refusal. NULL is checked below.
-        let p = winapi_virtual_reserve(over);
-        match NonNull::new(p as *mut u8) {
-            Some(n) => n,
-            // Nothing was reserved; no cleanup needed, so capturing here is
-            // already the immediate-capture the task requires.
-            None => return Err(VmemError::last_os_error()),
+    // task #921/V-32: when align <= WIN_ALLOCATION_GRANULARITY, try a fast-reserve
+    // path: VirtualAlloc(NULL, size, MEM_RESERVE, ...) may return a base already
+    // aligned to the requested alignment, avoiding the size+align over-reserve overhead.
+    // If it's not aligned, we release it and fall through to the over-reserve path.
+    let (region, over) = if align <= WIN_ALLOCATION_GRANULARITY {
+        let candidate = unsafe {
+            // SAFETY: `VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_READWRITE)`
+            // reserves (but does not commit) `size` bytes of address space,
+            // returning the base or NULL on OOM/refusal. NULL is checked below.
+            let p = winapi_virtual_reserve(size);
+            match NonNull::new(p as *mut u8) {
+                Some(n) => n,
+                // Nothing was reserved; no cleanup needed, so capturing here is
+                // already the immediate-capture the task requires.
+                None => return Err(VmemError::last_os_error()),
+            }
+        };
+        let candidate_ptr = candidate.as_ptr();
+        // Check if the reserved region happens to already be aligned to `align`.
+        // VirtualAlloc(NULL, ...) returns a base aligned to WIN_ALLOCATION_GRANULARITY
+        // (64 KiB), so this check often succeeds for `align <= 64 KiB` cases.
+        if candidate_ptr.addr().is_multiple_of(align) {
+            // Fast-reserve succeeded: use `size` directly, no over-reserve needed.
+            // The aligned base equals the region base (no offset).
+            (candidate, size)
+        } else {
+            // Aligned candidate won't work; release it and fall through to the
+            // size+align over-reserve path below.
+            // SAFETY: `candidate` was just reserved with `MEM_RESERVE` and has not
+            // been released yet; releasing before falling back prevents a leak.
+            unsafe { winapi_virtual_release(candidate_ptr) };
+            // Continue to the over = size + align path.
+            let over = size
+                .checked_add(align)
+                .ok_or_else(VmemError::invalid_argument)?;
+            let region = unsafe {
+                // SAFETY: same as the reserve call above, for `over` bytes.
+                let p = winapi_virtual_reserve(over);
+                match NonNull::new(p as *mut u8) {
+                    Some(n) => n,
+                    None => return Err(VmemError::last_os_error()),
+                }
+            };
+            (region, over)
         }
+    } else {
+        let over = size
+            .checked_add(align)
+            .ok_or_else(VmemError::invalid_argument)?;
+        let region = unsafe {
+            // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
+            // reserves (but does not commit) `over` bytes of address space,
+            // returning the base or NULL on OOM/refusal. NULL is checked below.
+            let p = winapi_virtual_reserve(over);
+            match NonNull::new(p as *mut u8) {
+                Some(n) => n,
+                // Nothing was reserved; no cleanup needed, so capturing here is
+                // already the immediate-capture the task requires.
+                None => return Err(VmemError::last_os_error()),
+            }
+        };
+        (region, over)
     };
     let region_ptr = region.as_ptr();
     // task #717: `.addr()` reads the address without exposing provenance
@@ -1751,14 +1804,8 @@ fn win_reserve_commit(
     // SAFETY: `[base_addr, base_addr+commit_len)` is within the just-reserved
     // region (`commit_len <= size`, validated by callers); `MEM_COMMIT` commits
     // exactly this aligned sub-range. NULL indicates commit-charge exhaustion.
-    let committed = unsafe {
-        VirtualAlloc(
-            base.as_ptr().cast(),
-            commit_len,
-            MEM_COMMIT | extra_commit_flags,
-            PAGE_READWRITE,
-        )
-    };
+    let committed =
+        unsafe { VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE) };
     if committed.is_null() {
         if extra_commit_flags != 0 {
             // Best-effort large pages: retry the commit with ordinary pages.
@@ -1786,12 +1833,13 @@ fn win_reserve_commit(
     }
     #[cfg(feature = "bench-internals")]
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
-    // extra_commit_flags were applied successfully (committed != NULL)
-    // NOTE: This uses the requested flag, not the observed grant (no
-    // HUGE_SUPPORTED-style query on Windows). Per this crate's docs, the
-    // two-call path (align > 64 KiB) is currently unreachable in practice
-    // for MEM_LARGE_PAGES, so this is a documented-but-not-enforced invariant.
-    Ok((base, region, over, extra_commit_flags != 0))
+    // task #921/V-7: the two-call path never requests MEM_LARGE_PAGES (always plain
+    // MEM_COMMIT), so granted_huge is always false here. Only the single-call fast path
+    // (align <= WIN_ALLOCATION_GRANULARITY) can grant huge pages.
+    // NOTE: MEM_LARGE_PAGES on a pre-reserved (not pre-committed-with-large-pages) region
+    // is empirically always rejected by Windows, so requesting it would be a guaranteed
+    // wasted syscall anyway.
+    Ok((base, region, over, false))
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -1959,14 +2007,23 @@ unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a committed region.
-    VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
+    // task #921/V-8: the return value is deliberately discarded. A failure here would
+    // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
+    // and the failure mode is a leak, never unsafety. The failure is known to be reachable
+    // in practice (e.g. the huge-page decommit case documented around lib.rs:1093), so
+    // this is not a theoretical concern.
+    let _ = VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
 }
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_release(addr: *mut u8) {
     // SAFETY: caller guarantees `addr` is the base of a `MEM_RESERVE` region;
     // `MEM_RELEASE` + size 0 releases the entire reservation.
-    VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE);
+    // task #921/V-8: the return value is deliberately discarded. A failure here would
+    // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
+    // and the failure mode is a leak, never unsafety (the mapping stays valid, just not
+    // returned to the OS).
+    let _ = VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE);
 }
 
 // ===========================================================================
