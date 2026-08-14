@@ -1012,7 +1012,7 @@ fn from_raw_parts_rejects_base_below_reservation_immediately() {
     // specific assert message. The process never reaches a point where this
     // "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw.sub(1), PAGE, raw, raw_len, align)
+        Reservation::from_raw_parts(raw.wrapping_sub(1), PAGE, raw, raw_len, align)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
