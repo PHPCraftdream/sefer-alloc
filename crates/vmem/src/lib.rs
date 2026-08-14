@@ -370,6 +370,39 @@ pub fn reset_bench_internals_counters() {
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
 }
 
+/// Validate a queried OS page size, falling back to PAGE if the value is invalid.
+///
+/// This function is pure and has no OS dependencies, making it directly testable.
+/// It guards against:
+/// - A queried value of 0
+/// - A non-power-of-two value
+/// - A value smaller than PAGE (4 KiB), which indicates `query_os_page_size()`
+///   read the wrong sysconf(3) parameter entirely (e.g., a wrong `_SC_PAGESIZE`
+///   constant on an untested target).
+///
+/// The OS page size is never smaller than PAGE on any target this crate supports,
+/// so a queried value below it indicates a broken query. A hostile/broken value
+/// would otherwise corrupt every rounding computation downstream, so we fall back
+/// to the safe default PAGE.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[inline]
+#[must_use]
+pub fn validate_page_size_public(queried: usize) -> usize {
+    validate_page_size_impl(queried)
+}
+
+/// Internal implementation of page size validation.
+#[inline]
+#[must_use]
+fn validate_page_size_impl(queried: usize) -> usize {
+    if queried >= PAGE && queried.is_power_of_two() {
+        queried
+    } else {
+        PAGE
+    }
+}
+
 /// Return the OS page size in bytes, querying the OS once and caching the
 /// result.
 ///
@@ -392,20 +425,7 @@ pub fn page_size() -> usize {
         return cached;
     }
     let queried = query_os_page_size();
-    // Guard against an OS returning 0, a non-power-of-two, or (task #714) a
-    // value smaller than PAGE (4 KiB) -- the OS page size is never smaller
-    // than PAGE on any target this crate supports, so a queried value below
-    // it indicates `query_os_page_size()` read the wrong sysconf(3)
-    // parameter entirely (exactly the failure mode a wrong `_SC_PAGESIZE`
-    // constant on an untested target produces: a plausible-looking
-    // power-of-two answer to a DIFFERENT question). A hostile/broken value
-    // would otherwise corrupt every rounding computation downstream. Fall
-    // back to PAGE.
-    let value = if queried >= PAGE && queried.is_power_of_two() {
-        queried
-    } else {
-        PAGE
-    };
+    let value = validate_page_size_impl(queried);
     PAGE_SIZE_CACHE.store(value, Ordering::Relaxed);
     value
 }

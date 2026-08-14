@@ -145,8 +145,9 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// `WIN_ALLOCATION_GRANULARITY` threshold. The test asserts:
 /// - the returned `Reservation`'s `as_ptr()` is non-null and aligned to 64 KiB;
 /// - the memory is writable (write a byte, read it back);
-/// - we do NOT hard-assert `is_huge()` one way or the other, since privilege
-///   availability (e.g. `SeLockMemoryPrivilege`) varies by host.
+/// - `is_huge()` is `false`: `GetLargePageMinimum()` returns 2 MiB on x86_64,
+///   so a 64 KiB `MEM_LARGE_PAGES` request can NEVER succeed regardless of
+///   privilege — the assertion is safe by construction, not by host configuration.
 ///
 /// Note: the V-6 alignment check (task #921) is unobservable on a conforming
 /// Windows host and is NOT regression-tested by this or any test in this crate —
@@ -170,8 +171,14 @@ fn reserve_aligned_huge_64k_single_call_path() {
         assert_eq!(base.read(), 0xAB, "written byte must read back");
     }
 
-    // We do NOT assert on `is_huge()` because privilege availability varies:
-    // some hosts have `SeLockMemoryPrivilege` and genuinely grant huge pages,
-    // most don't and fall back to ordinary pages. Either behavior is correct
-    // under the crate's best-effort contract.
+    // This assertion is safe unconditionally: GetLargePageMinimum() returns 2 MiB
+    // on x86_64, so a 64 KiB request can NEVER succeed regardless of privilege.
+    // If this assertion fails, it's the W-1 bug (task #949): Reservation::is_huge()
+    // incorrectly returns true after a Windows large-page request failed and fell
+    // back to ordinary pages.
+    assert!(
+        !r.is_huge(),
+        "is_huge() must be false for 64 KiB: GetLargePageMinimum() is 2 MiB, so a \
+         64 KiB MEM_LARGE_PAGES request cannot succeed by construction"
+    );
 }
