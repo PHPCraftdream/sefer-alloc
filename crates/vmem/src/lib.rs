@@ -176,10 +176,17 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 // - Unix: `unix_reserve` tries an EXACT-size `mmap` first
 //   (`try_reserve_aligned_exact`) and only falls through to the over-reserve
 //   path on a miss (wrong alignment), keeping the full `size + align` mapping.
-//   The survey (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11) computed this
-//   fast path is a net syscall LOSS below a 50% hit rate but noted "nothing
-//   anywhere counts this" — `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle it
-//   with a real number instead of the theoretical bound.
+//   The fast path costs 1 syscall on a hit (mmap) vs 3 on a miss (mmap +
+//   munmap + mmap for the over-reserve). Expected cost = `p*1 + (1-p)*3 =
+//   3 - 2p` syscalls vs a flat 1 without the fast path. This exceeds 1 for
+//   every hit rate p < 1 — the break-even is 100%, not the 50% bound from
+//   `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11, which assumed
+//   the OLD over-reserve path issued TWO munmap trim calls (removed by task
+//   #842). At real hit rates (34.4%-56.7%, see lib.rs:882-885) this is
+//   87%-131% MORE syscall traffic than not having the fast path at all.
+//   What the fast path still buys is address-space economy on 32-bit targets
+//   (exact-size mapping instead of `size + align`), not syscall savings.
+//   `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle the real hit rate.
 // - Windows: `win_reserve_commit` issues reserve+commit in either
 //   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
 //   (`commit_len == size`), over-reserving nothing — base == region)
@@ -2111,9 +2118,11 @@ fn unix_reserve(
     // instead of two at potentially misaligned offsets. Cost: up to `align`
     // bytes of untouched VA held for the reservation's lifetime (no RSS).
     #[cfg(feature = "huge-pages")]
-    if huge {
+    if granted_huge {
         // SAFETY: `base` is the start of a live `size`-byte mapping; a
         // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
+        // Only issued when huge pages were actually granted (MAP_HUGETLB
+        // succeeded), not on the ordinary-page fallback path.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
     Ok((
@@ -2207,6 +2216,9 @@ fn try_reserve_aligned_exact(
     }
     // `granted_huge` reflects what was actually requested AND what the OS supports.
     // On non-Linux Unix the `huge` flag is silently ignored, so we report false.
+    // This is correct because `MAP_HUGETLB` fails the WHOLE `mmap` call when
+    // 2 MiB hugetlb pages are unavailable (an all-or-nothing kernel behavior),
+    // so "the caller asked for huge and mmap succeeded" implies a grant.
     Ok((base, base, size, HUGE_SUPPORTED && huge))
 }
 
