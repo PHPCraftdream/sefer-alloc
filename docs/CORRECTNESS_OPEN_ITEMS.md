@@ -83,6 +83,30 @@ scoping decision is the pending step, not implementation).
    - **Status:** RESOLVED — no code/process change needed beyond this clarifying note, so a future round does not re-investigate the apparent conflict from scratch. Round 8's two review docs (`docs/reviews/2026-08-13-aligned-vmem-round8-review.md`, `...-round8-closing-review.md`) are committed in the same commit as this note, per this campaign's own established convention.
    - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC2; `git log --oneline -- docs/reviews/2026-08-12-aligned-vmem-round3-review.md` etc. (all four prior rounds' docs resolve to real commits); `CHANGELOG.md`'s R34-2 bullet (the root-crate campaign's stated convention).
 
+42. **URGENT — `aligned-vmem`'s `mock` Cargo-feature-unification
+    hazard was resolved with a doc-only fix, explicitly deferring a
+    stronger `--cfg`-flag conversion; the SAME finding recurs in
+    `numa-shim` and the deferral is load-bearing for that crate's own
+    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
+    review of the aligned-vmem round; moved into this tier 2026-08-14,
+    task #934/C-9 — see below for why.)
+
+    - **Status:** UNRESOLVED and URGENT — the manifest's own doc comment states
+      the conversion window "stays free only until 0.2.0 ships" (task #658),
+      and that deadline is effectively NOW (0.2.0 is queued for publish).
+      See "Recently resolved" section item 3 for the prior deferral context.
+      Moved from `[T]` to `[A]` in this same edit: the item's own stated
+      "Next trigger" below has now fired, so per this file's own
+      current-state-card convention it must not sit in a tier implying it
+      needs no imminent action.
+    - **Next trigger:** settle the `--cfg` conversion decision before 0.2.0
+      publishes if it is going to be settled at all. This is a maintainer
+      call requiring a real design choice, not a mechanical indexing task.
+    - **Evidence:** `crates/vmem/Cargo.toml:62-87` (the `mock = []` feature
+      comment, which explicitly names the 0.2.0 deadline);
+      `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-22;
+      `docs/reviews/2026-08-14-aligned-vmem-round11-closing-review.md` finding C-9.
+
 ### [T] Tracked, not yet actioned
 
 _(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
@@ -1883,25 +1907,6 @@ resolved" below.)_
       The compilation blocker (sub-item #3) is now guarded by a
       `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`
       gate in the `aligned-vmem-gates` job.
-
-42. **[A] URGENT — `aligned-vmem`'s `mock` Cargo-feature-unification
-    hazard was resolved with a doc-only fix, explicitly deferring a
-    stronger `--cfg`-flag conversion; the SAME finding recurs in
-    `numa-shim` and the deferral is load-bearing for that crate's own
-    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
-    review of the aligned-vmem round.)
-
-    - **Status:** UNRESOLVED and URGENT — the manifest's own doc comment states
-      the conversion window "stays free only until 0.2.0 ships" (task #658),
-      and that deadline is effectively NOW (0.2.0 is queued for publish).
-      See "Recently resolved" section item 3 for the prior deferral context.
-    - **Next trigger:** settle the `--cfg` conversion decision before 0.2.0
-      publishes if it is going to be settled at all. This is a maintainer
-      call requiring a real design choice, not a mechanical indexing task.
-    - **Evidence:** `crates/vmem/Cargo.toml:62-87` (the `mock = []` feature
-      comment, which explicitly names the 0.2.0 deadline);
-      `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-22;
-      `docs/reviews/2026-08-14-aligned-vmem-round11-closing-review.md` finding C-9.
 
 43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
     constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
