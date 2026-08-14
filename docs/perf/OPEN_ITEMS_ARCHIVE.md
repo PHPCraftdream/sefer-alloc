@@ -1827,3 +1827,48 @@ lived inline).*
   `R29_13_LARGE_CACHE_RETENTION_GATE.md` §9,
   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §9,
   `R29_5_PROMOTION_FREQUENCY_GATE.md` §9.
+
+- **R-V20-849 — Unix exact-reserve hit rate (aligned-vmem, WSL2 only) — `docs/perf/OPEN_ITEMS.md`'s own former item 46.** Resolved by `aligned-vmem` round 2 task #944 (finding P-1), 2026-08-14.
+
+  > **Current state**
+  > - **Status:** re-evaluation required (finding V-1 invalidated prior cost model).
+  > - **Current number/verdict:** 30-run aggregate on WSL2 (Hyper-V-backed kernel) found 4 MiB alignment hit rate = 272/480 = **56.6667%**, not the ~0.1% the review predicted. Other regimes: 4 KiB = 480/480 (100%), 64 KiB = 165/480 (34.375%), 1 MiB = 224/480 (46.6667%). **However**, the prior conclusion that "the exact-mmap fast path is very likely still a net win" is based on an invalidated cost model: it assumed the fast path breaks even at a 50% hit rate (from `SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11), but task #842 removed the two munmap trim calls from the over-reserve path. With the trims gone, the fast path costs 1 syscall on a hit vs 3 on a miss (expected cost `3 - 2p` vs a flat 1 without the fast path), which exceeds 1 for EVERY hit rate p < 1 — the break-even is 100%, not 50%. At real hit rates (34.4%-56.7%), the fast path incurs 87%-131% MORE syscall traffic than not having it at all. What the fast path still buys is address-space economy on 32-bit targets (exact-size mapping instead of `size + align`), not syscall savings.
+  > - **Next trigger:** re-evaluate whether the fast path should be kept, disabled, or gated on a 32-bit target check. The pre-release review (task #920, finding V-1) flags this as requiring a fresh decision based on the corrected arithmetic; the old "very likely still a net win" conclusion no longer holds.
+  > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`, `crates/vmem/src/lib.rs`:176-194 (updated fast-path rationale comment with corrected syscall-cost arithmetic).
+  > - **Cross-reference (origin):** task #849 (commit `35d51e6`), `docs/reviews/2026-08-12-aligned-vmem-post-campaign-closing-review.md` finding W15, task #920 (this update, finding V-1).
+  >
+  > **Mechanism to include in a future remeasurement (round 6/task #883, review finding S12 — unmeasured, not a recommendation to implement, recorded so a future bare-metal remeasurement includes this mechanism):**
+  > `docs/perf/ALIGNED_VMEM_VIRTUALALLOC2_VA_OPTIMIZATION_OPPORTUNITY.md` covers
+  > Windows `VirtualAlloc2` and BSD `MAP_ALIGNED(n)` as fast-path mechanisms, but
+  > neither covers Linux or macOS — the two platforms this item's own WSL2 numbers
+  > above actually measure, where the 43-66% miss rate outside the page-size regime
+  > (64 KiB = 34.375%, 1 MiB = 46.6667%, 4 MiB = 56.6667% hit) still costs 3 syscalls
+  > (`mmap(size)` → `munmap` → `mmap(size + align)`) plus a permanent `align` bytes of
+  > VA held for the reservation's lifetime on every miss. One mechanism not
+  > considered anywhere in the existing design note: on a miss, before falling back
+  > to over-reserve, retry `mmap(align_up(p, align), size, …)` with a
+  > non-`MAP_FIXED` hint address. Both Linux and Darwin honour a hint address when
+  > the range is free and silently ignore it otherwise, so the retry is sound by
+  > construction (the existing alignment check already validates the result); cost
+  > on a retry-hit is still 3 syscalls but the mapping is exact-size (no permanent
+  > `align`-byte VA overhead), and cost on a retry-miss is one extra `mmap`/`munmap`
+  > pair before the existing fallback. `UNIX_EXACT_RESERVE_ATTEMPTS`/
+  > `UNIX_EXACT_RESERVE_HITS` and `examples/v20_849_unix_exact_reserve_hit_rate.rs`
+  > already run the 30-independent-process methodology this item used; a third
+  > counter for "hint retry hit" would produce a real number from the same harness.
+  > **Plumbing gap (round 7/task #894, review finding T10 — not implemented,
+  > recorded so a future implementer does not re-derive it on contact):** the
+  > hint address `p` this mechanism wants to retry from is currently discarded
+  > before the caller can see it — `try_reserve_aligned_exact`
+  > (`crates/vmem/src/lib.rs`), on an alignment miss, munmaps the region and
+  > returns `Err(VmemError::invalid_argument())` with no address, so its
+  > caller `unix_reserve` has nothing to hint from; implementing S12 first
+  > requires widening `try_reserve_aligned_exact`'s error channel (or return
+  > type) to carry the missed address. The current munmap-before-return
+  > ordering is fine/intentional (any future hint would necessarily target an
+  > already-freed range) — worth stating explicitly so a future implementer
+  > does not instead try to read the address before the munmap.
+  > Full history: task #857 (this entry); S12 mechanism added task #883; T10
+  > plumbing note added task #894.
+
+  **Closed (`aligned-vmem` round 2, task #944/P-1, 2026-08-14):** the item's own "next trigger" above — kept, disabled, or gated on a 32-bit target check — is exactly what shipped. `try_reserve_aligned_exact` is now `#[cfg(target_pointer_width = "32")]`-only; `unix_reserve` always over-reserves on 64-bit. Justified by the same deterministic syscall-counting math this item's own "Current number/verdict" already established (expected cost `3 - 2p` exceeds the flat 1-syscall over-reserve cost for every hit rate `p < 1`), not a fresh empirical measurement — removing an always-pessimizing path cannot make things worse on 64-bit; the fast path is kept on 32-bit, where VA economy (this item's own stated remaining benefit) still matters. The S12 hint-retry mechanism directly above remains OPEN and UNIMPLEMENTED — it targets the miss cost of a fast path that still exists on 32-bit and would still apply there; on 64-bit the fast path this mechanism would improve no longer exists at all. Independently re-flagged (without knowledge of this item, per that review's isolation rules) as finding P-2 in `docs/reviews/2026-08-14-aligned-vmem-pre-release-review-round2.md` — see `CHANGELOG.md`'s round-2 entry for P-2's current disposition (still deferred, needs its own fresh measurement). See `CHANGELOG.md`'s `aligned-vmem` round 2 entry for the full task #944 verification.

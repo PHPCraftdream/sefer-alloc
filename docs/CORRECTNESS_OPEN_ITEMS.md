@@ -2229,6 +2229,13 @@ resolved" below.)_
      itself, which now documents the exposure honestly rather than claiming
      a fix that does not exist).
 
+56. **[T, LOW] `scripts/vmem-doc-drift-guard.mjs` false-positives on `from_raw_parts`'s "insufficient whenever the reservation was over-reserved" sentence** (Discovered 2026-08-14, task #950, during round-2 fix-pass verification — pre-existing, not introduced by round 2; confirmed still present against the pre-round-2 base commit `6f94f89`.)
+
+    - **Status:** OPEN — a guard false-positive, not a doc-content defect; `node scripts/vmem-doc-drift-guard.mjs` currently FAILs on a clean tree.
+    - **Current-number-or-verdict:** the guard FAILs on two near-identical sentences (`crates/vmem/src/lib.rs:1017` and `:1042`, both inside `from_raw_parts`'s rustdoc): "`ReservationParts` alone is insufficient whenever the reservation was over-reserved for alignment." The guard's own documented heuristic (`scripts/vmem-doc-drift-guard.mjs`'s header comment) treats a sentence as a violation unless it contains a scope word from a fixed list (`if/when/unless/may/miss/fast-path/slow-path/fallback/<=/>=/etc`) — the sentence's actual qualifier, "whenever", does not literally match any list entry (`when` as a standalone word does, but the guard's matcher appears not to treat `whenever` as containing it), even though the sentence IS already correctly conditional in plain English ("insufficient WHENEVER over-reserved" correctly implies "sufficient when NOT over-reserved", not an unconditional claim). This is the guard's own documented "KNOWN LIMITATION" class (its header comment: "the SCOPE list is a heuristic that will require point additions as the text evolves... not exhaustive") — the guard needs one more scope word (`whenever`) added to its list, not a doc-comment rewrite.
+    - **Next trigger:** add `whenever` to `scripts/vmem-doc-drift-guard.mjs`'s scope-word list and re-verify the guard passes without touching `lib.rs`'s prose (the fastest fix); or reword the two sentences to use a word already on the list, if a future task finds the guard's own word list is intentionally conservative and shouldn't grow.
+    - **Evidence:** `node scripts/vmem-doc-drift-guard.mjs` run against both `6f94f89` (pre-round-2) and the round-2-merged tree, identical FAIL output both times; `crates/vmem/src/lib.rs:1017,1042`; `scripts/vmem-doc-drift-guard.mjs`'s own header comment (the scope-word list and its documented "KNOWN LIMITATION" #2).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
