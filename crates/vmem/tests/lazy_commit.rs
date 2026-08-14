@@ -360,3 +360,48 @@ fn sequential_commit_range_grows_incrementally() {
         }
     }
 }
+
+/// Round 2 pre-release review, task #949 (T-1): Windows `reserve_aligned_lazy` actually saves
+/// commit charge. Every existing test in this file would pass verbatim even if
+/// `reserve_aligned_lazy_raw` simply forwarded to the eager path internally
+/// (which is literally what the Unix/miri/mock backends already do). This test
+/// uses the `bench-internals` oracles to verify that the Windows two-call path
+/// is actually taken when `commit_len != size`, pinning the `commit_len == size`
+/// guard in `win_reserve_commit` that a prior bug already broke once.
+#[test]
+#[cfg(all(windows, feature = "bench-internals"))]
+fn windows_lazy_reserve_saves_commit_charge() {
+    // Use a small initial commit to force the two-call path (commit_len != size).
+    let span = 4 * MIB;
+    let initial = PAGE; // 4 KiB initial commit, far less than span
+
+    aligned_vmem::reset_bench_internals_counters();
+    let before_two_call = aligned_vmem::windows_reserve_commit_two_call_pairs();
+    let before_single_call = aligned_vmem::windows_reserve_commit_single_calls();
+
+    let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
+
+    let after_two_call = aligned_vmem::windows_reserve_commit_two_call_pairs();
+    let after_single_call = aligned_vmem::windows_reserve_commit_single_calls();
+
+    // The two-call-pairs counter must have incremented (we took the lazy path).
+    assert_eq!(
+        after_two_call,
+        before_two_call + 1,
+        "reserve_aligned_lazy with small initial_commit must take the two-call path"
+    );
+
+    // The single-call counter must NOT have incremented.
+    assert_eq!(
+        after_single_call, before_single_call,
+        "reserve_aligned_lazy with small initial_commit must NOT take the single-call path"
+    );
+
+    // Verify the reservation actually works (write/read the committed region).
+    let base = r.as_ptr();
+    // SAFETY: first `initial` bytes are committed.
+    unsafe {
+        base.write(0xAA);
+        assert_eq!(base.read(), 0xAA);
+    }
+}

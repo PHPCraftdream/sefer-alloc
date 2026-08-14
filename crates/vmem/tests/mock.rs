@@ -400,3 +400,22 @@ fn reentrancy_guard_silently_drops_nested_calls() {
     // Reserve + Decommit + Recommit + Release
     assert_eq!(calls.len(), 4, "full operation sequence recorded correctly");
 }
+
+/// Round 2 pre-release review, task #949 (T-4): `release(NULL, ...)` early-return is
+/// documented but untested. The docs state that `release` returns early and
+/// does nothing when `reservation` is null, and that the mock recorder is
+/// also skipped in that case. This test verifies both halves.
+#[test]
+fn release_null_is_noop_and_not_recorded() {
+    mock::reset();
+    // SAFETY: passing null is explicitly documented as a no-op early-return.
+    unsafe {
+        aligned_vmem::release(core::ptr::null_mut(), 2 * MIB, PAGE);
+    }
+    // The call log must NOT contain a Release entry (the recorder was skipped).
+    let calls = mock::drain();
+    assert!(
+        calls.is_empty(),
+        "release(NULL, ...) must not record a Release entry (it's a no-op): {calls:?}"
+    );
+}

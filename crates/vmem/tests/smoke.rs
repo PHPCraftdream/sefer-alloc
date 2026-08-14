@@ -286,6 +286,59 @@ fn decommit_recommit_roundtrip() {
     }
 }
 
+/// Round 2 pre-release review, task #949 (T-3): decommit/recommit on an over-reserved span
+/// (nonzero head offset). Every existing decommit/recommit test uses `size ==
+/// align`, which takes a zero-offset path. This test uses `align = 4 * size`
+/// to force `base > reservation` by a nonzero head offset, confirming that
+/// `base.add(start)` arithmetic works against a genuinely offset base.
+#[test]
+fn decommit_recommit_roundtrip_on_over_reserved_span() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // Use align = 4 * size to force a nonzero head offset on over-reserve paths.
+    let size = PAGE; // 4 KiB
+    let align = 4 * size; // 16 KiB
+    let r = reserve_aligned(size, align).expect("reserve with align > size");
+    let base = r.as_ptr();
+
+    // Write/read at an offset within the span to confirm the base arithmetic works.
+    let offset = size / 2; // 2 KiB offset (still page-aligned for decommit)
+                           // SAFETY: base is valid for `size` bytes; offset is within that range.
+    unsafe {
+        base.add(offset).write(0x88);
+        assert_eq!(base.add(offset).read(), 0x88, "initial write/read works");
+
+        // Decommit and recommit at that offset.
+        aligned_vmem::decommit(base, 0, size);
+        assert!(
+            recommit(base, 0, size),
+            "recommit of decommitted range on an over-reserved span succeeds"
+        );
+
+        // Verify zero-fill (same exclusions as decommit_recommit_roundtrip above).
+        #[cfg(not(any(
+            miri,
+            feature = "mock",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos"
+        )))]
+        assert_eq!(
+            base.add(offset).read(),
+            0,
+            "recommitted page on over-reserved span must be zeroed"
+        );
+
+        // Write and read again to confirm the offset arithmetic still works.
+        base.add(offset).write(0x99);
+        assert_eq!(
+            base.add(offset).read(),
+            0x99,
+            "post-recommit write/read works"
+        );
+    }
+}
+
 #[test]
 fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
     // Non-regression for the fallible `recommit` API (bug-hunt 2026-07-09):
@@ -437,6 +490,31 @@ fn page_size_is_a_valid_os_page() {
     // Cached: a second call returns the same value.
     assert_eq!(page_size(), ps);
     assert_eq!(PAGE, 4096);
+}
+
+/// Round 2 pre-release review, task #949 (T-5): `validate_page_size_public()`'s fallback-validation
+/// branch (for wrong `_SC_PAGESIZE` constants on untested BSDs) is now testable.
+#[test]
+#[cfg(feature = "bench-internals")]
+fn validate_page_size_falls_back_on_invalid_values() {
+    // Zero is invalid (OS query failure).
+    assert_eq!(aligned_vmem::validate_page_size_public(0), PAGE);
+    // Non-power-of-two is invalid.
+    assert_eq!(aligned_vmem::validate_page_size_public(5), PAGE);
+    // Value smaller than PAGE is invalid (wrong sysconf parameter).
+    assert_eq!(aligned_vmem::validate_page_size_public(2048), PAGE); // 2 KiB < 4 KiB PAGE
+                                                                     // Valid value (4 KiB) passes through.
+    assert_eq!(aligned_vmem::validate_page_size_public(PAGE), PAGE);
+    // Valid value (16 KiB, Apple Silicon) passes through.
+    assert_eq!(
+        aligned_vmem::validate_page_size_public(16 * 1024),
+        16 * 1024
+    );
+    // Valid value (64 KiB, some Linux configs) passes through.
+    assert_eq!(
+        aligned_vmem::validate_page_size_public(64 * 1024),
+        64 * 1024
+    );
 }
 
 /// Round-6 review (S6) / `docs/CORRECTNESS_OPEN_ITEMS.md` item 43: the
