@@ -214,8 +214,12 @@ use core::sync::atomic::AtomicU64;
 /// misses and OS-level failures (e.g., OOM, MAP_HUGETLB refused). The hit-rate
 /// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
 /// measures the combined success rate of both alignment and OS availability.
-/// Denominator for [`UNIX_EXACT_RESERVE_HITS`]. See the module-level
-/// "bench-internals" section doc above.
+/// Note that the denominator conflates two different failure kinds with
+/// different syscall costs: an alignment miss costs 3 syscalls (mmap + munmap +
+/// mmap for the over-reserve), while an OS refusal costs only 1 (the initial
+/// mmap fails, no munmap runs afterward). Denominator for
+/// [`UNIX_EXACT_RESERVE_HITS`]. See the module-level "bench-internals"
+/// section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
@@ -386,6 +390,7 @@ pub fn reset_bench_internals_counters() {
 /// call (all-or-nothing) when `addr` is not a multiple of the real page size.
 /// Use this value (not [`PAGE`]) to round decommit offsets.
 #[must_use]
+#[inline]
 pub fn page_size() -> usize {
     let cached = PAGE_SIZE_CACHE.load(Ordering::Relaxed);
     if cached != 0 {
@@ -2089,7 +2094,7 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // task #921/V-8: the return value is deliberately discarded. A failure here would
     // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
     // and the failure mode is a leak, never unsafety. The failure is known to be reachable
-    // in practice (e.g. the huge-page decommit case documented around lib.rs:1093), so
+    // in practice (e.g. the huge-page decommit case documented in `decommit`'s rustdoc), so
     // this is not a theoretical concern.
     let _ = VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
 }
@@ -2267,7 +2272,7 @@ fn unix_reserve(
     ))
 }
 
-/// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
+/// 1-syscall exact-size mmap fast path. `huge` requests
 /// `MAP_HUGETLB`.
 ///
 /// Returns `(base, reservation, reservation_len, granted_huge)` where
