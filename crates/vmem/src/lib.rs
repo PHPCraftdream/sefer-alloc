@@ -735,7 +735,9 @@ impl Reservation {
     ///   or is undefined behavior (miri). On Windows, `VirtualFree(MEM_RELEASE)`
     ///   ignores this value, so it is advisory there — reporting the value
     ///   `Reservation::reservation_len` would report for an equivalent
-    ///   reservation is sufficient on Windows only.
+    ///   reservation is sufficient on Windows only. It must in all cases be a
+    ///   non-zero multiple of `PAGE` with `reservation_len >= len + (base -
+    ///   reservation)`; both are asserted at construction.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
     ///
