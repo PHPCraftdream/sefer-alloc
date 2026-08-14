@@ -1658,8 +1658,11 @@ fn reserve_aligned_raw(
 /// **Single-call fast path** (`align <= WIN_ALLOCATION_GRANULARITY && commit_len == size`):
 /// reserves and commits `commit_len` bytes in one `VirtualAlloc` call with
 /// `MEM_RESERVE | MEM_COMMIT | extra_commit_flags` (e.g., `MEM_LARGE_PAGES`).
-/// Returns `(base, base, commit_len, extra_commit_flags != 0)` — the fourth
-/// element indicates whether the extra flags were granted.
+/// If the initial call fails with `extra_commit_flags != 0`, it retries without
+/// the extra flags (ordinary-page fallback). Returns `(base, base, commit_len, huge_granted)`
+/// — the fourth element indicates whether the huge-page request actually succeeded
+/// (true only when `extra_commit_flags` was nonzero AND the initial attempt succeeded
+/// without falling back to ordinary pages).
 ///
 /// **Two-call path** (all other cases): reserves address space in a first call,
 /// then commits `commit_len` bytes with plain `MEM_COMMIT` (no extra flags applied).
@@ -1714,6 +1717,9 @@ fn win_reserve_commit(
     // through the unchanged two-call path below.
     if align <= WIN_ALLOCATION_GRANULARITY && commit_len == size {
         // Single-call path: reserve+commit together.
+        // Track whether huge pages were actually granted; initialized from the
+        // request flag, but may be cleared if the retry fallback succeeds.
+        let mut huge_granted = extra_commit_flags != 0;
         let base = unsafe {
             // SAFETY: `VirtualAlloc(NULL, commit_len, MEM_RESERVE | MEM_COMMIT
             // | extra_commit_flags, PAGE_READWRITE)` reserves and commits in one
@@ -1731,7 +1737,9 @@ fn win_reserve_commit(
                     if extra_commit_flags != 0 {
                         // Best-effort retry: try without extra_commit_flags (e.g.
                         // MEM_LARGE_PAGES). This matches the two-call path's fallback
-                        // behavior.
+                        // behavior. On success, `huge_granted` is cleared because the
+                        // retry succeeded with ordinary pages, not the original large-page
+                        // request.
                         // SAFETY: fresh anonymous reserve+commit at a kernel-chosen
                         // address; NULL is checked below.
                         let plain = VirtualAlloc(
@@ -1741,7 +1749,10 @@ fn win_reserve_commit(
                             PAGE_READWRITE,
                         );
                         match NonNull::new(plain as *mut u8) {
-                            Some(n) => n,
+                            Some(n) => {
+                                huge_granted = false; // Fallback to ordinary pages
+                                n
+                            }
                             None => return Err(VmemError::last_os_error()),
                         }
                     } else {
@@ -1775,13 +1786,15 @@ fn win_reserve_commit(
             #[cfg(feature = "bench-internals")]
             WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.fetch_add(1, Ordering::Relaxed);
             // Single-call path: base == region (no over-reserve).
-            // Return (base, base, commit_len, granted_huge).
-            // NOTE: granted_huge is `extra_commit_flags != 0`, not a runtime check
-            // - this matches the fast path's assumption that MEM_COMMIT | extra_commit_flags
-            // succeeded. If Windows stripped the flag silently (unlikely for MEM_RESERVE |
-            // MEM_COMMIT + MEM_LARGE_PAGES, which fails hard), granted_huge would be wrong,
-            // but this matches the existing contract where we don't query the actual grant.
-            return Ok((base, base, commit_len, extra_commit_flags != 0));
+            // Return (base, base, commit_len, huge_granted).
+            // NOTE: huge_granted reflects which VirtualAlloc call actually succeeded:
+            // if the retry fallback was taken, huge_granted is false (ordinary pages);
+            // otherwise it is true only when extra_commit_flags (e.g. MEM_LARGE_PAGES)
+            // was requested AND the initial attempt succeeded. We do not query the
+            // actual grant at runtime, but this correctly tracks the observable
+            // difference between "large-page request succeeded" vs "ordinary-page
+            // fallback".
+            return Ok((base, base, commit_len, huge_granted));
         }
     }
 
@@ -1886,24 +1899,6 @@ fn win_reserve_commit(
     let committed =
         unsafe { VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE) };
     if committed.is_null() {
-        if extra_commit_flags != 0 {
-            // Best-effort large pages: retry the commit with ordinary pages.
-            // SAFETY: same range within the same live reservation.
-            let plain = unsafe {
-                VirtualAlloc(base.as_ptr().cast(), commit_len, MEM_COMMIT, PAGE_READWRITE)
-            };
-            if !plain.is_null() {
-                #[cfg(feature = "bench-internals")]
-                WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
-                return Ok((base, region, over, false)); // Fallback to ordinary pages
-            }
-            // Capture immediately after the FINAL failing syscall (the plain
-            // retry), before the cleanup release below.
-            let err = VmemError::last_os_error();
-            // SAFETY: `region` reserved above, not yet handed out — release once.
-            unsafe { winapi_virtual_release(region_ptr) };
-            return Err(err);
-        }
         // Capture immediately after the failing commit, before cleanup.
         let err = VmemError::last_os_error();
         // SAFETY: `region` reserved above, not yet handed out — release once.
