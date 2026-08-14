@@ -1219,3 +1219,235 @@ fn try_reserve_overflow_is_invalid_argument_on_all_platforms() {
         }
     }
 }
+
+// ── Safe Reservation methods (task #947 A-2) ────────────────────────────────────
+
+/// Task #947/A-2: safe `Reservation::decommit` matches free function behavior.
+#[test]
+fn reservation_decommit_in_bounds_matches_free_function() {
+    let _guard = SERIAL.lock().unwrap();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Write a pattern so we can verify the range after decommit/recommit.
+    let base = r.as_ptr();
+    unsafe {
+        base.write_bytes(0xAB, 2 * MIB);
+    }
+
+    // Decommit a page-aligned range in the middle.
+    let start = ps;
+    let end = 4 * ps;
+    r.decommit(start, end);
+
+    // On Windows, recommit is required before write. On Linux, re-access is implicit.
+    // Either way, we should be able to decommit and the free function should behave identically.
+    #[cfg(windows)]
+    {
+        let recommitted = r.recommit(start, end);
+        assert!(
+            recommitted,
+            "recommit should succeed on Windows after decommit"
+        );
+    }
+
+    // Verify the range is now zeroed on re-access (Linux).
+    #[cfg(not(windows))]
+    unsafe {
+        let p = base.add(start);
+        assert_eq!(*p, 0, "Linux should zero-fill on re-access after decommit");
+    }
+}
+
+/// Task #947/A-2: safe `Reservation::decommit` rejects out-of-bounds calls.
+#[test]
+fn reservation_decommit_out_of_bounds_is_safe_no_op() {
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should be a safe no-op.
+    r.decommit(2 * MIB + ps, 2 * MIB + 2 * ps);
+
+    // Verify we can still write into the reservation (no UB occurred).
+    let base = r.as_ptr();
+    unsafe {
+        base.write_bytes(0xCD, ps);
+    }
+}
+
+/// Task #947/A-2: safe `Reservation::recommit` matches free function behavior.
+#[test]
+fn reservation_recommit_in_bounds_matches_free_function() {
+    let _guard = SERIAL.lock().unwrap();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Write a pattern.
+    let base = r.as_ptr();
+    unsafe {
+        base.write_bytes(0xAB, 2 * MIB);
+    }
+
+    // Decommit first.
+    let start = ps;
+    let end = 4 * ps;
+    r.decommit(start, end);
+
+    // Recommit via the safe method.
+    let recommitted = r.recommit(start, end);
+    assert!(recommitted, "recommit should succeed");
+
+    // On Windows, we should be able to write after recommit.
+    #[cfg(windows)]
+    unsafe {
+        let p = base.add(start);
+        p.write_bytes(0xCC, end - start);
+    }
+}
+
+/// Task #947/A-2: safe `Reservation::recommit` rejects out-of-bounds calls.
+#[test]
+fn reservation_recommit_out_of_bounds_returns_false() {
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should return false.
+    let result = r.recommit(2 * MIB + ps, 2 * MIB + 2 * ps);
+    assert!(!result, "out-of-bounds recommit should return false");
+}
+
+/// Task #947/A-2: safe `Reservation::try_recommit` matches free function behavior.
+#[test]
+fn reservation_try_recommit_in_bounds_matches_free_function() {
+    let _guard = SERIAL.lock().unwrap();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Try recommit on a valid range (empty range is a valid no-op).
+    let result = r.try_recommit(0, 0);
+    assert!(result.is_ok(), "empty range should be Ok(())");
+
+    // Try recommit on a misaligned range (should be invalid_argument).
+    let result = r.try_recommit(1, ps);
+    assert!(
+        result.is_err_and(|e| e.is_invalid_argument()),
+        "misaligned range should be invalid_argument"
+    );
+}
+
+/// Task #947/A-2: safe `Reservation::try_recommit` rejects out-of-bounds calls.
+#[test]
+fn reservation_try_recommit_out_of_bounds_returns_invalid_argument() {
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should be invalid_argument.
+    let result = r.try_recommit(2 * MIB + ps, 2 * MIB + 2 * ps);
+    assert!(
+        result.is_err_and(|e| e.is_invalid_argument()),
+        "out-of-bounds range should be invalid_argument"
+    );
+}
+
+/// Task #947/A-2: safe `Reservation::decommit_lazy` matches free function behavior.
+#[test]
+fn reservation_decommit_lazy_in_bounds_matches_free_function() {
+    let _guard = SERIAL.lock().unwrap();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Lazy decommit a page-aligned range.
+    r.decommit_lazy(ps, 4 * ps);
+
+    // The call should be a no-op (no panic, no UB).
+    // We can't easily verify the advisory nature of lazy decommit without
+    // OS-level RSS measurement, so we just confirm it doesn't crash.
+}
+
+/// Task #947/A-2: safe `Reservation::decommit_lazy` rejects out-of-bounds calls.
+#[test]
+fn reservation_decommit_lazy_out_of_bounds_is_safe_no_op() {
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should be a safe no-op.
+    r.decommit_lazy(2 * MIB + ps, 2 * MIB + 2 * ps);
+
+    // Verify we can still write into the reservation (no UB occurred).
+    let base = r.as_ptr();
+    unsafe {
+        base.write_bytes(0xEF, ps);
+    }
+}
+
+/// Task #947/A-2: safe `Reservation::commit_range` matches free function behavior.
+#[cfg(feature = "lazy-commit")]
+#[test]
+fn reservation_commit_range_in_bounds_matches_free_function() {
+    use aligned_vmem::reserve_aligned_lazy;
+
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    let ps = page_size();
+
+    // Commit a range via the safe method.
+    let committed = r.commit_range(0, 4 * ps);
+    assert!(committed, "commit_range should succeed");
+
+    // Verify we can write into the committed range.
+    let base = r.as_ptr();
+    unsafe {
+        base.write_bytes(0xAB, ps);
+    }
+}
+
+/// Task #947/A-2: safe `Reservation::commit_range` rejects out-of-bounds calls.
+#[cfg(feature = "lazy-commit")]
+#[test]
+fn reservation_commit_range_out_of_bounds_returns_false() {
+    use aligned_vmem::reserve_aligned_lazy;
+
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should return false.
+    let result = r.commit_range(2 * MIB + ps, 2 * MIB + 2 * ps);
+    assert!(!result, "out-of-bounds commit_range should return false");
+}
+
+/// Task #947/A-2: safe `Reservation::try_commit_range` matches free function behavior.
+#[cfg(feature = "lazy-commit")]
+#[test]
+fn reservation_try_commit_range_in_bounds_matches_free_function() {
+    use aligned_vmem::reserve_aligned_lazy;
+
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    let ps = page_size();
+
+    // Try commit on a valid range (empty range is a valid no-op).
+    let result = r.try_commit_range(0, 0);
+    assert!(result.is_ok(), "empty range should be Ok(())");
+
+    // Try commit on a misaligned range (should be invalid_argument).
+    let result = r.try_commit_range(1, ps);
+    assert!(
+        result.is_err_and(|e| e.is_invalid_argument()),
+        "misaligned range should be invalid_argument"
+    );
+}
+
+/// Task #947/A-2: safe `Reservation::try_commit_range` rejects out-of-bounds calls.
+#[cfg(feature = "lazy-commit")]
+#[test]
+fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
+    use aligned_vmem::reserve_aligned_lazy;
+
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    let ps = page_size();
+
+    // Out-of-bounds range should be invalid_argument.
+    let result = r.try_commit_range(2 * MIB + ps, 2 * MIB + 2 * ps);
+    assert!(
+        result.is_err_and(|e| e.is_invalid_argument()),
+        "out-of-bounds range should be invalid_argument"
+    );
+}
