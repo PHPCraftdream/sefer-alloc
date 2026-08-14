@@ -109,7 +109,7 @@
 // itself gated on `lazy-commit`. A caller who enables `fault-injection`
 // without `lazy-commit` gets a compiled-but-unreachable hook (harmless — the
 // feature is additive and test-only); suppress dead-code only in that
-// specific combination.
+// specific combination, on the single item it affects.
 //
 // Structural alternative considered and deferred for a future major release:
 // reorganize the three backends as separate `#[cfg]`-selected private modules
@@ -119,10 +119,6 @@
 // attribute, but is a larger refactor than this crate's 0.2.0 release should
 // carry. The current partial-replacement shape (mock replaces decommit/recommit/
 // commit_range but not reserve/release) is explicitly chosen.
-#![cfg_attr(
-    all(feature = "fault-injection", not(feature = "lazy-commit")),
-    allow(dead_code)
-)]
 
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -2833,6 +2829,26 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
     let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
     std::alloc::dealloc(reservation.as_ptr(), layout);
 }
+
+/// Unsupported target: no `reserve_aligned_raw` / `release_reservation` implementation.
+///
+/// The crate currently provides backends only for:
+/// - Windows (not miri): uses `VirtualAlloc` / `VirtualFree`.
+/// - Unix (not miri): uses `mmap` / `munmap`.
+/// - Miri: uses `std::alloc` for testing.
+///
+/// This target has `std` but matches none of the above (e.g. `wasm32-wasip1`,
+/// `x86_64-fortanix-unknown-sgx`). Adding support requires a new
+/// `reserve_aligned_raw` / `release_reservation` implementation for this
+/// target family.
+#[cfg(all(not(windows), not(unix), not(miri)))]
+compile_error!(
+    "aligned-vmem does not currently support this target because no \
+     `reserve_aligned_raw` / `release_reservation` implementation exists \
+     for it. The crate provides backends only for Windows, Unix, and miri. \
+     Adding support requires implementing those two functions for this \
+     target family."
+);
 
 #[cfg(miri)]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
