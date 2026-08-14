@@ -1650,13 +1650,24 @@ fn reserve_aligned_raw(
 }
 
 /// Windows over-reserve + commit helper shared by the eager, lazy and huge
-/// paths. Reserves `size + align` bytes, finds the aligned base, and commits
-/// `commit_len` bytes (with `extra_flags` OR-ed into `MEM_COMMIT`, e.g.
-/// `MEM_LARGE_PAGES`). Returns the aligned base, the reservation base, the
-/// full reservation length, and whether the extra_flags were successfully
-/// applied (i.e., `true` only if `extra_flags != 0` and the commit with those
-/// flags succeeded). On commit failure the whole reservation is released and
-/// `Err` returned.
+/// paths. Takes two execution paths:
+///
+/// **Single-call fast path** (`align <= WIN_ALLOCATION_GRANULARITY && commit_len == size`):
+/// reserves and commits `commit_len` bytes in one `VirtualAlloc` call with
+/// `MEM_RESERVE | MEM_COMMIT | extra_commit_flags` (e.g., `MEM_LARGE_PAGES`).
+/// Returns `(base, base, commit_len, extra_commit_flags != 0)` — the fourth
+/// element indicates whether the extra flags were granted.
+///
+/// **Two-call path** (all other cases): reserves address space in a first call,
+/// then commits `commit_len` bytes with plain `MEM_COMMIT` (no extra flags applied).
+/// The reserve size is conditional: when `align <= WIN_ALLOCATION_GRANULARITY`,
+/// the fast-reserve optimization attempts to reserve exactly `size` bytes and
+/// uses it if the result happens to already satisfy alignment; otherwise, it
+/// reserves `size + align` bytes to guarantee an aligned base can be found.
+/// Returns `(base, region, over, false)` — the fourth element is always `false`
+/// because the two-call path never requests `MEM_LARGE_PAGES` (Windows rejects
+/// it on pre-reserved regions anyway). On commit failure the whole reservation
+/// is released and `Err` returned.
 ///
 /// task #713: every `Err` here carries a [`VmemError`] captured IMMEDIATELY
 /// after the syscall that produced it, before any cleanup FFI call that could
