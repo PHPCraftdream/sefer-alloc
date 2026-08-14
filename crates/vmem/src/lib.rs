@@ -1321,7 +1321,7 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// returns `true`.
 ///
 /// `start` and `end` must be multiples of [`PAGE`] with `start <= end`. A
-/// genuinely empty range (`start == end`) is a no-op returning `true`; any
+/// well-formed no-op (empty range, `start == end`) returns `true`; any
 /// other contract violation (misaligned, or `start > end`) returns `false`
 /// (task #712: an earlier version of this function clamped a contract
 /// violation to the WRITE-PERMITTING `true` sentinel, which already caused a
@@ -1364,10 +1364,10 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
     unsafe { try_commit_range(base, start, end).is_ok() }
 }
 
-/// Fallible [`commit_range`]: `Ok(())` on success (or a genuinely empty
-/// no-op, `start == end`), `Err(VmemError::invalid_argument())` if the
-/// offsets violated the contract (misaligned, or `start > end`),
-/// `Err(VmemError)` carrying the OS cause on genuine commit failure.
+/// Fallible [`commit_range`]: `Ok(())` on success (or was a well-formed no-op),
+/// `Err(VmemError::invalid_argument())` if the offsets violated the contract
+/// (misaligned, or `start > end`), `Err(VmemError)` carrying the OS cause on
+/// genuine commit failure.
 ///
 /// # Safety
 ///

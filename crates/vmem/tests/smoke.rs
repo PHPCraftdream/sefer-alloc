@@ -2,8 +2,8 @@
 //! round-trip, RAII vs manual release, and contract rejection.
 
 use aligned_vmem::{
-    decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
-    try_reserve_aligned, Reservation, VmemError, PAGE,
+    commit_range, decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
+    try_commit_range, try_reserve_aligned, Reservation, VmemError, PAGE,
 };
 use std::panic;
 use std::sync::Mutex;
@@ -352,6 +352,59 @@ fn recommit_rejects_contract_violating_offsets() {
                 .unwrap_err()
                 .is_invalid_argument(),
             "the fallible form must carry VmemError::invalid_argument(), not an OS code"
+        );
+    }
+}
+
+/// Regression test for finding C-5 (Round 11 closing review): a prior
+/// round (task #923, V-19) reordered the check order so that alignment is
+/// verified BEFORE the empty-range early return. This fixed a real bug: a
+/// misaligned-but-empty range like `(5, 5)` now correctly returns
+/// `Err(VmemError::invalid_argument())` instead of the old `Ok(())` no-op.
+/// This test pins that behavior change so an accidental revert of the
+/// reorder is visible to the test suite.
+#[test]
+fn recommit_rejects_misaligned_empty_range() {
+    let span = 2 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+    // SAFETY: base is a live reservation; the call is rejected before it
+    // reaches the real commit syscall.
+    unsafe {
+        assert!(
+            aligned_vmem::try_recommit(base, 5, 5)
+                .unwrap_err()
+                .is_invalid_argument(),
+            "misaligned empty range (5, 5) must be rejected, not silently accepted as a no-op"
+        );
+        // Verify the aligned-empty case (0, 0) still succeeds — this is
+        // the "well-formed no-op" the doc now correctly describes.
+        assert!(
+            aligned_vmem::try_recommit(base, 0, 0).is_ok(),
+            "aligned empty range (0, 0) must succeed as a well-formed no-op"
+        );
+    }
+
+    // Same regression for `try_commit_range` when the feature is enabled.
+    #[cfg(feature = "lazy-commit")]
+    unsafe {
+        assert!(
+            try_commit_range(base, 5, 5)
+                .unwrap_err()
+                .is_invalid_argument(),
+            "try_commit_range: misaligned empty range (5, 5) must be rejected"
+        );
+        assert!(
+            try_commit_range(base, 0, 0).is_ok(),
+            "try_commit_range: aligned empty range (0, 0) must succeed as a well-formed no-op"
+        );
+        assert!(
+            !commit_range(base, 5, 5),
+            "commit_range: misaligned empty range (5, 5) must return false"
+        );
+        assert!(
+            commit_range(base, 0, 0),
+            "commit_range: aligned empty range (0, 0) must return true"
         );
     }
 }
