@@ -530,26 +530,9 @@ impl Reservation {
     /// The number of usable bytes at [`as_ptr`](Self::as_ptr).
     #[must_use]
     #[inline]
+    #[allow(clippy::len_without_is_empty)]
     pub const fn len(&self) -> usize {
         self.len
-    }
-
-    /// Whether the usable span is empty ([`len()`](Self::len) == `0`).
-    ///
-    /// **Deprecated (task #98 / R4-6):** [`Reservation`] is a non-empty RAII
-    /// handle — [`reserve_aligned`] rejects a zero `size`, and the unsafe
-    /// [`from_raw_parts`](Self::from_raw_parts) `# Safety` contract likewise
-    /// requires a non-zero `len`. So `is_empty` is **always `false`** for every
-    /// *valid* `Reservation`: there is no reachable valid state in which it
-    /// would return `true`.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Reservation is a non-empty RAII handle; is_empty is always false for any valid instance. Use len() if a length check is needed."
-    )]
-    #[must_use]
-    #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
     }
 
     /// The start of the underlying OS reservation (may sit below
@@ -685,6 +668,153 @@ impl Reservation {
         // it to `release_parts`.
         core::mem::forget(self);
         parts
+    }
+
+    /// Decommit pages `[start, end)` within this reservation.
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`decommit`]
+    /// function for callers already holding a `Reservation`. It delegates to
+    /// the underlying implementation with `self.as_ptr()` as base and
+    /// automatically ensures `[start, end)` is within the reservation's usable span.
+    ///
+    /// Returns the physical backing of `[start, end)` to the OS while keeping the
+    /// address-space reservation alive (Linux `MADV_DONTNEED`, Windows `MEM_DECOMMIT`).
+    /// Re-access after decommit produces fresh zero-filled pages (after [`Self::recommit`]
+    /// on Windows; implicitly on Linux — see [`decommit`]'s Darwin caveat).
+    ///
+    /// `start` and `end` must be multiples of the runtime page size ([`page_size()`]).
+    /// A no-op if the range is empty, is out of bounds (`end > self.len()`), or
+    /// if the offsets violate the page-size multiple contract (the same
+    /// silent-skip behavior as the free [`decommit`] function).
+    ///
+    /// See [`decommit`] for platform divergence notes (Windows crashes on write
+    /// before recommit, Linux does not), huge-page incompatibility, and Darwin
+    /// zero-fill caveats.
+    pub fn decommit(&self, start: usize, end: usize) {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return;
+        }
+        // SAFETY: `self.as_ptr()` is a valid reservation base, and we've just
+        // verified `[start, end)` is within `self.len()`. The free function's
+        // own contract (multiples of page_size(), etc.) is validated inside it.
+        unsafe { decommit(self.as_ptr(), start, end) };
+    }
+
+    /// Lazy decommit variant: hint the OS it MAY reclaim `[start, end)` under memory
+    /// pressure, cheaper than [`Self::decommit`] (Linux `MADV_FREE`, macOS/iOS
+    /// `MADV_FREE_REUSABLE`, other Unix falls back to `MADV_DONTNEED`; Windows falls
+    /// back to the eager [`Self::decommit`] path, which has no lazy equivalent).
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`decommit_lazy`]
+    /// function for callers already holding a `Reservation`. It delegates to the
+    /// underlying implementation with `self.as_ptr()` as base and automatically
+    /// ensures `[start, end)` is within the reservation's usable span.
+    ///
+    /// See [`decommit_lazy`] for the platform-specific cost inversion on macOS/iOS
+    /// (this variant actually drops RSS immediately there, unlike the eager path)
+    /// and other caveats.
+    pub fn decommit_lazy(&self, start: usize, end: usize) {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return;
+        }
+        // SAFETY: same safety argument as `decommit` above.
+        unsafe { decommit_lazy(self.as_ptr(), start, end) };
+    }
+
+    /// Recommit pages `[start, end)` previously passed to [`Self::decommit`].
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`recommit`]
+    /// function for callers already holding a `Reservation`. It delegates to
+    /// the underlying implementation with `self.as_ptr()` as base and automatically
+    /// ensures `[start, end)` is within the reservation's usable span.
+    ///
+    /// Returns `true` if the range is now committed (or the call was a well-formed
+    /// no-op — empty range, `start == end`), and `false` if the OS refused to
+    /// commit the pages (commit-charge exhaustion / true OOM) OR the offsets
+    /// violated the contract below. On `false` the caller MUST NOT write into
+    /// `[start, end)`. Never panics. For the cause use [`Self::try_recommit`].
+    ///
+    /// `start` and `end` must be multiples of the runtime page size ([`page_size()`]).
+    /// A well-formed no-op (empty range, `start == end`) returns `true`; any
+    /// other contract violation (misaligned, or `start > end`, or `end > self.len()`)
+    /// returns `false`.
+    #[must_use]
+    pub fn recommit(&self, start: usize, end: usize) -> bool {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return false;
+        }
+        // SAFETY: `self.as_ptr()` is a valid reservation base, and we've just
+        // verified `[start, end)` is within `self.len()`. The free function's
+        // own contract (multiples of page_size(), etc.) is validated inside it.
+        unsafe { recommit(self.as_ptr(), start, end) }
+    }
+
+    /// Fallible [`Self::recommit`]: `Ok(())` if the range is now committed
+    /// (or was a well-formed no-op), `Err(VmemError::invalid_argument())` if the
+    /// offsets violated the contract (misaligned, or `start > end`, or `end > self.len()`),
+    /// `Err(VmemError)` carrying the OS cause on genuine commit failure.
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`try_recommit`]
+    /// function for callers already holding a `Reservation`.
+    pub fn try_recommit(&self, start: usize, end: usize) -> Result<(), VmemError> {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return Err(VmemError::invalid_argument());
+        }
+        // SAFETY: same safety argument as `recommit` above.
+        unsafe { try_recommit(self.as_ptr(), start, end) }
+    }
+
+    /// Commit pages `[start, end)` within this reservation.
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`commit_range`]
+    /// function for callers already holding a `Reservation`. It delegates to
+    /// the underlying implementation with `self.as_ptr()` as base and automatically
+    /// ensures `[start, end)` is within the reservation's usable span.
+    ///
+    /// After a [`reserve_aligned_lazy`] call that left some pages reserved-but-uncommitted,
+    /// `commit_range` commits exactly the requested sub-range so it becomes writable.
+    ///
+    /// Returns `true` if the range is now committed, `false` if the OS refused
+    /// (commit-charge exhaustion / true OOM) OR the offsets violated the contract
+    /// above. On `false` the caller MUST NOT write into the range. Never panics.
+    /// For the cause use [`Self::try_commit_range`].
+    ///
+    /// `start` and `end` must be multiples of the runtime page size ([`page_size()`]).
+    /// A well-formed no-op (empty range, `start == end`) returns `true`; any
+    /// other contract violation (misaligned, or `start > end`, or `end > self.len()`)
+    /// returns `false`.
+    #[must_use]
+    #[cfg(feature = "lazy-commit")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
+    pub fn commit_range(&self, start: usize, end: usize) -> bool {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return false;
+        }
+        // SAFETY: same safety argument as `recommit` above.
+        unsafe { commit_range(self.as_ptr(), start, end) }
+    }
+
+    /// Fallible [`Self::commit_range`]: `Ok(())` on success (or was a well-formed no-op),
+    /// `Err(VmemError::invalid_argument())` if the offsets violated the contract
+    /// (misaligned, or `start > end`, or `end > self.len()`), `Err(VmemError)` carrying
+    /// the OS cause on genuine commit failure.
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`try_commit_range`]
+    /// function for callers already holding a `Reservation`.
+    #[cfg(feature = "lazy-commit")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
+    pub fn try_commit_range(&self, start: usize, end: usize) -> Result<(), VmemError> {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return Err(VmemError::invalid_argument());
+        }
+        // SAFETY: same safety argument as `recommit` above.
+        unsafe { try_commit_range(self.as_ptr(), start, end) }
     }
 
     /// Wrap a pre-existing OS reservation (e.g. one obtained from
@@ -1074,10 +1204,36 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
 /// so a `mock`-based test's expected call log may desync if it expects a
 /// record for a null pointer.
 pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize) {
-    let nn = match NonNull::new(reservation) {
-        Some(n) => n,
-        None => return,
-    };
+    // task #947/G-1: validate the documented contract BEFORE calling into the
+    // miri backend, matching `from_raw_parts`'s defensive pattern. This prevents
+    // a bare `.expect()` panic inside `release_reservation`'s miri path and
+    // provides an informative diagnostic instead. The check is cheap and
+    // defensive; the native backends ignore these values (except for basic null
+    // handling above), so a failure here indicates a caller contract violation
+    // that would otherwise manifest as a panic only under miri.
+    //
+    // The checked invariants are a subset of `from_raw_parts`'s checks because
+    // `release` receives only `(reservation_len, align)` (not the full
+    // `(base, len, reservation, reservation_len, align)` tuple), so the bounds
+    // between `base` and `reservation` are uncheckable here — we validate what
+    // we can and keep the same informative message style.
+    if reservation.is_null() {
+        return;
+    }
+    assert!(
+        reservation_len != 0
+            && reservation_len.is_multiple_of(PAGE)
+            && align.is_power_of_two()
+            && align >= PAGE
+            && std::alloc::Layout::from_size_align(reservation_len, align).is_ok(),
+        "release: \
+         reservation_len must be non-zero and a multiple of PAGE; \
+         align must be a power of two >= PAGE; \
+         (reservation_len, align) must form a valid Layout; \
+         got reservation_len={reservation_len}, align={align}"
+    );
+
+    let nn = unsafe { NonNull::new_unchecked(reservation) };
     #[cfg(feature = "mock")]
     mock::record(mock::Call::Release {
         reservation: reservation.addr(),
@@ -1280,10 +1436,10 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
 ///
 /// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation
 /// whose `[base+start, base+end)` range was previously decommitted.
-/// `start`/`end` must be multiples of [`PAGE`] with `start <= end` — a
-/// violation returns `false` (task #712: an earlier version of this function
-/// clamped a contract violation to the WRITE-PERMITTING `true` sentinel,
-/// which already caused a real crash — see
+/// `start`/`end` must be multiples of the runtime page size ([`page_size()`])
+/// with `start <= end` — a violation returns `false` (task #712: an earlier
+/// version of this function clamped a contract violation to the WRITE-PERMITTING
+/// `true` sentinel, which already caused a real crash — see
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// for the incident this class of bug produces on Windows).
 #[must_use]
@@ -1301,7 +1457,8 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 ///
 /// Same as [`recommit`].
 pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    let ps = page_size();
+    if start > end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return Err(VmemError::invalid_argument());
     }
     if start == end {
@@ -1336,12 +1493,12 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
 /// under miri the pages are already accessible, so this is a no-op that always
 /// returns `true`.
 ///
-/// `start` and `end` must be multiples of [`PAGE`] with `start <= end`. A
-/// well-formed no-op (empty range, `start == end`) returns `true`; any
-/// other contract violation (misaligned, or `start > end`) returns `false`
-/// (task #712: an earlier version of this function clamped a contract
-/// violation to the WRITE-PERMITTING `true` sentinel, which already caused a
-/// real crash — see
+/// `start` and `end` must be multiples of the runtime page size ([`page_size()`])
+/// with `start <= end`. A well-formed no-op (empty range, `start == end`)
+/// returns `true`; any other contract violation (misaligned, or `start > end`)
+/// returns `false` (task #712: an earlier version of this function clamped a
+/// contract violation to the WRITE-PERMITTING `true` sentinel, which already
+/// caused a real crash — see
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// for the incident this class of bug produces on Windows).
 ///
@@ -1391,7 +1548,8 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
 #[cfg(feature = "lazy-commit")]
 #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+    let ps = page_size();
+    if start > end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return Err(VmemError::invalid_argument());
     }
     if start == end {
