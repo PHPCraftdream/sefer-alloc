@@ -41,7 +41,7 @@
 //! external consumers today, not on any already-incurred breaking-change
 //! cost).
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 
 use crate::error::VmemError;
 
@@ -205,6 +205,11 @@ std::thread_local! {
     static RESERVE_FAILS: RefCell<u32> = const { RefCell::new(0) };
     /// Remaining scripted commit failures ([`fail_next_commit`]).
     static COMMIT_FAILS: RefCell<u32> = const { RefCell::new(0) };
+    /// Reentrancy guard for [`record`]. Set to `true` while we're inside
+    /// `record` to detect and silently drop reentrant calls rather than
+    /// panicking. This prevents a panic when the consumer's global allocator
+    /// calls back into this crate during `Vec::push`'s allocation (task #945/M-1).
+    static RECORDING: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Drain and return every recorded [`Call`] since the last drain (or test
@@ -241,8 +246,59 @@ pub fn fail_next_commit(n: u32) {
 }
 
 /// Internal: record a call into the thread-local log.
+///
+/// # Reentrancy safety (task #945/M-1)
+///
+/// This function is called from within the `GlobalAlloc` implementation path.
+/// When `Vec::push` needs to grow its buffer, it allocates through the global
+/// allocator, which may call back into this crate again. Without a guard, this
+/// would attempt to mutably borrow `CALLS` twice on the same thread, causing a
+/// `BorrowMutError` panic inside an allocator — undefined behavior in that
+/// context.
+///
+/// We guard against this with a `RECORDING` flag: if already set (indicating a
+/// reentrant call), we silently drop the recording rather than corrupting state
+/// or panicking. The reentrant call's own recording is lost, but the outer
+/// recording remains intact and the allocator path completes safely.
+///
+/// This is the same hazard class already documented for the miri backend in
+/// the crate-level module header (see `lib.rs`'s "A consumer that installs
+/// itself as `#[global_allocator]` cannot use this crate under miri..."
+/// paragraph — the mock backend has the same issue for the same reason).
+///
+/// # Thread-local storage teardown safety (task #945/M-2)
+///
+/// `Reservation::drop` calls this function (via `release` in `lib.rs`). If a
+/// `Reservation` is owned by a `thread_local!` elsewhere in a consumer's code,
+/// its destructor runs during TLS teardown, in unspecified order relative to
+/// `CALLS`'s own destructor. `LocalKey::with` panics if the thread-local value
+/// has already been destroyed on that thread — a panic during `Drop` becomes
+/// an abort if anything else is unwinding.
+///
+/// We use `try_with` (instead of `with`) to silently become a no-op when
+/// `CALLS` has already been destroyed, avoiding the teardown-order panic.
+///
+/// Note: no RAII guard is used to clear `RECORDING` on panic, because the only
+/// way `Vec::push` can panic is allocation failure, which aborts the process
+/// regardless. A non-allocation panic in `push` is virtually impossible (the
+/// only path would be `Clone` impl on `Call` panicking, which cannot happen
+/// here). The added complexity of a guard is not worth it for a case that
+/// either never occurs or always aborts.
 pub(crate) fn record(call: Call) {
-    CALLS.with(|c| c.borrow_mut().push(call));
+    RECORDING.with(|recording| {
+        if recording.get() {
+            // Reentrant call: silently drop to avoid BorrowMutError panic.
+            // The outer call's recording stays intact.
+            return;
+        }
+        recording.set(true);
+
+        // Use `try_with` to avoid panicking during TLS teardown when `CALLS`
+        // has already been destroyed (task #945/M-2).
+        let _ = CALLS.try_with(|c| c.borrow_mut().push(call));
+
+        recording.set(false);
+    });
 }
 
 /// Internal: consume one armed reserve fault, returning the error to raise.
