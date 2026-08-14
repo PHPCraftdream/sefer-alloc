@@ -187,9 +187,9 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
 //   (`commit_len == size`), over-reserving nothing — base == region)
 //   or two syscalls (all other cases — `align > 64 KiB`, or a partial initial
-//   commit (`commit_len != size`), or the fast-reserve alignment check missed —
-//   over-reserving `size + align` and keeping the full mapping — Windows cannot
-//   partially release a `MEM_RESERVE` region).
+//   commit (`commit_len != size`) — over-reserving `size + align` only when
+//   `align > 64 KiB` or the fast-reserve sub-path's own alignment check
+//   misses; Windows cannot partially release a `MEM_RESERVE` region).
 //   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 //   count each path separately for parity/comparison against the Unix
 //   hit-rate story.
