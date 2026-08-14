@@ -1752,9 +1752,9 @@ fn win_reserve_commit(
 
     // Two-call path (align > 64 KiB, or a partial initial commit, or single-call
     // alignment check failed).
-    // SAFETY: `validate_size_align` has already checked that `size + align`
-    // does not overflow, so `over` is well-formed.
-    let over = size + align;
+    let over = size
+        .checked_add(align)
+        .ok_or_else(VmemError::invalid_argument)?;
     let region = unsafe {
         // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
         // reserves (but does not commit) `over` bytes of address space,
@@ -2097,9 +2097,9 @@ fn unix_reserve(
     {
         return Ok((base, reservation, reservation_len, granted_huge));
     }
-    // SAFETY: `validate_size_align` has already checked that `size + align`
-    // does not overflow, so `over` is well-formed.
-    let over = size + align;
+    let over = size
+        .checked_add(align)
+        .ok_or_else(VmemError::invalid_argument)?;
     // Track whether huge pages were actually granted; assigned in each branch
     // below (a bare pointer, not a tuple, must be the unsafe block's own tail
     // expression -- `region_ptr` is used as a raw pointer immediately after).
