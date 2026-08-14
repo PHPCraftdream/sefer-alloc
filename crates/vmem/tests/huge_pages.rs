@@ -148,9 +148,12 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// - we do NOT hard-assert `is_huge()` one way or the other, since privilege
 ///   availability (e.g. `SeLockMemoryPrivilege`) varies by host.
 ///
-/// This also serves as a regression guard for task #921's V-6 alignment-check fix
-/// in the Windows single-call path.
+/// Note: the V-6 alignment check (task #921) is unobservable on a conforming
+/// Windows host and is NOT regression-tested by this or any test in this crate —
+/// it guards against `WIN_ALLOCATION_GRANULARITY` being wrong, a condition that
+/// cannot be constructed without a fake/mocked allocator backend.
 #[test]
+#[cfg(windows)]
 fn reserve_aligned_huge_64k_single_call_path() {
     const SIZE: usize = 64 * 1024; // 64 KiB, below WIN_ALLOCATION_GRANULARITY (also 64 KiB)
     let r = reserve_aligned_huge(SIZE, SIZE).expect("64 KiB huge reservation");
