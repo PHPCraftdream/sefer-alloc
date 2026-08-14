@@ -562,7 +562,7 @@ impl Reservation {
 
     /// The full size of the underlying OS reservation.
     ///
-    /// **At least two paths under-report the true OS reservation size** — this
+    /// **At least three paths under-report the true OS reservation size** — this
     /// value is not a portable guarantee of the actual bytes the OS mapped:
     ///
     /// - **Windows single-call fast path** (task #848, `align <= 64 KiB`): this
@@ -571,6 +571,11 @@ impl Reservation {
     ///   allocation granularity internally, so `reserve_aligned(4096, 4096)`
     ///   reports `reservation_len() == 4096` while actually consuming 64 KiB of
     ///   address space.
+    /// - **Windows two-call path's fast-reserve sub-path** (task #921/V-32,
+    ///   `align <= 64 KiB` via `reserve_aligned_lazy`): when the candidate
+    ///   `VirtualAlloc(NULL, size, MEM_RESERVE)` happens to be aligned, this
+    ///   returns `size` directly, not the rounded-up 64 KiB granularity. The
+    ///   underlying reservation still consumes a 64 KiB-granular region.
     /// - **Any page-rounding `mmap` where the OS page size exceeds the
     ///   requested granularity** — e.g. Apple-Silicon macOS's 16 KiB pages, or
     ///   64 KiB on some Linux configurations (see [`MIN_PAGE`]'s doc above):
@@ -709,8 +714,7 @@ impl Reservation {
     /// reservation's usable span need not start at the OS reservation's own
     /// base (this crate over-reserves `size + align` and keeps the full mapping
     /// whenever the exact-size fast path misses, or on Windows when
-    /// `align > 64 KiB` or the initial commit is partial (`commit_len !=
-    /// size`), which is exactly that shape).
+    /// `align > 64 KiB`, which is exactly that shape).
     ///
     /// # Safety
     ///
@@ -723,9 +727,14 @@ impl Reservation {
     /// - `reservation` is the *underlying OS reservation* start (often equal
     ///   to `base`, but may be lower because the reservation is over-reserved
     ///   to achieve alignment and the full mapping is kept).
-    /// - `reservation_len` is the value this crate itself would report via
-    ///   [`Reservation::reservation_len`] for an equivalent reservation, a non-zero
-    ///   multiple of [`PAGE`], `reservation_len >= len + (base - reservation)`.
+    /// - `reservation_len` on Unix and under miri MUST be the full length of
+    ///   the underlying OS mapping/allocation — Unix's `release` passes it
+    ///   directly to `munmap`, and miri's `release` passes it as the exact
+    ///   `Layout` size to `dealloc`, so an undersized value leaks memory (Unix)
+    ///   or is undefined behavior (miri). On Windows, `VirtualFree(MEM_RELEASE)`
+    ///   ignores this value, so it is advisory there — reporting the value
+    ///   `Reservation::reservation_len` would report for an equivalent
+    ///   reservation is sufficient on Windows only.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
     ///
@@ -790,7 +799,6 @@ impl Reservation {
         // unchecked caller responsibilities.
         let base_addr = base.addr();
         let res_addr = reservation.addr();
-        let offset = base_addr - res_addr; // SAFETY: guarded by `base_addr >= res_addr` assert below
         assert!(
             align.is_power_of_two()
                 && align >= PAGE
@@ -801,7 +809,7 @@ impl Reservation {
                 && base_addr >= res_addr
                 && base_addr.is_multiple_of(align)
                 && len
-                    .checked_add(offset)
+                    .checked_add(base_addr - res_addr)
                     .is_some_and(|required| reservation_len >= required)
                 && std::alloc::Layout::from_size_align(reservation_len, align).is_ok(),
             "Reservation::from_raw_parts: \
@@ -815,6 +823,7 @@ impl Reservation {
              got align={align}, reservation_len={reservation_len}, len={len}, \
              base={base:?}, reservation={reservation:?}"
         );
+        let _offset = base_addr - res_addr;
         Self {
             base: base_nn,
             len,
@@ -855,9 +864,12 @@ unsafe impl Send for Reservation {}
 /// undefined behavior on the native backend and cause leaks or crashes
 /// on the Unix backend.
 ///
-/// The motivating use case ("self-hosted metadata") is now fully realized:
-/// construct a `ReservationParts` from saved fields, then reconstruct a
-/// `Reservation` via [`Reservation::from_raw_parts`] when needed.
+/// `ReservationParts::new` closes the `release_parts` round-trip (release a
+/// reservation you only have the parts for). Reconstructing a full
+/// `Reservation` via `from_raw_parts` additionally requires the usable `base`
+/// and `len`, which the caller must record separately — `ReservationParts`
+/// alone is insufficient whenever the reservation was over-reserved for
+/// alignment.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReservationParts {
@@ -872,9 +884,11 @@ pub struct ReservationParts {
 impl ReservationParts {
     /// Construct a `ReservationParts` from its component fields.
     ///
-    /// This enables the "self-hosted metadata" use case where an allocator
-    /// records reservation metadata in its own data structures and later
-    /// reconstructs a `Reservation` handle via [`Reservation::from_raw_parts`].
+    /// This closes the `release_parts` round-trip (release a reservation you
+    /// only have the parts for). Reconstructing a full `Reservation` via
+    /// `from_raw_parts` additionally requires the usable `base` and `len`,
+    /// which the caller must record separately — `ReservationParts` alone is
+    /// insufficient whenever the reservation was over-reserved for alignment.
     #[must_use]
     #[inline]
     pub const fn new(ptr: *mut u8, len: usize, align: usize) -> Self {
