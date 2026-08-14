@@ -80,6 +80,10 @@ static FAIL_AT_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// real commit path ([`crate::try_commit_range`] / [`crate::commit_range`])
 /// return `Err`/`false` without touching the OS. `n == 0` disarms.
 ///
+/// Uses `Relaxed`, not `Release` like `arm_fail_at`: `FAIL_NEXT` carries no
+/// payload to publish across threads, so there is nothing a stronger ordering
+/// would protect.
+///
 /// Checked BEFORE [`arm_fail_at`]'s hook (this hook has priority).
 #[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub fn arm_fail_next(n: u32) {
@@ -114,7 +118,16 @@ pub fn arm_fail_at(k: u32) {
 // mock (task #646/F8): `try_commit_range`'s `#[cfg(not(feature = "mock"))]`
 // branch — the only call site — is compiled out under `mock`, so this goes
 // unused whenever `mock` is enabled alongside `fault-injection`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+// fault-injection (task #925/V-21): `try_commit_range` itself is gated on
+// `lazy-commit`, so this is unused when `fault-injection` is enabled without
+// `lazy-commit`. Suppressed in both specific combinations.
+#[cfg_attr(
+    any(
+        feature = "mock",
+        all(feature = "fault-injection", not(feature = "lazy-commit"))
+    ),
+    allow(dead_code)
+)]
 pub(crate) fn should_fail_commit() -> bool {
     // task #718: `fetch_update` performs the load-check-decrement as one
     // atomic read-modify-write, closing the race a separate `load` then
