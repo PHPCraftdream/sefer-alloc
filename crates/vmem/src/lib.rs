@@ -186,10 +186,10 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 // - Windows: `win_reserve_commit` issues reserve+commit in either
 //   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
 //   (`commit_len == size`), over-reserving nothing — base == region)
-//   or two syscalls (the traditional path for alignments > 64 KiB or when
-//   the fast-reserve sub-path's alignment check misses, over-reserving
-//   `size + align` and keeping the full mapping — Windows cannot partially
-//   release a `MEM_RESERVE` region).
+//   or two syscalls (all other cases — `align > 64 KiB`, or a partial initial
+//   commit (`commit_len != size`) — over-reserving `size + align` only when
+//   `align > 64 KiB` or the fast-reserve sub-path's own alignment check
+//   misses; Windows cannot partially release a `MEM_RESERVE` region).
 //   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 //   count each path separately for parity/comparison against the Unix
 //   hit-rate story.
@@ -2342,7 +2342,8 @@ fn try_reserve_aligned_exact(
         // `huge == true` may not reflect an actual grant, this exact-size fast path
         // gates the hint on `huge` because a successful `mmap` with `MAP_HUGETLB`
         // already implies a grant. The whole function returns early if `mmap` fails,
-        // so reaching this line means huge pages were actually granted.
+        // so on Linux reaching this line means MAP_HUGETLB was granted; off Linux
+        // the flag was a no-op and this hint is itself compiled out.
         // SAFETY: `base` is a live `size`-byte mapping; hint-only.
         unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
