@@ -93,10 +93,12 @@ mock = []
 # the real backend under test (real segment reservations, real commit
 # accounting) cannot use `mock`. `fault-injection` changes nothing about which
 # backend runs; it only splices two checks in front of the real commit syscall
-# so a test can deterministically force it to report OS-refused. Off by
-# default; NOT part of any bundle; zero cost when disabled (the hook body is
-# compiled out entirely, not just branched around at runtime).
-fault-injection = []
+# so a test can deterministically force it to report OS-refused. Implies
+# `lazy-commit` (the hook's only consumer is in `try_commit_range`, which is
+# only compiled when `lazy-commit` is enabled). Off by default; NOT part of any
+# bundle; zero cost when disabled (the hook body is compiled out entirely,
+# not just branched around at runtime).
+fault-injection = ["lazy-commit"]
 
 # Diagnostic-only path-activation counters (task #504, F11 step 1): a Unix
 # hit/total pair around `try_reserve_aligned_exact` (settles the "coin flip"

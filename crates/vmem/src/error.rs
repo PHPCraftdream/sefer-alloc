@@ -138,7 +138,22 @@ impl std::error::Error for VmemError {}
 impl From<VmemError> for std::io::Error {
     fn from(e: VmemError) -> Self {
         match e.os_code() {
-            Some(code) => std::io::Error::from_raw_os_error(code as i32),
+            Some(code) => {
+                // Win32 GetLastError returns a u32; a code with the high bit set
+                // (e.g. HRESULT 0x8007000E) becomes negative when cast to i32.
+                // Use try_from to detect overflow; fall back to Unknown on
+                // overflow (theoretical—no real VirtualAlloc/VirtualFree
+                // failure produces such a code in practice).
+                match i32::try_from(code) {
+                    Ok(signed) => std::io::Error::from_raw_os_error(signed),
+                    Err(_) => {
+                        // Code doesn't fit in i32 (high bit set). Preserve the
+                        // VmemError as io::Error::other to avoid silent
+                        // misinterpretation.
+                        std::io::Error::other(e)
+                    }
+                }
+            }
             None if e.is_invalid_argument() => {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
             }
