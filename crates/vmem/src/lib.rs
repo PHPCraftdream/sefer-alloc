@@ -1239,11 +1239,11 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 ///
 /// Same as [`recommit`].
 pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start == end {
-        return Ok(());
-    }
     if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
         return Err(VmemError::invalid_argument());
+    }
+    if start == end {
+        return Ok(());
     }
     #[cfg(feature = "mock")]
     {
@@ -1329,11 +1329,11 @@ pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
 #[cfg(feature = "lazy-commit")]
 #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
 pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    if start == end {
-        return Ok(());
-    }
     if start > end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
         return Err(VmemError::invalid_argument());
+    }
+    if start == end {
+        return Ok(());
     }
     #[cfg(feature = "mock")]
     {

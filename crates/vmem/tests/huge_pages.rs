@@ -135,3 +135,40 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
     fn assert_error_type(_: Result<aligned_vmem::Reservation, VmemError>) {}
     assert_error_type(try_reserve_aligned_huge(0, PAGE));
 }
+
+/// V-25: Windows single-call large-page branch (task #923).
+///
+/// Every existing `reserve_aligned_huge`/`try_reserve_aligned_huge` call site
+/// in this crate uses `align` of 2 MiB or 4 MiB, which on Windows all take the
+/// TWO-CALL path. This test exercises the Windows SINGLE-CALL large-page
+/// branch by using `align == size == 64 KiB`, which is well under the
+/// `WIN_ALLOCATION_GRANULARITY` threshold. The test asserts:
+/// - the returned `Reservation`'s `as_ptr()` is non-null and aligned to 64 KiB;
+/// - the memory is writable (write a byte, read it back);
+/// - we do NOT hard-assert `is_huge()` one way or the other, since privilege
+///   availability (e.g. `SeLockMemoryPrivilege`) varies by host.
+///
+/// This also serves as a regression guard for task #921's V-6 alignment-check fix
+/// in the Windows single-call path.
+#[test]
+fn reserve_aligned_huge_64k_single_call_path() {
+    const SIZE: usize = 64 * 1024; // 64 KiB, below WIN_ALLOCATION_GRANULARITY (also 64 KiB)
+    let r = reserve_aligned_huge(SIZE, SIZE).expect("64 KiB huge reservation");
+    let base = r.as_ptr();
+
+    // The returned pointer must be non-null and aligned to the requested alignment.
+    assert!(!base.is_null(), "base pointer must be non-null");
+    assert_eq!(base.addr() % SIZE, 0, "base must be 64 KiB-aligned");
+
+    // The memory must be writable (write a byte, read it back).
+    // SAFETY: base is valid for SIZE bytes, freshly reserved.
+    unsafe {
+        base.write(0xAB);
+        assert_eq!(base.read(), 0xAB, "written byte must read back");
+    }
+
+    // We do NOT assert on `is_huge()` because privilege availability varies:
+    // some hosts have `SeLockMemoryPrivilege` and genuinely grant huge pages,
+    // most don't and fall back to ordinary pages. Either behavior is correct
+    // under the crate's best-effort contract.
+}

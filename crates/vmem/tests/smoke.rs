@@ -163,7 +163,54 @@ fn reserve_is_aligned_and_writable() {
             off += PAGE;
         }
     }
+
+    // V-27: pin the reservation-containment invariant (task #923).
+    //
+    // The crate's central structural invariant is that the usable span
+    // ([base, base + len)) is fully contained within the OS reservation
+    // ([reservation_ptr, reservation_ptr + reservation_len)). This is already
+    // asserted for CALLER-supplied values in `from_raw_parts`'s `assert!`,
+    // but this is the first test that verifies it for a Reservation the crate
+    // produces itself.
+    assert!(
+        r.reservation_ptr().addr() <= r.as_ptr().addr(),
+        "reservation start must be <= usable base"
+    );
+    assert!(
+        r.as_ptr().addr() + r.len() <= r.reservation_ptr().addr() + r.reservation_len(),
+        "usable end must be <= reservation end"
+    );
+
     // RAII: dropping `r` releases the reservation.
+}
+
+/// V-26: align > size is legal and well-tested (task #923).
+///
+/// The documented contract allows any power-of-two `align >= PAGE` with any
+/// non-zero `PAGE`-multiple `size` — the two are unrelated. This case most
+/// stresses the over-reserve arithmetic (`over = size + align`, dominated by
+/// `align`). The test asserts normal success, correct alignment, and writability.
+#[test]
+fn reserve_aligned_with_align_greater_than_size() {
+    let align = 4 * MIB;
+    let size = PAGE;
+    let r = reserve_aligned(size, align).expect("reserve with align > size");
+    let base = r.as_ptr();
+
+    assert!(!base.is_null());
+    assert_eq!(
+        base.addr() % align,
+        0,
+        "base must be align-aligned even when align > size"
+    );
+    assert_eq!(r.len(), size);
+
+    // Verify writability.
+    // SAFETY: base is valid for `size` bytes, freshly reserved.
+    unsafe {
+        base.write(0x33);
+        assert_eq!(base.read(), 0x33);
+    }
 }
 
 #[test]
