@@ -169,19 +169,19 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //
 // Three independent questions, one instrument family each:
 //
-// - Unix: `unix_reserve` tries an EXACT-size `mmap` first
+// - Unix: on 32-bit, `unix_reserve` tries an EXACT-size `mmap` first
 //   (`try_reserve_aligned_exact`) and only falls through to the over-reserve
 //   path on a miss (wrong alignment), keeping the full `size + align` mapping.
 //   The fast path costs 1 syscall on a hit (mmap) vs 3 on a miss (mmap +
 //   munmap + mmap for the over-reserve). Expected cost = `p*1 + (1-p)*3 =
-//   3 - 2p` syscalls vs a flat 1 without the fast path. This exceeds 1 for
-//   every hit rate p < 1 — the break-even is 100%, not the 50% bound from
-//   `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11, which assumed
-//   the OLD over-reserve path issued TWO munmap trim calls (removed by task
-//   #842). At real hit rates (34.4%-56.7%, see lib.rs:882-885) this is
-//   87%-131% MORE syscall traffic than not having the fast path at all.
-//   What the fast path still buys is address-space economy on 32-bit targets
-//   (exact-size mapping instead of `size + align`), not syscall savings.
+//   3 - 2p` syscalls vs a flat 1 without the fast path. On 64-bit, the fast
+//   path is disabled entirely — `unix_reserve` always over-reserves (1 syscall)
+//   because the expected cost exceeds 1 for every hit rate p < 1 (the break-even
+//   is 100%), and address-space economy (the fast path's only benefit) is not
+//   a concern on 64-bit. On 32-bit, the fast path remains enabled for VA economy,
+//   despite the same syscall-cost disadvantage, because 32-bit address space is
+//   scarce. At real hit rates (34.4%-56.7%, see lib.rs:882-885) this would be
+//   87%-131% MORE syscall traffic on 64-bit if the fast path were kept.
 //   `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle the real hit rate.
 // - Windows: `win_reserve_commit` issues reserve+commit in either
 //   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
@@ -1164,18 +1164,22 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// this crate's first real-macOS CI run, 2026-08-13 — the underlying hazard
 /// was already known repo-wide since Round 9, see
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
-/// item 48):** `MADV_DONTNEED` on Darwin is
-/// advisory-only for anonymous memory — unlike Linux, it does not reliably
-/// unmap the physical pages, so a decommit + [`recommit`] roundtrip on the
-/// Darwin family (macOS/iOS/tvOS/watchOS — all share XNU and the same
-/// `MADV_DONTNEED` semantics, not just macOS) can observe the OLD data still
-/// resident instead of a fresh zero page. This is the same "indistinguishable
+/// item 48):** `MADV_DONTNEED` on Darwin and the four BSDs (FreeBSD/DragonFly/
+/// NetBSD/OpenBSD) is advisory-only for anonymous memory — unlike Linux, it does
+/// not reliably unmap the physical pages, so a decommit + [`recommit`] roundtrip
+/// on these OS families (macOS/iOS/tvOS/watchOS — all share XNU and the same
+/// `MADV_DONTNEED` semantics, not just macOS — plus the four BSDs which use
+/// identical `MADV_DONTNEED` semantics) can observe the OLD data still resident
+/// instead of a fresh zero page. This is the same "indistinguishable
 /// from a silent no-op" shape as the huge-page case above, but for ORDINARY
-/// (non-huge) reservations on the Darwin family specifically. See
+/// (non-huge) reservations on Darwin and the BSDs specifically. See
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// for the open item; no fix is implemented
-/// yet (the real fix needs re-`mmap`(`MAP_FIXED`) over the range on Darwin, a
-/// larger change deserving its own review round).
+/// yet (the real fix needs re-`mmap`(`MAP_FIXED`) over the range, a larger
+/// change deserving its own review round). Note: this caveat applies only to
+/// the EAGER `decommit` path (which uses `MADV_DONTNEED` on all Unix); the
+/// lazy `decommit_lazy` path uses `MADV_FREE`-family advice on Darwin/BSDs and
+/// DOES free pages on those platforms.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     let ps = page_size();
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
@@ -2179,6 +2183,11 @@ fn unix_reserve(
     {
         return Err(VmemError::invalid_argument());
     }
+    // 32-bit only: try exact-size mmap first for address-space economy.
+    // On 64-bit this is a net syscall loss (the fast path costs 1 syscall on a
+    // hit, 3 on a miss, vs a flat 1 syscall for the over-reserve path), and
+    // address-space economy is not a concern on 64-bit.
+    #[cfg(target_pointer_width = "32")]
     if let Ok((base, reservation, reservation_len, granted_huge)) =
         try_reserve_aligned_exact(size, align, huge)
     {
@@ -2236,6 +2245,15 @@ fn unix_reserve(
             return Err(VmemError::invalid_argument());
         }
     };
+    // Symmetry with `try_reserve_aligned_exact`'s unconditional alignment check:
+    // that check is a runtime check (not debug_assert) because it guards against
+    // an unverified `_SC_PAGESIZE` constant producing a misaligned base on BSDs.
+    // Here, the arithmetic `align_up_addr(region_addr, align)` is self-evidently
+    // correct with no unverified-constant dependency, so a debug_assert is sufficient.
+    debug_assert!(
+        base_addr.is_multiple_of(align),
+        "over-reserve base_addr must be align-aligned"
+    );
     // SAFETY: `base_addr >= region_addr` and `align`-aligned; `with_addr`
     // carries `region_ptr`'s provenance (valid for the whole `over`-byte
     // mapping) to the computed address.
@@ -2282,7 +2300,11 @@ fn unix_reserve(
 /// flow from before this task) — the error value here is not observable by
 /// any public caller today, but is still captured correctly for future
 /// callers / diagnostics.
-#[cfg(all(unix, not(miri)))]
+///
+/// NOTE: This function is only used on 32-bit targets for address-space
+/// economy. On 64-bit, `unix_reserve` always over-reserves (1 syscall)
+/// because the fast path is a net syscall loss at all hit rates.
+#[cfg(all(unix, not(miri), target_pointer_width = "32"))]
 fn try_reserve_aligned_exact(
     size: usize,
     align: usize,
@@ -2437,19 +2459,21 @@ fn reserve_aligned_huge_raw(
 }
 
 /// Select the lazy-decommit `madvise` advice for this platform.
-/// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; other Unix
-/// (including tvOS/watchOS, because this crate's cfg coverage currently only
-/// names macOS and iOS -- `MADV_FREE_REUSABLE`'s value comes from XNU, the
-/// kernel all four Darwin targets share, so it MAY work identically on
-/// tvOS/watchOS too, but this is REASONED-FROM-SPEC and not verified on
-/// either target, see [`decommit_lazy`]'s doc): `MADV_DONTNEED`.
+/// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; FreeBSD/DragonFly:
+/// `MADV_FREE` (5); NetBSD/OpenBSD: `MADV_FREE` (6); tvOS/watchOS (same XNU
+/// kernel as macOS/iOS): `MADV_FREE_REUSABLE`'s value comes from XNU, so it
+/// MAY work identically there too, but this is REASONED-FROM-SPEC and not
+/// verified on those targets (see [`decommit_lazy`]'s doc for the
+/// Darwin/BSD caveat). REASONED-FROM-SPEC for all BSD constants — this crate
+/// has no BSD CI runner to empirically verify on; values are from each OS's
+/// own `sys/mman.h` headers (FreeBSD/DragonFly: 5, NetBSD/OpenBSD: 6).
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 #[inline]
 fn madv_free_advice() -> i32 {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         MADV_FREE
     }
@@ -2457,7 +2481,24 @@ fn madv_free_advice() -> i32 {
     {
         MADV_FREE_REUSABLE
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+    {
+        MADV_FREE_BSD_5
+    }
+    #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+    {
+        MADV_FREE_BSD_6
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    )))]
     {
         MADV_DONTNEED
     }
@@ -2470,7 +2511,7 @@ const PROT_WRITE: i32 = 0x2;
 #[cfg(all(unix, not(miri)))]
 const MAP_PRIVATE: i32 = 0x02;
 // task #893 (T6, round-7 review): `MAP_ANON`/`MAP_HUGETLB` below are gated on
-// `target_os = "linux"` alone, but their numeric VALUES are `target_arch`-
+// `target_os = "linux"` or `target_os = "android"`, but their numeric VALUES are `target_arch`-
 // dependent, not just OS-dependent — the same class of non-portability the
 // `_SC_PAGESIZE` table below (task #714) documents at length. `0x20` /
 // `0x40000` are `asm-generic/mman-common.h`'s values, correct on every
@@ -2488,9 +2529,10 @@ const MAP_PRIVATE: i32 = 0x02;
 // `fd = -1` causes `EBADF`, `mmap` returns `MAP_FAILED`, and every
 // `reserve_aligned` call fails closed with no diagnostic pointing at the
 // wrong constant (Alpha, PA-RISC and Xtensa diverge similarly, but none of
-// those is a current Rust target at all). REASONED-FROM-SPEC, not executed —
+// those is a current Rust target at all). Android's bionic libc runs on the
+// Linux kernel, so the Linux values apply directly. REASONED-FROM-SPEC, not executed —
 // no MIPS target is available to verify this against real hardware.
-#[cfg(all(unix, not(miri), target_os = "linux"))]
+#[cfg(all(unix, not(miri), any(target_os = "linux", target_os = "android")))]
 const MAP_ANON: i32 = 0x20;
 #[cfg(all(
     unix,
@@ -2526,7 +2568,7 @@ const MAP_ANON: i32 = 0x1000;
 #[cfg(all(
     unix,
     not(miri),
-    not(target_os = "linux"),
+    not(any(target_os = "linux", target_os = "android")),
     not(any(
         target_os = "macos",
         target_os = "ios",
@@ -2551,8 +2593,15 @@ compile_error!(
 /// Same architecture caveat as `MAP_ANON` above: `0x40000` is correct on
 /// x86/x86_64/aarch64/arm/riscv/powerpc, wrong on MIPS (`0x80000` per
 /// `arch/mips/include/uapi/asm/mman.h`) — see the note above `MAP_ANON` for
-/// the full rationale and failure mode.
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+/// the full rationale and failure mode. Android's bionic libc runs on the
+/// Linux kernel, so the Linux value applies directly; Android is covered by
+/// the same `target_os = "linux"` arm.
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 const MAP_HUGETLB: i32 = 0x40000;
 
 /// Linux `MAP_HUGE_2MB` (request 2 MiB huge pages at mmap time).
@@ -2572,17 +2621,39 @@ const MAP_HUGETLB: i32 = 0x40000;
 /// Note: The `MAP_HUGE_*` size encoding (the bits above `MAP_HUGE_SHIFT`)
 /// was introduced in Linux 3.8 (2013); on older kernels these bits are not
 /// interpreted by the `MAP_HUGETLB` path and the system's default huge-page size
-/// is used instead.
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+/// is used instead. Android's bionic libc runs on the Linux kernel, so the
+/// Linux value applies directly; Android is covered by the same
+/// `target_os = "linux"` arm.
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 const MAP_HUGE_2MB: i32 = 21 << 26;
 
-/// task #852 (W2): `HUGE_SUPPORTED` is true only on Linux with the `huge-pages` feature enabled.
-/// Non-Linux Unix (macOS, iOS, BSD, etc.) do NOT support `MAP_HUGETLB` — the `libc_mmap`
-/// function silently ignores the `huge` parameter on those platforms. This constant is used
-/// to ensure `granted_huge` reports the ACTUAL grant, not just the request.
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+/// task #852 (W2): `HUGE_SUPPORTED` is true only on Linux or Android with the
+/// `huge-pages` feature enabled. Non-Linux Unix (macOS, iOS, BSD, etc.) do NOT
+/// support `MAP_HUGETLB` — the `libc_mmap` function silently ignores the `huge`
+/// parameter on those platforms. This constant is used to ensure `granted_huge`
+/// reports the ACTUAL grant, not just the request. Android's bionic libc runs on
+/// the Linux kernel, so Android is covered by the same `target_os = "linux"`
+/// arm and gets huge-page support when the feature is enabled.
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 const HUGE_SUPPORTED: bool = true;
-#[cfg(all(unix, not(miri), not(all(target_os = "linux", feature = "huge-pages"))))]
+#[cfg(all(
+    unix,
+    not(miri),
+    not(all(
+        any(target_os = "linux", target_os = "android"),
+        feature = "huge-pages"
+    ))
+))]
 const HUGE_SUPPORTED: bool = false;
 
 /// task #909: the Linux huge page size this crate explicitly requests via
@@ -2602,7 +2673,14 @@ const HUGE_SUPPORTED: bool = false;
 /// huge-page-aligned (see `unix_reserve`'s own doc for the full reasoning) —
 /// REASONED-FROM-SPEC, not empirically verified on a real hugetlb-configured host
 /// with a non-2-MiB default `default_hugepagesz` (none is in this project's CI).
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+/// Android's bionic libc runs on the Linux kernel, so the Linux value applies
+/// directly; Android is covered by the same `target_os = "linux"` arm.
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 const LINUX_HUGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
 #[cfg(all(unix, not(miri)))]
 const MAP_FAILED: usize = usize::MAX;
@@ -2612,15 +2690,34 @@ const MAP_FAILED: usize = usize::MAX;
 #[cfg_attr(feature = "mock", allow(dead_code))]
 const MADV_DONTNEED: i32 = 4;
 /// Linux `MADV_FREE` (lazy reclaim under pressure).
-#[cfg(all(unix, not(miri), target_os = "linux"))]
+#[cfg(all(unix, not(miri), any(target_os = "linux", target_os = "android")))]
 // mock (task #646/F8): see MADV_DONTNEED above.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 const MADV_FREE: i32 = 8;
 /// macOS/iOS `MADV_FREE_REUSABLE` (lazy reclaim; page reusable).
 #[cfg(all(unix, not(miri), any(target_os = "macos", target_os = "ios")))]
 const MADV_FREE_REUSABLE: i32 = 7;
+/// FreeBSD/DragonFly `MADV_FREE` (lazy reclaim; advisory).
+/// REASONED-FROM-SPEC — no BSD CI runner to empirically verify on; value from
+/// `sys/mman.h` (both OSes use 5).
+#[cfg(all(unix, not(miri), any(target_os = "freebsd", target_os = "dragonfly")))]
+// mock (task #646/F8): see MADV_DONTNEED above.
+#[cfg_attr(feature = "mock", allow(dead_code))]
+const MADV_FREE_BSD_5: i32 = 5;
+/// NetBSD/OpenBSD `MADV_FREE` (lazy reclaim; advisory).
+/// REASONED-FROM-SPEC — no BSD CI runner to empirically verify on; value from
+/// `sys/mman.h` (both OSes use 6).
+#[cfg(all(unix, not(miri), any(target_os = "netbsd", target_os = "openbsd")))]
+// mock (task #646/F8): see MADV_DONTNEED above.
+#[cfg_attr(feature = "mock", allow(dead_code))]
+const MADV_FREE_BSD_6: i32 = 6;
 /// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 const MADV_HUGEPAGE: i32 = 14;
 // task #714 (rust-intel audit MEDIUM §F1): `_SC_PAGESIZE`'s numeric value is
 // NOT portable across the `unix` family — it is an index into each OS's own
