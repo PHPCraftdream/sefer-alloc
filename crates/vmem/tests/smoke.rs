@@ -939,6 +939,35 @@ fn from_raw_parts_accepts_a_valid_reservation() {
     // Dropping `adopted` releases the reservation exactly once.
 }
 
+/// task #929 (C-4): the original subtraction (`offset = base_addr - res_addr`)
+/// ran BEFORE the `base_addr >= res_addr` assert, so in debug builds
+/// (`overflow-checks = true`), a contract-violating `base < reservation`
+/// panicked at the subtraction line itself with Rust's generic "attempt to
+/// subtract with overflow" message instead of reaching the carefully-written,
+/// informative multi-clause assert. Proves the reordering (subtract after the
+/// assert) produces the intended diagnostic message.
+#[test]
+#[should_panic(expected = "base must be >= reservation")]
+fn from_raw_parts_rejects_base_below_reservation_immediately() {
+    let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
+    let (raw, raw_len, align) = r.into_parts();
+    // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
+    // `base = raw.sub(1)` is deliberately below the reservation base, exactly
+    // the contract violation this test proves panics immediately with the
+    // specific assert message. The process never reaches a point where this
+    // "reservation" is used unsoundly.
+    let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        Reservation::from_raw_parts(raw.sub(1), PAGE, raw, raw_len, align)
+    }))
+    .err();
+    // Release the reservation to avoid leaking under miri.
+    // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
+    // just produced from a live, exclusively-owned reservation.
+    unsafe { release(raw, raw_len, align) };
+    // Re-panic with the original payload to satisfy `#[should_panic]`.
+    std::panic::resume_unwind(panic_info.unwrap());
+}
+
 #[test]
 fn distinct_reservations_do_not_overlap() {
     let span = 2 * MIB;
