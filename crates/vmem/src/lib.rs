@@ -494,8 +494,11 @@ pub struct Reservation {
     ///    allocation fails and falls back to ordinary pages)
     ///
     /// If any of these conditions fail, the function falls back to ordinary
-    /// pages and this flag is `false`. For `align > 64 KiB` the two-call path
-    /// is used, which does not support `MEM_LARGE_PAGES` at all.
+    /// pages and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
+    /// are only ever requested and possibly granted via the single-call fast path
+    /// (`align <=` the OS allocation granularity, typically 64 KiB); the two-call
+    /// path used for `align >` that threshold never requests large pages, so
+    /// `granted_huge` is always `false` for a reservation that takes it.
     granted_huge: bool,
 }
 
@@ -515,6 +518,12 @@ impl core::fmt::Debug for Reservation {
 impl Reservation {
     /// The aligned usable base of this span. Non-null, valid for [`len`](Self::len)
     /// bytes, aligned to the `align` requested at reservation time.
+    ///
+    /// Returns `*mut u8` (rather than the std convention of `*const T` from
+    /// `&self`) because a raw pointer carries no borrow obligation in this
+    /// crate's model, and the span is exclusively owned by this `Reservation`
+    /// handle. The mutability reflects ownership, not mutability of the
+    /// borrow itself.
     #[must_use]
     #[inline]
     pub fn as_ptr(&self) -> *mut u8 {
@@ -584,6 +593,13 @@ impl Reservation {
         self.reservation_len
     }
 
+    /// The alignment requested at reservation time.
+    #[must_use]
+    #[inline]
+    pub const fn align(&self) -> usize {
+        self.align
+    }
+
     /// Whether OS large/huge pages were actually granted for this reservation.
     ///
     /// Returns `true` if the reservation successfully obtained large/huge pages
@@ -602,8 +618,11 @@ impl Reservation {
     ///    allocation fails and falls back to ordinary pages)
     ///
     /// If any of these conditions fail, the function falls back to ordinary pages
-    /// and this flag is `false`. For `align > 64 KiB` the two-call path is used,
-    /// which does not support `MEM_LARGE_PAGES` at all. See
+    /// and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
+    /// are only ever requested and possibly granted via the single-call fast path
+    /// (`align <=` the OS allocation granularity, typically 64 KiB); the two-call
+    /// path used for `align >` that threshold never requests large pages, so
+    /// `is_huge()` is always `false` for a reservation that takes it. See
     /// [`reserve_aligned_huge`]'s rustdoc for details.
     ///
     /// **Note:** reservations adopted via [`from_raw_parts`](Self::from_raw_parts)
@@ -708,7 +727,8 @@ impl Reservation {
     /// - `reservation` is the *underlying OS reservation* start (often equal
     ///   to `base`, but may be lower because the reservation is over-reserved
     ///   to achieve alignment and the full mapping is kept).
-    /// - `reservation_len` is the full size of the OS reservation, a non-zero
+    /// - `reservation_len` is the value this crate itself would report via
+    ///   [`Reservation::reservation_len`] for an equivalent reservation, a non-zero
     ///   multiple of [`PAGE`], `reservation_len >= len + (base - reservation)`.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
@@ -767,13 +787,14 @@ impl Reservation {
         // NOT checked:
         // - `len` must be a non-zero multiple of `PAGE` (documented, not checked)
         // - `base` must be aligned to `align` (documented, not checked)
+        // - `reservation <= base` (documented, now checked below via `base_addr >= res_addr`)
         // - `reservation_len >= len + (base - reservation)` (documented, not checked)
-        // All three are now checked explicitly below, leaving only the genuinely
+        // All four are now checked explicitly below, leaving only the genuinely
         // uncheckable invariants (pointer validity, liveness, exclusivity) as
         // unchecked caller responsibilities.
         let base_addr = base.addr();
         let res_addr = reservation.addr();
-        let offset = base_addr.saturating_sub(res_addr);
+        let offset = base_addr - res_addr; // SAFETY: guarded by `base_addr >= res_addr` assert below
         assert!(
             align.is_power_of_two()
                 && align >= PAGE
@@ -781,6 +802,7 @@ impl Reservation {
                 && reservation_len.is_multiple_of(PAGE)
                 && len != 0
                 && len.is_multiple_of(PAGE)
+                && base_addr >= res_addr
                 && base_addr.is_multiple_of(align)
                 && len
                     .checked_add(offset)
@@ -790,6 +812,7 @@ impl Reservation {
              align must be a power of two >= PAGE; \
              reservation_len must be non-zero and a multiple of PAGE; \
              len must be non-zero and a multiple of PAGE; \
+             base must be >= reservation; \
              base must be aligned to align; \
              reservation_len must be >= len + (base - reservation); \
              (reservation_len, align) must form a valid Layout; \
@@ -836,12 +859,9 @@ unsafe impl Send for Reservation {}
 /// undefined behavior on the native backend and cause leaks or crashes
 /// on the Unix backend.
 ///
-/// **Note:** there is no public constructor for this type. The only way to
-/// obtain a `ReservationParts` instance is via [`Reservation::into_reservation_parts`].
-/// The motivating use case ("self-hosted metadata") cannot currently be
-/// realized because you need to *construct* a `ReservationParts` from already-saved
-/// fields, not just destructure an existing reservation. Adding a public
-/// `ReservationParts::new` constructor is a future additive API decision.
+/// The motivating use case ("self-hosted metadata") is now fully realized:
+/// construct a `ReservationParts` from saved fields, then reconstruct a
+/// `Reservation` via [`Reservation::from_raw_parts`] when needed.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReservationParts {
@@ -854,6 +874,17 @@ pub struct ReservationParts {
 }
 
 impl ReservationParts {
+    /// Construct a `ReservationParts` from its component fields.
+    ///
+    /// This enables the "self-hosted metadata" use case where an allocator
+    /// records reservation metadata in its own data structures and later
+    /// reconstructs a `Reservation` handle via [`Reservation::from_raw_parts`].
+    #[must_use]
+    #[inline]
+    pub const fn new(ptr: *mut u8, len: usize, align: usize) -> Self {
+        Self { ptr, len, align }
+    }
+
     /// Convert this struct back into a raw tuple compatible with [`release`].
     ///
     /// This method exists only for backwards compatibility with code that
@@ -903,6 +934,13 @@ pub fn reserve_aligned(size: usize, align: usize) -> Option<Reservation> {
 /// [`VmemError::invalid_argument`] without touching the OS.
 fn validate_size_align(size: usize, align: usize) -> Result<(), VmemError> {
     if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
+        return Err(VmemError::invalid_argument());
+    }
+    // Reject size/align combinations that would overflow `size + align`
+    // internally (e.g. on the two-call path), to ensure consistent
+    // classification as `invalid_argument` across all platforms rather than
+    // an OS-specific refusal.
+    if size.checked_add(align).is_none() {
         return Err(VmemError::invalid_argument());
     }
     Ok(())
@@ -1018,6 +1056,11 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
 /// reservation must be released **exactly once**. The native (`munmap` /
 /// `VirtualFree`) paths ignore `align`; it is consulted only by the miri
 /// fallback to reconstruct the exact `Layout`.
+///
+/// If `reservation` is null, this function returns early and does nothing
+/// (the call is a no-op). The mock recorder is also skipped in this case,
+/// so a `mock`-based test's expected call log may desync if it expects a
+/// record for a null pointer.
 pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize) {
     let nn = match NonNull::new(reservation) {
         Some(n) => n,
@@ -1488,8 +1531,11 @@ pub fn try_reserve_aligned_lazy(
 ///
 /// If any of these conditions fail, the function falls back to ordinary
 /// pages and returns a reservation with [`Reservation::is_huge`] == `false`.
-/// For `align > 64 KiB` the two-call path is used, which does not support
-/// `MEM_LARGE_PAGES` at all.
+/// On Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and
+/// possibly granted via the single-call fast path (`align <=` the OS allocation
+/// granularity, typically 64 KiB); the two-call path used for `align >` that
+/// threshold never requests large pages, so the result never has
+/// [`Reservation::is_huge`] == `true`.
 ///
 /// **Decommit incompatibility (task #843 V4):** on both Windows and Linux,
 /// [`decommit`] and [`decommit_lazy`] **do not work** on huge-page reservations.
@@ -1537,7 +1583,10 @@ pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation
 /// implement) into one helper:
 ///
 /// - `size` is rounded up to a multiple of [`PAGE`] internally (any non-zero
-///   `size` is accepted; a zero `size` returns `None`).
+///   `size` is accepted; a zero `size` returns `None`). On some platforms
+///   (e.g. macOS with 16 KiB pages, or 64 KiB Windows allocation granularity),
+///   the OS may round further beyond `PAGE`, so the actual granularity
+///   consumed can exceed `PAGE`.
 /// - the span is guaranteed all-zero on every backend, INCLUDING the miri
 ///   fallback (`std::alloc` does not zero; this helper zeroes explicitly under
 ///   miri), so the returned memory is a valid all-zero initial state.
