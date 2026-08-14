@@ -35,6 +35,8 @@ unsafe { release(raw, raw_len, raw_align) };
 
 Runnable form: `tests/readme_example.rs`.
 
+**Reservation ownership:** `Reservation` is a single-owner handle over its whole span with no built-in sub-span/re-derivation API. Sub-allocation on top of this crate is expected via raw pointer arithmetic within the reservation's bounds, done by the consumer.
+
 ## What it does
 
 | API | Purpose |
