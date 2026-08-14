@@ -1,9 +1,11 @@
 //! Smoke tests for `aligned-vmem`: reservation alignment, read/write, decommit
 //! round-trip, RAII vs manual release, and contract rejection.
 
+#[cfg(feature = "lazy-commit")]
+use aligned_vmem::{commit_range, try_commit_range};
 use aligned_vmem::{
-    commit_range, decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
-    try_commit_range, try_reserve_aligned, Reservation, VmemError, PAGE,
+    decommit_lazy, leak_zeroed_pages, page_size, recommit, release, reserve_aligned,
+    try_reserve_aligned, Reservation, VmemError, PAGE,
 };
 use std::panic;
 use std::sync::Mutex;
