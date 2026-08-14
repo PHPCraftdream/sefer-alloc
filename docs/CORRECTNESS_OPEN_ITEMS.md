@@ -187,7 +187,7 @@ scoping decision is the pending step, not implementation).
     removed — a real hazard for the worktree-isolation BEFORE/AFTER
     measurement pattern this file's sibling `docs/perf/OPEN_ITEMS.md` (and
     CLAUDE.md's R29-6/"bench-profile pinning" rules) already establish as
-    standard practice.** This environment sets `CARGO_TARGET_DIR=D:devust.cargo-target`
+    standard practice.** This environment sets `CARGO_TARGET_DIR=D:\dev\rust\.cargo-target`
     globally (`env | grep CARGO_TARGET_DIR`) — a location OUTSIDE any
     single worktree, shared by every `cargo` invocation regardless of
     which worktree's `CARGO_MANIFEST_DIR` ran it. At least 4 test files
@@ -2182,12 +2182,6 @@ resolved" below.)_
       - **V-31:** Several small untested corners listed for completeness, none blocking: `release`'s early return for null pointers (`crates/vmem/src/lib.rs:1075-1078`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` method; `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, at `crates/vmem/tests/smoke.rs:739-740`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
     - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `crates/vmem/tests/min_page.rs:8-10`; `crates/vmem/src/lib.rs:160` (`MIN_PAGE` definition); `crates/vmem/src/lib.rs:1075-1078` (`release`'s null early return); `crates/vmem/tests/smoke.rs:739-740`.
 
----
-
-## Recently resolved (closure trail — do not re-list as open)
-
-1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**
-
 55. **`sefer-region`'s packaged benchmark can attempt a write outside its own
    package root when run standalone** (`crates/region/benches/region_bench.rs`)
    (Filed 2026-08-09, task #792, from the static release audit's finding F14.)
@@ -2234,6 +2228,12 @@ resolved" below.)_
      finding F14; `crates/region/benches/region_bench.rs` (the benchmark file
      itself, which now documents the exposure honestly rather than claiming
      a fix that does not exist).
+
+---
+
+## Recently resolved (closure trail — do not re-list as open)
+
+1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**
    (`tests/r14_4_promotion_free_correctness.rs`) — **RESOLVED** by an urgent
    CI-fix task (2026-07-26), responding to `origin/main` CI run `30217256247`
    / job `89833506941` failing on the `test (--features "hardened
