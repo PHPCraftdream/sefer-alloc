@@ -83,6 +83,30 @@ scoping decision is the pending step, not implementation).
    - **Status:** RESOLVED — no code/process change needed beyond this clarifying note, so a future round does not re-investigate the apparent conflict from scratch. Round 8's two review docs (`docs/reviews/2026-08-13-aligned-vmem-round8-review.md`, `...-round8-closing-review.md`) are committed in the same commit as this note, per this campaign's own established convention.
    - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC2; `git log --oneline -- docs/reviews/2026-08-12-aligned-vmem-round3-review.md` etc. (all four prior rounds' docs resolve to real commits); `CHANGELOG.md`'s R34-2 bullet (the root-crate campaign's stated convention).
 
+42. **URGENT — `aligned-vmem`'s `mock` Cargo-feature-unification
+    hazard was resolved with a doc-only fix, explicitly deferring a
+    stronger `--cfg`-flag conversion; the SAME finding recurs in
+    `numa-shim` and the deferral is load-bearing for that crate's own
+    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
+    review of the aligned-vmem round; moved into this tier 2026-08-14,
+    task #934/C-9 — see below for why.)
+
+    - **Status:** UNRESOLVED and URGENT — the manifest's own doc comment states
+      the conversion window "stays free only until 0.2.0 ships" (task #658),
+      and that deadline is effectively NOW (0.2.0 is queued for publish).
+      See "Recently resolved" section item 3 for the prior deferral context.
+      Moved from `[T]` to `[A]` in this same edit: the item's own stated
+      "Next trigger" below has now fired, so per this file's own
+      current-state-card convention it must not sit in a tier implying it
+      needs no imminent action.
+    - **Next trigger:** settle the `--cfg` conversion decision before 0.2.0
+      publishes if it is going to be settled at all. This is a maintainer
+      call requiring a real design choice, not a mechanical indexing task.
+    - **Evidence:** `crates/vmem/Cargo.toml:62-87` (the `mock = []` feature
+      comment, which explicitly names the 0.2.0 deadline);
+      `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-22;
+      `docs/reviews/2026-08-14-aligned-vmem-round11-closing-review.md` finding C-9.
+
 ### [T] Tracked, not yet actioned
 
 _(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
@@ -1884,14 +1908,6 @@ resolved" below.)_
       `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`
       gate in the `aligned-vmem-gates` job.
 
-42. **Deferred decision — `aligned-vmem`'s `mock` Cargo-feature-unification
-    hazard was resolved with a doc-only fix, explicitly deferring a
-    stronger `--cfg`-flag conversion; the SAME finding recurs in
-    `numa-shim` and the deferral is load-bearing for that crate's own
-    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
-    review of the aligned-vmem round.) **Closed** — see "Recently resolved"
-    section for the full closure narrative.
-
 43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
     constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
     targets, never empirically executed.** (Filed 2026-08-09, task
@@ -2144,6 +2160,26 @@ resolved" below.)_
     - **Current-number-or-verdict:** confirmed clean for round 8's diff: `cargo check -p aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets` and the equivalent `cargo clippy ... -- -D warnings` both pass on this host (`x86_64-unknown-linux-gnu` is already installed via rustup — no new toolchain component needed). Cost measured: seconds once the target's std is cached, a few minutes cold.
     - **Next trigger:** any future round of this campaign that touches `crates/vmem/src/lib.rs` or `crates/vmem/tests/*.rs` should add this command to its own verification pass (in addition to, not instead of, the existing default-target matrix) before merging, not just before pushing — the campaign's existing "confirm CI green" step already catches it post-push, but that is one round later than the campaign's own zero-trust-review convention intends. `--all-targets` is load-bearing: without it, `tests/` is not built and Unix-only tests are not checked.
     - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC5.
+
+52. **[T, INFO] `decommit_lazy` leaves free BSD reclaim on the table** (Filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4.) Future opportunity/enhancement, not a defect — the behavior is correctly documented today.
+
+    - **Status:** OPEN — tracked as enhancement opportunity, not a blocking correctness issue.
+    - **Current-number-or-verdict:** `MADV_FREE` is defined only for `target_os = "linux"` (`crates/vmem/src/lib.rs:2585`) and `MADV_FREE_REUSABLE` only for macOS/iOS (`:2588`); every other Unix — including FreeBSD (MADV_FREE = 5), NetBSD (6), OpenBSD (6), DragonFly (5), all four of which are in the crate's own supported `MAP_ANON` list at `:2348-2362` — falls back to `MADV_DONTNEED` (`madv_free_advice` at `:2304-2317`). That fallback is *correct* (the doc at `:2292-2298` says so plainly), just not the cheap path the function's name advertises. Adding BSD-specific `#[cfg]` arms would make `decommit_lazy` actually lazy on the BSDs (where `MADV_FREE` is a distinct, cheaper syscall from `MADV_DONTNEED`).
+    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4; `crates/vmem/src/lib.rs:2576-2588` (the `MADV_DONTNEED`/`MADV_FREE`/`MADV_FREE_REUSABLE` constant definitions with their `#[cfg]` gates).
+
+53. **[T, INFO] `Reservation::from_raw_parts` hard-codes `granted_huge: false`, creating a fail-open hazard when callers follow documented decommit advice** (Filed 2026-08-14, task #934/C-9, sub-observation about item 48 from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`.)
+
+    - **Status:** OPEN — tracked as documentation/contract hazard, not a live bug (item 48 already records the decommit/Darwin gap; this item records the `from_raw_parts` interaction that amplifies it).
+    - **Current-number-or-verdict:** `from_raw_parts` (`crates/vmem/src/lib.rs:824`) constructs its returned `Reservation` with `granted_huge: false` unconditionally, with the comment "Caller cannot know; conservatively assume false". This means a reservation ADOPTED via `from_raw_parts` (as opposed to created directly by this crate's reserve functions) ALWAYS reports `is_huge() == false`, even if the underlying reservation actually holds huge pages. This interacts badly with item 48: the documented decommit advice (`crates/vmem/src/lib.rs:1487-1495`) says "use `is_huge()` to detect" the huge-page-incompatibility case on Darwin (where `decommit` silently fails to release physical memory). A caller following BOTH pieces of advice — adopt a reservation via `from_raw_parts`, then check `is_huge()` before deciding whether to call `decommit` — gets `is_huge() == false` unconditionally and calls `decommit` on memory it was explicitly told not to, a silent fail-open. See item 48 for the underlying decommit/Darwin gap; this item records the `from_raw_parts` amplification vector.
+    - **Evidence:** `crates/vmem/src/lib.rs:824` (the `granted_huge: false` hard-code in `from_raw_parts`'s constructor); item 48 (the decommit/Darwin documented gap); `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-9 (which identifies the same `from_raw_parts` contract issue from a different angle).
+
+54. **[T, INFO] Tautological tests and small untested corners** (Filed 2026-08-14, task #934/C-9, combining `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31.) Low-priority housekeeping items, not correctness gaps.
+
+    - **Status:** OPEN — tracked for completeness as hygiene, not blocking.
+    - **Current-number-or-verdict:**
+      - **V-29:** `tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
+      - **V-31:** Several small untested corners listed for completeness, none blocking: `release(null, …)`'s early return (`lib.rs:1015-1018`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` (`:538-540`); `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, `tests/smoke.rs:637`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
+    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `tests/min_page.rs:8-10`; `crates/vmem/src/lib.rs:160` (`MIN_PAGE` definition).
 
 ---
 
