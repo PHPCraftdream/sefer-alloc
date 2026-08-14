@@ -823,7 +823,6 @@ impl Reservation {
              got align={align}, reservation_len={reservation_len}, len={len}, \
              base={base:?}, reservation={reservation:?}"
         );
-        let _offset = base_addr - res_addr;
         Self {
             base: base_nn,
             len,
