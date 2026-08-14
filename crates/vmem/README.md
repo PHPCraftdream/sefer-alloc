@@ -16,7 +16,7 @@ through `extern "system"` / `extern "C"`, the same way `std` itself links
 aligned-vmem = "0.2"
 ```
 
-```rust
+```text
 use aligned_vmem::{reserve_aligned, release};
 
 // Reserve 4 MiB aligned to 4 MiB — e.g. one allocator segment.
@@ -32,6 +32,8 @@ unsafe { base.write(0xAB); assert_eq!(base.read(), 0xAB); }
 let (raw, raw_len, raw_align) = r.into_parts();
 unsafe { release(raw, raw_len, raw_align) };
 ```
+
+Runnable form: `tests/readme_example.rs`.
 
 ## What it does
 
@@ -60,9 +62,7 @@ as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
 to `lazy-commit` now), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
 must both additionally be multiples of the huge-page size (2 MiB), or the
-request is rejected up front**; **on Windows, `MEM_LARGE_PAGES` works only when
-`align <= 64 KiB`, `size` is a multiple of the system's large-page minimum,
-and the process has `SeLockMemoryPrivilege`**; otherwise the request falls back
+request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path (`align <= WIN_ALLOCATION_GRANULARITY`, typically 64 KiB); the two-call path used for `align >` that threshold never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
 to ordinary pages — see the function's own rustdoc for the full technical
 explanation; use `Reservation::is_huge` to detect whether a reservation actually
 got large/huge pages on either platform),
