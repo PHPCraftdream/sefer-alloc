@@ -2176,7 +2176,10 @@ fn unix_reserve(
     align: usize,
     huge: bool,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
-    #[cfg(all(target_os = "linux", feature = "huge-pages"))]
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android"),
+        feature = "huge-pages"
+    ))]
     if huge
         && (!size.is_multiple_of(LINUX_HUGE_PAGE_SIZE)
             || !align.is_multiple_of(LINUX_HUGE_PAGE_SIZE))
@@ -2830,11 +2833,17 @@ extern "C" {
 #[cfg(all(unix, not(miri)))]
 unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
     #[cfg_attr(
-        not(all(target_os = "linux", feature = "huge-pages")),
+        not(all(
+            any(target_os = "linux", target_os = "android"),
+            feature = "huge-pages"
+        )),
         allow(unused_mut)
     )]
     let mut flags = MAP_PRIVATE | MAP_ANON;
-    #[cfg(all(target_os = "linux", feature = "huge-pages"))]
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android"),
+        feature = "huge-pages"
+    ))]
     if huge {
         flags |= MAP_HUGETLB | MAP_HUGE_2MB;
     }
@@ -2912,17 +2921,28 @@ unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     let _ = ret;
 }
 
-#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+#[cfg(all(
+    unix,
+    not(miri),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
 unsafe fn libc_madvise_hugepage(addr: *mut u8, len: usize) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region;
-    // `MADV_HUGEPAGE` is a best-effort hint (errors ignored).
+    // `MADV_HUGEPAGE` is a best-effort hint (errors ignored). Android's bionic
+    // libc runs on the Linux kernel, so `MADV_HUGEPAGE` applies there too.
     let _ = madvise(addr as *mut core::ffi::c_void, len, MADV_HUGEPAGE);
 }
 
-#[cfg(all(unix, not(miri), not(target_os = "linux"), feature = "huge-pages"))]
+#[cfg(all(
+    unix,
+    not(miri),
+    not(any(target_os = "linux", target_os = "android")),
+    feature = "huge-pages"
+))]
 unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
-    // Non-Linux Unix: no transparent-huge-page madvise; the mmap fallback
-    // already yielded ordinary pages. No-op.
+    // Non-Linux, non-Android Unix: no transparent-huge-page madvise; the mmap
+    // fallback already yielded ordinary pages. No-op.
 }
 
 // ===========================================================================
