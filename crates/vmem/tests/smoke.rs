@@ -286,7 +286,7 @@ fn decommit_recommit_roundtrip() {
     }
 }
 
-/// Round-11 closing review (T-3): decommit/recommit on an over-reserved span
+/// Round 2 pre-release review, task #949 (T-3): decommit/recommit on an over-reserved span
 /// (nonzero head offset). Every existing decommit/recommit test uses `size ==
 /// align`, which takes a zero-offset path. This test uses `align = 4 * size`
 /// to force `base > reservation` by a nonzero head offset, confirming that
@@ -492,7 +492,7 @@ fn page_size_is_a_valid_os_page() {
     assert_eq!(PAGE, 4096);
 }
 
-/// Round-11 closing review (T-5): `validate_page_size_public()`'s fallback-validation
+/// Round 2 pre-release review, task #949 (T-5): `validate_page_size_public()`'s fallback-validation
 /// branch (for wrong `_SC_PAGESIZE` constants on untested BSDs) is now testable.
 #[test]
 #[cfg(feature = "bench-internals")]

@@ -361,7 +361,7 @@ fn sequential_commit_range_grows_incrementally() {
     }
 }
 
-/// Round-11 closing review (T-1): Windows `reserve_aligned_lazy` actually saves
+/// Round 2 pre-release review, task #949 (T-1): Windows `reserve_aligned_lazy` actually saves
 /// commit charge. Every existing test in this file would pass verbatim even if
 /// `reserve_aligned_lazy_raw` simply forwarded to the eager path internally
 /// (which is literally what the Unix/miri/mock backends already do). This test

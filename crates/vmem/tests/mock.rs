@@ -341,7 +341,7 @@ fn reset_clears_faults_and_log() {
     assert_eq!(mock::drain().len(), 2);
 }
 
-/// Round-11 closing review (T-4): `release(NULL, ...)` early-return is
+/// Round 2 pre-release review, task #949 (T-4): `release(NULL, ...)` early-return is
 /// documented but untested. The docs state that `release` returns early and
 /// does nothing when `reservation` is null, and that the mock recorder is
 /// also skipped in that case. This test verifies both halves.
