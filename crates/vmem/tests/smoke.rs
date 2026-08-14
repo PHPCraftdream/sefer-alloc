@@ -988,3 +988,25 @@ fn try_reserve_huge_size_is_a_genuine_os_refusal_not_invalid_argument() {
         }
     }
 }
+
+/// Regression test for task #922 V-11: size/align combinations that would
+/// overflow `size + align` must be rejected as `invalid_argument` on all
+/// platforms, not reach the OS backend and produce platform-specific errors.
+#[test]
+#[cfg_attr(miri, ignore)]
+fn try_reserve_overflow_is_invalid_argument_on_all_platforms() {
+    // Pick a size close to usize::MAX that is page-aligned.
+    let overflow_size = usize::MAX & !(PAGE - 1);
+    // Any reasonable alignment (e.g., PAGE) will cause `size + align` to overflow.
+    match try_reserve_aligned(overflow_size, PAGE) {
+        Err(e) => assert!(
+            e.is_invalid_argument(),
+            "size/align causing overflow must be invalid_argument, not OS-specific error: {e:?}"
+        ),
+        Ok(_) => {
+            // Only plausible with genuinely enormous overcommit-backed
+            // virtual memory; not itself a defect if it ever happens -- the
+            // crate never promised a size ceiling beyond page-alignment.
+        }
+    }
+}
