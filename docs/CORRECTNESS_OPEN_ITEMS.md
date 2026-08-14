@@ -107,6 +107,115 @@ scoping decision is the pending step, not implementation).
       `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-22;
       `docs/reviews/2026-08-14-aligned-vmem-round11-closing-review.md` finding C-9.
 
+
+11. **Coverage/process gap: `npm run check`'s
+    clippy gate did not catch pre-existing example/test lint+compile errors
+    that CI's clippy job caught.** _(The BUGS this item originally enumerated
+    — the E0601 in `r31_10_trim_cost_gate` and the `doc_lazy_continuation` in
+    `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257` —
+    plus three further latent failures unmasked once those cleared (E0432/E0599
+    in `r31_3_large_cache_extended_narrow_on` and `r31_8_large_cache_scan_isolation_*`
+    from incomplete `required-features` missing `alloc-decommit`, and a
+    `clippy::int_plus_one` in `tests/remote_ring_shadow_head.rs:165`) — were ALL
+    fixed by R33-1/task #506, commit `e526517befbf5a0cd0ca1a7ee62f9d84ffe509ee`; see
+    "Recently resolved" §6 below.
+    This remaining open half is the coverage GAP, not the bugs.)_
+    `scripts/check-all.mjs` HAS run all five ci.yml clippy rows since R30-5
+    (task #454), so the local gate should have caught at least the failures
+    under the default/experimental/`--all-features` combos it exercises — yet
+    the offending commits landed red. Follow-up: determine why (procedural —
+    pushed without running `npm run check`; or an as-yet-undetected drift
+    between the local matrix and ci.yml) and tighten enforcement so a red
+    `cargo clippy --all-targets -- -D warnings` row cannot land again
+    regardless of which of the five rows breaks.
+
+    **R33-2 update (task #507, 2026-08-03) — ROOT CAUSE FOUND; this is NOT a
+    coverage gap.** Direct investigation (git archaeology + infrastructure
+    audit) establishes the cause is PROCEDURAL, on two independent grounds,
+    and rules out the alternatives the original framing left open:
+
+    - **NOT a coverage gap.** `scripts/check-all.mjs` runs all five ci.yml
+      clippy rows (GENERATED from `PER_PR_ROWS`, byte-identical argv, since
+      R30-5/task #454), pinned by `tests/ci_clippy_matrix_consistency.rs`. The
+      original "coverage/process gap" framing above was a misdiagnosis of the
+      *symptom* (red rows landed) as a *hole in the gate*; the gate has no
+      hole. The item's "coverage" half is therefore CLOSED.
+    - **NOT toolchain drift, NOT a later-commit reintroduction.** Three of the
+      five failures (E0601 `r31_10_trim_cost_gate`, E0432/E0599
+      `r31_3_large_cache_extended_narrow_on`, E0599 `r31_8_large_cache_scan_*`)
+      are rustc *compile errors*, not clippy lints — they cannot be caused by
+      clippy tightening and would fail under any toolchain the moment the file
+      was introduced; `git log -S` shows each was introduced WITH its
+      file/line in its own round (`0985e22d1075135bb9740b23a457d32742d2a072`
+      R31-3 = 70 commits pre-fix; `4f897237cf6e4bcbe6a722f5c124890e15f07e82`
+      task #488 = 36 commits; `e6bbc6acbc3f01b649d70b02bd41b4f664dc822e`
+      R32-1 = 30 commits; `d38bf73c63fa989eace81e659a3844b98f6656c5`
+      task #502 = 9 commits), not reintroduced by an unrelated later
+      change. The two lints (`doc_lazy_continuation`, `int_plus_one`) are
+      long-stable. No `rust-toolchain.toml` exists to have drifted.
+    - **The actual cause: the "run `npm run check` before every push"
+      convention (CLAUDE.md) was not followed for those pushes, AND the async
+      CI red signal that should have been the safety net went unwatched.** This
+      repo has NO enforcement of the convention — no git hooks (`.git/hooks/`
+      holds only samples; `core.hooksPath` unset), no husky/lint-staged, and no
+      required status check blocks a direct push to `main` (direct-commit model;
+      CI runs *after* the push).
+
+    **Disposition / hardening (R33-2):** a mandatory pre-push git hook was
+    considered and rejected as out-of-character for this repo's
+    convention-by-discipline culture (CLAUDE.md uses zero hooks; a hook that
+    silently blocks pushes a developer doesn't know about is itself a footgun)
+    and low-effectiveness in practice (the developers who skip the gate are
+    exactly those who won't install an opt-in hook). The implemented measure is
+    the appropriately-scoped one for this repo: CLAUDE.md's "Before every push:
+    `npm run check`" section is strengthened with (a) the diagnosed root cause,
+    (b) a correction of its own stale "three feature-matrix entries" text (it
+    has been five clippy rows since R30-5), and (c) the genuinely-missing piece
+    — a **post-push "confirm CI went green" step** (CI is the only async safety
+    net, runs an unpinned toolchain/OS the local gate cannot reproduce, and is
+    the thing that eventually caught this — main was red for up to 70 commits
+    purely because nobody watched the post-push run). The airtight ceiling —
+    GitHub branch protection requiring the `clippy` check before merge — is
+    recommended but is repo-settings-side, outside any file a commit can touch.
+    Residual OPEN: re-scoped to "maintain the post-push CI-watch discipline now
+    in CLAUDE.md"; the original "coverage-gap" follow-up is closed (there was
+    no gap to tighten).
+
+13. **Root-caused: `git worktree add` +
+    this environment's global `CARGO_TARGET_DIR` can leave STALE test
+    binaries that fail with misleading errors after the worktree is
+    removed — a real hazard for the worktree-isolation BEFORE/AFTER
+    measurement pattern this file's sibling `docs/perf/OPEN_ITEMS.md` (and
+    CLAUDE.md's R29-6/"bench-profile pinning" rules) already establish as
+    standard practice.** This environment sets `CARGO_TARGET_DIR=D:\dev\rust\.cargo-target`
+    globally (`env | grep CARGO_TARGET_DIR`) — a location OUTSIDE any
+    single worktree, shared by every `cargo` invocation regardless of
+    which worktree's `CARGO_MANIFEST_DIR` ran it. At least 4 test files
+    (`tests/ci_clippy_matrix_consistency.rs`, `tests/dbg_hook_safety_tripwire.rs`,
+    `tests/no_stale_doc_references.rs`, `tests/no_stale_loom_files.rs`) use
+    `env!("CARGO_MANIFEST_DIR")` — a COMPILE-TIME constant baked into the
+    compiled test binary. During task #498's own verification, two
+    `git worktree add`s were created and removed (for BEFORE-measurement
+    isolation and for a flaky-test baseline check), each building into the
+    same shared `CARGO_TARGET_DIR`. After both worktrees were removed, the
+    NEXT `cargo test --features production` run against the main tree
+    intermittently reused a stale compiled test binary (cargo's fingerprint
+    matched on identical SOURCE content, not on which worktree produced the
+    binary) whose baked-in `CARGO_MANIFEST_DIR` pointed at one of the
+    now-deleted worktree paths — producing `read scripts/check-matrix.mjs:
+    NotFound` and `panicked ... "no source files found"` errors that look
+    like real test failures but are pure build-cache staleness. Confirmed
+    the fix: `touch <file>.rs` (or any edit) on each of the 4 affected test
+    files forces a rebuild and the failures disappear; a subsequent full
+    suite run was clean. **Not itself investigated for a permanent fix**
+    (e.g. a per-worktree `CARGO_TARGET_DIR`, or a documented "run `cargo
+    clean -p sefer-alloc --profile test` after removing a measurement
+    worktree" step) — filed here so a future round doing BEFORE/AFTER
+    worktree-isolated measurement (the R14-10/R29-6-established pattern)
+    knows to either use a worktree-local `CARGO_TARGET_DIR` override or
+    force-touch/rebuild the `env!(CARGO_MANIFEST_DIR)`-dependent test files
+    after removing a scratch worktree, rather than re-diagnosing this from
+    scratch.
 ### [T] Tracked, not yet actioned
 
 _(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
@@ -997,79 +1106,6 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     this file's append-only convention (do not silently drop the other
     four from the bundle).
 
-11. **[A, filed 2026-08-02, task #498] Coverage/process gap: `npm run check`'s
-    clippy gate did not catch pre-existing example/test lint+compile errors
-    that CI's clippy job caught.** _(The BUGS this item originally enumerated
-    — the E0601 in `r31_10_trim_cost_gate` and the `doc_lazy_continuation` in
-    `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257` —
-    plus three further latent failures unmasked once those cleared (E0432/E0599
-    in `r31_3_large_cache_extended_narrow_on` and `r31_8_large_cache_scan_isolation_*`
-    from incomplete `required-features` missing `alloc-decommit`, and a
-    `clippy::int_plus_one` in `tests/remote_ring_shadow_head.rs:165`) — were ALL
-    fixed by R33-1/task #506, commit `e526517befbf5a0cd0ca1a7ee62f9d84ffe509ee`; see
-    "Recently resolved" §6 below.
-    This remaining open half is the coverage GAP, not the bugs.)_
-    `scripts/check-all.mjs` HAS run all five ci.yml clippy rows since R30-5
-    (task #454), so the local gate should have caught at least the failures
-    under the default/experimental/`--all-features` combos it exercises — yet
-    the offending commits landed red. Follow-up: determine why (procedural —
-    pushed without running `npm run check`; or an as-yet-undetected drift
-    between the local matrix and ci.yml) and tighten enforcement so a red
-    `cargo clippy --all-targets -- -D warnings` row cannot land again
-    regardless of which of the five rows breaks.
-
-    **R33-2 update (task #507, 2026-08-03) — ROOT CAUSE FOUND; this is NOT a
-    coverage gap.** Direct investigation (git archaeology + infrastructure
-    audit) establishes the cause is PROCEDURAL, on two independent grounds,
-    and rules out the alternatives the original framing left open:
-
-    - **NOT a coverage gap.** `scripts/check-all.mjs` runs all five ci.yml
-      clippy rows (GENERATED from `PER_PR_ROWS`, byte-identical argv, since
-      R30-5/task #454), pinned by `tests/ci_clippy_matrix_consistency.rs`. The
-      original "coverage/process gap" framing above was a misdiagnosis of the
-      *symptom* (red rows landed) as a *hole in the gate*; the gate has no
-      hole. The item's "coverage" half is therefore CLOSED.
-    - **NOT toolchain drift, NOT a later-commit reintroduction.** Three of the
-      five failures (E0601 `r31_10_trim_cost_gate`, E0432/E0599
-      `r31_3_large_cache_extended_narrow_on`, E0599 `r31_8_large_cache_scan_*`)
-      are rustc *compile errors*, not clippy lints — they cannot be caused by
-      clippy tightening and would fail under any toolchain the moment the file
-      was introduced; `git log -S` shows each was introduced WITH its
-      file/line in its own round (`0985e22d1075135bb9740b23a457d32742d2a072`
-      R31-3 = 70 commits pre-fix; `4f897237cf6e4bcbe6a722f5c124890e15f07e82`
-      task #488 = 36 commits; `e6bbc6acbc3f01b649d70b02bd41b4f664dc822e`
-      R32-1 = 30 commits; `d38bf73c63fa989eace81e659a3844b98f6656c5`
-      task #502 = 9 commits), not reintroduced by an unrelated later
-      change. The two lints (`doc_lazy_continuation`, `int_plus_one`) are
-      long-stable. No `rust-toolchain.toml` exists to have drifted.
-    - **The actual cause: the "run `npm run check` before every push"
-      convention (CLAUDE.md) was not followed for those pushes, AND the async
-      CI red signal that should have been the safety net went unwatched.** This
-      repo has NO enforcement of the convention — no git hooks (`.git/hooks/`
-      holds only samples; `core.hooksPath` unset), no husky/lint-staged, and no
-      required status check blocks a direct push to `main` (direct-commit model;
-      CI runs *after* the push).
-
-    **Disposition / hardening (R33-2):** a mandatory pre-push git hook was
-    considered and rejected as out-of-character for this repo's
-    convention-by-discipline culture (CLAUDE.md uses zero hooks; a hook that
-    silently blocks pushes a developer doesn't know about is itself a footgun)
-    and low-effectiveness in practice (the developers who skip the gate are
-    exactly those who won't install an opt-in hook). The implemented measure is
-    the appropriately-scoped one for this repo: CLAUDE.md's "Before every push:
-    `npm run check`" section is strengthened with (a) the diagnosed root cause,
-    (b) a correction of its own stale "three feature-matrix entries" text (it
-    has been five clippy rows since R30-5), and (c) the genuinely-missing piece
-    — a **post-push "confirm CI went green" step** (CI is the only async safety
-    net, runs an unpinned toolchain/OS the local gate cannot reproduce, and is
-    the thing that eventually caught this — main was red for up to 70 commits
-    purely because nobody watched the post-push run). The airtight ceiling —
-    GitHub branch protection requiring the `clippy` check before merge — is
-    recommended but is repo-settings-side, outside any file a commit can touch.
-    Residual OPEN: re-scoped to "maintain the post-push CI-watch discipline now
-    in CLAUDE.md"; the original "coverage-gap" follow-up is closed (there was
-    no gap to tighten).
-
 12. **[T, filed 2026-08-02, task #498] `xthread_large_double_free_no_double_reclaim`
     (`tests/regression_xthread_large_free_no_leak.rs`) failed once during a
     full `cargo test --features production` run, not reproduced on 7
@@ -1146,41 +1182,6 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     identifying that an already-landed one (for a differently-described
     symptom) already closed it.
 
-13. **[A, filed 2026-08-02, task #498] Root-caused: `git worktree add` +
-    this environment's global `CARGO_TARGET_DIR` can leave STALE test
-    binaries that fail with misleading errors after the worktree is
-    removed — a real hazard for the worktree-isolation BEFORE/AFTER
-    measurement pattern this file's sibling `docs/perf/OPEN_ITEMS.md` (and
-    CLAUDE.md's R29-6/"bench-profile pinning" rules) already establish as
-    standard practice.** This environment sets `CARGO_TARGET_DIR=D:\dev\rust\.cargo-target`
-    globally (`env | grep CARGO_TARGET_DIR`) — a location OUTSIDE any
-    single worktree, shared by every `cargo` invocation regardless of
-    which worktree's `CARGO_MANIFEST_DIR` ran it. At least 4 test files
-    (`tests/ci_clippy_matrix_consistency.rs`, `tests/dbg_hook_safety_tripwire.rs`,
-    `tests/no_stale_doc_references.rs`, `tests/no_stale_loom_files.rs`) use
-    `env!("CARGO_MANIFEST_DIR")` — a COMPILE-TIME constant baked into the
-    compiled test binary. During task #498's own verification, two
-    `git worktree add`s were created and removed (for BEFORE-measurement
-    isolation and for a flaky-test baseline check), each building into the
-    same shared `CARGO_TARGET_DIR`. After both worktrees were removed, the
-    NEXT `cargo test --features production` run against the main tree
-    intermittently reused a stale compiled test binary (cargo's fingerprint
-    matched on identical SOURCE content, not on which worktree produced the
-    binary) whose baked-in `CARGO_MANIFEST_DIR` pointed at one of the
-    now-deleted worktree paths — producing `read scripts/check-matrix.mjs:
-    NotFound` and `panicked ... "no source files found"` errors that look
-    like real test failures but are pure build-cache staleness. Confirmed
-    the fix: `touch <file>.rs` (or any edit) on each of the 4 affected test
-    files forces a rebuild and the failures disappear; a subsequent full
-    suite run was clean. **Not itself investigated for a permanent fix**
-    (e.g. a per-worktree `CARGO_TARGET_DIR`, or a documented "run `cargo
-    clean -p sefer-alloc --profile test` after removing a measurement
-    worktree" step) — filed here so a future round doing BEFORE/AFTER
-    worktree-isolated measurement (the R14-10/R29-6-established pattern)
-    knows to either use a worktree-local `CARGO_TARGET_DIR` override or
-    force-touch/rebuild the `env!(CARGO_MANIFEST_DIR)`-dependent test files
-    after removing a scratch worktree, rather than re-diagnosing this from
-    scratch.
 
 14. **[T, filed 2026-08-02, task #499] Flaky (pre-existing, NOT caused by
     task #499's changes) —
@@ -2164,22 +2165,69 @@ resolved" below.)_
 52. **[T, INFO] `decommit_lazy` leaves free BSD reclaim on the table** (Filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4.) Future opportunity/enhancement, not a defect — the behavior is correctly documented today.
 
     - **Status:** OPEN — tracked as enhancement opportunity, not a blocking correctness issue.
-    - **Current-number-or-verdict:** `MADV_FREE` is defined only for `target_os = "linux"` (`crates/vmem/src/lib.rs:2585`) and `MADV_FREE_REUSABLE` only for macOS/iOS (`:2588`); every other Unix — including FreeBSD (MADV_FREE = 5), NetBSD (6), OpenBSD (6), DragonFly (5), all four of which are in the crate's own supported `MAP_ANON` list at `:2348-2362` — falls back to `MADV_DONTNEED` (`madv_free_advice` at `:2304-2317`). That fallback is *correct* (the doc at `:2292-2298` says so plainly), just not the cheap path the function's name advertises. Adding BSD-specific `#[cfg]` arms would make `decommit_lazy` actually lazy on the BSDs (where `MADV_FREE` is a distinct, cheaper syscall from `MADV_DONTNEED`).
-    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4; `crates/vmem/src/lib.rs:2576-2588` (the `MADV_DONTNEED`/`MADV_FREE`/`MADV_FREE_REUSABLE` constant definitions with their `#[cfg]` gates).
+    - **Current-number-or-verdict:** `MADV_FREE` is defined only for Linux at `crates/vmem/src/lib.rs:2612-2615` and `MADV_FREE_REUSABLE` only for macOS/iOS at `:2617-2618`; every other Unix — including FreeBSD (MADV_FREE = 5), NetBSD (6), OpenBSD (6), DragonFly (5), all four of which are in the crate's own supported `MAP_ANON` list at `:2492-2506` — falls back to `MADV_DONTNEED` via the `madv_free_advice` function at `:2448-2461`. That fallback is *correct* (the doc at `decommit_lazy` says so plainly), just not the cheap path the function's name advertises. Adding BSD-specific `#[cfg]` arms would make `decommit_lazy` actually lazy on the BSDs (where `MADV_FREE` is a distinct, cheaper syscall from `MADV_DONTNEED`).
+    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4; `crates/vmem/src/lib.rs:2612-2618` (the `MADV_DONTNEED`/`MADV_FREE`/`MADV_FREE_REUSABLE` constant definitions with their `#[cfg]` gates); `crates/vmem/src/lib.rs:2448-2461` (the `madv_free_advice` function); `crates/vmem/src/lib.rs:2492-2506` (the `MAP_ANON` cfg arms listing the supported BSDs).
 
 53. **[T, INFO] `Reservation::from_raw_parts` hard-codes `granted_huge: false`, creating a fail-open hazard when callers follow documented decommit advice** (Filed 2026-08-14, task #934/C-9, sub-observation about item 48 from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`.)
 
     - **Status:** OPEN — tracked as documentation/contract hazard, not a live bug (item 48 already records the decommit/Darwin gap; this item records the `from_raw_parts` interaction that amplifies it).
-    - **Current-number-or-verdict:** `from_raw_parts` (`crates/vmem/src/lib.rs:824`) constructs its returned `Reservation` with `granted_huge: false` unconditionally, with the comment "Caller cannot know; conservatively assume false". This means a reservation ADOPTED via `from_raw_parts` (as opposed to created directly by this crate's reserve functions) ALWAYS reports `is_huge() == false`, even if the underlying reservation actually holds huge pages. This interacts badly with item 48: the documented decommit advice (`crates/vmem/src/lib.rs:1487-1495`) says "use `is_huge()` to detect" the huge-page-incompatibility case on Darwin (where `decommit` silently fails to release physical memory). A caller following BOTH pieces of advice — adopt a reservation via `from_raw_parts`, then check `is_huge()` before deciding whether to call `decommit` — gets `is_huge() == false` unconditionally and calls `decommit` on memory it was explicitly told not to, a silent fail-open. See item 48 for the underlying decommit/Darwin gap; this item records the `from_raw_parts` amplification vector.
-    - **Evidence:** `crates/vmem/src/lib.rs:824` (the `granted_huge: false` hard-code in `from_raw_parts`'s constructor); item 48 (the decommit/Darwin documented gap); `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-9 (which identifies the same `from_raw_parts` contract issue from a different angle).
+    - **Current-number-or-verdict:** `from_raw_parts` (`crates/vmem/src/lib.rs:833`) constructs its returned `Reservation` with `granted_huge: false` unconditionally, with the comment "Caller cannot know; conservatively assume false". This means a reservation ADOPTED via `from_raw_parts` (as opposed to created directly by this crate's reserve functions) ALWAYS reports `is_huge() == false`, even if the underlying reservation actually holds huge pages. This interacts badly with the huge-page decommit incompatibility: `decommit`'s own documentation (`crates/vmem/src/lib.rs:1150-1159`) warns that it does not work on huge-page reservations on Windows and Linux, and `reserve_aligned_huge`'s documentation (`crates/vmem/src/lib.rs:1518-1520`) instructs callers to "use the returned `Reservation::is_huge` method" to detect whether huge pages were actually granted. A caller following BOTH pieces of advice — adopt a reservation via `from_raw_parts`, then check `is_huge()` before deciding whether to call `decommit` — gets `is_huge() == false` unconditionally and calls `decommit` on memory it was explicitly told not to, a silent fail-open. See item 48 for the underlying Darwin zero-fill gap (a separate issue documented at `decommit:1161-1175`); this item records the `from_raw_parts` amplification vector for the Windows/Linux huge-page case.
+    - **Evidence:** `crates/vmem/src/lib.rs:833` (the `granted_huge: false` hard-code in `from_raw_parts`'s constructor); item 48 (the decommit/Darwin documented gap); `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-18 (which identifies the same `from_raw_parts` contract issue from a different angle).
 
 54. **[T, INFO] Tautological tests and small untested corners** (Filed 2026-08-14, task #934/C-9, combining `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31.) Low-priority housekeeping items, not correctness gaps.
 
     - **Status:** OPEN — tracked for completeness as hygiene, not blocking.
     - **Current-number-or-verdict:**
-      - **V-29:** `tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
-      - **V-31:** Several small untested corners listed for completeness, none blocking: `release(null, …)`'s early return (`lib.rs:1015-1018`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` (`:538-540`); `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, `tests/smoke.rs:637`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
-    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `tests/min_page.rs:8-10`; `crates/vmem/src/lib.rs:160` (`MIN_PAGE` definition).
+      - **V-29:** `crates/vmem/tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
+      - **V-31:** Several small untested corners listed for completeness, none blocking: `release`'s early return for null pointers (`crates/vmem/src/lib.rs:1075-1078`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` method; `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, at `crates/vmem/tests/smoke.rs:739-740`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
+    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `crates/vmem/tests/min_page.rs:8-10`; `crates/vmem/src/lib.rs:160` (`MIN_PAGE` definition); `crates/vmem/src/lib.rs:1075-1078` (`release`'s null early return); `crates/vmem/tests/smoke.rs:739-740`.
+
+55. **`sefer-region`'s packaged benchmark can attempt a write outside its own
+   package root when run standalone** (`crates/region/benches/region_bench.rs`)
+   (Filed 2026-08-09, task #792, from the static release audit's finding F14.)
+   Moved from the "Recently resolved" section to `[T]` in this same edit — the item's
+   own text explicitly explains why it cannot be closed (no fix reachable from
+   `sefer-region`'s own source; requires an upstream `bench-scale-tool` change), so marking it
+   "**OPEN**" in a section whose header explicitly says "do not re-list as open" was a miscategorization.
+
+   - **Root cause, confirmed against `bench-scale-tool` 0.1.0's actual
+     source** (not just its doc comments): `Harness` exposes no public API
+     to override where its manifest lives. `manifest_path()` (private to
+     that crate) walks up from `CARGO_MANIFEST_DIR` for the nearest
+     `[workspace]`-declaring `Cargo.toml`, falling back to
+     `<crate>/../../bench-iters.txt` only when no such ancestor exists
+     (e.g. this crate extracted standalone from a published tarball). A
+     plain `cargo bench` run (no `--calibrate` flag) still attempts
+     `save_manifest` at the end whenever any workload was JIT-calibrated
+     on the spot (the self-healing path for a missing manifest entry) —
+     which is every workload on a fresh/missing manifest. For a
+     standalone-extracted package this targets a path OUTSIDE the package
+     root.
+   - **Why not closed:** there is no fix reachable from `sefer-region`'s
+     own source. The harness's manifest routing lives entirely in the
+     separately-published `bench-scale-tool` crate (a registry dependency,
+     not a workspace member this repo vendors or can patch). Closing this
+     for real requires either an upstream `bench-scale-tool` change (a
+     public API to override the manifest path, or a "read-only, never
+     write" mode) or a CI-side fix (extracting the packaged tarball into
+     an isolated temp directory and observing the actual failure/success
+     mode empirically, rather than assuming from source reading alone).
+   - **Mitigating:** `load_manifest` on a missing/unreadable path returns
+     an empty map rather than crashing, and every workload self-heals via
+     a 1-second JIT calibration pass rather than aborting — so a
+     standalone `cargo bench` run does not fail outright; the exposure is
+     the ATTEMPTED write outside the package root (which may itself fail
+     silently on a read-only extraction, or succeed and pollute an
+     ancestor directory on a writable one), not a guaranteed crash.
+   - **Next trigger:** either (a) `bench-scale-tool` ships a version with
+     a manifest-path override API sefer-region's `region_bench.rs` can
+     use, or (b) someone actually performs the isolated-tarball-extraction
+     verification this item currently only reasons about from source, and
+     records the real observed behavior.
+   - **Evidence:** `docs/reviews/2026-08-09-sefer-region-static-release-audit.md`
+     finding F14; `crates/region/benches/region_bench.rs` (the benchmark file
+     itself, which now documents the exposure honestly rather than claiming
+     a fix that does not exist).
 
 ---
 
@@ -2378,6 +2426,7 @@ resolved" below.)_
    upcoming round.** — **CLOSED** (updated 2026-08-09, task #778/F5 —
    round-closing review of the numa-shim round). Filed 2026-08-09,
    task #776/F13, round-closing review of the aligned-vmem round.
+   **RE-OPENED** 2026-08-14 (task #934/C-9) — see the `[A]` tier's item 42; the deadline this deferral was conditioned on has fired.
 
    - **Closure narrative:** `numa-shim`'s round reached its own §C10 finding
      in task #726 (commit `53b3ca2`) and applied EXACTLY the policy this
@@ -3351,61 +3400,6 @@ resolved" below.)_
      without broken-intra-doc-link warnings; the new links resolve correctly on the
      rendered docs.
    - **Files changed:** `crates/region/src/sync_region.rs`, `docs/CORRECTNESS_OPEN_ITEMS.md`.
-
-42. **`sefer-region`'s packaged benchmark can attempt a write outside its own
-   package root when run standalone** (`crates/region/benches/region_bench.rs`)
-   — **OPEN**, from the static release audit's finding F14
-   (`docs/reviews/2026-08-09-sefer-region-static-release-audit.md`, task #792).
-
-   - **Root cause, confirmed against `bench-scale-tool` 0.1.0's actual
-     source** (not just its doc comments): `Harness` exposes no public API
-     to override where its manifest lives. `manifest_path()` (private to
-     that crate) walks up from `CARGO_MANIFEST_DIR` for the nearest
-     `[workspace]`-declaring `Cargo.toml`, falling back to
-     `<crate>/../../bench-iters.txt` only when no such ancestor exists
-     (e.g. this crate extracted standalone from a published tarball). A
-     plain `cargo bench` run (no `--calibrate` flag) still attempts
-     `save_manifest` at the end whenever any workload was JIT-calibrated
-     on the spot (the self-healing path for a missing manifest entry) —
-     which is every workload on a fresh/missing manifest. For a
-     standalone-extracted package this targets a path OUTSIDE the package
-     root.
-   - **Why not closed:** there is no fix reachable from `sefer-region`'s
-     own source. The harness's manifest routing lives entirely in the
-     separately-published `bench-scale-tool` crate (a registry dependency,
-     not a workspace member this repo vendors or can patch). Closing this
-     for real requires either an upstream `bench-scale-tool` change (a
-     public API to override the manifest path, or a "read-only, never
-     write" mode) or a CI-side fix (extracting the packaged tarball into
-     an isolated temp directory and observing the actual failure/success
-     mode empirically, rather than assuming from source reading alone).
-   - **Mitigating:** `load_manifest` on a missing/unreadable path returns
-     an empty map rather than crashing, and every workload self-heals via
-     a 1-second JIT calibration pass rather than aborting — so a
-     standalone `cargo bench` run does not fail outright; the exposure is
-     the ATTEMPTED write outside the package root (which may itself fail
-     silently on a read-only extraction, or succeed and pollute an
-     ancestor directory on a writable one), not a guaranteed crash.
-   - **Next trigger:** either (a) `bench-scale-tool` ships a version with
-     a manifest-path override API sefer-region's `region_bench.rs` can
-     use, or (b) someone actually performs the isolated-tarball-extraction
-     verification this item currently only reasons about from source, and
-     records the real observed behavior.
-   - **Files changed:** `crates/region/benches/region_bench.rs` (comment
-     documenting the exposure honestly instead of claiming a fix that
-     doesn't exist); this index entry.
-   - **Related sub-finding, CLOSED by task #820:** the crate-local
-     `crates/region/benches/bench-iters.txt` file was deleted as misleading
-     — its header falsely claimed the harness read it directly (when the
-     harness has no way to be pointed at any crate-local file), and its
-     ID format used underscores (`st_insert`) instead of the actual slash
-     format (`st/insert`) used by the bench harness. No functionality is lost;
-     the workspace-level `bench-iters.txt` is the canonical source when running
-     within a workspace, and JIT calibration self-heals on fresh runs.
-
-43. **Item 43 (macOS half only) — `aligned-vmem`'s macOS `_SC_PAGESIZE = 29`
-    constant, previously only REASONED-FROM-SPEC, is now empirically
-    confirmed on real Apple Silicon hardware.** — **RESOLVED** (macOS half
     only; the BSD half of item 43 stays OPEN in the main index above — no
     BSD CI runner exists for this crate).
 
