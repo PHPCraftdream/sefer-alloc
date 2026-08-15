@@ -22,6 +22,24 @@
 //!
 //! Runnable form: `tests/mock.rs`.
 //!
+//! # Cross-thread drops split the Reserve/Release pair (task #959)
+//!
+//! The log behind [`drain`] is a `thread_local!`: a [`Call`] lands in
+//! the log of the thread the call runs ON, not the thread the
+//! reservation was created on. [`crate::Reservation`] is `Send` (see
+//! the `unsafe impl Send for Reservation` and its `SAFETY` comment in
+//! `src/lib.rs` — a reservation owns its bytes exclusively, with no
+//! thread affinity), so a test can create a reservation on thread A,
+//! move it to thread B, and drop it there. `Reservation`'s `Drop` then
+//! records `Call::Release` in thread B's log while the paired
+//! `Call::Reserve` stays in thread A's log; neither thread's `drain()`
+//! ever sees both halves, and a naive "every Reserve has a Release"
+//! leak check on thread A would misread the reservation as leaked.
+//! This is the thread-local log working as designed — not unsoundness,
+//! not a leak. Practical rule: [`drain`] on the thread where the drop
+//! happened; a test that moves a `Reservation` across threads must not
+//! expect one `drain()` to contain the Reserve/Release pair.
+//!
 //! # Cargo feature-unification hazard (task #715)
 //!
 //! `mock` is a NON-ADDITIVE, backend-REPLACING feature, and Cargo unifies
@@ -214,6 +232,10 @@ std::thread_local! {
 
 /// Drain and return every recorded [`Call`] since the last drain (or test
 /// start). Clears the log.
+///
+/// Returns THIS thread's log only: a [`Call::Release`] recorded by a
+/// `Reservation` dropped on another thread is not visible here — see
+/// the module-level "Cross-thread drops" section for the mechanism.
 #[must_use]
 #[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
 pub fn drain() -> Vec<Call> {

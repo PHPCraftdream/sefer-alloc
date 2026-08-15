@@ -10,6 +10,22 @@
 //! cargo run -p aligned-vmem --release --features bench-internals --example v20_849_unix_exact_reserve_hit_rate
 //! ```
 //!
+//! # Platform scope: the measured path is 32-bit Unix only (task #944, P-1)
+//!
+//! The fast path this example counts (`try_reserve_aligned_exact`, seen
+//! through `unix_exact_reserve_attempts()` / `unix_exact_reserve_hits()`)
+//! exists only on 32-bit Unix targets: finding P-1 of task #944 gated it
+//! to `target_pointer_width = "32"` (and miri is excluded), so on a
+//! 64-bit host it is compiled out BY DESIGN — not a bug. Both counters
+//! therefore stay 0 for the whole process, and every line this example
+//! prints reads `hits=0/0 (NaN%)`. That is "the code path is absent on
+//! this platform", NOT a measured hit rate of 0% and not a broken run;
+//! the counters' own rustdoc in `src/lib.rs` says the same (they are
+//! also always 0 on Windows and under miri). This example was written
+//! for task #849, before P-1's gate landed, and is kept for 32-bit Unix
+//! hosts; when built for a 64-bit target it prints an up-front notice
+//! saying exactly this instead of failing silently.
+//!
 //! For `align == size` (the fast path this measures), consecutive reservations
 //! within ONE process are highly correlated with each other (Linux places
 //! them at `base - k*size` under top-down `mmap`, so their alignment residue
@@ -58,6 +74,21 @@ fn measure(label: &str, size: usize, align: usize) {
 }
 
 fn main() {
+    // P-1 (task #944) compiled the measured fast path out of every
+    // 64-bit target; say so up front rather than letting four 0/0
+    // (NaN%) lines imply a measured 0% hit rate. Compiled out entirely
+    // on 32-bit targets, where the measurement is real.
+    #[cfg(target_pointer_width = "64")]
+    {
+        println!(
+            "note: this is a 64-bit target, where the measured fast path \
+             (try_reserve_aligned_exact) is compiled out by design \
+             (task #944, finding P-1): every line below will read \
+             hits=0/0 (NaN%). That is the path being absent on this \
+             platform, not a 0% hit rate and not a broken run; measure \
+             on a 32-bit Unix target for real numbers."
+        );
+    }
     // Existing bench arms' regimes (benches/vmem_bench.rs), plus the new
     // 4 MiB regime V20/P17 flags as the crate's own flagship
     // SEGMENT-aligned-SEGMENT use case (e.g. sefer-alloc's own segments).
