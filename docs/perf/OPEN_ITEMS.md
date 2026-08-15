@@ -2029,6 +2029,62 @@ for completeness.
     >   (names the tier-2 case, task #543); this task's commit (gzip fix +
     >   `.gitignore` rule + this entry, task #551).
 
+47. **PERF-1 (aligned-vmem, 2026-08-14/15, task #957) — Windows single-call
+    huge-page path pays a guaranteed-failing `VirtualAlloc(MEM_LARGE_PAGES)`
+    syscall when `size` is not a multiple of `GetLargePageMinimum()`.**
+
+    > **Current state**
+    > - **Status:** deferred — documented here, not implemented this round.
+    > - **Current number/verdict:** NOT MEASURED (no benchmark run this
+    >   round; this is a code-reading-only finding from an independent review
+    >   of `aligned-vmem`'s round-3 fix pass, not a gate report). `crates/vmem/src/lib.rs`'s
+    >   `win_reserve_commit` (called from `try_reserve_aligned_huge` with
+    >   `extra_commit_flags = MEM_LARGE_PAGES`, always through the single-call
+    >   fast path since huge-page requests use `align <= WIN_ALLOCATION_GRANULARITY`)
+    >   issues `VirtualAlloc(NULL, commit_len, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, ..)`
+    >   unconditionally, then on failure retries once without the large-page
+    >   flag. `GetLargePageMinimum()` (the Windows API that reports the actual
+    >   minimum large-page size — typically 2 MiB on x86_64, but not
+    >   guaranteed cross-arch/cross-SKU) is never called anywhere in the
+    >   crate (confirmed by grep — zero matches). Windows large-page
+    >   allocations fail outright unless `size` is an exact multiple of that
+    >   value, so any `reserve_aligned_huge(size, ..)` call whose `size` is
+    >   not a multiple of the true large-page minimum pays one syscall that
+    >   is guaranteed to fail (by page-size mismatch, not transient OS
+    >   refusal) before falling back to the ordinary-page retry — a
+    >   deterministic wasted syscall on every such call, not just an
+    >   occasional privilege-related miss.
+    > - **Why deferred, not implemented:** two designs were weighed. (a) A
+    >   cached pre-check — call `GetLargePageMinimum()` once (cache the
+    >   result the same way `page_size()` already caches `query_os_page_size()`),
+    >   then skip straight to the ordinary-page path (or return early) when
+    >   `size % large_page_minimum != 0`, instead of paying the doomed
+    >   syscall. (b) Leave as-is and document. (a) is the real fix but
+    >   touches the same `win_reserve_commit` fast path multiple prior
+    >   rounds (`V-6`/`V-7`/`V-8`/`V-32`/`H2C6`) have already hardened with
+    >   care around exact alignment/fallback semantics — a change there needs
+    >   its own dedicated round with Windows CI coverage to verify the
+    >   pre-check doesn't itself introduce a new false-skip (e.g. wrongly
+    >   short-circuiting a `size` that IS a valid multiple due to a caching
+    >   bug), not a bundled hygiene-pass task. The cost is also bounded and
+    >   one-time-per-call (one extra failing syscall, not a loop or
+    >   per-byte cost), and `reserve_aligned_huge` is documented as
+    >   best-effort or already off the hot allocation path for typical
+    >   callers (large upfront segment reservations, not per-allocation),
+    >   making this a real but low-urgency inefficiency rather than a
+    >   correctness bug.
+    > - **Next trigger:** a measured wall-clock/syscall-count gate showing
+    >   `reserve_aligned_huge` is called with non-multiple-of-large-page-minimum
+    >   `size` on a hot path in a real downstream consumer, OR a future round
+    >   already touching `win_reserve_commit`'s fast path for another reason
+    >   (natural place to fold in the pre-check without a dedicated
+    >   Windows-only round).
+    > - **Evidence:** `crates/vmem/src/lib.rs` `win_reserve_commit`
+    >   (single-call fast path, `extra_commit_flags` branch) and
+    >   `try_reserve_aligned_huge` (its `MEM_LARGE_PAGES` caller); confirmed
+    >   via `grep -rn GetLargePageMinimum crates/vmem/src/` returning zero
+    >   matches as of this entry.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

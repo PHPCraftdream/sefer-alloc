@@ -571,29 +571,23 @@ fn page_size_is_a_valid_os_page() {
     assert_eq!(PAGE, 4096);
 }
 
-/// Round 2 pre-release review, task #949 (T-5): `validate_page_size_public()`'s fallback-validation
+/// Round 2 pre-release review, task #949 (T-5): `validate_page_size()`'s fallback-validation
 /// branch (for wrong `_SC_PAGESIZE` constants on untested BSDs) is now testable.
 #[test]
 #[cfg(feature = "bench-internals")]
 fn validate_page_size_falls_back_on_invalid_values() {
     // Zero is invalid (OS query failure).
-    assert_eq!(aligned_vmem::validate_page_size_public(0), PAGE);
+    assert_eq!(aligned_vmem::validate_page_size(0), PAGE);
     // Non-power-of-two is invalid.
-    assert_eq!(aligned_vmem::validate_page_size_public(5), PAGE);
+    assert_eq!(aligned_vmem::validate_page_size(5), PAGE);
     // Value smaller than PAGE is invalid (wrong sysconf parameter).
-    assert_eq!(aligned_vmem::validate_page_size_public(2048), PAGE); // 2 KiB < 4 KiB PAGE
-                                                                     // Valid value (4 KiB) passes through.
-    assert_eq!(aligned_vmem::validate_page_size_public(PAGE), PAGE);
+    assert_eq!(aligned_vmem::validate_page_size(2048), PAGE); // 2 KiB < 4 KiB PAGE
+                                                              // Valid value (4 KiB) passes through.
+    assert_eq!(aligned_vmem::validate_page_size(PAGE), PAGE);
     // Valid value (16 KiB, Apple Silicon) passes through.
-    assert_eq!(
-        aligned_vmem::validate_page_size_public(16 * 1024),
-        16 * 1024
-    );
+    assert_eq!(aligned_vmem::validate_page_size(16 * 1024), 16 * 1024);
     // Valid value (64 KiB, some Linux configs) passes through.
-    assert_eq!(
-        aligned_vmem::validate_page_size_public(64 * 1024),
-        64 * 1024
-    );
+    assert_eq!(aligned_vmem::validate_page_size(64 * 1024), 64 * 1024);
 }
 
 /// Round-6 review (S6) / `docs/CORRECTNESS_OPEN_ITEMS.md` item 43: the

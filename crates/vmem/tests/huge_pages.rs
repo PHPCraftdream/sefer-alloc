@@ -173,9 +173,10 @@ fn reserve_aligned_huge_64k_single_call_path() {
 
     // This assertion is safe unconditionally: GetLargePageMinimum() returns 2 MiB
     // on x86_64, so a 64 KiB request can NEVER succeed regardless of privilege.
-    // If this assertion fails, it's the W-1 bug (task #949): Reservation::is_huge()
-    // incorrectly returns true after a Windows large-page request failed and fell
-    // back to ordinary pages.
+    // If this assertion fails, it's the W-1 bug (fixed in task #943; this test
+    // was added by task #949 to guard it): Reservation::is_huge() incorrectly
+    // returns true after a Windows large-page request failed and fell back to
+    // ordinary pages.
     assert!(
         !r.is_huge(),
         "is_huge() must be false for 64 KiB: GetLargePageMinimum() is 2 MiB, so a \

@@ -401,7 +401,7 @@ pub fn reset_bench_internals_counters() {
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[inline]
 #[must_use]
-pub fn validate_page_size_public(queried: usize) -> usize {
+pub fn validate_page_size(queried: usize) -> usize {
     validate_page_size_impl(queried)
 }
 
@@ -1128,7 +1128,21 @@ fn validate_size_align(size: usize, align: usize) -> Result<(), VmemError> {
     // internally (e.g. on the two-call path), to ensure consistent
     // classification as `invalid_argument` across all platforms rather than
     // an OS-specific refusal.
-    if size.checked_add(align).is_none() {
+    let Some(sum) = size.checked_add(align) else {
+        return Err(VmemError::invalid_argument());
+    };
+    // task #957 (fxx-3.3): `checked_add` above only rejects overflow past
+    // `usize::MAX`, but `Layout::from_size_align` (consulted later for the
+    // resulting `reservation_len`, e.g. in `release`'s G-1 assert and in
+    // `from_raw_parts`'s equivalent check) additionally requires the size to
+    // fit within `isize::MAX` once rounded up to `align` -- a `sum` between
+    // `isize::MAX` and `usize::MAX` passes `checked_add` but would later fail
+    // that `Layout` construction, turning what should be an immediate,
+    // attributable `invalid_argument` here into a deferred assert/panic
+    // downstream. Reject it here instead, for the same reason `checked_add`
+    // is checked above: a contract violation should be classified
+    // consistently and immediately, before any OS or `Layout` call.
+    if sum > isize::MAX as usize {
         return Err(VmemError::invalid_argument());
     }
     Ok(())
@@ -1301,7 +1315,7 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
          got reservation_len={reservation_len}, align={align}"
     );
 
-    let nn = unsafe { NonNull::new_unchecked(reservation) };
+    let nn = NonNull::new(reservation).expect("checked non-null above");
     #[cfg(feature = "mock")]
     mock::record(mock::Call::Release {
         reservation: reservation.addr(),
@@ -2162,6 +2176,13 @@ unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize,
 // alone is enabled without a real decommit call site reachable.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: DecommitKind) {
+    // task #957 (NUM-1): guard the `end - start` subtraction below against an
+    // inverted range (caller contract violation) so a debug build panics with
+    // an attributable message rather than the subtraction silently wrapping.
+    debug_assert!(
+        start <= end,
+        "decommit_pages_impl: start ({start}) must be <= end ({end})"
+    );
     let len = end - start;
     // Windows has no lazy `MADV_FREE` equivalent — both eager and lazy map to
     // `MEM_DECOMMIT`.
@@ -2175,6 +2196,13 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: De
 // mock (task #646/F8): see decommit_pages_impl above.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    // task #957 (NUM-1): guard the `end - start` subtraction below against an
+    // inverted range (caller contract violation) so a debug build panics with
+    // an attributable message rather than the subtraction silently wrapping.
+    debug_assert!(
+        start <= end,
+        "recommit_pages_impl: start ({start}) must be <= end ({end})"
+    );
     let len = end - start;
     // SAFETY: caller guarantees `[base+start, +len)` is within a reservation
     // owned by them; `MEM_COMMIT` re-commits the physical pages. NULL indicates
@@ -2620,6 +2648,13 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
 // alone is enabled without a real decommit call site reachable.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: DecommitKind) {
+    // task #957 (NUM-1): guard the `end - start` subtraction below against an
+    // inverted range (caller contract violation) so a debug build panics with
+    // an attributable message rather than the subtraction silently wrapping.
+    debug_assert!(
+        start <= end,
+        "decommit_pages_impl: start ({start}) must be <= end ({end})"
+    );
     let len = end - start;
     // task #719: missing SAFETY comment (the Windows sibling has one for the
     // identical `base.add(start)` offset above its own commit call).
