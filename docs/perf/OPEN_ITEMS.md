@@ -2032,6 +2032,11 @@ for completeness.
 47. **PERF-1 (aligned-vmem, 2026-08-14/15, task #957) — Windows single-call
     huge-page path pays a guaranteed-failing `VirtualAlloc(MEM_LARGE_PAGES)`
     syscall when `size` is not a multiple of `GetLargePageMinimum()`.**
+    **Second doomed-syscall class added 2026-08-16 (task #960, pre-publish
+    audit finding 4): the same path's unconditional ordinary-page retry pays
+    a second doomed syscall whenever the first `MEM_LARGE_PAGES` call fails
+    for a reason that dooms the retry too (e.g. `ERROR_NOT_ENOUGH_MEMORY`).
+    Two classes, two DIFFERENT cut-off mechanisms — see card.**
 
     > **Current state**
     > - **Status:** deferred — documented here, not implemented this round.
@@ -2054,6 +2059,32 @@ for completeness.
     >   refusal) before falling back to the ordinary-page retry — a
     >   deterministic wasted syscall on every such call, not just an
     >   occasional privilege-related miss.
+    > - **Second doomed-syscall class (added 2026-08-16, task #960,
+    >   pre-publish audit finding 4; same code site, DIFFERENT cut-off
+    >   mechanism, NOT covered by the class-1 pre-check):** the ordinary-page
+    >   retry in `win_reserve_commit`'s single-call path (the
+    >   `if extra_commit_flags != 0` branch inside the `None` arm of
+    >   `match NonNull::new(p ...)`) runs UNCONDITIONALLY after ANY failure
+    >   of the first `VirtualAlloc(.. | MEM_LARGE_PAGES)` call — including a
+    >   genuine `ERROR_NOT_ENOUGH_MEMORY` refusal, where the retry asks the
+    >   same pressured system for the SAME byte count again and almost
+    >   certainly fails too: two doomed syscalls instead of one exactly in
+    >   the regime (memory pressure) where a huge-pages consumer is worst
+    >   off. Unlike class 1, `size` here can be a perfect multiple of
+    >   `GetLargePageMinimum()`, so the cached divisibility pre-check cannot
+    >   cut this class — it is only reachable by inspecting the FIRST call's
+    >   error code (captured immediately after the failed syscall, per task
+    >   #713's `GetLastError` discipline) and retrying only on causes a
+    >   plain-page retry can plausibly cure (missing large-page privilege,
+    >   `ERROR_PRIVILEGE_NOT_HELD`, or an invalid-parameter class) — never on
+    >   `ERROR_NOT_ENOUGH_MEMORY`. **Two classes, two mechanisms:** class 1 =
+    >   cached `GetLargePageMinimum()` divisibility pre-check (no syscall);
+    >   class 2 = error-code discrimination between the two calls. Closing
+    >   ONE does NOT close the other — a future implementation must not
+    >   treat the size pre-check as covering both. Same deferral rationale
+    >   as class 1: the error-code check edits the same hardened fast path
+    >   (`V-6`/`V-7`/`V-8`/`V-32`/`H2C6`) and needs the same dedicated
+    >   Windows-covered round.
     > - **Why deferred, not implemented:** two designs were weighed. (a) A
     >   cached pre-check — call `GetLargePageMinimum()` once (cache the
     >   result the same way `page_size()` already caches `query_os_page_size()`),
@@ -2077,13 +2108,20 @@ for completeness.
     >   `reserve_aligned_huge` is called with non-multiple-of-large-page-minimum
     >   `size` on a hot path in a real downstream consumer, OR a future round
     >   already touching `win_reserve_commit`'s fast path for another reason
-    >   (natural place to fold in the pre-check without a dedicated
-    >   Windows-only round).
+    >   (natural place to fold in BOTH cut-off mechanisms without a
+    >   dedicated Windows-only round), OR (class 2 specifically) evidence
+    >   that real consumers hit `ERROR_NOT_ENOUGH_MEMORY`-shaped first
+    >   failures where the retry also fails.
     > - **Evidence:** `crates/vmem/src/lib.rs` `win_reserve_commit`
     >   (single-call fast path, `extra_commit_flags` branch) and
     >   `try_reserve_aligned_huge` (its `MEM_LARGE_PAGES` caller); confirmed
     >   via `grep -rn GetLargePageMinimum crates/vmem/src/` returning zero
-    >   matches as of this entry.
+    >   matches as of this entry. Class 2: the unconditional retry is the
+    >   `if extra_commit_flags != 0` branch inside the `None` arm of the
+    >   single-call path's `match NonNull::new(p ...)` (the retry's own
+    >   failure surfaces as `VmemError::last_os_error()`); added to this
+    >   card by task #960 (aligned-vmem 0.2.0 pre-publish audit,
+    >   2026-08-16, finding 4).
 
 ## Recently resolved (closure trail — do not re-list as open)
 

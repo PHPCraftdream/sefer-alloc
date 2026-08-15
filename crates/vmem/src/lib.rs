@@ -2279,8 +2279,12 @@ extern "system" {
 }
 
 /// Mirrors the Windows `SYSTEM_INFO` struct — only `dwPageSize` is read.
+///
+/// `Default` is all-zeroes (null for the two address fields);
+/// `GetSystemInfo` overwrites the fields it defines.
 #[cfg(all(windows, not(miri)))]
 #[repr(C)]
+#[derive(Default)]
 struct SystemInfo {
     w_processor_architecture: u16,
     w_reserved: u16,
@@ -2293,26 +2297,6 @@ struct SystemInfo {
     dw_allocation_granularity: u32,
     w_processor_level: u16,
     w_processor_revision: u16,
-}
-
-#[cfg(all(windows, not(miri)))]
-impl Default for SystemInfo {
-    fn default() -> Self {
-        // Zeroed; `GetSystemInfo` overwrites the fields it defines.
-        Self {
-            w_processor_architecture: 0,
-            w_reserved: 0,
-            dw_page_size: 0,
-            lp_minimum_application_address: core::ptr::null_mut(),
-            lp_maximum_application_address: core::ptr::null_mut(),
-            dw_active_processor_mask: 0,
-            dw_number_of_processors: 0,
-            dw_processor_type: 0,
-            dw_allocation_granularity: 0,
-            w_processor_level: 0,
-            w_processor_revision: 0,
-        }
-    }
 }
 
 #[cfg(all(windows, not(miri)))]
