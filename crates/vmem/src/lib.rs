@@ -184,8 +184,9 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   is 100%), and address-space economy (the fast path's only benefit) is not
 //   a concern on 64-bit. On 32-bit, the fast path remains enabled for VA economy,
 //   despite the same syscall-cost disadvantage, because 32-bit address space is
-//   scarce. At real hit rates (34.4%-56.7%, see lib.rs:882-885) this would be
-//   87%-131% MORE syscall traffic on 64-bit if the fast path were kept.
+//   scarce. At real hit rates (34.4%-56.7%, see `reserve_aligned`'s own
+//   rustdoc "Cost on Unix fast-path miss" note) this would be 87%-131% MORE
+//   syscall traffic on 64-bit if the fast path were kept.
 //   `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle the real hit rate.
 // - Windows: `win_reserve_commit` issues reserve+commit in either
 //   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
@@ -520,8 +521,11 @@ pub struct Reservation {
     /// this flag is `true` only when ALL of the following hold:
     /// 1. `align <= 64 KiB` (the single-call fast path requirement)
     /// 2. `size` is a multiple of the system's large-page minimum
-    /// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
-    ///    allocation fails and falls back to ordinary pages)
+    /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
+    ///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
+    ///    this for you — a process with the privilege granted but not
+    ///    enabled fails exactly like an unprivileged one and silently falls
+    ///    back to ordinary pages)
     ///
     /// If any of these conditions fail, the function falls back to ordinary
     /// pages and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
@@ -632,8 +636,11 @@ impl Reservation {
     /// this returns `true` only when ALL of the following hold:
     /// 1. `align <= 64 KiB` (the single-call fast path requirement)
     /// 2. `size` is a multiple of the system's large-page minimum
-    /// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
-    ///    allocation fails and falls back to ordinary pages)
+    /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
+    ///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
+    ///    this for you — a process with the privilege granted but not
+    ///    enabled fails exactly like an unprivileged one and silently falls
+    ///    back to ordinary pages)
     ///
     /// If any of these conditions fail, the function falls back to ordinary pages
     /// and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
@@ -1242,6 +1249,28 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
 /// (the call is a no-op). The mock recorder is also skipped in this case,
 /// so a `mock`-based test's expected call log may desync if it expects a
 /// record for a null pointer.
+///
+/// # Panics
+///
+/// Panics (via an informative multi-clause `assert!`, task #947/G-1) if
+/// `reservation` is non-null and `(reservation_len, align)` violates the
+/// documented contract above: `reservation_len` must be non-zero and a
+/// multiple of [`PAGE`], `align` must be a power of two `>= PAGE`, and the
+/// pair must form a valid [`std::alloc::Layout`]. Before this assert existed,
+/// this doc comment used to claim "the native (`munmap`/`VirtualFree`) paths
+/// ignore `align`" — which was true in the sense that a contract-violating
+/// call would silently "succeed" (no crash, no error) on those native
+/// backends; only the `miri` fallback path (which reconstructs a `Layout`
+/// from `reservation_len`/`align` to call back into `std::alloc`) would panic
+/// on the same bad input, with a bare, uninformative `.expect()` message.
+/// That divergence is now closed: this function validates the contract up
+/// front and panics with a descriptive message on **every** backend, not
+/// only under `miri`. The assert runs before `mock::record`, so under the
+/// `mock` feature a contract-violating call panics before it is ever
+/// recorded in the mock call log — it does not appear as a `Release` entry.
+///
+/// A null `reservation` is unaffected by this: it remains the documented
+/// no-op above and is not a panic path.
 pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize) {
     // task #947/G-1: validate the documented contract BEFORE calling into the
     // miri backend, matching `from_raw_parts`'s defensive pattern. This prevents
@@ -1739,8 +1768,11 @@ pub fn try_reserve_aligned_lazy(
 /// only when ALL of the following hold:
 /// 1. `align <= 64 KiB` (the single-call fast path requirement)
 /// 2. `size` is a multiple of the system's large-page minimum
-/// 3. The calling process has `SeLockMemoryPrivilege` (otherwise the
-///    allocation fails and falls back to ordinary pages)
+/// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
+///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
+///    this for you — a process with the privilege granted but not enabled
+///    fails exactly like an unprivileged one and silently falls back to
+///    ordinary pages)
 ///
 /// If any of these conditions fail, the function falls back to ordinary
 /// pages and returns a reservation with [`Reservation::is_huge`] == `false`.
@@ -2198,7 +2230,9 @@ fn reserve_aligned_huge_raw(
     // the two-call path is used, which does not support large pages at all.
     // Even when align <= 64 KiB, large-page allocation requires:
     // 1. size is a multiple of the system's large-page minimum
-    // 2. The process has SeLockMemoryPrivilege
+    // 2. The process has SeLockMemoryPrivilege granted AND has enabled it
+    //    via AdjustTokenPrivileges (this crate does not do this for you --
+    //    granted-but-not-enabled fails exactly like unprivileged)
     // If either fails, the allocation falls back to ordinary pages and
     // granted_huge is false.
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
@@ -2655,13 +2689,17 @@ fn reserve_aligned_huge_raw(
 
 /// Select the lazy-decommit `madvise` advice for this platform.
 /// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; FreeBSD/DragonFly:
-/// `MADV_FREE` (5); NetBSD/OpenBSD: `MADV_FREE` (6); tvOS/watchOS (same XNU
-/// kernel as macOS/iOS): `MADV_FREE_REUSABLE`'s value comes from XNU, so it
-/// MAY work identically there too, but this is REASONED-FROM-SPEC and not
-/// verified on those targets (see [`decommit_lazy`]'s doc for the
-/// Darwin/BSD caveat). REASONED-FROM-SPEC for all BSD constants — this crate
-/// has no BSD CI runner to empirically verify on; values are from each OS's
-/// own `sys/mman.h` headers (FreeBSD/DragonFly: 5, NetBSD/OpenBSD: 6).
+/// `MADV_FREE` (5); NetBSD/OpenBSD: `MADV_FREE` (6). tvOS/watchOS are routed
+/// to the `MADV_DONTNEED` fallback below (the `cfg` arms below match only
+/// `any(target_os = "macos", target_os = "ios")`, not tvOS/watchOS — see
+/// [`decommit_lazy`]'s own public doc, which documents this fallback as
+/// current behavior). `MADV_FREE_REUSABLE` would be a plausible future
+/// widening for tvOS/watchOS (same XNU kernel as macOS/iOS, so the numeric
+/// advice value is shared), not current behavior — REASONED-FROM-SPEC only,
+/// not verified on those targets, and not what this function actually does
+/// today. REASONED-FROM-SPEC for all BSD constants — this crate has no BSD
+/// CI runner to empirically verify on; values are from each OS's own
+/// `sys/mman.h` headers (FreeBSD/DragonFly: 5, NetBSD/OpenBSD: 6).
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
@@ -2924,7 +2962,8 @@ const MADV_HUGEPAGE: i32 = 14;
 // the page size, and if that unrelated value happened to be a power of two
 // it would silently pass `page_size()`'s validation guard and poison the
 // decommit-offset rounding callers are told to base on `page_size()`
-// (`:227-230`).
+// (see `UNIX_EXACT_RESERVE_HITS`'s own doc comment above for the counter
+// this hazard would have silently corrupted).
 //
 // REASONED-FROM-SPEC, NOT empirically verified (per this task's own
 // instruction: none of the four BSDs run in this project's CI) — values

@@ -50,7 +50,7 @@ Runnable form: `tests/readme_example.rs`.
 | `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
 | `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Return page-granular physical backing to the OS / re-commit it. |
-| `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
+| `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
 | `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
 | `PAGE` | Minimum decommit granularity constant (4 KiB) — superseded by `page_size()` on hosts with larger pages (see `MIN_PAGE` for the underlying constant). |
 | `MIN_PAGE` | Underlying minimum page size constant (4 KiB). |
@@ -124,19 +124,21 @@ below — since `decommit`'s `()` return has no write-permitting sentinel to
 misuse, silently skipping is safe, whereas `recommit`/`commit_range`'s
 boolean/`Result` return previously clamped a contract violation to the same
 value a genuine success reports, which crashed an in-repo consumer — see
-`recommit`'s own rustdoc). Two exceptions to "never panics": `recommit` and
+`recommit`'s own rustdoc). Three exceptions to "never panics": `recommit` and
 `commit_range` (and their fallible `try_*` forms) now **reject**, rather
 than silently accept, a violated offset range (`start > end` or misaligned)
 — they still don't panic, but callers relying on the old silent-no-op shape
-should check the return value; and `Reservation::from_raw_parts` (an
+should check the return value; `Reservation::from_raw_parts` (an
 `unsafe fn` for adopting a foreign OS reservation, not part of the ordinary
 reservation flow) panics immediately on a contract-violating `align`/
-`reservation_len` pair.
+`reservation_len` pair; and `release` panics on a contract-violating
+`(reservation_len, align)` pair (a null pointer remains a documented no-op)
+— see `release`'s own rustdoc `# Panics` section for the full detail.
 
 ## Platform caveats
 
 `decommit`'s single-line table entry above ("Return page-granular physical
-backing to the OS / re-commit it") hides three platform divergences worth
+backing to the OS / re-commit it") hides four platform divergences worth
 knowing before you rely on it — see `decommit`'s own rustdoc for the full
 technical explanation of each:
 
@@ -169,6 +171,18 @@ technical explanation of each:
   implemented yet — see
   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
   for the open item.
+- **BSD (FreeBSD/DragonFly/NetBSD/OpenBSD): the same advisory-only eager
+  `decommit` caveat as Darwin, but lazy `decommit_lazy` genuinely reclaims.**
+  `MADV_DONTNEED` is advisory-only for anonymous memory on the four BSDs too
+  — like Darwin and unlike Linux, eager `decommit` does not reliably unmap
+  the physical pages there, so the same "no zero-fill, no RSS return" gap
+  applies. Unlike eager `decommit`, though, `decommit_lazy`'s `MADV_FREE`
+  advice on BSD (as on Darwin's `MADV_FREE_REUSABLE`) DOES do something real:
+  it drops the physical footprint rather than being a no-op — see
+  `decommit`'s own rustdoc for the precise wording this caveat mirrors.
+  REASONED-FROM-SPEC only (no BSD CI runner in this crate to verify against
+  empirically); not independently confirmed the way the Darwin gap above was
+  by a real CI run.
 
 ## Provenance & safety
 
