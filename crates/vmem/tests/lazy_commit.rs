@@ -7,8 +7,32 @@
 #![cfg(feature = "lazy-commit")]
 
 use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE};
+#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
+
+/// Round 3 independent review (task #953, finding 6.3): `bench-internals`
+/// counters read/reset by `windows_lazy_reserve_saves_commit_charge` below
+/// (`reset_bench_internals_counters`, `windows_reserve_commit_two_call_pairs`,
+/// `windows_reserve_commit_single_calls`) are PROCESS-GLOBAL. libtest runs
+/// this file's tests on parallel threads by default, so any test that both
+/// resets those counters and then asserts an exact delta on them would race
+/// against any other test in this binary that also calls into
+/// `win_reserve_commit` concurrently -- mirroring the same hazard
+/// `tests/smoke.rs`'s own `SERIAL` mutex already exists to prevent for its
+/// process-global `UNIX_MADVISE_*` counters. Grep confirms
+/// `windows_lazy_reserve_saves_commit_charge` is the ONLY test in this file
+/// that reads `WINDOWS_RESERVE_COMMIT_*`-backed counters or calls
+/// `reset_bench_internals_counters`, so it is the only test that needs to
+/// hold this lock; a future test added to this file that reads the same
+/// counters must also take it. Gated identically to that test (only the
+/// Windows + `bench-internals`, non-`mock` build ever references this
+/// static, so an unconditional definition would warn
+/// `dead_code`/`unused_imports` on every other platform/feature
+/// combination).
+#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+static SERIAL: Mutex<()> = Mutex::new(());
 
 // ── reserve_aligned_lazy: basic contract ────────────────────────────────────
 
@@ -361,25 +385,67 @@ fn sequential_commit_range_grows_incrementally() {
     }
 }
 
-/// Round 2 pre-release review, task #949 (T-1): Windows `reserve_aligned_lazy` actually saves
-/// commit charge. Every existing test in this file would pass verbatim even if
-/// `reserve_aligned_lazy_raw` simply forwarded to the eager path internally
-/// (which is literally what the Unix/miri/mock backends already do). This test
-/// uses the `bench-internals` oracles to verify that the Windows two-call path
-/// is actually taken when `commit_len != size`, pinning the `commit_len == size`
-/// guard in `win_reserve_commit` that a prior bug already broke once.
+/// Round 2 pre-release review, task #949 (T-1); corrected in round 3 (task
+/// #953, findings 6.2/6.3): Windows `reserve_aligned_lazy` actually saves
+/// commit charge by routing through `win_reserve_commit`'s two-call path.
+///
+/// The ORIGINAL version of this test called
+/// `reserve_aligned_lazy(4 * MIB, /*align=*/ 4 * MIB, /*initial=*/ PAGE)`.
+/// That call does not actually pin the intended guard: `win_reserve_commit`'s
+/// single-call-fast-path condition is `align <= WIN_ALLOCATION_GRANULARITY
+/// (65536) && commit_len == size` (see `win_reserve_commit` in `src/lib.rs`).
+/// With `align = 4 * MiB`, the align half of that AND is ALREADY false on its
+/// own (`4 * MiB > 65536`), so the two-call path is forced regardless of
+/// whether `commit_len == size` holds. In other words, the original call
+/// would still take the two-call path -- and this test would still pass --
+/// even if the `commit_len == size` guard were deleted entirely (the exact
+/// bug this test claims to pin against re-occurring). It exercised the
+/// align-based routing, not the commit_len-based routing.
+///
+/// The FIX: use `align = PAGE` (4 KiB), which is `<= WIN_ALLOCATION_GRANULARITY`
+/// on its own -- so the align half of the guard is now TRUE by itself, and
+/// `commit_len != size` (`initial = PAGE < span = 4 * MiB`) becomes the ONLY
+/// remaining reason the two-call path is taken. If a future change deleted
+/// the `commit_len == size` check from `win_reserve_commit`, THIS call would
+/// wrongly take the single-call fast path (which silently shrinks the
+/// reservation to `initial` bytes -- see that function's own doc comment),
+/// and the two-call-pairs/single-call counter assertions below would catch
+/// it. This is the counterfactual `align = 4 * MiB` could not provide.
+///
+/// This test reads/resets the process-global `bench-internals` counters
+/// (`reset_bench_internals_counters`, `windows_reserve_commit_two_call_pairs`,
+/// `windows_reserve_commit_single_calls`), so it holds `SERIAL` for its whole
+/// body to stay single-threaded against any other test in this binary that
+/// also drives `win_reserve_commit` (libtest runs tests on parallel threads
+/// by default) -- see `SERIAL`'s own doc comment above.
+///
+/// Excluded under `feature = "mock"`: `try_reserve_aligned_lazy` deliberately
+/// chains `mock` builds to the EAGER backend (`reserve_aligned_raw`, which
+/// always calls `win_reserve_commit` with `commit_len == size`) instead of
+/// the real lazy path -- see that function's own module comment in
+/// `src/lib.rs` ("Under `mock` the OS partial-commit is bypassed ..."). Under
+/// `mock`, `commit_len == size` unconditionally, so this test's
+/// `align = PAGE` call would take the single-call fast path instead of the
+/// two-call path it exists to pin, and the counter assertions below would
+/// fail for a reason that has nothing to do with `win_reserve_commit`'s real
+/// guard -- confirmed empirically (`cargo test --all-features` before this
+/// exclusion failed with `two_call_pairs` staying at 0).
 #[test]
-#[cfg(all(windows, feature = "bench-internals"))]
+#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
 fn windows_lazy_reserve_saves_commit_charge() {
-    // Use a small initial commit to force the two-call path (commit_len != size).
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    // align = PAGE (<= WIN_ALLOCATION_GRANULARITY) makes commit_len != size
+    // the SOLE reason the two-call path is taken -- see the module doc above.
     let span = 4 * MIB;
+    let align = PAGE;
     let initial = PAGE; // 4 KiB initial commit, far less than span
 
     aligned_vmem::reset_bench_internals_counters();
     let before_two_call = aligned_vmem::windows_reserve_commit_two_call_pairs();
     let before_single_call = aligned_vmem::windows_reserve_commit_single_calls();
 
-    let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
+    let r = reserve_aligned_lazy(span, align, initial).expect("lazy reserve");
 
     let after_two_call = aligned_vmem::windows_reserve_commit_two_call_pairs();
     let after_single_call = aligned_vmem::windows_reserve_commit_single_calls();
