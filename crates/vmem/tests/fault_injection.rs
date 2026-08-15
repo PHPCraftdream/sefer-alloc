@@ -19,7 +19,7 @@
 ))]
 
 use aligned_vmem::fault_injection::{arm_fail_at, arm_fail_next};
-use aligned_vmem::{commit_range, reserve_aligned_lazy, PAGE};
+use aligned_vmem::{commit_range, page_size, reserve_aligned_lazy, PAGE};
 use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
@@ -237,6 +237,13 @@ fn fail_next_is_atomic_under_concurrent_callers() {
     // ALL of them (the pre-#775 shape) made this oracle one-sided.
     arm_fail_next(TOTAL / 2);
     let barrier = std::sync::Barrier::new(THREADS);
+    // task #959: the runtime page_size(), not the compile-time PAGE constant
+    // (task #947/A-1 moved commit_range's granularity check to page_size()) --
+    // a bare PAGE (4 KiB) fails that check unconditionally on 16 KiB-page
+    // hosts (Apple Silicon), which made every call in the loop below return
+    // false regardless of fault-injection, not just the armed half (first
+    // caught on real macOS CI: `failures == TOTAL`, not `TOTAL / 2`).
+    let ps = page_size();
 
     let failures: u32 = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..THREADS)
@@ -247,10 +254,10 @@ fn fail_next_is_atomic_under_concurrent_callers() {
                     let mut local_failures = 0u32;
                     for _ in 0..ROUNDS {
                         barrier.wait();
-                        // SAFETY: `[0, PAGE)` is within the fully-committed
+                        // SAFETY: `[0, ps)` is within the fully-committed
                         // span; recommitting an already-committed range is
                         // documented-idempotent and safe from any thread.
-                        let ok = unsafe { commit_range(base.0, 0, PAGE) };
+                        let ok = unsafe { commit_range(base.0, 0, ps) };
                         if !ok {
                             local_failures += 1;
                         }

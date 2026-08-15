@@ -13,7 +13,9 @@
 // otherwise a real clippy smell but is exactly the point here.
 #![allow(clippy::let_unit_value)]
 
-use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE};
+use aligned_vmem::{
+    commit_range, page_size, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE,
+};
 #[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
 use std::sync::Mutex;
 
@@ -142,9 +144,19 @@ fn lazy_reserve_small_align_still_reserves_full_span() {
     // 4 KiB reservation instead of a >=64 KiB one, and `commit_range` past
     // the first page failed.
     let _guard = serial_guard();
+    // task #959 (macOS CI, first real run of this row after task #947/A-1
+    // moved commit_range's granularity from PAGE to the runtime page_size()):
+    // `initial`/`size` must be multiples of `page_size()`, not the compile-time
+    // `PAGE` constant -- on Apple Silicon (page_size() == 16 KiB) a bare `PAGE`
+    // (4 KiB) fails try_commit_range's `is_multiple_of(page_size())` check
+    // unconditionally, independent of the align/size-shrink bug this test
+    // exists to guard. `ps` is always a multiple of `PAGE` (both are powers of
+    // two and `ps >= PAGE`), so reserve_aligned_lazy's own PAGE-multiple
+    // contract for `initial_commit` still holds.
+    let ps = page_size();
     let align = PAGE; // 4 KiB -- well under the 64 KiB single-call threshold
-    let size = 16 * PAGE; // 64 KiB
-    let initial = PAGE; // commit only the first page now
+    let size = 16 * ps;
+    let initial = ps; // commit only the first runtime page now
     let r = reserve_aligned_lazy(size, align, initial).expect("lazy reserve, small align");
     let base = r.as_ptr();
     assert_eq!(r.len(), size, "len() echoes the requested size");
@@ -211,16 +223,20 @@ fn commit_range_empty_range_is_a_noop() {
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
 
+    // task #959: boundaries must be multiples of the runtime page_size(),
+    // not the compile-time PAGE constant (task #947/A-1) -- a bare `PAGE`
+    // fails the multiple-of-page_size() check on 16 KiB-page hosts (Apple
+    // Silicon) before the start==end short-circuit is ever reached (V-19
+    // checks alignment first).
+    let ps = page_size();
+
     // SAFETY: base is a live reservation.
     unsafe {
         // A genuinely empty range (start == end) is the ONLY contract-legal
         // no-op — it returns true. See
         // `commit_range_rejects_contract_violating_offsets` below for the
         // (task #712-corrected) behavior on an actual contract violation.
-        assert!(
-            commit_range(base, PAGE, PAGE),
-            "start==end is a success no-op"
-        );
+        assert!(commit_range(base, ps, ps), "start==end is a success no-op");
     }
 }
 
@@ -273,9 +289,13 @@ fn commit_range_idempotent_on_already_committed() {
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
 
+    // task #959: use the runtime page_size(), not the compile-time PAGE
+    // constant -- see commit_range_empty_range_is_a_noop's comment above.
+    let ps = page_size();
+
     // SAFETY: the entire span is committed (eager reservation).
     unsafe {
-        let ok = commit_range(base, 0, PAGE);
+        let ok = commit_range(base, 0, ps);
         assert!(ok, "recommitting an already-committed page must succeed");
     }
 }

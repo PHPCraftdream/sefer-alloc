@@ -342,10 +342,23 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
     // such fast-path shortcut to skip, so any align > size that forces an
     // over-reserve exercises the same code path; both still need the retry
     // loop below because `align_up_addr` can still land on a zero offset.
+    //
+    // task #959 (first real macOS CI run of this test): on Unix, `align`
+    // must be a multiple of the RUNTIME `page_size()`, not the compile-time
+    // `PAGE` constant. `mmap`'s own return addresses are granular to the
+    // real OS page size, so aligning to exactly `4 * PAGE` (16 KiB) is
+    // indistinguishable from the OS's own allocation granularity on a
+    // 16 KiB-page host (Apple Silicon) -- every over-reserve base is then
+    // ALREADY `align`-aligned by construction, deterministically, not
+    // probabilistically, so the retry loop below exhausts its 1000-attempt
+    // bound without ever observing a nonzero offset. Aligning to a multiple
+    // of the runtime page size that's meaningfully larger than it (matching
+    // the ratio this test already used on 4 KiB-page hosts) restores a real
+    // ASLR-driven distribution on every currently-supported page size.
     #[cfg(windows)]
     let align = 128 * 1024; // 128 KiB, > the 64 KiB WIN_ALLOCATION_GRANULARITY
     #[cfg(not(windows))]
-    let align = 4 * size; // 16 KiB
+    let align = 4 * page_size();
 
     let mut extras = Vec::new();
     let r = loop {
