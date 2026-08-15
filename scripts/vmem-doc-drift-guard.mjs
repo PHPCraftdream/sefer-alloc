@@ -161,7 +161,7 @@ function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
 
   const TRIGGER   = /over-reserv|\btrim(s|med|ming)?\b/i;
   const HARD_FAIL = /unconditional/i;
-  const SCOPE     = /\bif\b|\bwhen\b|\bunless\b|\bmay\b|\bmiss\b|fast[- ]path|slow[- ]path|fall(s|ing)?[- ]?(back|through)|fallback|<=|>=|<|>|\bonly\b|\beither\b|\bpaths?\b|rather than|no longer|instead/i;
+  const SCOPE     = /\bif\b|\bwhen(ever)?\b|\bunless\b|\bmay\b|\bmiss\b|fast[- ]path|slow[- ]path|fall(s|ing)?[- ]?(back|through)|fallback|<=|>=|<|>|\bonly\b|\beither\b|\bpaths?\b|rather than|no longer|instead/i;
 
   for (const sentence of sentences) {
     const hasTrigger = TRIGGER.test(sentence);
