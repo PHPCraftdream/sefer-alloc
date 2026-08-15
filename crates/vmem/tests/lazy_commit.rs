@@ -5,6 +5,13 @@
 //! They do NOT touch any alloc-core / segment-header code.
 
 #![cfg(feature = "lazy-commit")]
+// `serial_guard()` returns a real `MutexGuard` on Windows+bench-internals+
+// non-mock builds and `()` everywhere else (the lock/counters it guards
+// don't exist there) -- every call site binds it via `let _guard = ...;` so
+// the guard's scope (drop at function end) is identical across all
+// platforms; on the `()` variant that's a unit-value binding, which is
+// otherwise a real clippy smell but is exactly the point here.
+#![allow(clippy::let_unit_value)]
 
 use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE};
 #[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
@@ -12,8 +19,9 @@ use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
 
-/// Round 3 independent review (task #953, finding 6.3): `bench-internals`
-/// counters read/reset by `windows_lazy_reserve_saves_commit_charge` below
+/// Round 3 independent review (task #953, finding 6.3; corrected post-merge
+/// after zero-trust re-verification): `bench-internals` counters read/reset
+/// by `windows_lazy_reserve_saves_commit_charge` below
 /// (`reset_bench_internals_counters`, `windows_reserve_commit_two_call_pairs`,
 /// `windows_reserve_commit_single_calls`) are PROCESS-GLOBAL. libtest runs
 /// this file's tests on parallel threads by default, so any test that both
@@ -21,23 +29,51 @@ const MIB: usize = 1024 * 1024;
 /// against any other test in this binary that also calls into
 /// `win_reserve_commit` concurrently -- mirroring the same hazard
 /// `tests/smoke.rs`'s own `SERIAL` mutex already exists to prevent for its
-/// process-global `UNIX_MADVISE_*` counters. Grep confirms
-/// `windows_lazy_reserve_saves_commit_charge` is the ONLY test in this file
-/// that reads `WINDOWS_RESERVE_COMMIT_*`-backed counters or calls
-/// `reset_bench_internals_counters`, so it is the only test that needs to
-/// hold this lock; a future test added to this file that reads the same
-/// counters must also take it. Gated identically to that test (only the
+/// process-global `UNIX_MADVISE_*` counters.
+///
+/// The original task #953 fix reasoned that only
+/// `windows_lazy_reserve_saves_commit_charge` needed to hold this lock,
+/// since it is the only test that *reads* the counters. That reasoning was
+/// incomplete: `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`_TWO_CALL_PAIRS` are
+/// incremented by `win_reserve_commit` whenever `bench-internals` is
+/// enabled, regardless of whether the calling test cares about them --
+/// every OTHER test in this file that calls `reserve_aligned`/
+/// `reserve_aligned_lazy`/`commit_range` on Windows also WRITES to these
+/// counters, and none of them held `SERIAL`, so
+/// `windows_lazy_reserve_saves_commit_charge`'s before/after delta could
+/// still be corrupted by a concurrent sibling test. Confirmed by direct
+/// reproduction: `cargo test -p aligned-vmem --features "lazy-commit
+/// huge-pages fault-injection bench-internals"` (no `mock`, matching the
+/// Windows CI row) failed `windows_lazy_reserve_saves_commit_charge`
+/// nondeterministically under default (parallel) `--test-threads`, passed
+/// reliably under `--test-threads=1`. Every test in this file now holds
+/// `SERIAL` for its whole body, so no `win_reserve_commit`-touching test
+/// can run concurrently with the one that measures an exact delta. Gated
+/// identically to `windows_lazy_reserve_saves_commit_charge` (only the
 /// Windows + `bench-internals`, non-`mock` build ever references this
 /// static, so an unconditional definition would warn
 /// `dead_code`/`unused_imports` on every other platform/feature
-/// combination).
+/// combination) -- a future test added to this file must also take it.
 #[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
 static SERIAL: Mutex<()> = Mutex::new(());
+
+/// Acquire [`SERIAL`] on Windows+`bench-internals`+non-`mock` builds (a
+/// no-op everywhere else, since neither the static nor the counters it
+/// guards exist there) -- see `SERIAL`'s own doc comment above for why
+/// every test in this file needs this, not only the ones that read the
+/// counters.
+#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+#[cfg(not(all(windows, feature = "bench-internals", not(feature = "mock"))))]
+fn serial_guard() {}
 
 // ── reserve_aligned_lazy: basic contract ────────────────────────────────────
 
 #[test]
 fn lazy_reserve_basic_write_initial_region() {
+    let _guard = serial_guard();
     // Reserve 4 MiB, commit only the first 64 KiB.
     let initial = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
@@ -61,6 +97,7 @@ fn lazy_reserve_basic_write_initial_region() {
 
 #[test]
 fn lazy_reserve_then_commit_range_grows_accessible() {
+    let _guard = serial_guard();
     // Reserve 4 MiB, commit first 64 KiB, then commit the next 64 KiB via
     // commit_range, then write into it.
     let chunk = 16 * PAGE; // 64 KiB
@@ -104,6 +141,7 @@ fn lazy_reserve_small_align_still_reserves_full_span() {
     // size=64 KiB, initial_commit=4 KiB -- the buggy version returned a
     // 4 KiB reservation instead of a >=64 KiB one, and `commit_range` past
     // the first page failed.
+    let _guard = serial_guard();
     let align = PAGE; // 4 KiB -- well under the 64 KiB single-call threshold
     let size = 16 * PAGE; // 64 KiB
     let initial = PAGE; // commit only the first page now
@@ -142,6 +180,7 @@ fn lazy_reserve_small_align_still_reserves_full_span() {
 
 #[test]
 fn lazy_reserve_commit_entire_remainder() {
+    let _guard = serial_guard();
     // Reserve 2 MiB, commit first 64 KiB, then commit the entire remainder
     // in one commit_range call. Proves that commit_range handles large ranges.
     let initial = 16 * PAGE; // 64 KiB
@@ -167,6 +206,7 @@ fn lazy_reserve_commit_entire_remainder() {
 
 #[test]
 fn commit_range_empty_range_is_a_noop() {
+    let _guard = serial_guard();
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -195,6 +235,7 @@ fn commit_range_rejects_contract_violating_offsets() {
     // buggy behavior — a misaligned/inverted range is not a "no-op", it is a
     // rejected contract violation the caller MUST NOT treat as "safe to
     // write".
+    let _guard = serial_guard();
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -227,6 +268,7 @@ fn commit_range_rejects_contract_violating_offsets() {
 fn commit_range_idempotent_on_already_committed() {
     // Committing a range that is already committed (from the eager path)
     // must succeed without error — MEM_COMMIT is idempotent on Windows.
+    let _guard = serial_guard();
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -275,6 +317,7 @@ fn lazy_reserve_rejects_bad_contracts() {
 fn release_via_into_parts_after_partial_commit() {
     // Verify that into_parts + release works correctly even when the
     // reservation is only partially committed.
+    let _guard = serial_guard();
     let initial = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
     let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
@@ -299,6 +342,7 @@ fn release_via_into_parts_after_partial_commit() {
 fn lazy_reserve_full_commit_equals_eager() {
     // When initial_commit == size, lazy-reserve is functionally identical to
     // the eager path: the entire span is committed.
+    let _guard = serial_guard();
     let span = 2 * MIB;
     let r_lazy =
         reserve_aligned_lazy(span, span, span).expect("lazy reserve with full initial commit");
@@ -327,6 +371,7 @@ fn lazy_reserve_full_commit_equals_eager() {
 fn sequential_commit_range_grows_incrementally() {
     // Simulate the B1/B2 pattern: start with a small committed region and
     // grow it in steps via commit_range.
+    let _guard = serial_guard();
     let chunk = 16 * PAGE; // 64 KiB per step
     let span = 2 * MIB;
     let r = reserve_aligned_lazy(span, span, chunk).expect("lazy reserve");
@@ -433,7 +478,7 @@ fn sequential_commit_range_grows_incrementally() {
 #[test]
 #[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
 fn windows_lazy_reserve_saves_commit_charge() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = serial_guard();
 
     // align = PAGE (<= WIN_ALLOCATION_GRANULARITY) makes commit_len != size
     // the SOLE reason the two-call path is taken -- see the module doc above.
