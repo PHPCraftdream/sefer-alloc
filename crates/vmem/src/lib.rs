@@ -2922,6 +2922,29 @@ const MADV_HUGEPAGE: i32 = 14;
 // - NetBSD `sys/unistd.h`: `_SC_PAGESIZE` = 28 (`_SC_PAGE_SIZE` aliases it).
 // - OpenBSD `sys/unistd.h`: `_SC_PAGESIZE` = 28 (same table position as
 //   NetBSD; OpenBSD forked from NetBSD's 4.4BSD-derived `unistd.h`).
+//
+// task #951 (independent review finding 2.1): task #944/U-2 wired Android
+// (bionic libc) into `MAP_ANON`/`MAP_HUGETLB`/`HUGE_SUPPORTED`/
+// `LINUX_HUGE_PAGE_SIZE`/`MADV_HUGEPAGE`/`MADV_FREE`/`libc_mmap`/
+// `libc_madvise_hugepage`/`unix_reserve`'s huge guard, but missed this
+// table — Android fell through to the `not(any(...))` fallback below and
+// silently got the glibc value 30. Bionic does NOT share glibc's
+// `confname.h` numbering (same portability hazard the BSD comment above
+// already documents for a different OS family). EMPIRICALLY VERIFIED for
+// this task (not merely reasoned-from-spec, unlike the BSD entries above,
+// none of which run in this project's CI): fetched
+// https://android.googlesource.com/platform/bionic/+/refs/heads/main/libc/include/bits/sysconf.h
+// directly (AOSP `main` branch, `platform/bionic` repo) on 2026-08-15,
+// which defines `#define _SC_PAGESIZE 0x0027` (= 39) and
+// `#define _SC_PAGE_SIZE 0x0028` (= 40 — a DIFFERENT slot from
+// `_SC_PAGESIZE` on bionic, unlike every other OS in this table where the
+// two names alias the same value; callers must use `_SC_PAGESIZE`'s 39,
+// not 40). glibc's value 30 lands on an unrelated `_SC_XOPEN_*`-range slot
+// under bionic's table, which is why the wrong value silently poisons
+// `page_size()`'s fallback path (returns a non-power-of-two or an
+// unrelated small integer, fails `validate_page_size_impl`, and falls
+// back to `PAGE` = 4096) instead of tripping the BSD-style "wrong but
+// power-of-two" poison scenario the task #714 comment above warns about.
 #[cfg(all(unix, not(miri)))]
 const _SC_PAGESIZE: i32 = {
     #[cfg(any(
@@ -2941,6 +2964,10 @@ const _SC_PAGESIZE: i32 = {
     {
         28
     }
+    #[cfg(target_os = "android")]
+    {
+        39
+    }
     #[cfg(not(any(
         target_os = "macos",
         target_os = "ios",
@@ -2950,9 +2977,14 @@ const _SC_PAGESIZE: i32 = {
         target_os = "dragonfly",
         target_os = "netbsd",
         target_os = "openbsd",
+        target_os = "android",
     )))]
     {
-        // Linux and most other unices use 30 for _SC_PAGESIZE / _SC_PAGE_SIZE.
+        // glibc/musl Linux use 30 for _SC_PAGESIZE / _SC_PAGE_SIZE. This is
+        // NOT a safe generalization to "most other unices" — that framing
+        // has already been wrong twice (the four BSDs above, task #714;
+        // Android/bionic above, task #951) — so treat 30 as the
+        // glibc/musl-Linux value specifically, not a portable unix default.
         30
     }
 };
