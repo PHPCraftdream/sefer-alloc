@@ -1225,7 +1225,7 @@ fn try_reserve_overflow_is_invalid_argument_on_all_platforms() {
 /// Task #947/A-2: safe `Reservation::decommit` matches free function behavior.
 #[test]
 fn reservation_decommit_in_bounds_matches_free_function() {
-    let _guard = SERIAL.lock().unwrap();
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1251,8 +1251,22 @@ fn reservation_decommit_in_bounds_matches_free_function() {
         );
     }
 
-    // Verify the range is now zeroed on re-access (Linux).
-    #[cfg(not(windows))]
+    // Verify the range is now zeroed on re-access (Linux). Skipped under miri,
+    // under the `mock` feature, and on the Darwin family — same exclusions as
+    // `decommit_recommit_roundtrip` above, for the same reasons: miri and the
+    // `mock` feature both model decommit as a no-op (no real RSS / zero-fill),
+    // so the previously-written 0xAB byte legally persists; and
+    // `MADV_DONTNEED` is advisory-only on XNU-based targets (macOS/iOS/tvOS/
+    // watchOS), so the zero-fill guarantee does not reliably hold there either.
+    #[cfg(not(any(
+        windows,
+        miri,
+        feature = "mock",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos"
+    )))]
     unsafe {
         let p = base.add(start);
         assert_eq!(*p, 0, "Linux should zero-fill on re-access after decommit");
@@ -1278,7 +1292,7 @@ fn reservation_decommit_out_of_bounds_is_safe_no_op() {
 /// Task #947/A-2: safe `Reservation::recommit` matches free function behavior.
 #[test]
 fn reservation_recommit_in_bounds_matches_free_function() {
-    let _guard = SERIAL.lock().unwrap();
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1319,7 +1333,7 @@ fn reservation_recommit_out_of_bounds_returns_false() {
 /// Task #947/A-2: safe `Reservation::try_recommit` matches free function behavior.
 #[test]
 fn reservation_try_recommit_in_bounds_matches_free_function() {
-    let _guard = SERIAL.lock().unwrap();
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1352,7 +1366,7 @@ fn reservation_try_recommit_out_of_bounds_returns_invalid_argument() {
 /// Task #947/A-2: safe `Reservation::decommit_lazy` matches free function behavior.
 #[test]
 fn reservation_decommit_lazy_in_bounds_matches_free_function() {
-    let _guard = SERIAL.lock().unwrap();
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
