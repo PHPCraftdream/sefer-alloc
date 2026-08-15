@@ -21,11 +21,15 @@
 //! Those crates are oriented around **file mappings** and **page-protection**.
 //! `aligned-vmem` does one different thing: hand you an *anonymous* span whose
 //! **base is aligned to a power of two you choose** (e.g. 2 MiB / 4 MiB for an
-//! allocator's segments). On Unix, first tries an ordinary exact-size `mmap` and
-//! checks whether the kernel happened to place it at an `align`-aligned address
-//! (fast path; hit rate depends on the OS's placement heuristics, not on any
-//! hint this crate passes). On a miss (wrong alignment), over-reserves `size + align`
-//! bytes and keeps the full mapping. On Windows, uses one syscall (fast path
+//! allocator's segments). On 32-bit Unix, first tries an ordinary exact-size
+//! `mmap` and checks whether the kernel happened to place it at an
+//! `align`-aligned address (fast path; hit rate depends on the OS's placement
+//! heuristics, not on any hint this crate passes); on a miss (wrong
+//! alignment), over-reserves `size + align` bytes and keeps the full mapping.
+//! On 64-bit Unix, the exact-size fast path is compiled out entirely (see the
+//! module-level "bench-internals" section below and [`reserve_aligned`]'s own
+//! rustdoc), so every reservation always over-reserves `size + align` bytes in
+//! one `mmap` call. On Windows, uses one syscall (fast path
 //! for `align <= 64 KiB`, over-reserving nothing — base == region) or two
 //! syscalls (over-reserving `size + align` and keeping the full mapping). The
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
@@ -208,8 +212,10 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 use core::sync::atomic::AtomicU64;
 
 /// `bench-internals`: total number of `try_reserve_aligned_exact` attempts
-/// (Unix only — always 0 on Windows/miri; that internal helper is private and
-/// platform-gated, so it is named here in code font rather than linked).
+/// (32-bit Unix only — always 0 on Windows/miri AND on 64-bit Unix, since
+/// task #944's finding P-1 gated that internal helper to
+/// `target_pointer_width = "32"`; it is private and platform-gated, so it is
+/// named here in code font rather than linked).
 /// This counter increments BEFORE the `mmap` call, so it includes both alignment
 /// misses and OS-level failures (e.g., OOM, MAP_HUGETLB refused). The hit-rate
 /// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
@@ -226,7 +232,9 @@ pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
 /// succeeded (the `mmap` landed already `align`-aligned, so no over-reserve
-/// fallback was needed). Numerator over
+/// fallback was needed). Like [`UNIX_EXACT_RESERVE_ATTEMPTS`], this is
+/// 32-bit Unix only — always 0 on Windows/miri AND on 64-bit Unix (see that
+/// static's own doc for why). Numerator over
 /// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
 /// section doc above.
 #[cfg(feature = "bench-internals")]
@@ -1073,21 +1081,27 @@ impl ReservationParts {
 /// - `align` must be a power of two `>=` [`PAGE`].
 /// - `size` must be a non-zero multiple of [`PAGE`].
 ///
-/// On Unix, first tries an ordinary exact-size `mmap` and checks whether the
-/// kernel happened to place it at an `align`-aligned address (fast path;
-/// hit rate depends on the OS's placement heuristics, not on any hint this
-/// crate passes). On a miss (wrong alignment), over-reserves `size + align`
-/// bytes and keeps the full mapping. On Windows, uses one syscall (fast path
+/// On 32-bit Unix, first tries an ordinary exact-size `mmap` and checks
+/// whether the kernel happened to place it at an `align`-aligned address
+/// (fast path; hit rate depends on the OS's placement heuristics, not on any
+/// hint this crate passes); on a miss (wrong alignment), over-reserves
+/// `size + align` bytes and keeps the full mapping. On 64-bit Unix, the fast
+/// path is compiled out (`target_pointer_width = "32"` — see task #944,
+/// finding P-1), so every reservation always over-reserves `size + align`
+/// bytes in one `mmap` call. On Windows, uses one syscall (fast path
 /// for `align <= 64 KiB`, over-reserving nothing — base == region) or two
 /// syscalls (over-reserving `size + align` and keeping the full mapping). The `Reservation::reservation_ptr` / `reservation_len` fields
 /// expose the full reservation; `Reservation::as_ptr` / `len` expose the
 /// aligned usable span.
 ///
-/// **Cost on Unix fast-path miss:** the reservation holds `size + align` bytes
-/// of virtual address space for its lifetime (measured hit rate: 34.4% at 64 KiB
-/// align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured
-/// on WSL2/Linux, x86_64; 30-run aggregate — the hit rate is kernel- and
-/// ASLR-dependent and is not expected to transfer to other Unix platforms).
+/// **Cost on 32-bit Unix fast-path miss:** the reservation holds `size + align`
+/// bytes of virtual address space for its lifetime (measured hit rate: 34.4% at
+/// 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849;
+/// measured on WSL2/Linux, x86_64; 30-run aggregate; scope: 32-bit only — the
+/// hit rate is kernel- and ASLR-dependent and is not expected to transfer to
+/// other Unix platforms). **On 64-bit Unix these numbers do not apply**: the
+/// fast path never runs, so every reservation pays the "miss" cost of
+/// `size + align` bytes held for the reservation's lifetime, unconditionally.
 ///
 /// Returns `None` on a contract violation or if the OS refuses the reservation
 /// (OOM) — never panics, so it is safe to call from inside a `GlobalAlloc`

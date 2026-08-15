@@ -41,7 +41,7 @@ Runnable form: `tests/readme_example.rs`.
 
 | API | Purpose |
 |---|---|
-| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned (exact-size mmap fast path on Unix; on fast-path miss or Windows with align > 64 KiB, over-reserve size+align and keep the full mapping; Windows with align <= 64 KiB uses single-call fast path with no over-reserve). On Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). |
+| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned. On 32-bit Unix, first tries an exact-size mmap fast path; on a miss, or on 64-bit Unix (where the fast path is compiled out — see P-1 below), over-reserves `size + align` and keeps the full mapping. On Windows, over-reserves `size + align` and keeps the full mapping when `align > 64 KiB`; for `align <= 64 KiB` uses a single-call fast path with no over-reserve. On 32-bit Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate; scope: 32-bit only — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). On 64-bit Unix, every reservation always over-reserves in one `mmap` call — the exact-size fast path never runs, so these hit-rate numbers do not apply there (task #944, finding P-1: `try_reserve_aligned_exact` is gated `target_pointer_width = "32"`). |
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the underlying OS reservation. |
 | `Reservation::into_parts() -> (*mut u8, usize, usize)` | Take the raw reservation, suppress `Drop`, for self-hosted release (legacy tuple form). |
 | `Reservation::into_reservation_parts() -> ReservationParts` | Take the raw reservation, suppress `Drop`, for self-hosted release (typed form). |
@@ -99,13 +99,18 @@ reservation"), and what the file-mapping crates don't directly offer.
 
 - `align` must be a power of two `>=` `PAGE` (4 KiB).
 - `size` must be a non-zero multiple of `PAGE`.
-- `decommit`/`decommit_lazy` offsets must be multiples of `page_size()`.
-- `recommit`/`commit_range` offsets must be multiples of `PAGE`.
+- `decommit`/`decommit_lazy` offsets must be multiples of the runtime page size
+  (`page_size()`).
+- `recommit`/`commit_range` offsets must be multiples of the runtime page size
+  (`page_size()`).
 
-Note: this asymmetry is intentional. `decommit`/`decommit_lazy` have an infallible
-`()` return with no write-permitting sentinel to misuse, so silently skipping on
-a violated range is safe; `recommit`/`commit_range`'s boolean/`Result` return
-means a silent no-op could hide a real OOM, so they reject violations instead.
+Note: `decommit`/`decommit_lazy` and `recommit`/`commit_range` validate the
+same granularity, but respond differently to a violated range — this
+asymmetry is intentional. `decommit`/`decommit_lazy` have an infallible
+`()` return with no write-permitting sentinel to misuse, so silently skipping
+on a violated range is safe; `recommit`/`commit_range`'s boolean/`Result`
+return means a silent no-op could hide a real OOM, so they reject violations
+instead.
 - On Linux with `huge-pages` enabled, `reserve_aligned_huge`/
   `try_reserve_aligned_huge` additionally require `size` and `align` to both
   be multiples of the huge-page size (2 MiB) — see that function's own
