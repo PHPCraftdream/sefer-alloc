@@ -5,15 +5,19 @@
 //! every public API surface added in this wave must have a test that would fail if the
 //! implementation were broken or deleted.
 
-use aligned_vmem::{
-    reserve_aligned, reserve_aligned_huge, reset_bench_internals_counters, Reservation,
-};
-use std::sync::Mutex;
+// Only `Reservation` is unconditionally available: `reserve_aligned_huge` is gated
+// behind `huge-pages` and `reset_bench_internals_counters` behind `bench-internals`,
+// so both are imported inside the gated tests that use them. A top-level unconditional
+// `use` of either breaks the default-feature CI row
+// (`cargo clippy -p aligned-vmem --all-targets -- -D warnings`) with E0432.
+use aligned_vmem::Reservation;
 
 // Serial guard for bench-internals tests that read/write global counters
 // (mirrors the pattern from tests/smoke.rs — see the comment block there for rationale).
-static SERIAL: Mutex<()> = Mutex::new(());
+#[cfg(feature = "bench-internals")]
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[cfg(feature = "bench-internals")]
 const MIB: usize = 1024 * 1024;
 
 /// Test that `decommit_reclaims_and_zeroes()` returns the correct compile-time
@@ -59,9 +63,11 @@ fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
 /// "decommit silently fails on huge reservations" problem; without this test,
 /// that observability could vanish unnoticed.
 #[test]
-#[cfg(feature = "bench-internals")]
+#[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
 fn huge_decommit_attempts_increments_on_huge_reservation() {
-    use aligned_vmem::huge_decommit_attempts;
+    use aligned_vmem::{
+        huge_decommit_attempts, reserve_aligned_huge, reset_bench_internals_counters,
+    };
 
     let _guard = SERIAL.lock();
 
@@ -127,7 +133,7 @@ fn huge_decommit_attempts_increments_on_huge_reservation() {
 #[test]
 #[cfg(feature = "bench-internals")]
 fn huge_decommit_attempts_does_not_increment_on_ordinary_reservation() {
-    use aligned_vmem::huge_decommit_attempts;
+    use aligned_vmem::{huge_decommit_attempts, reserve_aligned, reset_bench_internals_counters};
 
     let _guard = SERIAL.lock();
 
