@@ -196,18 +196,17 @@ The following platforms are verified by this project's CI and are tested on ever
 - **x86_64 Linux** (Ubuntu, glibc)
 - **x86_64 Windows** (Windows Server)
 - **AArch64 macOS** (Apple Silicon, macos-latest CI)
-- **i686 Linux** (compile-only check via `cargo check --target i686-unknown-linux-gnu`)
+- **i686 Linux** (compile-only check via `cargo check --target i686-unknown-linux-gnu` and `cargo check --target i686-unknown-linux-musl`)
 
 ### Reasoned-from-spec targets
 
 The following targets are supported but have not been empirically verified in CI. Support is based on published specifications and OS documentation:
 
 - **AArch64 Linux** — the crate's FFI constants (`MAP_ANON`, `MADV_*`, `_SC_PAGESIZE`) are architecture-agnostic standard Linux values, not x86_64-specific, so the same 64-bit code path used by x86_64 Linux applies, but this has not been empirically CI-verified. (The project's CI has a cross-compilation matrix for aarch64, but no job runs on an ARM64 runner; AArch64 macOS is CI-verified — see the CI-verified list above.)
-- **32-bit musl Linux** (e.g., `i686-unknown-linux-musl`, `armv7-unknown-linux-musleabihf`) — `off_t` is correctly declared as 64-bit (musl uses 64-bit `off_t` on all architectures); no CI runner currently tests these targets.
 - **BSD family** (FreeBSD, DragonFly BSD, NetBSD, OpenBSD) — `MAP_ANON`, `_SC_PAGESIZE`, and `MADV_*` constants are derived from each OS's header files; no BSD CI runner exists for this project. `MADV_DONTNEED`'s advisory-only behavior is confirmed by BSD documentation but not empirically verified on BSD hardware.
 - **Android (bionic)** — 32-bit targets use a 32-bit `off_t` by default (matching glibc behavior without `_FILE_OFFSET_BITS=64`); this is reasoned from bionic's design documentation, not CI-verified.
 - **Apple platforms beyond macOS** (iOS, tvOS, watchOS) — constants and behavior are derived from Apple's unified documentation; no CI runner currently tests these targets.
-- **MIPS** — **not supported**. The crate's `MAP_ANON`/`MAP_HUGETLB` constants (0x20 / 0x40000) are correct on all Linux architectures that use `asm-generic/mman-common.h` (x86, x86_64, aarch64, arm, riscv, powerpc) but are **wrong on MIPS** (MIPS uses 0x0800 / 0x80000 per `arch/mips/include/uapi/asm/mman.h`). A build on `mips*-unknown-linux-*` would fail closed at compile time via a `compile_error!` diagnostic explicitly naming this gap; adding support requires adding a `#[cfg(target_arch = "mips*")]` arm with the correct constants.
+- **MIPS** — **not supported**. The crate's `MAP_ANON`/`MAP_HUGETLB` constants (0x20 / 0x40000) are correct on all Linux architectures that use `asm-generic/mman-common.h` (x86, x86_64, aarch64, arm, riscv, powerpc) but are **wrong on MIPS** (MIPS uses 0x0800 / 0x80000 per `arch/mips/include/uapi/asm/mman.h`). A build on `mips*-unknown-linux-*` compiles successfully but fails closed at runtime with `EBADF` (invalid file descriptor) in every `reserve_aligned` call, because the wrong `MAP_ANON` constant causes `libc_mmap` to issue `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set; the failure is silent (no diagnostic points to the constant error). Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct constants.
 
 **Note:** The absence of CI verification for a target means only that this project's own test suite has not executed on that platform. The platform-specific constants (e.g., `MADV_DONTNEED = 4`, Linux's `_SC_PAGESIZE = 30`, macOS's `_SC_PAGESIZE = 29`) are sourced from the respective OS's official documentation and header files. If you use this crate on a reasoned-from-spec target and encounter issues, please file a bug report — the intent is to support the full `cfg(unix)` and `cfg(windows)` families.
 
