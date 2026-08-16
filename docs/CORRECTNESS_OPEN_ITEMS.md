@@ -83,29 +83,30 @@ scoping decision is the pending step, not implementation).
    - **Status:** RESOLVED — no code/process change needed beyond this clarifying note, so a future round does not re-investigate the apparent conflict from scratch. Round 8's two review docs (`docs/reviews/2026-08-13-aligned-vmem-round8-review.md`, `...-round8-closing-review.md`) are committed in the same commit as this note, per this campaign's own established convention.
    - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC2; `git log --oneline -- docs/reviews/2026-08-12-aligned-vmem-round3-review.md` etc. (all four prior rounds' docs resolve to real commits); `CHANGELOG.md`'s R34-2 bullet (the root-crate campaign's stated convention).
 
-42. **URGENT — `aligned-vmem`'s `mock` Cargo-feature-unification
-    hazard was resolved with a doc-only fix, explicitly deferring a
-    stronger `--cfg`-flag conversion; the SAME finding recurs in
-    `numa-shim` and the deferral is load-bearing for that crate's own
-    upcoming round.** (Filed 2026-08-09, task #776/F13, round-closing
-    review of the aligned-vmem round; moved into this tier 2026-08-14,
-    task #934/C-9 — see below for why.)
+42. **`numa-shim`'s `mock` Cargo-feature-unification hazard remains a Cargo
+    feature (deliberately deferred) — the aligned-vmem half of this item is
+    CLOSED, see "Recently resolved" below.** (Filed 2026-08-09, task
+    #776/F13, round-closing review of the aligned-vmem round; moved into
+    the `[A]` tier 2026-08-14, task #934/C-9; aligned-vmem half resolved
+    2026-08-16, task #962 — this card now covers ONLY the numa-shim half.)
 
-    - **Status:** UNRESOLVED and URGENT — the manifest's own doc comment states
-      the conversion window "stays free only until 0.2.0 ships" (task #658),
-      and that deadline is effectively NOW (0.2.0 is queued for publish).
-      See "Recently resolved" section item 3 for the prior deferral context.
-      Moved from `[T]` to `[A]` in this same edit: the item's own stated
-      "Next trigger" below has now fired, so per this file's own
-      current-state-card convention it must not sit in a tier implying it
-      needs no imminent action.
-    - **Next trigger:** settle the `--cfg` conversion decision before 0.2.0
-      publishes if it is going to be settled at all. This is a maintainer
-      call requiring a real design choice, not a mechanical indexing task.
-    - **Evidence:** `crates/vmem/Cargo.toml:62-87` (the `mock = []` feature
-      comment, which explicitly names the 0.2.0 deadline);
-      `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-22;
-      `docs/reviews/2026-08-14-aligned-vmem-round11-closing-review.md` finding C-9.
+    - **Status:** OPEN, not urgent — numa-shim has not yet had its first
+      crates.io publish (task #657, itself blocked), so the "free to convert
+      only until first publish" deadline that made the aligned-vmem half
+      URGENT has not fired for numa-shim yet. `crates/numa/Cargo.toml`'s
+      `mock = []` feature retains the same Cargo-feature-unification hazard
+      the aligned-vmem half had (documented in its own `Cargo.toml` comment,
+      explicitly cross-referencing the aligned-vmem conversion as proof the
+      `--cfg` approach works — see task #962's own commit).
+    - **Next trigger:** settle the `--cfg` conversion decision for numa-shim
+      before its own first publish (task #657) — same maintainer call, same
+      mechanical shape (Cargo.toml + cfg-gated call sites + CI rows) as the
+      aligned-vmem conversion task #962 just completed, which is now the
+      reference implementation to follow.
+    - **Evidence:** `crates/numa/Cargo.toml`'s `mock = []` feature and its
+      own doc comment (updated by task #962 to cite the aligned-vmem
+      precedent); `crates/vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs`
+      + the removed `mock = []` (the pattern to mirror).
 
 
 11. **Coverage/process gap: `npm run check`'s
@@ -3451,3 +3452,13 @@ resolved" below.)_
     - **Verification:** `node scripts/vmem-doc-drift-guard.mjs` now exits 0 (`OK: no unconditional over-reserve/trim statements found`); `HARD_FAIL` (`unconditional`) is untouched, so a genuinely unconditional sentence containing "whenever" would still be convicted — the widening only affects the SCOPE alternative, not the hard-fail path. `npm run check`'s `vmem-doc-drift-guard` step, previously the sole failing step, now passes.
     - **Note for whoever re-cites this item:** the two sentences' line numbers had already drifted from this item's own citation (`lib.rs:1017,1042` at filing time, `:1032,:1057` after round 3's doc edits moved them) before this closure — recorded here as a live instance of the exact staleness class this campaign's own conventions exist to catch, caught only because the guard itself re-ran and re-reported current line numbers rather than the citation being trusted at face value.
     - **Evidence:** `scripts/vmem-doc-drift-guard.mjs`'s `SCOPE` regex (the one-line diff); `crates/vmem/src/lib.rs` (the two `from_raw_parts` sentences, unchanged); `docs/CORRECTNESS_OPEN_ITEMS.md` (this closure).
+
+42a. **`aligned-vmem`'s `mock` Cargo-feature-unification hazard (item 42's aligned-vmem half)** — **CLOSED** (2026-08-16, task #962, per the maintainer decision recorded in this session: "делаем 2" — convert, do not just document the risk).
+
+    Cargo unifies features across a build's WHOLE dependency graph, not per edge: `mock` REPLACES the real syscall backend with a thread-local recording stub, so if ANY crate anywhere downstream of a build (including a sibling workspace member's own `[dev-dependencies]`) enabled `aligned-vmem/mock`, every OTHER consumer in that SAME build would silently get the mock backend too — no compile error, no warning. First flagged task #715 (rust-intel audit MEDIUM §C10), deferred at the time with an explicit "free only until 0.2.0's first publish" deadline (task #658) recorded in `Cargo.toml`'s own feature comment. That deadline arrived with 0.2.0 queued for publish (this item moved to `[A]`/URGENT, task #934/C-9, for exactly that reason).
+
+    - **Fix:** converted `mock` from a Cargo feature to the build-time `--cfg aligned_vmem_mock` flag (enabled via `RUSTFLAGS="--cfg aligned_vmem_mock"`), matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg flags are passed only explicitly per build invocation and do not unify across the dependency graph, closing the hazard structurally rather than by documentation/convention alone. Confirmed before converting that the hazard had zero present cost (grep across the whole workspace: `aligned-vmem/mock` was not actually enabled anywhere), so the conversion carried no breaking-change cost despite touching 13 files (`crates/vmem/{Cargo.toml,README.md,src/{lib,mock,fault_injection}.rs,tests/{mock,mock_reentrancy,fault_injection,lazy_commit,smoke}.rs}`, `.github/workflows/ci.yml`, root `Cargo.toml`, `crates/numa/Cargo.toml` — the last two comment-only cross-reference updates).
+    - **CI:** every step that previously relied on `--all-features` to reach mock coverage (which it can no longer do — mock is not a Cargo feature) got a dedicated `RUSTFLAGS: "--cfg aligned_vmem_mock"` step instead: `aligned-vmem-gates` (clippy + test, plus the `--cfg miri` row now also carrying `--cfg aligned_vmem_mock` to preserve its previously-incidental mock+miri type coverage), `test-windows`, `test-macos`, `test-workspace`. The feature-powerset job's comment corrected (5 features now, not 6 — mock sits entirely outside cargo-hack's feature space).
+    - **Verification:** a clean `cargo build -p aligned-vmem` produces zero `unexpected_cfgs` warnings (the new `[lints.rust] unexpected_cfgs` check-cfg declaration in `crates/vmem/Cargo.toml` covers the flag); `cargo test` WITH vs WITHOUT `RUSTFLAGS="--cfg aligned_vmem_mock"` flips `mock.rs` (0↔12), `mock_reentrancy.rs` (0↔2), `fault_injection.rs` (5↔0), and `lazy_commit.rs` (12↔11) exactly as intended; clippy clean on every arm; `cargo doc --all-features --no-deps` clean; `cargo test -p numa-shim --features mock` still green (28/28, confirming numa-shim's own SEPARATE `mock` feature — deliberately left unconverted, see item 42's remaining card above — was not disturbed); `ci.yml` re-parses as valid YAML; the full `npm run check` workspace gate is ALL GREEN.
+    - **Not closed by this task:** `numa-shim`'s own `mock` Cargo feature carries the identical hazard and remains unconverted, deliberately — its own first publish (task #657) has not happened yet, so its "free to convert" window has not closed. See item 42's remaining card (renumbered 42, scope narrowed) for that half.
+    - **Evidence:** commit (task #962, this session); `crates/vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs` declaration and the removed `mock = []`; `.github/workflows/ci.yml`'s new `RUSTFLAGS: "--cfg aligned_vmem_mock"` steps.
