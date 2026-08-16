@@ -559,6 +559,15 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
         assert_eq!(base.read(), 0x55);
     }
 
+    // Capture baseline counter before decommit. Only bound under the exact
+    // cfg that also consumes it below (windows + bench-internals + not
+    // mock) -- no dummy/else branch, since an unused binding under any
+    // other cfg combination would trip `-D warnings` on unused variables
+    // (the same bug class that broke `main`'s default build earlier in
+    // this campaign).
+    #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+    let failures_before = aligned_vmem::windows_virtualfree_decommit_failures();
+
     // Now decommit a range that extends into the never-committed tail.
     // [initial, 2*initial) straddles the committed/uncommitted boundary:
     // - [initial, initial) is empty (no-op)
@@ -589,5 +598,19 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
         // On Windows, decommitted pages fault on read. The key assertion
         // is that `r.decommit(...)` above did NOT panic — that proves the
         // safe method accepts ranges covering never-committed memory.
+        //
+        // Additionally, verify that the decommit actually succeeded (not just
+        // that it didn't panic). The crate's bench-internals counter tracks
+        // VirtualFree(MEM_DECOMMIT) failures — this test should NOT increment
+        // it, because decommitting never-committed pages is well-defined behavior
+        // on Windows.
+        #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+        {
+            let failures_after = aligned_vmem::windows_virtualfree_decommit_failures();
+            assert_eq!(
+                failures_after, failures_before,
+                "VirtualFree(MEM_DECOMMIT) should not fail on never-committed pages"
+            );
+        }
     }
 }
