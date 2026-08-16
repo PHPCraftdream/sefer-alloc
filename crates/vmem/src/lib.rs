@@ -999,7 +999,26 @@ impl Reservation {
     /// Returns `true` if eager [`Self::decommit`] on **this specific reservation**
     /// guarantees reclaim+zero-fill semantics, `false` otherwise.
     ///
-    /// This is an instance-level query that combines:
+    /// This is an **advisory** capability query. It is computed from
+    /// compile-time platform capability and the reservation's huge-page status only,
+    /// and does **not** issue any runtime syscall or observe whether a prior `decommit`
+    /// call actually succeeded. Specifically:
+    ///
+    /// - On Linux/Windows (native, not miri), `true` means the platform guarantees that
+    ///   `decommit` will return physical backing and zero-fill on next access via
+    ///   `MADV_DONTNEED` / `MEM_DECOMMIT`. Backend syscall failures (e.g. rare kernel
+    ///   failures) are silently discarded and not reflected in this query's return value.
+    /// - On Darwin/BSDs or under miri, `false` means decommit is advisory-only with no
+    ///   reclaim or zero-fill guarantee.
+    /// - On huge-page reservations (any platform), `false` because decommit is a silent
+    ///   no-op: the OS never releases the backing, and reads return the old data.
+    ///
+    /// A `true` return is therefore a statement about the **platform and reservation type**,
+    /// not a guarantee that a specific `decommit` call actually released memory or zeroed
+    /// pages — OS errors in that path are unobservable through this API by design
+    /// (the same contract as the infallible `decommit` method itself).
+    ///
+    /// This query combines:
     /// - the platform-level guarantee (see [`Self::decommit_reclaims_and_zeroes`]), and
     /// - the reservation's huge-page status (via [`Self::is_huge`]).
     ///
@@ -1370,6 +1389,29 @@ impl Reservation {
     ///   release behavior, it must be aligned to the runtime [`page_size()`].
     ///   **This alignment to page_size() is NOT checked by the constructor's
     ///   `assert!`** — it is the caller's responsibility to ensure it.
+    /// - Under miri specifically, `reservation` — NOT `base` — MUST be the exact
+    ///   pointer returned by a `std::alloc::alloc` call, and that call's `Layout`
+    ///   must equal `Layout::from_size_align(reservation_len, align)`. The miri
+    ///   `release_reservation` reconstructs precisely that `Layout` and hands
+    ///   `reservation` to `std::alloc::dealloc`, which requires the pointer to be
+    ///   the one `alloc` returned and the layout to match exactly; anything else
+    ///   is undefined behaviour, not a leak.
+    ///
+    ///   The distinction between `reservation` and `base` is load-bearing here
+    ///   and is why this bullet names one and not the other: the two are
+    ///   SEPARATE parameters precisely so a caller can hand over an
+    ///   over-reserved region whose usable `base` sits at an offset inside it.
+    ///   Satisfying the provenance requirement at `base` while `reservation`
+    ///   points somewhere else is exactly the mistake this wording exists to
+    ///   prevent. (This crate's own miri backend happens to return
+    ///   `base == reservation`, so the distinction never bites internally —
+    ///   which is what makes it easy to get wrong for a caller-supplied pair.)
+    ///
+    ///   This requirement is specific to the miri backend; the Windows and Unix
+    ///   backends release by address and do not track allocator provenance.
+    ///   It complements — and does not restate — the `reservation_len`
+    ///   precision rule below: that one governs the SIZE, this one governs
+    ///   WHICH POINTER and WHERE THE MEMORY CAME FROM.
     /// - `reservation_len` must cover the underlying OS mapping/allocation.
     ///   The required PRECISION differs per backend, and is spelled out here
     ///   because the two halves of this rule used to contradict each other

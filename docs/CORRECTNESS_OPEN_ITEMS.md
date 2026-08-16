@@ -2350,6 +2350,67 @@ resolved" below.)_
      to actually have the branch, or if the commit ceases to be referenced.
    Full history: this entry.
 
+68. **Name asymmetry in `Reservation` decommit capability API:**
+   `Reservation::decommit_reclaims_and_zeroes()` (associated function, `const fn`,
+   compile-time capability query) vs. `Reservation::can_decommit_reclaim_and_zero()`
+   (instance method, combines compile-time capability with `is_huge()`).
+   The two differ only by `zeroes` vs. `zero` in their names — not a bug, but
+   harms discoverability. Unification is worth doing before API stabilizes.
+
+   - **Status:** OPEN — decision pending. Owner's choice, not technical.
+   - **Current number/verdict:**
+     *Impact count:* 35 total usages across `crates/vmem/` (grep -rn):
+     - `decommit_reclaims_and_zeroes`: 20 occurrences (1 definition in lib.rs:985,
+       3 doc intra-doc links in lib.rs, 1 in lib.rs:1043 call, 1 in lib.rs:1147,
+       1 in lib.rs:2018, 1 in lib.rs:2029, 1 in CHANGELOG.md:19, 2 in README.md,
+       1 in tests/decommit_capability.rs module doc, 1 in test function name,
+       1 in test function call, 1 in a second test function call,
+       1 in a third test call, 1 in test doc comment, 1 in round_trip_contract.rs:196)
+     - `can_decommit_reclaim_and_zero`: 15 occurrences (1 definition in lib.rs:1042,
+       1 intra-doc link in lib.rs:964, 2 in lib.rs examples, 1 in CHANGELOG.md:25,
+       3 in test file names, 5 in test file calls, 2 in test file docs)
+     *Scope:* all 35 CODE / doc-comment usages are inside `crates/vmem/`; the
+     root crate's `src/`, `benches/` and `examples/` contain none, so a rename
+     is zero external API breakage for consumers of the parent `sefer-alloc`
+     crate and stays confined to the `aligned-vmem` subcrate's own surface.
+     Both counts (20 and 15) were re-verified by `grep -ro ... | wc -l` at
+     review, not taken on trust.
+     CORRECTION applied at review of task #1041: the delegated card asserted
+     "none in `docs/`", which is false — five files under `docs/` do mention
+     the names (`docs/CORRECTNESS_OPEN_ITEMS.md`, three R5/R6 review reports,
+     one session checkpoint). Those are historical records of what the API was
+     called at the time, NOT call sites, and a rename would deliberately leave
+     them untouched — the same non-retroactive posture this file takes
+     elsewhere. They are listed here so a later scope check does not
+     "discover" them and mistake them for missed sites.
+     *Which variant is cheaper to rename:*
+     - `decommit_reclaims_and_zeroes` (associated, 20 uses, const fn, compile-time
+       capability): LESS public (only appears as an example reference in the instance
+       method's doc), but MORE occurrences in docs/tests.
+     - `can_decommit_reclaim_and_zero` (instance, 15 uses, combines cfg + runtime):
+       MORE public (the user-facing API you call on a live reservation), but fewer
+       total occurrences.
+     Recommendation: rename the **associated function** to `decommit_reclaims_and_zero`
+       (drop the final `s`), because it is less directly called by users (most callers
+       use the instance method `can_decommit_reclaim_and_zero`), and the single-letter
+       reduction makes both names fit in the same mental pattern.
+     *Semver impact:* ZERO cost now (0.2.0 not yet published on crates.io), expensive
+     after publication (would require semver-major). The crate is currently at 0.1.0
+     on crates.io; 0.2.0 is pre-release. All public API changes are still free until
+     the 0.2.0 publish button is pressed — after that, this becomes a breaking change.
+     *Third option:* `#[deprecated]` alias pattern (keep both names, deprecate one).
+     Cost: adds API surface and clarity debt forever ("which name should I use?").
+     The whole point of pre-release stabilization is to settle these questions,
+     not to carry two parallel names forward. Not recommended — the better path is
+     to pick one name before 0.2.0 and ship it cleanly.
+   - **Next trigger:** Pre-0.2.0 freeze decision. The owner must choose one of:
+     (a) rename the associated function to `decommit_reclaim_and_zero` (drop `s`),
+     (b) rename the instance method to `can_decommit_reclaims_and_zeroes` (add `s`),
+     or (c) explicitly decide to leave the asymmetry as-is and close this card.
+     Once 0.2.0 publishes, this becomes a semver-major change if the owner later
+     changes their mind.
+   Full history: this entry.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
