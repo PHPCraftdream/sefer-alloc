@@ -871,10 +871,20 @@ impl Reservation {
         self.granted_huge
     }
 
-    /// Returns `true` if the current platform guarantees that eager [`Self::decommit`]
-    /// returns physical backing to the OS and zero-fills on next access, `false` otherwise.
+    /// Returns `true` if the current platform's **ordinary native backend** guarantees
+    /// that eager [`Self::decommit`] returns physical backing to the OS and zero-fills
+    /// on next access, `false` otherwise.
     ///
-    /// Platform behavior:
+    /// **Scope:** this is a platform-level query about the ordinary native backend's
+    /// contract. It does NOT apply to:
+    /// - **huge-page reservations** (those with [`Self::is_huge`] == `true`) — decommit
+    ///   silently fails there (see the free [`decommit`] function's rustdoc for details).
+    /// - **miri** — under miri, the backend is a no-op that doesn't model RSS or reclaim.
+    ///
+    /// For an instance-level query that accounts for huge pages, use
+    /// [`Self::can_decommit_reclaim_and_zero`].
+    ///
+    /// Platform behavior (ordinary native backend only):
     /// - **Linux (all targets)**: returns `true`. `MADV_DONTNEED` unmaps physical pages
     ///   and re-faults fresh zero pages on next access.
     /// - **Windows**: returns `true`. `MEM_DECOMMIT` unmaps physical pages and
@@ -889,8 +899,8 @@ impl Reservation {
     ///
     /// This is a compile-time constant per platform: the return value is the same
     /// for all calls within a single compilation unit, determined by the target
-    /// OS triple. It provides programmatic access to the platform-specific guarantee
-    /// that [`Self::decommit`]'s rustdoc describes in prose.
+    /// OS triple and whether miri is active. It provides programmatic access to the
+    /// platform-specific guarantee that [`Self::decommit`]'s rustdoc describes in prose.
     #[must_use]
     #[inline]
     pub const fn decommit_reclaims_and_zeroes() -> bool {
@@ -902,8 +912,51 @@ impl Reservation {
             target_os = "freebsd",
             target_os = "dragonfly",
             target_os = "netbsd",
-            target_os = "openbsd"
+            target_os = "openbsd",
+            miri
         )))
+    }
+
+    /// Returns `true` if eager [`Self::decommit`] on **this specific reservation**
+    /// guarantees reclaim+zero-fill semantics, `false` otherwise.
+    ///
+    /// This is an instance-level query that combines:
+    /// - the platform-level guarantee (see [`Self::decommit_reclaims_and_zeroes`]), and
+    /// - the reservation's huge-page status (via [`Self::is_huge`]).
+    ///
+    /// Returns `false` if EITHER condition fails:
+    /// - the platform doesn't guarantee reclaim+zero-fill (Darwin/BSDs, or miri), or
+    /// - this reservation uses huge pages (huge-page decommit is a silent no-op).
+    ///
+    /// Use this when you have an actual `Reservation` and need to know whether decommit
+    /// will work on it. Use the associated function [`Self::decommit_reclaims_and_zeroes`]
+    /// when you only care about platform capability without a reservation instance.
+    ///
+    /// # Example
+    ///
+    /// Ordinary reservation: decommit works on Linux/Windows (except miri):
+    /// ```text
+    /// let ordinary = reserve_aligned(1024 * 1024, 4096).expect("reserve");
+    /// // On Linux/Windows (native): ordinary.can_decommit_reclaim_and_zero() == true
+    /// // On Darwin/BSD or under miri: ordinary.can_decommit_reclaim_and_zero() == false
+    /// ```
+    ///
+    /// Huge-page reservation: decommit never works, even on Linux/Windows:
+    /// ```text
+    /// let huge = reserve_aligned_huge(1024 * 1024, 1024 * 1024);
+    /// if let Some(ref reservation) = huge {
+    ///     if reservation.is_huge() {
+    ///         // Always false, regardless of platform
+    ///         assert!(!reservation.can_decommit_reclaim_and_zero());
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// See the tests in `tests/decommit_capability.rs` for runnable coverage of both cases.
+    #[must_use]
+    #[inline]
+    pub fn can_decommit_reclaim_and_zero(&self) -> bool {
+        Self::decommit_reclaims_and_zeroes() && !self.is_huge()
     }
 
     /// Consume the handle WITHOUT releasing the OS reservation, returning the

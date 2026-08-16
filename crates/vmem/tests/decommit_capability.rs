@@ -17,7 +17,6 @@ use aligned_vmem::Reservation;
 #[cfg(feature = "bench-internals")]
 static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[cfg(feature = "bench-internals")]
 const MIB: usize = 1024 * 1024;
 
 /// Test that `decommit_reclaims_and_zeroes()` returns the correct compile-time
@@ -31,10 +30,23 @@ const MIB: usize = 1024 * 1024;
 #[test]
 fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
     // On Linux and Windows, decommit is guaranteed to reclaim and zero-fill
-    #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android", target_os = "windows"),
+        not(miri)
+    ))]
     assert!(
         Reservation::decommit_reclaims_and_zeroes(),
-        "Linux and Windows should guarantee reclaim+zero-fill semantics"
+        "Linux and Windows (native) should guarantee reclaim+zero-fill semantics"
+    );
+
+    // Under miri, the capability is false even on Linux/Windows targets
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android", target_os = "windows"),
+        miri
+    ))]
+    assert!(
+        !Reservation::decommit_reclaims_and_zeroes(),
+        "Under miri, capability should be false even on Linux/Windows targets"
     );
 
     // On Darwin and BSD family, decommit is advisory-only with no guarantee
@@ -51,6 +63,103 @@ fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
     assert!(
         !Reservation::decommit_reclaims_and_zeroes(),
         "Darwin and BSD should NOT guarantee reclaim+zero-fill semantics"
+    );
+}
+
+/// Test that `can_decommit_reclaim_and_zero()` returns `false` for huge-page reservations
+/// and equals the platform query for ordinary (fallback) reservations.
+///
+/// What breaks if this test is deleted:
+/// - The instance-level query could incorrectly return `true` for huge-page reservations,
+///   leading callers to believe decommit will work when it actually silently fails (R5-1, finding 3).
+/// - The documented relationship (instance query = platform query && !is_huge) could be broken
+///   for ordinary reservations, because this is the ONLY test that checks it on a real
+///   reservation obtained via `reserve_aligned_huge` (which may fall back to ordinary pages).
+///
+/// Counterfactual for huge case: if the implementation returns `Self::decommit_reclaims_and_zeroes()`
+/// (removing `&& !self.is_huge()`), this test fails on any host where `is_huge() == true`.
+///
+/// Counterfactual for ordinary case: if the implementation returns `true` unconditionally
+/// or writes `||` instead of `&&`, this test fails on Linux/Windows (where platform query returns `true`
+/// but the instance query should return `false` for huge pages, and `true` for ordinary fallback).
+#[test]
+#[cfg(feature = "huge-pages")]
+fn can_decommit_reclaim_and_zero_returns_false_for_huge_reservations() {
+    use aligned_vmem::reserve_aligned_huge;
+
+    // Try to reserve with huge pages. This may fall back to ordinary pages
+    // if huge pages are not available (no hugetlb pool, unprivileged, etc.).
+    let size = 2 * MIB; // Linux huge-page size
+    let huge_r = reserve_aligned_huge(size, size);
+
+    if let Some(ref reservation) = huge_r {
+        if reservation.is_huge() {
+            // HUGE CASE: decommit never works, even on platforms where the native
+            // backend guarantees it for ordinary reservations.
+            assert!(
+                !reservation.can_decommit_reclaim_and_zero(),
+                "instance query must return false for huge-page reservations"
+            );
+        } else {
+            // ORDINARY FALLBACK CASE: when huge pages are not available, the reservation
+            // is ordinary and the instance query should equal the platform query.
+            assert_eq!(
+                reservation.can_decommit_reclaim_and_zero(),
+                Reservation::decommit_reclaims_and_zeroes(),
+                "instance query should equal platform query for ordinary (fallback) reservations"
+            );
+        }
+    }
+    // If `huge_r == None`, the reservation failed entirely — nothing to test here.
+    // This is not a bug in the instance query, just an OS refusal.
+}
+
+/// Test that `can_decommit_reclaim_and_zero()` returns the platform capability
+/// for ordinary (non-huge) reservations.
+///
+/// What breaks if this test is deleted: the instance-level query could diverge from
+/// the platform-level query for ordinary reservations, breaking the documented
+/// relationship (instance query = platform query && !is_huge).
+#[test]
+fn can_decommit_reclaim_and_zero_matches_platform_for_ordinary_reservations() {
+    use aligned_vmem::reserve_aligned;
+
+    let ordinary_r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+    assert!(
+        !ordinary_r.is_huge(),
+        "ordinary reservation should never report as huge"
+    );
+
+    // For ordinary reservations, the instance query should match the platform query
+    #[cfg(not(miri))]
+    {
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+        assert!(
+            ordinary_r.can_decommit_reclaim_and_zero(),
+            "ordinary reservation on Linux/Windows should support reclaim+zero-fill"
+        );
+
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        assert!(
+            !ordinary_r.can_decommit_reclaim_and_zero(),
+            "ordinary reservation on Darwin/BSD should NOT support reclaim+zero-fill"
+        );
+    }
+
+    // Under miri, even ordinary reservations should report false
+    #[cfg(miri)]
+    assert!(
+        !ordinary_r.can_decommit_reclaim_and_zero(),
+        "under miri, even ordinary reservations should report false"
     );
 }
 

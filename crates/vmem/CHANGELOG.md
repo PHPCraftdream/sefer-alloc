@@ -17,10 +17,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   round-trip that preserves `base`, usable `len` and `granted_huge`, which
   `ReservationParts` discards (R4-11)
 - `Reservation::decommit_reclaims_and_zeroes()` — `const fn` capability query
-  reporting whether the current platform actually delivers decommit's
-  reclaim + zero-fill semantics (`false` on Darwin and the four BSDs, where
-  `MADV_DONTNEED` is advisory-only). Makes a guarantee that was previously
-  documented in prose only something callers can branch on (R4-3)
+  reporting whether the current platform's ordinary native backend actually delivers
+  decommit's reclaim + zero-fill semantics (`false` on Darwin and the four BSDs,
+  where `MADV_DONTNEED` is advisory-only, and under miri where the backend is a no-op).
+  Makes a guarantee that was previously documented in prose only something callers
+  can branch on (R4-3, R5-1)
+- `Reservation::can_decommit_reclaim_and_zero()` — instance-level query that combines
+  the platform guarantee with the reservation's huge-page status, returning `false`
+  for huge-page reservations where decommit silently fails (R5-1)
 - `VmemError::last_os_error()` for OS error capture with preserved errno
 - `bench-internals` feature with diagnostic counters for path activation:
   - `unix_exact_reserve_attempts()` / `unix_exact_reserve_hits()`
