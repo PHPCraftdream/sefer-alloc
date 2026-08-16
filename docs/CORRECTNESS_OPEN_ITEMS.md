@@ -2256,61 +2256,7 @@ resolved" below.)_
     - **Next trigger:** when a future round adds the missing `cargo miri test -p aligned-vmem` CI step recommended by item 41 (miri execution, not just compilation check), the runtime semantics gap will be closed. Until then, miri coverage is compile-only.
     - **Evidence:** the `--cfg miri` `cargo check` step in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only, not `cargo miri test`); item 41 (the existing open item documenting the missing `cargo miri test` CI step); `crates/vmem/src/lib.rs` FFI call sites (mmap/munmap/madvise on Unix, VirtualAlloc/VirtualFree on Windows — the runtime semantics that miri would catch if actually run).
 
-63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable`
-   scheduler-sensitive percentage thresholds (BOTH regimes).** (Filed
-   2026-08-16, concurrent work in `vmem-r6-flake` worktree.) The test's
-   adversarial regime assertion required ≥90% slow-path activation, which
-   failed under high parallel load (4 concurrent builds in shared target
-   directory) with 88.66% (256 fast / 2002 slow). On the same commit, with
-   no code changes, the test passed 3/3 runs in isolation — the failure is
-   scheduler-sensitive, not a regression. A zero-trust review identified
-   the SAME defect in the favorable (drain-immediately) regime, which used
-   a ≥95% fast-path threshold with the same vulnerability.
-
-   The root cause: process-global `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW`
-   counters are shared across all tests in the binary. libtest runs this
-   file's three `#[test]` functions concurrently by default. Without a
-   serial guard, concurrent sibling tests can pollute the counters between
-   a test's `before`/`after` snapshots, causing spurious percentage
-   assertion failures. The original failure pattern (slow_delta itself
-   was structurally correct at 2000 ≈ ROUNDS, but fast_delta grew to 256
-   under load) proves this: the adversarial mechanism worked, but the
-   DELTA measurement was corrupted by concurrent noise.
-
-   - **Status:** CLOSED — introduced a `static SERIAL: Mutex<()>` guard
-     (following the pattern from `crates/vmem/tests/smoke.rs`) that all
-     three `#[test]` functions in this file hold for their entire bodies.
-     With the serial guard, each test has exclusive access to the global
-     counters, eliminating the concurrent noise source. The assertions
-     now use exact counts (`assert_eq!`) instead of lower bounds, and the
-     percentage thresholds were tightened (favorable: ≥95% → ≥99% fast
-     path; adversarial: replaced with `slow_delta >= ROUNDS - 10` count
-     check, since the exact count is now trustworthy). Counterfactual
-     verified: removing the adversarial loop's `dbg_advance_head_only`
-     call (so the shadow never goes stale) caused the test to fail as
-     expected ("adversarial regime must issue exactly one full_check per
-     round (expected 2000, got 0)"), confirming the oracle still detects
-     when the adversarial condition is not reached. Guard effectiveness
-     demonstrated: without the guard, `cargo test --all-features --test
-     remote_ring_shadow_head` failed with 2258 vs expected 2000 (the
-     unfavorable test's ROUNDS were polluted by the adversarial test's
-     concurrent execution); with the guard, all three tests passed.
-   - **Evidence:** original failure message "got 88.66% (256 fast / 2002
-     slow)" from the failing `npm run check` invocation; `git diff
-     tests/remote_ring_shadow_head.rs` showing the `static SERIAL:
-     Mutex<()>` guard added to all three tests, favorable regime's
-     `total >= ROUNDS` → `assert_eq!(total, ROUNDS)` and `fast_pct >= 95.0`
-     → `>= 99.0` changes, adversarial regime's fresh `fast_before`/
-     `slow_before` snapshot taken after the RING_CAP fill (to exclude the
-     fill's own counter contributions), and the `slow_delta >= ROUNDS - 10`
-     exact count assertion; counterfactual run (adversarial loop commented
-     out) showing "expected 2000, got 0" failure; before-guard failure with
-     2258 vs 2000 and after-guard success; the `SERIAL` guard pattern from
-     `crates/vmem/tests/smoke.rs` that this change mirrors.
-   - **Next trigger:** none — fixed by this change. Future tests that read
-     before/after snapshots from process-global counters should follow this
-     same serial-guard pattern (or reset the counters if supported), otherwise
-     the same failure mode will recur.
+63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
 ---
 
@@ -2369,6 +2315,77 @@ resolved" below.)_
      it — fixing the test-isolation race was that commit's actual, correct
      scope. See open item 4 above ("Open items" §`[T]`) for a tracked
      follow-up on strengthening leak detection itself.
+
+3. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable`
+   scheduler-sensitive percentage thresholds (BOTH regimes).** **RESOLVED**
+   in TWO steps, both 2026-08-16 — do not read this card as landing in a
+   single commit:
+   (a) the root-cause fix, commit `8d68715` (task #1030): the `SERIAL`
+   guard plus exact-equality assertions;
+   (b) a portability follow-up, the commit carrying this entry (task
+   #1033, finding F5 of
+   `docs/reviews/2026-08-16-aligned-vmem-r6-wave-review.md`): (a)'s
+   exact equalities were only valid on strong-CAS targets, and were
+   replaced by two-sided bounds.
+
+   - **Root cause, confirmed:** process-global `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW`
+     counters are shared across all tests in the binary. libtest runs this
+     file's three `#[test]` functions concurrently by default. Without a
+     serial guard, concurrent sibling tests can pollute the counters between
+     a test's `before`/`after` snapshots, causing spurious percentage
+     assertion failures. The original failure pattern (slow_delta itself
+     was structurally correct at 2000 ≈ ROUNDS, but fast_delta grew to 256
+     under load) proves this: the adversarial mechanism worked, but the
+     DELTA measurement was corrupted by concurrent noise.
+   - **Fix (a), commit `8d68715`:** introduced a `static SERIAL: Mutex<()>`
+     guard (following the pattern from `crates/vmem/tests/smoke.rs`) that
+     all three `#[test]` functions in this file hold for their entire
+     bodies. With the serial guard, each test has exclusive access to the
+     global counters, eliminating the concurrent noise source. Because the
+     noise source was gone, the assertions were then TIGHTENED rather than
+     relaxed: lower bounds became exact equalities (`assert_eq!(total,
+     ROUNDS)`), and the percentage thresholds moved from ≥95% to ≥99% fast
+     path in the favorable regime and from a percentage to a
+     `slow_delta >= ROUNDS - 10` count check in the adversarial one.
+     Guard effectiveness was demonstrated by removing the guard: `cargo
+     test --all-features --test remote_ring_shadow_head` then reported
+     2258 against an expected 2000, i.e. one test's counter delta absorbed
+     roughly 258 pushes issued by a concurrently running sibling. (The
+     original card named a specific direction for that cross-test
+     pollution; it is not recoverable from the recorded evidence, which
+     shows only the polluted total, so the direction is deliberately left
+     unstated here rather than guessed.)
+   - **Fix (b), the commit carrying this entry:** (a)'s exact equalities
+     silently assumed `compare_exchange_weak` never fails spuriously.
+     `RemoteFreeRing::push` (`src/alloc_core/remote_free_ring.rs`) is a
+     `loop { load tail; full_check(t); compare_exchange_weak(..) }`, and
+     `full_check` bumps exactly one shadow counter PER CALL — so on an
+     LL/SC target (aarch64/ARM) a spurious CAS failure retries the loop
+     and double-counts one logical push. Exact equality therefore held
+     only on strong-CAS targets, where `compare_exchange_weak` lowers to
+     `lock cmpxchg`. Replaced with two-sided bounds
+     (`total >= ROUNDS && total <= ROUNDS + CAS_RETRY_SLACK`,
+     `CAS_RETRY_SLACK = 8`), which keeps everything (a) was for — the
+     original failure was a ~256-push distortion by a sibling test, not a
+     handful of CAS retries — while staying valid on every architecture.
+     Latent, not live: both tests require `feature = "bench-internals"`,
+     which is in neither `production` nor `experimental`, and every
+     aarch64/macOS CI row uses only those bundles, so the tests do not
+     compile there today. The failure would surface the moment an
+     aarch64 row gains `bench-internals`, or on a local
+     `cargo test --all-features` on Apple Silicon.
+   - **Counterfactual:** removing the adversarial loop's
+     `dbg_advance_head_only` call (so the shadow never goes stale) makes
+     the test fail, confirming the oracle still detects a non-reached
+     adversarial condition. Re-verified after fix (b) landed; note the
+     assertion message changed between (a) and (b), so a quoted failure
+     string is only meaningful against the matching revision.
+   - **Verification:** `cargo test --all-features --test
+     remote_ring_shadow_head`, 5 consecutive clean runs, plus
+     `cargo clippy --all-features --all-targets -- -D warnings` clean —
+     re-run for (b), not inherited from (a).
+   - **Files changed:** `tests/remote_ring_shadow_head.rs` in both
+     commits, plus this index entry.
 
 2. **Clippy dead-code — `--features "hardened medium-classes"` was not
    clippy-clean (11 errors)** — **RESOLVED** by R23-5 (task #374). All 11

@@ -54,6 +54,19 @@ static SERIAL: Mutex<()> = Mutex::new(());
 
 use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT, RING_CAP};
 
+/// Slack allowance for spurious `compare_exchange_weak` retries on weak-CAS
+/// architectures (aarch64, ARM). Each retry causes `full_check` to be called
+/// again, incrementing the shadow counters. A single-threaded workload can
+/// experience a few spurious failures per ROUNDS due to preemption, cache
+/// eviction, or loss of exclusive monitor. On strong-CAS targets (x86_64),
+/// `compare_exchange_weak` compiles to `lock cmpxchg` and never fails
+/// spuriously, so the actual slack will be 0.
+///
+/// This constant preserves the original fix's benefit (distinguishing ~256
+/// counter-pollution noise from sibling tests vs. a few CAS retries) while
+/// making the test portable across architectures.
+const CAS_RETRY_SLACK: u64 = 8;
+
 fn ring_buffer() -> Box<[u8]> {
     let mut buf: Vec<u8> = vec![0u8; FOOTPRINT];
     assert!(
@@ -179,14 +192,18 @@ fn shadow_survives_dbg_set_cursors_reset() {
 
     // With the serial guard, this test has exclusive access to the global
     // counters for its entire body, so the exact delta can be asserted
-    // without concern about concurrent sibling-test noise.
-    assert_eq!(
-        fast_after,
-        fast_before + 1,
+    // without concern about concurrent sibling-test noise. On weak-CAS
+    // architectures (aarch64), spurious compare_exchange_weak failures can
+    // cause a few extra fast-path increments, so we allow a small slack.
+    // See CAS_RETRY_SLACK above.
+    assert!(
+        fast_after > fast_before && fast_after <= fast_before + 1 + CAS_RETRY_SLACK,
         "the first push after dbg_set_cursors must take the shadow FAST path \
-         (cached_head was reset to match head by dbg_set_cursors): \
-         expected increment by 1, got {}",
-        fast_after - fast_before
+         (cached_head was reset to match head by dbg_set_cursors); weak-CAS \
+         retries may add a few extra fast counts (expected increment ~1, allowed \
+         range 1..={slack}, got {increment})",
+        slack = 1 + CAS_RETRY_SLACK,
+        increment = fast_after - fast_before
     );
 }
 
@@ -243,12 +260,14 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         let slow_delta = DBG_RING_PUSH_SHADOW_SLOW.load(Ordering::Relaxed) - slow_before;
         let total = fast_delta + slow_delta;
         // With the serial guard, this test has exclusive access to the global
-        // counters from parallel sibling tests, so the exact count can be
-        // asserted (the guard does not protect against the adversarial regime
-        // block below, which is in the same test and runs after this block).
-        assert_eq!(
-            total, ROUNDS as u64,
-            "every push takes exactly one full_check (expected {ROUNDS}, got {total})"
+        // counters from parallel sibling tests. On weak-CAS architectures (aarch64),
+        // spurious compare_exchange_weak failures can cause a few extra full_check
+        // calls per ROUNDS, so we allow a small slack. See CAS_RETRY_SLACK above.
+        assert!(
+            total >= ROUNDS as u64 && total <= ROUNDS as u64 + CAS_RETRY_SLACK,
+            "every push takes at least one full_check; weak-CAS retries may add a few extras \
+             (expected ~{ROUNDS}, allowed range {ROUNDS}..={ro}, got {total})",
+            ro = ROUNDS + CAS_RETRY_SLACK as u32
         );
         // The favorable regime must show the fast path dominating. With the
         // serial guard eliminating concurrent noise, we can assert the exact
@@ -312,9 +331,8 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
             // ONLY head/tail — NOT cached_head — so the shadow stays stale
             // relative to the now-advanced head, forcing every subsequent
             // push's full_check onto the slow path.
-            let (h, t) = ring.dbg_cursors();
+            let (h, _t) = ring.dbg_cursors();
             ring.dbg_advance_head_only(h.wrapping_add(1));
-            let _ = t;
             // Refill by exactly 1 (occupancy back to RING_CAP).
             assert!(
                 ring.push((i + 1) * 16).is_ok(),
@@ -326,11 +344,14 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         let slow_delta = DBG_RING_PUSH_SHADOW_SLOW.load(Ordering::Relaxed) - slow_before;
         let total = fast_delta + slow_delta;
         // With the serial guard, this test has exclusive access to the global
-        // counters, so the exact count can be asserted.
-        assert_eq!(
-            total, ROUNDS as u64,
-            "adversarial regime must issue exactly one full_check per round \
-             (expected {ROUNDS}, got {total})"
+        // counters. On weak-CAS architectures (aarch64), spurious compare_exchange_weak
+        // failures can cause a few extra full_check calls per ROUNDS, so we allow a
+        // small slack. See CAS_RETRY_SLACK above.
+        assert!(
+            total >= ROUNDS as u64 && total <= ROUNDS as u64 + CAS_RETRY_SLACK,
+            "adversarial regime must issue at least one full_check per round; weak-CAS \
+             retries may add a few extras (expected ~{ROUNDS}, allowed range {ROUNDS}..={ro}, got {total})",
+            ro = ROUNDS + CAS_RETRY_SLACK as u32
         );
         // Verify the adversarial regime actually activates the slow path.
         // With the serial guard eliminating concurrent noise, we can assert
