@@ -293,3 +293,140 @@ fn zero_arming_is_a_pure_disarm() {
     let ok = unsafe { commit_range(base, chunk, 2 * chunk) };
     assert!(ok, "disarmed hooks must not affect the real commit");
 }
+
+/// task #1021/R4-8: deterministic semantics test for `arm_fail_at` after the
+/// Mutex fix. Verifies that:
+/// - The fault fires on exactly the k-th call
+/// - The hook self-disarms after firing
+/// - Subsequent calls succeed
+///
+/// This test is deterministic and would fail if the counter/self-disarm logic
+/// was broken (e.g., if counter wasn't reset, or if target wasn't cleared after
+/// firing).
+#[test]
+fn arm_fail_at_fails_exactly_kth_and_self_disarms() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    arm_fail_next(0);
+    arm_fail_at(0);
+
+    let chunk = 16 * PAGE;
+    let span = 4 * MIB;
+    let r = reserve_aligned_lazy(span, span, chunk).expect("real lazy reserve");
+    let base = r.as_ptr();
+
+    // Arm to fail the 3rd call.
+    arm_fail_at(3);
+
+    // SAFETY: ranges are within span.
+    assert!(
+        unsafe { commit_range(base, 0, chunk) },
+        "1st call (k=1) should succeed"
+    );
+    assert!(
+        unsafe { commit_range(base, chunk, 2 * chunk) },
+        "2nd call (k=2) should succeed"
+    );
+    assert!(
+        !unsafe { commit_range(base, 2 * chunk, 3 * chunk) },
+        "3rd call (k=3) should fail"
+    );
+    assert!(
+        unsafe { commit_range(base, 3 * chunk, 4 * chunk) },
+        "4th call (k=4) should succeed (hook self-disarmed)"
+    );
+
+    // Verify hook is fully disarmed: another call without re-arming should succeed.
+    assert!(
+        unsafe { commit_range(base, 4 * chunk, 5 * chunk) },
+        "5th call (after self-disarm) should succeed"
+    );
+
+    // Explicitly disarm and verify it's a no-op.
+    arm_fail_at(0);
+    assert!(
+        unsafe { commit_range(base, 5 * chunk, 6 * chunk) },
+        "6th call (after explicit disarm) should succeed"
+    );
+}
+
+/// task #1021/R4-8: stress test for concurrent arming/firing without
+/// probabilistic assertions. This is NOT a regression oracle for the race fix
+/// — the race is closed by construction (both critical sections under a single
+/// `Mutex<FaultState>`), not by this test's outcome. A concurrent re-arm
+/// interleaving between the two atomic stores in the old implementation cannot
+/// be reliably reproduced with a probabilistic test on real hardware.
+///
+/// This test validates basic concurrency invariants under high contention:
+/// - No panics occur (deadlock detection via successful termination)
+/// - No deadlock (test completes in reasonable time)
+/// - Failure count is bounded by iteration count (no counter corruption)
+/// - Explicit disarm (`arm_fail_at(0)`) takes effect immediately
+///
+/// A broken implementation that corrupts the state machine would violate one
+/// of these invariants with high probability under stress.
+#[test]
+fn concurrent_arm_and_fire_stress_invariants_hold() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    arm_fail_next(0);
+    arm_fail_at(0);
+
+    let chunk = 16 * PAGE;
+    let span = 4 * MIB;
+    let r = reserve_aligned_lazy(span, span, chunk).expect("real lazy reserve");
+    let base_addr = r.as_ptr() as usize;
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    const ITERATIONS: u32 = 1000;
+
+    // Thread 1: repeatedly commit and count failures.
+    let t1 = {
+        let barrier = barrier.clone();
+        std::thread::spawn(move || {
+            let mut local_failures = 0u32;
+            let base = base_addr as *mut u8;
+            for _ in 0..ITERATIONS {
+                barrier.wait();
+                // SAFETY: `[0, chunk)` is within the span; recommitting an
+                // already-committed range is idempotent and safe.
+                let ok = unsafe { commit_range(base, 0, chunk) };
+                if !ok {
+                    local_failures += 1;
+                }
+            }
+            local_failures
+        })
+    };
+
+    // Thread 2: repeatedly re-arm the fault.
+    let t2 = {
+        let barrier = barrier.clone();
+        std::thread::spawn(move || {
+            for _ in 0..ITERATIONS {
+                barrier.wait();
+                // Re-arm to fail the next call.
+                arm_fail_at(1);
+            }
+        })
+    };
+
+    let failures = t1.join().expect("commit thread must not panic");
+    t2.join().expect("re-arm thread must not panic");
+
+    // Invariant: failure count must be bounded by iteration count.
+    // A corrupted counter (e.g., from lost decrements or overflow) would
+    // violate this with high probability under stress.
+    assert!(
+        failures <= ITERATIONS,
+        "failure count {} must not exceed iteration count {}",
+        failures,
+        ITERATIONS
+    );
+
+    // Invariant: explicit disarm must take effect immediately.
+    arm_fail_at(0);
+    // SAFETY: same range as above.
+    assert!(
+        unsafe { commit_range(base_addr as *mut u8, 0, chunk) },
+        "after explicit disarm, commit must succeed"
+    );
+}

@@ -245,10 +245,17 @@ std::thread_local! {
 /// Returns THIS thread's log only: a [`Call::Release`] recorded by a
 /// `Reservation` dropped on another thread is not visible here — see
 /// the module-level "Cross-thread drops" section for the mechanism.
+///
+/// task #1021/R4-9: holds the `RefCell` borrow only for the `mem::take`
+/// call, not for the returned `Vec`'s lifetime — this prevents a
+/// reentrancy panic if the returned `Vec`'s allocation itself triggers
+/// a nested `record` call (the `RECORDING` guard protects `record` from
+/// recursion within itself, but does not protect `drain` from allocating
+/// while holding the borrow).
 #[must_use]
 #[cfg_attr(docsrs, doc(cfg(aligned_vmem_mock)))]
 pub fn drain() -> Vec<Call> {
-    CALLS.with(|c| c.borrow_mut().drain(..).collect())
+    CALLS.with(|c| std::mem::take(&mut *c.borrow_mut()))
 }
 
 /// Clear the recorded call log AND both fault counters — call at the start of a

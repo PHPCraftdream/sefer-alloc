@@ -490,3 +490,54 @@ fn release_null_is_noop_and_not_recorded() {
         "release(NULL, ...) must not record a Release entry (it's a no-op): {calls:?}"
     );
 }
+
+/// task #1021/R4-9: functional test for `drain()` after the `mem::take` fix.
+/// Verifies that:
+/// - All recorded calls are returned
+/// - The log is cleared after drain
+/// - Subsequent calls are recorded correctly
+///
+/// This test covers functional correctness but does NOT directly verify the
+/// reentrancy fix (holding borrow only during `mem::take`, not during Vec
+/// allocation). The reentrancy scenario (allocating while holding the RefCell
+/// borrow) requires a custom `#[global_allocator]` installation — see
+/// `tests/mock_reentrancy.rs` for the pattern. The fix is justified by
+/// construction: `mem::take(&mut *c.borrow_mut())` replaces the Vec under a
+/// short-lived borrow, then returns the old Vec without holding any borrow.
+/// This eliminates the borrow-during-allocation window that existed in
+/// `c.borrow_mut().drain(..).collect()`.
+///
+/// Without the fix, if the global allocator called back into `record()`
+/// during the `collect()` allocation, it would panic with `BorrowMutError`.
+/// The `RECORDING` guard protects `record` from recursion within itself,
+/// but does not protect `drain` from allocating while holding the borrow.
+#[test]
+fn drain_returns_all_recorded_calls_and_clears_log() {
+    mock::reset();
+
+    // Record some calls. Each reserve will record Reserve, and when dropped,
+    // will record Release.
+    for _ in 0..5 {
+        let _ = reserve_aligned(MIB, MIB);
+    }
+
+    // Call drain - this should return all calls and clear the log.
+    let calls = mock::drain();
+
+    // Verify we got the expected number of calls (5 Reserve + 5 Release).
+    assert_eq!(calls.len(), 10, "expected 10 recorded calls");
+
+    // Verify the log is cleared.
+    assert!(mock::drain().is_empty(), "drain must clear the log");
+
+    // Verify subsequent calls are recorded correctly.
+    let r = reserve_aligned(MIB, MIB).expect("reserve after drain");
+    drop(r);
+
+    let calls_after = mock::drain();
+    assert_eq!(
+        calls_after.len(),
+        2,
+        "expected 2 new calls (Reserve + Release) after drain"
+    );
+}

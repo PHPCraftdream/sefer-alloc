@@ -33,28 +33,12 @@
 //! doc claimed exactly that "owner-only discipline" assumption and used
 //! `Relaxed` throughout on that basis; the assumption does not hold for
 //! multi-threaded consumers, so it is not a safe basis for the ordering
-//! choice). Concretely: [`arm_fail_at`]'s counter-reset-then-target-store is
-//! a payload-then-flag publish (the reset is the "payload", the target store
-//! is the "flag" that makes a fresh arming visible) and needs a
-//! Release/Acquire pair, not `Relaxed`, to guarantee a reader that observes
-//! the flag also observes the payload -- see [`arm_fail_at`] and
-//! `should_fail_commit`'s doc comments for the exact pairing. `FAIL_NEXT`'s
-//! decrement uses [`AtomicU32::fetch_update`] (a genuine atomic
-//! read-modify-write) instead of a separate load then store, which would
-//! otherwise race under concurrent callers and lose or duplicate a
+//! choice). Concretely: [`arm_fail_at`] now uses a `Mutex<FaultState>` to
+//! serialize arming and disarming, closing the concurrent re-arm race
+//! (task #1021/R4-8). `FAIL_NEXT`'s decrement uses [`AtomicU32::fetch_update`
+//! (a genuine atomic read-modify-write) instead of a separate load then store,
+//! which would otherwise race under concurrent callers and lose or duplicate a
 //! decrement.
-//!
-//! **Scope note (task #776, F15):** these fixes close the two hazards named
-//! above. A THIRD, narrower hazard in this same 3-atomic protocol remains
-//! unhandled: `should_fail_commit`'s one-shot self-disarm
-//! (`FAIL_AT_TARGET = 0` then `FAIL_AT_COUNTER = 0`, both `Relaxed`) can race
-//! a CONCURRENT [`arm_fail_at`] call re-arming the hook -- the disarm may
-//! land after the re-arm, silently cancelling a freshly-armed hook with no
-//! signal to the caller. This is out of scope for the two hazards this
-//! module's fixes targeted, and matters only for a consumer that arms
-//! `arm_fail_at` from multiple threads (this crate's own test suite never
-//! does). Not fixed here; recorded so "closed two real data-race hazards"
-//! is not read as an exhaustive audit of this module's every atomic.
 //!
 //! Zero cost when the feature is off: this entire module is compiled out
 //! (`#[cfg(feature = "fault-injection")]` on the `mod` declaration in
@@ -63,18 +47,22 @@
 //! byte-identical with the feature disabled.
 
 use core::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
+
+/// Fault state protected by a mutex to serialize arm/fire operations and
+/// prevent concurrent re-arm races (task #1021/R4-8).
+struct FaultState {
+    /// Target call number for one-shot failure (0 = disarmed).
+    target: u32,
+    /// Running count of commit calls since last arming.
+    counter: u32,
+}
+
+static FAULT_STATE: Mutex<FaultState> = Mutex::new(FaultState { target: 0, counter: 0 });
 
 /// When `> 0`, the next real commit call fails without touching the OS and
 /// decrements this counter. `0` disarms. See [`arm_fail_next`].
 static FAIL_NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// When `> 0`, [`FAIL_AT_COUNTER`] counts real commit calls; when the counter
-/// reaches this target, that call fails and the target resets to 0
-/// (one-shot). See [`arm_fail_at`].
-static FAIL_AT_TARGET: AtomicU32 = AtomicU32::new(0);
-
-/// Running count of real commit calls since the last [`arm_fail_at`] call.
-static FAIL_AT_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 /// Arm the "fail the next N real commits" hook. The next `n` calls to the
 /// real commit path ([`crate::try_commit_range`] / [`crate::commit_range`])
@@ -99,17 +87,16 @@ pub fn arm_fail_next(n: u32) {
 /// Resets the internal call counter, so arming always counts from zero.
 /// Checked AFTER [`arm_fail_next`]'s hook.
 ///
-/// task #718: the counter reset is the "payload" and the target store is the
-/// "flag" a reader gates on (`should_fail_commit` only inspects
-/// `FAIL_AT_COUNTER` once it has observed `FAIL_AT_TARGET` `> 0`) — a
-/// `Release` store here, paired with the `Acquire` load there, guarantees a
-/// reader that observes a freshly-armed target also observes the zeroed
-/// counter, even when the arming and committing calls run on different
-/// threads.
+/// task #1021/R4-8: This function now uses a Mutex to serialize arming with
+/// the self-disarm in `should_fail_commit`, preventing the concurrent re-arm
+/// race where a re-arm between the target reset and counter reset would be
+/// lost. The earlier two-atomic approach (`FAIL_AT_COUNTER = 0` then
+/// `FAIL_AT_TARGET = k`) had a race window between those stores.
 #[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub fn arm_fail_at(k: u32) {
-    FAIL_AT_COUNTER.store(0, Ordering::Relaxed);
-    FAIL_AT_TARGET.store(k, Ordering::Release);
+    let mut state = FAULT_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    state.counter = 0;
+    state.target = k;
 }
 
 /// Internal: consult both hooks for the current real commit call. Returns
@@ -147,16 +134,21 @@ pub(crate) fn should_fail_commit() -> bool {
     if fired {
         return true;
     }
-    // task #718: `Acquire` pairs with `arm_fail_at`'s `Release` store on
-    // `FAIL_AT_TARGET` — see that function's doc comment.
-    let target = FAIL_AT_TARGET.load(Ordering::Acquire);
-    if target > 0 {
-        let prev = FAIL_AT_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let call_number = prev + 1; // 1-based
-        if call_number == target {
-            // One-shot: disarm after firing.
-            FAIL_AT_TARGET.store(0, Ordering::Relaxed);
-            FAIL_AT_COUNTER.store(0, Ordering::Relaxed);
+
+    // task #1021/R4-8: Use Mutex to prevent concurrent re-arm race.
+    // The earlier two-atomic approach had a window between resetting
+    // FAIL_AT_TARGET and FAIL_AT_COUNTER where a concurrent arm_fail_at
+    // could be lost. Holding the mutex across both stores guarantees
+    // atomicity.
+    let mut state = FAULT_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    if state.target > 0 {
+        state.counter += 1;
+        let call_number = state.counter; // 1-based
+        if call_number == state.target {
+            // One-shot: disarm after firing. Both stores happen under the
+            // mutex, so no concurrent arm can interleave and be lost.
+            state.target = 0;
+            state.counter = 0;
             return true;
         }
     }
