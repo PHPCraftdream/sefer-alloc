@@ -103,7 +103,10 @@ fault-injection = ["lazy-commit"]
 # settles whether a `decommit`/`decommit_lazy` call's underlying syscall
 # actually succeeded — see
 # https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md
-# item 48. Mirrors
+# item 48, plus Windows `VirtualFree(MEM_DECOMMIT)` attempt/failure counters
+# (`aligned_vmem::windows_virtualfree_decommit_attempts()` /
+# `aligned_vmem::windows_virtualfree_decommit_failures()`) and Unix `munmap`
+# failures (`aligned_vmem::unix_munmap_failures()`). Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the

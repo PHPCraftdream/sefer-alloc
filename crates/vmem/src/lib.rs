@@ -207,6 +207,10 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   from "the syscall itself failed" for item 48's root-cause question.
 //   `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` settle it with a real
 //   number — see those statics' own docs.
+// - Windows decommit failure path (round-3): `VirtualFree(MEM_DECOMMIT)`
+//   failure/failure tracking distinguishes "the syscall was attempted but
+//   failed" from "it was never attempted at all". `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES`
+//   settle this, and `UNIX_MUNMAP_FAILURES` provides the Unix counterpart.
 //
 // `AtomicU64` storage, increments gated on `bench-internals` so a plain build
 // carries zero extra instructions (storage itself is also gated, not compiled

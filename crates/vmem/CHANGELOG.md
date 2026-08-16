@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `unix_exact_reserve_attempts()` / `unix_exact_reserve_hits()`
   - `windows_reserve_commit_calls()` / `windows_reserve_commit_single_calls()` / `windows_reserve_commit_two_call_pairs()`
   - `unix_madvise_attempts()` / `unix_madvise_successes()`
+  - `windows_virtualfree_decommit_attempts()` / `windows_virtualfree_decommit_failures()`
+  - `unix_munmap_failures()`
   - `reset_bench_internals_counters()`
   - `validate_page_size()` for testing page size validation logic
 - Mock backend converted from Cargo feature to build-time `--cfg aligned_vmem_mock` flag (no Cargo feature unification risk)

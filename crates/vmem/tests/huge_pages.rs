@@ -32,12 +32,12 @@
 //! end.
 
 #![cfg(feature = "huge-pages")]
-// `serial_guard()` returns a real `MutexGuard` on Windows+bench-internals+
-// non-mock builds and `()` everywhere else (the lock/counters it guards
-// don't exist there) -- every call site binds it via `let _guard = ...;` so
-// the guard's scope (drop at function end) is identical across all
-// platforms; on the `()` variant that's a unit-value binding, which is
-// otherwise a real clippy smell but is exactly the point here.
+// `serial_guard()` returns a real `MutexGuard` on `bench-internals` builds and
+// `()` everywhere else (the lock/counters it guards don't exist there) -- every
+// call site binds it via `let _guard = ...;` so the guard's scope (drop at
+// function end) is identical across all platforms; on the `()` variant that's
+// a unit-value binding, which is otherwise a real clippy smell but is exactly
+// the point here.
 #![allow(clippy::let_unit_value)]
 
 use aligned_vmem::reserve_aligned_huge;
