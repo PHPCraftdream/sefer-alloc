@@ -200,6 +200,46 @@ jobs:
       - run: cargo check --target i686-unknown-linux-gnu --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
       - run: rustup target add i686-unknown-linux-musl
       - run: cargo check --target i686-unknown-linux-musl --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
+      # R6-6 (2026-08-16 aligned-vmem prerelease audit): doc warnings, packaging, and
+      # semver gates — matching sefer-region-gates' coverage. aligned-vmem has no
+      # path dependencies (empty [dependencies]), so full `cargo publish --dry-run`
+      # works without modification.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps
+      - run: cargo publish --dry-run -p aligned-vmem
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      # aligned-vmem 0.1.0 is published on crates.io; cargo-semver-checks fetches
+      # that baseline from the registry automatically, no local tag needed.
+      #
+      # HONEST SCOPE FOR THE CURRENT 0.1.0 -> 0.2.0 DELTA: this step runs ZERO
+      # of its 254 lints today and therefore cannot fail today. Measured
+      # locally at task #1039 (verbatim output):
+      #
+      #   Checking aligned-vmem v0.1.0 -> v0.2.0 (major change)
+      #    Checked [   0.000s] 0 checks: 0 pass, 254 skip
+      #    Summary no semver update required
+      #
+      # The reason is structural, not a misconfiguration: for a 0.x crate a
+      # minor bump IS the major bump, so once the version is already 0.2.0
+      # every major-breaking lint is skipped as "already accounted for" --
+      # exactly what 0.2.0's documented BREAKING change
+      # (`Reservation::from_raw_parts` gained a `granted_huge` parameter, see
+      # crates/vmem/CHANGELOG.md) requires. The step is kept anyway because it
+      # becomes discriminating the moment 0.2.0 is the published baseline: a
+      # later 0.2.1/0.2.x that breaks API shape then fails here. Until then,
+      # do NOT read a green result from this step as "no unintended breaking
+      # changes" -- it is not evidence of that.
+      #
+      # Scope limit that survives the version bump (same caveat as the
+      # sefer-region step above): cargo-semver-checks compares the SHAPE of
+      # the public API from rustdoc JSON -- signatures, item presence/absence,
+      # trait impls. It does NOT analyze runtime/behavioral semantics, and it
+      # does NOT check whether the version in Cargo.toml is already published.
+      # No `|| true` and no `continue-on-error` here: when it does have teeth,
+      # it is a real gate.
+      - run: cargo semver-checks check-release --package aligned-vmem
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
