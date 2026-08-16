@@ -717,9 +717,9 @@ impl Reservation {
     /// [`reserve_aligned_huge`]'s rustdoc for details.
     ///
     /// **Note:** reservations adopted via [`from_raw_parts`](Self::from_raw_parts)
-    /// always report `false` for this method regardless of how the reservation
-    /// was actually created (the caller-supplied metadata cannot reliably convey
-    /// the OS's grant decision).
+    /// report whatever `granted_huge` value the caller passed to that constructor,
+    /// which the caller is responsible for getting right (see that constructor's
+    /// `# Safety` section).
     #[must_use]
     #[inline]
     pub const fn is_huge(&self) -> bool {
@@ -783,10 +783,14 @@ impl Reservation {
     /// the underlying implementation with `self.as_ptr()` as base and
     /// automatically ensures `[start, end)` is within the reservation's usable span.
     ///
-    /// Returns the physical backing of `[start, end)` to the OS while keeping the
-    /// address-space reservation alive (Linux `MADV_DONTNEED`, Windows `MEM_DECOMMIT`).
-    /// Re-access after decommit produces fresh zero-filled pages (after [`Self::recommit`]
-    /// on Windows; implicitly on Linux — see [`decommit`]'s Darwin caveat).
+    /// Hint the OS to return the physical backing of `[start, end)` while keeping the
+    /// address-space reservation alive. On Linux and Windows this is guaranteed to
+    /// return physical backing and zero-fill on next access (Linux `MADV_DONTNEED`,
+    /// Windows `MEM_DECOMMIT`). On the Darwin family (macOS/iOS/tvOS/watchOS) and the
+    /// four BSDs (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
+    /// zero-fill or reclaim guarantee — the physical pages may remain resident and
+    /// old data may be observed after a decommit+recommit roundtrip (after
+    /// [`Self::recommit`] on Windows; implicitly on Linux).
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`]).
     /// A no-op if the range is empty, is out of bounds (`end > self.len()`), or
@@ -809,8 +813,9 @@ impl Reservation {
 
     /// Lazy decommit variant: hint the OS it MAY reclaim `[start, end)` under memory
     /// pressure, cheaper than [`Self::decommit`] (Linux `MADV_FREE`, macOS/iOS
-    /// `MADV_FREE_REUSABLE`, other Unix falls back to `MADV_DONTNEED`; Windows falls
-    /// back to the eager [`Self::decommit`] path, which has no lazy equivalent).
+    /// `MADV_FREE_REUSABLE`, FreeBSD/DragonFly `MADV_FREE`, NetBSD/OpenBSD
+    /// `MADV_FREE`, other Unix (including tvOS/watchOS) falls back to `MADV_DONTNEED`;
+    /// Windows falls back to the eager [`Self::decommit`] path, which has no lazy equivalent).
     ///
     /// This is the safe, bounds-checked alternative to the free [`decommit_lazy`]
     /// function for callers already holding a `Reservation`. It delegates to the
@@ -977,10 +982,13 @@ impl Reservation {
     ///   reservation was obtained via a huge-page allocation (e.g.
     ///   `reserve_aligned_huge`) and the OS confirmed the grant (via
     ///   `Reservation::is_huge()` or equivalent platform-specific detection).
-    ///   Passing an incorrect value leads to undefined behavior when
-    ///   `decommit` is called, because decommit does not work correctly on
-    ///   huge pages. If you cannot determine whether the OS granted huge
-    ///   pages, you MUST pass `false` and use `reserve_aligned` instead.
+    ///   If you pass an incorrect value, `Reservation::is_huge()` will report
+    ///   an incorrect value, and any decommit-availability decision you make
+    ///   based on that wrong `is_huge()` result will be incorrect (on huge
+    ///   pages, `decommit` is a silent no-op — RSS does not drop and reads
+    ///   return the old data, not a crash or undefined behavior). If you cannot
+    ///   determine whether the OS granted huge pages, you MUST pass `false` and
+    ///   use `reserve_aligned` instead.
     ///
     /// The reservation must be released **exactly once** — by dropping this
     /// handle, or by extracting via `into_parts` and calling [`release`]
@@ -1514,7 +1522,8 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 
 /// Lazy decommit variant: hint the OS it MAY reclaim `[base+start, base+end)`
 /// under memory pressure, cheaper than [`decommit`] (Linux `MADV_FREE`,
-/// macOS/iOS `MADV_FREE_REUSABLE`, other Unix (including tvOS/watchOS) falls
+/// macOS/iOS `MADV_FREE_REUSABLE`, FreeBSD/DragonFly `MADV_FREE`,
+/// NetBSD/OpenBSD `MADV_FREE`, other Unix (including tvOS/watchOS) falls
 /// back to `MADV_DONTNEED`; Windows falls back to the eager [`decommit`]
 /// path, which has no lazy equivalent).
 ///
