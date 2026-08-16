@@ -218,10 +218,19 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   `WINDOWS_LARGE_PAGE_RETRY_FAILURES` counts ONLY the case where the initial
 //   large-page attempt failed AND the ordinary-page retry ALSO failed (both
 //   returned NULL). `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counts the case
-//   where an allocation succeeded but the returned base was misaligned, forcing
-//   a VirtualFree and fallback. Separating these lets a test distinguish "OS
-//   refused large pages entirely" from "large pages granted but alignment
-//   contract violated".
+//   where a fast-path attempt that requested large pages returned a base
+//   address that was not aligned to the requested `align`, forcing a
+//   `VirtualFree` and fallthrough to the two-call path. This is EXPECTED
+//   and NOT a malfunction when `WIN_ALLOCATION_GRANULARITY < align <=
+//   GetLargePageMinimum()`: `VirtualAlloc(NULL, ...)` guarantees alignment
+//   only to the 64 KiB granularity, not to arbitrary larger alignments. The
+//   counter grows on ordinary Windows machines without `SeLockMemoryPrivilege`
+//   because the fast path accepts such alignments when `extra_commit_flags !=
+//   0` (see the `fast_path_align_threshold` logic). A nonzero value is
+//   diagnostic ONLY when it appears for alignments at or below
+//   `WIN_ALLOCATION_GRANULARITY` (which the kernel SHOULD honor), or when the
+//   caller DOES have `SeLockMemoryPrivilege` (where large pages are actually
+//   granted and SHOULD respect the alignment guarantee).
 //
 // `AtomicU64` storage, increments gated on `bench-internals` so a plain build
 // carries zero extra instructions (storage itself is also gated, not compiled
@@ -462,22 +471,37 @@ pub fn windows_large_page_retry_failures() -> u64 {
     WINDOWS_LARGE_PAGE_RETRY_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: number of large-page allocation attempts (initial OR
-/// retry) that succeeded but returned a misaligned base, forcing a `VirtualFree`
-/// and fallthrough to the two-call path. This is distinct from
-/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, which tracks failures that returned NULL
-/// (allocation refused); this counter tracks successful allocations that failed
-/// the alignment contract. On a healthy Windows kernel this should be zero,
-/// but it exists as defensive instrumentation for kernel/constant violations.
+/// `bench-internals`: number of fast-path attempts that requested large pages
+/// (by passing `MEM_LARGE_PAGES` in `extra_commit_flags`) but the returned base
+/// address was not aligned to the requested `align`, forcing a `VirtualFree`
+/// and fallthrough to the two-call path.
+///
+/// This is EXPECTED and NOT a malfunction when `WIN_ALLOCATION_GRANULARITY <
+/// align <= GetLargePageMinimum()` (the threshold the fast path uses when
+/// `extra_commit_flags != 0`). `VirtualAlloc(NULL, ...)` guarantees alignment
+/// only to the 64 KiB granularity, not to arbitrary larger alignments. The
+/// counter grows on ordinary Windows machines without `SeLockMemoryPrivilege`
+/// because the fast path accepts such alignments when large pages are requested.
+/// A nonzero value is diagnostic ONLY when it appears for alignments at or
+/// below `WIN_ALLOCATION_GRANULARITY` (which the kernel SHOULD honor), or when
+/// the caller DOES have `SeLockMemoryPrivilege` (where large pages are actually
+/// granted and SHOULD respect the alignment guarantee).
+///
+/// Distinct from `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, which tracks failures
+/// where both the initial large-page attempt AND the ordinary-page retry returned
+/// NULL (allocation refused).
 /// Added by R5-4 (docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r5.md).
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub(crate) static WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: relaxed snapshot of the internal
-/// `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counter (large-page allocations that
-/// succeeded but returned misaligned base; private storage, this accessor is the
-/// public read surface). Diagnostic only.
+/// `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counter (fast-path attempts that
+/// requested large pages but the returned base was not aligned to the
+/// requested `align`; private storage, this accessor is the public read
+/// surface). See the static's doc for diagnostic interpretation (nonzero is
+/// expected for `WIN_ALLOCATION_GRANULARITY < align <= GetLargePageMinimum()`
+/// on machines without `SeLockMemoryPrivilege`). Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]

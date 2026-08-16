@@ -6,7 +6,9 @@
 ///   `bench-internals` feature.
 /// - `reset_bench_internals_counters()` brings all counters to exactly zero
 ///   after a successful reservation that demonstrably incremented at least
-///   one counter. This proves reset actually clears the counters, not that
+///   one counter. On Windows this is `WINDOWS_RESERVE_COMMIT_CALLS`; on Unix
+///   this is `UNIX_MADVISE_ATTEMPTS` after calling `decommit()` on the
+///   reserved range. This proves reset actually clears the counters, not that
 ///   they were already zero.
 ///
 /// # What this test does NOT verify
@@ -33,9 +35,12 @@
 ///   guaranteed increment path (`UNIX_EXACT_RESERVE_ATTEMPTS`) lives in
 ///   `try_reserve_aligned_exact`, which is gated to 32-bit targets via
 ///   `target_pointer_width = "32"`. Therefore, a plain `reserve_aligned(PAGE, PAGE)`
-///   call on 64-bit Unix does NOT guarantee any non-zero counter increment,
-///   and this test does NOT assert one. If a guaranteed 64-bit Unix counter
-///   exists (e.g., from a future fast-path change), it should be added here.
+///   call on 64-bit Unix does NOT guarantee any non-zero counter increment.
+///   This test guarantees increment on Unix by calling `decommit()` on the
+///   reserved range, which always issues `madvise()` and increments
+///   `UNIX_MADVISE_ATTEMPTS`. This approach works on both 64-bit Unix and on
+///   Apple Silicon macOS (where `decommit(0, PAGE)` would be rejected by the
+///   guard that checks `end.is_multiple_of(page_size())` for a 16 KiB page).
 ///
 ///   A test that actually exercises specific increment paths would need to
 ///   use the mock backend (via `--cfg aligned_vmem_mock`) and verify that
@@ -44,7 +49,7 @@
 #[cfg(feature = "bench-internals")]
 #[test]
 fn bench_internals_counters_existence_and_reset() {
-    use aligned_vmem::{reserve_aligned, reset_bench_internals_counters, PAGE};
+    use aligned_vmem::{page_size, reserve_aligned, reset_bench_internals_counters};
 
     // All accessors are imported to verify they compile and are accessible.
     // This section is deliberately verbose: every accessor name must appear
@@ -60,15 +65,15 @@ fn bench_internals_counters_existence_and_reset() {
         windows_virtualfree_decommit_failures, windows_virtualfree_release_failures,
     };
 
-    // Trigger a trivial reservation. On Windows, this guarantees at least
-    // one counter increment; on 64-bit Unix, it does NOT guarantee any
-    // specific counter increment (see doc above for rationale).
-    let result = reserve_aligned(PAGE, PAGE);
+    // Reserve 4 * page_size() to ensure we can decommit at least one page
+    // (important on Apple Silicon macOS where page_size() == 16 KiB, so
+    // decommit(0, PAGE) would fail the guard that checks end.is_multiple_of(ps)).
+    let ps = page_size();
+    let result = reserve_aligned(4 * ps, 4 * ps);
     assert!(result.is_some(), "trivial reserve must succeed");
     let reservation = result.unwrap();
-    drop(reservation); // Release.
 
-    // Verify that at least one counter was incremented on Windows.
+    // On Windows, verify that at least one counter was incremented.
     // This validates that the subsequent `reset_bench_internals_counters()` check
     // is actually testing reset behavior, not just asserting that zeros are zero.
     #[cfg(windows)]
@@ -77,6 +82,24 @@ fn bench_internals_counters_existence_and_reset() {
         "a successful reservation must be counted on Windows; got {}",
         windows_reserve_commit_calls()
     );
+
+    // On Unix, decommit one page to increment UNIX_MADVISE_ATTEMPTS.
+    // This guarantees a non-zero counter increment on 64-bit Unix where
+    // UNIX_EXACT_RESERVE_ATTEMPTS (32-bit-only) does not increment.
+    #[cfg(all(unix, not(aligned_vmem_mock)))]
+    unsafe {
+        aligned_vmem::decommit(reservation.reservation_ptr(), 0, ps);
+    }
+
+    #[cfg(all(unix, not(aligned_vmem_mock)))]
+    assert!(
+        unix_madvise_attempts() >= 1,
+        "decommit must increment UNIX_MADVISE_ATTEMPTS on Unix; got {}",
+        unix_madvise_attempts()
+    );
+
+    // Release.
+    drop(reservation);
 
     // Reset clears everything to zero. This assertion catches the R3-6 class of
     // bug: a new counter is added, but its `store(0, ...)` line is omitted from
