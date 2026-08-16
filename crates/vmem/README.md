@@ -160,6 +160,11 @@ technical explanation of each:
   `page_size()`-granular call gets `EINVAL` and does nothing. The effect is
   indistinguishable from a silent no-op — RSS does not drop and reads return
   the old data. Use `reserve_aligned` instead if you need working decommit.
+  **Note:** Huge-page support on Linux (`reserve_aligned_huge` with the
+  `huge-pages` feature) requires kernel >= 3.8 for correct `MAP_HUGE_2MB`
+  size encoding. On kernels older than 3.8, the size bits are ignored and
+  the system's configured default huge-page size is used instead of the
+  expected 2 MiB; the crate does not detect this mismatch.
 - **Darwin (macOS/iOS/tvOS/watchOS): no zero-fill, no RSS return, on ordinary
   reservations too.**
   `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, so unlike
@@ -207,7 +212,7 @@ The following targets are supported but have not been empirically verified in CI
 - **Android (bionic)** — 32-bit targets use a 32-bit `off_t` by default (matching glibc behavior without `_FILE_OFFSET_BITS=64`); this is reasoned from bionic's design documentation, not CI-verified.
 - **32-bit musl Linux** (e.g., `armv7-unknown-linux-musleabihf`) — `off_t` is correctly declared as 64-bit on all musl architectures (musl uses 64-bit `off_t` on all architectures), so the crate's dual-arch `OffT` type is safe; the i686-unknown-linux-musl target is compile-checked in CI (see the CI-verified list above), but other 32-bit musl targets are not.
 - **Apple platforms beyond macOS** (iOS, tvOS, watchOS) — constants and behavior are derived from Apple's unified documentation; no CI runner currently tests these targets.
-- **MIPS** — **not supported**. The crate's `MAP_ANON`/`MAP_HUGETLB` constants (0x20 / 0x40000) are correct on all Linux architectures that use `asm-generic/mman-common.h` (x86, x86_64, aarch64, arm, riscv, powerpc) but are **wrong on MIPS** (MIPS uses 0x0800 / 0x80000 per `arch/mips/include/uapi/asm/mman.h`). A build on `mips*-unknown-linux-*` compiles successfully but fails closed at runtime with `EBADF` (invalid file descriptor) in every `reserve_aligned` call, because the wrong `MAP_ANON` constant causes `libc_mmap` to issue `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set; the failure is silent (no diagnostic points to the constant error). Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct constants.
+- **MIPS** — **not supported (compile_error!)**. MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux. MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while this crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) but the failure is silent (no diagnostic points to the constant error). Rather than compile a buildable-but-broken crate, MIPS targets fail compilation with a clear diagnostic. This is a release decision; see `docs/CORRECTNESS_OPEN_ITEMS.md` for the decision record. Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values.
 
 **Note:** The absence of CI verification for a target means only that this project's own test suite has not executed on that platform. The platform-specific constants (e.g., `MADV_DONTNEED = 4`, Linux's `_SC_PAGESIZE = 30`, macOS's `_SC_PAGESIZE = 29`) are sourced from the respective OS's official documentation and header files. If you use this crate on a reasoned-from-spec target and encounter issues, please file a bug report — the intent is to support the full `cfg(unix)` and `cfg(windows)` families.
 
