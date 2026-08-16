@@ -79,6 +79,14 @@ fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
 /// Counterfactual for huge case: if the implementation returns `Self::decommit_reclaims_and_zeroes()`
 /// (removing `&& !self.is_huge()`), this test fails on any host where `is_huge() == true`.
 ///
+/// NOTE: The huge-page success path (the `if reservation.is_huge()` branch) is NOT currently
+/// exercised on standard CI runners. GitHub Actions `ubuntu-latest` runners have no configured
+/// hugetlb pool (`/proc/sys/vm/nr_hugepages` defaults to 0), and `windows-latest` runners lack
+/// `SeLockMemoryPrivilege` — see item 59 in `docs/CORRECTNESS_OPEN_ITEMS.md`. On those runners,
+/// `reserve_aligned_huge` falls back to ordinary pages, so only the ordinary (fallback) case
+/// below executes. The test remains valuable as documentation of the contract and for the
+/// rare host where huge pages are actually available.
+///
 /// Counterfactual for ordinary case: if the implementation returns `true` unconditionally
 /// or writes `||` instead of `&&`, this test fails on Linux/Windows (where platform query returns `true`
 /// but the instance query should return `false` for huge pages, and `true` for ordinary fallback).
@@ -90,28 +98,24 @@ fn can_decommit_reclaim_and_zero_returns_false_for_huge_reservations() {
     // Try to reserve with huge pages. This may fall back to ordinary pages
     // if huge pages are not available (no hugetlb pool, unprivileged, etc.).
     let size = 2 * MIB; // Linux huge-page size
-    let huge_r = reserve_aligned_huge(size, size);
+    let reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
 
-    if let Some(ref reservation) = huge_r {
-        if reservation.is_huge() {
-            // HUGE CASE: decommit never works, even on platforms where the native
-            // backend guarantees it for ordinary reservations.
-            assert!(
-                !reservation.can_decommit_reclaim_and_zero(),
-                "instance query must return false for huge-page reservations"
-            );
-        } else {
-            // ORDINARY FALLBACK CASE: when huge pages are not available, the reservation
-            // is ordinary and the instance query should equal the platform query.
-            assert_eq!(
-                reservation.can_decommit_reclaim_and_zero(),
-                Reservation::decommit_reclaims_and_zeroes(),
-                "instance query should equal platform query for ordinary (fallback) reservations"
-            );
-        }
+    if reservation.is_huge() {
+        // HUGE CASE: decommit never works, even on platforms where the native
+        // backend guarantees it for ordinary reservations.
+        assert!(
+            !reservation.can_decommit_reclaim_and_zero(),
+            "instance query must return false for huge-page reservations"
+        );
+    } else {
+        // ORDINARY FALLBACK CASE: when huge pages are not available, the reservation
+        // is ordinary and the instance query should equal the platform query.
+        assert_eq!(
+            reservation.can_decommit_reclaim_and_zero(),
+            Reservation::decommit_reclaims_and_zeroes(),
+            "instance query should equal platform query for ordinary (fallback) reservations"
+        );
     }
-    // If `huge_r == None`, the reservation failed entirely — nothing to test here.
-    // This is not a bug in the instance query, just an OS refusal.
 }
 
 /// Test that `can_decommit_reclaim_and_zero()` returns the platform capability
@@ -188,46 +192,46 @@ fn huge_decommit_attempts_increments_on_huge_reservation() {
     // if huge pages are not available (no hugetlb pool, unprivileged, etc.),
     // but the counter should still increment if `is_huge()` reports true.
     let size = 2 * MIB; // Linux huge-page size
-    let huge_r = reserve_aligned_huge(size, size);
+    let reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
 
-    if let Some(ref reservation) = huge_r {
-        if reservation.is_huge() {
-            reservation.decommit(0, size);
+    if reservation.is_huge() {
+        reservation.decommit(0, size);
 
-            // Counter should have incremented by exactly 1
-            assert_eq!(
-                huge_decommit_attempts(),
-                baseline + 1,
-                "huge_decommit_attempts should increment by 1 for a decommit on a huge reservation"
-            );
+        // Counter should have incremented by exactly 1
+        assert_eq!(
+            huge_decommit_attempts(),
+            baseline + 1,
+            "huge_decommit_attempts should increment by 1 for a decommit on a huge reservation"
+        );
 
-            // Test decommit_lazy as well — same counter path
-            reset_bench_internals_counters();
-            let baseline2 = huge_decommit_attempts();
+        // Test decommit_lazy as well — same counter path
+        reset_bench_internals_counters();
+        let baseline2 = huge_decommit_attempts();
 
-            reservation.decommit_lazy(0, size);
+        reservation.decommit_lazy(0, size);
 
-            assert_eq!(
-                huge_decommit_attempts(),
-                baseline2 + 1,
-                "huge_decommit_attempts should also increment by 1 for decommit_lazy on a huge reservation"
-            );
-        } else {
-            // Fallback to ordinary pages — counter should NOT increment
-            reservation.decommit(0, size);
-
-            assert_eq!(
-                huge_decommit_attempts(),
-                baseline,
-                "huge_decommit_attempts should NOT increment when is_huge() == false (fallback to ordinary pages)"
-            );
-        }
+        assert_eq!(
+            huge_decommit_attempts(),
+            baseline2 + 1,
+            "huge_decommit_attempts should also increment by 1 for decommit_lazy on a huge reservation"
+        );
     } else {
-        // Reservation failed entirely — no decommit was called, counter should stay at baseline
+        // Fallback to ordinary pages — counter should NOT increment
+        reservation.decommit(0, size);
+
         assert_eq!(
             huge_decommit_attempts(),
             baseline,
-            "huge_decommit_attempts should stay at baseline when reservation fails"
+            "huge_decommit_attempts should NOT increment when is_huge() == false (fallback to ordinary pages)"
+        );
+
+        // Test decommit_lazy as well
+        reservation.decommit_lazy(0, size);
+
+        assert_eq!(
+            huge_decommit_attempts(),
+            baseline,
+            "huge_decommit_attempts should NOT increment for decommit_lazy when is_huge() == false"
         );
     }
 }

@@ -148,6 +148,7 @@ fn reconstructed_reservation_is_actually_usable() {
     let expected_len = parts.len;
     let expected_reservation = parts.reservation;
     let expected_reservation_len = parts.reservation_len;
+    let expected_align = parts.align; // Check that align is preserved
     let reconstructed: Reservation = unsafe { parts.into_reservation() };
 
     // Verify reconstruction preserves key fields.
@@ -155,31 +156,48 @@ fn reconstructed_reservation_is_actually_usable() {
     assert_eq!(reconstructed.len(), expected_len);
     assert_eq!(reconstructed.reservation_ptr(), expected_reservation);
     assert_eq!(reconstructed.reservation_len(), expected_reservation_len);
+    assert_eq!(reconstructed.align(), expected_align);
 
-    // On platforms with reclaim+zero semantics, decommit and recommit a sub-range.
+    // Verify that `reconstructed.len()` matches the original `size` the test passed
+    // to `reserve_aligned`. The `expected_len` check above proves the round-trip
+    // preserves whatever `into_full_parts` returned; this check proves that value
+    // is the size the test actually requested. If `from_raw_parts` corrupted `len`
+    // (e.g., by dropping bits or mis-aligning the reconstruction), the comparison
+    // with the original `size` would fail.
+    assert_eq!(
+        reconstructed.len(),
+        size,
+        "reconstructed len must match the size requested from reserve_aligned"
+    );
+
+    // Verify that the reservation is actually usable by decommitting and recommitting a
+    // sub-range. This test checks only that the operations don't panic — if reconstruction
+    // corrupted internal state, any decommit/recommit operation would likely segfault.
+    //
+    // On platforms with reclaim+zero semantics (Linux, Windows), this also verifies that
+    // the recommit path works correctly. On advisory-only platforms (Darwin/BSD), the
+    // operations are still valid but may not actually reclaim or zero; the important
+    // check is that they don't panic, which indicates reconstruction didn't corrupt state.
+    let decommit_start = runtime_page_size;
+    let decommit_end = 2 * runtime_page_size;
+
+    // Decommit the sub-range.
+    reconstructed.decommit(decommit_start, decommit_end);
+
+    // Recommit the sub-range. The CALL is unconditional — that is the whole point
+    // of moving this block out from under the old platform `if`, which silently
+    // skipped the entire decommit/recommit body on the whole Darwin family.
+    //
+    // The RESULT, however, is only contractually pinned where the platform
+    // actually promises reclaim+zero semantics; asserting a specific boolean on
+    // an advisory-only backend would be asserting something the crate never
+    // promised. So: exercise everywhere, assert where there is a contract.
+    let recommitted = reconstructed.recommit(decommit_start, decommit_end);
     if Reservation::decommit_reclaims_and_zeroes() {
-        let decommit_start = runtime_page_size;
-        let decommit_end = 2 * runtime_page_size;
-
-        // This must be a valid non-empty range within bounds on ANY host.
         assert!(
-            decommit_end > decommit_start,
-            "decommit range must be non-empty"
-        );
-        assert!(
-            decommit_end <= reconstructed.len(),
-            "decommit range must fit within len"
-        );
-
-        // Decommit the sub-range.
-        reconstructed.decommit(decommit_start, decommit_end);
-
-        // Recommit it.
-        assert!(
-            reconstructed.recommit(decommit_start, decommit_end),
-            "recommit should succeed for decommitted range {}..{}",
-            decommit_start,
-            decommit_end
+            recommitted,
+            "recommit must succeed for the just-decommitted range {decommit_start}..{decommit_end} \
+             on a platform whose decommit reclaims and zeroes"
         );
     }
 
