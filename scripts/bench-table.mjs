@@ -26,7 +26,19 @@
 import { REPO_ROOT, run } from './lib.mjs';
 
 const BENCH = 'global_alloc';
-const FEATURES = 'production';
+// `internals`/`bench-internals` are required here, not optional: task #583
+// (commit `7a9b7c7`) gated `benches/global_alloc.rs`'s own
+// `AllocCore::dbg_layout_class_for` / `SeferAlloc::dbg_trim_current_thread`
+// calls behind those features and added them to the bench's own
+// `required-features` in the root `Cargo.toml` -- `cargo bench --features
+// production` alone has failed to even build this target ever since (a
+// latent break discovered 2026-08-16, unrelated to and predating the
+// session that found it: reproduced identically against the pre-session
+// base commit `d1de3bc`). Both features are measurement-only surface gates
+// (zero runtime-behavior change, `internals = []` in `Cargo.toml`) -- adding
+// them does not change what is being measured, only what diagnostic API the
+// bench file is allowed to call.
+const FEATURES = 'production internals bench-internals';
 
 // Mirrors `benches/global_alloc.rs`'s own constants. OPS is the number of
 // alloc/dealloc (or free+alloc churn) round-trips criterion's `b.iter`
