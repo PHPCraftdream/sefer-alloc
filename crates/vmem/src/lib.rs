@@ -843,6 +843,13 @@ impl Reservation {
     /// would be undefined behavior on the native backend and cause leaks or crashes
     /// on the Unix backend.
     ///
+    /// **WARNING:** This method discards `base`, `len`, and `granted_huge`. To
+    /// reconstruct a full `Reservation` via [`from_raw_parts`](Self::from_raw_parts),
+    /// you MUST preserve these three fields separately alongside the returned
+    /// `ReservationParts`. If you omit `granted_huge`, the reconstructed reservation
+    /// will incorrectly report `is_huge() == false` even if the original used huge
+    /// pages, which can lead to incorrect decommit-availability decisions.
+    ///
     /// For backwards compatibility with code that already uses the tuple form,
     /// you can call [`ReservationParts::as_tuple`] to get a raw tuple.
     #[must_use]
@@ -858,6 +865,32 @@ impl Reservation {
         // would describe already-freed memory: a guaranteed double-free the
         // moment the caller follows this method's own contract and passes
         // it to `release_parts`.
+        core::mem::forget(self);
+        parts
+    }
+
+    /// Consume the handle WITHOUT releasing the OS reservation, returning a
+    /// full [`ReservationFullParts`] struct containing all six fields needed to
+    /// reconstruct the original `Reservation` via [`from_raw_parts`](Self::from_raw_parts).
+    ///
+    /// This is the lossless round-trip alternative to [`into_reservation_parts`](Self::into_reservation_parts):
+    /// it preserves `base`, `len`, and `granted_huge` in addition to the underlying
+    /// reservation metadata, eliminating the risk of silent huge-page status loss
+    /// or usable-span information loss.
+    ///
+    /// Use this when you need to temporarily extract all reservation state for
+    /// later reconstruction, such as in a custom allocator that persists metadata
+    /// across restarts or hands off reservations between components.
+    #[must_use]
+    pub fn into_full_parts(self) -> ReservationFullParts {
+        let parts = ReservationFullParts {
+            base: self.base.as_ptr(),
+            len: self.len,
+            reservation: self.reservation.as_ptr(),
+            reservation_len: self.reservation_len,
+            align: self.align,
+            granted_huge: self.granted_huge,
+        };
         core::mem::forget(self);
         parts
     }
@@ -1024,9 +1057,9 @@ impl Reservation {
     /// `std::alloc::dealloc` on miri).
     ///
     /// This is **not** the inverse of [`into_parts`](Self::into_parts): that
-    /// method returns only 3 of the 5 fields this constructor requires
-    /// (`reservation_ptr, reservation_len, align`), discarding `base` and `len`
-    /// entirely. [`into_parts`](Self::into_parts)'s true structural complement
+    /// method returns only 3 of the 6 fields this constructor requires
+    /// (`reservation_ptr, reservation_len, align`), discarding `base`, `len`,
+    /// and `granted_huge` entirely. [`into_parts`](Self::into_parts)'s true structural complement
     /// is [`release`], whose signature is exactly the 3-tuple `into_parts`
     /// returns — that is the intended matched pair for "take ownership out of
     /// RAII, then give it back to the OS manually". `from_raw_parts` is a
@@ -1041,15 +1074,20 @@ impl Reservation {
     ///
     /// # Safety
     ///
-    /// All five values must describe a **live, exclusively-owned OS
+    /// All six values must describe a **live, exclusively-owned OS
     /// reservation** compatible with `aligned-vmem`'s release path:
     ///
     /// - `base` is the *aligned usable* start; non-null, valid for `len` bytes,
-    ///   aligned to `align`.
-    /// - `len` is the usable span size, a non-zero multiple of [`PAGE`].
+    ///   aligned to `align` AND to the runtime [`page_size()`] (not just the
+    ///   compile-time `PAGE`). On systems with non-4 KiB pages (e.g., 16 KiB on
+    ///   Apple Silicon), passing a 4 KiB-aligned `base` will cause `decommit`,
+    ///   `decommit_lazy`, or `munmap` calls to fail silently or return `EINVAL`.
+    /// - `len` is the usable span size, a non-zero multiple of both [`PAGE`] and
+    ///   the runtime [`page_size()`].
     /// - `reservation` is the *underlying OS reservation* start (often equal
     ///   to `base`, but may be lower because the reservation is over-reserved
-    ///   to achieve alignment and the full mapping is kept).
+    ///   to achieve alignment and the full mapping is kept). It must be aligned
+    ///   to the runtime [`page_size()`].
     /// - `reservation_len` on Unix and under miri MUST be the full length of
     ///   the underlying OS mapping/allocation — Unix's `release` passes it
     ///   directly to `munmap`, and miri's `release` passes it as the exact
@@ -1058,8 +1096,9 @@ impl Reservation {
     ///   ignores this value, so it is advisory there — reporting the value
     ///   `Reservation::reservation_len` would report for an equivalent
     ///   reservation is sufficient on Windows only. It must in all cases be a
-    ///   non-zero multiple of `PAGE` with `reservation_len >= len + (base -
-    ///   reservation)`; both are asserted at construction.
+    ///   non-zero multiple of both `PAGE` and the runtime [`page_size()`] with
+    ///   `reservation_len >= len + (base - reservation)`; both are asserted at
+    ///   construction.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
     /// - `granted_huge` MUST accurately reflect whether the OS actually
@@ -1204,10 +1243,12 @@ unsafe impl Send for Reservation {}
 ///
 /// `ReservationParts::new` closes the `release_parts` round-trip (release a
 /// reservation you only have the parts for). Reconstructing a full
-/// `Reservation` via `from_raw_parts` additionally requires the usable `base`
-/// and `len`, which the caller must record separately — `ReservationParts`
-/// alone is insufficient whenever the reservation was over-reserved for
-/// alignment.
+/// `Reservation` via `from_raw_parts` additionally requires the usable `base`,
+/// `len`, and `granted_huge` fields, which the caller must record separately —
+/// `ReservationParts` alone is insufficient whenever the reservation was
+/// over-reserved for alignment or when huge-page status must be preserved.
+/// If you omit `granted_huge`, the reconstructed reservation will incorrectly
+/// report `is_huge() == false` even if the original reservation used huge pages.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReservationParts {
@@ -1224,9 +1265,10 @@ impl ReservationParts {
     ///
     /// This closes the `release_parts` round-trip (release a reservation you
     /// only have the parts for). Reconstructing a full `Reservation` via
-    /// `from_raw_parts` additionally requires the usable `base` and `len`,
-    /// which the caller must record separately — `ReservationParts` alone is
-    /// insufficient whenever the reservation was over-reserved for alignment.
+    /// `from_raw_parts` additionally requires the usable `base`, `len`, and
+    /// `granted_huge` fields, which the caller must record separately —
+    /// `ReservationParts` alone is insufficient whenever the reservation was
+    /// over-reserved for alignment or when huge-page status must be preserved.
     #[must_use]
     #[inline]
     pub const fn new(ptr: *mut u8, len: usize, align: usize) -> Self {
@@ -1241,6 +1283,84 @@ impl ReservationParts {
     #[inline]
     pub const fn as_tuple(self) -> (*mut u8, usize, usize) {
         (self.ptr, self.len, self.align)
+    }
+}
+
+/// The full components returned by [`Reservation::into_full_parts`].
+///
+/// This struct contains ALL six fields needed to reconstruct a `Reservation`
+/// via [`Reservation::from_raw_parts`], eliminating the risk of metadata loss
+/// during round-trip. Unlike [`ReservationParts`], it preserves `base`, `len`,
+/// and `granted_huge` in addition to the underlying reservation metadata.
+///
+/// This is the lossless round-trip alternative to [`ReservationParts`]. Use it
+/// when you need to temporarily extract all reservation state for later
+/// reconstruction.
+#[non_exhaustive]
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReservationFullParts {
+    /// The aligned usable start pointer (from [`Reservation::as_ptr`]).
+    pub base: *mut u8,
+    /// The usable span size in bytes (from [`Reservation::len`]).
+    pub len: usize,
+    /// The underlying OS reservation start (from [`Reservation::reservation_ptr`]).
+    pub reservation: *mut u8,
+    /// The length of the reservation in bytes (from [`Reservation::reservation_len`]).
+    pub reservation_len: usize,
+    /// The alignment requested at reservation time.
+    pub align: usize,
+    /// Whether the OS granted huge pages for this reservation (from [`Reservation::is_huge`]).
+    pub granted_huge: bool,
+}
+
+impl ReservationFullParts {
+    /// Construct a `ReservationFullParts` from its component fields.
+    ///
+    /// This is the inverse of [`Reservation::into_full_parts`]. All six fields
+    /// are required to reconstruct a complete `Reservation` with no metadata loss.
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        base: *mut u8,
+        len: usize,
+        reservation: *mut u8,
+        reservation_len: usize,
+        align: usize,
+        granted_huge: bool,
+    ) -> Self {
+        Self {
+            base,
+            len,
+            reservation,
+            reservation_len,
+            align,
+            granted_huge,
+        }
+    }
+
+    /// Reconstruct a `Reservation` from these parts.
+    ///
+    /// This is a convenience wrapper around [`Reservation::from_raw_parts`]
+    /// that forwards all six fields. The same safety requirements apply.
+    ///
+    /// # Safety
+    ///
+    /// All six fields must satisfy the same invariants as documented for
+    /// [`Reservation::from_raw_parts`]. See that function's `# Safety` section
+    /// for full details.
+    #[must_use]
+    pub unsafe fn into_reservation(self) -> Reservation {
+        // SAFETY: Delegated to the caller — same contract as `from_raw_parts`.
+        unsafe {
+            Reservation::from_raw_parts(
+                self.base,
+                self.len,
+                self.reservation,
+                self.reservation_len,
+                self.align,
+                self.granted_huge,
+            )
+        }
     }
 }
 
