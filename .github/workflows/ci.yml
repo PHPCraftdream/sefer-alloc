@@ -190,6 +190,11 @@ jobs:
       # Since task #962, the mock cfg rides along (--cfg aligned_vmem_mock)
       # to preserve the previously-incidental mock+miri type coverage.
       - run: RUSTFLAGS="--cfg miri --cfg aligned_vmem_mock" cargo check -p aligned-vmem --all-features
+      # Finding II-14 (2026-08-16 prerelease audit): 32-bit Unix exact-size fast
+      # path has zero CI coverage. Add at least a compile-only check for i686
+      # to catch regressions in the cfg-gated `try_reserve_aligned_exact` path.
+      - run: rustup target add i686-unknown-linux-gnu
+      - run: cargo check --target i686-unknown-linux-gnu -p aligned-vmem
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /

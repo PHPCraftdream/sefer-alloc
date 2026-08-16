@@ -182,6 +182,32 @@ technical explanation of each:
   empirically); not independently confirmed the way the Darwin gap above was
   by a real CI run.
 
+## Supported targets
+
+This crate's platform support falls into two categories:
+
+### CI-verified targets
+
+The following platforms are verified by this project's CI and are tested on every commit:
+
+- **x86_64 Linux** (Ubuntu, glibc)
+- **x86_64 Windows** (Windows Server)
+- **x86_64 macOS** (macOS CI)
+- **i686 Linux** (compile-only check via `cargo check --target i686-unknown-linux-gnu`)
+
+### Reasoned-from-spec targets
+
+The following targets are supported but have not been empirically verified in CI. Support is based on published specifications and OS documentation:
+
+- **AArch64 Linux** — this project's `ci.yml` documents a multi-arch (x86_64 + aarch64) cross matrix as intent for weak-memory coverage, but no job in the current workflow actually runs on an ARM64 runner; the crate's own FFI constants (`MAP_ANON`, `MADV_*`, `_SC_PAGESIZE`) are architecture-agnostic standard Linux values, not x86_64-specific, so the same 64-bit code path used by x86_64 Linux applies, but this has not been empirically CI-verified.
+- **32-bit musl Linux** (e.g., `i686-unknown-linux-musl`, `armv7-unknown-linux-musleabihf`) — `off_t` is correctly declared as 64-bit (musl uses 64-bit `off_t` on all architectures); no CI runner currently tests these targets.
+- **BSD family** (FreeBSD, DragonFly BSD, NetBSD, OpenBSD) — `MAP_ANON`, `_SC_PAGESIZE`, and `MADV_*` constants are derived from each OS's header files; no BSD CI runner exists for this project. `MADV_DONTNEED`'s advisory-only behavior is confirmed by BSD documentation but not empirically verified on BSD hardware.
+- **Android (bionic)** — 32-bit targets use a 32-bit `off_t` by default (matching glibc behavior without `_FILE_OFFSET_BITS=64`); this is reasoned from bionic's design documentation, not CI-verified.
+- **Apple platforms beyond macOS** (iOS, tvOS, watchOS) — constants and behavior are derived from Apple's unified documentation; no CI runner currently tests these targets.
+- **MIPS and other tier-2 Linux architectures** — the crate is architecture-agnostic (all FFI uses the standard `mmap`/`munmap`/`madvise` interfaces), but no MIPS CI runner exists.
+
+**Note:** The absence of CI verification for a target means only that this project's own test suite has not executed on that platform. The platform-specific constants (e.g., `MADV_DONTNEED = 4`, Linux's `_SC_PAGESIZE = 30`, macOS's `_SC_PAGESIZE = 29`) are sourced from the respective OS's official documentation and header files. If you use this crate on a reasoned-from-spec target and encounter issues, please file a bug report — the intent is to support the full `cfg(unix)` and `cfg(windows)` families.
+
 ## Provenance & safety
 
 Every `unsafe` block carries a `// SAFETY:` proof. The crate is the OS aperture

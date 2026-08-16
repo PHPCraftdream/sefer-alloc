@@ -3080,11 +3080,13 @@ const _SC_PAGESIZE: i32 = {
 
 // task #719, #914: `offset`'s type is conditionally-typed based on the
 // target's actual `off_t` width. POSIX `off_t`'s width is platform-dependent:
-// - 32-bit Linux and Android (bionic) default to a 32-bit `off_t` without
+// - 32-bit Linux (glibc) and Android (bionic) default to a 32-bit `off_t` without
 //   `_FILE_OFFSET_BITS=64`. Since this crate's `mmap` is ALWAYS called with
 //   offset=0 (anonymous mappings only, no file descriptor), a 32-bit `off_t`
 //   is correct on these targets -- there is no code path where a wrong-width
 //   `off_t` could silently truncate a real value.
+// - 32-bit Linux with musl uses a 64-bit `off_t` unconditionally (musl defines
+//   `off_t` as 64-bit on every architecture; `mmap64` is an alias of `mmap`).
 // - Every other Unix target (64-bit pointer width, OR 32-bit BSD/Darwin) uses
 //   a 64-bit `off_t`. BSDs and macOS define `off_t` as a 64-bit `int64_t` even
 //   in 32-bit builds; this includes x86_64-unknown-{freebsd,netbsd,openbsd},
@@ -3093,14 +3095,16 @@ const _SC_PAGESIZE: i32 = {
 //   project's CI, but bionic inherits the same 32-bit-off_t-on-32-bit-default
 //   behavior as glibc on 32-bit targets without large-file-support flags.
 //
-// The two-arm `OffT` type alias below correctly classifies EVERY `cfg(unix)`
-// target -- either it matches the 32-bit-linux-or-android arm, or it matches
-// the catch-all "not(...)" arm. No `unix` target is left unclassified.
+// The two-arm `OffT` type alias below classifies targets as follows:
+// - The `i32` arm matches 32-bit glibc and bionic targets only.
+// - The `i64` catch-all arm matches everything else, including 32-bit musl,
+//   all 64-bit targets, and all 32-bit BSD/Darwin targets.
 #[cfg(all(
     unix,
     not(miri),
     target_pointer_width = "32",
-    any(target_os = "linux", target_os = "android")
+    any(target_os = "linux", target_os = "android"),
+    not(target_env = "musl")
 ))]
 type OffT = i32;
 
@@ -3109,7 +3113,8 @@ type OffT = i32;
     not(miri),
     not(all(
         target_pointer_width = "32",
-        any(target_os = "linux", target_os = "android")
+        any(target_os = "linux", target_os = "android"),
+        not(target_env = "musl")
     ))
 ))]
 type OffT = i64;
