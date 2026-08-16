@@ -639,12 +639,13 @@ pub struct Reservation {
     ///
     /// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
     /// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
-    /// but the actual paths that SUCCEED (pass the post-call alignment check) remain
-    /// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
-    /// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
-    /// fails and the fast path falls through to the two-call path. Practically, this
-    /// means `is_huge == true` only for shapes where large pages are actually granted,
-    /// which requires all three conditions above to hold.
+    /// but on an unprivileged host the actual paths that SUCCEED (pass the post-call alignment
+    /// check) are typically still limited. When large pages are NOT granted (unprivileged),
+    /// `VirtualAlloc`'s alignment guarantee is only 64 KiB; in practice it typically does NOT
+    /// happen to land on the requested alignment, so the post-call check fails and the fast
+    /// path falls through to the two-call path. Practically, this means `is_huge == true` only
+    /// for shapes where large pages are actually granted, which requires all three conditions
+    /// above to hold.
     ///
     /// If any of these conditions fail, the function falls back to ordinary
     /// pages and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
@@ -773,12 +774,13 @@ impl Reservation {
     ///
     /// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
     /// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
-    /// but the actual paths that SUCCEED (pass the post-call alignment check) remain
-    /// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
-    /// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
-    /// fails and the fast path falls through to the two-call path. Practically, this
-    /// means `is_huge() == true` only for shapes where large pages are actually granted,
-    /// which requires all three conditions above to hold.
+    /// but on an unprivileged host the actual paths that SUCCEED (pass the post-call alignment
+    /// check) are typically still limited. When large pages are NOT granted (unprivileged),
+    /// `VirtualAlloc`'s alignment guarantee is only 64 KiB; in practice it typically does NOT
+    /// happen to land on the requested alignment, so the post-call check fails and the fast
+    /// path falls through to the two-call path. Practically, this means `is_huge() == true` only
+    /// for shapes where large pages are actually granted, which requires all three conditions
+    /// above to hold.
     ///
     /// If any of these conditions fail, the function falls back to ordinary pages
     /// and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
@@ -1944,12 +1946,13 @@ pub fn try_reserve_aligned_lazy(
 ///
 /// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
 /// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
-/// but the actual paths that SUCCEED (pass the post-call alignment check) remain
-/// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
-/// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
-/// fails and the fast path falls through to the two-call path. Practically, this
-/// means `is_huge() == true` only for shapes where large pages are actually granted,
-/// which requires all three conditions above to hold.
+/// but on an unprivileged host the actual paths that SUCCEED (pass the post-call alignment
+/// check) are typically still limited. When large pages are NOT granted (unprivileged),
+/// `VirtualAlloc`'s alignment guarantee is only 64 KiB; in practice it typically does NOT
+/// happen to land on the requested alignment, so the post-call check fails and the fast
+/// path falls through to the two-call path. Practically, this means `is_huge() == true` only
+/// for shapes where large pages are actually granted, which requires all three conditions
+/// above to hold.
 ///
 /// **Extra-syscall cost on unprivileged hosts:** For the widened align range
 /// (`64 KiB < align <= GetLargePageMinimum()`), when large pages are requested but
