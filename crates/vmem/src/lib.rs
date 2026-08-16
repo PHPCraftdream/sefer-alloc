@@ -821,8 +821,7 @@ impl Reservation {
     /// Windows `MEM_DECOMMIT`). On the Darwin family (macOS/iOS/tvOS/watchOS) and the
     /// four BSDs (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
     /// zero-fill or reclaim guarantee — the physical pages may remain resident and
-    /// old data may be observed after a decommit+recommit roundtrip (after
-    /// [`Self::recommit`] on Windows; implicitly on Linux).
+    /// old data may be observed after a decommit+recommit roundtrip.
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`]).
     /// A no-op if the range is empty, is out of bounds (`end > self.len()`), or
@@ -1473,8 +1472,6 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
 /// zero-fill or reclaim guarantee — the physical pages may remain resident and
 /// old data may be observed after a decommit+recommit roundtrip.
-/// Re-access after decommit produces fresh zero-filled pages (after
-/// [`recommit`] on Windows; implicitly on Linux — see the Darwin caveat below).
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
 /// A no-op if the range is empty.
@@ -2534,7 +2531,8 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
-    // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a committed region.
+    // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a `MEM_RESERVE`d region;
+    // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
     let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT) };
     #[cfg(feature = "bench-internals")]
     if ret == 0 {
