@@ -142,11 +142,12 @@ pub mod fault_injection;
 
 /// The minimum page size this crate assumes for decommit/recommit granularity:
 /// 4 KiB, the smallest unit both `mmap` and `VirtualAlloc` will commit/decommit
-/// on the platforms this crate targets. Decommit/recommit offsets passed to the
-/// validation in [`decommit`] / [`recommit`] must be multiples of this value.
+/// on the platforms this crate targets.
 ///
-/// **Note:** this is a compile-time constant (the *minimum*); the real OS page
-/// size may be larger — query it with [`page_size`].
+/// Decommit/recommit offsets must be multiples of the runtime [`page_size()`];
+/// this constant is only the guaranteed lower bound. `page_size()` may be larger
+/// (e.g. 16 KiB on Apple Silicon macOS), so callers computing decommit offsets
+/// must round to `page_size()`, not `PAGE`.
 ///
 /// # Naming
 ///
@@ -489,9 +490,11 @@ fn query_os_page_size() -> usize {
 /// An owning handle to one aligned span of anonymous virtual memory.
 ///
 /// `as_ptr()` is non-null, aligned to the `align` requested at reservation, and
-/// valid for `len()` bytes for the lifetime of this handle. The span is **not**
-/// initialised. Dropping the handle returns the whole underlying OS reservation
-/// to the OS exactly once.
+/// valid for `len()` bytes for the lifetime of this handle **except ranges the
+/// caller has decommitted (via the free functions or the safe methods) and
+/// not yet recommitted — on Windows such pages are unmapped until `recommit`**.
+/// The span is **not** initialised. Dropping the handle returns the whole
+/// underlying OS reservation to the OS exactly once.
 ///
 /// For a self-hosted allocator that records `(reservation, reservation_len)` in
 /// its own metadata rather than keeping a `Vec<Reservation>`, use
@@ -553,7 +556,9 @@ impl core::fmt::Debug for Reservation {
 
 impl Reservation {
     /// The aligned usable base of this span. Non-null, valid for [`len`](Self::len)
-    /// bytes, aligned to the `align` requested at reservation time.
+    /// bytes **except ranges that have been decommitted and not yet recommitted —
+    /// on Windows such pages are unmapped until `recommit`**, aligned to the `align`
+    /// requested at reservation time.
     ///
     /// Returns `*mut u8` (rather than the std convention of `*const T` from
     /// `&self`) because a raw pointer carries no borrow obligation in this
@@ -588,23 +593,23 @@ impl Reservation {
     /// **At least three paths under-report the true OS reservation size** — this
     /// value is not a portable guarantee of the actual bytes the OS mapped:
     ///
-    /// - **Windows single-call fast path** (task #848, `align <= 64 KiB`): this
-    ///   returns `commit_len` (which equals `size`), not the rounded-up VA
-    ///   reservation size. Windows rounds VA reservations up to the 64 KiB
-    ///   allocation granularity internally, so `reserve_aligned(4096, 4096)`
-    ///   reports `reservation_len() == 4096` while actually consuming 64 KiB of
-    ///   address space.
-    /// - **Windows two-call path's fast-reserve sub-path** (task #921/V-32,
-    ///   `align <= 64 KiB` via `reserve_aligned_lazy`): when the candidate
-    ///   `VirtualAlloc(NULL, size, MEM_RESERVE)` happens to be aligned, this
-    ///   returns `size` directly, not the rounded-up 64 KiB granularity. The
-    ///   underlying reservation still consumes a 64 KiB-granular region.
-    /// - **Any page-rounding `mmap` where the OS page size exceeds the
-    ///   requested granularity** — e.g. Apple-Silicon macOS's 16 KiB pages, or
-    ///   64 KiB on some Linux configurations (see [`MIN_PAGE`]'s doc above):
-    ///   `mmap` rounds `length` up to the page size, so
-    ///   `reserve_aligned(PAGE, PAGE)` on a 16 KiB-page host actually maps a
-    ///   full 16 KiB page while this returns `4096`.
+    /// - **Windows single-call fast path** (`align <= 64 KiB`): this returns
+    ///   `commit_len` (which equals `size`), not the rounded-up VA reservation
+    ///   size. Windows rounds VA reservations up to the 64 KiB allocation
+    ///   granularity internally, so `reserve_aligned(4096, 4096)` reports
+    ///   `reservation_len() == 4096` while actually consuming 64 KiB of address
+    ///   space.
+    /// - **Windows two-call path's fast-reserve sub-path** (`align <= 64 KiB`
+    ///   via `reserve_aligned_lazy`): when the candidate `VirtualAlloc(NULL,
+    ///   size, MEM_RESERVE)` happens to be aligned, this returns `size` directly,
+    ///   not the rounded-up 64 KiB granularity. The underlying reservation still
+    ///   consumes a 64 KiB-granular region.
+    /// - **Any page-rounding `mmap` where the OS page size exceeds the requested
+    ///   granularity** — e.g. Apple-Silicon macOS's 16 KiB pages, or 64 KiB on
+    ///   some Linux configurations (see [`MIN_PAGE`]'s doc above): `mmap` rounds
+    ///   `length` up to the page size, so `reserve_aligned(PAGE, PAGE)` on a 16
+    ///   KiB-page host actually maps a full 16 KiB page while this returns
+    ///   `4096`.
     ///
     /// Both cases are harmless for correctness (`VirtualFree(base, 0,
     /// MEM_RELEASE)` ignores the length argument; `munmap` rounds its length
@@ -616,6 +621,13 @@ impl Reservation {
     pub const fn reservation_len(&self) -> usize {
         self.reservation_len
     }
+
+    // Historical note (task #848, #921): the Windows single-call fast path
+    // (`align <= 64 KiB`) and the two-call path's fast-reserve sub-path
+    // (`align <= 64 KiB` via `reserve_aligned_lazy`) are the primary under-
+    // report cases for this method; the page-rounding `mmap` case is the
+    // third. These are documented in the method's rustdoc above without
+    // task-number references.
 
     /// The alignment requested at reservation time.
     #[must_use]
@@ -869,24 +881,20 @@ impl Reservation {
     /// (`VirtualFree(MEM_RELEASE)` on Windows, `munmap` on Unix,
     /// `std::alloc::dealloc` on miri).
     ///
-    /// **Not the inverse of [`into_parts`](Self::into_parts)** (task #719: an
-    /// earlier revision of this doc claimed exactly that, which is
-    /// misleading — [`into_parts`](Self::into_parts) returns only 3 of the 5
-    /// fields this constructor requires, discarding `base` and `len`
-    /// entirely, so `r.into_parts()` cannot be fed straight back into
-    /// `from_raw_parts` to reconstruct `r`). [`into_parts`](Self::into_parts)'s
-    /// true structural complement is [`release`], whose signature is exactly
-    /// the 3-tuple `into_parts` returns
-    /// (`reservation_ptr, reservation_len, align`) — that is the intended
-    /// matched pair for "take ownership out of RAII, then give it back to
-    /// the OS manually". `from_raw_parts` is a separate, more general
-    /// constructor for the cross-crate handoff pattern: a sibling crate
-    /// (`numa-shim` on Windows) issues a platform-specific reservation call
-    /// that `aligned-vmem` itself does not wrap, then adopts the result via
-    /// this constructor — it needs `base`/`len` too because the adopted
-    /// reservation's usable span need not start at the OS reservation's own
-    /// base (this crate over-reserves `size + align` and keeps the full mapping
-    /// whenever the exact-size fast path misses, or on Windows when
+    /// This is **not** the inverse of [`into_parts`](Self::into_parts): that
+    /// method returns only 3 of the 5 fields this constructor requires
+    /// (`reservation_ptr, reservation_len, align`), discarding `base` and `len`
+    /// entirely. [`into_parts`](Self::into_parts)'s true structural complement
+    /// is [`release`], whose signature is exactly the 3-tuple `into_parts`
+    /// returns — that is the intended matched pair for "take ownership out of
+    /// RAII, then give it back to the OS manually". `from_raw_parts` is a
+    /// separate, more general constructor for the cross-crate handoff pattern:
+    /// a sibling crate (`numa-shim` on Windows) issues a platform-specific
+    /// reservation call that `aligned-vmem` itself does not wrap, then adopts
+    /// the result via this constructor — it needs `base`/`len` too because the
+    /// adopted reservation's usable span need not start at the OS reservation's
+    /// own base (this crate over-reserves `size + align` and keeps the full
+    /// mapping whenever the exact-size fast path misses, or on Windows when
     /// `align > 64 KiB`, which is exactly that shape).
     ///
     /// # Safety
@@ -938,50 +946,51 @@ impl Reservation {
         align: usize,
         granted_huge: bool,
     ) -> Self {
+        // Historical notes (task #719, #776, #916):
+        //
+        // - task #719: validate the documented `align`/`reservation_len` contract
+        //   HERE, at the unsafe call site, rather than leaving it to surface later
+        //   as a panic inside `Drop::drop` (via the miri backend's
+        //   `Layout::from_size_align(reservation_len, align).expect(...)` in
+        //   `release_reservation`) -- a panic reachable from `Drop` is far more
+        //   dangerous than one at construction time: if this `Reservation` is ever
+        //   dropped while ANOTHER panic is already unwinding the stack, Rust
+        //   aborts the whole process on the second panic. Every other construction
+        //   path in this crate already produces a valid `(align, reservation_len)`
+        //   pair by construction (validated at each public entry point), so this
+        //   check is specific to the caller-supplied values `from_raw_parts`
+        //   accepts. Violating the documented contract is already undefined
+        //   behaviour per this function's own `# Safety` section; panicking
+        //   immediately here converts a silently-deferred hazard into a loud,
+        //   attributable failure at the actual point of misuse.
+        //
+        // - task #776 (F2 revision -- round-closing review finding F7): the
+        //   original check validated only `align`, but `Layout::from_size_align`
+        //   also fails when `reservation_len` overflows `isize::MAX` once rounded
+        //   up to `align` -- an `align`-only check left that half of the SAME
+        //   Drop-reachable-panic hazard open (e.g. `from_raw_parts(b, PAGE, r,
+        //   usize::MAX, PAGE)` still constructed successfully and still panicked
+        //   inside `Drop` under miri). The explicit `reservation_len != 0 &&
+        //   reservation_len.is_multiple_of(PAGE)` checks enforce the documented
+        //   nonzero/page-multiple invariants, while `Layout::from_size_align(...).
+        //   is_ok()` catches overflow cases.
+        //
+        // - task #916 (H2C3): the comment above previously claimed these checks
+        //   "cover all documented contract violations immediately at the call
+        //   site" -- this was false. Four documented invariants were uncheckable
+        //   from the arguments alone (pointer validity, liveness, exclusivity,
+        //   and exact-once release), but three MORE were cheaply checkable and
+        //   were NOT checked:
+        //   - `len` must be a non-zero multiple of `PAGE` (documented, not checked)
+        //   - `base` must be aligned to `align` (documented, not checked)
+        //   - `reservation <= base` (documented, now checked below via `base_addr >= res_addr`)
+        //   - `reservation_len >= len + (base - reservation)` (documented, not checked)
+        //   All four are now checked explicitly below, leaving only the genuinely
+        //   uncheckable invariants (pointer validity, liveness, exclusivity) as
+        //   unchecked caller responsibilities.
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
         let res_nn =
             NonNull::new(reservation).expect("from_raw_parts: reservation must be non-null");
-        // task #719: validate the documented `align`/`reservation_len`
-        // contract HERE, at the unsafe call site, rather than leaving it to
-        // surface later as a panic inside `Drop::drop` (via the miri
-        // backend's `Layout::from_size_align(reservation_len,
-        // align).expect(...)` in `release_reservation`) -- a panic reachable
-        // from `Drop` is far more dangerous than one at construction time:
-        // if this `Reservation` is ever dropped while ANOTHER panic is
-        // already unwinding the stack, Rust aborts the whole process on the
-        // second panic. Every other construction path in this crate already
-        // produces a valid `(align, reservation_len)` pair by construction
-        // (validated at each public entry point), so this check is specific
-        // to the caller-supplied values `from_raw_parts` accepts. Violating
-        // the documented contract is already undefined behaviour per this
-        // function's own `# Safety` section; panicking immediately here
-        // converts a silently-deferred hazard into a loud, attributable
-        // failure at the actual point of misuse.
-        //
-        // task #776 (F2 revision -- round-closing review finding F7): the
-        // original check validated only `align`, but `Layout::from_size_align`
-        // also fails when `reservation_len` overflows `isize::MAX` once
-        // rounded up to `align` -- an `align`-only check left that half of
-        // the SAME Drop-reachable-panic hazard open (e.g.
-        // `from_raw_parts(b, PAGE, r, usize::MAX, PAGE)` still constructed
-        // successfully and still panicked inside `Drop` under miri). The
-        // explicit `reservation_len != 0 && reservation_len.is_multiple_of(PAGE)`
-        // checks enforce the documented nonzero/page-multiple invariants, while
-        // `Layout::from_size_align(...).is_ok()` catches overflow cases.
-        //
-        // task #916 (H2C3): the comment above previously claimed these checks
-        // "cover all documented contract violations immediately at the call site"
-        // -- this was false. Four documented invariants were uncheckable from
-        // the arguments alone (pointer validity, liveness, exclusivity, and
-        // exact-once release), but three MORE were cheaply checkable and were
-        // NOT checked:
-        // - `len` must be a non-zero multiple of `PAGE` (documented, not checked)
-        // - `base` must be aligned to `align` (documented, not checked)
-        // - `reservation <= base` (documented, now checked below via `base_addr >= res_addr`)
-        // - `reservation_len >= len + (base - reservation)` (documented, not checked)
-        // All four are now checked explicitly below, leaving only the genuinely
-        // uncheckable invariants (pointer validity, liveness, exclusivity) as
-        // unchecked caller responsibilities.
         let base_addr = base.addr();
         let res_addr = reservation.addr();
         assert!(
@@ -1278,33 +1287,30 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
 ///
 /// # Panics
 ///
-/// Panics (via an informative multi-clause `assert!`, task #947/G-1) if
-/// `reservation` is non-null and `(reservation_len, align)` violates the
-/// documented contract above: `reservation_len` must be non-zero and a
+/// Panics if `reservation` is non-null and `(reservation_len, align)` violates
+/// the documented contract above: `reservation_len` must be non-zero and a
 /// multiple of [`PAGE`], `align` must be a power of two `>= PAGE`, and the
-/// pair must form a valid [`std::alloc::Layout`]. Before this assert existed,
-/// this doc comment used to claim "the native (`munmap`/`VirtualFree`) paths
-/// ignore `align`" — which was true in the sense that a contract-violating
-/// call would silently "succeed" (no crash, no error) on those native
-/// backends; only the `miri` fallback path (which reconstructs a `Layout`
-/// from `reservation_len`/`align` to call back into `std::alloc`) would panic
-/// on the same bad input, with a bare, uninformative `.expect()` message.
-/// That divergence is now closed: this function validates the contract up
-/// front and panics with a descriptive message on **every** backend, not
-/// only under `miri`. The assert runs before `mock::record`, so under the
-/// `aligned_vmem_mock` cfg a contract-violating call panics before it is ever
-/// recorded in the mock call log — it does not appear as a `Release` entry.
+/// pair must form a valid [`std::alloc::Layout`]. The assert runs before
+/// `mock::record`, so under the `aligned_vmem_mock` cfg a contract-violating
+/// call panics before it is ever recorded in the mock call log — it does not
+/// appear as a `Release` entry.
 ///
 /// A null `reservation` is unaffected by this: it remains the documented
 /// no-op above and is not a panic path.
 pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize) {
-    // task #947/G-1: validate the documented contract BEFORE calling into the
-    // miri backend, matching `from_raw_parts`'s defensive pattern. This prevents
-    // a bare `.expect()` panic inside `release_reservation`'s miri path and
-    // provides an informative diagnostic instead. The check is cheap and
-    // defensive; the native backends ignore these values (except for basic null
-    // handling above), so a failure here indicates a caller contract violation
-    // that would otherwise manifest as a panic only under miri.
+    // Historical note (task #947/G-1): before this assert existed, this doc
+    // comment used to claim "the native (`munmap`/`VirtualFree`) paths ignore
+    // `align`" — which was true in the sense that a contract-violating call
+    // would silently "succeed" (no crash, no error) on those native backends;
+    // only the `miri` fallback path (which reconstructs a `Layout` from
+    // `reservation_len`/`align` to call back into `std::alloc`) would panic on
+    // the same bad input, with a bare, uninformative `.expect()` message. That
+    // divergence is now closed: this function validates the contract up front
+    // and panics with a descriptive message on **every** backend, not only
+    // under `miri`. The assert runs before `mock::record`, so under the
+    // `aligned_vmem_mock` cfg a contract-violating call panics before it is
+    // ever recorded in the mock call log — it does not appear as a `Release`
+    // entry.
     //
     // The checked invariants are a subset of `from_raw_parts`'s checks because
     // `release` receives only `(reservation_len, align)` (not the full
@@ -1783,20 +1789,16 @@ pub fn try_reserve_aligned_lazy(
 /// method.
 ///
 /// Base/align/size contract is otherwise identical to [`reserve_aligned`],
-/// **except on Linux with `huge-pages` enabled** (task #776, F3): `size` and
-/// `align` must BOTH additionally be multiples of the Linux huge-page size
-/// (2 MiB) — a request that only satisfies `reserve_aligned`'s own weaker
-/// `PAGE`-multiple contract is rejected with `VmemError::invalid_argument()`
-/// before any syscall runs, even though such a request could previously
-/// succeed there via the documented ordinary-page fallback (task #714 added
-/// this rejection to close a real `munmap` mapping leak — see that task's
-/// own commit for the full reasoning; the trade-off is a stricter contract
-/// in exchange for provable correctness). For the failure cause use
+/// **except on Linux with `huge-pages` enabled**: `size` and `align` must BOTH
+/// additionally be multiples of the Linux huge-page size (2 MiB) — a request
+/// that only satisfies `reserve_aligned`'s own weaker `PAGE`-multiple contract
+/// is rejected with `VmemError::invalid_argument()` before any syscall runs,
+/// even though such a request could previously succeed there via the documented
+/// ordinary-page fallback. For the failure cause use
 /// [`try_reserve_aligned_huge`].
 ///
-/// **Windows limitation (task #848 single-call fast path):** on Windows,
-/// this function returns a reservation with [`Reservation::is_huge`] == `true`
-/// only when ALL of the following hold:
+/// **Windows limitation:** on Windows, this function returns a reservation with
+/// [`Reservation::is_huge`] == `true` only when ALL of the following hold:
 /// 1. `align <= 64 KiB` (the single-call fast path requirement)
 /// 2. `size` is a multiple of the system's large-page minimum
 /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
@@ -1813,15 +1815,30 @@ pub fn try_reserve_aligned_lazy(
 /// threshold never requests large pages, so the result never has
 /// [`Reservation::is_huge`] == `true`.
 ///
-/// **Decommit incompatibility (task #843 V4):** on both Windows and Linux,
-/// [`decommit`] and [`decommit_lazy`] **do not work** on huge-page reservations.
-/// On Windows, `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions.
-/// On Linux, `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted
-/// only at huge-page granularity, so any [`page_size()`]-granular offset gets
-/// `EINVAL` and does nothing. The behavior is therefore indistinguishable from
-/// a silent no-op: the caller's RSS does not decrease, and subsequent reads
-/// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
-/// instead if you need decommit functionality.
+/// **Decommit incompatibility:** on both Windows and Linux, [`decommit`] and
+/// [`decommit_lazy`] **do not work** on huge-page reservations. On Windows,
+/// `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions. On Linux,
+/// `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted only at
+/// huge-page granularity, so any [`page_size()`]-granular offset gets `EINVAL`
+/// and does nothing. The behavior is therefore indistinguishable from a silent
+/// no-op: the caller's RSS does not decrease, and subsequent reads return the
+/// old (stale) data rather than zeroed pages. Use [`reserve_aligned`] instead
+/// if you need decommit functionality.
+// Historical notes (task #776, #714, #848, #843):
+//
+// - task #776, F3: Linux huge-page request additionally requires both size
+//   and align to be multiples of the Linux huge-page size (2 MiB), rejecting
+//   PAGE-multiple requests that `reserve_aligned` accepts. This was added to
+//   close a real `munmap` mapping leak (task #714); the trade-off is a
+//   stricter contract in exchange for provable correctness.
+//
+// - task #848: Windows single-call fast path (`align <= 64 KiB`) is the only
+//   path that can grant large pages on Windows; the two-call path never
+//   requests them.
+//
+// - task #843, V4: decommit does not work on huge-page reservations on either
+//   platform (Windows: VirtualFree fails; Linux: MADV_DONTNEED/MADV_FREE
+//   requires huge-page granularity).
 #[must_use]
 #[cfg(feature = "huge-pages")]
 #[cfg_attr(docsrs, doc(cfg(feature = "huge-pages")))]

@@ -25,7 +25,7 @@ let r = reserve_aligned(span, span).expect("OOM");
 let base = r.as_ptr();
 assert_eq!(base.addr() % span, 0);
 
-// SAFETY: base is valid for r.len() bytes, owned exclusively.
+// SAFETY: base is valid for r.len() bytes (except decommitted ranges), owned exclusively.
 unsafe { base.write(0xAB); assert_eq!(base.read(), 0xAB); }
 
 // RAII release on drop — or take the parts for self-hosted manual release:
@@ -122,16 +122,19 @@ below — since `decommit`'s `()` return has no write-permitting sentinel to
 misuse, silently skipping is safe, whereas `recommit`/`commit_range`'s
 boolean/`Result` return previously clamped a contract violation to the same
 value a genuine success reports, which crashed an in-repo consumer — see
-`recommit`'s own rustdoc). Three exceptions to "never panics": `recommit` and
-`commit_range` (and their fallible `try_*` forms) now **reject**, rather
-than silently accept, a violated offset range (`start > end` or misaligned)
-— they still don't panic, but callers relying on the old silent-no-op shape
-should check the return value; `Reservation::from_raw_parts` (an
-`unsafe fn` for adopting a foreign OS reservation, not part of the ordinary
-reservation flow) panics immediately on a contract-violating `align`/
-`reservation_len` pair; and `release` panics on a contract-violating
-`(reservation_len, align)` pair (a null pointer remains a documented no-op)
-— see `release`'s own rustdoc `# Panics` section for the full detail.
+`recommit`'s own rustdoc).
+
+**Behavior change:** `recommit` and `commit_range` (and their fallible
+`try_*` forms) now **reject**, rather than silently accept, a violated offset
+range (`start > end` or misaligned) — they still don't panic, but callers
+relying on the old silent-no-op shape should check the return value.
+
+**Two panic exceptions:** `Reservation::from_raw_parts` (an `unsafe fn` for
+adopting a foreign OS reservation, not part of the ordinary reservation
+flow) panics immediately on a contract-violating `align`/`reservation_len`
+pair; and `release` panics on a contract-violating `(reservation_len, align)`
+pair (a null pointer remains a documented no-op) — see `release`'s own rustdoc
+`# Panics` section for the full detail.
 
 ## Platform caveats
 
