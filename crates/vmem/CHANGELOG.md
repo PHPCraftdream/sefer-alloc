@@ -13,6 +13,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `page_size()` function to query the actual OS page size at runtime
 - `ReservationParts` typed wrapper and `into_reservation_parts()` method
 - `Reservation::into_reservation_parts()` typed form for manual release
+- `ReservationFullParts` + `Reservation::into_full_parts()` — lossless six-field
+  round-trip that preserves `base`, usable `len` and `granted_huge`, which
+  `ReservationParts` discards (R4-11)
+- `Reservation::decommit_reclaims_and_zeroes()` — `const fn` capability query
+  reporting whether the current platform actually delivers decommit's
+  reclaim + zero-fill semantics (`false` on Darwin and the four BSDs, where
+  `MADV_DONTNEED` is advisory-only). Makes a guarantee that was previously
+  documented in prose only something callers can branch on (R4-3)
 - `VmemError::last_os_error()` for OS error capture with preserved errno
 - `bench-internals` feature with diagnostic counters for path activation:
   - `unix_exact_reserve_attempts()` / `unix_exact_reserve_hits()`
@@ -53,6 +61,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - FFI struct layout for `SystemInfo` matches real `SYSTEM_INFO` (union head flattened)
 - Over-reserve documentation corrected to reflect "no trim" behavior
 - Documentation gaps fixed: huge-pages semantics, alignment contract, API completeness
+- 32-bit Linux/Android no longer issues the same `MAP_HUGETLB` mmap twice for a
+  single 2 MiB-aligned huge reservation: the generic 32-bit exact-size fast path
+  is now skipped when the huge-page exact-size path above already attempted it.
+  Saves a syscall and a second draw against a scarce hugetlb pool, and makes
+  `UNIX_EXACT_RESERVE_ATTEMPTS` count one attempt per logical reserve on every
+  platform (R4-2/R3-1)
+- MIPS targets now fail to compile with an explanatory `compile_error!` instead
+  of building successfully and then failing every `reserve_aligned` call at
+  runtime with an undiagnosed `EBADF` (MIPS `MAP_ANON`/`MAP_HUGETLB` values
+  differ from the `asm-generic` constants this crate hardcodes) (R4-1)
+- `mock::drain()` no longer holds the `RefCell` borrow across the returned
+  `Vec`'s allocation, which could reenter `record()` and panic with
+  `BorrowMutError`; it now `mem::take`s the log under a short borrow (R4-9)
+- `fault_injection`'s one-shot self-disarm can no longer cancel a concurrent
+  `arm_fail_at`: the two-atomic target/counter protocol is replaced by a single
+  mutex-guarded state, closing the last of the three races this module
+  documented (R4-8)
+- Three `// SAFETY:` comments on the Windows decommit path claimed the caller
+  must pass a COMMITTED range — a precondition the crate deliberately violates
+  in a CI-covered test; all now state the real `MEM_RESERVE`d-region contract
+- `from_raw_parts`'s contract documentation corrected: it takes six arguments,
+  not five, and now requires runtime `page_size()` alignment rather than only
+  the compile-time `PAGE` lower bound (R4-10, R4-6)
 
 ### Removed
 
