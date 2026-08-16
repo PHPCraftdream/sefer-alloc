@@ -159,6 +159,41 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--all-features'],
   },
+  // --- aligned-vmem package gates (mandatory local coverage) ---
+  // Reproduces the 'aligned-vmem package gates' job from ci.yml.
+  // Excludes mock (RUSTFLAGS) and cross-targets (rustup target add) to keep
+  // the local check fast (CLAUDE.md: "Tests and benchmarks must run as fast as possible").
+  {
+    name: 'clippy (aligned-vmem default)',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    name: 'clippy (aligned-vmem --features "huge-pages")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--features', 'huge-pages', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    name: 'clippy (aligned-vmem --features "bench-internals")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--features', 'bench-internals', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    name: 'clippy (aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    name: 'clippy (aligned-vmem --all-features)',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--all-features', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    name: 'test (aligned-vmem --all-features)',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem', '--all-features'],
+  },
+  // --- end aligned-vmem package gates ---
   // R30-5: the remaining (non-clippy) PER_PR_ROWS rows — currently
   // `check-perf-gate-iai-default` (`cargo check --bench perf_gate_iai
   // --features "production bench-internals"`, scripts/iai.mjs's own
@@ -249,7 +284,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x6, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
