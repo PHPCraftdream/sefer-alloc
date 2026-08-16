@@ -89,14 +89,22 @@ fn fail_next_commit_injects_recommit_failure() {
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let base = r.as_ptr();
     mock::fail_next_commit(1);
+    // task #959 (macOS CI, first real run of this test): boundaries passed
+    // to `recommit` must be multiples of the runtime `page_size()`, not the
+    // compile-time `PAGE` constant (task #947/A-1) -- that validation runs
+    // BEFORE the mock/real backend split, so it applies here too. A bare
+    // `PAGE` (4 KiB) fails unconditionally on 16 KiB-page hosts (Apple
+    // Silicon), which would have made the SECOND assert below fail on a
+    // validation rejection rather than the intended fault-consumed success.
+    let ps = page_size();
     // SAFETY: base is a live reservation.
     unsafe {
         assert!(
-            !recommit(base, 0, PAGE),
+            !recommit(base, 0, ps),
             "1st recommit fails (commit fault armed)"
         );
         assert!(
-            recommit(base, 0, PAGE),
+            recommit(base, 0, ps),
             "2nd recommit succeeds (fault consumed)"
         );
     }
@@ -112,13 +120,22 @@ fn fail_next_commit_injects_recommit_failure() {
 fn fail_next_commit_injects_commit_range_failure() {
     use aligned_vmem::{commit_range, reserve_aligned_lazy};
     mock::reset();
+    // `initial_commit` (the 3rd argument) validates against the compile-time
+    // `PAGE` constant (task #947/A-1's contract for `reserve_aligned_lazy`),
+    // so `PAGE` is correct there; the `commit_range` boundaries below
+    // validate against the runtime `page_size()` instead (see the comment
+    // at that call).
     let r = reserve_aligned_lazy(4 * MIB, 4 * MIB, PAGE).expect("lazy reserve");
     let base = r.as_ptr();
     mock::fail_next_commit(1);
+    // task #959: `commit_range`'s boundaries must be multiples of the
+    // runtime `page_size()`, not `PAGE` -- see the identical fix in
+    // `fail_next_commit_injects_recommit_failure` above for the mechanism.
+    let ps = page_size();
     // SAFETY: base is a live reservation.
     unsafe {
-        assert!(!commit_range(base, PAGE, 2 * PAGE), "commit fault armed");
-        assert!(commit_range(base, PAGE, 2 * PAGE), "fault consumed");
+        assert!(!commit_range(base, ps, 2 * ps), "commit fault armed");
+        assert!(commit_range(base, ps, 2 * ps), "fault consumed");
     }
     // V9: Explicitly drop to trigger Drop before draining.
     drop(r);
@@ -222,8 +239,15 @@ fn simulated_fault_reports_no_os_code() {
     let r = reserve_aligned(MIB, MIB).expect("reserve");
     let base = r.as_ptr();
     mock::fail_next_commit(1);
+    // task #959: use the runtime page_size(), not PAGE -- otherwise on a
+    // 16 KiB-page host this call fails `try_recommit`'s own boundary
+    // validation instead of the armed fault, and the assertion below would
+    // pass for the wrong reason (VmemError::invalid_argument() also reports
+    // os_code() == None, silently making this test vacuous w.r.t. the
+    // fault-injection mechanism it exists to check).
+    let ps = page_size();
     // SAFETY: base is a live reservation.
-    let err = unsafe { aligned_vmem::try_recommit(base, 0, PAGE) }
+    let err = unsafe { aligned_vmem::try_recommit(base, 0, ps) }
         .expect_err("armed commit fault must fail");
     assert_eq!(
         err.os_code(),
@@ -390,10 +414,18 @@ fn reentrancy_guard_silently_drops_nested_calls() {
     mock::reset();
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let base = r.as_ptr();
+    // task #959: both `decommit` and `recommit`'s boundary validation runs
+    // against the runtime `page_size()`, not `PAGE` -- a bare `PAGE` (4 KiB)
+    // fails that check unconditionally on 16 KiB-page hosts (Apple Silicon),
+    // which would make `decommit` silently skip (no Call::Decommit
+    // recorded) and `recommit` reject (no Call::Recommit recorded either,
+    // since that check runs before the mock branch), breaking the exact
+    // count this test asserts below.
+    let ps = page_size();
     // SAFETY: base is a live reservation.
     unsafe {
-        decommit(base, 0, PAGE);
-        let _ = recommit(base, 0, PAGE);
+        decommit(base, 0, ps);
+        let _ = recommit(base, 0, ps);
     }
     drop(r);
     let calls = mock::drain();

@@ -334,7 +334,17 @@ fn decommit_recommit_roundtrip() {
 #[test]
 fn decommit_recommit_roundtrip_on_over_reserved_span() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let size = PAGE; // 4 KiB
+    // task #959 (second bug of the same class, found on the SAME macOS CI
+    // run that exposed the `align` bug above -- masked by it until `align`
+    // was fixed, since the retry loop below never used to terminate): `size`
+    // is used as the `decommit`/`recommit` boundary at the bottom of this
+    // test, both of which require multiples of the runtime `page_size()`,
+    // not the compile-time `PAGE` constant (task #947/A-1). A bare `PAGE`
+    // (4 KiB) fails that check unconditionally on 16 KiB-page hosts (Apple
+    // Silicon). `page_size()` also satisfies `reserve_aligned`'s own
+    // PAGE-multiple contract for `size` (it is always a power-of-two
+    // multiple of `PAGE`), so this is safe on every host.
+    let size = page_size();
 
     // Windows: align > WIN_ALLOCATION_GRANULARITY (64 KiB) unconditionally
     // skips win_reserve_commit's fast-reserve sub-path, forcing the
