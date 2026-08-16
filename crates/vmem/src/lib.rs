@@ -215,11 +215,22 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "bench-internals")]
 use core::sync::atomic::AtomicU64;
 
-/// `bench-internals`: total number of `try_reserve_aligned_exact` attempts
-/// (32-bit Unix only — always 0 on Windows/miri AND on 64-bit Unix, since
-/// task #944's finding P-1 gated that internal helper to
-/// `target_pointer_width = "32"`; it is private and platform-gated, so it is
-/// named here in code font rather than linked).
+/// `bench-internals`: total number of exact-size `mmap` attempts across this
+/// crate's two distinct exact-size fast paths, sharing one counter for unified
+/// hit-rate tracking:
+/// - `try_reserve_aligned_exact` (32-bit Unix only — always 0 on Windows/miri
+///   AND on 64-bit Unix outside the huge-page case below, since task #944's
+///   finding P-1 gated that internal helper to `target_pointer_width = "32"`;
+///   it is private and platform-gated, so it is named here in code font
+///   rather than linked).
+/// - The Linux/Android huge-page exact-size path (II-4, 2026-08-16 audit
+///   finding), which uses an exact-size `mmap` with `MAP_HUGETLB` when
+///   `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) — this one DOES fire on 64-bit
+///   Linux/Android, since the huge-page path is not gated to 32-bit. It lives
+///   in the exact-size huge-path block in `unix_reserve`, a different code
+///   path from `try_reserve_aligned_exact`, but is counted here rather than
+///   under a separate static.
+///
 /// This counter increments BEFORE the `mmap` call, so it includes both alignment
 /// misses and OS-level failures (e.g., OOM, MAP_HUGETLB refused). The hit-rate
 /// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
@@ -234,13 +245,16 @@ use core::sync::atomic::AtomicU64;
 #[doc(hidden)]
 pub(crate) static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
-/// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
-/// succeeded (the `mmap` landed already `align`-aligned, so no over-reserve
-/// fallback was needed). Like [`UNIX_EXACT_RESERVE_ATTEMPTS`], this is
-/// 32-bit Unix only — always 0 on Windows/miri AND on 64-bit Unix (see that
-/// static's own doc for why). Numerator over
-/// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
-/// section doc above.
+/// `bench-internals`: number of exact-size `mmap` attempts (counted in
+/// [`UNIX_EXACT_RESERVE_ATTEMPTS`]) that succeeded -- the `mmap` landed
+/// already `align`-aligned, so no over-reserve fallback was needed. Covers
+/// both source paths that static's doc describes: `try_reserve_aligned_exact`
+/// (32-bit Unix only) and the Linux/Android huge-page exact-size path (II-4,
+/// 2026-08-16 audit finding, `align == LINUX_HUGE_PAGE_SIZE`, fires on
+/// 64-bit Linux/Android too).
+///
+/// Numerator over [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level
+/// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub(crate) static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -575,7 +589,8 @@ pub struct Reservation {
     ///
     /// **Windows limitation (task #848 single-call fast path):** on Windows,
     /// this flag is `true` only when ALL of the following hold:
-    /// 1. `align <= 64 KiB` (the single-call fast path requirement)
+    /// 1. The fast-path condition `align <= GetLargePageMinimum()` is satisfied
+    ///    (typically `align <= 2 MiB` on x86_64)
     /// 2. `size` is a multiple of the system's large-page minimum
     /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
     ///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
@@ -583,11 +598,19 @@ pub struct Reservation {
     ///    enabled fails exactly like an unprivileged one and silently falls
     ///    back to ordinary pages)
     ///
+    /// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
+    /// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
+    /// but the actual paths that SUCCEED (pass the post-call alignment check) remain
+    /// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
+    /// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
+    /// fails and the fast path falls through to the two-call path. Practically, this
+    /// means `is_huge == true` only for shapes where large pages are actually granted,
+    /// which requires all three conditions above to hold.
+    ///
     /// If any of these conditions fail, the function falls back to ordinary
     /// pages and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
-    /// are only ever requested and possibly granted via the single-call fast path
-    /// (`align <=` the OS allocation granularity, typically 64 KiB); the two-call
-    /// path used for `align >` that threshold never requests large pages, so
+    /// are only ever requested and possibly granted via the single-call fast path;
+    /// the two-call path never requests large pages, so
     /// `granted_huge` is always `false` for a reservation that takes it.
     granted_huge: bool,
 }
@@ -700,7 +723,8 @@ impl Reservation {
     ///
     /// **Windows limitation (task #848 single-call fast path):** on Windows,
     /// this returns `true` only when ALL of the following hold:
-    /// 1. `align <= 64 KiB` (the single-call fast path requirement)
+    /// 1. The fast-path condition `align <= GetLargePageMinimum()` is satisfied
+    ///    (typically `align <= 2 MiB` on x86_64)
     /// 2. `size` is a multiple of the system's large-page minimum
     /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
     ///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
@@ -708,11 +732,19 @@ impl Reservation {
     ///    enabled fails exactly like an unprivileged one and silently falls
     ///    back to ordinary pages)
     ///
+    /// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
+    /// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
+    /// but the actual paths that SUCCEED (pass the post-call alignment check) remain
+    /// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
+    /// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
+    /// fails and the fast path falls through to the two-call path. Practically, this
+    /// means `is_huge() == true` only for shapes where large pages are actually granted,
+    /// which requires all three conditions above to hold.
+    ///
     /// If any of these conditions fail, the function falls back to ordinary pages
     /// and this flag is `false`. On Windows, large pages (`MEM_LARGE_PAGES`)
-    /// are only ever requested and possibly granted via the single-call fast path
-    /// (`align <=` the OS allocation granularity, typically 64 KiB); the two-call
-    /// path used for `align >` that threshold never requests large pages, so
+    /// are only ever requested and possibly granted via the single-call fast path;
+    /// the two-call path never requests large pages, so
     /// `is_huge()` is always `false` for a reservation that takes it. See
     /// [`reserve_aligned_huge`]'s rustdoc for details.
     ///
@@ -1865,7 +1897,8 @@ pub fn try_reserve_aligned_lazy(
 ///
 /// **Windows limitation:** on Windows, this function returns a reservation with
 /// [`Reservation::is_huge`] == `true` only when ALL of the following hold:
-/// 1. `align <= 64 KiB` (the single-call fast path requirement)
+/// 1. The fast-path condition `align <= GetLargePageMinimum()` is satisfied
+///    (typically `align <= 2 MiB` on x86_64)
 /// 2. `size` is a multiple of the system's large-page minimum
 /// 3. The calling process has `SeLockMemoryPrivilege` granted AND has
 ///    **enabled** it via `AdjustTokenPrivileges` (the crate does not do
@@ -1873,12 +1906,34 @@ pub fn try_reserve_aligned_lazy(
 ///    fails exactly like an unprivileged one and silently falls back to
 ///    ordinary pages)
 ///
+/// NOTE: The widened fast-path condition (II-3, 2026-08-16 audit finding) expanded
+/// the single-call ATTEMPT window from `align <= 64 KiB` to `align <= GetLargePageMinimum()`,
+/// but the actual paths that SUCCEED (pass the post-call alignment check) remain
+/// limited. When large pages are NOT granted (unprivileged), `VirtualAlloc` returns a
+/// base aligned only to 64 KiB, not to the requested alignment, so the post-call check
+/// fails and the fast path falls through to the two-call path. Practically, this
+/// means `is_huge() == true` only for shapes where large pages are actually granted,
+/// which requires all three conditions above to hold.
+///
+/// **Extra-syscall cost on unprivileged hosts:** For the widened align range
+/// (`64 KiB < align <= GetLargePageMinimum()`), when large pages are requested but
+/// not granted (e.g., unprivileged process, or `SeLockMemoryPrivilege` not enabled),
+/// the code attempts `VirtualAlloc` with `MEM_LARGE_PAGES` (fails), retries without
+/// it (succeeds with ordinary pages), and if that retry's base doesn't happen to
+/// satisfy the requested alignment, the whole thing is released and falls through to
+/// the two-call path. This means an unprivileged reservation in this align range
+/// can cost up to 2 extra `VirtualAlloc` calls + 1 `VirtualFree` before reaching
+/// the two-call path, versus before the II-3 change (which would have gone straight
+/// to the two-call path for `align > 64 KiB`). This is a real, measurable behavior
+/// change, not a correctness bug — the widening genuinely expands the single-call
+/// attempt window, and unprivileged processes pay the extra-syscall cost for shapes
+/// that now attempt but fail the fast path.
+///
 /// If any of these conditions fail, the function falls back to ordinary
 /// pages and returns a reservation with [`Reservation::is_huge`] == `false`.
 /// On Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and
-/// possibly granted via the single-call fast path (`align <=` the OS allocation
-/// granularity, typically 64 KiB); the two-call path used for `align >` that
-/// threshold never requests large pages, so the result never has
+/// possibly granted via the single-call fast path; the two-call path never requests
+/// large pages, so the result never has
 /// [`Reservation::is_huge`] == `true`.
 ///
 /// **Decommit incompatibility:** on both Windows and Linux, [`decommit`] and
@@ -2048,6 +2103,13 @@ fn win_reserve_commit(
     // satisfy alignments up to that minimum. The unconditional alignment check
     // below guarantees correctness even if large pages are not granted.
     //
+    // NOTE: GetLargePageMinimum() returns 0 on systems/CPU that do not support
+    // large pages at all (Microsoft documentation). Since align >= PAGE > 0 always,
+    // the comparison align <= 0 is always false for a positive align, meaning the
+    // fast path becomes unreachable on such hosts. This is a safe degenerate case:
+    // we fall through correctly to the two-call path, same as when align > threshold.
+    // No special-case code is needed; the existing threshold comparison handles it.
+    //
     // Historical note: a ~4.6 µs / ~33% reduction claim was made in the original
     // V21 commit, inherited from pre-#848 measurement (R32_13) of the OLD two-call
     // path. That claim has NOT been re-measured for the current single-call fast
@@ -2072,6 +2134,7 @@ fn win_reserve_commit(
     // through the unchanged two-call path below.
     let fast_path_align_threshold = if extra_commit_flags != 0 {
         // When requesting large pages, the threshold is the large-page minimum.
+        // See the GetLargePageMinimum()==0 degenerate-case note above this function.
         unsafe { GetLargePageMinimum() }
     } else {
         WIN_ALLOCATION_GRANULARITY
@@ -2595,6 +2658,10 @@ fn unix_reserve(
         feature = "huge-pages"
     ))]
     if huge && align == LINUX_HUGE_PAGE_SIZE {
+        // Track exact-size attempt (bench-internals oracle for II-4 fast path).
+        #[cfg(feature = "bench-internals")]
+        UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+
         // SAFETY: anonymous private MAP_HUGETLB mapping of exactly `size` bytes.
         let p = unsafe { libc_mmap(size, true) };
         if !p.is_null() {
@@ -2605,6 +2672,10 @@ fn unix_reserve(
             // exactly where an unverified assumption matters (same reasoning
             // as the Windows H2C6 / Unix U1 checks elsewhere in this file).
             if region_addr.is_multiple_of(align) {
+                // Track exact-size hit (bench-internals oracle for II-4 fast path).
+                #[cfg(feature = "bench-internals")]
+                UNIX_EXACT_RESERVE_HITS.fetch_add(1, Ordering::Relaxed);
+
                 // SAFETY: non-null and just verified aligned.
                 let base = unsafe { NonNull::new_unchecked(p as *mut u8) };
                 return Ok((base, base, size, true));

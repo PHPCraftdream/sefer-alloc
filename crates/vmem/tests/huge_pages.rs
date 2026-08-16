@@ -39,8 +39,41 @@ use aligned_vmem::{try_reserve_aligned_huge, VmemError, PAGE};
 
 const MIB: usize = 1024 * 1024;
 
+/// The `bench-internals` diagnostic counters this file's path-activation
+/// tests read (`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`_TWO_CALL_PAIRS` on
+/// Windows, `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` on Linux) are
+/// PROCESS-GLOBAL. libtest runs this file's tests on parallel threads by
+/// default, so any test that calls `reserve_aligned_huge`/
+/// `try_reserve_aligned_huge` (which increments these counters as a side
+/// effect whenever `bench-internals` is enabled, regardless of whether the
+/// calling test itself reads them) can corrupt a sibling test's
+/// reset-then-measure window -- mirroring the exact hazard
+/// `tests/lazy_commit.rs`'s own `SERIAL` mutex already exists to prevent for
+/// the same counters. Confirmed by direct reproduction: running this file's
+/// tests under the default (parallel) `--test-threads` failed
+/// `reserve_aligned_huge_2mib_still_two_call_path_unprivileged`
+/// nondeterministically (observed `two_call_pairs=2` instead of the expected
+/// `1`, from a concurrently-running sibling test's own reservation call).
+/// Every test in this file that reserves through `reserve_aligned_huge`/
+/// `try_reserve_aligned_huge` now holds `SERIAL` for its whole body -- a
+/// future test added to this file must also take it.
+#[cfg(feature = "bench-internals")]
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire [`SERIAL`] under `bench-internals` (a no-op everywhere else,
+/// since neither the static nor the counters it guards exist there) -- see
+/// `SERIAL`'s own doc comment above for why every counter-touching test in
+/// this file needs this, not only the ones that read the counters.
+#[cfg(feature = "bench-internals")]
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+}
+#[cfg(not(feature = "bench-internals"))]
+fn serial_guard() {}
+
 #[test]
 fn reserve_aligned_huge_ordinary_page_sized_request_succeeds() {
+    let _guard = serial_guard();
     // The general huge-pages contract (best-effort: falls back to ordinary
     // pages when the OS refuses huge pages) applies on every platform,
     // including where `huge` is a documented no-op (macOS, other non-Linux
@@ -103,6 +136,7 @@ fn reserve_aligned_huge_rejects_non_huge_page_aligned_align() {
 #[test]
 #[cfg(target_os = "linux")]
 fn reserve_aligned_huge_accepts_huge_page_aligned_request() {
+    let _guard = serial_guard();
     // The positive case: a genuinely huge-page-aligned size/align pair must
     // NOT be rejected by the new guard (only misaligned requests are).
     // Whether the OS actually grants real huge pages depends on host
@@ -140,28 +174,53 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) uses exact-size mmap, avoiding
 /// `size + align` over-reserve against the hugetlb pool.
 ///
-/// This test verifies that `reserve_aligned_huge(2 MiB, 2 MiB)` succeeds
-/// and is properly aligned. The kernel guarantees an anonymous MAP_HUGETLB
-/// mapping starts at a huge-page-aligned address, so the exact-size mmap
-/// satisfies the alignment contract without over-reserving.
+/// This test verifies that `reserve_aligned_huge(2 MiB, 2 MiB)` succeeds,
+/// is properly aligned, AND actually takes the Linux exact-size huge-page
+/// fast path (using the bench-internals counters as a path-activation oracle).
+/// The kernel guarantees an anonymous MAP_HUGETLB mapping starts at a
+/// huge-page-aligned address, so the exact-size mmap satisfies the alignment
+/// contract without over-reserving.
 ///
 /// Whether huge pages are actually granted depends on host configuration
 /// (`/proc/sys/vm/nr_hugepages`); the crate's best-effort fallback means
 /// this must succeed either way, so the test only asserts on the contract-
 /// violation guard not firing (not on the actual huge-page grant).
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bench-internals"))]
 fn reserve_aligned_huge_exact_size_for_2mib_align() {
+    use aligned_vmem::{
+        reset_bench_internals_counters, try_reserve_aligned_huge, unix_exact_reserve_attempts,
+        unix_exact_reserve_hits,
+    };
+
+    let _guard = serial_guard();
     let size = LINUX_HUGE_PAGE_SIZE;
+
+    reset_bench_internals_counters();
     match try_reserve_aligned_huge(size, LINUX_HUGE_PAGE_SIZE) {
         Ok(r) => {
             let base = r.as_ptr();
             assert_eq!(base as usize % LINUX_HUGE_PAGE_SIZE, 0);
+
             // The memory must be writable.
             unsafe {
                 base.write(0xEF);
                 assert_eq!(base.read(), 0xEF);
             }
+
+            // PATH-ACTIVATION ORACLE: verify this took the Linux exact-size huge path.
+            // The exact-size huge path increments both UNIX_EXACT_RESERVE_ATTEMPTS
+            // and UNIX_EXACT_RESERVE_HITS when it succeeds.
+            let attempts = unix_exact_reserve_attempts();
+            let hits = unix_exact_reserve_hits();
+            assert_eq!(
+                attempts, 1,
+                "2 MiB shape must increment UNIX_EXACT_RESERVE_ATTEMPTS; observed: attempts={attempts}, hits={hits}"
+            );
+            assert_eq!(
+                hits, 1,
+                "2 MiB shape must increment UNIX_EXACT_RESERVE_HITS; observed: attempts={attempts}, hits={hits}"
+            );
         }
         Err(e) => assert!(
             !e.is_invalid_argument(),
@@ -186,10 +245,13 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
 ///
 /// II-3 (2026-08-16 audit finding): the single-call fast-path condition is
 /// widened to `align <= GetLargePageMinimum()` when requesting large pages,
-/// so `reserve_aligned_huge(4 MiB, 4 MiB)` can now attempt the single-call
-/// path. This test is extended to also verify the widened condition works
-/// (the actual huge-page grant still requires size to be a multiple of the
-/// large-page minimum and the process to have SeLockMemoryPrivilege).
+/// so `reserve_aligned_huge(2 MiB, 2 MiB)` (not 4 MiB!) can now ATTEMPT the
+/// single-call path -- though on an unprivileged host it still falls through
+/// to the two-call path (see the post-call-alignment-check explanation on
+/// `reserve_aligned_huge_2mib_still_two_call_path_unprivileged` below, which
+/// verifies the 2 MiB case with a path-activation counter assertion). The
+/// 4 MiB shape never even attempts the fast path, since 4 MiB >
+/// GetLargePageMinimum() (typically 2 MiB on x86_64).
 ///
 /// Note: the V-6 alignment check (task #921) is unobservable on a conforming
 /// Windows host and is NOT regression-tested by this or any test in this crate —
@@ -198,6 +260,7 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
 #[test]
 #[cfg(windows)]
 fn reserve_aligned_huge_64k_single_call_path() {
+    let _guard = serial_guard();
     const SIZE: usize = 64 * 1024; // 64 KiB, below WIN_ALLOCATION_GRANULARITY (also 64 KiB)
     let r = reserve_aligned_huge(SIZE, SIZE).expect("64 KiB huge reservation");
     let base = r.as_ptr();
@@ -226,21 +289,108 @@ fn reserve_aligned_huge_64k_single_call_path() {
     );
 }
 
-/// II-3 (2026-08-16 audit finding): Windows 4 MiB-aligned 4 MiB huge reservation.
+/// II-3 (2026-08-16 audit finding) — CLOSED and corrected:
 ///
-/// This test verifies that `reserve_aligned_huge(4 MiB, 4 MiB)` can now attempt
-/// the single-call fast path on Windows (the fast-path condition was widened
-/// from `align <= 64 KiB` to `align <= GetLargePageMinimum()` when requesting
-/// large pages). Whether large pages are actually granted depends on:
-/// 1. The process has SeLockMemoryPrivilege granted AND enabled
-/// 2. The size is a multiple of the system's large-page minimum (2 MiB on x86_64)
+/// The audit finding claimed that the Windows single-call fast-path condition
+/// was widened from `align <= 64 KiB` to `align <= GetLargePageMinimum()` when
+/// requesting large pages, and that this would make `reserve_aligned_huge(2 MiB, 2 MiB)`
+/// now attemptable via the single-call path.
 ///
-/// This test verifies the shape works (reserves and falls back correctly) without
-/// asserting on the actual huge-page grant (which depends on host configuration).
+/// **This claim was empirically false.** While the condition code was indeed
+/// widened to use `GetLargePageMinimum()` instead of `WIN_ALLOCATION_GRANULARITY`,
+/// the fast path also requires a POST-CALL alignment check that verifies the
+/// base returned by `VirtualAlloc` is actually aligned to the requested `align`.
+/// When large pages are not granted (e.g., due to lack of `SeLockMemoryPrivilege`),
+/// `VirtualAlloc` returns a base aligned only to 64 KiB (`WIN_ALLOCATION_GRANULARITY`),
+/// not to the requested 2 MiB. This causes the post-call check to fail, and the
+/// single-call path falls through to the two-call path.
+///
+/// The practical result: the II-3 widening expands the single-call ATTEMPT window
+/// from `align <= 64 KiB` to `align <= GetLargePageMinimum()` (typically 2 MiB),
+/// but the actual paths that SUCCEED (pass the post-call alignment check) are
+/// still limited to `align <= 64 KiB` because that's the guaranteed alignment of
+/// `VirtualAlloc`'s return value. The only shapes that truly benefit from the
+/// widening are those where:
+/// 1. The host grants actual large pages (rare, requires privilege), AND
+/// 2. The size is a multiple of `GetLargePageMinimum()`.
+///
+/// For the common unprivileged case, the fast-path widening has ZERO effect:
+/// `reserve_aligned_huge(2 MiB, 2 MiB)` still takes the two-call path, exactly as
+/// before. The earlier test was vacuous because it only asserted that the
+/// reservation succeeded and was aligned — both true regardless of which internal
+/// path was taken (the two-call path also produces correctly-aligned ordinary-page
+/// reservations).
+///
+/// This test documents the ACTUAL behavior (two-call path for unprivileged
+/// 2 MiB) and includes a path-activation assertion to detect if this ever changes.
 #[test]
-#[cfg(windows)]
-fn reserve_aligned_huge_4mib_single_call_path_widened() {
+#[cfg(all(windows, feature = "bench-internals"))]
+fn reserve_aligned_huge_2mib_still_two_call_path_unprivileged() {
+    let _guard = serial_guard();
+    use aligned_vmem::{
+        reset_bench_internals_counters, windows_reserve_commit_single_calls,
+        windows_reserve_commit_two_call_pairs,
+    };
+
+    const SIZE: usize = 2 * 1024 * 1024; // 2 MiB == GetLargePageMinimum() on typical x86_64
+
+    reset_bench_internals_counters();
+    let r = reserve_aligned_huge(SIZE, SIZE).expect("2 MiB huge reservation");
+    let base = r.as_ptr();
+
+    // The returned pointer must be non-null and aligned to 2 MiB.
+    assert!(!base.is_null(), "base pointer must be non-null");
+    assert_eq!(base.addr() % SIZE, 0, "base must be 2 MiB-aligned");
+
+    // The memory must be writable.
+    // SAFETY: base is valid for SIZE bytes, freshly reserved.
+    unsafe {
+        base.write(0xCD);
+        assert_eq!(base.read(), 0xCD, "written byte must read back");
+    }
+
+    // PATH-ACTIVATION ORACLE: verify this takes the two-call path (NOT single-call).
+    // The widened fast-path condition is `align <= GetLargePageMinimum()`, which is
+    // satisfied for SIZE=2 MiB on typical x86_64. However, the fast path ALSO
+    // requires a post-call alignment check. When large pages are not granted
+    // (unprivileged process), VirtualAlloc returns a base aligned only to 64 KiB,
+    // not to 2 MiB, so the post-call check fails and we fall through to the
+    // two-call path.
+    let single_calls = windows_reserve_commit_single_calls();
+    let two_call_pairs = windows_reserve_commit_two_call_pairs();
+    assert_eq!(
+        single_calls, 0,
+        "Unprivileged 2 MiB shape must NOT take the single-call fast path; observed: single_calls={single_calls}, two_call_pairs={two_call_pairs}"
+    );
+    assert_eq!(
+        two_call_pairs, 1,
+        "Unprivileged 2 MiB shape must take the two-call path; observed: single_calls={single_calls}, two_call_pairs={two_call_pairs}"
+    );
+}
+
+/// II-3 (2026-08-16 audit finding) — 4 MiB case explicitly documented as two-call path.
+///
+/// This test documents that `reserve_aligned_huge(4 MiB, 4 MiB)` does NOT use the
+/// single-call fast path on Windows, even after the II-3 widening. The reason:
+/// `GetLargePageMinimum()` returns 2 MiB on typical x86_64 Windows hosts, and the
+/// widened fast-path condition is `align <= GetLargePageMinimum()`. Since `align = 4 MiB > 2 MiB`,
+/// the condition is false, so the fast path is never attempted. The 4 MiB shape
+/// still takes the two-call path, exactly as before the II-3 change.
+///
+/// This test explicitly verifies this state so it's clearly documented, not left as
+/// an unverified assumption.
+#[test]
+#[cfg(all(windows, feature = "bench-internals"))]
+fn reserve_aligned_huge_4mib_still_two_call_path() {
+    let _guard = serial_guard();
+    use aligned_vmem::{
+        reset_bench_internals_counters, windows_reserve_commit_single_calls,
+        windows_reserve_commit_two_call_pairs,
+    };
+
     const SIZE: usize = 4 * 1024 * 1024; // 4 MiB
+
+    reset_bench_internals_counters();
     let r = reserve_aligned_huge(SIZE, SIZE).expect("4 MiB huge reservation");
     let base = r.as_ptr();
 
@@ -255,7 +405,17 @@ fn reserve_aligned_huge_4mib_single_call_path_widened() {
         assert_eq!(base.read(), 0xCD, "written byte must read back");
     }
 
-    // is_huge() depends on whether the system actually granted large pages.
-    // We don't assert on it here; the test verifies the shape works, not
-    // the actual grant (which is host-configured).
+    // PATH-ACTIVATION ORACLE: verify this takes the two-call path (NOT single-call).
+    // The fast-path condition is `align <= GetLargePageMinimum() && commit_len == size`.
+    // For SIZE = 4 MiB > GetLargePageMinimum() = 2 MiB, the condition is false.
+    let single_calls = windows_reserve_commit_single_calls();
+    let two_call_pairs = windows_reserve_commit_two_call_pairs();
+    assert_eq!(
+        single_calls, 0,
+        "4 MiB shape must NOT take the single-call fast path; observed: single_calls={single_calls}, two_call_pairs={two_call_pairs}"
+    );
+    assert_eq!(
+        two_call_pairs, 1,
+        "4 MiB shape must take the two-call path; observed: single_calls={single_calls}, two_call_pairs={two_call_pairs}"
+    );
 }
