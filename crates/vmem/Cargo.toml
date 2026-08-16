@@ -106,10 +106,12 @@ fault-injection = ["lazy-commit"]
 # item 48, plus Windows `VirtualFree(MEM_DECOMMIT)` attempt/failure counters
 # (`aligned_vmem::windows_virtualfree_decommit_attempts()` /
 # `aligned_vmem::windows_virtualfree_decommit_failures()`), Unix `munmap`
-# failures (`aligned_vmem::unix_munmap_failures()`), and a Windows speculative
-# large-page retry failure counter
-# (`aligned_vmem::windows_large_page_retry_failures()`, R4-5) measuring the
-# syscall overhead of failed large-page attempts that
+# failures (`aligned_vmem::unix_munmap_failures()`), Windows `VirtualFree(MEM_RELEASE)`
+# failures (`aligned_vmem::windows_virtualfree_release_failures()`), and two Windows
+# large-page counters (R4-5/R5-4): `windows_large_page_retry_failures()` (initial
+# large-page attempt AND ordinary-page retry BOTH failed) and
+# `windows_large_page_alignment_failures()` (allocation succeeded but base was
+# misaligned, forcing fallback). Both measure syscall overhead that
 # `windows_reserve_commit_single_calls()` does NOT capture, and
 # `aligned_vmem::huge_decommit_attempts()` (R4-4) counting decommit calls on
 # huge-page reservations (an upper bound for estimating the true huge-page

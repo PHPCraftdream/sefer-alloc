@@ -213,6 +213,15 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   failure/failure tracking distinguishes "the syscall was attempted but
 //   failed" from "it was never attempted at all". `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES`
 //   settle this, and `UNIX_MUNMAP_FAILURES` provides the Unix counterpart.
+// - Windows large-page failure taxonomy (R4-5/R5-4): two distinct failure modes
+//   that both incur syscall cost but are semantically separate.
+//   `WINDOWS_LARGE_PAGE_RETRY_FAILURES` counts ONLY the case where the initial
+//   large-page attempt failed AND the ordinary-page retry ALSO failed (both
+//   returned NULL). `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counts the case
+//   where an allocation succeeded but the returned base was misaligned, forcing
+//   a VirtualFree and fallback. Separating these lets a test distinguish "OS
+//   refused large pages entirely" from "large pages granted but alignment
+//   contract violated".
 //
 // `AtomicU64` storage, increments gated on `bench-internals` so a plain build
 // carries zero extra instructions (storage itself is also gated, not compiled
@@ -293,13 +302,11 @@ pub(crate) static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::ne
 pub(crate) static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of speculative large-page `VirtualAlloc` attempts that
-/// failed and incurred syscall cost without successfully taking the single-call fast path.
-/// This includes two distinct failure modes (Windows only — always 0 on Unix/miri):
-/// 1. The initial `VirtualAlloc` with `MEM_LARGE_PAGES` failed, the retry without
-///    `MEM_LARGE_PAGES` also failed, and the call returned an error.
-/// 2. Either the initial large-page attempt OR the ordinary-page retry succeeded,
-///    but the returned base address did not satisfy the requested alignment,
-///    forcing a `VirtualFree` and a fallthrough to the two-call path.
+/// fell back to ordinary pages and then still failed, incurring syscall cost without
+/// successful fast-path completion. This counts ONLY the case where the initial
+/// large-page attempt failed AND the ordinary-page retry ALSO failed (both syscalls
+/// returned NULL). Alignment failures on success are tracked separately by
+/// `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES`.
 ///
 /// This counter measures the syscall overhead of the speculative large-page retry
 /// logic that `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` does NOT capture — those
@@ -455,6 +462,29 @@ pub fn windows_large_page_retry_failures() -> u64 {
     WINDOWS_LARGE_PAGE_RETRY_FAILURES.load(Ordering::Relaxed)
 }
 
+/// `bench-internals`: number of large-page allocation attempts (initial OR
+/// retry) that succeeded but returned a misaligned base, forcing a `VirtualFree`
+/// and fallthrough to the two-call path. This is distinct from
+/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, which tracks failures that returned NULL
+/// (allocation refused); this counter tracks successful allocations that failed
+/// the alignment contract. On a healthy Windows kernel this should be zero,
+/// but it exists as defensive instrumentation for kernel/constant violations.
+/// Added by R5-4 (docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r5.md).
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: relaxed snapshot of the internal
+/// `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counter (large-page allocations that
+/// succeeded but returned misaligned base; private storage, this accessor is the
+/// public read surface). Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_large_page_alignment_failures() -> u64 {
+    WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES.load(Ordering::Relaxed)
+}
+
 /// `bench-internals`: relaxed snapshot of the internal `UNIX_MADVISE_ATTEMPTS`
 /// counter (private storage; this accessor is the public read surface).
 /// Diagnostic only.
@@ -532,15 +562,16 @@ pub fn huge_decommit_attempts() -> u64 {
     HUGE_DECOMMIT_ATTEMPTS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all twelve counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: reset all thirteen counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`,
 /// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, `UNIX_MADVISE_ATTEMPTS`,
-/// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
-/// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES`,
+/// `UNIX_MADVISE_SUCCESSES`, `UNIX_MUNMAP_FAILURES`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`,
-/// `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`, and `HUGE_DECOMMIT_ATTEMPTS`) to 0.
+/// `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`, `HUGE_DECOMMIT_ATTEMPTS`,
+/// and `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` -- all private storage, read via their
+/// respective accessor functions above) to 0.
 /// Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
@@ -553,6 +584,7 @@ pub fn reset_bench_internals_counters() {
     WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
     WINDOWS_LARGE_PAGE_RETRY_FAILURES.store(0, Ordering::Relaxed);
+    WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES.store(0, Ordering::Relaxed);
     UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
     UNIX_MUNMAP_FAILURES.store(0, Ordering::Relaxed);
@@ -2588,12 +2620,10 @@ fn win_reserve_commit(
             // and has not been released yet; releasing before handing to a caller prevents
             // a leak.
             unsafe { winapi_virtual_release(base.as_ptr()) };
-            // If we fell back from a large-page attempt, count it as a retry failure:
-            // we paid syscall cost (VirtualAlloc + VirtualFree) but still need to take
-            // the two-call slow path.
             #[cfg(feature = "bench-internals")]
-            if extra_commit_flags != 0 && !huge_granted {
-                WINDOWS_LARGE_PAGE_RETRY_FAILURES.fetch_add(1, Ordering::Relaxed);
+            if extra_commit_flags != 0 {
+                // Track alignment failures: allocation succeeded but base is misaligned.
+                WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES.fetch_add(1, Ordering::Relaxed);
             }
             // Fall through to the two-call path below.
         } else {
