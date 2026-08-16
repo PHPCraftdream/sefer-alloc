@@ -1211,6 +1211,16 @@ for completeness.
     > - **Evidence:** `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 + this file's item-1 closure entry (the LCM argument distinguishing the two ladders) + `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §5 (the ~40×→~1.8-2.1× correction that prompted this re-derivation).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L12`.
 
+49. **R4-5 — Windows huge-page speculative fast-path may miss expensively,
+    and existing counters do not show syscall cost (aligned-vmem).**
+
+    > **Current state**
+    > - **Status:** deferred, low-priority — observability added; measurement of real-world alignment/privilege/size distributions on Windows workloads is required before any further speculative-window optimization.
+    > - **Current number/verdict:** design-note filed — the `win_reserve_commit` fast-path threshold was extended to `GetLargePageMinimum()` to speculative-try large pages, but the existing `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` counters only count SUCCESSFUL completions, not the syscall cost of failed large-page attempts. The retry fallback can incur up to two additional `VirtualAlloc` calls and one `VirtualFree` on alignment failure before falling through to the two-call path, but this syscall overhead was not observable. A new `bench-internals`-gated counter `WINDOWS_LARGE_PAGE_RETRY_FAILURES` (`aligned_vmem::windows_large_page_retry_failures()`) is now added to measure exactly this failure mode — the ratio of failures to successful single-call fast-path completions indicates whether the speculative large-page window is too wide and should be narrowed.
+    > - **Next trigger:** measure real-world alignment/privilege/size distributions on target Windows workloads; ONLY if `WINDOWS_LARGE_PAGE_RETRY_FAILURES` / `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` shows a material failure rate should the speculative window be narrowed or removed. The current threshold (`GetLargePageMinimum()`) remains in place — this is observability-only, not a premature optimization removal.
+    > - **Evidence:** `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md` (finding R4-5); `crates/vmem/src/lib.rs` (counter declaration at `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, increment at `win_reserve_commit`'s large-page retry failure and its post-call alignment check, accessor `windows_large_page_retry_failures()`, reset in `reset_bench_internals_counters()`); `crates/vmem/Cargo.toml` (bench-internals feature documentation).
+    Full history: task #1022.
+
 44. **R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**
 
     > **Current state**

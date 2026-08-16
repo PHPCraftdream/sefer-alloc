@@ -17,6 +17,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `bench-internals` feature with diagnostic counters for path activation:
   - `unix_exact_reserve_attempts()` / `unix_exact_reserve_hits()`
   - `windows_reserve_commit_calls()` / `windows_reserve_commit_single_calls()` / `windows_reserve_commit_two_call_pairs()`
+  - `windows_large_page_retry_failures()`
   - `unix_madvise_attempts()` / `unix_madvise_successes()`
   - `windows_virtualfree_decommit_attempts()` / `windows_virtualfree_decommit_failures()`
   - `windows_virtualfree_release_failures()`

@@ -292,6 +292,28 @@ pub(crate) static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::ne
 #[doc(hidden)]
 pub(crate) static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: number of speculative large-page `VirtualAlloc` attempts that
+/// failed and incurred syscall cost without successfully taking the single-call fast path.
+/// This includes two distinct failure modes (Windows only — always 0 on Unix/miri):
+/// 1. The initial `VirtualAlloc` with `MEM_LARGE_PAGES` failed, the retry without
+///    `MEM_LARGE_PAGES` also failed, and the call returned an error.
+/// 2. Either the initial large-page attempt OR the ordinary-page retry succeeded,
+///    but the returned base address did not satisfy the requested alignment,
+///    forcing a `VirtualFree` and a fallthrough to the two-call path.
+///
+/// This counter measures the syscall overhead of the speculative large-page retry
+/// logic that `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` does NOT capture — those
+/// existing counters only increment on successful fast-path completion, not on
+/// the failed attempts that still paid syscall cost. A high ratio of this counter
+/// to `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` indicates the speculative large-page
+/// window may be too wide and should be narrowed after measuring real-world
+/// alignment/privilege/size distributions on target Windows workloads.
+/// See docs/perf/OPEN_ITEMS.md for the design note tracking this measurement gap.
+/// Added by R4-5 (docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md).
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_LARGE_PAGE_RETRY_FAILURES: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: total number of `madvise(2)` calls issued by
 /// `libc_madvise` (Unix only — always 0 on Windows/miri; that internal
 /// helper is private, so it is named here in code font rather than linked).
@@ -421,6 +443,18 @@ pub fn windows_reserve_commit_two_call_pairs() -> u64 {
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
 }
 
+/// `bench-internals`: relaxed snapshot of the internal
+/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES` counter (speculative large-page
+/// attempt failures that incurred syscall cost without successful fast-path
+/// completion; private storage, this accessor is the public read surface).
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_large_page_retry_failures() -> u64 {
+    WINDOWS_LARGE_PAGE_RETRY_FAILURES.load(Ordering::Relaxed)
+}
+
 /// `bench-internals`: relaxed snapshot of the internal `UNIX_MADVISE_ATTEMPTS`
 /// counter (private storage; this accessor is the public read surface).
 /// Diagnostic only.
@@ -477,9 +511,10 @@ pub fn windows_virtualfree_release_failures() -> u64 {
     WINDOWS_VIRTUALFREE_RELEASE_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all ten counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: reset all eleven counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
-/// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`, `UNIX_MADVISE_ATTEMPTS`,
+/// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`,
+/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
 /// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`,
@@ -495,6 +530,7 @@ pub fn reset_bench_internals_counters() {
     UNIX_EXACT_RESERVE_HITS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
+    WINDOWS_LARGE_PAGE_RETRY_FAILURES.store(0, Ordering::Relaxed);
     UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
     UNIX_MUNMAP_FAILURES.store(0, Ordering::Relaxed);
@@ -2352,7 +2388,11 @@ fn win_reserve_commit(
                                 huge_granted = false; // Fallback to ordinary pages
                                 n
                             }
-                            None => return Err(VmemError::last_os_error()),
+                            None => {
+                                #[cfg(feature = "bench-internals")]
+                                WINDOWS_LARGE_PAGE_RETRY_FAILURES.fetch_add(1, Ordering::Relaxed);
+                                return Err(VmemError::last_os_error());
+                            }
                         }
                     } else {
                         return Err(VmemError::last_os_error());
@@ -2380,6 +2420,13 @@ fn win_reserve_commit(
             // and has not been released yet; releasing before handing to a caller prevents
             // a leak.
             unsafe { winapi_virtual_release(base.as_ptr()) };
+            // If we fell back from a large-page attempt, count it as a retry failure:
+            // we paid syscall cost (VirtualAlloc + VirtualFree) but still need to take
+            // the two-call slow path.
+            #[cfg(feature = "bench-internals")]
+            if extra_commit_flags != 0 && !huge_granted {
+                WINDOWS_LARGE_PAGE_RETRY_FAILURES.fetch_add(1, Ordering::Relaxed);
+            }
             // Fall through to the two-call path below.
         } else {
             #[cfg(feature = "bench-internals")]

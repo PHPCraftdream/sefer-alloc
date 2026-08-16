@@ -105,8 +105,12 @@ fault-injection = ["lazy-commit"]
 # https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md
 # item 48, plus Windows `VirtualFree(MEM_DECOMMIT)` attempt/failure counters
 # (`aligned_vmem::windows_virtualfree_decommit_attempts()` /
-# `aligned_vmem::windows_virtualfree_decommit_failures()`) and Unix `munmap`
-# failures (`aligned_vmem::unix_munmap_failures()`). Mirrors
+# `aligned_vmem::windows_virtualfree_decommit_failures()`), Unix `munmap`
+# failures (`aligned_vmem::unix_munmap_failures()`), and a Windows speculative
+# large-page retry failure counter
+# (`aligned_vmem::windows_large_page_retry_failures()`, R4-5) measuring the
+# syscall overhead of failed large-page attempts that
+# `windows_reserve_commit_single_calls()` does NOT capture. Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the
