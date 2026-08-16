@@ -1026,8 +1026,17 @@ impl Reservation {
     /// or usable-span information loss.
     ///
     /// Use this when you need to temporarily extract all reservation state for
-    /// later reconstruction, such as in a custom allocator that persists metadata
-    /// across restarts or hands off reservations between components.
+    /// later reconstruction, such as in a custom allocator that hands off
+    /// reservations between components within the same process.
+    ///
+    /// **IMPORTANT:** `ReservationFullParts` is a plain struct with no `Drop`
+    /// implementation — dropping or forgetting it does NOT release the underlying
+    /// OS reservation. The reservation will leak until you reconstruct it via
+    /// `into_reservation()` and drop the resulting `Reservation`, or release it
+    /// manually via [`release`] (using the `ptr`, `len`, and `align` fields from
+    /// [`ReservationParts`]). If you only need manual release and don't require
+    /// preserving `base`, `len`, and `granted_huge`, prefer [`into_reservation_parts`](Self::into_reservation_parts)
+    /// instead, which provides the `release_parts` function.
     #[must_use]
     pub fn into_full_parts(self) -> ReservationFullParts {
         let parts = ReservationFullParts {
@@ -1245,16 +1254,20 @@ impl Reservation {
     /// reservation** compatible with `aligned-vmem`'s release path:
     ///
     /// - `base` is the *aligned usable* start; non-null, valid for `len` bytes,
-    ///   aligned to `align` AND to the runtime [`page_size()`] (not just the
-    ///   compile-time `PAGE`). On systems with non-4 KiB pages (e.g., 16 KiB on
+    ///   aligned to `align`. For correct `decommit`/`decommit_lazy` behavior,
+    ///   `base` must also be aligned to the runtime [`page_size()`] (not just
+    ///   the compile-time [`PAGE`]). On systems with non-4 KiB pages (e.g., 16 KiB on
     ///   Apple Silicon), passing a 4 KiB-aligned `base` will cause `decommit`,
     ///   `decommit_lazy`, or `munmap` calls to fail silently or return `EINVAL`.
-    /// - `len` is the usable span size, a non-zero multiple of both [`PAGE`] and
-    ///   the runtime [`page_size()`].
+    ///   **This alignment to page_size() is NOT checked by the constructor's
+    ///   `assert!`** — it is the caller's responsibility to ensure it.
+    /// - `len` is the usable span size, a non-zero multiple of [`PAGE`].
     /// - `reservation` is the *underlying OS reservation* start (often equal
     ///   to `base`, but may be lower because the reservation is over-reserved
-    ///   to achieve alignment and the full mapping is kept). It must be aligned
-    ///   to the runtime [`page_size()`].
+    ///   to achieve alignment and the full mapping is kept). For correct OS
+    ///   release behavior, it must be aligned to the runtime [`page_size()`].
+    ///   **This alignment to page_size() is NOT checked by the constructor's
+    ///   `assert!`** — it is the caller's responsibility to ensure it.
     /// - `reservation_len` on Unix and under miri MUST be the full length of
     ///   the underlying OS mapping/allocation — Unix's `release` passes it
     ///   directly to `munmap`, and miri's `release` passes it as the exact
@@ -1262,10 +1275,19 @@ impl Reservation {
     ///   or is undefined behavior (miri). On Windows, `VirtualFree(MEM_RELEASE)`
     ///   ignores this value, so it is advisory there — reporting the value
     ///   `Reservation::reservation_len` would report for an equivalent
-    ///   reservation is sufficient on Windows only. It must in all cases be a
-    ///   non-zero multiple of both `PAGE` and the runtime [`page_size()`] with
-    ///   `reservation_len >= len + (base - reservation)`; both are asserted at
-    ///   construction.
+    ///   reservation is sufficient on Windows only.
+    ///
+    ///   **Important:** On hosts where the OS page size exceeds [`PAGE`]
+    ///   (e.g., 16 KiB on Apple Silicon macOS, 64 KiB on some Linux
+    ///   configurations), `reservation_len` may under-report the actual OS
+    ///   mapping size — `mmap` rounds its length argument up to the page size,
+    ///   so `reserve_aligned(PAGE, PAGE)` actually maps a full 16 KiB page
+    ///   while `reservation_len()` returns `4096`. This is harmless for
+    ///   correctness (`munmap` rounds its length argument up the same way;
+    ///   `VirtualFree(MEM_RELEASE)` ignores the length on Windows), but it
+    ///   means `reservation_len` is a **logical** length, not a measure of the
+    ///   true OS reservation size. It must be a non-zero multiple of [`PAGE`]
+    ///   with `reservation_len >= len + (base - reservation)`.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
     /// - `granted_huge` MUST accurately reflect whether the OS actually
@@ -1365,6 +1387,8 @@ impl Reservation {
              base must be aligned to align; \
              reservation_len must be >= len + (base - reservation); \
              (reservation_len, align) must form a valid Layout; \
+             NOTE: alignment to runtime page_size() is NOT checked — \
+             caller must ensure base/reservation are page_size()-aligned; \
              got align={align}, reservation_len={reservation_len}, len={len}, \
              base={base:?}, reservation={reservation:?}"
         );

@@ -88,6 +88,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `from_raw_parts`'s contract documentation corrected: it takes six arguments,
   not five, and now requires runtime `page_size()` alignment rather than only
   the compile-time `PAGE` lower bound (R4-10, R4-6)
+- `from_raw_parts` documentation fixed to accurately reflect what the constructor's
+  `assert!` checks versus what remains the caller's responsibility. The documentation
+  previously required `len` and `reservation_len` to be multiples of both `PAGE`
+  and `page_size()`, and claimed "both are asserted at construction", but the
+  actual `assert!` only checks against `PAGE`. The fix clarifies: (a) logical
+  lengths (`len`, `reservation_len`) require only `PAGE` multiple (checked by
+  the assert), (b) addresses and operations (`base`, `reservation`, `decommit`/
+  `decommit_lazy` arguments) require `page_size()` alignment (NOT checked by the
+  assert, remains caller responsibility), and (c) `reservation_len` may under-report
+  the actual OS mapping size on hosts where `page_size()` > `PAGE` (harmless for
+  correctness, documented now) (R5-2)
+- `into_full_parts` documentation fixed: replaced "persists metadata across restarts"
+  (misleading — raw pointers don't survive process restarts) with "hands off
+  reservations between components within the same process", and added explicit
+  warning that dropping or forgetting `ReservationFullParts` does NOT release the
+  underlying OS reservation (R5-5)
 
 ### Removed
 
