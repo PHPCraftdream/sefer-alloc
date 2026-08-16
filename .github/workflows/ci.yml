@@ -193,13 +193,11 @@ jobs:
       # Finding II-14 (2026-08-16 prerelease audit): 32-bit Unix exact-size fast
       # path has zero CI coverage. Add at least a compile-only check for i686
       # to catch regressions in the cfg-gated `try_reserve_aligned_exact` path.
-      # Finding II-14 (2026-08-16 closing review): extend coverage to tests and
-      # optional features, and add musl target to verify the UB-class fix for
-      # wrong FFI `off_t` type.
-      - run: rustup target add i686-unknown-linux-gnu
-      - run: cargo check --target i686-unknown-linux-gnu --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
       # Finding II-1 (2026-08-16 closing review): add musl 32-bit target to compile-verify
       # that the correct `off_t` arm is selected (gated `not(target_env = "musl")`).
+      # Finding II-14 (2026-08-16 closing review): extend coverage to tests and optional features.
+      - run: rustup target add i686-unknown-linux-gnu
+      - run: cargo check --target i686-unknown-linux-gnu --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
       - run: rustup target add i686-unknown-linux-musl
       - run: cargo check --target i686-unknown-linux-musl --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
 

@@ -192,11 +192,13 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   syscall traffic on 64-bit if the fast path were kept.
 //   `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle the real hit rate.
 // - Windows: `win_reserve_commit` issues reserve+commit in either
-//   one syscall (the fast path for `align <= 64 KiB` on a full-span commit
-//   (`commit_len == size`), over-reserving nothing — base == region)
-//   or two syscalls (all other cases — `align > 64 KiB`, or a partial initial
+//   one syscall (the fast path for `align <= WIN_ALLOCATION_GRANULARITY` on a full-span commit
+//   (`commit_len == size`), or `align <= GetLargePageMinimum()` for large-page requests,
+//   over-reserving nothing — base == region)
+//   or two syscalls (all other cases — `align > WIN_ALLOCATION_GRANULARITY` for ordinary
+//   requests, `align > GetLargePageMinimum()` for large-page requests, or a partial initial
 //   commit (`commit_len != size`) — over-reserving `size + align` only when
-//   `align > 64 KiB` or the fast-reserve sub-path's own alignment check
+//   `align > WIN_ALLOCATION_GRANULARITY` or the fast-reserve sub-path's own alignment check
 //   misses; Windows cannot partially release a `MEM_RESERVE` region).
 //   `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`
 //   count each path separately for parity/comparison against the Unix
@@ -287,7 +289,7 @@ pub(crate) static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 /// single-call fast path (Windows only — always 0 on Unix/miri; that internal helper
 /// is private and platform-gated, so it is named here in code font rather than linked).
 /// Each call issues 1 syscall (`VirtualAlloc(MEM_RESERVE | MEM_COMMIT)`),
-/// which the fast path uses when `align <= 64 KiB` and `commit_len == size`.
+/// which the fast path uses when `align <= WIN_ALLOCATION_GRANULARITY` and `commit_len == size`.
 /// When a large-page request fails, a best-effort retry with ordinary pages
 /// issues a second syscall but is still counted as 1 in this counter — see the
 /// retry fallback code in `win_reserve_commit`. See the module-level
@@ -302,7 +304,7 @@ pub(crate) static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::ne
 /// Each call issues exactly 2 syscalls
 /// (`VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`, plus a possible
 /// third best-effort retry on a `huge-pages` commit failure — not counted
-/// here, see that call site). This path is used when `align > 64 KiB` or when
+/// here, see that call site). This path is used when `align > WIN_ALLOCATION_GRANULARITY` or when
 /// `commit_len != size` (the lazy-commit case). See the module-level
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
@@ -2102,8 +2104,9 @@ fn reserve_aligned_raw(
 /// Windows over-reserve + commit helper shared by the eager, lazy and huge
 /// paths. Takes two execution paths:
 ///
-/// **Single-call fast path** (`align <= WIN_ALLOCATION_GRANULARITY && commit_len == size`):
-/// reserves and commits `commit_len` bytes in one `VirtualAlloc` call with
+/// **Single-call fast path** (`align <= GetLargePageMinimum() && commit_len == size` for
+/// large-page requests, `align <= WIN_ALLOCATION_GRANULARITY && commit_len == size` for
+/// ordinary requests): reserves and commits `commit_len` bytes in one `VirtualAlloc` call with
 /// `MEM_RESERVE | MEM_COMMIT | extra_commit_flags` (e.g., `MEM_LARGE_PAGES`).
 /// If the initial call fails with `extra_commit_flags != 0`, it retries without
 /// the extra flags (ordinary-page fallback). Returns `(base, base, commit_len, huge_granted)`
@@ -2267,8 +2270,9 @@ fn win_reserve_commit(
         }
     }
 
-    // Two-call path (align > 64 KiB, or a partial initial commit, or single-call
-    // alignment check failed).
+    // Two-call path (align > WIN_ALLOCATION_GRANULARITY for ordinary requests,
+    // align > GetLargePageMinimum() for large-page requests, or a partial initial commit,
+    // or single-call alignment check failed).
     // task #921/V-32: when align <= WIN_ALLOCATION_GRANULARITY, try a fast-reserve
     // path: VirtualAlloc(NULL, size, MEM_RESERVE, ...) may return a base already
     // aligned to the requested alignment, avoiding the size+align over-reserve overhead.
@@ -2378,7 +2382,8 @@ fn win_reserve_commit(
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.fetch_add(1, Ordering::Relaxed);
     // task #921/V-7: the two-call path never requests MEM_LARGE_PAGES (always plain
     // MEM_COMMIT), so granted_huge is always false here. Only the single-call fast path
-    // (align <= WIN_ALLOCATION_GRANULARITY) can grant huge pages.
+    // (align <= GetLargePageMinimum() for large-page requests, align <= WIN_ALLOCATION_GRANULARITY
+    // otherwise) can grant huge pages.
     // NOTE: MEM_LARGE_PAGES on a pre-reserved (not pre-committed-with-large-pages) region
     // is empirically always rejected by Windows, so requesting it would be a guaranteed
     // wasted syscall anyway.
