@@ -1649,80 +1649,96 @@ fn into_full_parts_roundtrip_is_lossless() {
 }
 
 /// R4-11 / task #1019: `ReservationFullParts` preserves `granted_huge`
-/// metadata, while `ReservationParts` discards it. Proves that the lossless
-/// round-trip API correctly propagates the huge-page status.
+/// metadata via its public field, without requiring unsafe reconstruction.
+///
+/// This test verifies that the `granted_huge` field is present and accessible
+/// in `ReservationFullParts`. For the `granted_huge == false` case, we verify
+/// preservation on a real ordinary reservation. For the `granted_huge == true`
+/// case, we attempt a huge reservation under the `huge-pages` feature and
+/// verify metadata preservation if the OS actually grants huge pages.
+///
+/// The prior version of this test (fixed in the R5-3 audit finding) used a fake
+/// pointer (`0x1000`) and violated the safety contract of `from_raw_parts` with
+/// a false "// SAFETY: ... for the PURPOSE OF THIS TEST ONLY" comment.
 #[test]
 fn into_full_parts_preserves_granted_huge() {
-    use aligned_vmem::ReservationFullParts;
+    // Case 1: granted_huge == false (ordinary reservation)
+    // Verify on a REAL reservation, not a fake pointer.
+    let r = reserve_aligned(4 * PAGE, 2 * PAGE).expect("reserve");
 
-    // Construct `ReservationFullParts` with `granted_huge: true` to prove
-    // the field survives the round-trip. (We cannot reserve a genuine huge
-    // page in this test without hugetlbfs setup or admin privileges, but
-    // `from_raw_parts`'s contract only requires the value to accurately
-    // reflect what the OS granted — the constructor does not validate
-    // against actual OS state.)
-    let fake_base = 0x1000 as *mut u8;
-    let fake_reservation = fake_base;
-    let len = PAGE;
-    let reservation_len = PAGE;
-    let align = PAGE;
-    let granted_huge = true;
+    // Record the original values before moving `r`.
+    let original_base = r.as_ptr();
+    let original_len = r.len();
+    let original_res = r.reservation_ptr();
+    let original_res_len = r.reservation_len();
+    let original_align = r.align();
+    let original_is_huge = r.is_huge();
 
-    let full_parts = ReservationFullParts::new(
-        fake_base,
-        len,
-        fake_reservation,
-        reservation_len,
-        align,
-        granted_huge,
+    let full_parts = r.into_full_parts();
+
+    // The critical check: `granted_huge` field is present and accessible via
+    // pure metadata assertions, NO unsafe reconstruction needed.
+    assert!(
+        !full_parts.granted_huge,
+        "ordinary reservation must have granted_huge == false"
     );
 
-    // SAFETY: We pass a valid 4 KiB-aligned fake pointer with non-zero PAGE-
-    // multiple lengths and a power-of-two align >= PAGE. This satisfies the
-    // `from_raw_parts` contract for the PURPOSE OF THIS TEST ONLY — the
-    // reconstructed `Reservation` is never actually used (never read/written
-    // or dropped). The test only checks that `granted_huge` propagates.
+    // Verify the field matches the original reservation's reported value.
+    assert_eq!(
+        full_parts.granted_huge, original_is_huge,
+        "granted_huge field must match is_huge() from the original reservation"
+    );
+
+    // Verify all other fields are preserved as well.
+    assert_eq!(full_parts.base, original_base);
+    assert_eq!(full_parts.len, original_len);
+    assert_eq!(full_parts.reservation, original_res);
+    assert_eq!(full_parts.reservation_len, original_res_len);
+    assert_eq!(full_parts.align, original_align);
+
+    // Reconstruct and verify it's functional (honest round-trip, not just metadata).
+    // SAFETY: All fields come from a live, exclusively-owned reservation above.
     let reconstructed = unsafe { full_parts.into_reservation() };
+    assert!(
+        !reconstructed.is_huge(),
+        "reconstructed must preserve granted_huge == false"
+    );
+    // Drop releases the reservation exactly once.
 
-    // The critical check: `granted_huge` survived the round-trip.
-    assert!(reconstructed.is_huge());
+    // Case 2: granted_huge == true (if the OS grants huge pages)
+    // This requires the `huge-pages` feature and a real hugetlbfs configuration.
+    // We don't assert huge pages were actually granted (best-effort fallback),
+    // but we verify that IF they were granted, the metadata is preserved.
+    #[cfg(feature = "huge-pages")]
+    {
+        use aligned_vmem::reserve_aligned_huge;
 
-    // Prevent the fake reservation from being actually released (the pointer
-    // is not backed by a real OS mapping). We've already validated that the
-    // field propagates correctly; dropping would be UB here.
-    core::mem::forget(reconstructed);
-}
+        let r_huge = reserve_aligned_huge(2 * 1024 * 1024, 2 * 1024 * 1024)
+            .expect("huge reservation (or fallback)");
 
-/// R4-11 / task #1019: `ReservationParts` loses `granted_huge` metadata,
-/// proving the necessity of the `ReservationFullParts` lossless API.
-#[test]
-fn into_reservation_parts_loses_granted_huge() {
-    use aligned_vmem::reserve_aligned;
+        // Record whether it was actually granted before moving `r_huge`.
+        let actually_granted = r_huge.is_huge();
+        let full_parts_huge = r_huge.into_full_parts();
 
-    let r = reserve_aligned(PAGE, PAGE).expect("reserve");
+        // Verify the metadata is accessible. Whether it's true or false depends
+        // on host configuration, but the field MUST be accessible without
+        // unsafe reconstruction.
+        let actually_granted_huge = full_parts_huge.granted_huge;
 
-    // Extract via the legacy API (discards `granted_huge`).
-    let parts = r.into_reservation_parts();
+        // Verify the recorded value matches the parts field.
+        assert_eq!(
+            actually_granted_huge, actually_granted,
+            "granted_huge field must match the original reservation's is_huge()"
+        );
 
-    // To reconstruct via `from_raw_parts`, the caller MUST preserve
-    // `granted_huge` separately. If they default to `false`, the huge-page
-    // status is lost even if the original reservation used huge pages.
-    //
-    // This test does NOT actually test with a huge reservation (requires
-    // hugetlbfs setup). Instead, it proves the structural gap: `parts`
-    // alone is insufficient for a lossless round-trip — the caller must
-    // manually track three additional fields (base, len, granted_huge).
-
-    // The reconstructed reservation would require the caller to remember:
-    // - original_base (not in `parts`)
-    // - original_len (not in `parts`)
-    // - original_granted_huge (not in `parts`)
-    //
-    // Without those, a round-trip via `from_raw_parts` is impossible.
-    // This structural limitation is why `ReservationFullParts` exists.
-
-    // Release the reservation via the proper `release_parts` API.
-    // SAFETY: `parts.ptr` was obtained from a live reservation's
-    // `into_reservation_parts()` above and has not been released.
-    unsafe { aligned_vmem::release_parts(parts) };
+        // Verify the round-trip preserves the value.
+        // SAFETY: All fields come from a live reservation above.
+        let reconstructed_huge = unsafe { full_parts_huge.into_reservation() };
+        assert_eq!(
+            reconstructed_huge.is_huge(),
+            actually_granted_huge,
+            "reconstructed must preserve the original granted_huge value"
+        );
+        // Drop releases the reservation exactly once.
+    }
 }
