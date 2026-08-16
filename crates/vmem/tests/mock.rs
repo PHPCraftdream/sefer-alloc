@@ -173,7 +173,7 @@ fn call_constructors_work_from_external_tests() {
     );
 }
 
-/// task #953 (finding 6.4): test all 8 `Call` constructors, not just the 3
+/// II-16 (2026-08-16 pre-release audit finding): test all 8 `Call` constructors, not just the 3
 /// exercised by the original test (reserve/decommit/release). The remaining 5
 /// (reserve_lazy, reserve_huge, decommit_lazy, recommit, commit_range) are
 /// public API and must be verified to work.

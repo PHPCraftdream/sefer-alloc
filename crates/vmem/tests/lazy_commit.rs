@@ -537,7 +537,7 @@ fn windows_lazy_reserve_saves_commit_charge() {
     }
 }
 
-/// Round 2 pre-release review, task #953 (finding 6.4): observe safe
+/// II-17 (2026-08-16 pre-release audit finding): observe safe
 /// `Reservation::decommit` over the *never-committed tail* of a lazy
 /// Windows reservation. The safe method's bound is `len()`, which on a
 /// lazy reservation includes reserved-but-uncommitted pages; Microsoft

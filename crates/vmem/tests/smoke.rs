@@ -146,7 +146,7 @@ fn reservation_parts_prevents_parameter_swap() {
     unsafe { aligned_vmem::release(raw2, raw_len2, raw_align2) };
 }
 
-/// Round 2 pre-release review, task #953 (finding 6.4): verify that
+/// II-16 (2026-08-16 pre-release audit finding): verify that
 /// `ReservationParts::new` round-trips correctly through `release_parts`,
 /// closing the new → release path that `into_reservation_parts` already
 /// exercises (the reservation → new → release direction was the gap).

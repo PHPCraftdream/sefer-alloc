@@ -674,11 +674,12 @@ impl Reservation {
     }
 
     // Historical note (task #848, #921): the Windows single-call fast path
-    // (`align <= 64 KiB`) and the two-call path's fast-reserve sub-path
-    // (`align <= 64 KiB` via `reserve_aligned_lazy`) are the primary under-
-    // report cases for this method; the page-rounding `mmap` case is the
-    // third. These are documented in the method's rustdoc above without
-    // task-number references.
+    // (align <= WIN_ALLOCATION_GRANULARITY, typically 64 KiB; widens to
+    // GetLargePageMinimum() when requesting large pages) and the two-call
+    // path's fast-reserve sub-path (align <= WIN_ALLOCATION_GRANULARITY
+    // via reserve_aligned_lazy) are the primary under-report cases for
+    // this method; the page-rounding mmap case is the third. These are
+    // documented in the method's rustdoc above without task-number references.
 
     /// The alignment requested at reservation time.
     #[must_use]

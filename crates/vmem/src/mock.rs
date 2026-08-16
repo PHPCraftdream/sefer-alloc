@@ -52,7 +52,7 @@
 //!
 //! Reentrant calls (e.g., `reserve_aligned` called from within an allocator
 //! invoked by this mock's own `record` function) are silently dropped by
-//! design — see the `record` function's "Reentrancy safety" section below.
+//! design — see the `record` function's `# Reentrancy safety` section.
 //!
 //! While a pathological TLS-teardown ordering could theoretically interact
 //! with this, the current implementation's use of `try_with` for the
