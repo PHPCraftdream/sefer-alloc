@@ -2322,6 +2322,34 @@ resolved" below.)_
      practice.
    Full history: this entry.
 
+67. **Commit `4a6c77e`'s body describes a test branch that does not exist; the
+   text is unrewritable, so it is recorded here instead.** (Filed 2026-08-16,
+   task #1035, finding F12 of
+   `docs/reviews/2026-08-16-aligned-vmem-r6-wave-review.md`.)
+
+   - **Status:** OPEN as a citation hazard only — no code or doc in the tree is
+     wrong. Nothing to fix; this card exists so a future round does not quote
+     the commit body as a description of the code.
+   - **Current number/verdict:** `4a6c77e`'s message says of the rewritten
+     `into_full_parts_preserves_granted_huge`: "A huge-page arm runs when the
+     OS actually grants huge pages, with an else arm asserting instance ==
+     platform so the test is not vacuous on a runner without a hugetlb pool."
+     The test in `crates/vmem/tests/smoke.rs` has no such branch — it is a flat
+     sequence of metadata assertions (`full_parts.granted_huge ==
+     original_is_huge`, then field-by-field equality, then a `!reconstructed
+     .is_huge()` check). Verified for this card by reading the current test,
+     not from the report. The described if/else was presumably planned and
+     then not written, or belonged to a different test.
+   - **Scope check performed:** the wording exists ONLY in the immutable commit
+     body. `grep -niE "huge-page arm|else arm|not vacuous on a runner"` across
+     both CHANGELOGs, this index, `crates/vmem/tests/*.rs` and
+     `crates/vmem/src/*.rs` returns nothing. Git history is not rewritten for
+     this — the same non-retroactive posture CLAUDE.md already takes for the
+     R30-12 commit-prefix taxonomy ("Explicitly NOT a history rewrite").
+   - **Next trigger:** none. Close this card if the cited test is ever rewritten
+     to actually have the branch, or if the commit ceases to be referenced.
+   Full history: this entry.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

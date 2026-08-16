@@ -557,12 +557,12 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
 }
 
 /// `bench-internals`: number of decommit calls made on huge-page reservations.
-/// This is an upper bound: it counts every call regardless of whether the underlying
-/// syscall succeeded or failed due to huge-page incompatibility. On Linux, `madvise`
-/// on a `MAP_HUGETLB` mapping can succeed if the range is huge-page-aligned; on Windows,
-/// `VirtualFree(MEM_DECOMMIT)` fails on large-page regions. Use this as a denominator
-/// together with syscall-specific failure counters (e.g., `windows_virtualfree_decommit_failures`)
-/// to estimate the true huge-page incompatibility rate. Added to address finding
+/// These calls are short-circuited immediately (no syscall is issued) because
+/// decommit is incompatible with huge-page reservations on both Windows and Linux:
+/// - On Windows, `VirtualFree(MEM_DECOMMIT)` fails on large-page regions.
+/// - On Linux, `madvise` on a `MAP_HUGETLB` mapping only works at huge-page granularity,
+///   so any [`page_size()`]-granular offset gets `EINVAL` and does nothing.
+/// The counter reflects calls that hit this early-exit path. Added to address finding
 /// R4-4 (docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md).
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
@@ -1170,12 +1170,26 @@ impl Reservation {
         if end > self.len() {
             return;
         }
-        // Increment diagnostic counter for huge-page decommit attempts
-        // (finding R4-4). This is gated on the feature and the increment is a single
-        // relaxed fetch_add — zero overhead when the feature is off.
-        #[cfg(feature = "bench-internals")]
+        // Huge-page reservations: skip the backend call entirely (finding R6-7).
+        // Decommit cannot work here on either platform — `VirtualFree(MEM_DECOMMIT)`
+        // fails on a large-page region, and `madvise` on a `MAP_HUGETLB` mapping
+        // only operates at huge-page granularity, so a `page_size()`-granular
+        // range is rejected. Issuing the syscall anyway is pure cost.
+        //
+        // The `if` itself is UNCONDITIONAL and only the diagnostic increment is
+        // feature-gated. Putting the whole block (and therefore the `return`)
+        // behind `#[cfg(feature = "bench-internals")]` would confine the
+        // optimisation to diagnostic builds and leave the useless syscall in
+        // every production build — the exact inverse of the point — while also
+        // making an observable behaviour (syscall issued or not) depend on a
+        // feature flag. Caught at review of task #1040's delegated diff, which
+        // had exactly that shape.
         if self.is_huge() {
+            // Counts calls that hit this early-exit path; the increment is a
+            // single relaxed fetch_add and compiles out when the feature is off.
+            #[cfg(feature = "bench-internals")]
             HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+            return;
         }
         // SAFETY: `self.as_ptr()` is a valid reservation base, and we've just
         // verified `[start, end)` is within `self.len()`. The free function's
@@ -1204,10 +1218,13 @@ impl Reservation {
         if end > self.len() {
             return;
         }
-        // Increment diagnostic counter for huge-page decommit attempts (see `Self::decommit`)
-        #[cfg(feature = "bench-internals")]
+        // Huge-page reservations: skip the backend call entirely (finding R6-7).
+        // Same reasoning, same cfg placement rule as `Self::decommit` above —
+        // the `if`/`return` are unconditional, only the counter is gated.
         if self.is_huge() {
+            #[cfg(feature = "bench-internals")]
             HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+            return;
         }
         // SAFETY: same safety argument as `decommit` above.
         unsafe { decommit_lazy(self.as_ptr(), start, end) };
@@ -1353,14 +1370,32 @@ impl Reservation {
     ///   release behavior, it must be aligned to the runtime [`page_size()`].
     ///   **This alignment to page_size() is NOT checked by the constructor's
     ///   `assert!`** — it is the caller's responsibility to ensure it.
-    /// - `reservation_len` on Unix and under miri MUST be the full length of
-    ///   the underlying OS mapping/allocation — Unix's `release` passes it
-    ///   directly to `munmap`, and miri's `release` passes it as the exact
-    ///   `Layout` size to `dealloc`, so an undersized value leaks memory (Unix)
-    ///   or is undefined behavior (miri). On Windows, `VirtualFree(MEM_RELEASE)`
-    ///   ignores this value, so it is advisory there — reporting the value
-    ///   `Reservation::reservation_len` would report for an equivalent
-    ///   reservation is sufficient on Windows only.
+    /// - `reservation_len` must cover the underlying OS mapping/allocation.
+    ///   The required PRECISION differs per backend, and is spelled out here
+    ///   because the two halves of this rule used to contradict each other
+    ///   (task #1035, finding F9: this bullet said an undersized value "leaks
+    ///   memory (Unix)", while the "Important" note below said under-reporting
+    ///   on a large-page host is "harmless for correctness" — both about Unix):
+    ///   - **Native Unix:** `release` passes this value straight to `munmap`,
+    ///     which ROUNDS THE LENGTH UP to a whole page. A value short of the
+    ///     true mapping by less than one runtime page therefore still unmaps
+    ///     the whole mapping and is harmless — that is exactly the case the
+    ///     "Important" note below describes, and it is the case this crate
+    ///     itself produces on a host whose page size exceeds [`PAGE`]. What
+    ///     DOES leak is a value short by a whole page or more: those trailing
+    ///     pages stay mapped for the life of the process.
+    ///   - **miri:** `release` reconstructs a `Layout` from
+    ///     `reservation_len`/`align` and hands it to `std::alloc::dealloc`,
+    ///     which requires the EXACT size the allocation was made with — no
+    ///     rounding, and a mismatch is undefined behaviour rather than a leak.
+    ///     The rounding case above cannot arise here: under `cfg(miri)`
+    ///     `query_os_page_size()` returns [`PAGE`] unconditionally, so
+    ///     `page_size() == PAGE` and there is no larger runtime page to round
+    ///     up to. The exact-size requirement is unqualified under miri.
+    ///   - **Windows:** `VirtualFree(MEM_RELEASE)` ignores the length
+    ///     entirely, so the value is advisory — reporting whatever
+    ///     `Reservation::reservation_len` would report for an equivalent
+    ///     reservation is sufficient.
     ///
     ///   **Important:** On hosts where the OS page size exceeds [`PAGE`]
     ///   (e.g., 16 KiB on Apple Silicon macOS, 64 KiB on some Linux
