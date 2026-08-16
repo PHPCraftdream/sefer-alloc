@@ -110,7 +110,10 @@ fault-injection = ["lazy-commit"]
 # large-page retry failure counter
 # (`aligned_vmem::windows_large_page_retry_failures()`, R4-5) measuring the
 # syscall overhead of failed large-page attempts that
-# `windows_reserve_commit_single_calls()` does NOT capture. Mirrors
+# `windows_reserve_commit_single_calls()` does NOT capture, and
+# `aligned_vmem::huge_decommit_attempts()` (R4-4) counting decommit calls on
+# huge-page reservations (an upper bound for estimating the true huge-page
+# incompatibility rate). Mirrors
 # sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the

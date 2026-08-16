@@ -58,7 +58,10 @@ struct FaultState {
     counter: u32,
 }
 
-static FAULT_STATE: Mutex<FaultState> = Mutex::new(FaultState { target: 0, counter: 0 });
+static FAULT_STATE: Mutex<FaultState> = Mutex::new(FaultState {
+    target: 0,
+    counter: 0,
+});
 
 /// When `> 0`, the next real commit call fails without touching the OS and
 /// decrements this counter. `0` disarms. See [`arm_fail_next`].

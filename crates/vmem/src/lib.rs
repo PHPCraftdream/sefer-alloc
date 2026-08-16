@@ -502,6 +502,18 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.load(Ordering::Relaxed)
 }
 
+/// `bench-internals`: number of decommit calls made on huge-page reservations.
+/// This is an upper bound: it counts every call regardless of whether the underlying
+/// syscall succeeded or failed due to huge-page incompatibility. On Linux, `madvise`
+/// on a `MAP_HUGETLB` mapping can succeed if the range is huge-page-aligned; on Windows,
+/// `VirtualFree(MEM_DECOMMIT)` fails on large-page regions. Use this as a denominator
+/// together with syscall-specific failure counters (e.g., `windows_virtualfree_decommit_failures`)
+/// to estimate the true huge-page incompatibility rate. Added to address finding
+/// R4-4 (docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md).
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static HUGE_DECOMMIT_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: relaxed snapshot of `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`.
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
@@ -511,15 +523,25 @@ pub fn windows_virtualfree_release_failures() -> u64 {
     WINDOWS_VIRTUALFREE_RELEASE_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all eleven counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: relaxed snapshot of `HUGE_DECOMMIT_ATTEMPTS`.
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn huge_decommit_attempts() -> u64 {
+    HUGE_DECOMMIT_ATTEMPTS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all twelve counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`,
 /// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
 /// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`,
-/// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`, and
-/// `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`) to 0. Test/bench hook only —
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`,
+/// `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`, and `HUGE_DECOMMIT_ATTEMPTS`) to 0.
+/// Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
@@ -537,6 +559,7 @@ pub fn reset_bench_internals_counters() {
     WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.store(0, Ordering::Relaxed);
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.store(0, Ordering::Relaxed);
     WINDOWS_VIRTUALFREE_RELEASE_FAILURES.store(0, Ordering::Relaxed);
+    HUGE_DECOMMIT_ATTEMPTS.store(0, Ordering::Relaxed);
 }
 
 /// Validate a queried OS page size, falling back to PAGE if the value is invalid.
@@ -848,6 +871,41 @@ impl Reservation {
         self.granted_huge
     }
 
+    /// Returns `true` if the current platform guarantees that eager [`Self::decommit`]
+    /// returns physical backing to the OS and zero-fills on next access, `false` otherwise.
+    ///
+    /// Platform behavior:
+    /// - **Linux (all targets)**: returns `true`. `MADV_DONTNEED` unmaps physical pages
+    ///   and re-faults fresh zero pages on next access.
+    /// - **Windows**: returns `true`. `MEM_DECOMMIT` unmaps physical pages and
+    ///   re-faults fresh zero pages on next access.
+    /// - **Darwin family (macOS/iOS/tvOS/watchOS)**: returns `false`. `MADV_DONTNEED`
+    ///   is advisory-only for anonymous memory and does not reliably unmap/zero pages.
+    ///   A decommit+recommit roundtrip can observe old data still resident.
+    /// - **BSD family (FreeBSD/DragonFly/NetBSD/OpenBSD)**: returns `false`. Same
+    ///   advisory-only caveat as Darwin for eager decommit. (Note: lazy decommit
+    ///   via [`decommit_lazy`] DOES reclaim on BSD via `MADV_FREE`, even though
+    ///   eager decommit does not.)
+    ///
+    /// This is a compile-time constant per platform: the return value is the same
+    /// for all calls within a single compilation unit, determined by the target
+    /// OS triple. It provides programmatic access to the platform-specific guarantee
+    /// that [`Self::decommit`]'s rustdoc describes in prose.
+    #[must_use]
+    #[inline]
+    pub const fn decommit_reclaims_and_zeroes() -> bool {
+        cfg!(not(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )))
+    }
+
     /// Consume the handle WITHOUT releasing the OS reservation, returning the
     /// `(reservation_ptr, reservation_len, align)` the caller must later hand to
     /// [`release`] exactly once. Use this when your allocator records the
@@ -938,6 +996,10 @@ impl Reservation {
     /// the underlying implementation with `self.as_ptr()` as base and
     /// automatically ensures `[start, end)` is within the reservation's usable span.
     ///
+    /// **Programmatically check platform guarantees:** use
+    /// [`Self::decommit_reclaims_and_zeroes`] to query whether the current
+    /// platform guarantees reclaim+zero-fill semantics.
+    ///
     /// Hint the OS to return the physical backing of `[start, end)` while keeping the
     /// address-space reservation alive. On Linux and Windows this is guaranteed to
     /// return physical backing and zero-fill on next access (Linux `MADV_DONTNEED`,
@@ -953,11 +1015,20 @@ impl Reservation {
     ///
     /// See [`decommit`] for platform divergence notes (Windows crashes on write
     /// before recommit, Linux does not), huge-page incompatibility, and Darwin
-    /// zero-fill caveats.
+    /// zero-fill caveats. Under the `bench-internals` feature, the
+    /// [`huge_decommit_attempts`] counter is incremented when decommit
+    /// is called on a huge-page reservation.
     pub fn decommit(&self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return;
+        }
+        // Increment diagnostic counter for huge-page decommit attempts
+        // (finding R4-4). This is gated on the feature and the increment is a single
+        // relaxed fetch_add — zero overhead when the feature is off.
+        #[cfg(feature = "bench-internals")]
+        if self.is_huge() {
+            HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
         }
         // SAFETY: `self.as_ptr()` is a valid reservation base, and we've just
         // verified `[start, end)` is within `self.len()`. The free function's
@@ -978,11 +1049,18 @@ impl Reservation {
     ///
     /// See [`decommit_lazy`] for the platform-specific cost inversion on macOS/iOS
     /// (this variant actually drops RSS immediately there, unlike the eager path)
-    /// and other caveats.
+    /// and other caveats. Under the `bench-internals` feature, the
+    /// [`huge_decommit_attempts`] counter is incremented when decommit
+    /// is called on a huge-page reservation (same logic as `Self::decommit`).
     pub fn decommit_lazy(&self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return;
+        }
+        // Increment diagnostic counter for huge-page decommit attempts (see `Self::decommit`)
+        #[cfg(feature = "bench-internals")]
+        if self.is_huge() {
+            HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
         }
         // SAFETY: same safety argument as `decommit` above.
         unsafe { decommit_lazy(self.as_ptr(), start, end) };
@@ -1676,12 +1754,20 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 
 /// Decommit pages `[base + start, base + end)`: hint the OS to return
 /// their physical backing while keeping the address-space reservation alive.
-/// On Linux and Windows this is guaranteed to return physical backing and
-/// zero-fill on next access (Linux `MADV_DONTNEED`, Windows `MEM_DECOMMIT`).
-/// On the Darwin family (macOS/iOS/tvOS/watchOS) and the four BSDs
-/// (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
-/// zero-fill or reclaim guarantee — the physical pages may remain resident and
-/// old data may be observed after a decommit+recommit roundtrip.
+///
+/// **Programmatically check platform guarantees:** use
+/// [`Reservation::decommit_reclaims_and_zeroes`] to query whether the current
+/// platform guarantees reclaim+zero-fill semantics. Returns `true` on Linux/Windows,
+/// `false` on Darwin/BSD where decommit is advisory-only.
+///
+/// **Platform behavior:**
+/// - On Linux and Windows this is guaranteed to return physical backing and
+///   zero-fill on next access (Linux `MADV_DONTNEED`, Windows `MEM_DECOMMIT`).
+/// - On the Darwin family (macOS/iOS/tvOS/watchOS) and the four BSDs
+///   (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
+///   zero-fill or reclaim guarantee — the physical pages may remain resident and
+///   old data may be observed after a decommit+recommit roundtrip.
+///   See [`Reservation::decommit_reclaims_and_zeroes`].
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
 /// A no-op if the range is empty.
@@ -1709,16 +1795,21 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// item 6 (filed 2026-07-30) for the incident record and status.
 ///
-/// **Huge-page incompatibility (task #843 V4):** on both Windows and Linux,
-/// decommit **does not work** on huge-page reservations (those returned by
-/// [`reserve_aligned_huge`] with [`Reservation::is_huge`] == `true`).
+/// **Huge-page incompatibility (task #843 V4, finding R4-4):** on both Windows
+/// and Linux, decommit **does not work** on huge-page reservations (those
+/// returned by [`reserve_aligned_huge`] with [`Reservation::is_huge`] == `true`).
 /// On Windows, `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions.
 /// On Linux, `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted
 /// only at huge-page granularity, so any [`page_size()`]-granular offset gets
 /// `EINVAL` and does nothing. The behavior is therefore indistinguishable from
 /// a silent no-op: the caller's RSS does not decrease, and subsequent reads
-/// return the old (stale) data rather than zeroed pages. Use [`reserve_aligned`]
-/// instead if you need decommit functionality.
+/// return the old (stale) data rather than zeroed pages.
+///
+/// **Diagnostic visibility:** under the `bench-internals` feature, the
+/// [`huge_decommit_attempts`] counter is incremented each time
+/// decommit is called on a huge-page reservation, providing at least
+/// observability in measurement builds despite the silent API contract.
+/// Use [`reserve_aligned`] instead if you need working decommit.
 ///
 /// **Darwin zero-fill gap (confirmed as a real, failing-test-level gap by
 /// this crate's first real-macOS CI run, 2026-08-13 — the underlying hazard
@@ -2944,9 +3035,15 @@ fn unix_reserve(
     // causing `UNIX_EXACT_RESERVE_ATTEMPTS` to be incremented twice for one logical reserve.
     #[cfg(target_pointer_width = "32")]
     {
-        #[cfg(all(any(target_os = "linux", target_os = "android"), feature = "huge-pages"))]
+        #[cfg(all(
+            any(target_os = "linux", target_os = "android"),
+            feature = "huge-pages"
+        ))]
         let huge_exact_already_tried = huge && align == LINUX_HUGE_PAGE_SIZE;
-        #[cfg(not(all(any(target_os = "linux", target_os = "android"), feature = "huge-pages")))]
+        #[cfg(not(all(
+            any(target_os = "linux", target_os = "android"),
+            feature = "huge-pages"
+        )))]
         let huge_exact_already_tried = false;
 
         if !huge_exact_already_tried {
@@ -3359,11 +3456,7 @@ compile_error!(
 // we fail compilation with a clear diagnostic. This is a release decision:
 // adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]`
 // arm with the correct MIPS-specific constant values. See `docs/CORRECTNESS_OPEN_ITEMS.md`.
-#[cfg(all(
-    unix,
-    not(miri),
-    any(target_arch = "mips", target_arch = "mips64")
-))]
+#[cfg(all(unix, not(miri), any(target_arch = "mips", target_arch = "mips64")))]
 compile_error!(
     "aligned-vmem does not support MIPS: MAP_ANON/MAP_HUGETLB constant values \
      differ from the values this crate hardcodes, causing every reservation to \

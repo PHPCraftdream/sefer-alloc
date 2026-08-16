@@ -176,7 +176,9 @@ technical explanation of each:
   repository since Round 9, before this crate was extracted); no fix is
   implemented yet — see
   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
-  for the open item.
+  for the open item. Use `Reservation::decommit_reclaims_and_zeroes()` to
+  programmatically query whether the current platform guarantees reclaim+zero-fill
+  semantics.
 - **BSD (FreeBSD/DragonFly/NetBSD/OpenBSD): the same advisory-only eager
   `decommit` caveat as Darwin, but lazy `decommit_lazy` genuinely reclaims.**
   `MADV_DONTNEED` is advisory-only for anonymous memory on the four BSDs too
@@ -186,6 +188,8 @@ technical explanation of each:
   advice on BSD (as on Darwin's `MADV_FREE_REUSABLE`) DOES do something real:
   it drops the physical footprint rather than being a no-op — see
   `decommit`'s own rustdoc for the precise wording this caveat mirrors.
+  Use `Reservation::decommit_reclaims_and_zeroes()` to programmatically query
+  whether the current platform guarantees reclaim+zero-fill semantics.
   REASONED-FROM-SPEC only (no BSD CI runner in this crate to verify against
   empirically); not independently confirmed the way the Darwin gap above was
   by a real CI run.
