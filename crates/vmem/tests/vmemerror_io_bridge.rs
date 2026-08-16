@@ -43,3 +43,23 @@ fn vmemerror_unknown_code_maps_to_other() {
     let error_msg = format!("{}", io_error);
     assert!(error_msg.contains("unknown OS error code"));
 }
+
+/// Test that VmemError with an OS code above i32::MAX maps to io::Error::other
+/// (the high-bit branch of the From<VmemError> for io::Error impl).
+/// This tests the fix from task #946/G-2, which replaced an unchecked `as i32`
+/// cast with i32::try_from to avoid truncating codes with the high bit set.
+#[test]
+fn vmemerror_high_bit_code_maps_to_other() {
+    // 0x8007_000E is a HRESULT with the high bit set; it does not fit in i32.
+    // The Windows HRESULT facility uses the high bit to indicate failure.
+    let error_with_high_bit = VmemError::from_os_code(0x8007_000E);
+    let io_error: Error = error_with_high_bit.into();
+
+    // Should be Other kind (overflow path falls back to io::Error::other)
+    assert_eq!(io_error.kind(), ErrorKind::Other);
+    // No raw_os_error available (code doesn't fit in i32)
+    assert_eq!(io_error.raw_os_error(), None);
+    // The error message should mention the OS error code (preserved via other)
+    let error_msg = format!("{}", io_error);
+    assert!(error_msg.contains("OS virtual-memory error (code 2147942414)")); // 0x8007_000E = 2147942414
+}

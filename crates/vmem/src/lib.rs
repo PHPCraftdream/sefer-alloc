@@ -277,8 +277,7 @@ pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 /// Covers every `madvise` call site reachable through `decommit_pages_impl`
 /// (both `DecommitKind::Eager` — `MADV_DONTNEED` — and
 /// `DecommitKind::Lazy` — `MADV_FREE`/`MADV_FREE_REUSABLE`/`MADV_DONTNEED`
-/// fallback), NOT the separate `MADV_HUGEPAGE` hint call in
-/// `libc_madvise_hugepage`. Added by task #882 as the empirical oracle for
+/// fallback). Added by task #882 as the empirical oracle for
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// item 48: `libc_madvise` itself discards
 /// `madvise`'s return value by design (task #719 — a failure there is not a
@@ -1819,9 +1818,14 @@ pub fn try_reserve_aligned_lazy(
 // ---------------------------------------------------------------------------
 
 /// Reserve `size` bytes aligned to `align`, requesting OS **large / huge
-/// pages** (Linux `MAP_HUGETLB` + `MADV_HUGEPAGE`, Windows `MEM_LARGE_PAGES`).
+/// pages** (Linux `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`).
 /// Currently a **no-op on macOS and other non-Linux Unix** — it falls back to
 /// an ordinary reservation, identical to [`reserve_aligned`].
+///
+/// **Transparent-huge-page hinting (Linux `MADV_HUGEPAGE`) is not used:** it
+/// cannot affect an already-explicitly-huge `MAP_HUGETLB` mapping (the pages
+/// are already huge), so issuing it would be a wasted syscall. This crate's
+/// strategy is the explicit hugetlbfs path only.
 ///
 /// Large pages reduce TLB pressure for big allocator segments. The request is
 /// **best-effort**: if the OS refuses large pages (none configured, no
@@ -2593,14 +2597,6 @@ fn unix_reserve(
     // `munmap` at `region_ptr` (provably page-aligned by `mmap`'s contract)
     // instead of two at potentially misaligned offsets. Cost: up to `align`
     // bytes of untouched VA held for the reservation's lifetime (no RSS).
-    #[cfg(feature = "huge-pages")]
-    if granted_huge {
-        // SAFETY: `base` is the start of a live `size`-byte mapping; a
-        // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
-        // Only issued when huge pages were actually granted (MAP_HUGETLB
-        // succeeded), not on the ordinary-page fallback path.
-        unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
-    }
     Ok((
         base,
         // SAFETY: `region_ptr` is confirmed non-null above (both the `p` and
@@ -2689,17 +2685,6 @@ fn try_reserve_aligned_exact(
     UNIX_EXACT_RESERVE_HITS.fetch_add(1, Ordering::Relaxed);
     // SAFETY: non-null and proven `align`-aligned.
     let base = unsafe { NonNull::new_unchecked(region_ptr as *mut u8) };
-    #[cfg(feature = "huge-pages")]
-    if huge {
-        // Unlike `unix_reserve`, which has a fallback-to-ordinary-pages branch where
-        // `huge == true` may not reflect an actual grant, this exact-size fast path
-        // gates the hint on `huge` because a successful `mmap` with `MAP_HUGETLB`
-        // already implies a grant. The whole function returns early if `mmap` fails,
-        // so on Linux reaching this line means MAP_HUGETLB was granted; off Linux
-        // the flag was a no-op and this hint is itself compiled out.
-        // SAFETY: `base` is a live `size`-byte mapping; hint-only.
-        unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
-    }
     // `granted_huge` reflects what was actually requested AND what the OS supports.
     // On non-Linux Unix the `huge` flag is silently ignored, so we report false.
     // This is correct because `MAP_HUGETLB` fails the WHOLE `mmap` call when
@@ -3051,14 +3036,6 @@ const MADV_FREE_BSD_5: i32 = 5;
 // mock (task #646/F8): see MADV_DONTNEED above.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_FREE_BSD_6: i32 = 6;
-/// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
-#[cfg(all(
-    unix,
-    not(miri),
-    any(target_os = "linux", target_os = "android"),
-    feature = "huge-pages"
-))]
-const MADV_HUGEPAGE: i32 = 14;
 // task #714 (rust-intel audit MEDIUM §F1): `_SC_PAGESIZE`'s numeric value is
 // NOT portable across the `unix` family — it is an index into each OS's own
 // `sysconf(3)` name table, not a POSIX-wide constant. The prior version of
@@ -3085,9 +3062,8 @@ const MADV_HUGEPAGE: i32 = 14;
 //
 // task #951 (independent review finding 2.1): task #944/U-2 wired Android
 // (bionic libc) into `MAP_ANON`/`MAP_HUGETLB`/`HUGE_SUPPORTED`/
-// `LINUX_HUGE_PAGE_SIZE`/`MADV_HUGEPAGE`/`MADV_FREE`/`libc_mmap`/
-// `libc_madvise_hugepage`/`unix_reserve`'s huge guard, but missed this
-// table — Android fell through to the `not(any(...))` fallback below and
+// `LINUX_HUGE_PAGE_SIZE`/`MADV_FREE`/`libc_mmap`/`unix_reserve`'s huge
+// guard, but missed this table — Android fell through to the `not(any(...))` fallback below and
 // silently got the glibc value 30. Bionic does NOT share glibc's
 // `confname.h` numbering (same portability hazard the BSD comment above
 // already documents for a different OS family). EMPIRICALLY VERIFIED for
@@ -3303,30 +3279,6 @@ unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     }
     #[cfg(not(feature = "bench-internals"))]
     let _ = ret;
-}
-
-#[cfg(all(
-    unix,
-    not(miri),
-    any(target_os = "linux", target_os = "android"),
-    feature = "huge-pages"
-))]
-unsafe fn libc_madvise_hugepage(addr: *mut u8, len: usize) {
-    // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region;
-    // `MADV_HUGEPAGE` is a best-effort hint (errors ignored). Android's bionic
-    // libc runs on the Linux kernel, so `MADV_HUGEPAGE` applies there too.
-    let _ = madvise(addr as *mut core::ffi::c_void, len, MADV_HUGEPAGE);
-}
-
-#[cfg(all(
-    unix,
-    not(miri),
-    not(any(target_os = "linux", target_os = "android")),
-    feature = "huge-pages"
-))]
-unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
-    // Non-Linux, non-Android Unix: no transparent-huge-page madvise; the mmap
-    // fallback already yielded ordinary pages. No-op.
 }
 
 // ===========================================================================

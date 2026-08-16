@@ -115,6 +115,88 @@ fn reserve_decommit_recommit_release_cycle() {
     }
 }
 
+/// Helper: fault all pages in a reservation by writing to each page.
+///
+/// This ensures pages are backed by physical memory and have PTE entries,
+/// making the subsequent decommit cost realistic (measuring the cost of
+/// tearing down PTEs and TLB entries, not the cheap never-faulted path).
+#[inline]
+unsafe fn fault_pages(base: *mut u8, len: usize) {
+    use std::ptr;
+    // Write one byte to each real OS page to fault it in -- use the runtime
+    // page_size(), not a hardcoded 4 KiB: on a host with a larger real page
+    // size (e.g. 16 KiB on Apple Silicon macOS), stepping by 4 KiB would
+    // still touch every page (over-faulting is harmless here), but using the
+    // real page size keeps this consistent with the rest of the crate's own
+    // page_size()-vs-PAGE discipline.
+    let page_size = aligned_vmem::page_size();
+    for offset in (0..len).step_by(page_size) {
+        ptr::write_volatile(base.add(offset), 0xAB);
+    }
+}
+
+/// Helper: perform a reserve → fault → decommit → release cycle.
+///
+/// Measures decommit cost on *dirty* (touched) pages, which have real PTEs
+/// to tear down. This is the realistic allocator-churn pattern; the
+/// cold/never-touched version (`reserve_decommit_release_cycle`) measures
+/// the cheap path (no PTEs, no TLB shootdown).
+fn reserve_fault_decommit_release_cycle() {
+    let r = reserve_aligned(RESERVE_SIZE, RESERVE_ALIGN);
+    match r {
+        Some(reservation) => {
+            let base = black_box(reservation.as_ptr());
+            let len = black_box(reservation.len());
+            // SAFETY: `base` is from a live reservation, [base, base+len) is within bounds.
+            unsafe {
+                // Fault all pages by writing to them.
+                fault_pages(base, len);
+                // Now decommit the dirty pages (realistic cost).
+                decommit(base, 0, len);
+            }
+            // Reservation dropped -> release.
+        }
+        None => panic!(
+            "reserve_fault_decommit_release_cycle: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+        ),
+    }
+}
+
+/// Helper: perform a reserve → fault → decommit → recommit → release cycle.
+///
+/// Measures the full realistic churn pattern on dirty pages: allocate,
+/// fault to get real backing, decommit to return physical memory, then
+/// recommit when needed again.
+fn reserve_fault_decommit_recommit_release_cycle() {
+    let r = reserve_aligned(RESERVE_SIZE, RESERVE_ALIGN);
+    match r {
+        Some(reservation) => {
+            let base = black_box(reservation.as_ptr());
+            let len = black_box(reservation.len());
+            // SAFETY: `base` is from a live reservation, [base, base+len) is within bounds.
+            unsafe {
+                // Fault all pages by writing to them.
+                fault_pages(base, len);
+                // Decommit the dirty pages (realistic cost).
+                decommit(base, 0, len);
+                // Recommit it (no-op on Unix/miri, but measured on Windows).
+                let ok = recommit(base, 0, len);
+                // On Windows, recommit can fail due to commit-charge exhaustion.
+                // This is a failure worth aborting the benchmark for.
+                if !ok {
+                    panic!(
+                        "reserve_fault_decommit_recommit_release_cycle: recommit failed (commit-charge exhaustion) -- benchmark aborted, not measuring a failed recommit"
+                    );
+                }
+            }
+            // Reservation dropped -> release.
+        }
+        None => panic!(
+            "reserve_fault_decommit_recommit_release_cycle: reserve_aligned failed (OOM or contract violation) -- benchmark aborted, not measuring a failed reservation"
+        ),
+    }
+}
+
 fn main() {
     let mut h = Harness::new("vmem_bench", env!("CARGO_MANIFEST_DIR"));
 
@@ -134,6 +216,22 @@ fn main() {
 
     h.bench("reserve_decommit_recommit_release", || {
         reserve_decommit_recommit_release_cycle();
+    });
+
+    // ── Reserve → Fault → Decommit → Release (dirty/touched pages) ────────
+    //
+    // Measures decommit cost on pages that have been faulted in (realistic
+    // allocator churn: decommitting pages that have actually been used).
+    // The cold/never-touched version above measures the cheap path (no PTEs).
+
+    h.bench("reserve_fault_decommit_release", || {
+        reserve_fault_decommit_release_cycle();
+    });
+
+    // ── Reserve → Fault → Decommit → Recommit → Release (dirty/touched) ───
+
+    h.bench("reserve_fault_decommit_recommit_release", || {
+        reserve_fault_decommit_recommit_release_cycle();
     });
 
     // ── Larger allocation (1 MiB) — reserve only ──────────────────────────

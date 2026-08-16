@@ -45,8 +45,10 @@ lazy-commit = []
 alloc-lazy-commit = ["lazy-commit"]
 
 # Optional huge/large pages: `reserve_aligned_huge` requesting OS large pages
-# (Linux `MAP_HUGETLB` + `MADV_HUGEPAGE`, Windows `MEM_LARGE_PAGES`). Currently
-# a no-op on macOS and other non-Linux Unix (falls back to an ordinary
+# (Linux `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`). Transparent-huge-page
+# hinting (Linux `MADV_HUGEPAGE`) is not used: it cannot affect an already
+# explicitly-huge `MAP_HUGETLB` mapping, so issuing it would be a wasted syscall.
+# Currently a no-op on macOS and other non-Linux Unix (falls back to an ordinary
 # reservation) — there is no `VM_FLAGS_SUPERPAGE` implementation yet. Off by
 # default so the zero-deps core stays tiny. The reservation transparently
 # falls back to ordinary pages when the OS refuses the large-page request, so
