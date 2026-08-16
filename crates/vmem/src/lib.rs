@@ -2568,10 +2568,10 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // Finding C-12 (2026-08-16 audit): add an attempts counter mirroring the
     // Unix `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` pair, letting tests
     // distinguish "genuinely succeeded" from "never attempted".
-    // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a `MEM_RESERVE`d region;
-    // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
     #[cfg(feature = "bench-internals")]
     WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a `MEM_RESERVE`d region;
+    // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
     let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT) };
     #[cfg(feature = "bench-internals")]
     if ret == 0 {

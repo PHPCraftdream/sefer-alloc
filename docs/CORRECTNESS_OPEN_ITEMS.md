@@ -2160,9 +2160,9 @@ resolved" below.)_
     - **Next trigger:** any future round of this campaign that touches `crates/vmem/src/lib.rs` or `crates/vmem/tests/*.rs` should add this command to its own verification pass (in addition to, not instead of, the existing default-target matrix) before merging, not just before pushing — the campaign's existing "confirm CI green" step already catches it post-push, but that is one round later than the campaign's own zero-trust-review convention intends. `--all-targets` is load-bearing: without it, `tests/` is not built and Unix-only tests are not checked.
     - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC5.
 
-52. **[T, INFO] `decommit_lazy` leaves free BSD reclaim on the table** (Filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
+52. **`decommit_lazy` leaves free BSD reclaim on the table** (Filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
 
-53. **[T, INFO] `Reservation::from_raw_parts` hard-codes `granted_huge: false`, creating a fail-open hazard when callers follow documented decommit advice** (Filed 2026-08-14, task #934/C-9, sub-observation about item 48 from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
+53. **`Reservation::from_raw_parts` hard-codes `granted_huge: false`, creating a fail-open hazard when callers follow documented decommit advice** (Filed 2026-08-14, task #934/C-9, sub-observation about item 48 from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
 
 54. **[T, INFO] Tautological tests and small untested corners** (Filed 2026-08-14, task #934/C-9, combining `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31.) Low-priority housekeeping items, not correctness gaps.
 

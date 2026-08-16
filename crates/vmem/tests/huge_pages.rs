@@ -230,6 +230,9 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
                     hits <= 1,
                     "UNIX_EXACT_RESERVE_HITS cannot exceed 1 for a single reservation; observed: attempts={attempts}, hits={hits}"
                 );
+                // This assert is a cheap tripwire for future refactoring, not an active path-activation oracle.
+                // By construction (single HITS increment site returns immediately, 32-bit path unreachable in this scenario),
+                // hits can never exceed 1. The active oracle is assert_eq!(attempts, 1) above and the r.is_huge() check below.
                 // When hits == 1, the MAP_HUGETLB mmap succeeded and actually granted a huge page.
                 if hits == 1 {
                     assert!(
