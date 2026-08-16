@@ -1398,14 +1398,15 @@ impl Reservation {
     ///   is undefined behaviour, not a leak.
     ///
     ///   The distinction between `reservation` and `base` is load-bearing here
-    ///   and is why this bullet names one and not the other: the two are
-    ///   SEPARATE parameters precisely so a caller can hand over an
-    ///   over-reserved region whose usable `base` sits at an offset inside it.
-    ///   Satisfying the provenance requirement at `base` while `reservation`
-    ///   points somewhere else is exactly the mistake this wording exists to
-    ///   prevent. (This crate's own miri backend happens to return
-    ///   `base == reservation`, so the distinction never bites internally —
-    ///   which is what makes it easy to get wrong for a caller-supplied pair.)
+    ///   and is why this bullet names one and not the other: they are SEPARATE
+    ///   parameters, and `base` MAY sit at a non-zero offset inside the region
+    ///   `reservation` points at whenever the caller obtained that region with
+    ///   extra slack to satisfy alignment. Satisfying the provenance
+    ///   requirement at `base` while `reservation` points somewhere else is
+    ///   exactly the mistake this wording exists to prevent. (This crate's own
+    ///   miri backend returns `base == reservation`, so the distinction never
+    ///   bites internally — which is what makes it easy to get wrong for a
+    ///   caller-supplied pair.)
     ///
     ///   This requirement is specific to the miri backend; the Windows and Unix
     ///   backends release by address and do not track allocator provenance.

@@ -65,6 +65,16 @@ use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT, RING_
 /// This constant preserves the original fix's benefit (distinguishing ~256
 /// counter-pollution noise from sibling tests vs. a few CAS retries) while
 /// making the test portable across architectures.
+///
+/// Gated on `bench-internals` because every consumer is: both users are
+/// `#[cfg(feature = "bench-internals")]` tests reading the
+/// `DBG_RING_PUSH_SHADOW_*` counters, which exist only under that feature.
+/// Declaring it unconditionally made it dead code in the
+/// `hardened medium-classes internals` clippy row (no `bench-internals` there),
+/// failing `-D warnings`. Caught by `npm run check` after task #1033 landed —
+/// that row is precisely what a per-crate `-p aligned-vmem` verification pass
+/// does not cover.
+#[cfg(feature = "bench-internals")]
 const CAS_RETRY_SLACK: u64 = 8;
 
 fn ring_buffer() -> Box<[u8]> {
