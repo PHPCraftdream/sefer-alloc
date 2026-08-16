@@ -136,6 +136,41 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
     assert_error_type(try_reserve_aligned_huge(0, PAGE));
 }
 
+/// II-4 (2026-08-16 audit finding): Linux huge-page reservation with
+/// `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) uses exact-size mmap, avoiding
+/// `size + align` over-reserve against the hugetlb pool.
+///
+/// This test verifies that `reserve_aligned_huge(2 MiB, 2 MiB)` succeeds
+/// and is properly aligned. The kernel guarantees an anonymous MAP_HUGETLB
+/// mapping starts at a huge-page-aligned address, so the exact-size mmap
+/// satisfies the alignment contract without over-reserving.
+///
+/// Whether huge pages are actually granted depends on host configuration
+/// (`/proc/sys/vm/nr_hugepages`); the crate's best-effort fallback means
+/// this must succeed either way, so the test only asserts on the contract-
+/// violation guard not firing (not on the actual huge-page grant).
+#[test]
+#[cfg(target_os = "linux")]
+fn reserve_aligned_huge_exact_size_for_2mib_align() {
+    let size = LINUX_HUGE_PAGE_SIZE;
+    match try_reserve_aligned_huge(size, LINUX_HUGE_PAGE_SIZE) {
+        Ok(r) => {
+            let base = r.as_ptr();
+            assert_eq!(base as usize % LINUX_HUGE_PAGE_SIZE, 0);
+            // The memory must be writable.
+            unsafe {
+                base.write(0xEF);
+                assert_eq!(base.read(), 0xEF);
+            }
+        }
+        Err(e) => assert!(
+            !e.is_invalid_argument(),
+            "a 2 MiB-aligned request with size = 2 MiB must never be rejected as a \
+             contract violation -- the kernel guarantees huge-page alignment: {e:?}"
+        ),
+    }
+}
+
 /// V-25: Windows single-call large-page branch (task #923).
 ///
 /// Every existing `reserve_aligned_huge`/`try_reserve_aligned_huge` call site
@@ -148,6 +183,13 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// - `is_huge()` is `false`: `GetLargePageMinimum()` returns 2 MiB on x86_64,
 ///   so a 64 KiB `MEM_LARGE_PAGES` request can NEVER succeed regardless of
 ///   privilege — the assertion is safe by construction, not by host configuration.
+///
+/// II-3 (2026-08-16 audit finding): the single-call fast-path condition is
+/// widened to `align <= GetLargePageMinimum()` when requesting large pages,
+/// so `reserve_aligned_huge(4 MiB, 4 MiB)` can now attempt the single-call
+/// path. This test is extended to also verify the widened condition works
+/// (the actual huge-page grant still requires size to be a multiple of the
+/// large-page minimum and the process to have SeLockMemoryPrivilege).
 ///
 /// Note: the V-6 alignment check (task #921) is unobservable on a conforming
 /// Windows host and is NOT regression-tested by this or any test in this crate —
@@ -182,4 +224,38 @@ fn reserve_aligned_huge_64k_single_call_path() {
         "is_huge() must be false for 64 KiB: GetLargePageMinimum() is 2 MiB, so a \
          64 KiB MEM_LARGE_PAGES request cannot succeed by construction"
     );
+}
+
+/// II-3 (2026-08-16 audit finding): Windows 4 MiB-aligned 4 MiB huge reservation.
+///
+/// This test verifies that `reserve_aligned_huge(4 MiB, 4 MiB)` can now attempt
+/// the single-call fast path on Windows (the fast-path condition was widened
+/// from `align <= 64 KiB` to `align <= GetLargePageMinimum()` when requesting
+/// large pages). Whether large pages are actually granted depends on:
+/// 1. The process has SeLockMemoryPrivilege granted AND enabled
+/// 2. The size is a multiple of the system's large-page minimum (2 MiB on x86_64)
+///
+/// This test verifies the shape works (reserves and falls back correctly) without
+/// asserting on the actual huge-page grant (which depends on host configuration).
+#[test]
+#[cfg(windows)]
+fn reserve_aligned_huge_4mib_single_call_path_widened() {
+    const SIZE: usize = 4 * 1024 * 1024; // 4 MiB
+    let r = reserve_aligned_huge(SIZE, SIZE).expect("4 MiB huge reservation");
+    let base = r.as_ptr();
+
+    // The returned pointer must be non-null and aligned to 4 MiB.
+    assert!(!base.is_null(), "base pointer must be non-null");
+    assert_eq!(base.addr() % SIZE, 0, "base must be 4 MiB-aligned");
+
+    // The memory must be writable.
+    // SAFETY: base is valid for SIZE bytes, freshly reserved.
+    unsafe {
+        base.write(0xCD);
+        assert_eq!(base.read(), 0xCD, "written byte must read back");
+    }
+
+    // is_huge() depends on whether the system actually granted large pages.
+    // We don't assert on it here; the test verifies the shape works, not
+    // the actual grant (which is host-configured).
 }

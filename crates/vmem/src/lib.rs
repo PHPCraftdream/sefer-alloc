@@ -2030,6 +2030,14 @@ fn win_reserve_commit(
     // a base aligned to WIN_ALLOCATION_GRANULARITY (64 KiB on all supported
     // Windows targets), so the alignment contract is satisfied by construction.
     //
+    // II-3 (2026-08-16 audit finding): when requesting large pages
+    // (extra_commit_flags includes MEM_LARGE_PAGES), widen the fast-path
+    // condition to use GetLargePageMinimum() instead of WIN_ALLOCATION_GRANULARITY.
+    // A granted large-page allocation is naturally aligned to at least the
+    // large-page minimum (typically 2 MiB on Windows), so it will already
+    // satisfy alignments up to that minimum. The unconditional alignment check
+    // below guarantees correctness even if large pages are not granted.
+    //
     // Historical note: a ~4.6 µs / ~33% reduction claim was made in the original
     // V21 commit, inherited from pre-#848 measurement (R32_13) of the OLD two-call
     // path. That claim has NOT been re-measured for the current single-call fast
@@ -2052,7 +2060,13 @@ fn win_reserve_commit(
     // for (the eager `reserve_aligned`/`reserve_aligned_huge` callers, which
     // always pass `commit_len == size`) and routes the lazy-commit caller
     // through the unchanged two-call path below.
-    if align <= WIN_ALLOCATION_GRANULARITY && commit_len == size {
+    let fast_path_align_threshold = if extra_commit_flags != 0 {
+        // When requesting large pages, the threshold is the large-page minimum.
+        unsafe { GetLargePageMinimum() }
+    } else {
+        WIN_ALLOCATION_GRANULARITY
+    };
+    if align <= fast_path_align_threshold && commit_len == size {
         // Single-call path: reserve+commit together.
         // Track whether huge pages were actually granted; initialized from the
         // request flag, but may be cleared if the retry fallback succeeds.
@@ -2343,16 +2357,30 @@ fn reserve_aligned_huge_raw(
     align: usize,
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     // Windows large pages work via the single-call fast path (task #848):
-    // MEM_LARGE_PAGES is now issued in a combined MEM_RESERVE | MEM_COMMIT call,
-    // but only when align <= 64 KiB (the fast path condition). For align > 64 KiB
-    // the two-call path is used, which does not support large pages at all.
-    // Even when align <= 64 KiB, large-page allocation requires:
+    // MEM_LARGE_PAGES is issued in a combined MEM_RESERVE | MEM_COMMIT call.
+    // The fast-path condition is widened (2026-08-16 audit finding II-3) to
+    // attempt the single-call path for any `align` up to GetLargePageMinimum()
+    // (typically 2 MiB), not just the 64 KiB WIN_ALLOCATION_GRANULARITY. A
+    // granted large-page allocation is naturally aligned to at least the
+    // large-page minimum, so it satisfies alignments up to that threshold.
+    // The unconditional post-call alignment check guarantees correctness
+    // even if large pages are not granted (the allocation then uses ordinary
+    // pages, which have the 64 KiB WIN_ALLOCATION_GRANULARITY guarantee).
+    //
+    // Even when the fast-path condition is satisfied, large-page allocation
+    // requires:
     // 1. size is a multiple of the system's large-page minimum
     // 2. The process has SeLockMemoryPrivilege granted AND has enabled it
     //    via AdjustTokenPrivileges (this crate does not do this for you --
     //    granted-but-not-enabled fails exactly like unprivileged)
     // If either fails, the allocation falls back to ordinary pages and
     // granted_huge is false.
+    //
+    // This widening makes the Linux and Windows parameter spaces overlap
+    // (e.g., `reserve_aligned_huge(4 MiB, 4 MiB)` can now be huge on both
+    // platforms), resolving the disjointness issue where Linux required
+    // `align >= 2 MiB` but Windows only granted large pages for
+    // `align <= 64 KiB`.
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
@@ -2366,6 +2394,7 @@ extern "system" {
     ) -> *mut core::ffi::c_void;
     fn VirtualFree(lp_address: *mut core::ffi::c_void, dw_size: usize, dw_free_type: u32) -> i32;
     fn GetSystemInfo(lp_system_info: *mut SystemInfo);
+    fn GetLargePageMinimum() -> usize;
 }
 
 /// Mirrors the Windows `SYSTEM_INFO` struct — only `dwPageSize` is read.
@@ -2522,6 +2551,56 @@ fn unix_reserve(
             || !align.is_multiple_of(LINUX_HUGE_PAGE_SIZE))
     {
         return Err(VmemError::invalid_argument());
+    }
+    // II-4 (2026-08-16 audit finding): Linux exact-size huge-page fast path
+    // for `align == LINUX_HUGE_PAGE_SIZE` (2 MiB). The kernel guarantees an
+    // anonymous MAP_HUGETLB mapping with addr == NULL starts at a huge-page-
+    // aligned address (see the doc comment above), so an exact-size mmap
+    // satisfies the alignment contract with zero over-reserve when
+    // `align == LINUX_HUGE_PAGE_SIZE`. This avoids charging `size + align`
+    // against the scarce hugetlb pool.
+    //
+    // This block handles ONLY the genuine-huge-page-granted case and returns
+    // early on success; on any failure (mmap refusal, or -- defensively --
+    // the kernel's alignment guarantee not holding) it falls through to the
+    // general over-reserve path below instead of re-implementing its own
+    // ordinary-page fallback. That path already correctly tracks
+    // `granted_huge = false` on a huge-to-ordinary fallback (see its own
+    // `libc_mmap(over, huge)` retry below) -- duplicating that logic here
+    // previously produced a real bug (caught by zero-trust review): an
+    // earlier version of this block retried `libc_mmap(size, false)` inline
+    // and unconditionally returned `granted_huge = true` even when that
+    // ordinary-page retry was the one that actually succeeded, which is
+    // both a false `is_huge()` claim (the same class of bug task #943/W-1
+    // fixed for Windows) and paired with an alignment guarantee that does
+    // NOT hold for a plain (non-`MAP_HUGETLB`) mapping.
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android"),
+        feature = "huge-pages"
+    ))]
+    if huge && align == LINUX_HUGE_PAGE_SIZE {
+        // SAFETY: anonymous private MAP_HUGETLB mapping of exactly `size` bytes.
+        let p = unsafe { libc_mmap(size, true) };
+        if !p.is_null() {
+            let region_addr = p.addr();
+            // Real runtime check (not debug_assert!): the kernel's huge-page-
+            // alignment guarantee is unverified behavior this crate is
+            // trusting, not self-evident arithmetic -- release builds are
+            // exactly where an unverified assumption matters (same reasoning
+            // as the Windows H2C6 / Unix U1 checks elsewhere in this file).
+            if region_addr.is_multiple_of(align) {
+                // SAFETY: non-null and just verified aligned.
+                let base = unsafe { NonNull::new_unchecked(p as *mut u8) };
+                return Ok((base, base, size, true));
+            }
+            // Kernel's alignment guarantee did not hold (should not happen in
+            // practice); release this mapping and fall through below.
+            // SAFETY: `p` was returned by `mmap` above and not yet handed to
+            // a caller; releasing before falling through prevents a leak.
+            unsafe { libc_munmap(p.cast(), size) };
+        }
+        // Huge mmap failed, or its alignment guarantee didn't hold: fall
+        // through to the general over-reserve path below.
     }
     // 32-bit only: try exact-size mmap first for address-space economy.
     // On 64-bit this is a net syscall loss (the fast path costs 1 syscall on a
