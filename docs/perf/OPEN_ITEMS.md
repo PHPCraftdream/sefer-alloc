@@ -402,7 +402,7 @@ for completeness.
    >   (the CONDITIONAL-GO recommendation + the 3-condition GO path);
    >   `docs/FEATURE_PROMOTION_STATUS.md` (survey row).
 
-30. **R828 — sefer-region structural levers (P-perf-1/2/4/5).**
+51. **R828 — sefer-region structural levers (P-perf-1/2/4/5).**
 
    > **Current state**
    > - **Status:** measured, all DEFER except P-perf-2 (GO as opt-in).
@@ -1210,6 +1210,15 @@ for completeness.
     > - **Next trigger:** none named as *urgent* (still optional, low-cost) — unchanged from before this correction. If ever revisited, the probe is the same one already named: a Vec-push-shaped 16 B→16 KiB hot-buffer harness measuring the sub-16 KiB ladder's own Stage-1 hit rate directly (not inferred from the unrelated OPT-G/Large-grow ratio).
     > - **Evidence:** `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 + this file's item-1 closure entry (the LCM argument distinguishing the two ladders) + `docs/perf/R34_23_REALLOC_AND_VEC_GATE.md` §5 (the ~40×→~1.8-2.1× correction that prompted this re-derivation).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L12`.
+
+50. **Follow-up from commit 66b8508 (task #1030): aligned-vmem package gates appear AFTER root test rows, so a root-test failure masks them.**
+
+   > **Current state**
+   > - **Status:** OPEN — cheap clippy rows sit AFTER four expensive root test rows in `scripts/check-all.mjs`, so a root-test failure causes the script to stop before reaching the aligned-vmem gates, masking their failure state.
+   > - **Current number/verdict:** structurally observable — the aligned-vmem group (steps 14-19 in the runtime steps array) runs AFTER the four root-test rows (steps 8-11). If any root test fails, `npm run check` exits immediately and never reports whether the aligned-vmem clippy rows would have passed.
+   > - **Next trigger:** reorder the `steps` array in `scripts/check-all.mjs` so cheap clippy checks run BEFORE expensive test rows — placing the aligned-vmem clippy rows before the four root-test rows would unmask both failure classes in a single run.
+   > - **Evidence:** commit 66b8508 body ("Two follow-ups this commit does NOT do, recorded so they are not lost: (1) the new group sits AFTER the four root test rows, so a root-test failure masks it -- cheap clippy rows would be better placed before expensive test rows"); `scripts/check-all.mjs` current structure (aligned-vmem steps at indices 14-19, root-test steps at 8-11).
+   Full history: this entry (filed 2026-08-16, task #1030 follow-up).
 
 49. **R4-5 — Windows huge-page speculative fast-path may miss expensively,
     and existing counters do not show syscall cost (aligned-vmem).**

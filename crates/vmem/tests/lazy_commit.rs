@@ -214,6 +214,72 @@ fn lazy_reserve_commit_entire_remainder() {
     }
 }
 
+// ── R6-2: lazy validation against runtime page_size() ───────────────────────
+
+/// Test that lazy reservations reject size/initial_commit that are not
+/// multiples of runtime page_size().
+///
+/// On mainstream Windows (page_size() == PAGE == 4096), the negative case
+/// (where page_size() > PAGE) cannot be tested because it never occurs.
+/// This test verifies that the rule is enforced correctly for the
+/// values that ARE testable on this host.
+#[test]
+fn lazy_reservation_validates_against_page_size() {
+    let _guard = serial_guard();
+    let ps = page_size();
+    let span = 4 * MIB;
+
+    // Positive case: size and initial_commit are multiples of page_size()
+    // should succeed.
+    let valid_initial = 2 * ps; // 2 pages
+    let r = reserve_aligned_lazy(span, span, valid_initial).expect(
+        "lazy reservation should succeed when size and initial_commit are page_size() multiples",
+    );
+    assert_eq!(r.len(), span);
+    drop(r);
+
+    // The bug R6-2 fixes: when page_size() > PAGE (e.g., 64 KiB on some Windows
+    // configs), a request like size=68 KiB, initial_commit=4 KiB would pass the old
+    // PAGE-based validation but create an unwritable tail because commit_range
+    // requires offsets to be multiples of page_size().
+    //
+    // On this host, page_size() == PAGE, so we cannot construct a failing case.
+    // Document this limitation and verify what we CAN: that the validation
+    // accepts valid inputs that are multiples of page_size().
+
+    if ps != PAGE {
+        // This branch would run on a host where page_size() > PAGE, e.g.:
+        // - 64 KiB-page Windows configuration
+        // - 16 KiB-page macOS
+        //
+        // On such a host, we could test that:
+        // - size not a multiple of page_size() is rejected
+        // - initial_commit not a multiple of page_size() is rejected
+        // But we cannot reach this branch on mainstream Windows.
+
+        // Example of what WOULD fail on a 64 KiB-page host:
+        let bad_size = 17 * PAGE; // 68 KiB, not a multiple of 64 KiB
+        assert!(
+            reserve_aligned_lazy(bad_size, bad_size, PAGE).is_none(),
+            "should reject size not multiple of page_size()"
+        );
+
+        let bad_initial = PAGE; // 4 KiB, not a multiple of 64 KiB
+        assert!(
+            reserve_aligned_lazy(span, span, bad_initial).is_none(),
+            "should reject initial_commit not multiple of page_size()"
+        );
+    } else {
+        // On mainstream Windows (ps == PAGE == 4096), the R6-2 scenario
+        // cannot occur. Verify that valid inputs still work correctly.
+        let initial = 16 * ps; // 64 KiB
+        let r = reserve_aligned_lazy(span, span, initial)
+            .expect("valid multiples of page_size() should succeed");
+        assert_eq!(r.len(), span);
+        drop(r);
+    }
+}
+
 // ── commit_range: contract validation ───────────────────────────────────────
 
 #[test]

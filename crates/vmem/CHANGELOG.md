@@ -45,6 +45,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - `page_size()` granularity is now used for decommit/recommit validation instead of compile-time `PAGE` constant
+- **lazy-commit contract tightened:** `reserve_aligned_lazy` now requires both `size` and `initial_commit` to be multiples of the runtime `page_size()` (not just `PAGE`). This prevents unwritable tails on systems where `page_size() > PAGE` (e.g., 64 KiB Windows configurations or 16 KiB macOS), where `commit_range` only accepts page_size()-aligned offsets. Mainstream Windows (page_size() == 4096) is unaffected. (R6-2)
 - All OS error paths now capture `errno`/`GetLastError` immediately before cleanup FFI
 - Unix 64-bit fast path disabled: syscall economy (one `mmap` call at the cost of extra virtual address space held per reservation). Exception on Linux: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base).
 - `reserve_aligned_huge()` semantics fixed: reports actual huge-page grant only on platforms where it's observable
@@ -55,6 +56,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Lazy reservation documentation corrected:** `Reservation` type and `as_ptr()` docs now explicitly state that lazy reservations on Windows only commit the `initial_commit` prefix; the tail must be committed via `commit_range` before it's writable. README platform caveats updated with this information. (R6-1 variant 1)
+- **`from_raw_parts` Windows commit-state documentation rewritten:** No longer inaccurately requires all Windows reservations to be created with `MEM_RESERVE | MEM_COMMIT`. Instead documents that partial-commit (lazy) reservations are valid, and explains the `granted_huge` compatibility requirements. (R6-1 variant 2)
 - Android build support added with correct `_SC_PAGESIZE` constant wiring
 - 32-bit Linux glibc/musl FFI fix: `off_t` type correctly declared as 64-bit on all musl targets (was mismatched for 32-bit musl)
 - BSD `decommit_lazy` no-ops fixed: FreeBSD/DragonFly/NetBSD/OpenBSD now dispatch to their own real `MADV_FREE` constant values instead of an undefined/wrong one

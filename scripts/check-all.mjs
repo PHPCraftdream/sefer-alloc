@@ -43,27 +43,41 @@
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   14. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   14. aligned-vmem package gates (5 clippy rows + 1 test row) — reproduces
+//      the 'aligned-vmem package gates' job from ci.yml. Excludes mock (RUSTFLAGS)
+//      and cross-targets to keep the local check fast (CLAUDE.md: "Tests and
+//      benchmarks must run as fast as possible"): clippy (default, huge-pages,
+//      bench-internals, lazy-commit+huge-pages+fault-injection+bench-internals,
+//      --all-features) and test (--all-features).
+//   15. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   15. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   16. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
 //      structural complement to 14 — 14 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   16. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   17. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   17. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   18. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   18. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   19. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   19. npm run iai                                                (deterministic judge,
+//   20. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//      W5/task #854 asked for two rounds ago): guard against the doc-comment
+//      drift class that has recurred 5 times (unconditional "over-reserve
+//      / trim" statements without qualifying context). Heuristic: every
+//      SENTENCE mentioning "over-reserv"/"trim" must contain a scope word
+//      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
+//      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
+//      header for the full history and the per-sentence rewrite (task #878/Q8).
+//   21. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)

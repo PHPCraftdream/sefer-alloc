@@ -101,6 +101,11 @@ reservation"), and what the file-mapping crates don't directly offer.
   (`page_size()`).
 - `recommit`/`commit_range` offsets must be multiples of the runtime page size
   (`page_size()`).
+- **Lazy reservations (feature `lazy-commit`):** `reserve_aligned_lazy`'s
+  `size` and `initial_commit` must BOTH be multiples of the runtime page size
+  (`page_size()`), not just `PAGE`. This is required because `commit_range`
+  operates on whole runtime pages, and a `size` not aligned to `page_size()` would
+  create an unwritable tail that cannot be committed via the public API.
 
 Note: `decommit`/`decommit_lazy` and `recommit`/`commit_range` validate the
 same granularity, but respond differently to a violated range — this
@@ -138,10 +143,7 @@ pair (a null pointer remains a documented no-op) — see `release`'s own rustdoc
 
 ## Platform caveats
 
-`decommit`'s single-line table entry above ("Return page-granular physical
-backing to the OS / re-commit it") hides four platform divergences worth
-knowing before you rely on it — see `decommit`'s own rustdoc for the full
-technical explanation of each:
+The table entry above (`decommit`/`recommit`) hides five platform divergences worth knowing before you rely on it — see each function's own rustdoc for the full technical explanation:
 
 - **Windows: a write before recommit is a hard crash, not a soft re-fault.**
   `MEM_DECOMMIT` genuinely unmaps the pages, so writing into
@@ -151,6 +153,14 @@ technical explanation of each:
   write, so code that is safe on Linux can crash on Windows. This exact
   divergence has already crashed an in-repo consumer — see
   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+  item 6 for the incident record.
+- **Lazy reservations on Windows: only the committed prefix is writable.**
+  When created via `reserve_aligned_lazy`, only the `initial_commit` bytes
+  are committed at reservation time. The tail `[initial_commit, len())` must be
+  committed via `commit_range` before it becomes writable. Writing to the
+  uncommitted tail raises a `STATUS_ACCESS_VIOLATION`. This is different from
+  eager reservations (`reserve_aligned`), where the entire `len()` span is
+  writable from the start.
   item 6 for the incident record.
 - **Huge pages: decommit does nothing, on either OS.** When a reservation
   came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),

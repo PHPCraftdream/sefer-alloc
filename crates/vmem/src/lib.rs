@@ -722,9 +722,20 @@ fn query_os_page_size() -> usize {
 /// An owning handle to one aligned span of anonymous virtual memory.
 ///
 /// `as_ptr()` is non-null, aligned to the `align` requested at reservation, and
-/// valid for `len()` bytes for the lifetime of this handle **except ranges the
-/// caller has decommitted (via the free functions or the safe methods) and
-/// not yet recommitted — on Windows such pages are unmapped until `recommit`**.
+/// valid for `len()` bytes for the lifetime of this handle **with the following
+/// exceptions**:
+///
+/// - **Decommitted ranges**: Ranges that the caller has decommitted (via the
+///   free functions or the safe methods) and not yet recommitted are
+///   inaccessible. On Windows such pages are unmapped until `recommit`; on
+///   Unix the kernel returns fresh zero pages on next access.
+///
+/// - **Lazy reservations on Windows (feature `lazy-commit`)**: When created via
+///   `reserve_aligned_lazy`, only the `initial_commit` prefix is committed at
+///   reservation time. The tail `[initial_commit, len())` must be committed via
+///   `commit_range` before it becomes writable. Writing to the uncommitted tail
+///   results in an access violation.
+///
 /// The span is **not** initialised. Dropping the handle returns the whole
 /// underlying OS reservation to the OS exactly once.
 ///
@@ -797,10 +808,22 @@ impl core::fmt::Debug for Reservation {
 }
 
 impl Reservation {
-    /// The aligned usable base of this span. Non-null, valid for [`len`](Self::len)
-    /// bytes **except ranges that have been decommitted and not yet recommitted —
-    /// on Windows such pages are unmapped until `recommit`**, aligned to the `align`
-    /// requested at reservation time.
+    /// The aligned usable base of this span. Non-null, aligned to the `align`
+    /// requested at reservation.
+    ///
+    /// **Validity scope:** Valid for [`len()`](Self::len) bytes, with the
+    /// following exceptions:
+    ///
+    /// - **Decommitted ranges:** Ranges decommitted via the free functions or
+    ///   safe methods and not yet recommitted. On Windows such pages are
+    ///   unmapped until `recommit`; on Unix the kernel returns fresh zero pages
+    ///   on next access.
+    ///
+    /// - **Lazy reservations on Windows (feature `lazy-commit`):** When created
+    ///   via `reserve_aligned_lazy`, only the `initial_commit` prefix is
+    ///   committed at reservation time. The tail `[initial_commit, len())` must
+    ///   be committed via `commit_range` before it becomes writable. Writing
+    ///   to the uncommitted tail results in an access violation.
     ///
     /// Returns `*mut u8` (rather than the std convention of `*const T` from
     /// `&self`) because a raw pointer carries no borrow obligation in this
@@ -1370,8 +1393,32 @@ impl Reservation {
     /// manually. Constructing two `Reservation` handles over the same OS
     /// reservation is undefined behaviour (double release).
     ///
-    /// On Windows specifically, the reservation MUST have been created with
-    /// `MEM_RESERVE | MEM_COMMIT` so `VirtualFree(MEM_RELEASE)` accepts it.
+    /// **Windows commit state:** On Windows, the reservation's commit state
+    /// (which pages are committed vs. reserved-only) must be compatible with the
+    /// `granted_huge` value:
+    ///
+    /// - If `granted_huge == false`, the reservation may be in any valid
+    ///   commit state: fully committed (created via `reserve_aligned` or the
+    ///   single-call Windows fast path), partially committed (created via the
+    ///   two-call `reserve_aligned_lazy` path), or reserved-only (not a common
+    ///   pattern but valid).
+    ///
+    /// - If `granted_huge == true`, the reservation MUST have been created with
+    ///   `MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES` in a single call (the only
+    ///   way Windows grants large pages). The crate itself only produces such
+    ///   reservations via its `reserve_aligned_huge` single-call fast path.
+    ///
+    ///   The crate's own two-call `reserve_aligned_lazy` path (which issues
+    ///   `VirtualAlloc(MEM_RESERVE)` followed by `VirtualAlloc(MEM_COMMIT)`) is
+    ///   incompatible with `granted_huge == true`, because `MEM_COMMIT` cannot
+    ///   be combined with `MEM_LARGE_PAGES` on a pre-reserved region — MSDN
+    ///   requires all three flags in a single call. Passing `granted_huge == true`
+    ///   for a lazy reservation would make `Reservation::is_huge()` report a
+    ///   value inconsistent with the reservation's actual state.
+    ///
+    ///   If you adopted a reservation from another source and cannot determine
+    ///   whether it was created with the one-call large-page path, you MUST pass
+    ///   `granted_huge == false`.
     #[must_use]
     pub unsafe fn from_raw_parts(
         base: *mut u8,
@@ -1690,9 +1737,47 @@ fn validate_size_align(size: usize, align: usize) -> Result<(), VmemError> {
 /// Private helper: validate `initial_commit` for lazy reservations.
 /// Only called from `try_reserve_aligned_lazy`, which is itself gated on
 /// `lazy-commit` -- dead code when that feature is off.
+///
+/// On Windows, `VirtualAlloc(MEM_COMMIT)` operates on whole runtime pages,
+/// and `try_commit_range` accepts only offsets that are multiples of `page_size()`.
+/// Therefore, both `size` and `initial_commit` must be multiples of the runtime
+/// page size to avoid creating unwritable tails. This is a fail-closed check:
+/// reject requests that would create spans that cannot be fully committed via the
+/// public API.
+///
+/// **Why this check is NOT `#[cfg(windows)]`-gated, even though the hazard it
+/// prevents is Windows-only** (task #1037, finding R6-2, which is itself
+/// scoped "platform-specific ... on Windows"): on Unix,
+/// `reserve_aligned_lazy_raw` IGNORES `initial_commit` entirely and delegates
+/// straight to `reserve_aligned_raw` — the whole span is committed by the
+/// `mmap` itself, so an uncommittable tail cannot exist there. A Unix-only
+/// caller therefore loses nothing real by this rejection and gains nothing
+/// real from being allowed through.
+///
+/// The rejection is uniform anyway because the alternative is worse: a caller
+/// developing on x86-64 Linux who passes a `PAGE`-multiple that is not a
+/// `page_size()` multiple writes code that is silently broken the moment it
+/// runs on Windows with a larger runtime page — and the crate would have
+/// accepted it on every host they tested. Note that a per-OS `#[cfg]` would
+/// NOT buy portability either: `page_size()` is a RUNTIME value, so the same
+/// call already differs between a 4 KiB x86-64 host and a 16 KiB Apple
+/// Silicon one. There is no portable compile-time constant to validate
+/// against, which is exactly why the contract is stated in terms of
+/// `page_size()` and enforced everywhere.
+///
+/// Concrete cost of the uniform rule, stated so it is not a surprise: on a
+/// 16 KiB-page host, `reserve_aligned_lazy(size, align, PAGE)` is now
+/// rejected, where before it was accepted and worked (harmlessly, since Unix
+/// ignores the argument). `PAGE` is a compile-time floor, not the runtime
+/// page size; callers must pass a `page_size()` multiple.
 #[cfg_attr(not(feature = "lazy-commit"), allow(dead_code))]
 fn validate_initial_commit(initial_commit: usize, size: usize) -> Result<(), VmemError> {
-    if initial_commit == 0 || !initial_commit.is_multiple_of(PAGE) || initial_commit > size {
+    let ps = page_size();
+    if initial_commit == 0
+        || !initial_commit.is_multiple_of(ps)
+        || !size.is_multiple_of(ps)
+        || initial_commit > size
+    {
         return Err(VmemError::invalid_argument());
     }
     Ok(())
@@ -2232,7 +2317,13 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
 /// matching the eager path).
 ///
 /// See [`reserve_aligned`] for the base/align contract. `initial_commit` must
-/// be a non-zero multiple of [`PAGE`] and `<= size`; violations return `None`.
+/// be a non-zero multiple of the runtime [`page_size()`] (not the compile-time
+/// [`PAGE`]) and `<= size`; `size` must also be a multiple of [`page_size()`].
+/// Violations return `None`. This stricter contract exists because on Windows,
+/// `VirtualAlloc(MEM_COMMIT)` operates on whole runtime pages and
+/// `commit_range` accepts only offsets that are multiples of `page_size()`; a
+/// `size` not aligned to `page_size()` would create an unwritable tail that
+/// cannot be committed via the public API.
 ///
 /// The returned [`Reservation`] frees the ENTIRE VA reservation on drop
 /// regardless of how much was committed. For the failure cause use

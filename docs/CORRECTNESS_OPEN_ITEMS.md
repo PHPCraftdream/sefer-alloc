@@ -2258,6 +2258,70 @@ resolved" below.)_
 
 63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
+64. **Follow-up from commit 66b8508 (task #1030): `npm run check` lacks a `cargo test -p aligned-vmem` row with DEFAULT features, though ci.yml has a separate job that tests workspace members with default features.** (Filed 2026-08-16, follow-up from commit body, not indexed.)
+
+   - **Status:** OPEN — local gate does not cover a runtime mode CI tests (ci.yml's 'test workspace members' job runs `cargo test -p aligned-vmem` with default features; the local gate's aligned-vmem clippy rows cover compile-failure mode via `--all-targets` but not runtime).
+   - **Current number/verdict:** structurally observable — commit 66b8508 added 5 aligned-vmem clippy rows and 1 test row (`--all-features`) to `scripts/check-all.mjs`, but no row with plain `cargo test -p aligned-vmem`. The default-feature clippy row (`--all-targets`) validates that the feature set compiles, but does not execute runtime tests, so an OOM or panic that would be caught by `cargo test` is invisible to `npm run check`.
+   - **Next trigger:** add a `cargo test -p aligned-vmem` row with DEFAULT features to `scripts/check-all.mjs`, matching the mode ci.yml's separate 'test workspace members' job exercises.
+   - **Evidence:** commit 66b8508 body ("(2) there is no `cargo test -p aligned-vmem` row with DEFAULT features, which is what ci.yml's separate 'test workspace members' job runs"); `.github/workflows/ci.yml` (the separate 'test workspace members' job); `scripts/check-all.mjs` (current aligned-vmem rows: 5 clippy + 1 `--all-features` test).
+   Full history: this entry (filed 2026-08-16, task #1030 follow-up).
+
+65. **CI-coverage gap: `aligned-vmem-gates` job added three steps (cargo doc with RUSTDOCFLAGS="-D warnings", cargo publish --dry-run, cargo semver-checks check-release) that are NOT covered by `npm run check`.** (Filed 2026-08-16, task #1039 coverage gap.)
+
+   - **Status:** OPEN — same class as task #1024's `aligned-vmem package gates` gap: a CI job exists that runs checks not reproduced locally.
+   - **Current number/verdict:** structurally observable — commit ce4852a added three steps to `.github/workflows/ci.yml`'s `aligned-vmem-gates` job: (1) `RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps`, (2) `cargo publish --dry-run -p aligned-vmem`, (3) `cargo semver-checks check-release --package aligned-vmem`. None of these exist in `scripts/check-all.mjs`.
+   - **Next trigger:** add the first and third steps to `npm run check`. The second step (`cargo publish --dry-run`) should NOT be added — it attempts to download the crates.io index, which is inappropriate for every local run. The added steps would run before the `vmem-doc-drift-guard` step (line 20 in the current array), maintaining the existing ordering that runs repo-wide guards before crate-specific ones.
+   - **Evidence:** commit ce4852a (full commit message with all three steps and their rationale); `.github/workflows/ci.yml` (the `aligned-vmem-gates` job's full step list); `scripts/check-all.mjs` (current aligned-vmem rows lack these three checks).
+   Full history: this entry (filed 2026-08-16, task #1039 coverage gap).
+
+66. **`Reservation` still carries no committed-length state, so a lazy handle's
+   committed prefix is a DOCUMENTED contract rather than a CHECKABLE one
+   (finding R6-1, variant 3 — deliberately deferred, not closed).** (Filed
+   2026-08-16, task #1037, from
+   `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-1.)
+
+   - **Status:** OPEN — deferred by decision, pending owner sign-off. R6-1
+     offered three remedies; task #1037 implemented variants 1 (documentation)
+     and 2 (`from_raw_parts` contract) and deliberately did NOT implement
+     variant 3 (return committed-prefix metadata from the lazy API, or give
+     lazy reservations their own handle type). Variants 1+2 close the
+     DOCUMENTATION divergence — the rustdoc no longer claims `as_ptr()` is
+     valid for all of `len()` on a lazy Windows handle, and `from_raw_parts`
+     no longer demands a single combined `MEM_RESERVE | MEM_COMMIT` call that
+     the crate's own lazy path does not make. They do NOT close the STATEFUL
+     gap: nothing in the public API lets a holder of a `Reservation` ask which
+     prefix is committed, so the contract stays one the caller must track
+     externally and can violate with no diagnostic beyond an access violation.
+     Any claim that R6-1 is "fully closed" is wrong; the batch report for
+     #1037 made exactly that claim and it was corrected at review.
+   - **Current number/verdict:** the gap is precisely one missing observable.
+     `Reservation`'s fields are `base`/`len`/`reservation`/`reservation_len`/
+     `align`/`granted_huge` — there is no `committed_len`. `commit_range`
+     validates bounds and `page_size()` multiples, never "was this already
+     committed".
+   - **Next trigger:** an owner decision, cheapest before 0.2.0 ships. The
+     three shapes and their costs, recorded so the decision rests on
+     substance rather than a re-derivation: (a) add a `committed_len` field
+     to `Reservation` — changes no public signature but grows the struct and
+     forces every construction site to supply it, including `from_raw_parts`,
+     already a 6-argument `unsafe fn` whose arity was itself a prior finding;
+     (b) a separate `LazyReservation` type — cleanest contract, but either
+     duplicates the decommit/recommit/commit_range surface or needs a
+     deref/conversion story; (c) return `(Reservation, usize)` from the lazy
+     constructors — smallest diff, but a breaking signature change that
+     leaves the value unattached to the handle it describes. All three are
+     cheap now (crates.io carries only 0.1.0; 0.2.0 is unpublished) and
+     expensive afterwards.
+   - **Evidence:** `crates/vmem/src/lib.rs` — `Reservation`'s field list and
+     the "Validity scope" section of `as_ptr`'s rustdoc (the lazy exception
+     added by task #1037); `reserve_aligned_lazy`'s rustdoc (promises only
+     `initial_commit` is committed on Windows); `validate_initial_commit`
+     (validates shape, not commit state); the two `reserve_aligned_lazy_raw`
+     backends — the Unix one ignores `initial_commit` entirely and delegates
+     to `reserve_aligned_raw`, which is why this gap is Windows-only in
+     practice.
+   Full history: this entry.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
