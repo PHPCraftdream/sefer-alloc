@@ -34,10 +34,11 @@
 //! syscalls (over-reserving `size + align` and keeping the full mapping). The
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
 //! reservation; `Reservation::as_ptr` / `len` expose the aligned usable span,
-//! plus page-granularity decommit/recommit so you can return physical memory to the
-//! OS while keeping the address-space reservation (on the Darwin family —
-//! macOS/iOS/tvOS/watchOS — this reclaim is advisory-only, see [`decommit`]'s
-//! Darwin caveat). If you are building an
+//! plus page-granularity decommit/recommit so you can hint the OS to return
+//! physical memory while keeping the address-space reservation (on Linux and
+//! Windows this is guaranteed to return physical backing; on the Darwin family
+//! — macOS/iOS/tvOS/watchOS — and the BSDs, this reclaim is advisory-only and
+//! provides no zero-fill guarantee, see [`decommit`]'s Darwin caveat). If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
 //!
@@ -911,6 +912,15 @@ impl Reservation {
     ///   reservation)`; both are asserted at construction.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
+    /// - `granted_huge` MUST accurately reflect whether the OS actually
+    ///   granted huge pages for this reservation. Pass `true` only if the
+    ///   reservation was obtained via a huge-page allocation (e.g.
+    ///   `reserve_aligned_huge`) and the OS confirmed the grant (via
+    ///   `Reservation::is_huge()` or equivalent platform-specific detection).
+    ///   Passing an incorrect value leads to undefined behavior when
+    ///   `decommit` is called, because decommit does not work correctly on
+    ///   huge pages. If you cannot determine whether the OS granted huge
+    ///   pages, you MUST pass `false` and use `reserve_aligned` instead.
     ///
     /// The reservation must be released **exactly once** — by dropping this
     /// handle, or by extracting via `into_parts` and calling [`release`]
@@ -926,6 +936,7 @@ impl Reservation {
         reservation: *mut u8,
         reservation_len: usize,
         align: usize,
+        granted_huge: bool,
     ) -> Self {
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
         let res_nn =
@@ -1003,7 +1014,7 @@ impl Reservation {
             reservation: res_nn,
             reservation_len,
             align,
-            granted_huge: false, // Caller cannot know; conservatively assume false
+            granted_huge,
         }
     }
 }
@@ -1356,11 +1367,16 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 // Decommit / recommit
 // ---------------------------------------------------------------------------
 
-/// Decommit pages `[base + start, base + end)`: return their physical backing
-/// to the OS while keeping the address-space reservation alive (Linux
-/// `MADV_DONTNEED`, Windows `MEM_DECOMMIT`). Re-access after decommit produces
-/// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on
-/// Linux — see the Darwin caveat below).
+/// Decommit pages `[base + start, base + end)`: hint the OS to return
+/// their physical backing while keeping the address-space reservation alive.
+/// On Linux and Windows this is guaranteed to return physical backing and
+/// zero-fill on next access (Linux `MADV_DONTNEED`, Windows `MEM_DECOMMIT`).
+/// On the Darwin family (macOS/iOS/tvOS/watchOS) and the four BSDs
+/// (FreeBSD/DragonFly/NetBSD/OpenBSD), this is a best-effort hint with no
+/// zero-fill or reclaim guarantee — the physical pages may remain resident and
+/// old data may be observed after a decommit+recommit roundtrip.
+/// Re-access after decommit produces fresh zero-filled pages (after
+/// [`recommit`] on Windows; implicitly on Linux — see the Darwin caveat below).
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
 /// A no-op if the range is empty.

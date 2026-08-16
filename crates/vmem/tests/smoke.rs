@@ -985,7 +985,7 @@ fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
     // reaches a point where this "reservation" is used unsoundly -- the
     // `assert!` fires before `Self` is even constructed.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3)
+        Reservation::from_raw_parts(raw, PAGE, raw, raw_len, 3, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1013,7 +1013,7 @@ fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, PAGE, raw, usize::MAX, align)
+        Reservation::from_raw_parts(raw, PAGE, raw, usize::MAX, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1039,7 +1039,7 @@ fn from_raw_parts_rejects_zero_reservation_len_immediately() {
     // The process never reaches a point where this "reservation" is used
     // unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, PAGE, raw, 0, align)
+        Reservation::from_raw_parts(raw, PAGE, raw, 0, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1065,7 +1065,7 @@ fn from_raw_parts_rejects_non_page_multiple_reservation_len_immediately() {
     // the contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, PAGE, raw, PAGE / 2, align)
+        Reservation::from_raw_parts(raw, PAGE, raw, PAGE / 2, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1090,7 +1090,7 @@ fn from_raw_parts_rejects_zero_len_immediately() {
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, 0, raw, raw_len, align)
+        Reservation::from_raw_parts(raw, 0, raw, raw_len, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1115,7 +1115,7 @@ fn from_raw_parts_rejects_non_page_multiple_len_immediately() {
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, PAGE / 2, raw, raw_len, align)
+        Reservation::from_raw_parts(raw, PAGE / 2, raw, raw_len, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1147,7 +1147,7 @@ fn from_raw_parts_rejects_misaligned_base_immediately() {
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(misaligned_base, PAGE, raw, raw_len, align)
+        Reservation::from_raw_parts(misaligned_base, PAGE, raw, raw_len, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1173,7 +1173,7 @@ fn from_raw_parts_rejects_insufficient_reservation_len_immediately() {
     // contract violation this test proves panics immediately. The process
     // never reaches a point where this "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw, 2 * PAGE, raw, PAGE, align)
+        Reservation::from_raw_parts(raw, 2 * PAGE, raw, PAGE, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.
@@ -1196,7 +1196,7 @@ fn from_raw_parts_accepts_a_valid_reservation() {
     // just produced from a live, exclusively-owned reservation, adopted back
     // with `base == reservation` and `len == raw_len` (the reservation has no
     // over-reserved head/tail here, since `size == align == PAGE`).
-    let adopted = unsafe { Reservation::from_raw_parts(raw, raw_len, raw, raw_len, align) };
+    let adopted = unsafe { Reservation::from_raw_parts(raw, raw_len, raw, raw_len, align, false) };
     let base = adopted.as_ptr();
     // SAFETY: the adopted reservation is a live, committed PAGE-byte span.
     unsafe {
@@ -1224,7 +1224,7 @@ fn from_raw_parts_rejects_base_below_reservation_immediately() {
     // specific assert message. The process never reaches a point where this
     // "reservation" is used unsoundly.
     let panic_info = panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        Reservation::from_raw_parts(raw.wrapping_sub(1), PAGE, raw, raw_len, align)
+        Reservation::from_raw_parts(raw.wrapping_sub(1), PAGE, raw, raw_len, align, false)
     }))
     .err();
     // Release the reservation to avoid leaking under miri.

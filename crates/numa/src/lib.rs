@@ -1134,7 +1134,14 @@ mod platform {
         //   `VirtualFree(MEM_RELEASE)` on the WHOLE `over`-byte span will
         //   accept it (matches aligned-vmem's own `win_reserve_commit` shape).
         let r = unsafe {
-            aligned_vmem::Reservation::from_raw_parts(base, size, raw as *mut u8, over, align)
+            aligned_vmem::Reservation::from_raw_parts(
+                base,
+                size,
+                raw as *mut u8,
+                over,
+                align,
+                false, // ordinary VirtualAllocExNuma pages -- MEM_LARGE_PAGES is never requested here
+            )
         };
         Some(r)
     }
