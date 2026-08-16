@@ -47,6 +47,26 @@
 //! this repo's `cfg(loom)`/`cfg(kani)` flags. A `--cfg` flag cannot be
 //! silently unified into a build by another crate downstream — that was the
 //! whole point of the conversion (task #715, task #658).
+//!
+//! # Recording contract edge cases
+//!
+//! Reentrant calls (e.g., `reserve_aligned` called from within an allocator
+//! invoked by this mock's own `record` function) are silently dropped by
+//! design — see the `record` function's "Reentrancy safety" section below.
+//!
+//! While a pathological TLS-teardown ordering could theoretically interact
+//! with this, the current implementation's use of `try_with` for the
+//! vector-backed log key (`CALLS`) makes that practically unreachable under
+//! today's std teardown order: the `RefCell<Vec>` is the only key that can
+//! ever be torn down mid-access, and it is protected via `try_with` rather
+//! than ordinary `.with(...)` (the `RECORDING` guard is a `Cell<bool>` with
+//! no `Drop` impl, so it is const-initialized and never runs a destructor).
+//!
+//! A well-formed empty-range `recommit`/`commit_range` call (`start == end`)
+//! is treated as a no-op and is **not** recorded in the mock call log, unlike
+//! other well-formed calls to the same functions (the early-return happens
+//! before `mock::record` is called — see those functions' implementations
+//! in `src/lib.rs`).
 
 use core::cell::{Cell, RefCell};
 

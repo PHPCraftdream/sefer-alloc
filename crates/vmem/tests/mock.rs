@@ -173,6 +173,45 @@ fn call_constructors_work_from_external_tests() {
     );
 }
 
+/// task #953 (finding 6.4): test all 8 `Call` constructors, not just the 3
+/// exercised by the original test (reserve/decommit/release). The remaining 5
+/// (reserve_lazy, reserve_huge, decommit_lazy, recommit, commit_range) are
+/// public API and must be verified to work.
+#[test]
+fn all_call_constructors_are_accessible_and_correct() {
+    use aligned_vmem::mock::Call;
+
+    // ReserveLazy (feature-gated constructor, but the Call variant exists in all builds)
+    let call_lazy = Call::reserve_lazy(4 * MIB, 4 * MIB, PAGE);
+    assert!(
+        matches!(call_lazy, Call::ReserveLazy { size, align, initial_commit, .. } if size == 4 * MIB && align == 4 * MIB && initial_commit == PAGE)
+    );
+
+    // ReserveHuge (feature-gated constructor, but the Call variant exists in all builds)
+    let call_huge = Call::reserve_huge(2 * MIB, 2 * MIB);
+    assert!(
+        matches!(call_huge, Call::ReserveHuge { size, align, .. } if size == 2 * MIB && align == 2 * MIB)
+    );
+
+    // DecommitLazy
+    let call_decommit_lazy = Call::decommit_lazy(0x2000, PAGE, 2 * PAGE);
+    assert!(
+        matches!(call_decommit_lazy, Call::DecommitLazy { base, start, end, .. } if base == 0x2000 && start == PAGE && end == 2 * PAGE)
+    );
+
+    // Recommit
+    let call_recommit = Call::recommit(0x3000, 0, PAGE);
+    assert!(
+        matches!(call_recommit, Call::Recommit { base, start, end, .. } if base == 0x3000 && start == 0 && end == PAGE)
+    );
+
+    // CommitRange
+    let call_commit_range = Call::commit_range(0x4000, PAGE, 2 * PAGE);
+    assert!(
+        matches!(call_commit_range, Call::CommitRange { base, start, end, .. } if base == 0x4000 && start == PAGE && end == 2 * PAGE)
+    );
+}
+
 #[cfg(feature = "huge-pages")]
 #[test]
 fn fail_next_reserve_injects_through_huge_path() {

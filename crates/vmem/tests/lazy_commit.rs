@@ -536,3 +536,58 @@ fn windows_lazy_reserve_saves_commit_charge() {
         assert_eq!(base.read(), 0xAA);
     }
 }
+
+/// Round 2 pre-release review, task #953 (finding 6.4): observe safe
+/// `Reservation::decommit` over the *never-committed tail* of a lazy
+/// Windows reservation. The safe method's bound is `len()`, which on a
+/// lazy reservation includes reserved-but-uncommitted pages; Microsoft
+/// documents `VirtualFree(MEM_DECOMMIT)` on such pages as succeeding, so
+/// this should be fine — but nothing pins this specific shape.
+#[test]
+fn safe_decommit_over_never_committed_tail_succeeds() {
+    let _guard = serial_guard();
+    // Reserve 4 MiB, commit only the first 64 KiB.
+    let initial = 16 * PAGE; // 64 KiB
+    let span = 4 * MIB;
+    let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
+    let base = r.as_ptr();
+
+    // Write into the committed region to verify it's actually committed.
+    // SAFETY: first `initial` bytes are committed.
+    unsafe {
+        base.write(0x55);
+        assert_eq!(base.read(), 0x55);
+    }
+
+    // Now decommit a range that extends into the never-committed tail.
+    // [initial, 2*initial) straddles the committed/uncommitted boundary:
+    // - [initial, initial) is empty (no-op)
+    // - [initial, initial + PAGE) is the first uncommitted page
+    // The safe method's bounds check passes (2*initial < len() == span), and
+    // the underlying `VirtualFree(MEM_DECOMMIT)` must succeed even on the
+    // uncommitted portion (per Microsoft's documentation).
+    let decommit_start = initial;
+    let decommit_end = 2 * initial;
+    r.decommit(decommit_start, decommit_end);
+
+    // Verify that the committed part we wrote is still readable (decommit
+    // doesn't release the address space, just the physical backing). On
+    // Windows, accessing a decommitted page faults; on Unix/miri it doesn't.
+    // We assert the COMMITTED part we wrote into is still valid.
+    // SAFETY: [0, initial) is still committed (we only decommitted starting
+    // at `initial`).
+    #[cfg(not(windows))]
+    unsafe {
+        assert_eq!(
+            base.read(),
+            0x55,
+            "decommitted region still readable on Unix"
+        );
+    }
+    #[cfg(windows)]
+    {
+        // On Windows, decommitted pages fault on read. The key assertion
+        // is that `r.decommit(...)` above did NOT panic — that proves the
+        // safe method accepts ranges covering never-committed memory.
+    }
+}

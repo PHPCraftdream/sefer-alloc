@@ -146,6 +146,44 @@ fn reservation_parts_prevents_parameter_swap() {
     unsafe { aligned_vmem::release(raw2, raw_len2, raw_align2) };
 }
 
+/// Round 2 pre-release review, task #953 (finding 6.4): verify that
+/// `ReservationParts::new` round-trips correctly through `release_parts`,
+/// closing the new → release path that `into_reservation_parts` already
+/// exercises (the reservation → new → release direction was the gap).
+#[test]
+fn reservation_parts_new_roundtrips_through_release() {
+    // This is the "self-hosted allocator" path: you recorded (ptr, len, align)
+    // somewhere else, and now you need to release the reservation without
+    // reconstructing the full `Reservation`.
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let parts_from_reservation = r.into_reservation_parts();
+
+    // Build a fresh `ReservationParts` from the same fields — this is the
+    // path the finding flagged as untested.
+    let parts_from_new = aligned_vmem::ReservationParts::new(
+        parts_from_reservation.ptr,
+        parts_from_reservation.len,
+        parts_from_reservation.align,
+    );
+
+    // Verify the fields match (they must, since we copied them).
+    assert_eq!(parts_from_new.ptr, parts_from_reservation.ptr);
+    assert_eq!(parts_from_new.len, parts_from_reservation.len);
+    assert_eq!(parts_from_new.align, parts_from_reservation.align);
+
+    // Release via `release_parts` — this must succeed without panicking.
+    // SAFETY: `r` was already consumed by `into_reservation_parts()` above,
+    // which forgets `r` internally (no `Drop` runs for it — see
+    // `Reservation::into_reservation_parts`'s own doc) — so there is no
+    // surviving `Reservation` handle whose `Drop` could race this call.
+    // `parts_from_reservation` is an inert copy of the same (ptr, len,
+    // align) fields and is never itself passed to a release function, so
+    // `release_parts(parts_from_new)` is the only release call for this
+    // reservation's one physical mapping — exactly the "release exactly
+    // once" contract `release_parts` requires.
+    unsafe { aligned_vmem::release_parts(parts_from_new) };
+}
+
 #[test]
 fn reserve_is_aligned_and_writable() {
     let span = 4 * MIB;
