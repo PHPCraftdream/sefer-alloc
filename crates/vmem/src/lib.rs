@@ -242,16 +242,6 @@ use core::sync::atomic::AtomicU64;
 /// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
 /// measures the combined success rate of both alignment and OS availability.
 ///
-/// **Double-increment caveat (32-bit Linux/Android only):** On a 32-bit host with
-/// the `huge-pages` feature enabled and `align == LINUX_HUGE_PAGE_SIZE` (2 MiB),
-/// a single logical `reserve` call can increment this counter twice: once when
-/// the huge-page exact-size fast path is tried (in `unix_reserve`) and falls
-/// through, and again when execution reaches the 32-bit `try_reserve_aligned_exact`
-/// fast path immediately below. In this specific configuration, the denominator
-/// does NOT equal "number of reservation calls" and the computed hit rate is
-/// skewed. This caveat does not affect 64-bit hosts, where only the huge-page
-/// path uses these counters.
-///
 /// Note that the denominator conflates two different failure kinds with
 /// different syscall costs: an alignment miss costs 3 syscalls (mmap + munmap +
 /// mmap for the over-reserve), while an OS refusal costs only 1 (the initial
@@ -269,15 +259,6 @@ pub(crate) static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// (32-bit Unix only) and the Linux/Android huge-page exact-size path (II-4,
 /// 2026-08-16 audit finding, `align == LINUX_HUGE_PAGE_SIZE`, fires on
 /// 64-bit Linux/Android too).
-///
-/// **Double-increment caveat (32-bit Linux/Android only):** On a 32-bit host
-/// with the `huge-pages` feature enabled and `align == LINUX_HUGE_PAGE_SIZE`
-/// (2 MiB), both the huge-page path in `unix_reserve` and the 32-bit
-/// `try_reserve_aligned_exact` path share this counter. In this specific
-/// configuration, the counter tracks both paths' successes rather than a
-/// single logical operation, and the computed hit rate is skewed. This caveat
-/// does not affect 64-bit hosts, where only the huge-page path increments this
-/// counter.
 ///
 /// Numerator over [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level
 /// "bench-internals" section doc above.
@@ -2413,8 +2394,9 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: De
     let len = end - start;
     // Windows has no lazy `MADV_FREE` equivalent — both eager and lazy map to
     // `MEM_DECOMMIT`.
-    // SAFETY: caller guarantees `[base+start, +len)` is within a committed
-    // reservation; `MEM_DECOMMIT` returns the physical pages.
+    // SAFETY: caller guarantees `[base+start, +len)` is within a MEM_RESERVEd
+    // region (not necessarily committed); `MEM_DECOMMIT` returns the physical pages,
+    // and decommitting an already-uncommitted sub-range is a defined safe no-op.
     let addr = unsafe { base.add(start) };
     unsafe { winapi_virtual_decommit(addr, len) };
 }
@@ -2570,7 +2552,8 @@ unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
 // mock (task #646/F8): see decommit_pages_impl above.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
-    // SAFETY: caller guarantees `[addr, addr+len)` is within a committed region.
+    // SAFETY: caller guarantees `[addr, addr+len)` is within a MEM_RESERVEd region;
+    // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
     // task #921/V-8: the return value is deliberately discarded. A failure here would
     // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
     // and the failure mode is a leak, never unsafety. The failure is known to be reachable
@@ -2749,11 +2732,26 @@ fn unix_reserve(
     // On 64-bit this is a net syscall loss (the fast path costs 1 syscall on a
     // hit, 3 on a miss, vs a flat 1 syscall for the over-reserve path), and
     // address-space economy is not a concern on 64-bit.
+    //
+    // R3-1/R4-2 fix: skip 32-bit generic exact path when huge-page exact-size fast path
+    // was already tried above (lines 2707-2738). Without this check, a 32-bit host
+    // with hugetlb pool == 0 would call `try_reserve_aligned_exact(size, align, huge=true)`
+    // after the specialized huge-exact path just failed with the same MAP_HUGETLB call,
+    // causing `UNIX_EXACT_RESERVE_ATTEMPTS` to be incremented twice for one logical reserve.
     #[cfg(target_pointer_width = "32")]
-    if let Ok((base, reservation, reservation_len, granted_huge)) =
-        try_reserve_aligned_exact(size, align, huge)
     {
-        return Ok((base, reservation, reservation_len, granted_huge));
+        #[cfg(all(any(target_os = "linux", target_os = "android"), feature = "huge-pages"))]
+        let huge_exact_already_tried = huge && align == LINUX_HUGE_PAGE_SIZE;
+        #[cfg(not(all(any(target_os = "linux", target_os = "android"), feature = "huge-pages")))]
+        let huge_exact_already_tried = false;
+
+        if !huge_exact_already_tried {
+            if let Ok((base, reservation, reservation_len, granted_huge)) =
+                try_reserve_aligned_exact(size, align, huge)
+            {
+                return Ok((base, reservation, reservation_len, granted_huge));
+            }
+        }
     }
     let over = size
         .checked_add(align)
