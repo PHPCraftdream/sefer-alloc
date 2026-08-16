@@ -19,6 +19,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `windows_reserve_commit_calls()` / `windows_reserve_commit_single_calls()` / `windows_reserve_commit_two_call_pairs()`
   - `unix_madvise_attempts()` / `unix_madvise_successes()`
   - `windows_virtualfree_decommit_attempts()` / `windows_virtualfree_decommit_failures()`
+  - `windows_virtualfree_release_failures()`
   - `unix_munmap_failures()`
   - `reset_bench_internals_counters()`
   - `validate_page_size()` for testing page size validation logic

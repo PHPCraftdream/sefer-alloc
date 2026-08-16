@@ -343,6 +343,21 @@ pub(crate) static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub(crate) static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: number of `VirtualFree(..., MEM_RELEASE)` calls that
+/// failed (Windows only — always 0 on Unix/miri). `VirtualFree(MEM_RELEASE)`
+/// failures indicate a backend bookkeeping problem that can turn into a
+/// silent leak/un-freed RSS with zero visibility. For correctly created internal
+/// reservations, a release failure usually indicates a bookkeeping defect. For
+/// `unsafe from_raw_parts` and external allocator handoff, a failure turns into a
+/// silent leak at Drop. The crate's public API is infallible (by design), so
+/// failures are currently silently ignored; this counter provides at least
+/// diagnostic visibility into the failure rate. Added to address the finding
+/// documented in `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`
+/// item R4-7.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_VIRTUALFREE_RELEASE_FAILURES: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: number of `VirtualFree(MEM_DECOMMIT)` attempts made.
 /// Denominator for [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]. Mirrors the Unix
 /// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` pair pattern — lets tests
@@ -453,13 +468,23 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all nine counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: relaxed snapshot of `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`.
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_virtualfree_release_failures() -> u64 {
+    WINDOWS_VIRTUALFREE_RELEASE_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all ten counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`, `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
 /// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES`,
-/// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`, and
-/// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`) to 0. Test/bench hook only —
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`,
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`, and
+/// `WINDOWS_VIRTUALFREE_RELEASE_FAILURES`) to 0. Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
@@ -475,6 +500,7 @@ pub fn reset_bench_internals_counters() {
     UNIX_MUNMAP_FAILURES.store(0, Ordering::Relaxed);
     WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.store(0, Ordering::Relaxed);
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.store(0, Ordering::Relaxed);
+    WINDOWS_VIRTUALFREE_RELEASE_FAILURES.store(0, Ordering::Relaxed);
 }
 
 /// Validate a queried OS page size, falling back to PAGE if the value is invalid.
@@ -2589,8 +2615,19 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
     // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
     // and the failure mode is a leak, never unsafety (the mapping stays valid, just not
     // returned to the OS).
+    //
+    // task R4-7 (2026-08-16 audit finding): increment the failure counter
+    // under `bench-internals` so at least diagnostic visibility exists. The
+    // counter is gated on the feature and the increment is a single relaxed
+    // fetch_add — zero overhead when the feature is off.
     // SAFETY: `VirtualFree` with `MEM_RELEASE` and size 0 is safe for the base of a `MEM_RESERVE` region.
-    let _ = unsafe { VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE) };
+    let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE) };
+    #[cfg(feature = "bench-internals")]
+    if ret == 0 {
+        WINDOWS_VIRTUALFREE_RELEASE_FAILURES.fetch_add(1, Ordering::Relaxed);
+    }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = ret;
 }
 
 // ===========================================================================

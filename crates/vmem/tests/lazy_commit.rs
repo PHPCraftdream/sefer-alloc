@@ -624,3 +624,31 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
         }
     }
 }
+
+#[test]
+#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+fn windows_virtualfree_release_failures_accessor_exists() {
+    // This test verifies that the `windows_virtualfree_release_failures()`
+    // accessor exists, compiles, and returns 0 when no failures have occurred.
+    // A path-activation test for real VirtualFree(MEM_RELEASE) failures is
+    // difficult without mocking (the failure mode is a silent leak on Drop),
+    // so this minimal sanity check is the practical baseline.
+    //
+    // Deliberately WEAKER than the decommit counter's coverage, and named as
+    // such: `windows_virtualfree_decommit_failures()` has a real delta-asserting
+    // test above (`safe_decommit_over_never_committed_tail_succeeds`, which pins
+    // `failures_after == failures_before` across a known-good decommit), because
+    // that syscall is reachable on demand. `MEM_RELEASE` is not: it only runs
+    // from `Drop`, and making it FAIL on demand would require a bogus base
+    // address -- i.e. deliberately violating `winapi_virtual_release`'s own
+    // safety contract. `unix_munmap_failures()` has no test at all today. So
+    // this checks existence, accessibility and reset-to-zero only; it would NOT
+    // catch the increment being deleted. Full fail-path coverage stays deferred
+    // to a fault-injection harness.
+    aligned_vmem::reset_bench_internals_counters();
+    let failures = aligned_vmem::windows_virtualfree_release_failures();
+    assert_eq!(
+        failures, 0,
+        "windows_virtualfree_release_failures() should return 0 after reset"
+    );
+}
