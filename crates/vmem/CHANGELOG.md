@@ -55,4 +55,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `Reservation::is_empty()` method (use `len() == 0` instead)
 - `mock` Cargo feature (replaced by `--cfg aligned_vmem_mock` build flag)
 
-[0.1.0]: https://github.com/PHPCraftdream/sefer-alloc/releases/tag/v0.1.0-aligned-vmem

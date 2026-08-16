@@ -235,6 +235,17 @@ use core::sync::atomic::AtomicU64;
 /// misses and OS-level failures (e.g., OOM, MAP_HUGETLB refused). The hit-rate
 /// ratio `UNIX_EXACT_RESERVE_HITS / UNIX_EXACT_RESERVE_ATTEMPTS` therefore
 /// measures the combined success rate of both alignment and OS availability.
+///
+/// **Double-increment caveat (32-bit Linux/Android only):** On a 32-bit host with
+/// the `huge-pages` feature enabled and `align == LINUX_HUGE_PAGE_SIZE` (2 MiB),
+/// a single logical `reserve` call can increment this counter twice: once when
+/// the huge-page exact-size fast path is tried (in `unix_reserve`) and falls
+/// through, and again when execution reaches the 32-bit `try_reserve_aligned_exact`
+/// fast path immediately below. In this specific configuration, the denominator
+/// does NOT equal "number of reservation calls" and the computed hit rate is
+/// skewed. This caveat does not affect 64-bit hosts, where only the huge-page
+/// path uses these counters.
+///
 /// Note that the denominator conflates two different failure kinds with
 /// different syscall costs: an alignment miss costs 3 syscalls (mmap + munmap +
 /// mmap for the over-reserve), while an OS refusal costs only 1 (the initial
@@ -252,6 +263,15 @@ pub(crate) static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// (32-bit Unix only) and the Linux/Android huge-page exact-size path (II-4,
 /// 2026-08-16 audit finding, `align == LINUX_HUGE_PAGE_SIZE`, fires on
 /// 64-bit Linux/Android too).
+///
+/// **Double-increment caveat (32-bit Linux/Android only):** On a 32-bit host
+/// with the `huge-pages` feature enabled and `align == LINUX_HUGE_PAGE_SIZE`
+/// (2 MiB), both the huge-page path in `unix_reserve` and the 32-bit
+/// `try_reserve_aligned_exact` path share this counter. In this specific
+/// configuration, the counter tracks both paths' successes rather than a
+/// single logical operation, and the computed hit rate is skewed. This caveat
+/// does not affect 64-bit hosts, where only the huge-page path increments this
+/// counter.
 ///
 /// Numerator over [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level
 /// "bench-internals" section doc above.
@@ -2341,10 +2361,9 @@ fn win_reserve_commit(
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize, _align: usize) {
-    // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE,
-    // ..)` with an inner aligned sub-range separately committed. `VirtualFree(..,
-    // 0, MEM_RELEASE)` releases the ENTIRE region regardless of commit state.
-    // SAFETY: `winapi_virtual_release` requires `addr` to be the base of a `MEM_RESERVE` region.
+    // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE, ..)`
+    // with an inner aligned sub-range separately committed. `VirtualFree(.., 0,
+    // MEM_RELEASE)` releases the entire MEM_RESERVE region regardless of commit state.
     unsafe { winapi_virtual_release(reservation.as_ptr()) };
 }
 
@@ -2511,8 +2530,8 @@ const PAGE_READWRITE: u32 = 0x04;
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
-    // SAFETY: `MEM_RESERVE` only — reserve address space without commit.
-    // SAFETY: `VirtualAlloc` with `MEM_RESERVE` is safe for any valid size; null base is documented for this usage.
+    // SAFETY: `VirtualAlloc` with `MEM_RESERVE` only reserves address space without
+    // commit; null base is documented for this usage and safe for any valid size.
     unsafe { VirtualAlloc(core::ptr::null_mut(), over, MEM_RESERVE, PAGE_READWRITE) }
 }
 
@@ -2868,9 +2887,9 @@ fn try_reserve_aligned_exact(
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, _align: usize) {
-    // SAFETY: on unix `reservation` IS the start of the remaining mapping of
-    // length `reservation_len`; `munmap` returns it.
-    // SAFETY: `libc_munmap` requires the address/len to be a live mmap'd region being unmapped once.
+    // SAFETY: on unix `reservation` is the start of the remaining mapping of length
+    // `reservation_len`; `libc_munmap` requires the address/len to be a live mmap'd
+    // region being unmapped once, which this call satisfies.
     unsafe { libc_munmap(reservation.as_ptr(), reservation_len) };
 }
 
