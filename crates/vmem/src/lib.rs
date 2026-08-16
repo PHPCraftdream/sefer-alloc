@@ -232,7 +232,7 @@ use core::sync::atomic::AtomicU64;
 /// section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `try_reserve_aligned_exact` attempts that
 /// succeeded (the `mmap` landed already `align`-aligned, so no over-reserve
@@ -243,7 +243,7 @@ pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of successful `win_reserve_commit` calls that took the
 /// single-call fast path (Windows only — always 0 on Unix/miri; that internal helper
@@ -256,7 +256,7 @@ pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of successful `win_reserve_commit` calls that took the
 /// two-call path (Windows only — always 0 on Unix/miri; that internal helper
@@ -269,7 +269,7 @@ pub static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::new(0);
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: total number of `madvise(2)` calls issued by
 /// `libc_madvise` (Unix only — always 0 on Windows/miri; that internal
@@ -288,7 +288,7 @@ pub static WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS: AtomicU64 = AtomicU64::new(0);
 /// Denominator for [`UNIX_MADVISE_SUCCESSES`].
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static UNIX_MADVISE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNIX_MADVISE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of [`UNIX_MADVISE_ATTEMPTS`] that returned `0`
 /// (success) from `madvise(2)`, as opposed to `-1` (failure, `errno` set).
@@ -296,7 +296,7 @@ pub static UNIX_MADVISE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 /// settles. Numerator over [`UNIX_MADVISE_ATTEMPTS`].
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `munmap` calls that failed (Unix only —
 /// always 0 on Windows/miri). `munmap` failures indicate a backend
@@ -322,8 +322,9 @@ pub static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
-/// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
-/// Diagnostic only.
+/// `bench-internals`: relaxed snapshot of the internal
+/// `UNIX_EXACT_RESERVE_ATTEMPTS` counter (private storage; this accessor is
+/// the public read surface). Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
@@ -331,8 +332,9 @@ pub fn unix_exact_reserve_attempts() -> u64 {
     UNIX_EXACT_RESERVE_ATTEMPTS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_HITS`].
-/// Diagnostic only.
+/// `bench-internals`: relaxed snapshot of the internal
+/// `UNIX_EXACT_RESERVE_HITS` counter (private storage; this accessor is the
+/// public read surface). Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
 #[must_use]
@@ -340,9 +342,10 @@ pub fn unix_exact_reserve_hits() -> u64 {
     UNIX_EXACT_RESERVE_HITS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of the sum of
-/// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`] and
-/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`] (both paths combined).
+/// `bench-internals`: relaxed snapshot of the sum of the internal
+/// `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` and
+/// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` counters (both paths combined;
+/// private storage, this accessor is the public read surface).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -352,8 +355,9 @@ pub fn windows_reserve_commit_calls() -> u64 {
         + WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`]
-/// (single-call path count).
+/// `bench-internals`: relaxed snapshot of the internal
+/// `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` counter (single-call path count;
+/// private storage, this accessor is the public read surface).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -362,8 +366,9 @@ pub fn windows_reserve_commit_single_calls() -> u64 {
     WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`]
-/// (two-call path count).
+/// `bench-internals`: relaxed snapshot of the internal
+/// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` counter (two-call path count;
+/// private storage, this accessor is the public read surface).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -372,7 +377,8 @@ pub fn windows_reserve_commit_two_call_pairs() -> u64 {
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`UNIX_MADVISE_ATTEMPTS`].
+/// `bench-internals`: relaxed snapshot of the internal `UNIX_MADVISE_ATTEMPTS`
+/// counter (private storage; this accessor is the public read surface).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -381,7 +387,8 @@ pub fn unix_madvise_attempts() -> u64 {
     UNIX_MADVISE_ATTEMPTS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`UNIX_MADVISE_SUCCESSES`].
+/// `bench-internals`: relaxed snapshot of the internal `UNIX_MADVISE_SUCCESSES`
+/// counter (private storage; this accessor is the public read surface).
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -408,11 +415,11 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all eight counters
-/// ([`UNIX_EXACT_RESERVE_ATTEMPTS`], [`UNIX_EXACT_RESERVE_HITS`],
-/// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`],
-/// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`], [`UNIX_MADVISE_ATTEMPTS`],
-/// [`UNIX_MADVISE_SUCCESSES`], [`UNIX_MUNMAP_FAILURES`],
+/// `bench-internals`: reset all eight counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
+/// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`, `UNIX_MADVISE_ATTEMPTS`,
+/// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
+/// respective accessor functions above -- plus [`UNIX_MUNMAP_FAILURES`] and
 /// [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]) to 0. Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
@@ -3239,7 +3246,7 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
-    let ret = munmap(addr as *mut core::ffi::c_void, len);
+    let ret = unsafe { munmap(addr as *mut core::ffi::c_void, len) };
     #[cfg(feature = "bench-internals")]
     if ret != 0 {
         UNIX_MUNMAP_FAILURES.fetch_add(1, Ordering::Relaxed);
@@ -3313,7 +3320,8 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
     // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly
     // this layout in `reserve_aligned_raw`; freed once.
     let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
-    std::alloc::dealloc(reservation.as_ptr(), layout);
+    // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly this layout.
+    unsafe { std::alloc::dealloc(reservation.as_ptr(), layout) };
 }
 
 // Unsupported target: no `reserve_aligned_raw` / `release_reservation` implementation.
