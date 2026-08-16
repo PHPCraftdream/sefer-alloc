@@ -356,6 +356,14 @@ pub(crate) static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub(crate) static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: number of `VirtualFree(MEM_DECOMMIT)` attempts made.
+/// Denominator for [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]. Mirrors the Unix
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` pair pattern — lets tests
+/// distinguish "genuinely succeeded" from "never attempted".
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: relaxed snapshot of the internal
 /// `UNIX_EXACT_RESERVE_ATTEMPTS` counter (private storage; this accessor is
 /// the public read surface). Diagnostic only.
@@ -431,6 +439,15 @@ pub fn unix_madvise_successes() -> u64 {
     UNIX_MADVISE_SUCCESSES.load(Ordering::Relaxed)
 }
 
+/// `bench-internals`: relaxed snapshot of `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`.
+/// Denominator for `windows_virtualfree_decommit_failures()`. Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_virtualfree_decommit_attempts() -> u64 {
+    WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.load(Ordering::Relaxed)
+}
+
 /// `bench-internals`: relaxed snapshot of `UNIX_MUNMAP_FAILURES`.
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
@@ -449,11 +466,12 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all eight counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: reset all nine counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`, `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
-/// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES` and
+/// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES`,
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`, and
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`) to 0. Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
@@ -468,6 +486,7 @@ pub fn reset_bench_internals_counters() {
     UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
     UNIX_MUNMAP_FAILURES.store(0, Ordering::Relaxed);
+    WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.store(0, Ordering::Relaxed);
     WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.store(0, Ordering::Relaxed);
 }
 
@@ -2550,8 +2569,14 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
+    //
+    // Finding C-12 (2026-08-16 audit): add an attempts counter mirroring the
+    // Unix `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` pair, letting tests
+    // distinguish "genuinely succeeded" from "never attempted".
     // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a `MEM_RESERVE`d region;
     // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
+    #[cfg(feature = "bench-internals")]
+    WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT) };
     #[cfg(feature = "bench-internals")]
     if ret == 0 {

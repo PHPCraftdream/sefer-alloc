@@ -32,6 +32,13 @@
 //! end.
 
 #![cfg(feature = "huge-pages")]
+// `serial_guard()` returns a real `MutexGuard` on Windows+bench-internals+
+// non-mock builds and `()` everywhere else (the lock/counters it guards
+// don't exist there) -- every call site binds it via `let _guard = ...;` so
+// the guard's scope (drop at function end) is identical across all
+// platforms; on the `()` variant that's a unit-value binding, which is
+// otherwise a real clippy smell but is exactly the point here.
+#![allow(clippy::let_unit_value)]
 
 use aligned_vmem::reserve_aligned_huge;
 #[cfg(target_os = "linux")]
@@ -186,18 +193,14 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// this must succeed either way, so the test only asserts on the contract-
 /// violation guard not firing (not on the actual huge-page grant).
 #[test]
-#[cfg(all(target_os = "linux", feature = "bench-internals"))]
+#[cfg(target_os = "linux")]
 fn reserve_aligned_huge_exact_size_for_2mib_align() {
-    use aligned_vmem::{
-        reset_bench_internals_counters, try_reserve_aligned_huge, unix_exact_reserve_attempts,
-        unix_exact_reserve_hits,
-    };
-
     let _guard = serial_guard();
     let size = LINUX_HUGE_PAGE_SIZE;
 
-    reset_bench_internals_counters();
-    match try_reserve_aligned_huge(size, LINUX_HUGE_PAGE_SIZE) {
+    #[cfg(feature = "bench-internals")]
+    aligned_vmem::reset_bench_internals_counters();
+    match aligned_vmem::try_reserve_aligned_huge(size, LINUX_HUGE_PAGE_SIZE) {
         Ok(r) => {
             let base = r.as_ptr();
             assert_eq!(base as usize % LINUX_HUGE_PAGE_SIZE, 0);
@@ -211,16 +214,19 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
             // PATH-ACTIVATION ORACLE: verify this took the Linux exact-size huge path.
             // The exact-size huge path increments both UNIX_EXACT_RESERVE_ATTEMPTS
             // and UNIX_EXACT_RESERVE_HITS when it succeeds.
-            let attempts = unix_exact_reserve_attempts();
-            let hits = unix_exact_reserve_hits();
-            assert_eq!(
-                attempts, 1,
-                "2 MiB shape must increment UNIX_EXACT_RESERVE_ATTEMPTS; observed: attempts={attempts}, hits={hits}"
-            );
-            assert_eq!(
-                hits, 1,
-                "2 MiB shape must increment UNIX_EXACT_RESERVE_HITS; observed: attempts={attempts}, hits={hits}"
-            );
+            #[cfg(feature = "bench-internals")]
+            {
+                let attempts = aligned_vmem::unix_exact_reserve_attempts();
+                let hits = aligned_vmem::unix_exact_reserve_hits();
+                assert_eq!(
+                    attempts, 1,
+                    "2 MiB shape must increment UNIX_EXACT_RESERVE_ATTEMPTS; observed: attempts={attempts}, hits={hits}"
+                );
+                assert_eq!(
+                    hits, 1,
+                    "2 MiB shape must increment UNIX_EXACT_RESERVE_HITS; observed: attempts={attempts}, hits={hits}"
+                );
+            }
         }
         Err(e) => assert!(
             !e.is_invalid_argument(),

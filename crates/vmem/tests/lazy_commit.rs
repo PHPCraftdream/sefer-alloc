@@ -566,7 +566,10 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
     // (the same bug class that broke `main`'s default build earlier in
     // this campaign).
     #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
-    let failures_before = aligned_vmem::windows_virtualfree_decommit_failures();
+    let (failures_before, attempts_before) = (
+        aligned_vmem::windows_virtualfree_decommit_failures(),
+        aligned_vmem::windows_virtualfree_decommit_attempts(),
+    );
 
     // Now decommit a range that extends into the never-committed tail.
     // [initial, 2*initial) straddles the committed/uncommitted boundary:
@@ -600,13 +603,20 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
         // safe method accepts ranges covering never-committed memory.
         //
         // Additionally, verify that the decommit actually succeeded (not just
-        // that it didn't panic). The crate's bench-internals counter tracks
-        // VirtualFree(MEM_DECOMMIT) failures — this test should NOT increment
-        // it, because decommitting never-committed pages is well-defined behavior
-        // on Windows.
+        // that it didn't panic) and that the syscall was actually attempted.
+        // The crate's bench-internals counters track both attempts and failures
+        // for `VirtualFree(MEM_DECOMMIT)`. This test must increment attempts by
+        // exactly 1 (proving the syscall really ran on the never-committed tail)
+        // and must NOT increment failures (proving it succeeded).
         #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
         {
+            let attempts_after = aligned_vmem::windows_virtualfree_decommit_attempts();
             let failures_after = aligned_vmem::windows_virtualfree_decommit_failures();
+            assert_eq!(
+                attempts_after,
+                attempts_before + 1,
+                "VirtualFree(MEM_DECOMMIT) should be attempted exactly once"
+            );
             assert_eq!(
                 failures_after, failures_before,
                 "VirtualFree(MEM_DECOMMIT) should not fail on never-committed pages"
