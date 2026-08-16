@@ -975,7 +975,7 @@ impl Reservation {
     ///
     /// Huge-page reservation: decommit never works, even on Linux/Windows:
     /// ```text
-    /// let huge = reserve_aligned_huge(1024 * 1024, 1024 * 1024);
+    /// let huge = reserve_aligned_huge(2 * 1024 * 1024, 2 * 1024 * 1024);
     /// if let Some(ref reservation) = huge {
     ///     if reservation.is_huge() {
     ///         // Always false, regardless of platform
@@ -983,6 +983,11 @@ impl Reservation {
     ///     }
     /// }
     /// ```
+    /// NOTE: On Linux/Android with the `huge-pages` feature enabled, the
+    /// arguments must be multiples of the huge page size (2 MiB); the example
+    /// above uses 2 MiB for both size and align to avoid rejection. On other
+    /// platforms, the function is a best-effort no-op and any size/align will
+    /// succeed (falling back to ordinary pages).
     ///
     /// See the tests in `tests/decommit_capability.rs` for runnable coverage of both cases.
     #[must_use]
@@ -1065,10 +1070,11 @@ impl Reservation {
     /// implementation — dropping or forgetting it does NOT release the underlying
     /// OS reservation. The reservation will leak until you reconstruct it via
     /// `into_reservation()` and drop the resulting `Reservation`, or release it
-    /// manually via [`release`] (using the `ptr`, `len`, and `align` fields from
-    /// [`ReservationParts`]). If you only need manual release and don't require
-    /// preserving `base`, `len`, and `granted_huge`, prefer [`into_reservation_parts`](Self::into_reservation_parts)
-    /// instead, which provides the `release_parts` function.
+    /// manually via [`release`] (using the `reservation`, `reservation_len`, and
+    /// `align` fields from `ReservationFullParts`). If you only need manual
+    /// release and don't require preserving `base`, `len`, and `granted_huge`,
+    /// prefer [`into_reservation_parts`](Self::into_reservation_parts) instead,
+    /// which provides the `release_parts` function.
     #[must_use]
     pub fn into_full_parts(self) -> ReservationFullParts {
         let parts = ReservationFullParts {

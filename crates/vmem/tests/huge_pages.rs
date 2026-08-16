@@ -4,14 +4,14 @@
 //!
 //! **Verification honesty (per task #714's own instruction):** no
 //! hugetlb-configured host is in this project's CI, and this crate's
-//! `MAP_HUGETLB` request path is Linux-only (`libc_mmap`'s `huge` flag has
+//! `MAP_HUGETLB` request path is Linux/Android-only (`libc_mmap`'s `huge` flag has
 //! no effect on any other target — huge pages are a documented no-op
-//! elsewhere). The `#[cfg(target_os = "linux")]` tests below (the
+//! elsewhere). The `#[cfg(any(target_os = "linux", target_os = "android"))]` tests below (the
 //! task #714-specific hugetlb-alignment-rejection regressions) therefore
-//! only ever compile and run on Linux; everywhere else (including the
+//! only ever compile and run on Linux/Android; everywhere else (including the
 //! Windows host this round's fixes were authored and verified on) they are
 //! `#[cfg]`-excluded and only the general best-effort-fallback sanity test
-//! above them runs. The Linux-only tests' correctness was checked, when
+//! above them runs. The Linux/Android-only tests' correctness was checked, when
 //! authored, by a cross-compile (`cargo check --target
 //! x86_64-unknown-linux-gnu`), NOT by execution on a real hugetlb-backed
 //! system.
@@ -23,9 +23,9 @@
 //! `test-workspace` job, `runs-on: ubuntu-latest`) and already runs
 //! `cargo test -p aligned-vmem --all-features`, which compiles this file
 //! (gated only on `feature = "huge-pages"`, not `target_os`) and executes
-//! all four Linux-gated tests below on every push. This file's Linux-only
-//! regression coverage is therefore genuinely LIVE in CI, not merely
-//! compile-checked. The real residual gap, stated precisely: no
+//! all four Linux/Android-gated tests below on every push. This file's
+//! Linux/Android-only regression coverage is therefore genuinely LIVE in CI
+//! on the Linux runner; Android itself is not executed in CI, only cfg-gated. The real residual gap, stated precisely: no
 //! **hugetlb-configured** host runs these tests, so the
 //! `MAP_HUGETLB`-actually-succeeds branch (as opposed to the
 //! best-effort-fallback branch, which IS exercised) stays untested end to
@@ -41,14 +41,14 @@
 #![allow(clippy::let_unit_value)]
 
 use aligned_vmem::reserve_aligned_huge;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use aligned_vmem::{try_reserve_aligned_huge, VmemError, PAGE};
 
 const MIB: usize = 1024 * 1024;
 
 /// The `bench-internals` diagnostic counters this file's path-activation
 /// tests read (`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`_TWO_CALL_PAIRS` on
-/// Windows, `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` on Linux) are
+/// Windows, `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` on Linux/Android) are
 /// PROCESS-GLOBAL. libtest runs this file's tests on parallel threads by
 /// default, so any test that calls `reserve_aligned_huge`/
 /// `try_reserve_aligned_huge` (which increments these counters as a side
@@ -95,22 +95,26 @@ fn reserve_aligned_huge_ordinary_page_sized_request_succeeds() {
         base.write(0xAB);
         assert_eq!(base.read(), 0xAB);
     }
-    // Regression for W2 fix: on non-Linux Unix and Windows, huge pages are
-    // a documented no-op, so is_huge() must always return false even when
-    // reserve_aligned_huge is called.
-    #[cfg(not(target_os = "linux"))]
-    assert!(!r.is_huge(), "non-Linux Unix and Windows never report huge");
+    // Regression for W2 fix: on platforms where huge pages are a documented
+    // no-op (macOS, iOS, BSDs), `is_huge()` must always return false. Windows
+    // and Linux/Android with the `huge-pages` feature are exempt:
+    // - Windows can grant `MEM_LARGE_PAGES` when the process has the required
+    //   privilege, so `is_huge() == true` is valid.
+    // - Linux/Android with the `huge-pages` feature actually attempt `MAP_HUGETLB`
+    //   and may succeed on a configured host, so `is_huge() == true` is valid.
+    #[cfg(all(not(windows), not(any(target_os = "linux", target_os = "android"))))]
+    assert!(!r.is_huge(), "non-Linux/Android Unix never reports huge");
 }
 
-// ── task #714: hugetlb-alignment rejection (Linux + huge-pages only) ───────
+// ── task #714: hugetlb-alignment rejection (Linux/Android + huge-pages only) ───────
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const LINUX_HUGE_PAGE_SIZE: usize = 2 * MIB;
 
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
-    // task #714 (rust-intel audit MEDIUM §F1): on Linux, `mmap(2)`'s Huge TLB
+    // task #714 (rust-intel audit MEDIUM §F1): on Linux/Android, `mmap(2)`'s Huge TLB
     // rule requires munmap's addr AND length to be huge-page-aligned; the
     // over-reserve path used to silently leak the whole mapping (EINVAL
     // from munmap, discarded) when `size` was not a multiple of the huge
@@ -127,7 +131,7 @@ fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_align() {
     // Same rule, the `align` half: `over = size + align` must also be
     // huge-page-aligned for the release to stay provably conformant (see
@@ -141,7 +145,7 @@ fn reserve_aligned_huge_rejects_non_huge_page_aligned_align() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn reserve_aligned_huge_accepts_huge_page_aligned_request() {
     let _guard = serial_guard();
     // The positive case: a genuinely huge-page-aligned size/align pair must
@@ -168,7 +172,7 @@ fn reserve_aligned_huge_accepts_huge_page_aligned_request() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn reserve_aligned_huge_error_type_is_vmem_error() {
     // Type-level sanity: the fallible entry point's error type is exactly
     // `VmemError` (guards against a future refactor silently widening the
@@ -177,12 +181,12 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
     assert_error_type(try_reserve_aligned_huge(0, PAGE));
 }
 
-/// II-4 (2026-08-16 audit finding): Linux huge-page reservation with
+/// II-4 (2026-08-16 audit finding): Linux/Android huge-page reservation with
 /// `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) uses exact-size mmap, avoiding
 /// `size + align` over-reserve against the hugetlb pool.
 ///
 /// This test verifies that `reserve_aligned_huge(2 MiB, 2 MiB)` succeeds,
-/// is properly aligned, AND actually takes the Linux exact-size huge-page
+/// is properly aligned, AND actually takes the Linux/Android exact-size huge-page
 /// fast path (using the bench-internals counters as a path-activation oracle).
 /// The kernel guarantees an anonymous MAP_HUGETLB mapping starts at a
 /// huge-page-aligned address, so the exact-size mmap satisfies the alignment
@@ -193,7 +197,7 @@ fn reserve_aligned_huge_error_type_is_vmem_error() {
 /// this must succeed either way, so the test only asserts on the contract-
 /// violation guard not firing (not on the actual huge-page grant).
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn reserve_aligned_huge_exact_size_for_2mib_align() {
     let _guard = serial_guard();
     let size = LINUX_HUGE_PAGE_SIZE;
@@ -211,7 +215,7 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
                 assert_eq!(base.read(), 0xEF);
             }
 
-            // PATH-ACTIVATION ORACLE: verify this took the Linux exact-size huge path.
+            // PATH-ACTIVATION ORACLE: verify this took the Linux/Android exact-size huge path.
             // The exact-size huge path increments UNIX_EXACT_RESERVE_ATTEMPTS before calling
             // mmap, and increments UNIX_EXACT_RESERVE_HITS only if that mmap succeeds AND
             // the returned address happens to be aligned. When /proc/sys/vm/nr_hugepages == 0
