@@ -131,7 +131,10 @@ unsafe fn fault_pages(base: *mut u8, len: usize) {
     // page_size()-vs-PAGE discipline.
     let page_size = aligned_vmem::page_size();
     for offset in (0..len).step_by(page_size) {
-        ptr::write_volatile(base.add(offset), 0xAB);
+        // SAFETY: `base` is from a live reservation, [base, base+offset) is within bounds.
+        let ptr = unsafe { base.add(offset) };
+        // SAFETY: `ptr` is within a committed region from a live reservation.
+        unsafe { ptr::write_volatile(ptr, 0xAB) };
     }
 }
 

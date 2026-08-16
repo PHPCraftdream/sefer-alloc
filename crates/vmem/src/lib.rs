@@ -308,7 +308,7 @@ pub(crate) static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 /// item P2-6.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `VirtualFree(..., MEM_DECOMMIT)` calls that
 /// failed (Windows only — always 0 on Unix/miri). `VirtualFree(MEM_DECOMMIT)`
@@ -320,7 +320,7 @@ pub static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
 /// `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md` item P2-6.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
+pub(crate) static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: relaxed snapshot of the internal
 /// `UNIX_EXACT_RESERVE_ATTEMPTS` counter (private storage; this accessor is
@@ -397,7 +397,7 @@ pub fn unix_madvise_successes() -> u64 {
     UNIX_MADVISE_SUCCESSES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`UNIX_MUNMAP_FAILURES`].
+/// `bench-internals`: relaxed snapshot of `UNIX_MUNMAP_FAILURES`.
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -406,7 +406,7 @@ pub fn unix_munmap_failures() -> u64 {
     UNIX_MUNMAP_FAILURES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: relaxed snapshot of [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`].
+/// `bench-internals`: relaxed snapshot of `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`.
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
@@ -419,8 +419,8 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`, `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES` -- all private storage, read via their
-/// respective accessor functions above -- plus [`UNIX_MUNMAP_FAILURES`] and
-/// [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]) to 0. Test/bench hook only —
+/// respective accessor functions above -- plus `UNIX_MUNMAP_FAILURES` and
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`) to 0. Test/bench hook only —
 /// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
@@ -2282,7 +2282,8 @@ unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize,
     // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE,
     // ..)` with an inner aligned sub-range separately committed. `VirtualFree(..,
     // 0, MEM_RELEASE)` releases the ENTIRE region regardless of commit state.
-    winapi_virtual_release(reservation.as_ptr());
+    // SAFETY: `winapi_virtual_release` requires `addr` to be the base of a `MEM_RESERVE` region.
+    unsafe { winapi_virtual_release(reservation.as_ptr()) };
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -2449,7 +2450,8 @@ const PAGE_READWRITE: u32 = 0x04;
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
     // SAFETY: `MEM_RESERVE` only — reserve address space without commit.
-    VirtualAlloc(core::ptr::null_mut(), over, MEM_RESERVE, PAGE_READWRITE)
+    // SAFETY: `VirtualAlloc` with `MEM_RESERVE` is safe for any valid size; null base is documented for this usage.
+    unsafe { VirtualAlloc(core::ptr::null_mut(), over, MEM_RESERVE, PAGE_READWRITE) }
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -2467,7 +2469,8 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
-    let ret = VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
+    // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a committed region.
+    let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT) };
     #[cfg(feature = "bench-internals")]
     if ret == 0 {
         WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
@@ -2484,7 +2487,8 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
     // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
     // and the failure mode is a leak, never unsafety (the mapping stays valid, just not
     // returned to the OS).
-    let _ = VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE);
+    // SAFETY: `VirtualFree` with `MEM_RELEASE` and size 0 is safe for the base of a `MEM_RESERVE` region.
+    let _ = unsafe { VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE) };
 }
 
 // ===========================================================================
@@ -2795,7 +2799,8 @@ fn try_reserve_aligned_exact(
 unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, _align: usize) {
     // SAFETY: on unix `reservation` IS the start of the remaining mapping of
     // length `reservation_len`; `munmap` returns it.
-    libc_munmap(reservation.as_ptr(), reservation_len);
+    // SAFETY: `libc_munmap` requires the address/len to be a live mmap'd region being unmapped once.
+    unsafe { libc_munmap(reservation.as_ptr(), reservation_len) };
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -3369,7 +3374,8 @@ unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     // not a new syscall or a change to what `libc_madvise` returns to its
     // caller (still `()` either way), so it is zero-cost when the feature is
     // off.
-    let ret = madvise(addr as *mut core::ffi::c_void, len, advice);
+    // SAFETY: `madvise` is safe for any address/len within a live mmap region; advice is a valid constant.
+    let ret = unsafe { madvise(addr as *mut core::ffi::c_void, len, advice) };
     #[cfg(feature = "bench-internals")]
     {
         UNIX_MADVISE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);

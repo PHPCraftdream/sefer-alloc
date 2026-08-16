@@ -193,8 +193,14 @@ jobs:
       # Finding II-14 (2026-08-16 prerelease audit): 32-bit Unix exact-size fast
       # path has zero CI coverage. Add at least a compile-only check for i686
       # to catch regressions in the cfg-gated `try_reserve_aligned_exact` path.
+      # Closing review finding II-3: extend coverage to tests and optional features,
+      # and add musl target to verify the UB-class fix for wrong FFI `off_t` type.
       - run: rustup target add i686-unknown-linux-gnu
-      - run: cargo check --target i686-unknown-linux-gnu -p aligned-vmem
+      - run: cargo check --target i686-unknown-linux-gnu --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
+      # Finding II-3 (2026-08-16 closing review): add musl 32-bit target to verify
+      # the wrong FFI `off_t` type fix (gated `not(target_env = "musl")`).
+      - run: rustup target add i686-unknown-linux-musl
+      - run: cargo check --target i686-unknown-linux-musl --all-targets --features "lazy-commit huge-pages fault-injection bench-internals" -p aligned-vmem
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
