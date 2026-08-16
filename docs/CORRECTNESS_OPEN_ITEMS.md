@@ -2219,6 +2219,38 @@ resolved" below.)_
      itself, which now documents the exposure honestly rather than claiming
      a fix that does not exist).
 
+58. **[T] CI-coverage gap: i686-gnu and i686-musl targets are compile-only verified, runtime exact/huge path never executes in CI.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
+
+    The CI workflow's `aligned-vmem-gates` job (its `rustup target add i686-unknown-linux-{gnu,musl}` + `cargo check --target` steps) runs `cargo check --target i686-unknown-linux-{gnu,musl} --all-targets` for compile-time verification of the 32-bit Unix exact-size path and the FFI `off_t` type-correctness fixes (item 44, task #914), but does NOT run `cargo test --target i686-...` to execute the runtime behavior. The `try_reserve_aligned_exact` path (gated on `cfg(all(unix, not(target_pointer_width = "64"), not(target_os = "android"), ...))`) and the 32-bit `OffT`-corrected `mmap` calls are therefore never exercised under actual 32-bit execution in CI, only verified for compile-time correctness.
+
+    - **Status:** OPEN — not urgent, because the compile-only check catches the known FFI ABI mismatch risk (item 44), but the runtime exact-size reservation path is unverified on 32-bit targets.
+    - **Next trigger:** when a 32-bit Linux runtime test runner becomes available in CI (e.g., via GitHub Actions `i686-unknown-linux-gnu` self-hosted runner or QEMU-based emulation), add a `cargo test --target i686-unknown-linux-gnu` step to the `aligned-vmem-gates` job. Until then, the compile-only check is the best available coverage.
+    - **Evidence:** the `cargo check --target i686-unknown-linux-{gnu,musl} --all-targets` steps in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only); `crates/vmem/src/lib.rs` `try_reserve_aligned_exact` function (the 32-bit-gated exact-size reservation path); item 44 (the `OffT` fix that this compile-only check guards against regressions).
+
+59. **[T] CI-coverage gap: Linux MAP_HUGETLB and Windows MEM_LARGE_PAGES success paths depend on configured hugetlb pool or SeLockMemoryPrivilege, neither present in standard CI.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
+
+    The Linux `MAP_HUGETLB` success branch (`libc_mmap` with `MAP_HUGETLB | MAP_HUGE_2MB`) only succeeds when the system has a configured hugetlb pool with 2 MiB huge pages available. Standard GitHub Actions `ubuntu-latest` runners do NOT pre-configure any hugetlb pool (`/proc/sys/vm/nr_hugepages` defaults to 0 on these runners), so all huge-page reservation attempts fall back to ordinary 4 KiB pages in CI. Similarly, the Windows `MEM_LARGE_PAGES` success branch requires `SeLockMemoryPrivilege` and appropriate large-page configuration, which standard `windows-latest` runners do not provide. The happy paths for both platforms are therefore never exercised in CI, only the fallback paths.
+
+    - **Status:** OPEN — not urgent, because the fallback path is the same code exercised on non-huge-page systems, and the `is_huge()` predicate correctly reports the failure (test arm verifies `granted_huge == false`). However, the actual huge-page success path is unverified in CI.
+    - **Next trigger:** when a CI runner with configured hugetlb pool (Linux) or SeLockMemoryPrivilege (Windows) becomes available, add a dedicated `test-huge-pages` job that runs `cargo test --features huge-pages` with appropriate hugetlb pool setup (e.g., `sudo sysctl vm.nr_hugepages=128` on Linux). Until then, the success paths remain unverified.
+    - **Evidence:** `crates/vmem/src/lib.rs` `libc_mmap` function (Linux `MAP_HUGETLB | MAP_HUGE_2MB` handling); `crates/vmem/src/lib.rs` `winapi_virtual_reserve` function (Windows `MEM_LARGE_PAGES` handling); `crates/vmem/tests/huge_pages.rs` (the test that would exercise the success path if hugetlb were available); `/proc/sys/vm/nr_hugepages` on standard runners (observed to be 0).
+
+60. **[T] CI-coverage gap: BSD, Android, tvOS and watchOS branches are reasoned-from-spec, not empirically executed on real hardware.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
+
+    The BSD platforms (FreeBSD, NetBSD, OpenBSD, DragonFly) are only compile-verified; no BSD CI runner exists (`.github/workflows/ci.yml` has no BSD job). The `decommit_lazy` and `_SC_PAGESIZE` handling for these platforms are based on reading headers and POSIX spec, not empirical runs. Similarly, Android, tvOS and watchOS platforms are not represented in CI; only macOS covers part of the Darwin family (iOS, tvOS, watchOS are missing). This is an honest limit of the current CI infrastructure, not a discovered bug.
+
+    - **Status:** OPEN — not urgent, because the unconditional alignment check in `unix_reserve` prevents violation of reserve alignment even if `_SC_PAGESIZE` values were wrong, and decommit correctness is verified on Linux/macOS which are the primary deployment targets. However, the BSD/Darwin/Android branches remain empirically unverified.
+    - **Next trigger:** when a FreeBSD/NetBSD/OpenBSD/DragonFly CI runner becomes available (self-hosted or via a service like Cirrus CI), add a `test-bsd` job. Similarly, if iOS/tvOS/watchOS or Android CI runners become available, add corresponding jobs. Until then, these platforms remain spec-verified only.
+    - **Evidence:** item 43 (BSD `_SC_PAGESIZE` values, partially open); item 48 (Darwin `MADV_DONTNEED` behavior, partially open); `.github/workflows/ci.yml` (no BSD/iOS/tvOS/watchOS/Android jobs); `crates/vmem/src/lib.rs` platform-specific constants (FreeBSD/NetBSD/OpenBSD/DragonFly `_SC_PAGESIZE` values, Android-specific handling, Darwin-family `decommit_lazy` behavior).
+
+61. **[T] CI-coverage gap: Miri in workflow is used as `cargo check --cfg miri`, not as an interpreter test — it does not verify runtime semantics of native mmap/munmap/madvise.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
+
+    The CI workflow's miri invocation (the `RUSTFLAGS="--cfg miri ..." cargo check` step in the `aligned-vmem-gates` job) runs `RUSTFLAGS="--cfg miri --cfg aligned_vmem_mock" cargo check -p aligned-vmem --all-features`, which only verifies compilation under miri's `cfg(miri)` gates. It does NOT run `cargo miri test`, which would execute the test suite under miri's interpreter and catch UB in the actual runtime semantics of FFI calls, pointer provenance, and concurrent operations. Miri's true value is in detecting undefined behavior in execution, not just typechecking cfg-gated code paths.
+
+    - **Status:** OPEN — item 41 already documents that `aligned-vmem` has no dedicated `cargo miri test` CI step. This item is the same gap, phrased as a runtime-semantics concern rather than a missing CI step.
+    - **Next trigger:** when a future round adds the missing `cargo miri test -p aligned-vmem` CI step recommended by item 41 (miri execution, not just compilation check), the runtime semantics gap will be closed. Until then, miri coverage is compile-only.
+    - **Evidence:** the `--cfg miri` `cargo check` step in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only, not `cargo miri test`); item 41 (the existing open item documenting the missing `cargo miri test` CI step); `crates/vmem/src/lib.rs` FFI call sites (mmap/munmap/madvise on Unix, VirtualAlloc/VirtualFree on Windows — the runtime semantics that miri would catch if actually run).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
