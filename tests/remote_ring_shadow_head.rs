@@ -37,6 +37,21 @@
     feature = "internals"
 ))]
 
+use std::sync::Mutex;
+
+/// Serial guard for process-global `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW` counters.
+/// These counters are incremented by any push's full_check, and libtest runs
+/// this file's tests on parallel threads by default. Without this guard, a test
+/// that both reads a before/after snapshot and asserts on the delta would race
+/// against concurrent sibling tests in the same binary, exactly the hazard that
+/// caused the original flaky failure (adversarial regime got 256 fast / 2002 slow,
+/// breaching the 90% threshold, even though slow_delta itself was structurally
+/// correct at 2000 ≈ ROUNDS). The lock is held for the whole test body so the
+/// shared counters are exercised single-threaded when it matters; the lock
+/// itself is cheap enough to hold unconditionally, so no `#[cfg]` branching is
+/// needed.
+static SERIAL: Mutex<()> = Mutex::new(());
+
 use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT, RING_CAP};
 
 fn ring_buffer() -> Box<[u8]> {
@@ -61,6 +76,13 @@ fn ring_buffer() -> Box<[u8]> {
 /// spuriously report overflow here.
 #[test]
 fn shadow_stale_low_never_causes_spurious_admit() {
+    // This test does NOT touch the `DBG_RING_PUSH_SHADOW_*` counters, but
+    // it does perform pushes that increment them. Taking the guard prevents
+    // concurrent corruption of those counters when this test runs alongside
+    // the other two `#[test]` functions in this file that do read/assert
+    // on those counters.
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
     // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
@@ -124,19 +146,10 @@ fn shadow_stale_low_never_causes_spurious_admit() {
 /// (this task's fix — see that method's doc comment), so a preset ring with
 /// genuine headroom takes the shadow FAST path on its very next push,
 /// confirmed via the `bench-internals`-gated oracle counters.
-///
-/// **Note on the oracle counters and test parallelism:** `DBG_RING_PUSH_SHADOW_FAST`/
-/// `_SLOW` are PROCESS-WIDE statics (matching the pre-existing
-/// `DBG_RING_OVERFLOW`'s own design), and `cargo test` runs `#[test]`
-/// functions in this binary CONCURRENTLY on separate threads by default —
-/// so a sibling test's pushes can bump either counter between this test's
-/// `before`/`after` reads. This test therefore asserts only what THIS ring's
-/// one push structurally guarantees (`fast_after >= fast_before + 1`, a
-/// monotonic lower bound immune to concurrent noise from other tests), not
-/// an exact delta that assumes exclusive access to the global counters.
 #[cfg(feature = "bench-internals")]
 #[test]
 fn shadow_survives_dbg_set_cursors_reset() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use sefer_alloc::alloc_core::remote_free_ring::DBG_RING_PUSH_SHADOW_FAST;
     use std::sync::atomic::Ordering;
 
@@ -164,11 +177,16 @@ fn shadow_survives_dbg_set_cursors_reset() {
 
     let fast_after = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed);
 
-    assert!(
-        fast_after > fast_before,
+    // With the serial guard, this test has exclusive access to the global
+    // counters for its entire body, so the exact delta can be asserted
+    // without concern about concurrent sibling-test noise.
+    assert_eq!(
+        fast_after,
+        fast_before + 1,
         "the first push after dbg_set_cursors must take the shadow FAST path \
          (cached_head was reset to match head by dbg_set_cursors): \
-         fast_before={fast_before} fast_after={fast_after}"
+         expected increment by 1, got {}",
+        fast_after - fast_before
     );
 }
 
@@ -179,9 +197,19 @@ fn shadow_survives_dbg_set_cursors_reset() {
 /// SAME oracle a wall-clock gate report would use to prove which regime it
 /// measured; this test proves the oracle itself is trustworthy before any
 /// gate report cites it.
+///
+/// **Note on the oracle counters and test parallelism:** `DBG_RING_PUSH_SHADOW_FAST`/
+/// `_SLOW` are PROCESS-WIDE statics. Without the serial guard (see the
+/// `SERIAL` mutex at module top), concurrent sibling tests in this same
+/// binary could pollute the counters between `before`/`after` snapshots,
+/// causing spurious failures on percentage assertions — exactly what
+/// happened to the original adversarial regime assertion (88.66% vs 90%).
+/// The serial guard eliminates this noise, allowing exact counts and
+/// percentage assertions without tolerance margins.
 #[cfg(feature = "bench-internals")]
 #[test]
 fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use sefer_alloc::alloc_core::remote_free_ring::{
         DBG_RING_PUSH_SHADOW_FAST, DBG_RING_PUSH_SHADOW_SLOW,
     };
@@ -214,29 +242,24 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         let fast_delta = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed) - fast_before;
         let slow_delta = DBG_RING_PUSH_SHADOW_SLOW.load(Ordering::Relaxed) - slow_before;
         let total = fast_delta + slow_delta;
-        // NOTE on parallelism (see this file's module doc): the counters are
-        // process-wide and `cargo test`'s default concurrent scheduling means
-        // sibling tests in this SAME binary (in particular the adversarial
-        // scope below, and the other two `#[test]` functions in this file)
-        // can add a handful of counts to either side between `before` and
-        // `after`. `total` is therefore asserted as a LOWER bound (this
-        // ring's own ROUNDS pushes are a guaranteed floor — every one of them
-        // took exactly one full_check, whatever else also ran concurrently),
-        // not an exact equality.
-        assert!(
-            total >= ROUNDS as u64,
-            "every push takes exactly one full_check (expected >= {ROUNDS}, got {total})"
+        // With the serial guard, this test has exclusive access to the global
+        // counters from parallel sibling tests, so the exact count can be
+        // asserted (the guard does not protect against the adversarial regime
+        // block below, which is in the same test and runs after this block).
+        assert_eq!(
+            total, ROUNDS as u64,
+            "every push takes exactly one full_check (expected {ROUNDS}, got {total})"
         );
-        // The favorable regime must show the fast path dominating (>= 95%,
-        // loosened from a tighter bound to tolerate concurrent sibling-test
-        // noise on the shared global counters): at most a handful of
-        // slow-path calls are structurally expected from THIS ring (the very
-        // first push, before cached_head is ever refreshed from 0), plus
-        // whatever noise concurrently-running tests contribute.
+        // The favorable regime must show the fast path dominating. With the
+        // serial guard eliminating concurrent noise, we can assert the exact
+        // percentage that the test setup structurally guarantees: at most a
+        // handful of slow-path calls are expected (the very first push, before
+        // cached_head is ever refreshed from 0, plus any periodic refresh due
+        // to modulus/occupancy wrapping), so >= 99% fast path is realistic.
         let fast_pct = (fast_delta as f64 / total as f64) * 100.0;
         assert!(
-            fast_pct >= 95.0,
-            "favorable (drain-immediately) regime should show >=95% fast-path \
+            fast_pct >= 99.0,
+            "favorable (drain-immediately) regime should show >=99% fast-path \
              activation, got {fast_pct:.2}% ({fast_delta} fast / {slow_delta} slow)"
         );
     }
@@ -278,6 +301,8 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
             "ring must be exactly full before the adversarial loop"
         );
 
+        // Take a fresh before snapshot AFTER the initial RING_CAP fill,
+        // to measure only the adversarial loop's own contribution.
         let fast_before = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed);
         let slow_before = DBG_RING_PUSH_SHADOW_SLOW.load(Ordering::Relaxed);
 
@@ -300,15 +325,25 @@ fn shadow_path_activation_oracle_fast_and_slow_both_reachable() {
         let fast_delta = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed) - fast_before;
         let slow_delta = DBG_RING_PUSH_SHADOW_SLOW.load(Ordering::Relaxed) - slow_before;
         let total = fast_delta + slow_delta;
-        assert!(
-            total > 0,
-            "adversarial regime must issue at least one full_check"
+        // With the serial guard, this test has exclusive access to the global
+        // counters, so the exact count can be asserted.
+        assert_eq!(
+            total, ROUNDS as u64,
+            "adversarial regime must issue exactly one full_check per round \
+             (expected {ROUNDS}, got {total})"
         );
-        let slow_pct = (slow_delta as f64 / total as f64) * 100.0;
+        // Verify the adversarial regime actually activates the slow path.
+        // With the serial guard eliminating concurrent noise, we can assert
+        // the exact count that the test setup structurally guarantees:
+        // every push in the adversarial loop forces a slow-path full_check,
+        // so slow_delta should equal ROUNDS. The test name promises
+        // "both reachable", and this proves the slow path is actually
+        // exercised without being scheduler-sensitive.
         assert!(
-            slow_pct >= 90.0,
-            "adversarial (held-at-capacity) regime should show >=90% slow-path \
-             activation, got {slow_pct:.2}% ({fast_delta} fast / {slow_delta} slow)"
+            slow_delta >= ROUNDS as u64 - 10,
+            "adversarial (held-at-capacity) regime must show slow-path \
+             activation near ROUNDS (>= {expected}, got {slow_delta} / {ROUNDS})",
+            expected = ROUNDS - 10
         );
     }
 }
