@@ -1125,6 +1125,14 @@ for completeness.
     >   `examples/r34_10_sparse_decay_gate.rs`; source-identity tree
     >   `bb67abc538d5570e45fba42d8613470838934a2f`.
 
+48. **`aligned-vmem`: 64-bit Unix `reserve` over-reserves `align` bytes of VA per reservation.**
+
+    > **Current state**
+    > - **Status:** design-only, deferred — reasoned-but-unmeasured performance idea.
+    > - **Current number/verdict:** NEED-MEASUREMENT — no measured victim exists today. On 64-bit Unix, `crates/vmem/src/lib.rs`'s `unix_reserve` (task #944/P-1 compiled out the exact-size fast path) always over-reserves `size + align` bytes in one `mmap` call and keeps the whole mapping. The cost is extra virtual address space held per reservation (cheap for small aligns like 4 KiB, larger for big aligns like 4 MiB). The 32-bit exact-size fast path (`try_reserve_aligned_exact`, `crates/vmem/src/lib.rs:2550-2622`) shows the shape of a possible fix: try an exact-size `mmap` first, check if the base is already `align`-aligned (hit), and fall back to the over-reserve on a miss. However, porting this to 64-bit is a real measured-tradeoff decision, not a one-line fix: on a miss, the fast path costs 3 syscalls (mmap + munmap + over-reserve mmap) vs the current flat 1 syscall. The break-even analysis between syscall savings (on hits) and retry cost (on misses) needs a real measured gate before implementation — the same class of question that led to the 32-bit fast path's own retreat-to-64-bit-removal (see `unix_reserve`'s own doc comment near lines 2428-2437 for the documented reasoning).
+    > - **Next trigger:** a round with access to a 64-bit Unix target and a reservation-heavy workload pattern that demonstrates `align`-amplified VA pressure is a real problem (not merely theoretical), measured via `aligned-vmem`'s `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` bench-internals counters to determine the actual hit rate on 64-bit.
+    > - **Evidence:** `crates/vmem/src/lib.rs:2428-2437` (32-bit fast path gating comment), `crates/vmem/src/lib.rs:2550-2622` (32-bit exact-size fast path implementation), `crates/vmem/src/lib.rs:2438-2527` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4).
+
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a

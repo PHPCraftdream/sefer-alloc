@@ -299,6 +299,30 @@ pub static UNIX_MADVISE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 #[doc(hidden)]
 pub static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: number of `munmap` calls that failed (Unix only —
+/// always 0 on Windows/miri). `munmap` failures indicate a backend
+/// bookkeeping problem that can turn into a silent leak/un-freed RSS
+/// with zero visibility. The crate's public API is infallible (by design),
+/// so failures are currently silently ignored; this counter provides at
+/// least diagnostic visibility into the failure rate. Added to address
+/// the finding documented in `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`
+/// item P2-6.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: number of `VirtualFree(..., MEM_DECOMMIT)` calls that
+/// failed (Windows only — always 0 on Unix/miri). `VirtualFree(MEM_DECOMMIT)`
+/// failures indicate a backend bookkeeping problem that can turn into a
+/// silent leak/un-freed RSS with zero visibility. The crate's public API is
+/// infallible (by design), so failures are currently silently ignored; this
+/// counter provides at least diagnostic visibility into the failure rate.
+/// Added to address the finding documented in
+/// `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md` item P2-6.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
 /// Diagnostic only.
 #[cfg(feature = "bench-internals")]
@@ -367,12 +391,31 @@ pub fn unix_madvise_successes() -> u64 {
     UNIX_MADVISE_SUCCESSES.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all six counters
+/// `bench-internals`: relaxed snapshot of [`UNIX_MUNMAP_FAILURES`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn unix_munmap_failures() -> u64 {
+    UNIX_MUNMAP_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_virtualfree_decommit_failures() -> u64 {
+    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all eight counters
 /// ([`UNIX_EXACT_RESERVE_ATTEMPTS`], [`UNIX_EXACT_RESERVE_HITS`],
 /// [`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`],
 /// [`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`], [`UNIX_MADVISE_ATTEMPTS`],
-/// [`UNIX_MADVISE_SUCCESSES`]) to 0. Test/bench hook only — lets a
-/// measurement window start from a clean count instead of accumulating
+/// [`UNIX_MADVISE_SUCCESSES`], [`UNIX_MUNMAP_FAILURES`],
+/// [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]) to 0. Test/bench hook only —
+/// lets a measurement window start from a clean count instead of accumulating
 /// across the whole process lifetime, mirroring sefer-alloc's established
 /// `dbg_reset_*` convention.
 #[cfg(feature = "bench-internals")]
@@ -384,6 +427,8 @@ pub fn reset_bench_internals_counters() {
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
+    UNIX_MUNMAP_FAILURES.store(0, Ordering::Relaxed);
+    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.store(0, Ordering::Relaxed);
 }
 
 /// Validate a queried OS page size, falling back to PAGE if the value is invalid.
@@ -588,10 +633,10 @@ impl Reservation {
         self.reservation.as_ptr()
     }
 
-    /// The full size of the underlying OS reservation.
+    /// The **requested/logical** span length of this reservation.
     ///
-    /// **At least three paths under-report the true OS reservation size** — this
-    /// value is not a portable guarantee of the actual bytes the OS mapped:
+    /// **This value is NOT necessarily the actual OS reservation size** — at least
+    /// three paths under-report the true VA span the OS mapped:
     ///
     /// - **Windows single-call fast path** (`align <= 64 KiB`): this returns
     ///   `commit_len` (which equals `size`), not the rounded-up VA reservation
@@ -2367,7 +2412,16 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // and the failure mode is a leak, never unsafety. The failure is known to be reachable
     // in practice (e.g. the huge-page decommit case documented in `decommit`'s rustdoc), so
     // this is not a theoretical concern.
-    let _ = VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
+    //
+    // task P2-6 (2026-08-16 audit finding): increment the failure counter
+    // under `bench-internals` so at least diagnostic visibility exists. The
+    // counter is gated on the feature and the increment is a single relaxed
+    // fetch_add — zero overhead when the feature is off.
+    let ret = VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
+    #[cfg(feature = "bench-internals")]
+    if ret == 0 {
+        WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -3204,7 +3258,16 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     // surface it through even if we wanted to). The failure mode on error is
     // a leaked mapping, never memory unsafety — the memory stays validly
     // mapped, just not returned to the OS.
-    let _ = munmap(addr as *mut core::ffi::c_void, len);
+    //
+    // task P2-6 (2026-08-16 audit finding): increment the failure counter
+    // under `bench-internals` so at least diagnostic visibility exists. The
+    // counter is gated on the feature and the increment is a single relaxed
+    // fetch_add — zero overhead when the feature is off.
+    let ret = munmap(addr as *mut core::ffi::c_void, len);
+    #[cfg(feature = "bench-internals")]
+    if ret != 0 {
+        UNIX_MUNMAP_FAILURES.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[cfg(all(unix, not(miri)))]
