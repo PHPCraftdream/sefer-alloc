@@ -2462,6 +2462,8 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     if ret == 0 {
         WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
     }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = ret;
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -3330,6 +3332,8 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     if ret != 0 {
         UNIX_MUNMAP_FAILURES.fetch_add(1, Ordering::Relaxed);
     }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = ret;
 }
 
 #[cfg(all(unix, not(miri)))]
