@@ -64,7 +64,7 @@ as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
 to `lazy-commit` now), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
 must both additionally be multiples of the huge-page size (2 MiB), or the
-request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path (`align <= WIN_ALLOCATION_GRANULARITY`, typically 64 KiB); the two-call path used for `align >` that threshold never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
+request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path; the two-call path never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
 to ordinary pages — see the function's own rustdoc for the full technical
 explanation; use `Reservation::is_huge` to detect whether a reservation actually
 got large/huge pages on either platform), and `fault-injection` (`fault_injection::arm_fail_next` /

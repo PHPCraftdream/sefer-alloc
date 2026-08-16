@@ -95,7 +95,7 @@ fault-injection = ["lazy-commit"]
 # a real number) plus Windows-side counters for `win_reserve_commit` calls
 # split by fast/slow path (`aligned_vmem::windows_reserve_commit_single_calls()` /
 # `aligned_vmem::windows_reserve_commit_two_call_pairs()` — the fast path
-# issues a single syscall for `align <= 64 KiB` on a full-span commit
+# issues a single syscall for alignments within the fast-path condition on a full-span commit
 # (`commit_len == size`), the traditional path issues two syscalls for
 # larger alignments or a partial initial commit), for cross-platform comparison,
 # plus (round-6, task #882) a Unix `madvise(2)` attempt/success pair

@@ -1953,9 +1953,11 @@ pub fn try_reserve_aligned_lazy(
 //   close a real `munmap` mapping leak (task #714); the trade-off is a
 //   stricter contract in exchange for provable correctness.
 //
-// - task #848: Windows single-call fast path (`align <= 64 KiB`) is the only
+// - task #848: Windows single-call fast path is the only
 //   path that can grant large pages on Windows; the two-call path never
-//   requests them.
+//   requests them. (For large-page requests, the fast-path condition is
+//   `align <= GetLargePageMinimum()`, typically 2 MiB; for ordinary requests,
+//   it is `align <= WIN_ALLOCATION_GRANULARITY`, 64 KiB.)
 //
 // - task #843, V4: decommit does not work on huge-page reservations on either
 //   platform (Windows: VirtualFree fails; Linux: MADV_DONTNEED/MADV_FREE
@@ -2450,11 +2452,11 @@ fn reserve_aligned_huge_raw(
     // If either fails, the allocation falls back to ordinary pages and
     // granted_huge is false.
     //
-    // This widening makes the Linux and Windows parameter spaces overlap
-    // (e.g., `reserve_aligned_huge(4 MiB, 4 MiB)` can now be huge on both
-    // platforms), resolving the disjointness issue where Linux required
-    // `align >= 2 MiB` but Windows only granted large pages for
-    // `align <= 64 KiB`.
+    // This widening narrows (but does not eliminate) the platform gap versus
+    // Linux's `align >= 2 MiB` requirement: the overlap is now in the 2 MiB
+    // neighborhood (where both platforms CAN attempt a huge grant, though
+    // Windows still needs privilege to actually succeed), not at 4 MiB
+    // (which exceeds GetLargePageMinimum() and can never be huge on Windows).
     win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
