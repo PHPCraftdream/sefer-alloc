@@ -67,20 +67,18 @@ must both additionally be multiples of the huge-page size (2 MiB), or the
 request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path (`align <= WIN_ALLOCATION_GRANULARITY`, typically 64 KiB); the two-call path used for `align >` that threshold never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
 to ordinary pages — see the function's own rustdoc for the full technical
 explanation; use `Reservation::is_huge` to detect whether a reservation actually
-got large/huge pages on either platform),
-`mock`
-(recording call log +
+got large/huge pages on either platform), and `fault-injection` (`fault_injection::arm_fail_next` /
+`arm_fail_at` — an armed hook on the REAL `try_commit_range` syscall path,
+DISTINCT from the mock backend: it changes nothing about which backend runs, it only
+forces a specific real commit call to report failure, for a consumer that
+needs the genuine OS backend under test). The mock backend (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
-backend with a stub — **⚠ Cargo feature-unification hazard: enable only in a
-leaf test/dev target, never in a library's own `[dependencies]` or a shared
-`[dev-dependencies]` entry — see `mock`'s own module doc and its `Cargo.toml`
-feature comment for the full reasoning, task #715**), and `fault-injection`
-(`fault_injection::arm_fail_next` /
-`arm_fail_at` — an armed hook on the REAL `try_commit_range` syscall path,
-DISTINCT from `mock`: it changes nothing about which backend runs, it only
-forces a specific real commit call to report failure, for a consumer that
-needs the genuine OS backend under test).
+backend with a stub) is enabled via the `aligned_vmem_mock` cfg flag
+(`RUSTFLAGS="--cfg aligned_vmem_mock" cargo test ...`), following the same
+pattern as this repo's `cfg(loom)`/`cfg(kani)` flags. A `--cfg` flag cannot be
+silently unified into a build by another crate downstream — exactly why it
+was converted (task #962).
 
 Backends: `mmap`/`munmap`/`madvise` on Unix,
 `VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, `std::alloc`

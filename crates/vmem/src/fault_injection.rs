@@ -1,6 +1,6 @@
 //! Real-path commit fault injection (feature `fault-injection`).
 //!
-//! Distinct from `crate::mock` (feature `mock`, not necessarily enabled
+//! Distinct from `crate::mock` (cfg `aligned_vmem_mock`, not necessarily set
 //! alongside `fault-injection`): `mock` replaces the *entire* backend for
 //! commit/decommit/recommit (and short-circuits reservations only for the
 //! scripted-failure case) with a thread-local recording stub — a consumer
@@ -115,15 +115,15 @@ pub fn arm_fail_at(k: u32) {
 /// Internal: consult both hooks for the current real commit call. Returns
 /// `true` if this call should be forced to fail. Called once per real commit
 /// attempt, immediately before the OS syscall.
-// mock (task #646/F8): `try_commit_range`'s `#[cfg(not(feature = "mock"))]`
-// branch — the only call site — is compiled out under `mock`, so this goes
-// unused whenever `mock` is enabled alongside `fault-injection`.
+// mock (task #646/F8): `try_commit_range`'s `#[cfg(not(aligned_vmem_mock))]`
+// branch — the only call site — is compiled out under `aligned_vmem_mock`, so this goes
+// unused whenever the `aligned_vmem_mock` cfg is set alongside `fault-injection`.
 // fault-injection (task #925/V-21): `try_commit_range` itself is gated on
 // `lazy-commit`, so this is unused when `fault-injection` is enabled without
 // `lazy-commit`. Suppressed in both specific combinations.
 #[cfg_attr(
     any(
-        feature = "mock",
+        aligned_vmem_mock,
         all(feature = "fault-injection", not(feature = "lazy-commit"))
     ),
     allow(dead_code)

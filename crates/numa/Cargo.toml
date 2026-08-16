@@ -19,9 +19,11 @@ categories = ["os", "memory-management"]
 # render omits it entirely (task #644). Deliberately an explicit list, NOT
 # `all-features = true`: `all-features` would also turn on `mock`, which
 # REPLACES the real platform backend (not merely additive) and would surface
-# the test-only recording module as if it were ordinary reference API — same
-# reasoning applied consistently to `aligned-vmem`'s own `mock` feature
-# (`../vmem/Cargo.toml`).
+# the test-only recording module as if it were ordinary reference API —
+# aligned-vmem's own `mock` has since been converted to the build-time
+# `--cfg aligned_vmem_mock` flag (task #962, `../vmem/Cargo.toml`); numa-shim's
+# own `mock` remains a Cargo feature, and its conversion is deliberately
+# deferred (docs/CORRECTNESS_OPEN_ITEMS.md item 42).
 [package.metadata.docs.rs]
 features = ["vmem-integration"]
 
@@ -45,15 +47,16 @@ vmem-integration = ["dep:aligned-vmem"]
 # library dependency of anything else) — never in a library's own
 # `[dependencies]`, and never in a `[dev-dependencies]` entry reachable from
 # more than one build target in the same workspace. Same policy as
-# `aligned-vmem`'s own `mock` feature (`../vmem/Cargo.toml`, task #715): a
-# stronger fix (a build-time `--cfg` flag instead of a Cargo feature,
-# matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
-# unify) was evaluated and DEFERRED for the same reason — this crate has not
-# yet had its first crates.io publish (task #657), so removing `mock` as a
-# Cargo feature later remains possible without an immediate breaking-change
-# cost, and converting now would be a large mechanical change for a hazard
-# that, today, has zero real external consumers to protect. Revisit if/when
-# this crate gains external consumers and the hazard is reported for real.
+# `aligned-vmem`'s own `mock` (a Cargo feature at the time, `../vmem/Cargo.toml`,
+# task #715): a stronger fix (a build-time `--cfg` flag instead of a Cargo
+# feature, matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
+# unify) has since been PROVEN next door — aligned-vmem's `mock` WAS
+# converted to the `--cfg aligned_vmem_mock` build flag (task #962,
+# `../vmem/Cargo.toml`). The SAME conversion for numa-shim remains
+# deliberately DEFERRED to this crate's own upcoming round (still
+# unpublished, task #657, zero external consumers) per
+# docs/CORRECTNESS_OPEN_ITEMS.md item 42. Revisit if/when this crate gains
+# external consumers and the hazard is reported for real.
 mock = []
 
 [dependencies]

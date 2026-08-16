@@ -251,7 +251,7 @@ fn decommit_recommit_roundtrip() {
             "recommit of a live reservation's decommitted range must succeed"
         );
         // After recommit the page reads as zero (fresh OS page). Skipped under
-        // miri AND under the `mock` feature: both model decommit/recommit as
+        // miri AND under the `aligned_vmem_mock` cfg: both model decommit/recommit as
         // no-ops (no real RSS / zero-fill-on-recommit), so the previously-
         // written byte legally persists — this zero-fill guarantee is a
         // real-OS property.
@@ -272,7 +272,7 @@ fn decommit_recommit_roundtrip() {
         // + VirtualAlloc(MEM_COMMIT)).
         #[cfg(not(any(
             miri,
-            feature = "mock",
+            aligned_vmem_mock,
             target_os = "macos",
             target_os = "ios",
             target_os = "tvos",
@@ -409,7 +409,7 @@ fn decommit_recommit_roundtrip_on_over_reserved_span() {
         // Verify zero-fill (same exclusions as decommit_recommit_roundtrip above).
         #[cfg(not(any(
             miri,
-            feature = "mock",
+            aligned_vmem_mock,
             target_os = "macos",
             target_os = "ios",
             target_os = "tvos",
@@ -725,13 +725,13 @@ fn decommit_lazy_roundtrip() {
 /// close that gap too -- not done here because no CI row runs
 /// `bench-internals` against the real (non-mock) Unix backend on Linux; see
 /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 48's S4 sub-note.
-/// Also excluded under `mock` (the recording backend never calls the real
+/// Also excluded under `aligned_vmem_mock` (the recording backend never calls the real
 /// `madvise(2)`, so the counters would stay at 0 by construction, not by
 /// answering the question) and `miri` (no real FFI).
 #[cfg(all(
     target_os = "macos",
     feature = "bench-internals",
-    not(feature = "mock"),
+    not(aligned_vmem_mock),
     not(miri)
 ))]
 #[test]
@@ -809,7 +809,7 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
 /// `madvise(2)` on any host where the OS page size exceeds `PAGE` (e.g. a 16
 /// KiB-page Apple Silicon host) -- `madvise` rejects the WHOLE call in that
 /// case (see `decommit`'s own rustdoc on the all-or-nothing failure mode),
-/// which this crate's `mock`-feature test suite cannot observe AS A REAL
+/// which this crate's `aligned_vmem_mock`-cfg test suite cannot observe AS A REAL
 /// `madvise(2)` REJECTION (task #906/#908 added a mock-layer arm,
 /// `mock.rs`'s `decommit_silently_skips_contract_violating_offsets`, that
 /// observes the FORWARDING for both guards at the call-log layer instead --
@@ -820,7 +820,7 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
 /// macOS): `unix_madvise_attempts()`'s counters are `unix`-wide, matching
 /// `macos_decommit_madvise_syscall_actually_succeeds` above's own note that a
 /// Linux instance of this style of assertion was a known gap.
-#[cfg(all(unix, feature = "bench-internals", not(feature = "mock"), not(miri)))]
+#[cfg(all(unix, feature = "bench-internals", not(aligned_vmem_mock), not(miri)))]
 #[test]
 fn decommit_contract_violation_never_reaches_madvise() {
     use aligned_vmem::{reset_bench_internals_counters, unix_madvise_attempts};
@@ -1338,16 +1338,16 @@ fn reservation_decommit_in_bounds_matches_free_function() {
     }
 
     // Verify the range is now zeroed on re-access (Linux). Skipped under miri,
-    // under the `mock` feature, and on the Darwin family — same exclusions as
+    // under the `aligned_vmem_mock` cfg, and on the Darwin family — same exclusions as
     // `decommit_recommit_roundtrip` above, for the same reasons: miri and the
-    // `mock` feature both model decommit as a no-op (no real RSS / zero-fill),
+    // `aligned_vmem_mock` cfg both model decommit as a no-op (no real RSS / zero-fill),
     // so the previously-written 0xAB byte legally persists; and
     // `MADV_DONTNEED` is advisory-only on XNU-based targets (macOS/iOS/tvOS/
     // watchOS), so the zero-fill guarantee does not reliably hold there either.
     #[cfg(not(any(
         windows,
         miri,
-        feature = "mock",
+        aligned_vmem_mock,
         target_os = "macos",
         target_os = "ios",
         target_os = "tvos",

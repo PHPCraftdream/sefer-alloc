@@ -35,7 +35,7 @@
 //! [`ReentrantProbeAlloc`] below is installed as `#[global_allocator]`. Its
 //! `alloc()` checks a thread-local `TRIGGER_ON_NEXT_ALLOC` flag; when armed,
 //! it disarms itself (so it fires exactly once, not recursively forever) and
-//! calls `aligned_vmem::reserve_aligned` (mock feature on) before delegating
+//! calls `aligned_vmem::reserve_aligned` (mock cfg on) before delegating
 //! to the real system allocator to service the original request. We arm the
 //! trigger, then call `reserve_aligned` once on a FRESH thread (so `CALLS`
 //! starts at `Vec::new()`, capacity 0 — its very first `push` is
@@ -58,7 +58,7 @@
 //! The fix was then restored and the test passes again. See the final task
 //! report for the exact commands run.
 
-#![cfg(feature = "mock")]
+#![cfg(aligned_vmem_mock)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

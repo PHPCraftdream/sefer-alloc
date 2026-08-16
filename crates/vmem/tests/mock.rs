@@ -1,8 +1,8 @@
-//! Tests for the `mock` feature: recording call log + fail-N-th fault
+//! Tests for the `mock` build-time cfg (`aligned_vmem_mock`, task #962):
 //! injection. These run on any target (they never depend on the real OS
 //! reservation succeeding beyond `std::alloc`).
 
-#![cfg(feature = "mock")]
+#![cfg(aligned_vmem_mock)]
 
 use aligned_vmem::mock::{self, Call};
 use aligned_vmem::{

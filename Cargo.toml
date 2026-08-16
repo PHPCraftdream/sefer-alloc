@@ -720,11 +720,12 @@ numa-aware-mock = ["numa-aware", "numa-shim/mock"]
 #
 # Also pulls in `aligned-vmem/fault-injection`: the R7-B4 grow-on-carve
 # rollback tests need to force a REAL commit to fail at an exact point in a
-# live allocation sequence (not `aligned-vmem/mock`, which replaces the whole
-# backend — sefer needs the real segment reservation + real commit
-# accounting under test). `os::commit_pages` delegates to
-# `aligned_vmem::fault_injection`'s hook instead of carrying its own
-# COMMIT_FAIL_* atomics (absorbed into vmem, CRATE-P2 follow-up).
+# live allocation sequence (not aligned-vmem's mock backend — enabled since
+# task #962 via the `--cfg aligned_vmem_mock` build flag, no longer a Cargo
+# feature — which replaces the whole backend; sefer needs the real segment
+# reservation + real commit accounting under test). `os::commit_pages`
+# delegates to `aligned_vmem::fault_injection`'s hook instead of carrying its
+# own COMMIT_FAIL_* atomics (absorbed into vmem, CRATE-P2 follow-up).
 #
 # R12-9 (task #260): `alloc-lazy-commit` is a PURE COMBINATOR — a convenience
 # alias that turns on BOTH `primordial-lazy-commit` AND

@@ -140,9 +140,10 @@ jobs:
     # public API used by the bench left CI green. Task #846 proved two clippy
     # rows are required: --all-features (covers all optional features) and
     # default (caught the inverted #[cfg_attr] dead_code bug that #846 fixed);
-    # since Q3/task #877, a third: an explicit everything-except-`mock` list,
-    # because `--all-features` turns on `mock`, which REPLACES the backend and
-    # #[cfg]-erases the real-backend branches from clippy's view.
+    # a third row exercises the explicit named full feature set (identical backend
+    # coverage to --all-features minus the compat alias). Mock-arm clippy coverage
+    # moved to its own dedicated RUSTFLAGS row after task #962 (mock is now the
+    # --cfg aligned_vmem_mock build flag, not a Cargo feature).
     # Task #851: miri compilation check — catches E0308 tuple-arity mismatches
     # that block publication but are invisible to the other checks.
     name: aligned-vmem package gates
@@ -155,20 +156,40 @@ jobs:
       # Task #846 proved this combination catches the inverted #[cfg_attr]
       # dead_code bug that shipped undetected when only --all-features ran.
       - run: cargo clippy -p aligned-vmem --all-targets -- -D warnings
-      # R1/Q3: `--all-features` enables `mock`, which REPLACES the backend, so the
-      # row above does not lint try_commit_range's real-backend branch. Explicit
-      # everything-except-`mock` list, matching test-windows/test-macos.
+      # R1/Q3: Mock is no longer a Cargo feature (converted to the build-time
+      # --cfg aligned_vmem_mock flag in task #962), so --all-features no longer lints
+      # the MOCK arm instead. Both this named-feature row and the --all-features
+      # row above lint the real backend; the mock arm gets its own RUSTFLAGS row below.
       - run: cargo clippy -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets -- -D warnings
-      # Full feature set: lazy-commit, huge-pages, fault-injection, mock,
-      # bench-internals (all "off by default", so --all-features is the union).
+      # Full feature set: lazy-commit (incl. the alloc-lazy-commit compat alias),
+      # huge-pages, fault-injection, bench-internals (all "off by default", so
+      # --all-features is the union). Real backend only — mock unreachable via
+      # features since task #962 (--cfg aligned_vmem_mock flag instead).
       - run: cargo clippy -p aligned-vmem --all-features --all-targets -- -D warnings
+      # Task #962: mock-arm clippy coverage. `mock` is no longer a Cargo
+      # feature (converted to the build-time `--cfg aligned_vmem_mock` flag —
+      # cfg flags do not unify across the dependency graph, unlike features),
+      # so `--all-features` no longer compiles the mock backend. This row
+      # lints the mock cfg arm explicitly, mirroring the rows below.
+      - run: cargo clippy -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets -- -D warnings
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
       # Basic sanity check that the crate's tests pass (library + integration
       # tests; does NOT run benchmarks -- bench targets are not #[test] functions).
+      # Now runs the REAL backend since mock is cfg-gated off (task #962).
       - run: cargo test -p aligned-vmem --all-features
+      # Task #962: mock-backend test coverage under the `--cfg aligned_vmem_mock`
+      # build flag (previously this coverage came from `--all-features`, which
+      # can no longer turn on mock — it is not a Cargo feature anymore).
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals"
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
       # Task #851: miri compilation gate. NO miri interpreter required — this
       # is just `cargo check` with the `miri` cfg set, which catches the
       # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.
-      - run: RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features
+      # Since task #962, the mock cfg rides along (--cfg aligned_vmem_mock)
+      # to preserve the previously-incidental mock+miri type coverage.
+      - run: RUSTFLAGS="--cfg miri --cfg aligned_vmem_mock" cargo check -p aligned-vmem --all-features
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
@@ -780,17 +801,23 @@ jobs:
       - run: cargo test --features "production exact-span-large large-reserved-capacity internals" --no-fail-fast
       # Task #858/F2: aligned-vmem crate Windows test coverage for the REAL
       # backend (VirtualAlloc/MEM_COMMIT/MEM_DECOMMIT) on real Windows hardware.
-      # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
-      # non-additive backend-replacing feature (see the "CARGO FEATURE-UNIFICATION
-      # HAZARD" comment on crates/vmem/Cargo.toml's `mock` feature),
-      # so `--all-features` would test the mock recording stub, not the real
-      # Windows backend. The step below (also from F2) runs with `--all-features`
-      # for the mock's own coverage, but it is NOT a Windows-backend test.
+      # NOTE: historically this explicit list had to EXCLUDE `mock` — a
+      # non-additive backend-replacing feature, so `--all-features` turned it
+      # on and tested the mock recording stub instead of the real Windows
+      # backend. Since task #962 `mock` is not a Cargo feature at all (it is
+      # the --cfg aligned_vmem_mock build flag), so `--all-features` and this
+      # list both build the REAL backend; the explicit list is kept as the
+      # documented form. The mock-cfg row below covers the mock backend.
       - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
       # Task #858/F2: aligned-vmem crate mock coverage. Tests the mock recording
       # backend itself (NOT the real VirtualAlloc/MEM_DECOMMIT backend) with all
       # optional features enabled. This is the only row that runs tests/mock.rs.
-      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # Since task #962 the mock backend is enabled via the build-time
+      # --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features (which can
+      # no longer reach it).
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -814,18 +841,22 @@ jobs:
       - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --test decommit_soak --test decommit_stale_ring --no-fail-fast
       # Task #856/W14-2: aligned-vmem crate macOS test coverage for the REAL
       # Darwin backend (mmap/madvise/MADV_DONTNEED) on real macOS hardware.
-      # NOTE: this uses an explicit feature list that EXCLUDES `mock` — `mock` is a
-      # non-additive backend-replacing feature (see the "CARGO FEATURE-UNIFICATION
-      # HAZARD" comment on crates/vmem/Cargo.toml's `mock` feature),
-      # so `--all-features` would test the mock recording stub, not the real
-      # Darwin backend. The step below (also from W14-2) runs with `--all-features`
-      # for the mock's own coverage, but it is NOT a Darwin-backend test.
+      # NOTE: historically this explicit list had to EXCLUDE `mock` — a
+      # non-additive backend-replacing feature, so `--all-features` turned it
+      # on and tested the mock recording stub instead of the real Darwin
+      # backend. Since task #962 `mock` is not a Cargo feature at all (it is
+      # the --cfg aligned_vmem_mock build flag), so `--all-features` and this
+      # list both build the REAL backend; the explicit list is kept as the
+      # documented form. The mock-cfg row below covers the mock backend.
       - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
       # Task #856/W14-2: aligned-vmem crate mock coverage on macOS. Tests the mock
       # recording backend itself (NOT the real mmap/madvise/MADV_DONTNEED backend)
       # with all optional features enabled. This is the only row that runs
-      # tests/mock.rs on macOS.
-      - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # tests/mock.rs on macOS. Since task #962 the mock backend is enabled via
+      # the build-time --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features.
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
 
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
@@ -840,8 +871,8 @@ jobs:
     #   2. `tagged-index-stack` — default features only (its non-loom test
     #      files had never run in CI at all before task #639).
     #   3. `aligned-vmem` — `--all-features` (deliberately NOT default-only:
-    #      exercises `huge-pages`/`lazy-commit`/`fault-injection`/`mock`/
-    #      `bench-internals` together, previously never compiled in CI).
+    #      exercises `huge-pages`/`lazy-commit`/`fault-injection`/`bench-internals`
+    #      together on the REAL backend; mock has its own RUSTFLAGS row below).
     #   4-5. `size-classes` / `racy-ptr-cell` — `--no-default-features` cross-
     #      built for `thumbv7em-none-eabi` (bare-metal no_std proof for their
     #      published `no-std::no-alloc` category claim).
@@ -886,30 +917,41 @@ jobs:
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
-      # `mock.rs` — all gated on the `fault-injection`/`lazy-commit`/`mock`
-      # features) compiled to zero tests, and the Linux `MAP_HUGETLB`
+      # `mock.rs` — all gated on the `fault-injection`/`lazy-commit` features
+      # and, for `mock.rs`, the `aligned_vmem_mock` cfg since task #962) compiled to zero tests, and the Linux `MAP_HUGETLB`
       # `huge-pages` code path had never been compiled by CI on any OS.
-      # `--all-features` closes most of that: it turns on `huge-pages`,
-      # `lazy-commit`, `fault-injection`, `mock`, and `bench-internals`
-      # together, so `lazy_commit.rs`/`mock.rs`/`smoke.rs` actually run
-      # (verified locally: 9 + 5 + 10 tests). As a side effect this also
-      # exercises `rust-version = "1.88"`'s MSRV-completeness for the crate
-      # standalone with every feature on, which the existing `msrv` job
-      # (root-crate-scoped) and `test-workspace`'s own default-features step
-      # never did.
+      # After task #962, `--all-features` runs all remaining features on the
+      # REAL backend (`lazy_commit.rs`/`smoke.rs` now actually run, and
+      # `fault_injection.rs` also runs instead of compiling to zero tests
+      # under mock as it did historically). The step below exercises mock
+      # coverage separately via the build-time --cfg aligned_vmem_mock flag.
+      # As a side effect this also exercises `rust-version = "1.88"`'s
+      # MSRV-completeness for the crate standalone with every feature on,
+      # which the existing `msrv` job (root-crate-scoped) and
+      # `test-workspace`'s own default-features step never did.
       - run: cargo test -p aligned-vmem --all-features --no-fail-fast
+      # Task #962: mock-backend coverage for aligned-vmem on Linux. `mock`
+      # was converted from a Cargo feature to the build-time
+      # `--cfg aligned_vmem_mock` flag (cfg flags do not unify across the
+      # dependency graph, unlike Cargo features), so `--all-features` in the
+      # step above no longer compiles it — this row runs `mock.rs` /
+      # `mock_reentrancy.rs` (and `smoke.rs` under the recording backend)
+      # with all remaining optional features enabled.
+      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
       # rust-intel audit finding (task #699, HIGH, 2026-08-09):
       # `--all-features` does NOT actually run `fault_injection.rs` -- this
       # step's own comment above previously claimed it did ("plus
       # fault_injection.rs compiling and running under mock"), which was
       # false: the file's own `#![cfg(all(feature = "fault-injection",
-      # feature = "lazy-commit", not(feature = "mock")))]` gate requires
-      # `mock` OFF (it tests the REAL commit-fault-injection hook on the
+      # feature = "lazy-commit", not(aligned_vmem_mock)))]` gate requires
+      # mock OFF (it tests the REAL commit-fault-injection hook on the
       # real syscall backend, which `mock` entirely replaces), so turning
-      # `mock` on alongside it via `--all-features` makes the whole file
-      # compile to ZERO tests (verified: `cargo test -p aligned-vmem
-      # --all-features --test fault_injection` -> "0 passed"). This file's
-      # own tests had therefore never executed in ANY CI configuration.
+      # `mock` on alongside it via `--all-features` made the whole file
+      # compile to ZERO tests. Since task #962 mock is a --cfg flag, so the
+      # step above now correctly runs this file. This file's own tests
+      # had therefore never executed in ANY CI configuration until task #699.
       # Fixed with a dedicated step using the file's actual required
       # feature combination. Deliberately not stating a test COUNT here
       # (task #776, F10) -- a hardcoded count goes stale the moment a test
@@ -2032,9 +2074,13 @@ jobs:
           tool: cargo-hack
       - name: cargo hack check --feature-powerset --depth 2
         run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
-      # Task #856/W14-3: aligned-vmem crate feature-powerset check. 6 features
-      # (lazy-commit, alloc-lazy-commit alias, huge-pages, mock, fault-injection,
-      # bench-internals) resolve to 21 invocations at depth 2. Added to the same
+      # Task #856/W14-3: aligned-vmem crate feature-powerset check. 5 features
+      # (lazy-commit, alloc-lazy-commit alias, huge-pages, fault-injection,
+      # bench-internals) — mock is no longer a Cargo feature (task #962,
+      # converted to the build-time --cfg aligned_vmem_mock flag, outside
+      # cargo-hack's feature space entirely). Invocation count shrank
+      # accordingly; re-derive via --dry-run if a specific number is needed
+      # (this repo's convention avoids hardcoded counts per task #776/F10). Added to the same
       # weekly cadence as the root crate's powerset job for consistency.
       - name: cargo hack check --feature-powerset --depth 2 (aligned-vmem)
         run: cargo hack check --feature-powerset --depth 2 -p aligned-vmem --no-dev-deps

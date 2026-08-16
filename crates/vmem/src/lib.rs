@@ -99,9 +99,10 @@
 // bypassed by the recording backend, so their per-OS `*_impl` helpers become
 // legitimately unused. This used to be a crate-wide `allow(dead_code)`, which
 // made the whole crate structurally unable to report ANY unused item under
-// `--all-features` (task #646/F8). Narrowed to per-item `#[cfg_attr(feature =
-// "mock", allow(dead_code))]` on exactly the helpers confirmed (by building
-// `--features mock,lazy-commit,huge-pages,fault-injection` on Windows, Unix
+// `--all-features` (task #646/F8). Narrowed to per-item
+// `#[cfg_attr(aligned_vmem_mock, allow(dead_code))]` on exactly the helpers
+// confirmed (by building `RUSTFLAGS="--cfg aligned_vmem_mock" cargo build
+// --features lazy-commit,huge-pages,fault-injection` on Windows, Unix
 // (`--target x86_64-unknown-linux-gnu`) and miri (`--cfg miri`)) to go dead
 // under `mock` alone: the per-OS `decommit_pages_impl` / `recommit_pages_impl`
 // / `commit_range_impl` / `reserve_aligned_lazy_raw` trio-plus-one on each
@@ -119,7 +120,7 @@
 // reorganize the three backends as separate `#[cfg]`-selected private modules
 // (`os_windows` / `os_unix` / `os_miri`) with one shared private signature,
 // allowing `mock` to be a fourth module selected by the same `#[cfg]` mechanism.
-// That would eliminate every `#[cfg_attr(feature = "mock", allow(dead_code))]`
+// That would eliminate every `#[cfg_attr(aligned_vmem_mock, allow(dead_code))]`
 // attribute, but is a larger refactor than this crate's 0.2.0 release should
 // carry. The current partial-replacement shape (mock replaces decommit/recommit/
 // commit_range but not reserve/release) is explicitly chosen.
@@ -130,8 +131,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub mod error;
 pub use error::VmemError;
 
-#[cfg(feature = "mock")]
-#[cfg_attr(docsrs, doc(cfg(feature = "mock")))]
+#[cfg(aligned_vmem_mock)]
+#[cfg_attr(docsrs, doc(cfg(aligned_vmem_mock)))]
 pub mod mock;
 
 #[cfg(feature = "fault-injection")]
@@ -1010,7 +1011,7 @@ impl Reservation {
 impl Drop for Reservation {
     fn drop(&mut self) {
         // Record the release for mock observers (RAII path visibility).
-        #[cfg(feature = "mock")]
+        #[cfg(aligned_vmem_mock)]
         mock::record(mock::Call::Release {
             reservation: self.reservation.as_ptr().addr(),
             reservation_len: self.reservation_len,
@@ -1223,12 +1224,12 @@ fn finish_reservation_huge(
 pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, VmemError> {
     validate_size_align(size, align)?;
     // Mock fault-injection: honour a scripted reserve failure first.
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     if let Some(e) = mock::take_reserve_fault() {
         mock::record(mock::Call::Reserve { size, align });
         return Err(e);
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::Reserve { size, align });
 
     // task #713: `reserve_aligned_raw` now captures its own `VmemError`
@@ -1280,7 +1281,7 @@ pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, Vme
 /// That divergence is now closed: this function validates the contract up
 /// front and panics with a descriptive message on **every** backend, not
 /// only under `miri`. The assert runs before `mock::record`, so under the
-/// `mock` feature a contract-violating call panics before it is ever
+/// `aligned_vmem_mock` cfg a contract-violating call panics before it is ever
 /// recorded in the mock call log — it does not appear as a `Release` entry.
 ///
 /// A null `reservation` is unaffected by this: it remains the documented
@@ -1316,7 +1317,7 @@ pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize
     );
 
     let nn = NonNull::new(reservation).expect("checked non-null above");
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::Release {
         reservation: reservation.addr(),
         reservation_len,
@@ -1423,13 +1424,13 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::Decommit {
         base: base.addr(),
         start,
         end,
     });
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(aligned_vmem_mock))]
     // SAFETY: forwarded from the caller's contract; the per-OS routine touches
     // only kernel page-state, never the bytes.
     unsafe {
@@ -1491,13 +1492,13 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::DecommitLazy {
         base: base.addr(),
         start,
         end,
     });
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(aligned_vmem_mock))]
     // SAFETY: forwarded from the caller's contract; the per-OS routine touches
     // only kernel page-state, never the bytes.
     unsafe {
@@ -1550,7 +1551,7 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
     if start == end {
         return Ok(());
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     {
         mock::record(mock::Call::Recommit {
             base: base.addr(),
@@ -1559,7 +1560,7 @@ pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<()
         });
         mock::take_commit_fault().map_or(Ok(()), Err)
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(aligned_vmem_mock))]
     // SAFETY: forwarded from the caller's contract.
     unsafe {
         recommit_pages_impl(base, start, end)
@@ -1641,7 +1642,7 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
     if start == end {
         return Ok(());
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     {
         mock::record(mock::Call::CommitRange {
             base: base.addr(),
@@ -1650,7 +1651,7 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
         });
         mock::take_commit_fault().map_or(Ok(()), Err)
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(aligned_vmem_mock))]
     {
         // Real-path fault injection (feature `fault-injection`, DISTINCT from
         // `mock`): consult the armed hooks immediately before the real
@@ -1705,7 +1706,7 @@ pub fn try_reserve_aligned_lazy(
 ) -> Result<Reservation, VmemError> {
     validate_size_align(size, align)?;
     validate_initial_commit(initial_commit, size)?;
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     if let Some(e) = mock::take_reserve_fault() {
         mock::record(mock::Call::ReserveLazy {
             size,
@@ -1714,7 +1715,7 @@ pub fn try_reserve_aligned_lazy(
         });
         return Err(e);
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::ReserveLazy {
         size,
         align,
@@ -1727,9 +1728,9 @@ pub fn try_reserve_aligned_lazy(
     // consumer's mocked "commit" is a no-op. Chain to the EAGER (fully
     // committed) backend instead, so the returned span is entirely usable while
     // the mock still records the `ReserveLazy` call for assertion.
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     let raw = reserve_aligned_raw(size, align);
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(aligned_vmem_mock))]
     let raw = reserve_aligned_lazy_raw(size, align, initial_commit);
 
     // task #713: both `raw` branches now capture their own `VmemError`
@@ -1817,12 +1818,12 @@ pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
 #[cfg_attr(docsrs, doc(cfg(feature = "huge-pages")))]
 pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation, VmemError> {
     validate_size_align(size, align)?;
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     if let Some(e) = mock::take_reserve_fault() {
         mock::record(mock::Call::ReserveHuge { size, align });
         return Err(e);
     }
-    #[cfg(feature = "mock")]
+    #[cfg(aligned_vmem_mock)]
     mock::record(mock::Call::ReserveHuge { size, align });
 
     // task #713: `reserve_aligned_huge_raw` now captures its own `VmemError`
@@ -2174,7 +2175,7 @@ unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize,
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: DecommitKind) {
     // task #957 (NUM-1): guard the `end - start` subtraction below against an
     // inverted range (caller contract violation) so a debug build panics with
@@ -2194,7 +2195,7 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: De
 
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): see decommit_pages_impl above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
     // task #957 (NUM-1): guard the `end - start` subtraction below against an
     // inverted range (caller contract violation) so a debug build panics with
@@ -2226,7 +2227,7 @@ unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> Result
 #[cfg(all(windows, not(miri), feature = "lazy-commit"))]
 // mock (task #646/F8): see decommit_pages_impl above; `try_commit_range`'s
 // real-path branch is compiled out under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn commit_range_impl(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
     // Same MEM_COMMIT call as recommit (idempotent on Windows).
     // SAFETY: forwarded from the caller's contract.
@@ -2236,7 +2237,7 @@ unsafe fn commit_range_impl(base: *mut u8, start: usize, end: usize) -> Result<(
 #[cfg(all(windows, not(miri), feature = "lazy-commit"))]
 // mock (task #646/F8): `try_reserve_aligned_lazy`'s real-path branch is
 // compiled out under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
@@ -2308,7 +2309,7 @@ const WIN_ALLOCATION_GRANULARITY: usize = 65536; // 64 KiB - VirtualAlloc alignm
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): only consumed by winapi_virtual_decommit below, which
 // itself is unused under `mock`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MEM_DECOMMIT: u32 = 0x0000_4000;
 #[cfg(all(windows, not(miri)))]
 const MEM_RELEASE: u32 = 0x0000_8000;
@@ -2325,7 +2326,7 @@ unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
 
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): see decommit_pages_impl above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a committed region.
     // task #921/V-8: the return value is deliberately discarded. A failure here would
@@ -2630,7 +2631,7 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: DecommitKind) {
     // task #957 (NUM-1): guard the `end - start` subtraction below against an
     // inverted range (caller contract violation) so a debug build panics with
@@ -2655,7 +2656,7 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: Dec
 
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): see decommit_pages_impl above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
     // On Linux, re-access after MADV_DONTNEED is implicit — the kernel
     // actually unmaps the physical pages, so the next write re-faults a
@@ -2680,7 +2681,7 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Res
 #[cfg(all(unix, not(miri), feature = "lazy-commit"))]
 // mock (task #646/F8): `try_commit_range`'s real-path branch is compiled out
 // under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
     // Unix: pages are already accessible (eager mmap). Always succeeds.
     Ok(())
@@ -2689,7 +2690,7 @@ unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Resul
 #[cfg(all(unix, not(miri), feature = "lazy-commit"))]
 // mock (task #646/F8): `try_reserve_aligned_lazy`'s real-path branch is
 // compiled out under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
@@ -2722,7 +2723,7 @@ fn reserve_aligned_huge_raw(
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 #[inline]
 fn madv_free_advice() -> i32 {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -2939,12 +2940,12 @@ const MAP_FAILED: usize = usize::MAX;
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only consumed by decommit_pages_impl / madv_free_advice
 // above, both unused under `mock`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_DONTNEED: i32 = 4;
 /// Linux `MADV_FREE` (lazy reclaim under pressure).
 #[cfg(all(unix, not(miri), any(target_os = "linux", target_os = "android")))]
 // mock (task #646/F8): see MADV_DONTNEED above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_FREE: i32 = 8;
 /// macOS/iOS `MADV_FREE_REUSABLE` (lazy reclaim; page reusable).
 #[cfg(all(unix, not(miri), any(target_os = "macos", target_os = "ios")))]
@@ -2954,14 +2955,14 @@ const MADV_FREE_REUSABLE: i32 = 7;
 /// `sys/mman.h` (both OSes use 5).
 #[cfg(all(unix, not(miri), any(target_os = "freebsd", target_os = "dragonfly")))]
 // mock (task #646/F8): see MADV_DONTNEED above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_FREE_BSD_5: i32 = 5;
 /// NetBSD/OpenBSD `MADV_FREE` (lazy reclaim; advisory).
 /// REASONED-FROM-SPEC — no BSD CI runner to empirically verify on; value from
 /// `sys/mman.h` (both OSes use 6).
 #[cfg(all(unix, not(miri), any(target_os = "netbsd", target_os = "openbsd")))]
 // mock (task #646/F8): see MADV_DONTNEED above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_FREE_BSD_6: i32 = 6;
 /// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
 #[cfg(all(
@@ -3171,7 +3172,7 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region.
     // task #719: the return value is deliberately discarded -- `madvise`
@@ -3285,14 +3286,14 @@ compile_error!(
 #[cfg(miri)]
 // mock (task #646/F8): bypassed by the recording backend, unused when `mock`
 // alone is enabled without a real decommit call site reachable.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn decommit_pages_impl(_base: *mut u8, _start: usize, _end: usize, _kind: DecommitKind) {
     // Miri models no RSS; decommit is a no-op.
 }
 
 #[cfg(miri)]
 // mock (task #646/F8): see decommit_pages_impl above.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
     Ok(())
 }
@@ -3300,7 +3301,7 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Res
 #[cfg(all(miri, feature = "lazy-commit"))]
 // mock (task #646/F8): `try_commit_range`'s real-path branch is compiled out
 // under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
     Ok(())
 }
@@ -3308,7 +3309,7 @@ unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Resul
 #[cfg(all(miri, feature = "lazy-commit"))]
 // mock (task #646/F8): `try_reserve_aligned_lazy`'s real-path branch is
 // compiled out under `mock`, so this never gets called.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
@@ -3343,7 +3344,7 @@ fn reserve_aligned_huge_raw(
 // narrowed every other dead-code allow in this file away from (see the
 // module doc above). `DecommitKind` was missed from that pass. Narrowed to
 // match the established per-item pattern.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 enum DecommitKind {
     Eager,
     Lazy,

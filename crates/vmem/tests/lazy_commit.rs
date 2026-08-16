@@ -16,7 +16,7 @@
 use aligned_vmem::{
     commit_range, page_size, reserve_aligned, reserve_aligned_lazy, try_commit_range, PAGE,
 };
-#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
 use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
@@ -45,30 +45,30 @@ const MIB: usize = 1024 * 1024;
 /// `windows_lazy_reserve_saves_commit_charge`'s before/after delta could
 /// still be corrupted by a concurrent sibling test. Confirmed by direct
 /// reproduction: `cargo test -p aligned-vmem --features "lazy-commit
-/// huge-pages fault-injection bench-internals"` (no `mock`, matching the
+/// huge-pages fault-injection bench-internals"` (no `aligned_vmem_mock`, matching the
 /// Windows CI row) failed `windows_lazy_reserve_saves_commit_charge`
 /// nondeterministically under default (parallel) `--test-threads`, passed
 /// reliably under `--test-threads=1`. Every test in this file now holds
 /// `SERIAL` for its whole body, so no `win_reserve_commit`-touching test
 /// can run concurrently with the one that measures an exact delta. Gated
 /// identically to `windows_lazy_reserve_saves_commit_charge` (only the
-/// Windows + `bench-internals`, non-`mock` build ever references this
+/// Windows + `bench-internals`, non-`aligned_vmem_mock` build ever references this
 /// static, so an unconditional definition would warn
 /// `dead_code`/`unused_imports` on every other platform/feature
 /// combination) -- a future test added to this file must also take it.
-#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
 static SERIAL: Mutex<()> = Mutex::new(());
 
-/// Acquire [`SERIAL`] on Windows+`bench-internals`+non-`mock` builds (a
+/// Acquire [`SERIAL`] on Windows+`bench-internals`+non-`aligned_vmem_mock` builds (a
 /// no-op everywhere else, since neither the static nor the counters it
 /// guards exist there) -- see `SERIAL`'s own doc comment above for why
 /// every test in this file needs this, not only the ones that read the
 /// counters.
-#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
 fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
     SERIAL.lock().unwrap_or_else(|e| e.into_inner())
 }
-#[cfg(not(all(windows, feature = "bench-internals", not(feature = "mock"))))]
+#[cfg(not(all(windows, feature = "bench-internals", not(aligned_vmem_mock))))]
 fn serial_guard() {}
 
 // ── reserve_aligned_lazy: basic contract ────────────────────────────────────
@@ -484,19 +484,19 @@ fn sequential_commit_range_grows_incrementally() {
 /// also drives `win_reserve_commit` (libtest runs tests on parallel threads
 /// by default) -- see `SERIAL`'s own doc comment above.
 ///
-/// Excluded under `feature = "mock"`: `try_reserve_aligned_lazy` deliberately
+/// Excluded under `aligned_vmem_mock`: `try_reserve_aligned_lazy` deliberately
 /// chains `mock` builds to the EAGER backend (`reserve_aligned_raw`, which
 /// always calls `win_reserve_commit` with `commit_len == size`) instead of
 /// the real lazy path -- see that function's own module comment in
-/// `src/lib.rs` ("Under `mock` the OS partial-commit is bypassed ..."). Under
-/// `mock`, `commit_len == size` unconditionally, so this test's
+/// `src/lib.rs` ("Under `aligned_vmem_mock` the OS partial-commit is bypassed ..."). Under
+/// `aligned_vmem_mock`, `commit_len == size` unconditionally, so this test's
 /// `align = PAGE` call would take the single-call fast path instead of the
 /// two-call path it exists to pin, and the counter assertions below would
 /// fail for a reason that has nothing to do with `win_reserve_commit`'s real
 /// guard -- confirmed empirically (`cargo test --all-features` before this
 /// exclusion failed with `two_call_pairs` staying at 0).
 #[test]
-#[cfg(all(windows, feature = "bench-internals", not(feature = "mock")))]
+#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
 fn windows_lazy_reserve_saves_commit_charge() {
     let _guard = serial_guard();
 

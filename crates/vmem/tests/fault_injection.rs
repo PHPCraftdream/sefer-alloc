@@ -1,21 +1,21 @@
 //! Tests for the `fault-injection` feature: real-path commit fault injection,
 //! DISTINCT from `mock`. These tests run against the REAL OS backend (no
-//! `mock` feature): `reserve_aligned_lazy` performs a genuine reservation and
+//! `aligned_vmem_mock` cfg): `reserve_aligned_lazy` performs a genuine reservation and
 //! `commit_range` issues genuine `VirtualAlloc`/no-op-Unix commit syscalls —
 //! the armed hooks only intercept the specific call(s) under test, proving
 //! the fault-injection hook coexists with (and does not replace) the real
 //! backend.
 
-// `not(feature = "mock")`: under `mock`, `try_commit_range` is entirely
+// `not(aligned_vmem_mock)`: under `aligned_vmem_mock`, `try_commit_range` is entirely
 // replaced by the recording stub (see `crate::mock`'s doc comment) and never
 // reaches the real-path hook this file tests — that combination is legal to
 // compile (see `--all-features`) but produces a vacuous no-op test, which
 // would be worse than not running it. These tests specifically prove the
-// hook fires on the REAL backend, so they require `mock` OFF.
+// hook fires on the REAL backend, so they require `aligned_vmem_mock` OFF.
 #![cfg(all(
     feature = "fault-injection",
     feature = "lazy-commit",
-    not(feature = "mock")
+    not(aligned_vmem_mock)
 ))]
 
 use aligned_vmem::fault_injection::{arm_fail_at, arm_fail_next};

@@ -17,12 +17,13 @@ categories = ["memory-management", "os"]
 # fault-injection) actually appears on the published docs page — the default
 # feature set is intentionally empty (see `[features]` below), so a plain
 # `cargo doc` render would omit all of it (task #644). Deliberately an
-# explicit list, NOT `all-features = true`: `all-features` would also turn on
-# `mock`, which REPLACES the real syscall backend (not merely additive) and
-# would surface the test-only recording module (`src/mock.rs`) as if it were
-# ordinary reference API. `bench-internals` is likewise excluded — it is a
-# diagnostic counter surface with no consumer-facing purpose. Mirrors the
-# same decision made for `numa-shim` (`crates/numa/Cargo.toml`).
+# explicit list, NOT `all-features = true`: `mock` is no longer a Cargo
+# feature (converted to the build-time `--cfg aligned_vmem_mock` flag in
+# task #962, per docs/CORRECTNESS_OPEN_ITEMS.md item 42) so `all-features`
+# CANNOT turn it on. `bench-internals` is excluded — it is a diagnostic
+# counter surface with no consumer-facing purpose. Mirrors the same decision
+# made for `numa-shim` (`crates/numa/Cargo.toml` — note that numa-shim's own
+# mock is still a feature there).
 [package.metadata.docs.rs]
 features = ["lazy-commit", "huge-pages", "fault-injection"]
 rustdoc-args = ["--cfg", "docsrs"]
@@ -59,32 +60,16 @@ huge-pages = []
 # (including macOS and miri) without exhausting real commit charge. Off by
 # default; NOT part of any bundle.
 #
-# CARGO FEATURE-UNIFICATION HAZARD (task #715, rust-intel audit MEDIUM §C10)
-# — read before enabling: this is a NON-ADDITIVE, backend-REPLACING feature.
-# Cargo unifies features across a build's WHOLE dependency graph, not per
-# edge — so if ANY crate anywhere downstream of your build (including a
-# sibling workspace member's own `[dev-dependencies]`) enables
-# `aligned-vmem/mock`, every OTHER consumer in that SAME build silently gets
-# the mock backend too: `reserve_aligned`/`recommit`/`decommit`/etc. stop
-# touching the real OS for THEM as well, with no compile error and no
-# warning. Enable this feature ONLY in a leaf test/dev target (a `[[test]]`,
-# an integration-test crate, or a `[dev-dependencies]` entry in a binary that
-# is never itself a library dependency of anything else) — never in a
-# library's own `[dependencies]`, and never in a `[dev-dependencies]` entry
-# that could be reached from more than one build target in the same
-# workspace. A stronger fix (a build-time `--cfg` flag instead of a Cargo
-# feature, matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg
-# flags do not unify) was evaluated and DEFERRED: `mock` (and `Call`, and
-# `src/mock.rs`) is new in 0.2.0 and has never been published — 0.1.0 had no
-# `mock` feature at all. Removing or converting `mock` is therefore still
-# free today and stays free only until 0.2.0 ships (task #658); the deferral
-# rests on the mechanical cost of the conversion (every test file, `ci.yml`,
-# this crate's whole feature-powerset CI matrix) plus the absence of real
-# external consumers today, not on any already-incurred breaking-change
-# cost. Revisit if/when this crate gains external consumers and the hazard
-# is reported for real — but settle the `--cfg` question before 0.2.0
-# publishes if it is going to be settled at all.
-mock = []
+# NOTE: this used to be a Cargo feature whose unification hazard was documented
+# as an open risk (task #715, rust-intel audit MEDIUM §C10). RESOLVED before
+# the first 0.2.0 publish (task #962, docs/CORRECTNESS_OPEN_ITEMS.md item 42)
+# by converting it to the build-time `--cfg aligned_vmem_mock` flag — cfg flags
+# are passed only explicitly per-build via `RUSTFLAGS="--cfg aligned_vmem_mock"`
+# and do not unify across the dependency graph, so no downstream crate can
+# silently turn the mock backend on for anyone else. Same pattern as the repo's
+# `cfg(loom)`/`cfg(kani)` precedent. The flag is declared in this crate's
+# `[lints.rust unexpected_cfgs]` below so it produces no `unexpected cfg`
+# warnings.
 
 # Real-path commit fault injection: an armed "fail the next N / fail exactly
 # the k-th" hook on the REAL `try_commit_range` syscall path (`lazy-commit`),
@@ -127,6 +112,16 @@ fault-injection = ["lazy-commit"]
 # `aligned-vmem/bench-internals`. Off by default; NOT part of any bundle;
 # zero cost when disabled (increments compiled out entirely).
 bench-internals = []
+
+# `aligned_vmem_mock` is a build-time cfg (set via
+# `RUSTFLAGS="--cfg aligned_vmem_mock"`), NOT a Cargo feature — cfg flags do
+# not unify across the build's dependency graph, which is the whole point of
+# the task #962 conversion. Declaring it here keeps `unexpected_cfgs` silent
+# for this crate (same pattern as the root workspace's `loom`/`kani`
+# declaration, which this crate does not inherit — it has no
+# `[lints] workspace = true`).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(aligned_vmem_mock)'] }
 
 [dependencies]
 
