@@ -56,6 +56,16 @@
 /// provided for interop with code that uses the sentinel pattern.
 pub const NO_NODE: u32 = u32::MAX;
 
+/// Re-exported so callers of [`reserve_on_node`] can name the return type as
+/// `numa_shim::Reservation` without adding a direct `aligned-vmem`
+/// dependency of their own. This re-export makes the intentional semver
+/// coupling between the two sibling crates visible in `numa-shim`'s own
+/// public API (item 46, `docs/CORRECTNESS_OPEN_ITEMS.md`) rather than
+/// leaving it implicit — see [`reserve_on_node`]'s own doc section on the
+/// coupling for the full rationale.
+#[cfg(feature = "vmem-integration")]
+pub use aligned_vmem::Reservation;
+
 /// Test-only mock state replacing platform NUMA syscalls.  Records every
 /// invocation into a thread-local buffer so unit tests can assert the
 /// wrapping logic is correct on any target (including macOS and miri,
@@ -377,6 +387,22 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
 ///
 /// When `node` is `NO_NODE` (or [`None`] from [`current_node`]) the call
 /// behaves like plain [`aligned_vmem::reserve_aligned`].
+///
+/// # Semver coupling with `aligned-vmem`
+///
+/// This function's return type is `aligned-vmem`'s own [`Reservation`]
+/// (re-exported here as [`numa_shim::Reservation`](crate::Reservation)), not
+/// a `numa-shim`-owned wrapper. That is an intentional, accepted coupling
+/// (item 46, `docs/CORRECTNESS_OPEN_ITEMS.md`), not an oversight: `numa-shim`
+/// and `aligned-vmem` are sibling crates in this workspace, released
+/// together, so a semver-major bump in `aligned-vmem`'s `Reservation` shape
+/// forces a coordinated `numa-shim` bump in the same release — a cost
+/// already paid by the shared release process, not an extra one. The
+/// alternative (a `numa-shim`-owned newtype) was considered and rejected:
+/// wrapping `Reservation` would need either full API forwarding (permanent
+/// boilerplate that drifts on every `aligned-vmem` change) or an
+/// `into_inner()` escape hatch that re-exposes the same type in a public
+/// signature anyway, reproducing the coupling it was meant to remove.
 #[cfg(feature = "vmem-integration")]
 #[must_use]
 pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation> {
