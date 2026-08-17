@@ -36,59 +36,87 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-22. aligned-vmem package gates — 11 steps (5 clippy rows + 2
-//      cross-target unix rows (1 check + 1 clippy, item 51/task #1059)
-//      + 2 test rows + 1 doc row + 1 optional semver row). NOTE the position:
-//      this group sits BEFORE the two remaining PER_PR_ROWS rows in the
-//      runtime array, not after them. The header said the opposite from the
-//      group's introduction (commit 66b8508, task #1024) until task #1047
-//      checked the order against the array instead of against the previous
-//      comment; the old "12-13 = PER_PR_ROWS, 14 = aligned-vmem" pair was a
-//      straight transposition. Reproduces the 'aligned-vmem
-//      package gates' job from ci.yml. Excludes mock (RUSTFLAGS) and the
-//      i686 cross-targets to keep the local check fast (CLAUDE.md: "Tests and
-//      benchmarks must run as fast as possible") — but INCLUDES the
-//      x86_64-unknown-linux-gnu cross-target (item 51/task #1059): a plain
-//      Windows cargo check/clippy compiles #[cfg(unix)] code to NOTHING
-//      (task #1055, commit a4b8e50, found genuinely missing imports in
-//      src/os/unix.rs and src/os/miri.rs that every host-target row silently
-//      skipped), so the unix cfg surface needs an explicit --target row even
-//      though CI's ubuntu-latest job already covers it natively. Rows:
-//      clippy (default, huge-pages, bench-internals,
+//   12-26. aligned-vmem package gates — 15 steps (2 cache-invalidation
+//      cleans + 5 clippy rows + 3 cross-target unix rows (1 check + 2
+//      clippy) + 1 mock clippy row + 2 test rows + 1 doc row + 1 optional
+//      semver row). NOTE the position: this group sits BEFORE the two
+//      remaining PER_PR_ROWS rows in the runtime array, not after them
+//      (task #1047 checked the order against the array after the header
+//      had claimed the opposite since the group's introduction, commit
+//      66b8508/task #1024). Reproduces the 'aligned-vmem package gates'
+//      job from ci.yml. Task #1071 closed three holes in this group, all
+//      three of which let the 2026-08-17 push reach CI red despite a
+//      green local gate: (1) FEATURE COVERAGE — the cross-target rows ran
+//      one hardcoded set with `huge-pages` always on, so the
+//      bench-internals-without-huge-pages unix shape (task #1070's
+//      Breakage A: imports whose only use sites need huge-pages or
+//      32-bit) was unreachable by construction; there is now a
+//      bench-internals-ONLY cross clippy row — the minimal lattice
+//      addition, because the crate's only compound feature gates are
+//      bench-internals x (huge-pages | 32-bit) (the breakage just fixed)
+//      and fault-injection x not(lazy-commit) (an explicit in-code
+//      allow(dead_code) in src/fault_injection.rs, not a lint surface),
+//      so {bench-internals alone, full set} reaches every pairwise
+//      feature interaction compilable on x86_64-linux. (2) MOCK — the
+//      `--cfg aligned_vmem_mock` arm was excluded "to keep the local
+//      check fast" with no measurement behind it; the mock clippy row is
+//      now included (~2.5 s after invalidation, measured — see the row's
+//      own comment), and the mock TEST row stays excluded because it
+//      FAILS on a clean tree at HEAD (`decommit`'s debug_assert fires on
+//      the contract-violating call that tests/mock.rs's
+//      decommit_silently_skips_contract_violating_offsets expects to be
+//      silently skipped — a pre-existing crate issue outside this gate
+//      task's scope, recorded in the task #1071 commit). (3) CACHE REPLAY
+//      — a cargo step's exit-0 could mean "cargo found a fresh cache",
+//      not "the lints ran" (the failing push's gate log shows the
+//      cross-target clippy row printing only `Finished ... 0.74s` before
+//      its OK); the group is now preceded by two `cargo clean -p
+//      aligned-vmem` steps — the HOST form plus a --target
+//      x86_64-unknown-linux-gnu form, because the host form provably does
+//      NOT invalidate the cross-target dir — and every cargo row in the
+//      group carries `expectWork: 'aligned-vmem'`, which FAILS the step
+//      unless its own output shows a real Checking/Compiling/Documenting
+//      line (see the run-loop comment). STILL excluded (CI covers both):
+//      the i686 cross-targets and the RUSTFLAGS `--cfg miri` check row
+//      (item 51/task #1059 history), and mock-backend TEST execution
+//      (see (2)). Rows: clippy (default, huge-pages, bench-internals,
 //      lazy-commit+huge-pages+fault-injection+bench-internals,
 //      --all-features); cross-target check + clippy
 //      (x86_64-unknown-linux-gnu,
-//      lazy-commit+huge-pages+fault-injection+bench-internals); test
-//      (default, --all-features); doc (--all-features, warnings-as-errors);
-//      semver-checks (optional, skipped if cargo-semver-checks not installed).
-//   23-24. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//      lazy-commit+huge-pages+fault-injection+bench-internals) and
+//      clippy (x86_64-unknown-linux-gnu, bench-internals only); clippy
+//      (--cfg aligned_vmem_mock via RUSTFLAGS, full feature set); test
+//      (default, --all-features); doc (--all-features,
+//      warnings-as-errors); semver-checks (optional, skipped if
+//      cargo-semver-checks not installed).
+//   27-28. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   25. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   29. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   26. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   30. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
 //      structural complement to 25 — 25 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   27. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   31. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   28. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   32. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   29. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   33. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   30. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   34. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -96,7 +124,7 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   31. npm run iai                                                (deterministic judge,
+//   35. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -194,36 +222,81 @@ const steps = [
   },
   // --- aligned-vmem package gates (mandatory local coverage) ---
   // Reproduces the 'aligned-vmem package gates' job from ci.yml.
-  // Excludes mock (RUSTFLAGS) and the i686 cross-targets to keep the local
-  // check fast (CLAUDE.md: "Tests and benchmarks must run as fast as
-  // possible") — but INCLUDES the x86_64-unknown-linux-gnu cross-target
-  // (item 51/task #1059): on a Windows host the unix cfg surface is
-  // invisible to every host-target row — see the two cross-target steps
-  // below.
+  // INCLUDES the mock (--cfg aligned_vmem_mock) clippy row and is preceded
+  // by two cache-invalidation cleans (task #1071 — the old "excludes mock
+  // (RUSTFLAGS) ... to keep the local check fast" rule was an unmeasured
+  // assumption, and the vacuous cache-replay OKs it also permitted are
+  // what let the 2026-08-17 push ship red to CI; see the header's task
+  // #1071 block for all three holes). Still excluded: the i686
+  // cross-targets and the RUSTFLAGS `--cfg miri` check row (CI covers
+  // both), and mock TEST execution (pre-existing local failure — see
+  // header). The x86_64-unknown-linux-gnu cross-target stays (item
+  // 51/task #1059): on a Windows host the unix cfg surface is invisible
+  // to every host-target row — see the cross-target steps below.
+  {
+    // Task #1071, hole 3: force real work in every row below. A green
+    // cargo step is NOT proof its lints ran — cargo's freshness check is
+    // mtime-based, and on a tree whose bytes changed but whose mtimes did
+    // not advance (observed live in the 2026-08-17 failing push and
+    // reproduced deterministically in task #1071's counterfactual: a
+    // restored-mtime edit of src/os/unix.rs makes the cross-target clippy
+    // row print only `Finished ... 0.6s` and exit 0 while the file
+    // contains a -D warnings error), the step replays the cache and the
+    // gate records a vacuous OK. `cargo clean -p` is the invalidation
+    // mechanism because `touch` was shown insufficient for the
+    // cargo-test profile (task #1070). This HOST form invalidates host
+    // clippy/check/test/doc artifacts including the RUSTFLAGS-mock
+    // variants (verified: each profile prints a fresh
+    // Checking/Compiling/Documenting line after it) but provably does NOT
+    // touch the --target dir — hence the --target-scoped companion step
+    // immediately below. Measured cost per run: the clean itself ~1.1-1.7
+    // s, plus a once-per-run rebuild surcharge on the rows below (~2-2.5
+    // s per clippy row, ~4 s per test row, ~13 s for the doc row) and
+    // ~2.7 s of ripple into the two later [matrix] rows (task #1071
+    // commit has the full table).
+    name: 'clean (aligned-vmem host artifacts — cache invalidation for the rows below)',
+    cmd: 'cargo',
+    args: ['clean', '-p', 'aligned-vmem'],
+  },
+  {
+    // Task #1071, hole 3: cross-target companion of the clean above — the
+    // host form leaves everything under target/x86_64-unknown-linux-gnu
+    // untouched (measured: the cross rows replay `Finished` in 0.69 s
+    // with no Checking line after a host-only clean); only this scoped
+    // form actually invalidates them. ~1.2 s per run.
+    name: 'clean (aligned-vmem x86_64-unknown-linux-gnu artifacts — cross-target companion)',
+    cmd: 'cargo',
+    args: ['clean', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu'],
+  },
   {
     name: 'clippy (aligned-vmem default)',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
   },
   {
     name: 'clippy (aligned-vmem --features "huge-pages")',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--features', 'huge-pages', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
   },
   {
     name: 'clippy (aligned-vmem --features "bench-internals")',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--features', 'bench-internals', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
   },
   {
     name: 'clippy (aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals")',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
   },
   {
     name: 'clippy (aligned-vmem --all-features)',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--all-features', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
   },
   {
     // Item 51 (task #1059): cross-target unix compile gate. On this Windows
@@ -244,6 +317,7 @@ const steps = [
     name: 'check (aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals")',
     cmd: 'cargo',
     args: ['check', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets'],
+    expectWork: 'aligned-vmem',
   },
   {
     // Item 51 (task #1059): clippy half of the cross-target unix gate above —
@@ -252,11 +326,57 @@ const steps = [
     name: 'clippy (aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals")',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
+  },
+  {
+    // Task #1071, hole 1: the feature-lattice companion of the cross rows
+    // above. The 2026-08-17 CI breakage (task #1070's Breakage A) lived in
+    // a cfg shape those rows cannot reach: bench-internals ON with
+    // huge-pages OFF on 64-bit unix, where UNIX_EXACT_RESERVE_*'s only
+    // use sites vanish and the imports go unused under -D warnings. The
+    // rows above always ran with huge-pages on, so this defect class was
+    // unreachable by construction — the gate added to catch unix drift
+    // could not catch the unix drift that actually shipped.
+    // bench-internals ALONE is the minimal addition that closes the
+    // lattice (see the header's task #1071 block for the full
+    // justification). clippy, not check: the breakage class is a lint
+    // (unused imports), which bare `cargo check` warns about but exits 0
+    // on. Measured ~2.6 s after the clean steps / ~1.1 s warm (task
+    // #1071 commit).
+    name: 'clippy (aligned-vmem --target x86_64-unknown-linux-gnu --features "bench-internals")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu', '--features', 'bench-internals', '--all-targets', '--', '-D', 'warnings'],
+    expectWork: 'aligned-vmem',
+  },
+  {
+    // Task #1071, hole 2: the mock arm. Excluded since the group's
+    // introduction "to keep the local check fast" — a decision made
+    // without a measurement, and the reason task #1070's Breakage B (the
+    // whole --cfg aligned_vmem_mock arm failing to compile: E0433 on a
+    // bare mock:: path plus six unused imports) shipped through a green
+    // local gate. Measured cost: ~2.5 s after the clean steps — the same
+    // order as the 0.72 s/0.64 s warm cross-target rows that item
+    // 51/task #1059 justified adding, so "for speed" is not a defensible
+    // reason to keep the crate's mock backend unverifiable locally.
+    // Mirrors CI's aligned-vmem-gates mock clippy row exactly (features +
+    // --all-targets + -D warnings + the RUSTFLAGS cfg). The mock TEST row
+    // stays excluded: it FAILS on a clean tree at HEAD
+    // (tests/mock.rs's decommit_silently_skips_contract_violating_offsets
+    // calls the contract-violating decommit that api/decommit.rs's
+    // debug_assert rejects — a pre-existing crate issue, not a gate
+    // issue; see the task #1071 commit), so mock-backend RUNTIME behavior
+    // stays CI-only.
+    name: 'clippy (aligned-vmem --cfg aligned_vmem_mock --features "lazy-commit huge-pages fault-injection bench-internals")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_mock' },
+    expectWork: 'aligned-vmem',
   },
   {
     name: 'test (aligned-vmem --all-features)',
     cmd: 'cargo',
     args: ['test', '-p', 'aligned-vmem', '--all-features'],
+    expectWork: 'aligned-vmem',
   },
   {
     // Item 64 (task #1030 follow-up): default-feature runtime test —
@@ -266,6 +386,7 @@ const steps = [
     name: 'test (aligned-vmem default)',
     cmd: 'cargo',
     args: ['test', '-p', 'aligned-vmem'],
+    expectWork: 'aligned-vmem',
   },
   {
     // Item 65 (task #1039): doc warnings check — matches the aligned-vmem-gates
@@ -275,6 +396,7 @@ const steps = [
     cmd: 'cargo',
     args: ['doc', '-p', 'aligned-vmem', '--all-features', '--no-deps'],
     env: { RUSTDOCFLAGS: '-D warnings' },
+    expectWork: 'aligned-vmem',
   },
   {
     // Item 65 (task #1039): semver check — matches the aligned-vmem-gates job's
@@ -376,7 +498,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x11 [5 clippy + 2 cross-target unix (1 check + 1 clippy) + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
@@ -395,12 +517,37 @@ for (const step of steps) {
   // reached rustdoc, doc warnings did not fail the build, and the step's own
   // name asserted a guarantee it did not provide. A step that cannot fail is
   // worse than no step, because it reads as coverage.
-  const { code } = await run(step.cmd, step.args, {
+  const { code, out } = await run(step.cmd, step.args, {
     cwd: REPO_ROOT,
     ...(step.env ? { env: { ...process.env, ...step.env } } : {}),
   });
   if (code !== 0) {
     console.log(`\n[check-all] FAIL at step: ${step.name} (exit ${code})`);
+    allOk = false;
+    break;
+  }
+  // Task #1071, hole 3: `expectWork` turns "exit 0" into "exit 0 AND
+  // provably did something". A step carrying `expectWork: '<crate>'` must
+  // show a real Checking/Compiling/Documenting line for that crate in its
+  // own output — the two `clean` steps ahead of the aligned-vmem group
+  // guarantee such a line appears whenever the row actually runs, so its
+  // absence means cargo replayed a cache the cleans were supposed to
+  // invalidate (wrong target dir, changed `cargo clean` semantics, a
+  // duplicate-fingerprint row inserted ahead, ...) and the step's OK is
+  // vacuous. A vacuous green is worse than no step: it reads as coverage
+  // (the failing push's gate printed `Finished ... 0.74s` + OK for a row
+  // that had checked nothing).
+  if (
+    step.expectWork &&
+    !new RegExp(`^\\s*(Checking|Compiling|Documenting) ${step.expectWork}\\b`, 'm').test(out)
+  ) {
+    console.log(
+      `\n[check-all] FAIL at step: ${step.name} (exit 0 but no evidence of real ` +
+        `work — expected a 'Checking|Compiling|Documenting ${step.expectWork}' line ` +
+        `in the step output; cargo served a cached result, so the ` +
+        `cache-invalidation steps ahead of the aligned-vmem group did not take ` +
+        `effect. See the task #1071 hole-3 notes in this file's header.)`,
+    );
     allOk = false;
     break;
   }
