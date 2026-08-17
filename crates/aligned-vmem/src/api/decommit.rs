@@ -31,11 +31,16 @@ use crate::page_size::page_size;
 /// and `[base+start, base+end)` must contain no data the caller still needs —
 /// its contents are discarded.
 ///
-/// **No fallible form:** this entry point is intentionally infallible. The `()`
-/// return carries no write-permitting sentinel to misuse, so silently skipping
-/// on a contract violation is safe. A `try_decommit` return could be added in a
-/// future additive API decision if consumers need error propagation, but the
-/// README already argues for the safety of silent no-op on this shape.
+/// **Contract violations, by build profile (task #1051):** this entry point
+/// is intentionally infallible — the `()` return carries no write-permitting
+/// sentinel to misuse — so a violated range (`start > end`, or an endpoint
+/// not a multiple of [`page_size()`]) is a silent no-op in a RELEASE build:
+/// no OS call is made and nothing is recorded. In a DEBUG build the same
+/// violation trips the `debug_assert!` below before anything happens, so a
+/// consumer's own test fails at the mistake instead of quietly decommitting
+/// nothing and leaving the memory resident; zero cost in release.
+/// [`try_decommit`] is the fallible form for callers who need the violation
+/// reported: it returns `Err` on every profile and never trips the tripwire.
 ///
 /// **Platform divergence, not just a data-loss concern:** on Windows,
 /// `MEM_DECOMMIT` genuinely unmaps the pages, so a **write to `[base+start,

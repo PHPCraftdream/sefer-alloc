@@ -295,35 +295,45 @@ fn simulated_fault_reports_no_os_code() {
     );
 }
 
-/// task #902 (review finding U7, LOW): `decommit`/`decommit_lazy`'s contract
-/// is DELIBERATELY asymmetric with `recommit`/`commit_range` -- a
-/// contract-violating range (misaligned, or `start >= end`) is REJECTED with
-/// `false`/`Err` on the commit side (see `recommit_rejects_contract_violating_offsets`
-/// in `smoke.rs` and `commit_range_rejects_contract_violating_offsets` in
-/// `lazy_commit.rs`), but SILENTLY SKIPPED with no error at all on the
-/// decommit side (`lib.rs`'s `decommit`/`decommit_lazy`: `if start >= end ||
-/// !start.is_multiple_of(ps) || !end.is_multiple_of(ps) { return; }`) --
-/// intentional, documented in README.md as safe because `()` has no
-/// write-permitting sentinel to misuse. Nothing previously tested this
-/// silent-skip half at all: every decommit/decommit_lazy call site in this
-/// crate's tests/ passes a well-formed, `page_size()`-aligned range. A future
-/// contributor could "unify" the validation base from `page_size()` to the
-/// crate's `PAGE` constant (a plausible-looking simplification), or delete
-/// the guard outright, and the whole test suite would stay green with no
-/// test noticing -- this locks the silent-skip contract at the `mock`
-/// call-log layer: a misaligned, contract-violating `decommit` call must
-/// record NO `Call::Decommit` at all (not even a "rejected" variant -- true
-/// silence, matching the `()` return with no error channel).
+/// task #902 (review finding U7, LOW), reconciled with task #1051 by task
+/// #1072: `decommit`/`decommit_lazy`'s contract is DELIBERATELY asymmetric
+/// with `recommit`/`commit_range` -- a contract-violating range (misaligned,
+/// or `start >= end`) is REJECTED with `false`/`Err` on the commit side (see
+/// `recommit_rejects_contract_violating_offsets` in `smoke.rs` and
+/// `commit_range_rejects_contract_violating_offsets` in `lazy_commit.rs`),
+/// but SILENTLY SKIPPED with no error at all on the decommit side
+/// (`src/api/decommit.rs`: `if start >= end || !start.is_multiple_of(ps) ||
+/// !end.is_multiple_of(ps) { return; }`) -- intentional, documented in
+/// README.md as safe because `()` has no write-permitting sentinel to
+/// misuse. Since task #1051 the eager `decommit` additionally trips a
+/// `debug_assert!` on that violation in DEBUG builds (the tripwire half is
+/// pinned by `try_decommit.rs`'s
+/// `decommit_debug_asserts_on_a_contract_violation`), so this task-#902
+/// silent-skip lock is now the RELEASE half and is gated
+/// `not(debug_assertions)` -- in a debug build the same calls panic before
+/// reaching the recorder. A future contributor could still "unify" the
+/// validation base from `page_size()` to the crate's `PAGE` constant (a
+/// plausible-looking simplification), or delete the guard outright, and the
+/// release-build suite would stay green with no test noticing -- this locks
+/// the silent-skip contract at the mock call-log layer: a misaligned,
+/// contract-violating `decommit` call must record NO `Call::Decommit` at all
+/// (not even a "rejected" variant -- true silence, matching the `()` return
+/// with no error channel). CI's test rows are debug-profile and compile this
+/// test out; run it via `cargo test --release` under the mock cfg (task
+/// #1072's verification did exactly that).
 #[test]
-fn decommit_silently_skips_contract_violating_offsets() {
+#[cfg(not(debug_assertions))]
+fn decommit_release_silently_skips_contract_violating_offsets() {
     mock::reset();
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let base = r.as_ptr();
-    // SAFETY: base is a live reservation; the call below is a contract
-    // VIOLATION (misaligned start, 1 is not a multiple of PAGE) that must be
-    // silently skipped before it reaches any recording/syscall path.
+    // SAFETY: base is a live reservation; the calls below are contract
+    // VIOLATIONS (misaligned start, 1 is not a multiple of PAGE; inverted
+    // start > end) that must be silently skipped before they reach any
+    // recording/syscall path.
     unsafe {
         decommit(base, 1, PAGE);
+        decommit(base, PAGE, 0);
     }
     let calls = mock::drain();
     assert!(
@@ -332,35 +342,16 @@ fn decommit_silently_skips_contract_violating_offsets() {
          at all (silent skip, not a recorded-then-rejected call): {calls:?}"
     );
 
-    // Same assertion for the lazy variant, and also cover the `start >= end`
-    // (inverted/empty-looking but non-trivially-violating) shape alongside
-    // the misaligned-offset shape above.
-    mock::reset();
-    // SAFETY: same live reservation; `start > end` is also a contract
-    // violation per the same guard.
-    unsafe {
-        decommit_lazy(base, PAGE, 0);
-    }
-    let calls = mock::drain();
-    assert!(
-        !calls.iter().any(|c| matches!(c, Call::DecommitLazy { .. })),
-        "a contract-violating decommit_lazy() call must record NO \
-         Call::DecommitLazy at all: {calls:?}"
-    );
-
     // task #906 (round-9 review, V2-1 bonus; corrected task #908/V2C4+V2C5):
-    // the two contract-violation shapes above (one `decommit`, one
-    // `decommit_lazy`) are rejected under EITHER validation base
-    // (`page_size()` or `PAGE`), so neither discriminates a future
-    // `page_size()` -> `PAGE` swap at either guard. A `PAGE`-aligned-but-not-
-    // `page_size()`-aligned offset does discriminate, but only exists when
-    // `page_size() > PAGE` (e.g. 16 KiB Apple Silicon); these arms are a
-    // no-op everywhere else and live only on the macOS CI runner. Mirrors
-    // the same two calls added to
-    // `decommit_contract_violation_never_reaches_madvise` in `smoke.rs`,
-    // giving BOTH guards a second, mock-layer oracle (symmetric with that
-    // test -- V2C5 flagged the original version of this block as covering
-    // only `decommit_lazy` while its own doc comment above names `decommit`).
+    // the two contract-violation shapes above are rejected under EITHER
+    // validation base (`page_size()` or `PAGE`), so neither discriminates a
+    // future `page_size()` -> `PAGE` swap at the guard. A `PAGE`-aligned-but-
+    // not-`page_size()`-aligned offset does discriminate, but only exists
+    // when `page_size() > PAGE` (e.g. 16 KiB Apple Silicon); this arm is a
+    // no-op everywhere else and lives only on large-page hosts' --release
+    // runs. Mirrors the same call in smoke.rs's eager oracle
+    // (`decommit_contract_violation_never_reaches_madvise`), keeping BOTH
+    // guards' validation bases covered at a second layer.
     if page_size() > PAGE {
         mock::reset();
         // SAFETY: same live reservation; `PAGE` is a genuine multiple of
@@ -376,10 +367,42 @@ fn decommit_silently_skips_contract_violating_offsets() {
             "a contract-violating decommit() call must record NO \
              Call::Decommit at all (validation base check): {calls:?}"
         );
+    }
+}
 
+/// task #902/#1072, lazy half: `decommit_lazy` did NOT gain task #1051's
+/// debug tripwire (only the eager `decommit` did -- `decommit_lazy.rs` has
+/// no `debug_assert`), so its contract-violation response is SILENTLY SKIP
+/// on EVERY profile and this half needs no profile gate. Same mock-layer
+/// oracle as the eager test above: a contract-violating `decommit_lazy`
+/// call must record NO `Call::DecommitLazy` at all.
+#[test]
+fn decommit_lazy_silently_skips_contract_violating_offsets() {
+    mock::reset();
+    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let base = r.as_ptr();
+    // SAFETY: base is a live reservation; the call below is a contract
+    // VIOLATION (inverted start > end) that must be silently skipped before
+    // it reaches any recording/syscall path.
+    unsafe {
+        decommit_lazy(base, PAGE, 0);
+    }
+    let calls = mock::drain();
+    assert!(
+        !calls.iter().any(|c| matches!(c, Call::DecommitLazy { .. })),
+        "a contract-violating decommit_lazy() call must record NO \
+         Call::DecommitLazy at all: {calls:?}"
+    );
+
+    // task #906/#908 validation-base arm, mirroring the eager test above and
+    // smoke.rs's `decommit_lazy_contract_violation_never_reaches_madvise`:
+    // a `PAGE`-aligned-but-not-`page_size()`-aligned offset discriminates a
+    // future `page_size()` -> `PAGE` swap at `decommit_lazy`'s own guard,
+    // and exists only when `page_size() > PAGE` (e.g. 16 KiB Apple Silicon).
+    if page_size() > PAGE {
         mock::reset();
         // SAFETY: same live reservation; same contract argument as the
-        // `decommit` call immediately above.
+        // eager test's validation-base arm above.
         unsafe {
             decommit_lazy(base, PAGE, 2 * PAGE);
         }

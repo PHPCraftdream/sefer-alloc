@@ -113,7 +113,10 @@ asymmetry is intentional. `decommit`/`decommit_lazy` have an infallible
 `()` return with no write-permitting sentinel to misuse, so silently skipping
 on a violated range is safe; `recommit`/`commit_range`'s boolean/`Result`
 return means a silent no-op could hide a real OOM, so they reject violations
-instead.
+instead. Since task #1051 the eager `decommit` additionally trips a
+`debug_assert!` on a violated range in DEBUG builds (zero cost — and still a
+silent no-op — in release); `decommit_lazy` silently skips on every profile,
+and `try_decommit` reports the violation as `Err` on every profile.
 - On Linux with `huge-pages` enabled, `reserve_aligned_huge`/
   `try_reserve_aligned_huge` additionally require `size` and `align` to both
   be multiples of the huge-page size (2 MiB) — see that function's own
@@ -121,13 +124,16 @@ instead.
 
 Most violations return `None` / `false` / `Err(_)` — never a panic, so this
 is safe to call from inside a `GlobalAlloc::alloc` body: `reserve_aligned`
-and its siblings, and `decommit`/`decommit_lazy` (which silently no-op on a
-violated range, an intentional asymmetry with `recommit`/`commit_range`
-below — since `decommit`'s `()` return has no write-permitting sentinel to
-misuse, silently skipping is safe, whereas `recommit`/`commit_range`'s
-boolean/`Result` return previously clamped a contract violation to the same
-value a genuine success reports, which crashed an in-repo consumer — see
-`recommit`'s own rustdoc).
+and its siblings, and `decommit_lazy` (which silently no-ops on a violated
+range on every profile, an intentional asymmetry with
+`recommit`/`commit_range` below — since the `()` return has no
+write-permitting sentinel to misuse, silently skipping is safe, whereas
+`recommit`/`commit_range`'s boolean/`Result` return previously clamped a
+contract violation to the same value a genuine success reports, which
+crashed an in-repo consumer — see `recommit`'s own rustdoc). The eager
+`decommit` is the one debug-build exception: since task #1051 a violated
+range trips its `debug_assert!` there (release builds keep the silent
+no-op; `try_decommit` reports the violation as `Err` on every profile).
 
 **Behavior change:** `recommit` and `commit_range` (and their fallible
 `try_*` forms) now **reject**, rather than silently accept, a violated offset
@@ -139,7 +145,9 @@ adopting a foreign OS reservation, not part of the ordinary reservation
 flow) panics immediately on a contract-violating `align`/`reservation_len`
 pair; and `release` panics on a contract-violating `(reservation_len, align)`
 pair (a null pointer remains a documented no-op) — see `release`'s own rustdoc
-`# Panics` section for the full detail.
+`# Panics` section for the full detail. A third, debug-only panic surface
+exists: `decommit`'s task-#1051 `debug_assert!` on a violated range,
+compiled out of release builds (see above).
 
 ## Platform caveats
 

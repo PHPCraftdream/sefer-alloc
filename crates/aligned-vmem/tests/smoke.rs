@@ -850,31 +850,38 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
     drop(r);
 }
 
-/// task #902 (review finding U7, LOW): mirrors
-/// `decommit_silently_skips_contract_violating_offsets` in `mock.rs`, but at
-/// the real-syscall layer instead of the mock call-log layer -- proves a
-/// contract-violating `decommit`/`decommit_lazy` call never even reaches
-/// `libc_madvise` (the counters it increments stay untouched), not merely
-/// that the crate's own mock recorder saw nothing. Without this, a future
-/// "simplification" that changed the validation base in `lib.rs`'s
-/// `decommit`/`decommit_lazy` from `page_size()` to the crate's smaller
-/// `PAGE` constant (both guards currently read `let ps = page_size();`) would
-/// forward a `PAGE`-aligned-but-not-`page_size()`-aligned offset straight to
+/// task #902 (review finding U7, LOW), reconciled with task #1051 by task
+/// #1072: mirrors `decommit_release_silently_skips_contract_violating_offsets`
+/// in `mock.rs`, but at the real-syscall layer instead of the mock call-log
+/// layer -- proves a contract-violating `decommit` call never even reaches
+/// `libc_madvise` (the counter it increments stays untouched), not merely
+/// that the crate's own mock recorder saw nothing. Since task #1051 the
+/// eager `decommit` trips a `debug_assert!` on that violation in DEBUG
+/// builds, so this real-syscall oracle is the RELEASE half and is gated
+/// `not(debug_assertions)` -- CI's debug-profile rows compile it out, and
+/// the tripwire half is pinned by `try_decommit.rs`'s
+/// `decommit_debug_asserts_on_a_contract_violation`. Without this, a future
+/// "simplification" that changed the validation base in `src/api/decommit.rs`
+/// from `page_size()` to the crate's smaller `PAGE` constant (the guard
+/// currently reads `let ps = page_size();`) would forward a
+/// `PAGE`-aligned-but-not-`page_size()`-aligned offset straight to
 /// `madvise(2)` on any host where the OS page size exceeds `PAGE` (e.g. a 16
 /// KiB-page Apple Silicon host) -- `madvise` rejects the WHOLE call in that
 /// case (see `decommit`'s own rustdoc on the all-or-nothing failure mode),
-/// which this crate's `aligned_vmem_mock`-cfg test suite cannot observe AS A REAL
-/// `madvise(2)` REJECTION (task #906/#908 added a mock-layer arm,
-/// `mock.rs`'s `decommit_silently_skips_contract_violating_offsets`, that
-/// observes the FORWARDING for both guards at the call-log layer instead --
-/// the syscall's own EINVAL failure remains observable only here, at the
-/// real-syscall layer), and which would go undetected on any CI runner
-/// whose OS page size happens to equal `PAGE` (the common case). Gated on
-/// any Unix (not just
-/// macOS): `unix_madvise_attempts()`'s counters are `unix`-wide, matching
-/// `macos_decommit_madvise_syscall_actually_succeeds` above's own note that a
-/// Linux instance of this style of assertion was a known gap.
-#[cfg(all(unix, feature = "bench-internals", not(aligned_vmem_mock), not(miri)))]
+/// which this crate's `aligned_vmem_mock`-cfg test suite cannot observe AS A
+/// REAL `madvise(2)` REJECTION (the mock-layer arm lives in `mock.rs`), and
+/// which would go undetected on any CI runner whose OS page size happens to
+/// equal `PAGE` (the common case). Gated on any Unix (not just macOS):
+/// `unix_madvise_attempts()`'s counters are `unix`-wide, matching
+/// `macos_decommit_madvise_syscall_actually_succeeds` above's own note that
+/// a Linux instance of this style of assertion was a known gap.
+#[cfg(all(
+    unix,
+    feature = "bench-internals",
+    not(aligned_vmem_mock),
+    not(miri),
+    not(debug_assertions)
+))]
 #[test]
 fn decommit_contract_violation_never_reaches_madvise() {
     use aligned_vmem::{reset_bench_internals_counters, unix_madvise_attempts};
@@ -896,23 +903,20 @@ fn decommit_contract_violation_never_reaches_madvise() {
     // the crate's own guard must reject before any real syscall is issued.
     unsafe {
         aligned_vmem::decommit(base, 1, PAGE);
-        decommit_lazy(base, PAGE, 0);
+        aligned_vmem::decommit(base, PAGE, 0);
     }
 
     // task #904 (round-8 closing review, UC4): the two calls above are
     // rejected under EITHER validation base (`page_size()` or `PAGE`), so by
-    // themselves they cannot detect the specific mistake this test's own doc
-    // comment names -- a future `let ps = page_size();` -> `let ps = PAGE;`
-    // edit at the `decommit`/`decommit_lazy` guards. Only a
+    // themselves they cannot detect the specific mistake this test's own
+    // doc comment names -- a future `let ps = page_size();` -> `let ps = PAGE;`
+    // edit at the `decommit` guard. Only a
     // `PAGE`-aligned-but-not-`page_size()`-aligned offset discriminates the
     // two bases: rejected under `page_size()`, forwarded to `madvise(2)`
     // under `PAGE`. That offset exists only when `page_size() > PAGE` (e.g.
     // 16 KiB Apple Silicon); on every other host (4 KiB pages) the two bases
     // are the same value and no offset can tell them apart, so this arm is a
-    // no-op there and lives only on the macOS CI runner. Both `decommit`'s
-    // and `decommit_lazy`'s guards get their own discriminating call below
-    // (task #906, V2-1) -- a single call cannot cover both, since each
-    // function validates independently.
+    // no-op there and lives only on large-page hosts' --release runs.
     if page_size() > PAGE {
         // SAFETY: same live reservation; `PAGE` is a genuine multiple of
         // `PAGE` but (by the `if` above) NOT a multiple of `page_size()`, so
@@ -921,24 +925,12 @@ fn decommit_contract_violation_never_reaches_madvise() {
         unsafe {
             aligned_vmem::decommit(base, PAGE, 2 * PAGE);
         }
-        // SAFETY: same live reservation; same contract argument as the
-        // `decommit` call immediately above -- `PAGE` is a genuine multiple
-        // of `PAGE` but (by the `if` above) NOT a multiple of `page_size()`,
-        // so this is a contract violation under `decommit_lazy`'s own real
-        // validation base too. Without this call, a future edit that swaps
-        // `decommit_lazy`'s guard from `page_size()` to `PAGE` (lib.rs) is
-        // NOT caught here: the only `decommit_lazy` call above
-        // (`decommit_lazy(base, PAGE, 0)`) is rejected under EITHER base by
-        // `start >= end` alone, so it cannot discriminate.
-        unsafe {
-            decommit_lazy(base, PAGE, 2 * PAGE);
-        }
     }
 
     let attempts = unix_madvise_attempts();
     assert_eq!(
         attempts, 0,
-        "a contract-violating decommit()/decommit_lazy() call must never \
+        "a contract-violating decommit() call must never \
          reach libc_madvise (the real madvise(2) syscall) at all -- got \
          {attempts} attempt(s), meaning the crate's validation guard was \
          bypassed or removed (or, on a host where page_size() > PAGE, that \
@@ -948,6 +940,63 @@ fn decommit_contract_violation_never_reaches_madvise() {
     // `base` was never actually decommitted (all calls above were rejected
     // before any OS effect) -- still a live reservation, released exactly
     // once via `r`'s own Drop here.
+    drop(r);
+}
+
+/// task #902/#1072, lazy half: `decommit_lazy` did NOT gain task #1051's
+/// debug tripwire (only the eager `decommit` did), so its contract-violation
+/// response is SILENTLY SKIP on EVERY profile and this real-syscall oracle
+/// needs no `not(debug_assertions)` gate. Mirrors
+/// `decommit_lazy_silently_skips_contract_violating_offsets` in `mock.rs`:
+/// a contract-violating `decommit_lazy` call must never reach
+/// `libc_madvise`, on any profile.
+#[cfg(all(unix, feature = "bench-internals", not(aligned_vmem_mock), not(miri)))]
+#[test]
+fn decommit_lazy_contract_violation_never_reaches_madvise() {
+    use aligned_vmem::{reset_bench_internals_counters, unix_madvise_attempts};
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let span = 4 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+
+    // Clean slate: same rationale as the eager test above -- SERIAL plus a
+    // reset keeps this measurement window uncontaminated by any other test
+    // in this binary that also calls `decommit`/`decommit_lazy`.
+    reset_bench_internals_counters();
+
+    // SAFETY: base is a live reservation for `span` bytes; `start > end` is
+    // a contract violation that the crate's own guard must reject before any
+    // real syscall is issued.
+    unsafe {
+        decommit_lazy(base, PAGE, 0);
+    }
+
+    // task #906/#908 validation-base arm, mirroring the eager test above: a
+    // `PAGE`-aligned-but-not-`page_size()`-aligned offset discriminates a
+    // future `page_size()` -> `PAGE` swap at `decommit_lazy`'s OWN guard
+    // (the `start > end` call above is rejected under either base and cannot
+    // discriminate). Exists only when `page_size() > PAGE`.
+    if page_size() > PAGE {
+        // SAFETY: same live reservation; same contract argument as the
+        // eager test's validation-base arm above.
+        unsafe {
+            decommit_lazy(base, PAGE, 2 * PAGE);
+        }
+    }
+
+    let attempts = unix_madvise_attempts();
+    assert_eq!(
+        attempts, 0,
+        "a contract-violating decommit_lazy() call must never \
+         reach libc_madvise (the real madvise(2) syscall) at all -- got \
+         {attempts} attempt(s), meaning the crate's validation guard was \
+         bypassed or removed (or, on a host where page_size() > PAGE, that \
+         the validation base was changed from page_size() to PAGE)"
+    );
+
+    // `base` was never actually decommitted -- still a live reservation,
+    // released exactly once via `r`'s own Drop here.
     drop(r);
 }
 
