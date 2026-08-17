@@ -370,8 +370,14 @@ fn decommit_recommit_roundtrip() {
 /// an explicit diagnostic instead of silently exercising the zero-offset
 /// path under a misleading test name.
 #[test]
+#[cfg(not(miri))]
 fn decommit_recommit_roundtrip_on_over_reserved_span() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // Excluded under miri: the fallback backend (src/os/miri.rs) is a plain
+    // std::alloc model that returns (base, base, size) — it never
+    // over-reserves, so a nonzero head offset is structurally impossible
+    // there and this test's premise cannot hold (same class as the Darwin
+    // 16 KiB-page exclusion documented in the module comment above).
     // task #959 (second bug of the same class, found on the SAME macOS CI
     // run that exposed the `align` bug above -- masked by it until `align`
     // was fixed, since the retry loop below never used to terminate): `size`

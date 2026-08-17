@@ -241,6 +241,52 @@ jobs:
       # it is a real gate.
       - run: cargo semver-checks check-release --package aligned-vmem
 
+  aligned-vmem-miri:
+    # Task #1057 — closes docs/CORRECTNESS_OPEN_ITEMS.md items 41 and 61: this
+    # crate had NO step anywhere in CI that ran `cargo miri test -p
+    # aligned-vmem` — only the compile-only `RUSTFLAGS="--cfg miri
+    # --cfg aligned_vmem_mock" cargo check` step in the `aligned-vmem-gates`
+    # job above (added by task #851), which catches type/cfg errors under the
+    # miri cfg but never executes the interpreter, so it cannot catch UB in
+    # the FFI/pointer code paths the way item 61 phrased the gap. This job is
+    # the missing interpreter run. Modeled on `numa-shim-macos-miri` (the
+    # workflow's other small-crate per-PR miri job) with three deliberate
+    # differences, each documented in the task #1057 commit message:
+    # - `ubuntu-latest`, not `macos-latest`: unlike numa-shim's job (which
+    #   existed to cross macOS x miri for a cfg-collision bug), this crate's
+    #   miri fallback backend (crates/aligned-vmem/src/os/miri.rs) is built on
+    #   std::alloc and platform-independent, so there is no macOS-specific
+    #   reason to pay for a macOS runner.
+    # - `MIRIFLAGS: -Zmiri-ignore-leaks`, not `-Zmiri-disable-isolation`: the
+    #   ONLY intentional-leak case is tests/smoke.rs's
+    #   `leak_zeroed_pages_is_zeroed_and_static` — the function under test
+    #   `leak_zeroed_pages` core::mem::forget-leaks by design (process-lifetime
+    #   sidecar), which miri's default leak checker reports as a failure with
+    #   no bug present. Verified locally that this flag alone suffices.
+    # - Per-PR cadence (no `schedule:`/`workflow_dispatch` keys), matching
+    #   numa-shim-macos-miri: this crate's suite is small enough that miri's
+    #   interpreter overhead is affordable on every PR (~45 s default /
+    # ~2 min --all-features measured locally on the committer's host).
+    name: aligned-vmem under miri (interpreter, not just --cfg miri check)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-ignore-leaks"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      # Two runs: default features and --all-features (lazy-commit +
+      # alloc-lazy-commit compat + huge-pages + fault-injection +
+      # bench-internals). No additional single-feature runs: every feature's
+      # cfg-gated code (including src/os/miri.rs's lazy-commit and huge-pages
+      # arms) is compiled and exercised under --all-features, so narrower runs
+      # would re-interpret overlapping suites at full cost for no unique
+      # coverage; fault-injection is API-layer (feature-gated in
+      # src/api/commit_range.rs, pre-backend) and runs green under miri.
+      - run: cargo miri test -p aligned-vmem
+      - run: cargo miri test -p aligned-vmem --all-features
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production

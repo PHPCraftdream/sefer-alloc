@@ -76,7 +76,8 @@ fn bench_internals_counters_existence_and_reset() {
     // On Windows, verify that at least one counter was incremented.
     // This validates that the subsequent `reset_bench_internals_counters()` check
     // is actually testing reset behavior, not just asserting that zeros are zero.
-    #[cfg(windows)]
+    // miri's backend never increments reserve counters (storage is real, increments are backend-side).
+    #[cfg(all(windows, not(miri)))]
     assert!(
         windows_reserve_commit_calls() >= 1,
         "a successful reservation must be counted on Windows; got {}",
@@ -91,7 +92,8 @@ fn bench_internals_counters_existence_and_reset() {
         aligned_vmem::decommit(reservation.reservation_ptr(), 0, ps);
     }
 
-    #[cfg(all(unix, not(aligned_vmem_mock)))]
+    // miri's decommit is a no-op, so UNIX_MADVISE_ATTEMPTS stays 0 there.
+    #[cfg(all(unix, not(aligned_vmem_mock), not(miri)))]
     assert!(
         unix_madvise_attempts() >= 1,
         "decommit must increment UNIX_MADVISE_ATTEMPTS on Unix; got {}",

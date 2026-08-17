@@ -1848,72 +1848,7 @@ resolved" below.)_
       `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
       finding P4-12.
 
-41. **CI-coverage gap — `aligned-vmem` has NO dedicated `cargo miri test -p
-    aligned-vmem` step in `.github/workflows/ci.yml`; the crate's own test
-    suite has never run under miri.** (Discovered 2026-08-09 during task
-    #713's zero-trust verification of a `VmemError` errno-capture fix —
-    running the suite under miri, as that task's own instruction required,
-    was the first time in this crate's history it happened.)
-
-    - **Status:** OPEN — the CI step itself is still missing. 2 of the 3
-      miri blockers are now CLOSED (updated 2026-08-12, task #851/W1 — the
-      compilation error that blocked publication is now fixed, see sub-item
-      #3 below; the remaining blocker is still sub-item #1).
-    - **Evidence, current as of this update:**
-      - `.github/workflows/ci.yml`'s only miri invocation touching this
-        crate at all is `cargo miri test -p numa-shim --features
-        vmem-integration` (`:1572`), which transitively exercises some
-        `aligned-vmem` code paths through `numa-shim`'s own integration
-        tests, not this crate's own `tests/*.rs` suite directly. This is
-        still true — the missing CI step is the item's live blocker.
-      - Of the three miri-incompatibilities originally found by running
-        `cargo +nightly miri test -p aligned-vmem --all-features`:
-        1. **Still OPEN.** `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`
-           intentionally leaks (the function under test,
-           `leak_zeroed_pages`, `core::mem::forget`-leaks by design for a
-           process-lifetime sidecar) — miri's default leak-checker flags
-           this as "memory leaked" and fails the run. Not a real bug; needs
-           either `MIRIFLAGS=-Zmiri-ignore-leaks` for this crate's miri
-           runs, or restructuring the test to avoid the intentional leak.
-        2. **CLOSED by task #716** (commit `81ecfe3`). `tests/lazy_commit.rs`'s
-           `sequential_commit_range_grows_incrementally` read uninitialized
-           memory under miri (`crates/aligned-vmem/tests/lazy_commit.rs:287`);
-           task #716 gated the offending assertion with `#[cfg(not(miri))]`
-           and re-ran it under miri to confirm the UB report disappeared.
-           Independently re-confirmed clean during task #776's own
-           `cargo +nightly miri test` re-run of this crate's suite this
-           round (see `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`
-           §0, which ran the file under miri and reported it green).
-        3. **CLOSED by task #851** (commit `78ecc81`). E0308 tuple-arity mismatch:
-           `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --features
-           lazy-commit,huge-pages` failed compilation because two miri-gated
-           `.map()` closures still destructured a 4-element tuple
-           `(base, reservation, reservation_len, _granted_huge)` after
-           task #844 had changed `reserve_aligned_raw` under miri to return
-           a 3-element tuple `(NonNull<u8>, NonNull<u8>, usize)`. Fixed by
-           removing `_granted_huge` from both destructuring patterns
-           (`crates/aligned-vmem/src/lib.rs:2239` and `:2250`). A miri compilation
-           gate (`RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`)
-           has been added to `aligned-vmem-gates` job in `.github/workflows/ci.yml`
-           to catch this class of error in future (does NOT require miri
-           interpreter, only the cfg flag).
-      - Verified NOT a regression from task #713's own changes: `git stash`
-        (reverting all of #713's edits) reproduces both original failures
-        identically on the pre-#713 tree.
-    - **Why filed instead of fixed here:** out of scope for task #713 (an
-      errno-capture-timing fix) — fixing #1 needs a scoped
-      `MIRIFLAGS`/test-restructure decision. Adding the missing CI step
-      itself is a `ci.yml` change with its own blast radius (miri run
-      time, whether to scope it to specific test files to dodge #1 until
-      it's separately fixed) that deserves its own task rather than a
-      drive-by inside #713 or #776.
-    - **Next trigger:** a future task should add a `cargo miri test -p
-      aligned-vmem` CI step (miri execution, not just compilation check), using
-      `MIRIFLAGS=-Zmiri-ignore-leaks` (or a test restructure) to route
-      around sub-item #1 above, which is the only remaining runtime blocker.
-      The compilation blocker (sub-item #3) is now guarded by a
-      `RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`
-      gate in the `aligned-vmem-gates` job.
+41. **CLOSED** by task #1057 (dedicated per-PR `aligned-vmem-miri` CI job added). See "Recently resolved" below for the full closure narrative.
 
 43. **Deferred verification — `aligned-vmem`'s per-OS `_SC_PAGESIZE`
     constant table (task #714) is REASONED-FROM-SPEC for 4 of 6 affected
@@ -2222,13 +2157,7 @@ resolved" below.)_
     - **Next trigger:** when a FreeBSD/NetBSD/OpenBSD/DragonFly CI runner becomes available (self-hosted or via a service like Cirrus CI), add a `test-bsd` job. Similarly, if iOS/tvOS/watchOS or Android CI runners become available, add corresponding jobs. Until then, these platforms remain spec-verified only.
     - **Evidence:** item 43 (BSD `_SC_PAGESIZE` values, partially open); item 48 (Darwin `MADV_DONTNEED` behavior, partially open); `.github/workflows/ci.yml` (no BSD/iOS/tvOS/watchOS/Android jobs); `crates/aligned-vmem/src/lib.rs` platform-specific constants (FreeBSD/NetBSD/OpenBSD/DragonFly `_SC_PAGESIZE` values, Android-specific handling, Darwin-family `decommit_lazy` behavior).
 
-61. **[T] CI-coverage gap: Miri in workflow is used as `cargo check --cfg miri`, not as an interpreter test — it does not verify runtime semantics of native mmap/munmap/madvise.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
-
-    The CI workflow's miri invocation (the `RUSTFLAGS="--cfg miri ..." cargo check` step in the `aligned-vmem-gates` job) runs `RUSTFLAGS="--cfg miri --cfg aligned_vmem_mock" cargo check -p aligned-vmem --all-features`, which only verifies compilation under miri's `cfg(miri)` gates. It does NOT run `cargo miri test`, which would execute the test suite under miri's interpreter and catch UB in the actual runtime semantics of FFI calls, pointer provenance, and concurrent operations. Miri's true value is in detecting undefined behavior in execution, not just typechecking cfg-gated code paths.
-
-    - **Status:** OPEN — item 41 already documents that `aligned-vmem` has no dedicated `cargo miri test` CI step. This item is the same gap, phrased as a runtime-semantics concern rather than a missing CI step.
-    - **Next trigger:** when a future round adds the missing `cargo miri test -p aligned-vmem` CI step recommended by item 41 (miri execution, not just compilation check), the runtime semantics gap will be closed. Until then, miri coverage is compile-only.
-    - **Evidence:** the `--cfg miri` `cargo check` step in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only, not `cargo miri test`); item 41 (the existing open item documenting the missing `cargo miri test` CI step); `crates/aligned-vmem/src/lib.rs` FFI call sites (mmap/munmap/madvise on Unix, VirtualAlloc/VirtualFree on Windows — the runtime semantics that miri would catch if actually run).
+61. **CLOSED** by task #1057 (same fix as item 41 — the new `aligned-vmem-miri` CI job runs the interpreter, closing this runtime-semantics phrasing of the same gap). See "Recently resolved" below for the full closure narrative.
 
 63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
@@ -2274,6 +2203,13 @@ resolved" below.)_
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+41+61. **`aligned-vmem` had NO `cargo miri test -p aligned-vmem` step anywhere in CI** (item 41: the missing step; item 61: the same gap phrased as runtime-semantics concern — one fix, closed together) — **CLOSED** by task #1057.
+
+   - **What was added:** a new dedicated job `aligned-vmem-miri` in `.github/workflows/ci.yml` (placed directly after `aligned-vmem-gates`), modeled on `numa-shim-macos-miri`'s per-PR small-crate pattern with three deliberate differences: `ubuntu-latest` runner (the miri fallback backend `src/os/miri.rs` is platform-independent std::alloc — no macOS-specific cfg-collision reason to pay for a macOS runner); `MIRIFLAGS: -Zmiri-ignore-leaks` (routes around the ONE intentional leak, `tests/smoke.rs`'s `leak_zeroed_pages_is_zeroed_and_static`, where the function under test `core::mem::forget`-leaks a process-lifetime sidecar by design — NOT `-Zmiri-disable-isolation`, which solves a different problem); per-PR cadence, not weekly (suite is small; ~45 s default / ~2 min all-features locally). Steps: `cargo miri test -p aligned-vmem` (default) + `cargo miri test -p aligned-vmem --all-features` — no narrower single-feature runs, since every feature's cfg-gated code is compiled and exercised under `--all-features`.
+   - **What local verification found BEFORE committing (the important part):** the known leak was the ONLY blocker item 41's history recorded, but running the suite under miri on the committer's host (and, as the CI predictor, under `--target x86_64-unknown-linux-gnu`) found NINE more failing tests — all one mechanism: they assert real-backend observables (nonzero over-reserve head offset; bench-internals counter deltas) that `src/os/miri.rs`'s minimal std::alloc backend structurally cannot produce (it returns `(base, base, size)` — never over-reserves — and never increments any counter; the counter increment sites live only in the real unix/windows backends, whose storage re-exports in `src/bench_internals/mod.rs` are already `not(miri)`-gated). Five fail on linux/miri (smoke.rs `decommit_recommit_roundtrip_on_over_reserved_span`; bench_internals_counters.rs `bench_internals_counters_existence_and_reset`; huge_pages.rs `reserve_aligned_huge_exact_size_for_2mib_align` + both `reserve_aligned_huge_rejects_non_huge_page_aligned_{size,align}` — the hugetlb-alignment guards live in the real unix backend only); six on windows/miri (same smoke test; same counters test; huge_pages.rs both `..._still_two_call_path` tests; lazy_commit.rs `windows_lazy_reserve_saves_commit_charge` and `safe_decommit_over_never_committed_tail_succeeds`' counter block). Zero UB reports in any run. All nine post-date the crate's last miri-green run (2026-08-09, task #776) and had never been executed under miri — exactly the coverage gap this item existed to surface. With owner authorization, each gained the repo's established `not(miri)` exclusion (mirroring in-file precedent like smoke.rs's Darwin-family gates), so NO real-OS coverage was lost — Windows/Linux/macOS runs still execute every one of them.
+   - **Verified after the exclusions, before committing:** all four local miri runs green — `MIRIFLAGS=-Zmiri-ignore-leaks cargo +nightly miri test -p aligned-vmem` (default and `--all-features`, on windows-msvc) plus the same two under `--target x86_64-unknown-linux-gnu` (what the ubuntu runner will execute). The intentional-leak test passes under the flag; no test was skipped or weakened beyond the miri-only cfg exclusions.
+   - **Consequence:** items 41 and 61 both close; the `aligned-vmem-gates` compile-only `--cfg miri` check stays (it catches cfg/type drift cheaply); future miri-blocking test regressions in this crate now go red per-PR instead of unnoticed.
 
 69. **Flaky test: `safe_decommit_over_never_committed_tail_succeeds` intermittently read `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS` as 0 instead of 1 under full-suite parallel load** — **CLOSED** by task #1063.
 

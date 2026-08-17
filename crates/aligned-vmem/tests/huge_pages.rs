@@ -112,7 +112,9 @@ fn reserve_aligned_huge_ordinary_page_sized_request_succeeds() {
 const LINUX_HUGE_PAGE_SIZE: usize = 2 * MIB;
 
 #[test]
-#[cfg(any(target_os = "linux", target_os = "android"))]
+// The hugetlb-alignment guard lives in the real unix backend; miri's
+// std::alloc backend accepts these layouts, so this rejection cannot be observed there.
+#[cfg(all(any(target_os = "linux", target_os = "android"), not(miri)))]
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
     // task #714 (rust-intel audit MEDIUM §F1): on Linux/Android, `mmap(2)`'s Huge TLB
     // rule requires munmap's addr AND length to be huge-page-aligned; the
@@ -131,7 +133,9 @@ fn reserve_aligned_huge_rejects_non_huge_page_aligned_size() {
 }
 
 #[test]
-#[cfg(any(target_os = "linux", target_os = "android"))]
+// The hugetlb-alignment guard lives in the real unix backend; miri's
+// std::alloc backend accepts these layouts, so this rejection cannot be observed there.
+#[cfg(all(any(target_os = "linux", target_os = "android"), not(miri)))]
 fn reserve_aligned_huge_rejects_non_huge_page_aligned_align() {
     // Same rule, the `align` half: `over = size + align` must also be
     // huge-page-aligned for the release to stay provably conformant (see
@@ -222,7 +226,8 @@ fn reserve_aligned_huge_exact_size_for_2mib_align() {
             // (the default on GitHub-hosted ubuntu-latest CI runners), the MAP_HUGETLB mmap
             // fails and the function falls through to the ordinary-page fallback path, which
             // succeeds and returns Ok(r) — so attempts is always 1, but hits may be 0.
-            #[cfg(feature = "bench-internals")]
+            // Oracle needs the real unix backend; miri's never increments these counters.
+            #[cfg(all(feature = "bench-internals", not(miri)))]
             {
                 let attempts = aligned_vmem::unix_exact_reserve_attempts();
                 let hits = aligned_vmem::unix_exact_reserve_hits();
@@ -351,7 +356,8 @@ fn reserve_aligned_huge_64k_single_call_path() {
 /// This test documents the ACTUAL behavior (two-call path for unprivileged
 /// 2 MiB) and includes a path-activation assertion to detect if this ever changes.
 #[test]
-#[cfg(all(windows, feature = "bench-internals"))]
+// miri's backend never touches the windows reserve counters.
+#[cfg(all(windows, feature = "bench-internals", not(miri)))]
 fn reserve_aligned_huge_2mib_still_two_call_path_unprivileged() {
     let _guard = serial_guard();
     use aligned_vmem::{
@@ -409,7 +415,8 @@ fn reserve_aligned_huge_2mib_still_two_call_path_unprivileged() {
 /// This test explicitly verifies this state so it's clearly documented, not left as
 /// an unverified assumption.
 #[test]
-#[cfg(all(windows, feature = "bench-internals"))]
+// miri's backend never touches the windows reserve counters.
+#[cfg(all(windows, feature = "bench-internals", not(miri)))]
 fn reserve_aligned_huge_4mib_still_two_call_path() {
     let _guard = serial_guard();
     use aligned_vmem::{

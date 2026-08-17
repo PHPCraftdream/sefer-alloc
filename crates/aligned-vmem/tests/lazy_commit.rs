@@ -566,7 +566,13 @@ fn sequential_commit_range_grows_incrementally() {
 /// guard -- confirmed empirically (`cargo test --all-features` before this
 /// exclusion failed with `two_call_pairs` staying at 0).
 #[test]
-#[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+// Two-call-path oracle is windows-backend-only; miri's backend is single-call by construction.
+#[cfg(all(
+    windows,
+    feature = "bench-internals",
+    not(aligned_vmem_mock),
+    not(miri)
+))]
 fn windows_lazy_reserve_saves_commit_charge() {
     let _guard = serial_guard();
 
@@ -637,7 +643,13 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
     // other cfg combination would trip `-D warnings` on unused variables
     // (the same bug class that broke `main`'s default build earlier in
     // this campaign).
-    #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+    // Counter oracle excluded under miri (backend never increments VirtualFree counters); the rest of the test still runs there.
+    #[cfg(all(
+        windows,
+        feature = "bench-internals",
+        not(aligned_vmem_mock),
+        not(miri)
+    ))]
     let (failures_before, attempts_before) = (
         aligned_vmem::windows_virtualfree_decommit_failures(),
         aligned_vmem::windows_virtualfree_decommit_attempts(),
@@ -680,7 +692,12 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
         // for `VirtualFree(MEM_DECOMMIT)`. This test must increment attempts by
         // exactly 1 (proving the syscall really ran on the never-committed tail)
         // and must NOT increment failures (proving it succeeded).
-        #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
+        #[cfg(all(
+            windows,
+            feature = "bench-internals",
+            not(aligned_vmem_mock),
+            not(miri)
+        ))]
         {
             let attempts_after = aligned_vmem::windows_virtualfree_decommit_attempts();
             let failures_after = aligned_vmem::windows_virtualfree_decommit_failures();
