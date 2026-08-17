@@ -970,6 +970,25 @@ fn leak_zeroed_pages_is_zeroed_and_static() {
     assert!(leak_zeroed_pages(0).is_none(), "zero size rejected");
 }
 
+/// Item 54 / V-31 (task #1058): `leak_zeroed_pages` was only ever tested
+/// with a size that rounds up (`3 * PAGE + 7` above). Pin the exact-multiple
+/// case, where the internal round-up is a no-op.
+#[test]
+fn leak_zeroed_pages_exact_multiple_needs_no_rounding() {
+    let size = 4 * PAGE;
+    let p = leak_zeroed_pages(size).expect("leak zeroed exact multiple");
+    let base = p.as_ptr();
+    assert_eq!(base as usize % PAGE, 0, "PAGE-aligned");
+    // SAFETY: valid for exactly `size` bytes, guaranteed zeroed on every backend.
+    unsafe {
+        for off in 0..size {
+            assert_eq!(base.add(off).read(), 0, "byte {off} must be zero");
+        }
+        base.write(0xAB);
+        assert_eq!(base.read(), 0xAB);
+    }
+}
+
 /// task #719: `from_raw_parts` used to accept any `align` and defer
 /// validation to `Drop` time (a `Layout::from_size_align(...).expect(...)`
 /// panic inside the miri backend's `release_reservation`, reachable from

@@ -2078,13 +2078,7 @@ resolved" below.)_
 
 53. **`Reservation::from_raw_parts` hard-codes `granted_huge: false`, creating a fail-open hazard when callers follow documented decommit advice** (Filed 2026-08-14, task #934/C-9, sub-observation about item 48 from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
 
-54. **[T, INFO] Tautological tests and small untested corners** (Filed 2026-08-14, task #934/C-9, combining `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31.) Low-priority housekeeping items, not correctness gaps.
-
-    - **Status:** OPEN — tracked for completeness as hygiene, not blocking.
-    - **Current-number-or-verdict:**
-      - **V-29:** `crates/aligned-vmem/tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/aligned-vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
-      - **V-31:** Several small untested corners listed for completeness, none blocking: `release`'s early return for null pointers (`crates/aligned-vmem/src/lib.rs:1075-1078`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` method; `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, at `crates/aligned-vmem/tests/smoke.rs:739-740`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
-    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `crates/aligned-vmem/tests/min_page.rs:8-10`; `crates/aligned-vmem/src/lib.rs:160` (`MIN_PAGE` definition); `crates/aligned-vmem/src/lib.rs:1075-1078` (`release`'s null early return); `crates/aligned-vmem/tests/smoke.rs:739-740`.
+54. **CLOSED** by task #1058 (V-29's tautological `min_page_equals_page` deleted — the compiler enforces the `MIN_PAGE == PAGE` alias and the untouched `min_page_is_4kib` pins the concrete value; V-31's two genuine gaps filled — `ReservationParts` derived `PartialEq`/`Eq` and `leak_zeroed_pages` exact-multiple size now tested; V-31's other three sub-findings were stale-card non-gaps, already covered or moot). See "Recently resolved" below for the full closure narrative.
 
 55. **`sefer-region`'s packaged benchmark can attempt a write outside its own
    package root when run standalone** (`crates/sefer-region/benches/region_bench.rs`)
@@ -2203,6 +2197,15 @@ resolved" below.)_
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+54. **[T, INFO] Tautological tests and small untested corners** (Filed 2026-08-14, task #934/C-9, combining findings V-29 and V-31 of `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md`) — **CLOSED** by task #1058.
+
+   - **V-29, genuinely fixed by deletion:** removed `min_page_equals_page` from `crates/aligned-vmem/tests/min_page.rs`. It asserted `MIN_PAGE == PAGE` where the definition is literally `pub const MIN_PAGE: usize = PAGE;` (`crates/aligned-vmem/src/min_page.rs:8`) — an equality the compiler guarantees, so the test could never fail. Deleted rather than rewritten because every candidate replacement assertion is likewise already compiler-enforced (the alias itself is type-checked; the concrete value is pinned by the untouched sibling `min_page_is_4kib`; const-context usability is guaranteed by `pub const`) — a rewrite would be busywork, exactly the failure mode the task brief warned against.
+   - **V-31, two genuine gaps, filled:**
+     - `ReservationParts`'s derived `PartialEq`/`Eq` had no struct-level test anywhere — the existing `reservation_parts_prevents_parameter_swap` and `reservation_parts_new_roundtrips_through_release` (`crates/aligned-vmem/tests/smoke.rs`) compare individual fields, never the whole struct. New `crates/aligned-vmem/tests/reservation_parts.rs`: two parts built from identical `(ptr, len, align)` compare equal; parts differing in exactly one field (each of ptr/len/align in turn) compare unequal; plus a `require_eq::<ReservationParts>()` marker check pinning the derive's `Eq` half, which `assert_eq!` alone does not exercise.
+     - `leak_zeroed_pages` was tested only with a rounding size (`3 * PAGE + 7`). New `leak_zeroed_pages_exact_multiple_needs_no_rounding` in `crates/aligned-vmem/tests/smoke.rs`, next to the existing `leak_zeroed_pages_is_zeroed_and_static`: an exact `4 * PAGE` size (internal round-up is a no-op), asserting PAGE alignment, all-zero over the full size, and writability.
+   - **V-31, three stale-card non-gaps, no code needed:** (1) `release`'s null-pointer early return is already covered by `release_null_is_noop_and_not_recorded` (`crates/aligned-vmem/tests/mock.rs`, task #949/T-4); (2) the deprecated `Reservation::is_empty` no longer exists — deleted by task #947/A-3 — so "untested" is moot (the surviving `LazyReservation::is_empty` in `crates/aligned-vmem/src/lazy_reservation.rs` is a different, newer, non-deprecated method, out of this item's scope); (3) the `try_reserve_aligned` `size + align` overflow case is already covered by `try_reserve_overflow_is_invalid_argument_on_all_platforms` (`crates/aligned-vmem/tests/smoke.rs`, task #922/V-11). The card's "untested corners" list predated those tests and was simply stale.
+   - **Verification:** `cargo test -p aligned-vmem --all-features` green (both new tests pass, `min_page_equals_page` removed, nothing regressed); `npm run check` ALL GREEN.
 
 41+61. **`aligned-vmem` had NO `cargo miri test -p aligned-vmem` step anywhere in CI** (item 41: the missing step; item 61: the same gap phrased as runtime-semantics concern — one fix, closed together) — **CLOSED** by task #1057.
 
