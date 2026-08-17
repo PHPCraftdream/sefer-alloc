@@ -118,17 +118,18 @@ fault-injection = ["lazy-commit"]
 # with large pages succeeded" and "single-call failed with large pages, retry with
 # plain pages succeeded"). All three measure syscall overhead that
 # `windows_reserve_commit_single_calls()` does NOT capture, and
-# `aligned_vmem::huge_decommit_attempts()` (R4-4) counting decommit calls on
-# huge-page reservations (an upper bound for estimating the true huge-page
-# incompatibility rate). Mirrors
-# sefer-alloc's own `bench-internals` feature NAME (`AtomicU64` storage and
+# `aligned_vmem::huge_decommit_attempts()` (R4-4) counting the EARLY-EXIT decommit
+# calls on huge-page reservations — the safe methods skip the syscall there because
+# it is provably useless (task #1040/R6-7), so this counts skips, NOT an upper bound
+# on a huge-page incompatibility rate as it did before that change. Keep this
+# wording in step with the counter's own rustdoc in `src/lib.rs`; the two drifted
+# apart once already (task #1045, finding R7-9). Shares sefer-alloc's
+# `bench-internals` feature NAME (`AtomicU64` storage and
 # increments both gated on `bench-internals`; the statics are `#[doc(hidden)]`,
 # the accessor functions are public — sefer-alloc's own convention is the
 # inverse attribute placement: private statics wrapped by `#[doc(hidden)]`
-# accessor functions) — this crate has no such feature
-# of its own yet, so it is introduced here with the same name for the
-# sefer-alloc `bench-internals` feature to forward into via
-# `aligned-vmem/bench-internals`. Off by default; NOT part of any bundle;
+# accessor functions), which is what lets sefer-alloc's own `bench-internals`
+# forward into it via `aligned-vmem/bench-internals`. Off by default; NOT part of any bundle;
 # zero cost when disabled (increments compiled out entirely).
 bench-internals = []
 

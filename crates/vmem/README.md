@@ -161,7 +161,6 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
   uncommitted tail raises a `STATUS_ACCESS_VIOLATION`. This is different from
   eager reservations (`reserve_aligned`), where the entire `len()` span is
   writable from the start.
-  item 6 for the incident record.
 - **Huge pages: decommit does nothing, on either OS.** When a reservation
   came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
   `decommit` does not work on it on either Windows or Linux: `VirtualFree`

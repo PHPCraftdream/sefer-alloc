@@ -28,8 +28,15 @@
 //! alignment), over-reserves `size + align` bytes and keeps the full mapping.
 //! On 64-bit Unix, the exact-size fast path is compiled out entirely (see the
 //! module-level "bench-internals" section below and [`reserve_aligned`]'s own
-//! rustdoc), so every reservation always over-reserves `size + align` bytes in
-//! one `mmap` call. On Windows, uses one syscall (fast path
+//! rustdoc), with ONE exception: on Linux AND Android, with the `huge-pages`
+//! feature on, a request for `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) huge pages
+//! takes an exact-size `MAP_HUGETLB` attempt first, which when it succeeds
+//! reserves exactly `size`. The exception's gate is
+//! `any(target_os = "linux", target_os = "android")` + `feature = "huge-pages"` —
+//! it is NOT keyed on pointer width, which is why it survives on 64-bit; and it
+//! covers Android too, so do not describe it as Linux-only. When that exception
+//! does not apply, a 64-bit Unix reservation over-reserves `size + align` bytes
+//! in one `mmap` call. On Windows, uses one syscall (fast path
 //! for `align <= 64 KiB`, over-reserving nothing — base == region) or two
 //! syscalls (over-reserving `size + align` and keeping the full mapping). The
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
@@ -307,10 +314,12 @@ pub(crate) static WINDOWS_RESERVE_COMMIT_SINGLE_CALLS: AtomicU64 = AtomicU64::ne
 /// two-call path (Windows only — always 0 on Unix/miri; that internal helper
 /// is private and platform-gated, so it is named here in code font rather than linked).
 /// Each call issues exactly 2 syscalls
-/// (`VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`, plus a possible
-/// third best-effort retry on a `huge-pages` commit failure — not counted
-/// here, see that call site). This path is used when `align > WIN_ALLOCATION_GRANULARITY` or when
-/// `commit_len != size` (the lazy-commit case). See the module-level
+/// (`VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`). This path is used when
+/// `align > WIN_ALLOCATION_GRANULARITY` or when `commit_len != size` (the lazy-commit case).
+/// NOTE: this path never requests large pages (always plain MEM_COMMIT), so there is no
+/// best-effort retry on failure — only the single-call fast path has that logic
+/// (task #921/V-7, which is where that code comment's own attribution points).
+/// See the module-level
 /// "bench-internals" section doc above.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
@@ -1818,7 +1827,14 @@ impl ReservationFullParts {
 /// hint this crate passes); on a miss (wrong alignment), over-reserves
 /// `size + align` bytes and keeps the full mapping. On 64-bit Unix, the fast
 /// path is compiled out (`target_pointer_width = "32"` — see task #944,
-/// finding P-1), so every reservation always over-reserves `size + align`
+/// finding P-1), with ONE exception: on Linux AND Android, with the `huge-pages`
+/// feature on, a request for `align == LINUX_HUGE_PAGE_SIZE` (2 MiB) huge pages
+/// takes an exact-size `MAP_HUGETLB` attempt first, which when it succeeds
+/// reserves exactly `size`. That exception is gated on
+/// `any(target_os = "linux", target_os = "android")` + `feature = "huge-pages"`,
+/// NOT on pointer width — which is both why it still fires on 64-bit and why
+/// calling it Linux-only would be wrong. When it does not apply, a 64-bit Unix
+/// reservation over-reserves `size + align`
 /// bytes in one `mmap` call. On Windows, uses one syscall (fast path
 /// for `align <= 64 KiB`, over-reserving nothing — base == region) or two
 /// syscalls (over-reserving `size + align` and keeping the full mapping). The `Reservation::reservation_ptr` / `reservation_len` fields
