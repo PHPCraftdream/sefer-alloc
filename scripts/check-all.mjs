@@ -36,49 +36,59 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-20. aligned-vmem package gates — 9 steps (5 clippy rows + 2 test rows
-//      + 1 doc row + 1 optional semver row). NOTE the position: this group
-//      sits BEFORE the two remaining PER_PR_ROWS rows in the runtime array,
-//      not after them. The header said the opposite from the group's
-//      introduction (commit 66b8508, task #1024) until task #1047 checked the
-//      order against the array instead of against the previous comment; the
-//      old "12-13 = PER_PR_ROWS, 14 = aligned-vmem" pair was a straight
-//      transposition. Reproduces the 'aligned-vmem
-//      package gates' job from ci.yml. Excludes mock (RUSTFLAGS) and
-//      cross-targets to keep the local check fast (CLAUDE.md: "Tests and
-//      benchmarks must run as fast as possible"): clippy (default,
-//      huge-pages, bench-internals, lazy-commit+huge-pages+fault-injection+bench-internals,
-//      --all-features); test (default, --all-features); doc (--all-features,
-//      warnings-as-errors); semver-checks (optional, skipped if cargo-semver-checks
-//      not installed).
-//   21-22. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   12-22. aligned-vmem package gates — 11 steps (5 clippy rows + 2
+//      cross-target unix rows (1 check + 1 clippy, item 51/task #1059)
+//      + 2 test rows + 1 doc row + 1 optional semver row). NOTE the position:
+//      this group sits BEFORE the two remaining PER_PR_ROWS rows in the
+//      runtime array, not after them. The header said the opposite from the
+//      group's introduction (commit 66b8508, task #1024) until task #1047
+//      checked the order against the array instead of against the previous
+//      comment; the old "12-13 = PER_PR_ROWS, 14 = aligned-vmem" pair was a
+//      straight transposition. Reproduces the 'aligned-vmem
+//      package gates' job from ci.yml. Excludes mock (RUSTFLAGS) and the
+//      i686 cross-targets to keep the local check fast (CLAUDE.md: "Tests and
+//      benchmarks must run as fast as possible") — but INCLUDES the
+//      x86_64-unknown-linux-gnu cross-target (item 51/task #1059): a plain
+//      Windows cargo check/clippy compiles #[cfg(unix)] code to NOTHING
+//      (task #1055, commit a4b8e50, found genuinely missing imports in
+//      src/os/unix.rs and src/os/miri.rs that every host-target row silently
+//      skipped), so the unix cfg surface needs an explicit --target row even
+//      though CI's ubuntu-latest job already covers it natively. Rows:
+//      clippy (default, huge-pages, bench-internals,
+//      lazy-commit+huge-pages+fault-injection+bench-internals,
+//      --all-features); cross-target check + clippy
+//      (x86_64-unknown-linux-gnu,
+//      lazy-commit+huge-pages+fault-injection+bench-internals); test
+//      (default, --all-features); doc (--all-features, warnings-as-errors);
+//      semver-checks (optional, skipped if cargo-semver-checks not installed).
+//   23-24. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   23. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   25. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   24. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   26. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
-//      structural complement to 23 — 23 only proves ONE method is gated;
+//      structural complement to 25 — 25 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   25. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   27. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   26. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   28. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   27. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   29. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   28. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   30. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -86,7 +96,7 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   29. npm run iai                                                (deterministic judge,
+//   31. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -184,8 +194,12 @@ const steps = [
   },
   // --- aligned-vmem package gates (mandatory local coverage) ---
   // Reproduces the 'aligned-vmem package gates' job from ci.yml.
-  // Excludes mock (RUSTFLAGS) and cross-targets (rustup target add) to keep
-  // the local check fast (CLAUDE.md: "Tests and benchmarks must run as fast as possible").
+  // Excludes mock (RUSTFLAGS) and the i686 cross-targets to keep the local
+  // check fast (CLAUDE.md: "Tests and benchmarks must run as fast as
+  // possible") — but INCLUDES the x86_64-unknown-linux-gnu cross-target
+  // (item 51/task #1059): on a Windows host the unix cfg surface is
+  // invisible to every host-target row — see the two cross-target steps
+  // below.
   {
     name: 'clippy (aligned-vmem default)',
     cmd: 'cargo',
@@ -210,6 +224,34 @@ const steps = [
     name: 'clippy (aligned-vmem --all-features)',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--all-features', '--all-targets', '--', '-D', 'warnings'],
+  },
+  {
+    // Item 51 (task #1059): cross-target unix compile gate. On this Windows
+    // host every #[cfg(unix)] / #[cfg(all(unix, not(miri)))] item in the
+    // crate compiles to NOTHING under the host-target rows above — the gap
+    // that let genuinely missing imports hide in src/os/unix.rs (cfg(unix))
+    // and src/os/miri.rs (cfg(miri)) until task #1055's cross-checks caught
+    // them (commit a4b8e50). This row closes the cfg(unix) half locally; the
+    // cfg(miri) half stays with CI's RUSTFLAGS row (excluded locally along
+    // with mock, same keep-it-fast rule). CI also covers the unix half
+    // natively (aligned-vmem-gates runs on ubuntu-latest) — this row exists
+    // so the LOCAL pre-push gate stops being blind to it. Feature set
+    // matches the lazy-commit clippy row above / CI's native-linux row for
+    // the same combination; --all-targets is load-bearing (without it,
+    // tests/ is not built and unix-only tests go unchecked).
+    // x86_64-unknown-linux-gnu is already installed via rustup — ~3-6 s per
+    // cached run (measured task #1059).
+    name: 'check (aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals")',
+    cmd: 'cargo',
+    args: ['check', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets'],
+  },
+  {
+    // Item 51 (task #1059): clippy half of the cross-target unix gate above —
+    // same rationale (unix cfg code is invisible to the host clippy rows;
+    // linting it only on CI means drift lands one push late).
+    name: 'clippy (aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals")',
+    cmd: 'cargo',
+    args: ['clippy', '-p', 'aligned-vmem', '--target', 'x86_64-unknown-linux-gnu', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
   },
   {
     name: 'test (aligned-vmem --all-features)',
@@ -334,7 +376,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x9 [5 clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x11 [5 clippy + 2 cross-target unix (1 check + 1 clippy) + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
