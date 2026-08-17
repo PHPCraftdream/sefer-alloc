@@ -231,6 +231,12 @@ static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 //   `WIN_ALLOCATION_GRANULARITY` (which the kernel SHOULD honor), or when the
 //   caller DOES have `SeLockMemoryPrivilege` (where large pages are actually
 //   granted and SHOULD respect the alignment guarantee).
+//   `WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES` counts the case where the
+//   initial large-page attempt failed but the retry with ordinary pages succeeded,
+//   closing the observability gap where `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`
+//   cannot distinguish between "single-call with large pages succeeded" and
+//   "single-call failed with large pages, retry with plain pages succeeded"
+//   (both increment the same counter). Added by R7-3.
 //
 // `AtomicU64` storage, increments gated on `bench-internals` so a plain build
 // carries zero extra instructions (storage itself is also gated, not compiled
@@ -495,6 +501,21 @@ pub fn windows_large_page_retry_failures() -> u64 {
 #[doc(hidden)]
 pub(crate) static WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
+/// `bench-internals`: number of large-page `VirtualAlloc` attempts that returned NULL,
+/// but the unconditional retry with ordinary pages succeeded.
+///
+/// This counter tracks the "huge failed, plain succeeded" scenario, which is NOT
+/// visible from `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` (which counts successful
+/// logical completion regardless of which attempt succeeded) or
+/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES` (which counts only when BOTH attempts failed).
+/// A high ratio of this counter to `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` indicates
+/// that the large-page request window is wide relative to actual privilege/size
+/// conditions, incurring an extra syscall on the cold path without benefit.
+/// Added by R7-3 (docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md).
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES: AtomicU64 = AtomicU64::new(0);
+
 /// `bench-internals`: relaxed snapshot of the internal
 /// `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` counter (fast-path attempts that
 /// requested large pages but the returned base was not aligned to the
@@ -507,6 +528,17 @@ pub(crate) static WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES: AtomicU64 = AtomicU64::
 #[must_use]
 pub fn windows_large_page_alignment_failures() -> u64 {
     WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of the internal
+/// `WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES` counter (large-page attempts
+/// that failed, but the retry with ordinary pages succeeded; private storage,
+/// this accessor is the public read surface). Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_large_page_plain_fallback_successes() -> u64 {
+    WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES.load(Ordering::Relaxed)
 }
 
 /// `bench-internals`: relaxed snapshot of the internal `UNIX_MADVISE_ATTEMPTS`
@@ -586,10 +618,12 @@ pub fn huge_decommit_attempts() -> u64 {
     HUGE_DECOMMIT_ATTEMPTS.load(Ordering::Relaxed)
 }
 
-/// `bench-internals`: reset all thirteen counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
+/// `bench-internals`: reset all fourteen counters (`UNIX_EXACT_RESERVE_ATTEMPTS`,
 /// `UNIX_EXACT_RESERVE_HITS`, `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`,
 /// `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`,
-/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`, `UNIX_MADVISE_ATTEMPTS`,
+/// `WINDOWS_LARGE_PAGE_RETRY_FAILURES`,
+/// `WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES`,
+/// `UNIX_MADVISE_ATTEMPTS`,
 /// `UNIX_MADVISE_SUCCESSES`, `UNIX_MUNMAP_FAILURES`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`,
 /// `WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`,
@@ -608,6 +642,7 @@ pub fn reset_bench_internals_counters() {
     WINDOWS_RESERVE_COMMIT_SINGLE_CALLS.store(0, Ordering::Relaxed);
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS.store(0, Ordering::Relaxed);
     WINDOWS_LARGE_PAGE_RETRY_FAILURES.store(0, Ordering::Relaxed);
+    WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES.store(0, Ordering::Relaxed);
     WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES.store(0, Ordering::Relaxed);
     UNIX_MADVISE_ATTEMPTS.store(0, Ordering::Relaxed);
     UNIX_MADVISE_SUCCESSES.store(0, Ordering::Relaxed);
@@ -726,9 +761,21 @@ fn query_os_page_size() -> usize {
 /// exceptions**:
 ///
 /// - **Decommitted ranges**: Ranges that the caller has decommitted (via the
-///   free functions or the safe methods) and not yet recommitted are
-///   inaccessible. On Windows such pages are unmapped until `recommit`; on
-///   Unix the kernel returns fresh zero pages on next access.
+///   free functions or the safe methods) and not yet recommitted have
+///   platform-specific behavior:
+///   - **Windows**: pages are unmapped until `recommit`; access before `recommit`
+///     crashes with `STATUS_ACCESS_VIOLATION`.
+///   - **Linux (eager `decommit`)**: pages are zeroed on next access via `MADV_DONTNEED`.
+///   - **Linux (lazy `decommit_lazy`)**: pages keep old contents until kernel
+///     reclaims them under pressure; writes before reclamation cancel the free.
+///   - **Darwin/BSD**: pages keep old contents; `MADV_DONTNEED` is advisory-only
+///     and does not reliably zero.
+///   - **Huge reservations**: old contents remain either way. The safe methods
+///     [`Reservation::decommit`]/[`Reservation::decommit_lazy`] skip the
+///     backend call outright (they can consult `is_huge()`); the free
+///     functions cannot, so they still issue the syscall — which the OS then
+///     refuses or ignores on a huge mapping. Same observable outcome, different
+///     mechanism; do not read "no-op" as "no syscall" for the free functions.
 ///
 /// - **Lazy reservations on Windows (feature `lazy-commit`)**: When created via
 ///   `reserve_aligned_lazy`, only the `initial_commit` prefix is committed at
@@ -815,9 +862,22 @@ impl Reservation {
     /// following exceptions:
     ///
     /// - **Decommitted ranges:** Ranges decommitted via the free functions or
-    ///   safe methods and not yet recommitted. On Windows such pages are
-    ///   unmapped until `recommit`; on Unix the kernel returns fresh zero pages
-    ///   on next access.
+    ///   safe methods and not yet recommitted have platform-specific behavior:
+    ///   - **Windows**: pages are unmapped until `recommit`; access before
+    ///     `recommit` crashes with `STATUS_ACCESS_VIOLATION`.
+    ///   - **Linux (eager `decommit`)**: pages are zeroed on next access via
+    ///     `MADV_DONTNEED`.
+    ///   - **Linux (lazy `decommit_lazy`)**: pages keep old contents until kernel
+    ///     reclaims them under pressure; writes before reclamation cancel the free.
+    ///   - **Darwin/BSD**: pages keep old contents; `MADV_DONTNEED` is
+    ///     advisory-only and does not reliably zero.
+    ///   - **Huge reservations**: old contents remain either way. The safe
+    ///     methods [`Self::decommit`]/[`Self::decommit_lazy`] skip the backend
+    ///     call outright (they can consult [`Self::is_huge`]); the free
+    ///     functions cannot, so they still issue the syscall — which the OS
+    ///     then refuses or ignores on a huge mapping. Same observable outcome,
+    ///     different mechanism; do not read "no-op" as "no syscall" for the
+    ///     free functions.
     ///
     /// - **Lazy reservations on Windows (feature `lazy-commit`):** When created
     ///   via `reserve_aligned_lazy`, only the `initial_commit` prefix is
@@ -963,7 +1023,7 @@ impl Reservation {
     /// For an instance-level query that accounts for huge pages, use
     /// [`Self::can_decommit_reclaim_and_zero`].
     ///
-    /// Platform behavior (ordinary native backend only):
+    /// Platform behavior (ordinary native backend only, eager decommit path):
     /// - **Linux (all targets)**: returns `true`. `MADV_DONTNEED` unmaps physical pages
     ///   and re-faults fresh zero pages on next access.
     /// - **Windows**: returns `true`. `MEM_DECOMMIT` unmaps physical pages and
@@ -2785,6 +2845,9 @@ fn win_reserve_commit(
                         match NonNull::new(plain as *mut u8) {
                             Some(n) => {
                                 huge_granted = false; // Fallback to ordinary pages
+                                #[cfg(feature = "bench-internals")]
+                                WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES
+                                    .fetch_add(1, Ordering::Relaxed);
                                 n
                             }
                             None => {

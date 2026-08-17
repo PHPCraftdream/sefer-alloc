@@ -2258,21 +2258,9 @@ resolved" below.)_
 
 63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
-64. **Follow-up from commit 66b8508 (task #1030): `npm run check` lacks a `cargo test -p aligned-vmem` row with DEFAULT features, though ci.yml has a separate job that tests workspace members with default features.** (Filed 2026-08-16, follow-up from commit body, not indexed.)
+64. **Follow-up from commit 66b8508 (task #1030): `npm run check` lacks a `cargo test -p aligned-vmem` row with DEFAULT features, though ci.yml has a separate job that tests workspace members with default features.** — **CLOSED**, see "Recently resolved" §#64 below.
 
-   - **Status:** OPEN — local gate does not cover a runtime mode CI tests (ci.yml's 'test workspace members' job runs `cargo test -p aligned-vmem` with default features; the local gate's aligned-vmem clippy rows cover compile-failure mode via `--all-targets` but not runtime).
-   - **Current number/verdict:** structurally observable — commit 66b8508 added 5 aligned-vmem clippy rows and 1 test row (`--all-features`) to `scripts/check-all.mjs`, but no row with plain `cargo test -p aligned-vmem`. The default-feature clippy row (`--all-targets`) validates that the feature set compiles, but does not execute runtime tests, so an OOM or panic that would be caught by `cargo test` is invisible to `npm run check`.
-   - **Next trigger:** add a `cargo test -p aligned-vmem` row with DEFAULT features to `scripts/check-all.mjs`, matching the mode ci.yml's separate 'test workspace members' job exercises.
-   - **Evidence:** commit 66b8508 body ("(2) there is no `cargo test -p aligned-vmem` row with DEFAULT features, which is what ci.yml's separate 'test workspace members' job runs"); `.github/workflows/ci.yml` (the separate 'test workspace members' job); `scripts/check-all.mjs` (current aligned-vmem rows: 5 clippy + 1 `--all-features` test).
-   Full history: this entry (filed 2026-08-16, task #1030 follow-up).
-
-65. **CI-coverage gap: `aligned-vmem-gates` job added three steps (cargo doc with RUSTDOCFLAGS="-D warnings", cargo publish --dry-run, cargo semver-checks check-release) that are NOT covered by `npm run check`.** (Filed 2026-08-16, task #1039 coverage gap.)
-
-   - **Status:** OPEN — same class as task #1024's `aligned-vmem package gates` gap: a CI job exists that runs checks not reproduced locally.
-   - **Current number/verdict:** structurally observable — commit ce4852a added three steps to `.github/workflows/ci.yml`'s `aligned-vmem-gates` job: (1) `RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps`, (2) `cargo publish --dry-run -p aligned-vmem`, (3) `cargo semver-checks check-release --package aligned-vmem`. None of these exist in `scripts/check-all.mjs`.
-   - **Next trigger:** add the first and third steps to `npm run check`. The second step (`cargo publish --dry-run`) should NOT be added — it attempts to download the crates.io index, which is inappropriate for every local run. The added steps would run before the `vmem-doc-drift-guard` step (line 20 in the current array), maintaining the existing ordering that runs repo-wide guards before crate-specific ones.
-   - **Evidence:** commit ce4852a (full commit message with all three steps and their rationale); `.github/workflows/ci.yml` (the `aligned-vmem-gates` job's full step list); `scripts/check-all.mjs` (current aligned-vmem rows lack these three checks).
-   Full history: this entry (filed 2026-08-16, task #1039 coverage gap).
+65. **CI-coverage gap: `aligned-vmem-gates` job added three steps (cargo doc with RUSTDOCFLAGS="-D warnings", cargo publish --dry-run, cargo semver-checks check-release) that are NOT covered by `npm run check`.** — **CLOSED**, see "Recently resolved" §#65 below.
 
 66. **`Reservation` still carries no committed-length state, so a lazy handle's
    committed prefix is a DOCUMENTED contract rather than a CHECKABLE one
@@ -2320,6 +2308,30 @@ resolved" below.)_
      backends — the Unix one ignores `initial_commit` entirely and delegates
      to `reserve_aligned_raw`, which is why this gap is Windows-only in
      practice.
+   - **RE-RAISED independently as R7-2** (2026-08-17, task #1044,
+     `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md`). R7 is a
+     fresh static pass over `2ad2607` that reaches this item on its own and
+     names R7-2 as ONE OF THE TWO conditions of its conditional NO-GO for
+     publishing with `lazy-commit` enabled. (The other, R7-1, is a
+     documentation defect and IS closed by code — task #1043.) R7 itself
+     states this is "the remainder of open item 66, not a new divergence in
+     the docs", so this card stays the single live record; no new item was
+     opened for it.
+   - **A FOURTH option R7 adds, absent from the three above:** explicitly
+     ACCEPT the caller-tracked contract as a deliberate decision, or exclude
+     `lazy-commit` from the supported release profile and demote the risk to
+     backlog. This is strictly cheaper than (a)/(b)/(c) — it costs a recorded
+     decision and no API change — and it is a legitimate answer rather than
+     an evasion: the gap is Windows-only and reachable only through an
+     opt-in feature. What both reviews rule out is leaving the question
+     UNANSWERED. R7's wording: "это решение должно быть зафиксировано".
+     Publishing with the contract neither implemented nor explicitly
+     accepted is the one outcome neither review permits.
+   - **Owner decision, not an engineering call.** Five options are open
+     (a/b/c above, accept-as-is, drop-the-feature); all are cheap only while
+     0.2.0 is unpublished; none can be chosen from inside the code. Recorded
+     rather than acted on — the same posture task #1037 took when it
+     implemented R6-1's variants 1 and 2 and deliberately left variant 3.
    Full history: this entry.
 
 67. **Commit `4a6c77e`'s body describes a test branch that does not exist; the
@@ -3741,3 +3753,23 @@ resolved" below.)_
     Resolved by `from_raw_parts` now taking an explicit `granted_huge: bool` parameter (breaking change) instead of hard-coding `false`. Callers can now accurately reconstruct a `Reservation` with the correct `granted_huge` flag when adopting a foreign reservation, eliminating the fail-open hazard. This was a deliberate API change in the 0.2.0 pre-release cycle to address the contract gap identified in this item. Item 48 (the underlying decommit/Darwin gap) remains open as a separate issue.
 
     - **Evidence:** see `pub unsafe fn from_raw_parts` signature (`granted_huge: bool` parameter) and its use in the `Reservation` constructor (`granted_huge` field).
+
+64. **Follow-up from commit 66b8508 (task #1030): `npm run check` lacks a `cargo test -p aligned-vmem` row with DEFAULT features, though ci.yml has a separate job that tests workspace members with default features.** — **CLOSED** (filed 2026-08-16, R7-8 finding class third occurrence; this is the same gap task #1024 closed with commit 66b8508, resurfaced as items 64/65 in task #1034).
+
+    The local gate now matches ci.yml's runtime coverage: added `cargo test -p aligned-vmem` (plain default features, no `--all-features`) to `scripts/check-all.mjs`. The pre-existing clippy rows (`--all-targets`) validated compile-time only; this new step catches runtime failures (OOM, panic) that clippy cannot see. Placement: immediately after the `test (aligned-vmem --all-features)` step, maintaining the existing grouped aligned-vmem block.
+
+    - **Files changed:** `scripts/check-all.mjs` (added one new step; updated header comment to reflect aligned-vmem block is now 9 steps: 5 clippy + 2 test + 1 doc + 1 optional semver).
+    - **Verification:** `cargo test -p aligned-vmem` (default features) runs green locally (53 tests, 0 failures); `node --check scripts/check-all.mjs` passes (script is valid JS); `cargo test --all-features --test ci_clippy_matrix_consistency` passes (PER_PR_ROWS unchanged — aligned-vmem rows are a separate group, not part of the pinned matrix).
+    - **Evidence:** this session's `scripts/check-all.mjs` diff; the added step's name `test (aligned-vmem default)`; local verification output below.
+
+65. **CI-coverage gap: `aligned-vmem-gates` job added three steps (cargo doc with RUSTDOCFLAGS="-D warnings", cargo publish --dry-run, cargo semver-checks check-release) that are NOT covered by `npm run check`.** — **CLOSED** (filed 2026-08-16, task #1039 coverage gap; same class as task #1024's `aligned-vmem package gates` gap).
+
+    The local gate now reproduces two of the three CI steps (the third, `cargo publish --dry-run`, was deliberately excluded per this item's own "Next trigger" instruction because it contacts crates.io on every local run). Added:
+    1. `RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps` — implemented as a `cargo doc` step with `env: { RUSTDOCFLAGS: '-D warnings' }` to avoid Windows shell quoting issues.
+    2. `cargo semver-checks check-release --package aligned-vmem` — implemented as an optional wrapper script (`scripts/aligned-vmem-semver-check-optional.mjs`) that (a) checks if `cargo-semver-checks` is installed via `cargo semver-checks --version`, and (b) if missing, prints a clear diagnostic ("tool not installed; skipping — this is expected and NOT a failure") and exits 0; if present, runs the actual check and propagates its exit code. This distinction makes "tool missing" (configuration absence) visible and distinct from "tool present but broke" (actual semver violation), avoiding the forbidden `|| true` silent-swallow pattern.
+
+    - **Files changed:** `scripts/check-all.mjs` (added two new steps; made the runner loop actually PASS `step.env`; corrected the header's step numbering); `scripts/aligned-vmem-semver-check-optional.mjs` (new optional wrapper script); `scripts/lib.mjs` (no change needed).
+    - **A defect this closure INTRODUCED and then had to fix — recorded here rather than only in the commit body (exactly the F7/R22-3 class this index exists to prevent):** the first version of the doc step declared `env: { RUSTDOCFLAGS: '-D warnings' }` on the step object while `check-all.mjs`'s runner loop still called `run(step.cmd, step.args, { cwd: REPO_ROOT })` — it never read `step.env`. `run()` itself was never at fault (`scripts/lib.mjs:52` forwards `opts` straight to `spawn`, so it has always supported `env`); the loop simply dropped the field. The result was a step NAMED "warnings-as-errors" that could not fail — worse than an absent step, because it reads as coverage. Fixed by merging `step.env` OVER `process.env`, not replacing it: `spawn`'s `env` option replaces the environment wholesale, which would strip `PATH` and break every subsequent `cargo` lookup. Proven by counterfactual rather than by inspection — the same broken intra-doc link yields `exit 0` without the pass-through and `exit 101` with it.
+    - **A second stale-doc defect found in the same file while closing this item:** the header comment's step numbering placed the aligned-vmem group AFTER the two remaining `PER_PR_ROWS` rows ("12-13 = PER_PR_ROWS, 14 = aligned-vmem"). The runtime array has had the opposite order since commit 66b8508 introduced the group. Re-derived from the array itself and corrected to `12-20` (aligned-vmem, 9 steps) / `21-22` (PER_PR_ROWS), renumbering the seven entries after them; the sibling stale figure in `docs/perf/OPEN_ITEMS.md` item 50 ("steps 14-19") was corrected in the same pass.
+    - **Verification:** `RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps` runs green locally; `node scripts/aligned-vmem-semver-check-optional.mjs` runs green locally (found cargo-semver-checks 0.50.0, semver check reported `0 checks: 0 pass, 254 skip` — every lint is SKIPPED because 0.1.0→0.2.0 is a major bump for a 0.x crate, so this step cannot fail until 0.2.0 is itself the baseline); `node --check scripts/check-all.mjs` passes; full `npm run check` from the primary checkout reports `ALL GREEN`.
+    - **Evidence:** this session's `scripts/check-all.mjs` diff; the new `scripts/aligned-vmem-semver-check-optional.mjs` script with explicit "tool missing vs. tool present but broke" diagnostic distinction; local verification output below.

@@ -35,6 +35,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `windows_virtualfree_release_failures()`
   - `unix_munmap_failures()`
   - `huge_decommit_attempts()` for tracking decommit calls on huge-page reservations
+  - `windows_large_page_retry_failures()` / `windows_large_page_alignment_failures()` / `windows_large_page_plain_fallback_successes()` — separate counters for large-page failure modes
   - `reset_bench_internals_counters()`
   - `validate_page_size()` for testing page size validation logic
 - Mock backend converted from Cargo feature to build-time `--cfg aligned_vmem_mock` flag (no Cargo feature unification risk)

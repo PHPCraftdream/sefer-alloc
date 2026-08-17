@@ -36,40 +36,49 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-13. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   12-20. aligned-vmem package gates — 9 steps (5 clippy rows + 2 test rows
+//      + 1 doc row + 1 optional semver row). NOTE the position: this group
+//      sits BEFORE the two remaining PER_PR_ROWS rows in the runtime array,
+//      not after them. The header said the opposite from the group's
+//      introduction (commit 66b8508, task #1024) until task #1047 checked the
+//      order against the array instead of against the previous comment; the
+//      old "12-13 = PER_PR_ROWS, 14 = aligned-vmem" pair was a straight
+//      transposition. Reproduces the 'aligned-vmem
+//      package gates' job from ci.yml. Excludes mock (RUSTFLAGS) and
+//      cross-targets to keep the local check fast (CLAUDE.md: "Tests and
+//      benchmarks must run as fast as possible"): clippy (default,
+//      huge-pages, bench-internals, lazy-commit+huge-pages+fault-injection+bench-internals,
+//      --all-features); test (default, --all-features); doc (--all-features,
+//      warnings-as-errors); semver-checks (optional, skipped if cargo-semver-checks
+//      not installed).
+//   21-22. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   14. aligned-vmem package gates (5 clippy rows + 1 test row) — reproduces
-//      the 'aligned-vmem package gates' job from ci.yml. Excludes mock (RUSTFLAGS)
-//      and cross-targets to keep the local check fast (CLAUDE.md: "Tests and
-//      benchmarks must run as fast as possible"): clippy (default, huge-pages,
-//      bench-internals, lazy-commit+huge-pages+fault-injection+bench-internals,
-//      --all-features) and test (--all-features).
-//   15. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   23. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   16. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   24. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
-//      structural complement to 14 — 14 only proves ONE method is gated;
+//      structural complement to 23 — 23 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   17. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   25. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   18. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   26. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   19. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   27. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   20. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   28. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -77,7 +86,7 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   21. npm run iai                                                (deterministic judge,
+//   29. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -207,6 +216,33 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '-p', 'aligned-vmem', '--all-features'],
   },
+  {
+    // Item 64 (task #1030 follow-up): default-feature runtime test —
+    // ci.yml's separate 'test workspace members' job runs this, and the local
+    // gate should match it. The clippy row above validates compile-time, but
+    // runtime tests (OOM, panic) are invisible to --all-targets alone.
+    name: 'test (aligned-vmem default)',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem'],
+  },
+  {
+    // Item 65 (task #1039): doc warnings check — matches the aligned-vmem-gates
+    // job's first step. Uses process.env.RUSTDOCFLAGS rather than inline
+    // environment syntax to avoid Windows shell quoting issues.
+    name: 'doc (aligned-vmem --all-features, warnings-as-errors)',
+    cmd: 'cargo',
+    args: ['doc', '-p', 'aligned-vmem', '--all-features', '--no-deps'],
+    env: { RUSTDOCFLAGS: '-D warnings' },
+  },
+  {
+    // Item 65 (task #1039): semver check — matches the aligned-vmem-gates job's
+    // third step. Skipped with a clear diagnostic if cargo-semver-checks is not
+    // installed; this is NOT a silent error swallow (the check is explicitly
+    // documented as optional when the tool is absent).
+    name: 'semver-checks (aligned-vmem, optional)',
+    cmd: 'node',
+    args: ['scripts/aligned-vmem-semver-check-optional.mjs'],
+  },
   // --- end aligned-vmem package gates ---
   // R30-5: the remaining (non-clippy) PER_PR_ROWS rows — currently
   // `check-perf-gate-iai-default` (`cargo check --bench perf_gate_iai
@@ -298,14 +334,29 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x6, perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x9 [5 clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
   console.log(`\n============================================================`);
   console.log(`  ${step.name}`);
   console.log(`============================================================`);
-  const { code } = await run(step.cmd, step.args, { cwd: REPO_ROOT });
+  // `step.env`, when present, is MERGED over the inherited environment rather
+  // than replacing it — `spawn`'s `env` option replaces wholesale, which would
+  // strip PATH and break every subsequent `cargo` lookup.
+  //
+  // This pass-through is load-bearing, not decoration (task #1047 review): the
+  // step that needs it is `doc (aligned-vmem --all-features,
+  // warnings-as-errors)`, whose ONLY teeth are `RUSTDOCFLAGS=-D warnings`.
+  // The delegated version of that step declared `env` on the step object while
+  // this loop still called `run(cmd, args, { cwd })` — so the variable never
+  // reached rustdoc, doc warnings did not fail the build, and the step's own
+  // name asserted a guarantee it did not provide. A step that cannot fail is
+  // worse than no step, because it reads as coverage.
+  const { code } = await run(step.cmd, step.args, {
+    cwd: REPO_ROOT,
+    ...(step.env ? { env: { ...process.env, ...step.env } } : {}),
+  });
   if (code !== 0) {
     console.log(`\n[check-all] FAIL at step: ${step.name} (exit ${code})`);
     allOk = false;

@@ -107,11 +107,16 @@ fault-injection = ["lazy-commit"]
 # (`aligned_vmem::windows_virtualfree_decommit_attempts()` /
 # `aligned_vmem::windows_virtualfree_decommit_failures()`), Unix `munmap`
 # failures (`aligned_vmem::unix_munmap_failures()`), Windows `VirtualFree(MEM_RELEASE)`
-# failures (`aligned_vmem::windows_virtualfree_release_failures()`), and two Windows
-# large-page counters (R4-5/R5-4): `windows_large_page_retry_failures()` (initial
-# large-page attempt AND ordinary-page retry BOTH failed) and
+# failures (`aligned_vmem::windows_virtualfree_release_failures()`), and three Windows
+# large-page counters (R4-5/R5-4, R7-3): `windows_large_page_retry_failures()` (initial
+# large-page attempt AND ordinary-page retry BOTH failed),
 # `windows_large_page_alignment_failures()` (allocation succeeded but base was
-# misaligned, forcing fallback). Both measure syscall overhead that
+# misaligned, forcing fallback), and
+# `windows_large_page_plain_fallback_successes()` (initial large-page attempt
+# failed but ordinary-page retry succeeded — closes the observability gap where
+# `windows_reserve_commit_single_calls()` cannot distinguish between "single-call
+# with large pages succeeded" and "single-call failed with large pages, retry with
+# plain pages succeeded"). All three measure syscall overhead that
 # `windows_reserve_commit_single_calls()` does NOT capture, and
 # `aligned_vmem::huge_decommit_attempts()` (R4-4) counting decommit calls on
 # huge-page reservations (an upper bound for estimating the true huge-page

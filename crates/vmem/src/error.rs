@@ -36,8 +36,23 @@ pub struct VmemError {
 
 impl VmemError {
     /// A caller-contract-violation error: the arguments were rejected before
-    /// any OS call (e.g. `align` not a power of two, `size` not a page
-    /// multiple, `size == 0`).
+    /// any OS call. This covers MORE than the `size`/`align` contract, which is
+    /// why neither this doc nor `Display` names that one contract specifically
+    /// any more (task #1046, finding R7-7 — `Display` used to print
+    /// "size/align contract violation" for every one of these). The rejected
+    /// classes, enumerated from the actual call sites rather than guessed:
+    ///
+    /// - `size`/`align` contract: `align` not a power of two, `size` not a page
+    ///   multiple, `size == 0`, or the `size + align` sum overflowing.
+    /// - The `initial_commit` contract on the lazy path.
+    /// - The commit/recommit RANGE contract: `start > end`, either endpoint not
+    ///   a multiple of the runtime `page_size()`, or `end` past `len()`.
+    /// - Huge-page alignment on the Linux/Android huge path.
+    /// - An internal fit computation failing — deliberately mapped here rather
+    ///   than to a stale OS error code, because no OS call refused anything.
+    ///
+    /// The specific cause is documented on the method that returned it; this
+    /// type carries no payload naming which parameter was at fault.
     #[must_use]
     #[inline]
     pub const fn invalid_argument() -> Self {
@@ -123,7 +138,7 @@ impl fmt::Debug for VmemError {
 impl fmt::Display for VmemError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.invalid_arg {
-            f.write_str("invalid argument (size/align contract violation)")
+            f.write_str("invalid argument (argument contract violation)")
         } else {
             match self.code {
                 Some(code) => write!(f, "OS virtual-memory error (code {code})"),
