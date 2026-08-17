@@ -1534,7 +1534,13 @@ fn reservation_decommit_lazy_out_of_bounds_is_safe_no_op() {
 fn reservation_commit_range_in_bounds_matches_free_function() {
     use aligned_vmem::reserve_aligned_lazy;
 
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
+    // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
+    // safe methods, so they take the explicit door out and keep testing exactly
+    // what they were written to test.
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+        .expect("lazy reserve")
+        .into_reservation();
     let ps = page_size();
 
     // Commit a range via the safe method.
@@ -1554,7 +1560,13 @@ fn reservation_commit_range_in_bounds_matches_free_function() {
 fn reservation_commit_range_out_of_bounds_returns_false() {
     use aligned_vmem::reserve_aligned_lazy;
 
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
+    // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
+    // safe methods, so they take the explicit door out and keep testing exactly
+    // what they were written to test.
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+        .expect("lazy reserve")
+        .into_reservation();
     let ps = page_size();
 
     // Out-of-bounds range should return false.
@@ -1568,7 +1580,13 @@ fn reservation_commit_range_out_of_bounds_returns_false() {
 fn reservation_try_commit_range_in_bounds_matches_free_function() {
     use aligned_vmem::reserve_aligned_lazy;
 
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
+    // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
+    // safe methods, so they take the explicit door out and keep testing exactly
+    // what they were written to test.
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+        .expect("lazy reserve")
+        .into_reservation();
     let ps = page_size();
 
     // Try commit on a valid range (empty range is a valid no-op).
@@ -1589,7 +1607,13 @@ fn reservation_try_commit_range_in_bounds_matches_free_function() {
 fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
     use aligned_vmem::reserve_aligned_lazy;
 
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE).expect("lazy reserve");
+    // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
+    // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
+    // safe methods, so they take the explicit door out and keep testing exactly
+    // what they were written to test.
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+        .expect("lazy reserve")
+        .into_reservation();
     let ps = page_size();
 
     // Out-of-bounds range should be invalid_argument.

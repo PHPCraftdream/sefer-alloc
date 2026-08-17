@@ -2025,7 +2025,15 @@ impl AllocCore {
             }
             #[cfg(feature = "small-segment-lazy-commit")]
             {
-                let reservation = seg?;
+                // `into_reservation()`: aligned-vmem's lazy constructors now hand
+                // back a `LazyReservation`, which tracks the commit watermark for
+                // callers that want the crate to do that bookkeeping. THIS caller
+                // does not: the allocator keeps its own frontier
+                // (`committed_payload_end`) INSIDE the mapped segment header,
+                // because the hot allocation path reaches it by masking a bare
+                // pointer and has no handle in scope. So take the explicit door
+                // out and own the commit state from here on.
+                let reservation = seg?.into_reservation();
                 let b = reservation.as_ptr();
                 // `reservation_ptr()` is always non-null per the
                 // aligned_vmem::Reservation contract (checked at construction).

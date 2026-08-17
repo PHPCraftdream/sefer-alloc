@@ -251,7 +251,9 @@ impl Segment {
         if reserved_len == 0 {
             return None;
         }
-        let reservation = vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit)?;
+        // `into_reservation()` — same rationale as the sibling constructors.
+        let reservation =
+            vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit)?.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -288,7 +290,12 @@ impl Segment {
     #[must_use]
     #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
     pub(crate) fn reserve_lazy(initial_commit: usize) -> Option<Self> {
-        let reservation = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?;
+        // `into_reservation()`: see the note at `alloc_core_small.rs`'s lazy
+        // branch. The allocator's commit frontier lives in the segment header,
+        // reachable from a bare pointer on the hot path, so it does NOT use
+        // `LazyReservation`'s tracking and takes the explicit door out.
+        let reservation =
+            vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -310,7 +317,12 @@ impl Segment {
     #[must_use]
     #[cfg(feature = "bench-internals")]
     pub(crate) fn reserve_lazy_for_measurement(initial_commit: usize) -> Option<Self> {
-        let reservation = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?;
+        // `into_reservation()`: see the note at `alloc_core_small.rs`'s lazy
+        // branch. The allocator's commit frontier lives in the segment header,
+        // reachable from a bare pointer on the hot path, so it does NOT use
+        // `LazyReservation`'s tracking and takes the explicit door out.
+        let reservation =
+            vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }

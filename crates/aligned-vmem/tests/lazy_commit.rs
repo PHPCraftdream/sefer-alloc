@@ -157,7 +157,9 @@ fn lazy_reserve_small_align_still_reserves_full_span() {
     let align = PAGE; // 4 KiB -- well under the 64 KiB single-call threshold
     let size = 16 * ps;
     let initial = ps; // commit only the first runtime page now
-    let r = reserve_aligned_lazy(size, align, initial).expect("lazy reserve, small align");
+    let r = reserve_aligned_lazy(size, align, initial)
+        .expect("lazy reserve, small align")
+        .into_reservation();
     let base = r.as_ptr();
     assert_eq!(r.len(), size, "len() echoes the requested size");
     assert!(
@@ -406,7 +408,9 @@ fn release_via_into_parts_after_partial_commit() {
     let _guard = serial_guard();
     let initial = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
-    let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
+    let r = reserve_aligned_lazy(span, span, initial)
+        .expect("lazy reserve")
+        .into_reservation();
     let base = r.as_ptr();
 
     // Write into the committed region.
@@ -615,7 +619,9 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
     // Reserve 4 MiB, commit only the first 64 KiB.
     let initial = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
-    let r = reserve_aligned_lazy(span, span, initial).expect("lazy reserve");
+    let r = reserve_aligned_lazy(span, span, initial)
+        .expect("lazy reserve")
+        .into_reservation();
     let base = r.as_ptr();
 
     // Write into the committed region to verify it's actually committed.
