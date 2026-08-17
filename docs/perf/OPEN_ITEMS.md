@@ -1229,6 +1229,59 @@ for completeness.
    > - **Evidence:** commit `84bc9ac`'s body (the counterexample, written out in full); `unix_reserve` in `crates/vmem/src/lib.rs` (the exact-size attempt and the over-reserve attempt, with their differing size arguments); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-8 and `...-r7.md` § R7-4 (the two raisings).
    Full history: this entry (filed 2026-08-17, task #1048).
 
+53. **R7-5 — 64-bit Unix `reserve` retains `size + align` of VA per reservation (aligned-vmem). INFO, deliberate trade-off, not a bug.**
+
+   > **Current state**
+   > - **Status:** OPEN as a recorded trade-off — deliberately NOT changed.
+   > - **Current number/verdict:** the generic exact-size probe is compiled out on
+   >   64-bit Unix (`#[cfg(all(unix, not(miri), target_pointer_width = "32"))]` on
+   >   the exact-size helper, and the `#[cfg(target_pointer_width = "32")]` arm
+   >   inside `unix_reserve`), so an ordinary 64-bit reservation keeps the whole
+   >   over-reserved `size + align` mapping instead of trimming to `size`. That is
+   >   syscall-optimal for the typical 64-bit case — one `mmap`, versus the exact
+   >   probe's `mmap + munmap + over-reserve mmap` whenever the probe misses — at
+   >   the cost of VA that a large `align` with many live reservations makes
+   >   theoretically noticeable. The Linux huge exact-size exception does NOT
+   >   cover this generic case.
+   > - **Next trigger:** a 64-bit reservation-heavy workload measurement showing
+   >   the VA pressure is real and outweighs the extra syscalls. The existing
+   >   exact-path counters cannot answer it — they instrument the Linux huge
+   >   attempt, not the generic 64-bit ordinary path — so a new counter or probe
+   >   is part of the trigger. Needs a Linux host; structurally unreachable from
+   >   this project's Windows dev host.
+   > - **Evidence:** `crates/vmem/src/lib.rs` — the module-doc sentence "On 64-bit
+   >   Unix, the exact-size fast path is compiled out entirely", `unix_reserve`'s
+   >   32-bit-gated exact arm, and the `target_pointer_width = "32"` gate on the
+   >   exact-size helper (cited by SYMBOL, not by line number: this round's own
+   >   R7-9 finding is about stale line citations, and batch G's draft of this
+   >   card cited `unix_reserve` at `:3258` when it is at `:3322`);
+   >   `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md` § R7-5.
+   Full history: this entry (filed 2026-08-17, task #1049).
+
+54. **R7-10 — backend functions return unnamed tuples and `lib.rs` is monolithic (aligned-vmem). INFO, deferred to a future MAJOR.**
+
+   > **Current state**
+   > - **Status:** OPEN, deferred by decision — explicitly NOT for 0.2.0.
+   > - **Current number/verdict:** one `lib.rs` holds the public API, three
+   >   backends, the mock/cfg branches and the local FFI declarations. The
+   >   private `RawReservation` struct already removes the `base`/`reservation`
+   >   transposition risk AT CALL SITES (that is what its own doc comment says it
+   >   exists for), but the backend boundary itself still hands back positional
+   >   values. Not an error today; it raises audit cost and cfg-specific
+   >   regression risk.
+   > - **Next trigger:** planning a future major version — split private
+   >   `os_windows`/`os_unix`/`os_miri` modules and return named raw results from
+   >   the backend boundary. R7 states directly that mixing this refactor into
+   >   0.2.0's release fixes is the wrong trade.
+   > - **Evidence:** `crates/vmem/src/lib.rs` — the `RawReservation` struct and
+   >   its doc comment ("Private struct for raw reservation results from backend
+   >   functions / Named to prevent transposing `base` and `reservation`"), cited
+   >   by symbol: batch G's draft called those doc lines a "module doc" at
+   >   `:1925-1931` and placed the struct at `:1924`, when the struct is at
+   >   `:1932` and those lines are its OWN doc;
+   >   `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md` § R7-10.
+   Full history: this entry (filed 2026-08-17, task #1049).
+
 49. **R4-5 — Windows huge-page speculative fast-path may miss expensively,
     and existing counters do not show syscall cost (aligned-vmem).**
 

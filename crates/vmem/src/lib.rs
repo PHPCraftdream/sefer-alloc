@@ -4134,10 +4134,17 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
     // task #776 (F8): `.addr()` for the same reason as the fast-path fix
     // above -- a comparison-only read, not a round-trip.
     if p.addr() == MAP_FAILED {
-        core::ptr::null_mut()
-    } else {
-        p
+        return core::ptr::null_mut();
     }
+    // R7-11: POSIX does not guarantee that `mmap(NULL, ...)` never returns address zero.
+    // If the kernel returns a successful mapping at address zero, we must unmap it
+    // to avoid leaking it before returning an error. The crate does not support
+    // address-zero mappings (no caller expects or can safely use them).
+    if p.cast::<u8>().is_null() {
+        unsafe { libc_munmap(p.cast(), len) };
+        return core::ptr::null_mut();
+    }
+    p
 }
 
 #[cfg(all(unix, not(miri)))]
