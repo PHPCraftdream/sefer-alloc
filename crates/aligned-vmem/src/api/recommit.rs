@@ -1,6 +1,7 @@
 use crate::error::VmemError;
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
+#[cfg(not(aligned_vmem_mock))]
 use crate::os::recommit_pages_impl;
 use crate::page_size::page_size;
 

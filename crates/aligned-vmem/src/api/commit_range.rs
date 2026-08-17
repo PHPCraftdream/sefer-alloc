@@ -1,8 +1,9 @@
 use crate::error::VmemError;
-#[cfg(feature = "fault-injection")]
+#[cfg(all(feature = "fault-injection", not(aligned_vmem_mock)))]
 use crate::fault_injection;
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
+#[cfg(not(aligned_vmem_mock))]
 use crate::os::commit_range_impl;
 use crate::page_size::page_size;
 

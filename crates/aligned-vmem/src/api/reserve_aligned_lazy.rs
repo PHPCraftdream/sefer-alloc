@@ -2,6 +2,7 @@ use crate::error::VmemError;
 use crate::lazy_reservation::LazyReservation;
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
+#[cfg(not(aligned_vmem_mock))]
 use crate::os::reserve_aligned_lazy_raw;
 #[cfg(aligned_vmem_mock)]
 use crate::os::reserve_aligned_raw;

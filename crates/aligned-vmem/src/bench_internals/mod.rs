@@ -88,11 +88,21 @@ pub use unix::{
     unix_exact_reserve_attempts, unix_exact_reserve_hits, unix_madvise_attempts,
     unix_madvise_successes, unix_munmap_failures,
 };
+#[cfg(all(
+    feature = "bench-internals",
+    unix,
+    not(miri),
+    any(
+        all(
+            any(target_os = "linux", target_os = "android"),
+            feature = "huge-pages"
+        ),
+        target_pointer_width = "32"
+    )
+))]
+pub(crate) use unix::{UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS};
 #[cfg(all(feature = "bench-internals", unix, not(miri)))]
-pub(crate) use unix::{
-    UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS, UNIX_MADVISE_ATTEMPTS,
-    UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES,
-};
+pub(crate) use unix::{UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES};
 #[cfg(feature = "bench-internals")]
 pub use windows::{
     windows_large_page_alignment_failures, windows_large_page_plain_fallback_successes,

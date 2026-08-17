@@ -1,5 +1,6 @@
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
+#[cfg(not(aligned_vmem_mock))]
 use crate::os::{decommit_pages_impl, DecommitKind};
 use crate::page_size::page_size;
 

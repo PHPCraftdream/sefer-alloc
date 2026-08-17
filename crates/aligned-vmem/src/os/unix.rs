@@ -2,11 +2,19 @@ use core::ptr::NonNull;
 #[cfg(feature = "bench-internals")]
 use core::sync::atomic::Ordering;
 
+#[cfg(all(
+    feature = "bench-internals",
+    any(
+        all(
+            any(target_os = "linux", target_os = "android"),
+            feature = "huge-pages"
+        ),
+        target_pointer_width = "32"
+    )
+))]
+use crate::bench_internals::{UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS};
 #[cfg(feature = "bench-internals")]
-use crate::bench_internals::{
-    UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS, UNIX_MADVISE_ATTEMPTS,
-    UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES,
-};
+use crate::bench_internals::{UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES};
 use crate::error::VmemError;
 use crate::os::{align_up_addr, DecommitKind};
 

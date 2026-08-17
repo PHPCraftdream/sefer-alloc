@@ -913,7 +913,7 @@ impl Drop for Reservation {
     fn drop(&mut self) {
         // Record the release for mock observers (RAII path visibility).
         #[cfg(aligned_vmem_mock)]
-        mock::record(mock::Call::Release {
+        crate::mock::record(crate::mock::Call::Release {
             reservation: self.reservation.as_ptr().addr(),
             reservation_len: self.reservation_len,
         });
