@@ -35,7 +35,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `windows_virtualfree_release_failures()`
   - `unix_munmap_failures()`
   - `huge_decommit_attempts()` for tracking decommit calls on huge-page reservations
-  - `windows_large_page_retry_failures()` / `windows_large_page_alignment_failures()` / `windows_large_page_plain_fallback_successes()` — separate counters for large-page failure modes
+  - `windows_large_page_plain_fallback_successes()` — the "large-page attempt failed, ordinary-page retry succeeded" case, which neither `windows_reserve_commit_single_calls()` (counts logical completion regardless of which attempt won) nor `windows_large_page_retry_failures()` (counts only when BOTH failed) can distinguish (R7-3)
   - `reset_bench_internals_counters()`
   - `validate_page_size()` for testing page size validation logic
 - Mock backend converted from Cargo feature to build-time `--cfg aligned_vmem_mock` flag (no Cargo feature unification risk)
@@ -56,6 +56,85 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Windows single-call fast path for `align <= WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) on full-span commit; when requesting large pages (`MEM_LARGE_PAGES`), the threshold widens to `GetLargePageMinimum()` (typically 2 MiB).
 
 ### Fixed
+
+#### Prerelease audit round 7 (`docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md`)
+
+Eleven findings, no proven UB or memory-safety defect among them. One code
+change with runtime effect (R7-11), one observable-string change (R7-7), one new
+diagnostic counter (R7-3), one gate-coverage fix (R7-8); the rest are
+documentation corrections or recorded decisions. R7's own verdict was a
+CONDITIONAL NO-GO on two conditions — **only one of which is closed here**, see
+"Still open" below.
+
+- **Zero-fill after decommit is no longer promised platform-wide (R7-1, release
+  blocker, CLOSED).** `Reservation`'s and `as_ptr()`'s rustdoc said a
+  decommitted range comes back as fresh zero pages "on Unix". That holds for
+  exactly one of four Unix cases. Both sites now carry a per-platform matrix:
+  Windows (unmapped, access faults), Linux eager `decommit` (zeroed via
+  `MADV_DONTNEED`), Linux `decommit_lazy` (old contents until the kernel
+  reclaims; a write cancels the free), Darwin/BSD (advisory, does not reliably
+  zero), huge reservations (old contents either way). The huge bullet also
+  states the mechanism difference the old text erased: the SAFE methods skip the
+  backend call because they can read `is_huge()`, the FREE functions cannot and
+  still issue the syscall the OS then ignores — do not read "no-op" as "no
+  syscall" for the free functions.
+- **`VmemError::invalid_argument`'s `Display` no longer mislabels every
+  rejection (R7-7).** Six distinct argument-contract checks return this error,
+  but `Display` printed `"size/align contract violation"` for all of them, so a
+  rejected commit RANGE reported a size/align fault. Now
+  `"argument contract violation"`, with the constructor's doc enumerating all six
+  rejecting classes read off the actual call sites.
+- **`mmap` returning address zero is no longer treated as failure-and-leaked
+  (R7-11).** `libc_mmap` used NULL as its failure signal but only tested for
+  `MAP_FAILED`. POSIX does not guarantee `mmap(NULL, ...)` never returns address
+  zero; such a mapping would have been read as a failure and never unmapped. The
+  two cases are now distinguished and a successful zero-address mapping is
+  `munmap`'d before the error is returned. Unix-only path, compiled under
+  `x86_64-unknown-linux-gnu` and `i686-unknown-linux-gnu` but never executed —
+  no portable test can reach it (it needs a kernel that actually maps at zero).
+- **Seven stale documentation sites corrected (R7-9)**, including a README
+  fragment orphaned mid-sentence, a `Cargo.toml` comment still calling
+  `huge_decommit_attempts` an "upper bound incompatibility rate" (it counts
+  early exits since the R6-7 fix) while also claiming the `bench-internals`
+  feature did not exist ten lines above its own declaration, and a
+  `WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` doc describing a "third best-effort
+  retry" that path cannot perform (it never requests `MEM_LARGE_PAGES`).
+- **The module doc's "64-bit Unix compiles the exact-size path out entirely"
+  now names its exception (R7-9).** The Linux AND Android huge-page path
+  (`any(target_os = "linux", target_os = "android")` + `feature = "huge-pages"`,
+  `align == 2 MiB`) is not keyed on pointer width and does still fire on 64-bit.
+  Both rustdoc sites say so, and say Android explicitly — omitting it is the
+  exact shape of an earlier round's R6-3 finding.
+
+##### Recorded decisions, deliberately not code changes
+
+- **R7-4 — NULL a second time.** The claim that a failed Linux/Android huge
+  exact-size `mmap` is followed by a guaranteed-to-also-fail second huge attempt
+  is false in general: the two calls request DIFFERENT sizes (`size` vs
+  `size + align`), so a fragmented or bounded hugetlb pool can satisfy one and
+  refuse the other. Recorded with that counterexample as perf open item 52 so a
+  third review does not re-raise it. Settling it needs a Linux host with and
+  without a configured pool — unreachable from this project's dev host and CI.
+- **R7-5 (64-bit Unix retains `size + align` of VA) and R7-10 (backend tuples /
+  monolithic `lib.rs`)** — recorded as perf open items 53 and 54. R7 asks
+  explicitly that neither be acted on in 0.2.0.
+- **R7-6** — the uniform (not `cfg`-gated) lazy validation against the runtime
+  `page_size()` needed no new record: `validate_initial_commit`'s own doc
+  already states the decision in full, including the half a summary would drop —
+  that on a 16 KiB-page host `reserve_aligned_lazy(size, align, PAGE)` is now
+  REJECTED where it previously worked.
+
+##### Still open — owner decision, NOT closed by this round
+
+- **R7-2 / correctness open item 66: `Reservation` carries no committed-length
+  state,** so a lazy handle's committed prefix is a documented contract rather
+  than a checkable one. This is the SECOND of R7's two conditional-NO-GO
+  conditions and cannot be closed by code. Five options are recorded on the
+  item: a `committed_len` field; a separate `LazyReservation` type; returning
+  `(Reservation, usize)`; explicitly ACCEPTING the caller-tracked contract; or
+  excluding `lazy-commit` from the supported release profile. All five are cheap
+  only while 0.2.0 is unpublished. What both reviews rule out is leaving the
+  question unanswered.
 
 - **Lazy reservation documentation corrected:** `Reservation` type and `as_ptr()` docs now explicitly state that lazy reservations on Windows only commit the `initial_commit` prefix; the tail must be committed via `commit_range` before it's writable. README platform caveats updated with this information. (R6-1 variant 1)
 - **`from_raw_parts` Windows commit-state documentation rewritten:** No longer inaccurately requires all Windows reservations to be created with `MEM_RESERVE | MEM_COMMIT`. Instead documents that partial-commit (lazy) reservations are valid, and explains the `granted_huge` compatibility requirements. (R6-1 variant 2)
