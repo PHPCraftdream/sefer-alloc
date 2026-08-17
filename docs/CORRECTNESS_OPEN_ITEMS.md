@@ -2261,77 +2261,7 @@ resolved" below.)_
 
 65. **CI-coverage gap: `aligned-vmem-gates` job added three steps (cargo doc with RUSTDOCFLAGS="-D warnings", cargo publish --dry-run, cargo semver-checks check-release) that are NOT covered by `npm run check`.** — **CLOSED**, see "Recently resolved" §#65 below.
 
-66. **`Reservation` still carries no committed-length state, so a lazy handle's
-   committed prefix is a DOCUMENTED contract rather than a CHECKABLE one
-   (finding R6-1, variant 3 — deliberately deferred, not closed).** (Filed
-   2026-08-16, task #1037, from
-   `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-1.)
-
-   - **Status:** OPEN — deferred by decision, pending owner sign-off. R6-1
-     offered three remedies; task #1037 implemented variants 1 (documentation)
-     and 2 (`from_raw_parts` contract) and deliberately did NOT implement
-     variant 3 (return committed-prefix metadata from the lazy API, or give
-     lazy reservations their own handle type). Variants 1+2 close the
-     DOCUMENTATION divergence — the rustdoc no longer claims `as_ptr()` is
-     valid for all of `len()` on a lazy Windows handle, and `from_raw_parts`
-     no longer demands a single combined `MEM_RESERVE | MEM_COMMIT` call that
-     the crate's own lazy path does not make. They do NOT close the STATEFUL
-     gap: nothing in the public API lets a holder of a `Reservation` ask which
-     prefix is committed, so the contract stays one the caller must track
-     externally and can violate with no diagnostic beyond an access violation.
-     Any claim that R6-1 is "fully closed" is wrong; the batch report for
-     #1037 made exactly that claim and it was corrected at review.
-   - **Current number/verdict:** the gap is precisely one missing observable.
-     `Reservation`'s fields are `base`/`len`/`reservation`/`reservation_len`/
-     `align`/`granted_huge` — there is no `committed_len`. `commit_range`
-     validates bounds and `page_size()` multiples, never "was this already
-     committed".
-   - **Next trigger:** an owner decision, cheapest before 0.2.0 ships. The
-     three shapes and their costs, recorded so the decision rests on
-     substance rather than a re-derivation: (a) add a `committed_len` field
-     to `Reservation` — changes no public signature but grows the struct and
-     forces every construction site to supply it, including `from_raw_parts`,
-     already a 6-argument `unsafe fn` whose arity was itself a prior finding;
-     (b) a separate `LazyReservation` type — cleanest contract, but either
-     duplicates the decommit/recommit/commit_range surface or needs a
-     deref/conversion story; (c) return `(Reservation, usize)` from the lazy
-     constructors — smallest diff, but a breaking signature change that
-     leaves the value unattached to the handle it describes. All three are
-     cheap now (crates.io carries only 0.1.0; 0.2.0 is unpublished) and
-     expensive afterwards.
-   - **Evidence:** `crates/aligned-vmem/src/lib.rs` — `Reservation`'s field list and
-     the "Validity scope" section of `as_ptr`'s rustdoc (the lazy exception
-     added by task #1037); `reserve_aligned_lazy`'s rustdoc (promises only
-     `initial_commit` is committed on Windows); `validate_initial_commit`
-     (validates shape, not commit state); the two `reserve_aligned_lazy_raw`
-     backends — the Unix one ignores `initial_commit` entirely and delegates
-     to `reserve_aligned_raw`, which is why this gap is Windows-only in
-     practice.
-   - **RE-RAISED independently as R7-2** (2026-08-17, task #1044,
-     `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md`). R7 is a
-     fresh static pass over `2ad2607` that reaches this item on its own and
-     names R7-2 as ONE OF THE TWO conditions of its conditional NO-GO for
-     publishing with `lazy-commit` enabled. (The other, R7-1, is a
-     documentation defect and IS closed by code — task #1043.) R7 itself
-     states this is "the remainder of open item 66, not a new divergence in
-     the docs", so this card stays the single live record; no new item was
-     opened for it.
-   - **A FOURTH option R7 adds, absent from the three above:** explicitly
-     ACCEPT the caller-tracked contract as a deliberate decision, or exclude
-     `lazy-commit` from the supported release profile and demote the risk to
-     backlog. This is strictly cheaper than (a)/(b)/(c) — it costs a recorded
-     decision and no API change — and it is a legitimate answer rather than
-     an evasion: the gap is Windows-only and reachable only through an
-     opt-in feature. What both reviews rule out is leaving the question
-     UNANSWERED. R7's wording: "это решение должно быть зафиксировано".
-     Publishing with the contract neither implemented nor explicitly
-     accepted is the one outcome neither review permits.
-   - **Owner decision, not an engineering call.** Five options are open
-     (a/b/c above, accept-as-is, drop-the-feature); all are cheap only while
-     0.2.0 is unpublished; none can be chosen from inside the code. Recorded
-     rather than acted on — the same posture task #1037 took when it
-     implemented R6-1's variants 1 and 2 and deliberately left variant 3.
-   Full history: this entry.
+66. **`Reservation` carried no committed-length state, so a lazy handle's committed prefix was a DOCUMENTED contract rather than a CHECKABLE one (R6-1 variant 3 / R7-2).** — **CLOSED** by the new `LazyReservation` type (task #1051), see "Recently resolved" §#66 below — including why all five options this card previously listed were set aside for a sixth.
 
 67. **Commit `4a6c77e`'s body describes a test branch that does not exist; the
    text is unrewritable, so it is recorded here instead.** (Filed 2026-08-16,
@@ -2436,6 +2366,17 @@ resolved" below.)_
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+66. **`Reservation` carried no committed-length state (R6-1 / R7-2, the second of R7's two conditional-NO-GO conditions).** — **CLOSED** by task #1051, commit `0c1e6c4`.
+
+   - **What this card asked for, and why none of its five options were taken.** The card listed: (a) a `committed_len` field on `Reservation`; (b) a separate `LazyReservation` type; (c) returning `(Reservation, usize)`; (d) explicitly ACCEPTING the caller-tracked contract; (e) excluding `lazy-commit` from the supported release profile. I first recommended (d) plus a capability query, on the ground that a field cannot be kept truthful. The owner rejected (d): we are publishing a library, and shipping sharp primitives with the invariants left to prose is the C++ path — consumers should get tools, not homework. That objection was correct, and my argument had been aimed at the wrong target: it was an argument against BOLTING A FIELD ONTO `Reservation`, not against moving the bookkeeping into the crate at all.
+   - **Why the field genuinely could not work** (the part of the analysis that survives, and the reason (a) stays rejected): `Reservation`'s mutating methods take `&self`, not `&mut self`, so they cannot update a plain field; the free primitives take a bare `*mut u8` and never see the handle at all; the crate's own only consumer uses exactly those free primitives (`src/alloc_core/os.rs`); and `into_full_parts`/`from_raw_parts` would need a seventh field supplied by the caller, i.e. the field would be only as true as the caller — today's contract with more surface.
+   - **What was built instead — option (b), sharpened.** `LazyReservation` owns the `Reservation` AND a watermark. `ensure_committed(len)` is idempotent and monotone (a call at or below the watermark issues no syscall), which is what removes the caller's "did I already commit this?" bookkeeping; `shrink_committed` rounds UP so a page holding bytes the caller asked to keep is never released; `into_reservation()` is the explicit door out. Mutators take `&mut self` — not hygiene, but the crate finally stating a requirement it always had: the watermark is racy and concurrent committers must serialise, which nothing under the raw primitives ever said.
+   - **The boundary that keeps this a tool and not an allocator.** Exactly one `usize` is tracked; arbitrary committed/uncommitted HOLES are deliberately not representable. Governing rule, reusable for future proposals: the crate takes on state ONLY when the OS does not cheaply expose it AND the caller would otherwise have to invent it. "How much is committed" passes (Windows knows but charges a `VirtualQuery`; Unix has no such notion); "is THIS page committed" does not, and is not offered.
+   - **`lazy_commit_is_honored()`** (const fn) completes the family `decommit_reclaims_and_zeroes()` / `is_huge()`: where a platform difference exists, expose it as something to branch on. `LazyReservation::new` derives the initial watermark FROM that query rather than from the caller's `initial_commit`, which is what makes the two incapable of disagreeing.
+   - **Honest limit, documented on the type:** `as_ptr()` still hands out the raw pointer and passing it to the raw primitives makes the watermark stale. No API over raw memory can prevent that. What changed is the DEFAULT — the tracked path is what you get without asking.
+   - **Verification:** new `tests/lazy_reservation.rs`, 10 tests, every platform arm asserting rather than skipping. Two counterfactuals run personally: rounding DOWN instead of up made `ensure_committed_rounds_up_to_a_page` FAIL; advancing the watermark WITHOUT issuing the commit killed the binary with `STATUS_ACCESS_VIOLATION` (0xc0000005), proving the writability test touches real OS-committed memory. Both reverted, suite re-run green.
+   - **Consequence for the release:** this was the SECOND of R7's two conditional-NO-GO conditions (the first, R7-1, was closed by code in `13723d7`). Both are now closed.
 
 50-U10. **`aligned-vmem` — the U10 half of item 50 ("Windows `bench-internals` reserve-path counters have zero test coverage") rested on a FALSE premise and is closed.** (Filed round 8, task #903, finding U10 of `docs/reviews/2026-08-13-aligned-vmem-round8-review.md`; re-flagged as stale by R7-9 and closed by task #1045.)
 

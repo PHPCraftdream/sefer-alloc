@@ -9,6 +9,40 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - Safe `Reservation` methods for page-level memory management: `decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`, `try_commit_range`
+- **`LazyReservation`** — a `Reservation` that also tracks how much of itself is
+  committed, so callers of the lazy path no longer have to invent that
+  bookkeeping. Exactly one number is tracked, a watermark: `[0, committed_len())`
+  is committed. `ensure_committed(len)` is idempotent and monotone (a call at or
+  below the watermark issues no syscall and no error), which is what removes the
+  "did I already commit this?" question entirely; it rounds UP to a page, so
+  `len` need not be page-aligned. `shrink_committed(len)` also rounds UP, so a
+  page holding bytes you asked to KEEP is never released.
+  `into_reservation()` is the explicit door out for callers keeping their own
+  commit state. The mutators take `&mut self` — not bookkeeping hygiene, but the
+  crate stating a requirement it always had: the watermark is racy, concurrent
+  committers must serialise, and under the raw primitives nothing ever said so.
+  Arbitrary committed/uncommitted HOLES are deliberately not representable —
+  that is a per-page bitmap, i.e. an allocator's job, not this crate's. (item 66
+  / R7-2)
+- **`lazy_commit_is_honored()`** (`const fn`) — whether this platform's backend
+  actually honors `initial_commit`, i.e. whether "lazy" is real here. Only the
+  Windows native backend performs a genuine two-phase
+  reserve-then-commit-prefix; Unix delegates to the eager path, miri models no
+  RSS, and the mock backend chains to eager deliberately. Previously this was
+  discoverable only by reading the backend source. Third member of the family
+  `decommit_reclaims_and_zeroes()` / `is_huge()`: where a platform difference
+  exists, expose it as something to branch on rather than a caveat in prose.
+  `LazyReservation` derives its initial watermark FROM this query, which is what
+  makes the two incapable of disagreeing.
+- **`try_decommit()`** — the fallible twin `decommit` never had. Of this crate's
+  state-changing primitives, `decommit`/`decommit_lazy` were the only pair with
+  no `try_*` form, and also the only ones that silently do nothing on a contract
+  violation: silent AND unreportable in one place. An EMPTY page-aligned range
+  is a well-formed no-op returning `Ok(())`, distinguished from a violation —
+  `decommit`'s single `start >= end` early return conflates the two. The OS
+  refusing or ignoring the request is deliberately NOT an error: decommit is
+  best-effort by nature, and reporting that as `Err` would promise a portable
+  guarantee the platforms do not give.
 - `MIN_PAGE` constant as an alias for `PAGE` with clearer semantics
 - `page_size()` function to query the actual OS page size at runtime
 - `ReservationParts` typed wrapper and `into_reservation_parts()` method
@@ -45,6 +79,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **BREAKING (pre-publish): `reserve_aligned_lazy` / `try_reserve_aligned_lazy`
+  now return `LazyReservation`** instead of `Reservation`. Callers that keep
+  their own commit bookkeeping add `.into_reservation()`. Chosen over adding a
+  second parallel constructor so there is ONE obvious way to make a lazy
+  reservation; 0.2.0 is unpublished, so the change costs nothing.
+- **`decommit` now `debug_assert!`s on a range-contract violation.** Its
+  signature returns `()` and has nowhere to report one, so a debug build says so
+  loudly and a consumer's own test fails at the mistake instead of quietly
+  decommitting nothing. Zero cost in release; the fallible form is
+  `try_decommit`.
 - `page_size()` granularity is now used for decommit/recommit validation instead of compile-time `PAGE` constant
 - **lazy-commit contract tightened:** `reserve_aligned_lazy` now requires both `size` and `initial_commit` to be multiples of the runtime `page_size()` (not just `PAGE`). This prevents unwritable tails on systems where `page_size() > PAGE` (e.g., 64 KiB Windows configurations or 16 KiB macOS), where `commit_range` only accepts page_size()-aligned offsets. Mainstream Windows (page_size() == 4096) is unaffected. (R6-2)
 - All OS error paths now capture `errno`/`GetLastError` immediately before cleanup FFI

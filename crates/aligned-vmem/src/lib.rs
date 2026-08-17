@@ -2437,6 +2437,16 @@ pub unsafe fn release_parts(parts: ReservationParts) {
 /// lazy `decommit_lazy` path uses `MADV_FREE`-family advice on Darwin/BSDs and
 /// DOES free pages on those platforms.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
+    // A contract violation here is silent BY SIGNATURE — this function returns
+    // `()` and has nowhere to report one. In a debug build say so loudly, so a
+    // consumer's own test fails at the mistake rather than quietly decommitting
+    // nothing and leaving the memory resident. Zero cost in release.
+    debug_assert!(
+        decommit_range_is_well_formed(start, end),
+        "aligned-vmem: decommit({start}, {end}) violates the range contract \
+         (start > end, or an endpoint is not a multiple of page_size()); the \
+         call does nothing. Use try_decommit for the fallible form."
+    );
     let ps = page_size();
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
@@ -2453,6 +2463,60 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     unsafe {
         decommit_pages_impl(base, start, end, DecommitKind::Eager)
     };
+}
+
+/// Whether `[start, end)` is a well-formed decommit range: `start <= end` and
+/// both endpoints are multiples of the runtime [`page_size()`].
+///
+/// An EMPTY range (`start == end`, page-aligned) is well-formed — it is a
+/// deliberate no-op, not a mistake. That distinction is why this predicate
+/// exists separately from the `start >= end` early-return in [`decommit`]:
+/// the early return conflates "nothing to do" with "you got the arguments
+/// wrong", and only the second deserves a diagnostic.
+#[must_use]
+fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
+    let ps = page_size();
+    start <= end && start.is_multiple_of(ps) && end.is_multiple_of(ps)
+}
+
+/// Fallible [`decommit`]: the same operation, with a channel for the one thing
+/// `decommit` cannot report.
+///
+/// Of this crate's state-changing primitives, `decommit`/[`decommit_lazy`] were
+/// the only pair with no fallible twin — and also the only ones that do nothing
+/// at all on a contract violation. The worst two properties met in one place:
+/// silent AND unreportable. This closes the first half.
+///
+/// # Errors
+///
+/// [`VmemError::invalid_argument`] if `start > end`, or either endpoint is not
+/// a multiple of the runtime [`page_size()`]. An empty page-aligned range
+/// (`start == end`) is a well-formed no-op and returns `Ok(())`.
+///
+/// Note what is deliberately NOT an error: the OS refusing or ignoring the
+/// request. `decommit` is best-effort by nature — on Darwin and the BSDs
+/// `MADV_DONTNEED` is advisory, and on a huge-page reservation the operation is
+/// incompatible outright. Reporting those as `Err` would promise a portable
+/// guarantee the platforms do not give. Use
+/// [`Reservation::decommit_reclaims_and_zeroes`] to learn what the platform
+/// actually does.
+///
+/// # Safety
+///
+/// Identical to [`decommit`]: `base` must be the usable base of a live
+/// reservation owned by the caller, and `[base+start, base+end)` must lie
+/// within its usable span.
+pub unsafe fn try_decommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    if !decommit_range_is_well_formed(start, end) {
+        return Err(VmemError::invalid_argument());
+    }
+    if start == end {
+        return Ok(());
+    }
+    // SAFETY: forwarded from this function's own `# Safety` contract, which is
+    // identical to `decommit`'s.
+    unsafe { decommit(base, start, end) };
+    Ok(())
 }
 
 /// Lazy decommit variant: hint the OS it MAY reclaim `[base+start, base+end)`
