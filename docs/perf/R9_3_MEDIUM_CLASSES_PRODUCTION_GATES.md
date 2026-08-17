@@ -230,7 +230,7 @@ here by direct 15×-launch of the prebuilt binary following the
 by direct `cargo build ... --features "production medium-classes"` then the same
 N×-launch protocol). Windows `PagefileUsage` is the commit-charge axis the R6
 review (§4 P0-2 / §5.5 item 9 / §6 Stage A.3) added specifically because the
-inline `HeapCore` is demand-zero-committed by `crates/vmem` and therefore
+inline `HeapCore` is demand-zero-committed by `crates/aligned-vmem` and therefore
 invisible to RSS/`WorkingSetSize` until touched. medians of 15 fresh-process
 samples:
 

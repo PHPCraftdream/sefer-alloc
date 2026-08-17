@@ -4,7 +4,7 @@
 //! ## The design defect (pre-R12-2)
 //!
 //! `numa-shim` scans up to 64 real OS node ids
-//! (`crates/numa/src/lib.rs::cpu_to_numa_node`, `for node in 0u32..64`), but
+//! (`crates/numa-shim/src/lib.rs::cpu_to_numa_node`, `for node in 0u32..64`), but
 //! the segment directory's `node_bucket` used to map a segment's `node_id`
 //! to its bucket by using the raw OS node id as a DIRECT array index clamped
 //! at `MAX_NODES = 8` (`src/alloc_core/segment_directory.rs`). Every node id

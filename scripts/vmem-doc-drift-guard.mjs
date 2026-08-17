@@ -36,7 +36,7 @@ import { REPO_ROOT, run } from './lib.mjs';
 import { readFileSync } from 'fs';
 
 async function main() {
-  const vmemDir = `${REPO_ROOT}/crates/vmem`;
+  const vmemDir = `${REPO_ROOT}/crates/aligned-vmem`;
 
   const filePaths = [
     `${vmemDir}/src/lib.rs`,

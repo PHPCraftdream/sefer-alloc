@@ -6,9 +6,9 @@ research reports; siblings cover concurrency primitives, OS/platform, test-infra
 working tree at time of writing; note that `src/alloc_core/alloc_core_{large,small}*.rs`
 were mid-refactor (untracked split of `alloc_core.rs`) and are treated as unstable.
 
-**Already extracted** (do not re-propose): `aligned-vmem` (`crates/vmem`),
-`sefer-region` (`crates/region`), `numa-shim` (`crates/numa`), `malloc-bench`
-(`crates/malloc-bench`). The precedent that matters: `aligned-vmem` was extracted
+**Already extracted** (do not re-propose): `aligned-vmem` (`crates/aligned-vmem`),
+`sefer-region` (`crates/sefer-region`), `numa-shim` (`crates/numa-shim`), `malloc-bench`
+(`crates/malloc-bench-rs`). The precedent that matters: `aligned-vmem` was extracted
 *because* its entire purpose is a confined concern with standalone community value —
 the bar the candidates below are measured against.
 

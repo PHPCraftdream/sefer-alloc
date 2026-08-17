@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 description = "Cross-platform aligned anonymous virtual memory: reserve, commit, decommit, and release power-of-two-aligned spans via mmap/VirtualAlloc. Zero dependencies, miri-friendly."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
-homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/vmem"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/aligned-vmem"
 documentation = "https://docs.rs/aligned-vmem"
 keywords = ["mmap", "virtualalloc", "memory", "decommit", "aligned"]
 categories = ["memory-management", "os"]
@@ -22,7 +22,7 @@ categories = ["memory-management", "os"]
 # task #962, per docs/CORRECTNESS_OPEN_ITEMS.md item 42) so `all-features`
 # CANNOT turn it on. `bench-internals` is excluded — it is a diagnostic
 # counter surface with no consumer-facing purpose. Mirrors the same decision
-# made for `numa-shim` (`crates/numa/Cargo.toml` — note that numa-shim's own
+# made for `numa-shim` (`crates/numa-shim/Cargo.toml` — note that numa-shim's own
 # mock is still a feature there).
 [package.metadata.docs.rs]
 features = ["lazy-commit", "huge-pages", "fault-injection"]

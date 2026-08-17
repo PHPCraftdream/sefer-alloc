@@ -223,7 +223,7 @@ try {
       '    total VM size) is a SEPARATE axis from RSS, added here — it does NOT\n' +
       '    replace the RSS numbers above. WHY IT EXISTS (R6-OPT-A1, radical_\n' +
       '    optimization_review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows,\n' +
-      '    `crates/vmem` commits the FULL exact size of the Registry + inline\n' +
+      '    `crates/aligned-vmem` commits the FULL exact size of the Registry + inline\n' +
       '    `HeapOverflow` array in one `VirtualAlloc(MEM_COMMIT)` call, which is\n' +
       '    largely demand-zero and therefore invisible to RSS/`WorkingSetSize` until\n' +
       '    pages are actually touched — RSS alone hides this cost entirely. Expect\n' +

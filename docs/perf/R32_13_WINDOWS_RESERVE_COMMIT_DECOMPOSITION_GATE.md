@@ -12,7 +12,7 @@ WSL/Valgrind needed, unlike most of this backlog.
 **Date:** 2026-08-03. **Base revision measured:** `main` @
 `f126de1a77f01c6a33f605d0985a29cf71862ab5` (working tree carrying only this
 task's own additive edits at measurement time — `git status --short`
-showed `Cargo.toml`, `crates/vmem/Cargo.toml`, `crates/vmem/src/lib.rs`,
+showed `Cargo.toml`, `crates/aligned-vmem/Cargo.toml`, `crates/aligned-vmem/src/lib.rs`,
 `src/alloc_core/alloc_core_core_diag.rs`, `src/alloc_core/alloc_core_small_pool.rs`,
 `src/alloc_core/os.rs`, `src/registry/heap_core_diag.rs`,
 `tests/dbg_hook_safety_tripwire.rs`, `README.md` modified, plus new files
@@ -52,7 +52,7 @@ adds two things R29-3 never measured:
    `VirtualAlloc(MEM_COMMIT)` into one timed region — correct for Linux
    (where `mmap` commits eagerly in one call, so there is nothing to
    split) but too coarse for Windows, where they are unconditionally TWO
-   separate syscalls (`crates/vmem/src/lib.rs`'s `win_reserve_commit`,
+   separate syscalls (`crates/aligned-vmem/src/lib.rs`'s `win_reserve_commit`,
    `:800-866`). This task's new `dbg_decomp_win_reserve_only`/
    `_commit_only`/`_release_only` hooks isolate them.
 2. **A path-activation oracle for the F11-step-1 counters** (see §3.1) —
@@ -68,7 +68,7 @@ pattern already plumbed through `src/alloc_core/os.rs` (confirmed at
 `:52-57` — not `:374-386` as the survey guessed; the survey's own citation
 was an approximate line reference, corrected here):
 
-- `aligned_vmem::UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` (`crates/vmem/src/lib.rs`) —
+- `aligned_vmem::UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` (`crates/aligned-vmem/src/lib.rs`) —
   hit/total pair around `try_reserve_aligned_exact`, settling the Unix
   "coin flip" question the survey computed a theoretical bound for but
   never measured.
@@ -261,8 +261,8 @@ functions (`commit_pages`/`reserve_lazy`), reachable only from
 
 | file | change |
 |---|---|
-| `crates/vmem/Cargo.toml` | +1 `bench-internals` feature (crate-local, no dependencies) |
-| `crates/vmem/src/lib.rs` | +3 `bench-internals`-gated `AtomicU64` counters + accessors + reset hook; 2 increment sites (`try_reserve_aligned_exact`, `win_reserve_commit`) |
+| `crates/aligned-vmem/Cargo.toml` | +1 `bench-internals` feature (crate-local, no dependencies) |
+| `crates/aligned-vmem/src/lib.rs` | +3 `bench-internals`-gated `AtomicU64` counters + accessors + reset hook; 2 increment sites (`try_reserve_aligned_exact`, `win_reserve_commit`) |
 | `src/alloc_core/os.rs` | +1 `bench-internals`-gated `Segment::reserve_lazy_for_measurement` + 1 `bench-internals`-gated `commit_pages_for_measurement` |
 | `src/alloc_core/alloc_core_core_diag.rs` | +6 `dbg_*` accessors delegating to the new `aligned_vmem` counters |
 | `src/alloc_core/alloc_core_small_pool.rs` | +3 `bench-internals`-gated decomposition hooks (`dbg_decomp_win_reserve_only`/`_commit_only`/`_release_only`) |

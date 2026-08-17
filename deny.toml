@@ -83,8 +83,8 @@ wildcards = "warn"
 [sources]
 # Allow only crates.io as a registry source; deny any git-sourced or
 # unknown-registry dependency. Workspace-local path crates
-# (crates/vmem, crates/numa, crates/region, crates/malloc-bench, and the
-# root's path-dep on crates/region) are allowed implicitly by cargo-deny's
+# (crates/aligned-vmem, crates/numa-shim, crates/sefer-region, crates/malloc-bench-rs, and the
+# root's path-dep on crates/sefer-region) are allowed implicitly by cargo-deny's
 # default `unknown-workspace` handling (workspace members are trusted).
 unknown-registry = "deny"
 unknown-git = "deny"

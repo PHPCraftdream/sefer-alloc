@@ -91,7 +91,7 @@ Four structural performance levers from the static release audit were measured:
 
 ### Methodology
 
-Benchmark probe (`crates/region/benches/r828_dense_iteration_probe.rs`):
+Benchmark probe (`crates/sefer-region/benches/r828_dense_iteration_probe.rs`):
 
 1. **Iteration axis**: Compare `SlotMap<DefaultKey, u64>` (holey iteration) vs `DenseSlotMap<DefaultKey, u64>` (compact iteration) on 100k populated → 10k live (90% removed) state, measuring time per full `iter()` pass (1000 passes per sample, `black_box`-guarded sum to prevent dead-code elimination).
 2. **Churn axis**: Compare insert/remove throughput on a churny workload (repeated insert+remove cycles, 50k operations per sample).
@@ -137,7 +137,7 @@ A full implementation requires resolving these questions (handle identity, gener
 
 ### Methodology
 
-Benchmark probe (`crates/region/benches/r828_batch_guard_probe.rs`) comparing three access patterns for N=64 lookups (same N as the original audit's 31.6× measurement):
+Benchmark probe (`crates/sefer-region/benches/r828_batch_guard_probe.rs`) comparing three access patterns for N=64 lookups (same N as the original audit's 31.6× measurement):
 
 1. **one-shot**: Fresh `read()` call per lookup.
 2. **manual_guard**: Single guard held across all lookups (existing pattern).
@@ -168,7 +168,7 @@ Also measured the manual-guard pattern under 8 concurrent readers to check conte
 |-----|-----------|-------------|
 | concurrent_manual_guard | 5.4 | 5.4 |
 
-**Correction (found by the #832 closing review, F-C5):** this report originally read the 1.12× figure as "small, well within noise" — backwards. The concurrent arm's 5.40 ns/lookup is *aggregate* per-op cost across 8 readers, so comparing it directly to the single-threaded 4.84 ns/lookup means: aggregate throughput with 8 readers is **~11% LOWER** than with 1 reader (1/5.40 ≈ 185M lookups/s vs. 1/4.84 ≈ 207M lookups/s) — i.e. **zero** read scaling — and each thread's own per-lookup latency degrades to roughly 5.40 × 8 ≈ 43 ns, an **~8.9× per-thread slowdown** versus the single-threaded 4.84 ns. This is a real, substantial `RwLock` read-acquisition-contention effect, consistent with the shared-cache-line cost this same round's R827 report documents for `NEXT_REGION_ID` and with `crates/region/README.md`'s existing "Contended reads" section. The P-perf-2 verdict (GO opt-in) is unaffected by this correction — if anything, real read contention makes the batching API's case stronger, not weaker — but the original "well within noise" characterization was wrong and would have misled anyone sizing a reader fleet.
+**Correction (found by the #832 closing review, F-C5):** this report originally read the 1.12× figure as "small, well within noise" — backwards. The concurrent arm's 5.40 ns/lookup is *aggregate* per-op cost across 8 readers, so comparing it directly to the single-threaded 4.84 ns/lookup means: aggregate throughput with 8 readers is **~11% LOWER** than with 1 reader (1/5.40 ≈ 185M lookups/s vs. 1/4.84 ≈ 207M lookups/s) — i.e. **zero** read scaling — and each thread's own per-lookup latency degrades to roughly 5.40 × 8 ≈ 43 ns, an **~8.9× per-thread slowdown** versus the single-threaded 4.84 ns. This is a real, substantial `RwLock` read-acquisition-contention effect, consistent with the shared-cache-line cost this same round's R827 report documents for `NEXT_REGION_ID` and with `crates/sefer-region/README.md`'s existing "Contended reads" section. The P-perf-2 verdict (GO opt-in) is unaffected by this correction — if anything, real read contention makes the batching API's case stronger, not weaker — but the original "well within noise" characterization was wrong and would have misled anyone sizing a reader fleet.
 
 ### Analysis
 
@@ -186,7 +186,7 @@ Open question #3 (whether `with_read`'s closure should allow calling back into t
 
 ### Methodology
 
-Benchmark probe (`crates/region/benches/r828_drop_outside_lock_probe.rs`) comparing two clear patterns on `SyncRegion<SlowDrop>` with 10,000 values, where `SlowDrop` has an artificial 50µs delay in its destructor:
+Benchmark probe (`crates/sefer-region/benches/r828_drop_outside_lock_probe.rs`) comparing two clear patterns on `SyncRegion<SlowDrop>` with 10,000 values, where `SlowDrop` has an artificial 50µs delay in its destructor:
 
 1. **baseline**: `sync_region.write().clear()` drops values under the write lock.
 2. **two-phase**: `std::mem::replace(&mut *guard, Region::new())` under the lock (fast structural swap), then `drop(guard)` to release the lock, then `drop(old_region)` outside the lock (slow, but no longer blocking readers).
@@ -269,4 +269,4 @@ The note also identifies an open design fork (Shape A vs B for shard-id encoding
 - **P-perf-4**: Real, large, reproducible tail-latency benefit once the probe's synchronization bug was fixed. The semantic design work (region_id/generation survival, panic safety, and landing the actual fix inside `SyncRegion::clear()`) is the real blocker for implementation, not a measurement gap.
 - **P-perf-5**: Not remeasured; defers to a confirmed production bottleneck. The design note's Shape A vs B fork remains unresolved.
 
-All three benchmark probes use ONLY the existing public API (`Region<T>`, `SyncRegion<T>`) and direct slotmap types within the bench files. NO changes were made to `crates/region/src/` — this was a measurement-only task per the scope constraint in task #828.
+All three benchmark probes use ONLY the existing public API (`Region<T>`, `SyncRegion<T>`) and direct slotmap types within the bench files. NO changes were made to `crates/sefer-region/src/` — this was a measurement-only task per the scope constraint in task #828.

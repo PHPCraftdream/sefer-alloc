@@ -130,7 +130,7 @@ Investigated and ruled out as the mechanism, in order:
    `MAX_SEGMENTS` — registry+hash+free-list metadata region grows from
    28,672 to 114,688 bytes, +86,016 bytes = +21 pages). Ruled out: this
    value only affects the Windows lazy-commit path
-   (`crates/vmem/src/lib.rs`'s `#[cfg(all(windows, not(miri), feature =
+   (`crates/aligned-vmem/src/lib.rs`'s `#[cfg(all(windows, not(miri), feature =
    "lazy-commit"))]` `reserve_aligned_lazy_raw`). The Unix/Linux variant
    (`#[cfg(all(unix, not(miri), feature = "lazy-commit"))]`, the one WSL's
    `npm run iai` actually compiles and runs) takes an `_initial_commit:

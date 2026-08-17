@@ -127,7 +127,7 @@ fn fresh_small_segment_frontier_is_correct() {
     // Determine the expected frontier based on the lazy-commit mode + platform.
     // `reserve_small_segment` (alloc_core_small.rs, R8-5/task #218) sets the
     // frontier with a 3-way split mirroring the THREE
-    // `reserve_aligned_lazy_raw` implementations in `crates/vmem/src/lib.rs`:
+    // `reserve_aligned_lazy_raw` implementations in `crates/aligned-vmem/src/lib.rs`:
     //   - `numa-aware` (any platform): `SEGMENT` (NUMA reservations stay eager —
     //     P2 gate).
     //   - NOT `numa-aware` AND real Windows (not miri): `meta_end +

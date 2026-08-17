@@ -184,7 +184,7 @@ A pooled segment is, by the admission rule (`alloc_core_small_pool.rs:177-
 188`), FULLY CARVED (`bump` near `SEGMENT`) with every block on some class free
 list (it emptied at `live_count == 0`, so every block is free). Decommitting
 its payload `[small_decommit_start(), SEGMENT)` and later recommitting it
-yields, per backend (`crates/vmem/src/lib.rs:416-503`):
+yields, per backend (`crates/aligned-vmem/src/lib.rs:416-503`):
 
 - **Windows (`MEM_DECOMMIT` then `VirtualAlloc(MEM_COMMIT)`):** recommit is
   demand-zero. Every block's first word reads `0x0` → `Node::read_next`
@@ -197,7 +197,7 @@ yields, per backend (`crates/vmem/src/lib.rs:416-503`):
 - **Linux (`MADV_DONTNEED`):** re-access supplies a fresh zero page
   transparently. Identical to Windows: `next` reads null, chain collapses.
 - **macOS (`MADV_DONTNEED`, advisory + lazy):** re-access is NOT zero-fill
-  (`crates/vmem/src/lib.rs:448-456`, and R9-5 §2 "OS-zero guarantee"). `next`
+  (`crates/aligned-vmem/src/lib.rs:448-456`, and R9-5 §2 "OS-zero guarantee"). `next`
   reads as ARBITRARY GARBAGE — a wild pointer. `pop_free` computes
   `(next - segment) as u32` (`alloc_core_small.rs:870`), producing a garbage
   offset, and the NEXT `pop_free`/`drain_freelist_batch` derefs it via

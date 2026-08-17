@@ -1160,7 +1160,7 @@ exist and is the real cost.
 
 ### F11 — every Windows segment reservation over-reserves `size + align` (2× the VA for a 4 MiB segment) and never trims it, because the backend has no aligned-reservation fast path at all — unlike the Unix backend, which has one whose hit rate has never been measured (NEW; the Windows half sits on OPEN_ITEMS item 16's own named-but-unexplored trigger)
 
-**What / where.** `crates/vmem/src/lib.rs`, the two backends of
+**What / where.** `crates/aligned-vmem/src/lib.rs`, the two backends of
 `reserve_aligned_raw`:
 
 - **Windows** (`:789-866`). `reserve_aligned_raw` → `win_reserve_commit`,
@@ -1254,7 +1254,7 @@ the first time.
 1. **Cheapest first step, zero risk, answers the Unix question outright:** two
    counters (hit / total) in `unix_reserve` around
    `try_reserve_aligned_exact`, plus a Windows-side count of reserve+commit
-   pairs. `crates/vmem` already has `SEGMENTS_RESERVED_TOTAL`/`..._RELEASED_TOTAL`
+   pairs. `crates/aligned-vmem` already has `SEGMENTS_RESERVED_TOTAL`/`..._RELEASED_TOTAL`
    plumbed through `src/alloc_core/os.rs:374-386` and surfaced in
    `AllocStats` — the same pattern extends in a few lines. Per CLAUDE.md's
    benchmark-hook rule these must be `bench-internals`-gated. This turns
@@ -1457,7 +1457,7 @@ disassembly check of `SeferAlloc::alloc`'s prologue on the `x86_64-pc-windows-ms
 target would settle it in minutes and is worth doing once, given item 24's
 standing unexplained Windows wall-clock signal (see F11).
 
-**(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa/` exists
+**(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa-shim/` exists
 (833 lines) with `src/alloc_core/numa.rs` (125 lines) as the in-crate seam, but
 `numa-aware` is **not part of `production`**, so every NUMA-touching site
 (`alloc_core_large.rs:382-407`, `:487-488`, `:349-353`) compiles out of the

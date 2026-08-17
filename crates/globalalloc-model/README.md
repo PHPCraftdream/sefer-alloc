@@ -18,7 +18,7 @@ live blocks), asserting the **M1–M4 correctness oracles** on every step:
 - **`realloc` prefix preservation:** the `min(old, new)` prefix is preserved.
 
 This is the correctness twin of
-[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs) (the performance
+[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs-rs) (the performance
 side). Nothing else on crates.io offers a ready "differential-test your
 `GlobalAlloc` against a model with UAF/overlap/zeroed/realloc oracles" kit.
 

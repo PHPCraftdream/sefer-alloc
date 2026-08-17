@@ -97,13 +97,13 @@
 // standalone. Six are pulled into sefer-alloc's runtime dep tree under named
 // feature gates; the other four are dev-only infra:
 //
-//   sefer-region       (crates/region)             — typed handle store (this re-export; runtime, no feature gate)
-//   aligned-vmem       (crates/vmem)               — OS virtual-memory aperture          (feature: alloc-core)
-//   numa-shim          (crates/numa)               — NUMA detection + binding            (feature: numa-aware)
+//   sefer-region       (crates/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
+//   aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
+//   numa-shim          (crates/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
 //   racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
 //   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
 //   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack         (feature: alloc-global)
-//   malloc-bench-rs    (crates/malloc-bench)       — portable GlobalAlloc bench harness  (dev-only)
+//   malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
 //   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
 //   proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
 //   proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol    (dev-only)
@@ -125,15 +125,15 @@
 //
 // EXTERNAL publishable crates (each independently auditable):
 //
-//   aligned-vmem  (crates/vmem/src/lib.rs)         — #![allow(unsafe_code)]
+//   aligned-vmem  (crates/aligned-vmem/src/lib.rs)         — #![allow(unsafe_code)]
 //     Sole purpose: SEGMENT-aligned mmap/VirtualAlloc + page decommit/recommit.
 //     Entire crate = OS aperture. Small, single-responsibility. Audit in isolation.
 //
-//   numa-shim     (crates/numa/src/lib.rs)         — #![allow(unsafe_code)]
+//   numa-shim     (crates/numa-shim/src/lib.rs)         — #![allow(unsafe_code)]
 //     Sole purpose: Linux mbind(2) via syscall(2), Windows VirtualAllocExNuma.
 //     No libnuma dep. Small, single-responsibility. Audit in isolation.
 //
-//   malloc-bench-rs (crates/malloc-bench/src/lib.rs) — #![allow(unsafe_code)]
+//   malloc-bench-rs (crates/malloc-bench-rs/src/lib.rs) — #![allow(unsafe_code)]
 //     Confined to alloc_block / free_block / drain_mailbox helpers plus one
 //     `unsafe impl Send for Block` (the cross-thread ownership-transfer token);
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
@@ -153,10 +153,10 @@
 //     Sole purpose: OS-FFI self-probe (Windows K32GetProcessMemoryInfo, macOS
 //     task_info, Linux /proc). Every block carries `// SAFETY:`. Dev-only.
 //
-//   sefer-region  (crates/region/src/lib.rs)        — #![forbid(unsafe_code)]
+//   sefer-region  (crates/sefer-region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
 //     unsafe owns the generational layout. No version-scoped audit record
-//     for slotmap is tracked by this project (see crates/region/README.md
+//     for slotmap is tracked by this project (see crates/sefer-region/README.md
 //     "## Safety").
 //
 //   size-classes  (crates/size-classes/src/lib.rs)  — #![forbid(unsafe_code)]

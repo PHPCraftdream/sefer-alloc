@@ -205,7 +205,7 @@ either fall back to Plan B or file a follow-up task to investigate.
 
 GitHub Actions runners do not expose Hyper-V management to workflows, so
 this recipe is run **manually** on a developer's Windows dev box as a
-**release gate**: before any release that touches `crates/numa/src/lib.rs`
+**release gate**: before any release that touches `crates/numa-shim/src/lib.rs`
 (the Windows `VirtualAllocExNuma` path), one maintainer with Hyper-V access
 runs the recipe and reports the outcome. For per-PR CI coverage of the
 Windows code path, see Phase 1 (`numa-shim-mock`) — that does run on every

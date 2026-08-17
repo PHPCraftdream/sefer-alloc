@@ -168,7 +168,7 @@ hold an AWS account), needs manual recipe.
 (primary, ~$0.15 / ~8 minutes scripted), Azure `HBv4` alternative,
 explicit "GCP not recommended" note, and a budget breakdown. Run the
 recipe before any release tagged `0.x.y` whose diff touches
-`crates/numa/**`, `src/alloc_core/numa.rs`, or
+`crates/numa-shim/**`, `src/alloc_core/numa.rs`, or
 `segment_header::node_id`.
 
 ### F) Larger GitHub Actions runners
@@ -214,11 +214,11 @@ emulation is essentially free.
 ## Phase 1 — mock-shim concrete design (for follow-up task)
 
 ```rust
-// crates/numa/Cargo.toml
+// crates/numa-shim/Cargo.toml
 [features]
 mock = []
 
-// crates/numa/src/lib.rs
+// crates/numa-shim/src/lib.rs
 #[cfg(feature = "mock")]
 mod mock {
     use std::cell::RefCell;
@@ -246,7 +246,7 @@ mod mock {
 // ... existing platform dispatch
 ```
 
-Tests in `crates/numa/tests/mock_dispatch.rs` (gated on `feature = "mock"`):
+Tests in `crates/numa-shim/tests/mock_dispatch.rs` (gated on `feature = "mock"`):
 
 ```rust
 #[test]

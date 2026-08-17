@@ -1,11 +1,11 @@
 # Crate-extraction research — lane 3: OS / platform / memory abstraction
 
 Research agent report (read-only survey, 2026-07). Question: beyond the
-already-extracted `crates/vmem` (`aligned-vmem`) and `crates/numa`
+already-extracted `crates/aligned-vmem` (`aligned-vmem`) and `crates/numa-shim`
 (`numa-shim`), what other OS/platform/memory abstractions are worth extracting —
 or how should `vmem` itself be broadened — for testability and community use?
 
-Surveyed sources: `crates/vmem/src/lib.rs`, `crates/numa/src/lib.rs`,
+Surveyed sources: `crates/aligned-vmem/src/lib.rs`, `crates/numa-shim/src/lib.rs`,
 `src/alloc_core/os.rs`, `src/alloc_core/numa.rs`, `src/alloc_core/segment_header.rs`,
 `src/alloc_core/segment_layout.rs`, `examples/first_alloc_process.rs`,
 `scripts/first-alloc-bench.mjs`, `src/registry/*` (sidecar pattern), both
@@ -31,7 +31,7 @@ crate in this lane.
 
 ## Candidate 1 — `aligned-vmem` itself: publish + broaden (EXTEND, not new)
 
-1. **What / where.** `crates/vmem/src/lib.rs` (~1080 lines, one file, zero
+1. **What / where.** `crates/aligned-vmem/src/lib.rs` (~1080 lines, one file, zero
    deps). API today: `reserve_aligned`, `Reservation` (RAII +
    `into_parts`/`from_raw_parts`), `release`, `decommit`, `recommit`, and —
    behind the `alloc-lazy-commit` feature (R7-B0) — `reserve_aligned_lazy` +
@@ -102,10 +102,10 @@ crate in this lane.
 
 1. **What / where.** Two existing patterns that belong together inside
    `aligned-vmem` as a `mock`/`test-hooks` feature:
-   - `crates/numa/src/lib.rs` `mod mock` (feature `mock`): a thread-local
+   - `crates/numa-shim/src/lib.rs` `mod mock` (feature `mock`): a thread-local
      recording mock that replaces platform syscalls, letting any target
      (macOS, miri) assert the wrapping logic. Proven pattern, already tested
-     (`crates/numa/tests/mock_dispatch.rs`).
+     (`crates/numa-shim/tests/mock_dispatch.rs`).
    - `src/alloc_core/os.rs` `COMMIT_FAIL_ARMED` (R7-B2): a fault-injection
      atomic that makes the next `commit_pages` fail without touching the OS,
      used for commit-charge-exhaustion (OOM-path) tests. Today it lives in

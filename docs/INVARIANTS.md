@@ -6,7 +6,7 @@ in `tests/differential.rs`) and form the spec that every future change must keep
 green.
 
 The canonical copy of the `sefer-region` invariants (I1–I7) lives at
-`crates/region/src/invariants.md` and is rendered in the crate's rustdoc.
+`crates/sefer-region/src/invariants.md` and is rendered in the crate's rustdoc.
 The text below is reproduced for workspace-level context; any drift is
 resolved by updating the canonical copy.
 
@@ -37,7 +37,7 @@ resolved by updating the canonical copy.
 - **I6 — slot reuse and bounded growth.** Freed slots are reused by
   `insert`; capacity grows to a historical high-water mark of live entries
   and does not increase further under steady-state churn. Verified in
-  `tests/freelist_reuse.rs` and in `crates/region/tests/coverage_gaps.rs`
+  `tests/freelist_reuse.rs` and in `crates/sefer-region/tests/coverage_gaps.rs`
   (`region_reserve_reuses_freed_slots_on_churn`). Note: `slotmap` does not
   physically compact — tombstone slots remain in the backing store; I6
   guarantees only reuse and bounded growth, not physical density.
@@ -47,7 +47,7 @@ resolved by updating the canonical copy.
   it before touching the backing slotmap; a handle from a *different*
   `Region<T>` is rejected exactly like a stale handle (`None`/`false`),
   even when its raw `DefaultKey` collides with a live key in that region.
-  Verified in `tests/region_invariants.rs` and in `crates/region/tests/smoke.rs`
+  Verified in `tests/region_invariants.rs` and in `crates/sefer-region/tests/smoke.rs`
   (`cross_region_handle_rejection`, `cross_region_different_value_types`,
   `cross_region_same_value_type`).
 

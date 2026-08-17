@@ -22,7 +22,7 @@ Core instructions, mandatory for all code in this repository. They
      constants). The constants are that type's protocol, not independent
      exports in the sense of the rule.
   3. **single-file seam crates in `crates/`** — for a crate that is one file
-     (e.g. `crates/numa/src/lib.rs`, `crates/malloc-bench/src/lib.rs`), "the whole crate is one module"; it
+     (e.g. `crates/numa-shim/src/lib.rs`, `crates/malloc-bench-rs/src/lib.rs`), "the whole crate is one module"; it
      publishing several public items is normal, because the crate as a whole is
      the single focused library — that is its one responsibility.
   4. **`#[cfg(kani)]` proof harnesses in `src/`** (e.g. `src/kani_proofs.rs`) —

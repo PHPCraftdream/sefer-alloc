@@ -113,9 +113,9 @@ since."
   Windows-only by cfg, `alloc_core_small.rs:1635-1638`, so this branch never runs
   on macOS — see §4.2.)
 - **NOT guaranteed** on decommit-then-recommit on macOS/XNU/*BSD (`MADV_DONTNEED`
-  is advisory+lazy, no zero-fill — `crates/vmem/src/lib.rs` §decommit note). This
+  is advisory+lazy, no zero-fill — `crates/aligned-vmem/src/lib.rs` §decommit note). This
   is the P4(b) killer — and it is the reason the design hinges on §4.3.
-  (Round 6/task #883 citation check: this note did not exist in `crates/vmem/src/lib.rs`
+  (Round 6/task #883 citation check: this note did not exist in `crates/aligned-vmem/src/lib.rs`
   when this document was written on 2026-07-20 — it was added by commit
   `9c777bc` on 2026-08-13, so the citation was unverifiable at the time.
   Round-6 closing review SC5: "now accurate" overstated this — the vmem note
@@ -126,7 +126,7 @@ since."
   and still uncited for the `*BSD` and `decommit_lazy` slices; see
   `docs/CORRECTNESS_OPEN_ITEMS.md` item 48.)
 - **NOT guaranteed under `cfg!(miri)`**: miri's `std::alloc` fallback does not
-  zero (`crates/vmem`'s miri aperture), exactly as R9-1 documented for the Large
+  zero (`crates/aligned-vmem`'s miri aperture), exactly as R9-1 documented for the Large
   path. The Small design withholds the signal identically (§5).
 
 **Operational test for "is the block I am about to hand out virgin?".** A block
@@ -330,7 +330,7 @@ freed block to virgin.** ✓
 
 ## 5. The miri caveat (mirrors R9-1 exactly)
 
-Under `cfg!(miri)`, `crates/vmem`'s aperture falls back to bare
+Under `cfg!(miri)`, `crates/aligned-vmem`'s aperture falls back to bare
 `std::alloc::alloc`, which does **not** zero freshly-reserved memory (vmem's own
 `leak_zeroed_pages` documents and works around exactly this — cited in
 `alloc_core_large.rs:43-48`). Therefore:
@@ -369,7 +369,7 @@ hold for THIS design; the third (narrow win) stands and is acknowledged.
 | **#3 — "The extractable win is narrow (only the first `alloc_zeroed` touch of a genuinely fresh, never-reused bump slice)."** | **Stands.** Acknowledged in §0 and §8. The win is a cold/calloc-first-touch ceiling; steady-state churn reuses blocks and gets zero benefit. This is the second reason (after the production-plumbing cost, §10) no prototype is rushed. |
 
 (Round 6/task #883: row #2's macOS/XNU/\*BSD fact is the same one §4.3 above
-cites via `crates/vmem/src/lib.rs` §decommit note — see that note's own
+cites via `crates/aligned-vmem/src/lib.rs` §decommit note — see that note's own
 citation-accuracy correction above; nothing in this row needed to change.)
 
 The P4(b) "what would flip this to GO" criteria were: (i) a deterministic

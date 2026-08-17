@@ -26,7 +26,7 @@
 //!    `VirtualAlloc(MEM_COMMIT)` into one timed region — correct for Linux
 //!    (where `mmap` commits eagerly in one call) but too coarse for Windows,
 //!    where they are unconditionally two separate syscalls
-//!    (`crates/vmem/src/lib.rs`'s `win_reserve_commit`). This binary uses the
+//!    (`crates/aligned-vmem/src/lib.rs`'s `win_reserve_commit`). This binary uses the
 //!    new `dbg_decomp_win_reserve_only`/`_commit_only`/`_release_only` hooks
 //!    (task #504) — built on the SAME `aligned_vmem::reserve_aligned_lazy` +
 //!    `commit_range` primitive the opt-in `primordial-lazy-commit`/

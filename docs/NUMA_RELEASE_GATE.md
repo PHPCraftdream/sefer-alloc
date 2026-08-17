@@ -4,7 +4,7 @@ Phase 4 deliverable for the NUMA testing strategy (task #99 / Phase 4 of
 [`NUMA_TESTING_OPTIONS.md`](NUMA_TESTING_OPTIONS.md)).
 
 > **When to run.** Before any release tagged `0.x.y` whose diff touches
-> `crates/numa/**`, `src/alloc_core/numa.rs`, or
+> `crates/numa-shim/**`, `src/alloc_core/numa.rs`, or
 > `src/alloc_core/segment_header.rs::node_id`. **Skip** for patch releases
 > that don't touch those files — Phase 1 (mock) + Phase 2 (real Linux
 > kernel) + Phase 3 (Hyper-V virtual NUMA) already cover the day-to-day
@@ -208,7 +208,7 @@ The release-cutting maintainer. Requires:
 
 If no maintainer can run it for a given release, the release notes must
 explicitly say "NUMA gate skipped this release — code paths in
-`crates/numa/` and `src/alloc_core/numa.rs` were not touched, so per the
+`crates/numa-shim/` and `src/alloc_core/numa.rs` were not touched, so per the
 gating policy this is acceptable". Don't release while saying "we will
 gate it later".
 

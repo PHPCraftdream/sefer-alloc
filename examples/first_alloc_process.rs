@@ -45,7 +45,7 @@
 //! not trimmed by the OS) confirming the first-touch pages were made resident.
 //!
 //! `commit_*_kib` is a SEPARATE axis from RSS (R6-OPT-A1, radical_optimization_
-//! review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows, `crates/vmem`
+//! review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows, `crates/aligned-vmem`
 //! commits the FULL exact size of the Registry + inline `HeapOverflow` array in
 //! one `VirtualAlloc(MEM_COMMIT)` call, which shows up as Windows commit charge
 //! (`PagefileUsage`) even though it is largely demand-zero and therefore

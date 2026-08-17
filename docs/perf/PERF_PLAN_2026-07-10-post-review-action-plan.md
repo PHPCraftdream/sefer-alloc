@@ -116,7 +116,7 @@ gating, just a local measurement instrument.
 
 ### G4: OS reservation primitive — per-platform syscall waste
 **Merges:** LS2 (Windows) + LS4 (Unix). Same function
-(`crates/vmem/src/lib.rs`, `reserve_aligned_raw`), same defect family
+(`crates/aligned-vmem/src/lib.rs`, `reserve_aligned_raw`), same defect family
 (over-reserve + trim), independent per-platform fixes.
 Windows (`lib.rs:341-378`): `MEM_RESERVE|MEM_COMMIT` of size+align commits
 8MiB per 4MiB segment, then decommit-trims — a transient 2x commit-charge
@@ -259,7 +259,7 @@ bench)
   bench converges toward the ~30ns/op reuse-path figure.
 - Sequencing: before G2's go/no-go measurement. Independent of A1.
 
-**A3. G4 — fix `reserve_aligned_raw` per platform** (`crates/vmem/src/lib.rs`)
+**A3. G4 — fix `reserve_aligned_raw` per platform** (`crates/aligned-vmem/src/lib.rs`)
 - Do: Windows two-step reserve-then-commit-subrange (`:341-378`); Unix
   exact-size-mmap-first with over-reserve fallback (`:473-509`).
 - Impact: per segment reservation — Windows: removes a guaranteed 2x

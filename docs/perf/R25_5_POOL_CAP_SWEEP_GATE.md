@@ -245,7 +245,7 @@ the measured window. Each decommit-then-reserve round-trip is not a no-op on
 either RSS or commit charge:
 
 - **`decommit_empty_segment`** returns the segment's payload pages to the OS
-  (`VirtualFree(MEM_DECOMMIT)`-equivalent via `crates/vmem`), then
+  (`VirtualFree(MEM_DECOMMIT)`-equivalent via `crates/aligned-vmem`), then
   **`release_empty_segment_now`** releases the OS reservation and
   `table.recycle`s the slot.
 - The very next demand for a segment (this bench continuously prefills fresh

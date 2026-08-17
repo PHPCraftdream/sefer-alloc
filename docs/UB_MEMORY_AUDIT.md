@@ -129,10 +129,10 @@ cargo test --features production --test regression_xthread_double_free_residual 
 
 **Файлы и строки:**
 
-- `crates/malloc-bench/src/lib.rs:187-194` — mailbox освобождает полученный блок через локальный `a`.
-- `crates/malloc-bench/src/lib.rs:389-406` — документация честно требует stateless facade/shared global state.
-- `crates/malloc-bench/src/lib.rs:435-469` — safe `run`, bounds только `A: GlobalAlloc + Send + 'static`, отдельный `A` создаётся на каждый поток.
-- `crates/malloc-bench/src/lib.rs:473-496` — unsafe worker/dealloc вызываются из safe `run`.
+- `crates/malloc-bench-rs/src/lib.rs:187-194` — mailbox освобождает полученный блок через локальный `a`.
+- `crates/malloc-bench-rs/src/lib.rs:389-406` — документация честно требует stateless facade/shared global state.
+- `crates/malloc-bench-rs/src/lib.rs:435-469` — safe `run`, bounds только `A: GlobalAlloc + Send + 'static`, отдельный `A` создаётся на каждый поток.
+- `crates/malloc-bench-rs/src/lib.rs:473-496` — unsafe worker/dealloc вызываются из safe `run`.
 
 **Почему это опасно:** типовая сигнатура не обеспечивает заявленное требование. Полностью корректный stateful `GlobalAlloc`, где каждый `A` владеет отдельной arena, удовлетворяет текущим bounds. Cross-thread handoff освобождает блок через другой instance, нарушая `GlobalAlloc::dealloc` contract и потенциально вызывая foreign free, double-free или corruption. Документированный prose-контракт полезен, но safe public function не может допускать UB при типологически корректном safe вызове.
 
@@ -144,9 +144,9 @@ cargo test --features production --test regression_xthread_double_free_residual 
 
 **Файлы и строки:**
 
-- `crates/malloc-bench/src/lib.rs:245-249` — комментарий обещает освободить блок локально при `send` error, но `SendError<Block>` игнорируется; содержащийся `Block` просто drop-ается без dealloc.
-- `crates/malloc-bench/src/lib.rs:305-312` — mstress path явно делает `let _ = send(block)` с тем же результатом.
-- `crates/malloc-bench/src/lib.rs:94-103` — `Block` не имеет `Drop`, поэтому raw allocation теряется.
+- `crates/malloc-bench-rs/src/lib.rs:245-249` — комментарий обещает освободить блок локально при `send` error, но `SendError<Block>` игнорируется; содержащийся `Block` просто drop-ается без dealloc.
+- `crates/malloc-bench-rs/src/lib.rs:305-312` — mstress path явно делает `let _ = send(block)` с тем же результатом.
+- `crates/malloc-bench-rs/src/lib.rs:94-103` — `Block` не имеет `Drop`, поэтому raw allocation теряется.
 
 **Последствие:** если receiving worker завершился/паниковал раньше sender, неотправленный блок утечёт. Это не UAF и не double-free; нормальный успешный benchmark run этот путь не достигает. На panic/error path утечка детерминирована.
 

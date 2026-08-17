@@ -34,13 +34,13 @@ features = ["production"]
 
 # Workspace root. `sefer-alloc` is the root crate AND the workspace; the
 # extracted, independently-publishable building blocks live under `crates/`:
-#   - sefer-region    (crates/region)       — typed handle store (Handle<T>/Region<T>)
+#   - sefer-region    (crates/sefer-region)       — typed handle store (Handle<T>/Region<T>)
 #                                             #![forbid(unsafe_code)]
-#   - aligned-vmem    (crates/vmem)         — OS virtual-memory aperture
+#   - aligned-vmem    (crates/aligned-vmem)         — OS virtual-memory aperture
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
-#   - numa-shim       (crates/numa)         — dependency-free NUMA detection + binding
+#   - numa-shim       (crates/numa-shim)         — dependency-free NUMA detection + binding
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
-#   - malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc benchmark harness
+#   - malloc-bench-rs (crates/malloc-bench-rs) — portable GlobalAlloc benchmark harness
 #                                             standalone, not in sefer-alloc runtime dep tree
 #   - racy-ptr-cell   (crates/racy-ptr-cell)— lazy CAS-published pointer cell
 #                                             #![allow(unsafe_code)], single-purpose, real-type loom
@@ -75,7 +75,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
+members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/racy-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
 resolver = "2"
 
 # Task #711 (racy-ptr-cell round-closing review, §C10 drift hazard): `loom`
@@ -294,7 +294,7 @@ alloc-decommit = ["alloc-core"]
 # actually needs (a 260 KiB request pays for 4 MiB — ~15x amplification).
 #
 # The segment's ALIGNMENT stays `SEGMENT` (4 MiB) unconditionally — only the
-# physical `usable` byte count shrinks. `crates/vmem`'s `reserve_aligned(size,
+# physical `usable` byte count shrinks. `crates/aligned-vmem`'s `reserve_aligned(size,
 # align)` already supports `size != align` on both backends (Windows
 # `win_reserve_commit` / Unix `unix_reserve`: both over-reserve
 # `size + align`, then trim to an `align`-aligned `size`-byte span for
@@ -849,7 +849,7 @@ virgin-zero-skip = ["alloc-decommit"]
 # `default-features = false`: sefer-region gates its std-dependent SyncRegion on
 # its own `std` feature, which we re-enable via our own `std` feature so the
 # no_std core compiles without it and the default build gets SyncRegion as before.
-sefer-region = { path = "crates/region", version = "0.2", default-features = false }
+sefer-region = { path = "crates/sefer-region", version = "0.2", default-features = false }
 # Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
@@ -870,7 +870,7 @@ core_affinity = { version = "0.8", optional = true }
 # page-level decommit/recommit. Extracted from sefer-alloc into a standalone
 # crate so it can be used and published independently. Pulled in ONLY by the
 # `alloc-core` feature (and every feature that depends on it).
-aligned-vmem = { path = "crates/vmem", version = "0.2", optional = true }
+aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true }
 # CRATE-P3: the lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY
 # with OOM rollback + loser re-race), extracted from `registry/bootstrap.rs`'s
 # per-chunk / overflow-sidecar materialisation state machine and
@@ -900,7 +900,7 @@ tagged-index-stack = { path = "crates/tagged-index-stack", version = "0.1", opti
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.
-numa-shim = { path = "crates/numa", version = "0.1", features = ["vmem-integration"], optional = true }
+numa-shim = { path = "crates/numa-shim", version = "0.1", features = ["vmem-integration"], optional = true }
 
 [dev-dependencies]
 # Phase 2 dependency: the locality bench compares `Region` against raw
@@ -927,7 +927,7 @@ mimalloc = "0.1"
 # CRATE-P1: the extracted larson/mstress macro-benchmark harness. Dev-only —
 # `examples/malloc_macro.rs` drives it (through its `run_with` per-thread pin
 # hook) instead of carrying a second copy of the workload. NOT a runtime dep.
-malloc-bench-rs = { path = "crates/malloc-bench" }
+malloc-bench-rs = { path = "crates/malloc-bench-rs" }
 # CRATE-P6: the extracted differential op-stream harness (reference model +
 # M1-M4 oracles). Dev-only — `tests/alloc_core_differential.rs` and
 # `tests/heap_differential.rs` are thin consumers of its `proptest` front-end

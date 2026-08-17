@@ -30,7 +30,7 @@ in full before writing a single line here:**
   change (R8-10, task #223, commit `852828e`, 2026-07-20) that removed the
   only production code path that could have made the optimization unsound
   on macOS/XNU/*BSD (`MADV_DONTNEED` laziness). (Round 6/task #883 citation
-  check: R9-5's own citation of this fact to "`crates/vmem/src/lib.rs`
+  check: R9-5's own citation of this fact to "`crates/aligned-vmem/src/lib.rs`
   §decommit note" was unverifiable when R9-5 was written — that note was
   added later, by commit `9c777bc` on 2026-08-13. Round-6 closing review
   SC5: it is now accurate for macOS/iOS/tvOS/watchOS and for `decommit`
@@ -109,8 +109,8 @@ explicitly).
 
 **Confirmed bug class from this exact mechanism's history**: R9-1
 (`860d897`) fixed a real correctness gap — under miri,
-`crates/vmem`'s aperture falls back to `std::alloc::alloc` (confirmed,
-`crates/vmem/src/lib.rs:7-8`: "Under miri it falls back to `std::alloc` so
+`crates/aligned-vmem`'s aperture falls back to `std::alloc::alloc` (confirmed,
+`crates/aligned-vmem/src/lib.rs:7-8`: "Under miri it falls back to `std::alloc` so
 consumers stay miri-testable"; line 766-768: "Under miri, `reserve_aligned`
 falls back to `std::alloc`, which does NOT [zero]... zero explicitly under
 miri"), which does NOT zero — so a naively "fresh" reservation under miri
@@ -483,7 +483,7 @@ twice over.
 
 Mirrors R9-1 exactly, independently re-verified this session:
 
-- `crates/vmem/src/lib.rs:7-8`: "Under miri it falls back to `std::alloc` so
+- `crates/aligned-vmem/src/lib.rs:7-8`: "Under miri it falls back to `std::alloc` so
   consumers stay miri-testable." Line 766-768 (`leak_zeroed_pages`,
   the SAME helper Large's freshness doc cites): "Under miri, `reserve_aligned`
   falls back to `std::alloc`, which does NOT [zero]... zero explicitly under
@@ -494,7 +494,7 @@ Mirrors R9-1 exactly, independently re-verified this session:
   — the identical `os.rs:146` `Segment::reserve` function `alloc_large_slow`
   calls for its OS reservation (`alloc_core_large.rs:305`,
   `#[cfg(not(feature = "numa-aware"))]` arm). Both paths bottom out in the
-  same `aligned_vmem` seam, which is the crate `crates/vmem` re-exports
+  same `aligned_vmem` seam, which is the crate `crates/aligned-vmem` re-exports
   under the name used throughout `os.rs`. There is exactly ONE miri-fallback
   aperture for BOTH segment kinds, not two independently-gated ones — so the
   Large path's proven-correct gate transfers structurally, not by analogy.

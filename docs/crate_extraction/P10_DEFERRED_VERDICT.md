@@ -13,7 +13,7 @@ crates, not just the reports:
   `tail_relaxed()` guard idiom, AND `DirtyRouter<const WORDS>`. The MPSC-ring
   protocol is therefore **fully extracted and generalized already** — this is
   decisive for the two deferred concurrency candidates below.
-- `crates/vmem` (0.2) already ships `try_reserve_aligned*` (Result API),
+- `crates/aligned-vmem` (0.2) already ships `try_reserve_aligned*` (Result API),
   `mod mock` with `fail_next_commit`, and `leak_zeroed_pages`. The "second half
   of the vmem unsafe story" framing for `carved-mem` is now testable against a
   real 0.2 baseline.

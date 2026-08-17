@@ -35,7 +35,7 @@ static SERIAL: Mutex<()> = Mutex::new(());
 // unconditional POSITIVE assertion to write for a negative claim; proving the
 // negative would need a `compile_fail` doctest or a `trybuild` dependency,
 // mirroring the same tradeoff `sefer-region`'s own `Handle<T>` static
-// assertions already made (see `crates/region/tests/handle_static_asserts.rs`).
+// assertions already made (see `crates/sefer-region/tests/handle_static_asserts.rs`).
 const fn assert_send<T: Send>() {}
 const _: () = assert_send::<Reservation>();
 

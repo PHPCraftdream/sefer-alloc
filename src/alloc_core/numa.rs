@@ -1,4 +1,4 @@
-//! NUMA OS-seam — thin wrapper over the `numa-shim` crate (`crates/numa`).
+//! NUMA OS-seam — thin wrapper over the `numa-shim` crate (`crates/numa-shim`).
 //!
 //! Preserves the in-tree call sites' API for backward-compat inside the
 //! `sefer-alloc` crate; the actual unsafe OS FFI (mbind, VirtualAllocExNuma,

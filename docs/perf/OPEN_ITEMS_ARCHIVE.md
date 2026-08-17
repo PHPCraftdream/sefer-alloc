@@ -845,7 +845,7 @@ don't rewrite" convention.
    than paper over. **Revised verdict:** NO-GO for whole-segment remap
    (base-address stability, unaffected) and NO-GO for Windows specifically
    (a third, separate blocker — placeholder-VA/`MEM_REPLACE_PLACEHOLDER`
-   only moves section-object-backed mappings, and `crates/vmem` uses plain
+   only moves section-object-backed mappings, and `crates/aligned-vmem` uses plain
    anonymous `VirtualAlloc` with no section handle, §1.2 — untouched by
    this correction); **CONDITIONAL-GO for LINUX SUB-REGION remap
    specifically**, pending a correctness prototype that adds the `mremap`
@@ -1834,7 +1834,7 @@ lived inline).*
   > - **Status:** re-evaluation required (finding V-1 invalidated prior cost model).
   > - **Current number/verdict:** 30-run aggregate on WSL2 (Hyper-V-backed kernel) found 4 MiB alignment hit rate = 272/480 = **56.6667%**, not the ~0.1% the review predicted. Other regimes: 4 KiB = 480/480 (100%), 64 KiB = 165/480 (34.375%), 1 MiB = 224/480 (46.6667%). **However**, the prior conclusion that "the exact-mmap fast path is very likely still a net win" is based on an invalidated cost model: it assumed the fast path breaks even at a 50% hit rate (from `SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11), but task #842 removed the two munmap trim calls from the over-reserve path. With the trims gone, the fast path costs 1 syscall on a hit vs 3 on a miss (expected cost `3 - 2p` vs a flat 1 without the fast path), which exceeds 1 for EVERY hit rate p < 1 — the break-even is 100%, not 50%. At real hit rates (34.4%-56.7%), the fast path incurs 87%-131% MORE syscall traffic than not having it at all. What the fast path still buys is address-space economy on 32-bit targets (exact-size mapping instead of `size + align`), not syscall savings.
   > - **Next trigger:** re-evaluate whether the fast path should be kept, disabled, or gated on a 32-bit target check. The pre-release review (task #920, finding V-1) flags this as requiring a fresh decision based on the corrected arithmetic; the old "very likely still a net win" conclusion no longer holds.
-  > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`, `crates/vmem/src/lib.rs`:176-194 (updated fast-path rationale comment with corrected syscall-cost arithmetic).
+  > - **Evidence:** `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` (full report), `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` (30-run raw output), `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv`, `crates/aligned-vmem/src/lib.rs`:176-194 (updated fast-path rationale comment with corrected syscall-cost arithmetic).
   > - **Cross-reference (origin):** task #849 (commit `35d51e6`), `docs/reviews/2026-08-12-aligned-vmem-post-campaign-closing-review.md` finding W15, task #920 (this update, finding V-1).
   >
   > **Mechanism to include in a future remeasurement (round 6/task #883, review finding S12 — unmeasured, not a recommendation to implement, recorded so a future bare-metal remeasurement includes this mechanism):**
@@ -1860,7 +1860,7 @@ lived inline).*
   > recorded so a future implementer does not re-derive it on contact):** the
   > hint address `p` this mechanism wants to retry from is currently discarded
   > before the caller can see it — `try_reserve_aligned_exact`
-  > (`crates/vmem/src/lib.rs`), on an alignment miss, munmaps the region and
+  > (`crates/aligned-vmem/src/lib.rs`), on an alignment miss, munmaps the region and
   > returns `Err(VmemError::invalid_argument())` with no address, so its
   > caller `unix_reserve` has nothing to hint from; implementing S12 first
   > requires widening `try_reserve_aligned_exact`'s error channel (or return

@@ -158,7 +158,7 @@ the objective, tool-checkable condition for "done".
 > **NOTE (2026-08-11, task #816).** The `Handle<T>` design described below predates the
 > F2 identity redesign (commit `9741388`, task #802). The current design adds
 > `region_id: NonZeroUsize` as a third field to `Handle<T>` for cross-instance
-> isolation (invariant I7 in `docs/INVARIANTS.md`). See `crates/region/src/handle.rs`
+> isolation (invariant I7 in `docs/INVARIANTS.md`). See `crates/sefer-region/src/handle.rs`
 > for the actual current layout. The rest of this phase's plan remains valid as
 > historical context.
 

@@ -13,7 +13,7 @@
 //! paid in full by EVERY process on its FIRST heap claim, even a process that
 //! only ever needs one or two heaps. Windows commits the whole reservation in
 //! one `VirtualAlloc` call; there is no OS-level "commit only the pages you
-//! touch" for a single reservation of this shape (see `crates/vmem/src/lib.rs`).
+//! touch" for a single reservation of this shape (see `crates/aligned-vmem/src/lib.rs`).
 //!
 //! The fix: split the slot array into [`registry_chunk::NUM_CHUNKS`] chunks of
 //! [`registry_chunk::CHUNK_SLOTS`] slots each ([`RegistryChunk`]), and
@@ -142,7 +142,7 @@
 //! `aligned_vmem::reserve_aligned` is a direct OS syscall (`VirtualAlloc` /
 //! `mmap`) — it does NOT call `std::alloc`, `Box`, `Vec`, or any other
 //! Rust allocator entry point. Its dependency graph (verified by reading
-//! `crates/vmem/src/lib.rs` in full):
+//! `crates/aligned-vmem/src/lib.rs` in full):
 //!
 //! - Windows: `extern "system" { fn VirtualAlloc(...) }` — no std alloc.
 //! - Unix: `extern "C" { fn mmap(...) }` — no std alloc.

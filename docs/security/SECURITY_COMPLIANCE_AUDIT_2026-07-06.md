@@ -17,7 +17,7 @@ Method: `grep -rn "unsafe {" / "unsafe fn" / "unsafe impl"` over `src/` and
 
 **Result: every `unsafe` block in the workspace sits inside a named seam file.**
 No stray `unsafe` was found outside the seam list. `src/heap/`, `src/alloc_core/`
-(other than `os.rs`/`node.rs`/`numa.rs`), `src/region*`, and `crates/region`
+(other than `os.rs`/`node.rs`/`numa.rs`), `src/region*`, and `crates/sefer-region`
 contain zero `unsafe` blocks (only doc-comment mentions).
 
 Inventory (block counts from grep; `// SAFETY:` count per file alongside):
@@ -34,9 +34,9 @@ Inventory (block counts from grep; `// SAFETY:` count per file alongside):
 | `src/registry/bootstrap.rs` (286 `unsafe impl Sync`, 353, 475, 515, 572, 592) | 6 | 9 | Adequate — publication/acquire protocol documented at :142. |
 | `src/registry/heap_registry.rs` (76, 88, 105, 136, 149, 164, 207, 212, 306, … incl. `unsafe fn recycle`/`abandon_segments`/`try_adopt`) | 15 | 19 | Adequate — pointer-handoff contracts stated on each `unsafe fn`. |
 | `src/registry/heap_slot.rs` | Send/Sync impls | present | Adequate (listed in README seam table). |
-| `crates/vmem/src/lib.rs` (199, 229, 273–391, 424–638 — the OS FFI: `VirtualAlloc`/`mmap`/`madvise`) | 21 | 29 | Adequate — the whole crate IS the aperture; SAFETY density exceeds block count. |
-| `crates/numa/src/lib.rs` (174 `unsafe fn bind_range`, 249–683 — `mbind`/`GetNumaProcessorNodeEx` FFI) | 10 | 19 | Adequate. |
-| `crates/malloc-bench/src` | confined helpers | per README | Not runtime-relevant (bench harness, not in the sefer-alloc dep tree). |
+| `crates/aligned-vmem/src/lib.rs` (199, 229, 273–391, 424–638 — the OS FFI: `VirtualAlloc`/`mmap`/`madvise`) | 21 | 29 | Adequate — the whole crate IS the aperture; SAFETY density exceeds block count. |
+| `crates/numa-shim/src/lib.rs` (174 `unsafe fn bind_range`, 249–683 — `mbind`/`GetNumaProcessorNodeEx` FFI) | 10 | 19 | Adequate. |
+| `crates/malloc-bench-rs/src` | confined helpers | per README | Not runtime-relevant (bench harness, not in the sefer-alloc dep tree). |
 
 Confinement is compiler-enforced: the crate root is `#![forbid(unsafe_code)]`
 (switching to `deny` + per-file `allow` when `alloc-core`/`experimental` features
@@ -164,8 +164,8 @@ risk is negligible for a repo where tag pushes require write access).
 - Root `Cargo.toml:8`: `license = "MIT OR Apache-2.0"`. Both `LICENSE-MIT` and
   `LICENSE-APACHE` exist at the repo root (MIT text verified: "Copyright (c) 2026
   sefer-alloc contributors").
-- All four sub-crates (`crates/vmem`, `crates/numa`, `crates/region`,
-  `crates/malloc-bench`) declare `MIT OR Apache-2.0` and ship their own
+- All four sub-crates (`crates/aligned-vmem`, `crates/numa-shim`, `crates/sefer-region`,
+  `crates/malloc-bench-rs`) declare `MIT OR Apache-2.0` and ship their own
   LICENSE-MIT/LICENSE-APACHE pairs (verified for vmem and region; numa and
   malloc-bench declare the same field). Consistent.
 

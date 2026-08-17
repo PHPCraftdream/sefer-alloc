@@ -18,7 +18,7 @@
 //! directory (`CARGO_TARGET_TMPDIR`, NOT a hand-rolled relative `target/`
 //! path — this workspace overrides `CARGO_TARGET_DIR` to a shared location
 //! outside the repo, so a literal `"target/..."` string would silently
-//! create an untracked stray directory under `crates/region/` instead of
+//! create an untracked stray directory under `crates/sefer-region/` instead of
 //! landing in the real, already-gitignored build-artifact tree). Run
 //! explicitly:
 //! ```text

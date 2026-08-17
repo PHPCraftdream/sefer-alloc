@@ -233,7 +233,7 @@ recoverability:
 ## 6. Linux + miri no regression (B5 criterion)
 
 On Unix and under miri, `reserve_aligned_lazy` falls back to the eager
-`reserve_aligned` internally (see `crates/vmem/src/lib.rs` lines 918–930 and
+`reserve_aligned` internally (see `crates/aligned-vmem/src/lib.rs` lines 918–930 and
 1058–1067). The lazy path produces a `Reservation` with identical observable
 behavior: the full span is committed eagerly, and `commit_range` is a no-op
 (the pages are already committed).

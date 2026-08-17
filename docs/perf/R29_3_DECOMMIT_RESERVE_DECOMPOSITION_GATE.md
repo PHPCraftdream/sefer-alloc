@@ -282,7 +282,7 @@ WSL2/Linux, which is where this gate was always measured — see this doc's
 own §"Platform" note in the header) crashes with `STATUS_ACCESS_VIOLATION`
 inside Measurement B, specifically the `write_volatile` refault loop
 immediately after `HeapCore::dbg_decomp_decommit_payload`. Root cause:
-Windows `MEM_DECOMMIT` (`crates/vmem/src/lib.rs`'s
+Windows `MEM_DECOMMIT` (`crates/aligned-vmem/src/lib.rs`'s
 `decommit_pages_impl` for `cfg(windows)`) genuinely UNMAPS the payload
 pages — unlike Linux `MADV_DONTNEED`, which keeps the VA mapping resident
 and re-faults transparently on next write. The example's Measurement B
@@ -294,7 +294,7 @@ fixed hooks' pre-fill/A/C/A' loops (which never call
 `dbg_decomp_decommit_payload`) natively on Windows — hundreds of iterations
 completed cleanly; the crash reproduces identically whether R30-1's fix is
 applied or reverted, and occurs in a code path (`dbg_decomp_decommit_payload`
-→ `os::decommit_pages` → `crates/vmem`) untouched by this task's diff.
+→ `os::decommit_pages` → `crates/aligned-vmem`) untouched by this task's diff.
 Filed as a new tracked item in `docs/CORRECTNESS_OPEN_ITEMS.md` for a future
 round rather than fixed here (out of R30-1's scope, and this doc's own
 methodology has always measured on WSL2/Linux specifically — see the

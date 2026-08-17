@@ -49,7 +49,7 @@ These underpin the design and were confirmed against the source:
   `resolve_heap_overflow` (R6) is the ready owner-slot resolver to model the A4
   producer path on.
 - vmem commits the whole usable span at once on Windows
-  (`crates/vmem/src/lib.rs` `winapi_virtual_commit`, ~line 420); the
+  (`crates/aligned-vmem/src/lib.rs` `winapi_virtual_commit`, ~line 420); the
   fallible-recommit style (`recommit_pages_impl`) is the precedent for B.
 - The 0.9 MiB B-gate is realistic: ~0.52 MiB non-segment (chunk + overflow
   sidecar) + metadata (tens of KiB) + first payload chunk (128–256 KiB).

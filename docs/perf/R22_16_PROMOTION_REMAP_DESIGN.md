@@ -20,7 +20,7 @@
 > framing without reading §10 first.
 
 **Task:** R22-16 (task #367, P1). **DESIGN-ONLY.** No `src/` change, no
-`Cargo.toml` change, no `crates/vmem/src/lib.rs` change, no `tests/` change, no
+`Cargo.toml` change, no `crates/aligned-vmem/src/lib.rs` change, no `tests/` change, no
 benchmark run. This document investigates whether an OS-level VA-remap
 primitive (Windows placeholder VA / `MEM_REPLACE_PLACEHOLDER`, Linux `mremap`)
 could replace the promotion `memcpy` itself — the one part of the R10-2 kill
@@ -50,7 +50,7 @@ design**, gated on a cheap Stage-1 measurement this document specifies but
 does not run.
 
 The crux (task brief point 2) is real and is a hard blocker, not a soft one:
-`crates/vmem/src/lib.rs` — read in full (§1) — provides **zero** existing
+`crates/aligned-vmem/src/lib.rs` — read in full (§1) — provides **zero** existing
 wrapping of any region-relocation primitive (`mremap`, Windows placeholder VA
 / `MEM_REPLACE_PLACEHOLDER`, `MapViewOfFile3`). Every primitive it exposes is
 **reserve / commit / decommit / release a region at its OWN fixed base** — none
@@ -109,9 +109,9 @@ the only surviving direction, and specifies the cheap Stage-1 measurement
 
 ## 1. The exact per-OS primitive and its constraints
 
-### 1.1 What `crates/vmem/src/lib.rs` already provides — read in full
+### 1.1 What `crates/aligned-vmem/src/lib.rs` already provides — read in full
 
-`crates/vmem/src/lib.rs` (1394 lines) is confirmed, per the file's own module
+`crates/aligned-vmem/src/lib.rs` (1394 lines) is confirmed, per the file's own module
 doc (lines 1-24) and CLAUDE.md's own "single-file seam crate" exception, to be
 the **entire** OS-reservation surface for this crate — every raw
 `VirtualAlloc`/`VirtualFree`/`mmap`/`munmap`/`madvise`/`sysconf`/
@@ -151,7 +151,7 @@ The complete inventory of what it exposes:
 `MEM_REPLACE_PLACEHOLDER` / `MapViewOfFile3`, nor to `mremap`.** A
 process-wide grep for `mremap`, `MEM_REPLACE_PLACEHOLDER`, `VirtualAlloc2`,
 `MapViewOfFile3`, `MEM_RESERVE_PLACEHOLDER` across the ENTIRE repository
-(not just `crates/vmem`) returns **zero** hits in any `src/`, `crates/`, or
+(not just `crates/aligned-vmem`) returns **zero** hits in any `src/`, `crates/`, or
 `benches/` file — the only 3 files mentioning any of those tokens at all are
 this round's own review docs (`docs/reviews/2026-07-26-r22-plan.md`,
 `docs/reviews/2026-07-26-oh-review-r19-r21.md`) and an unrelated historical
@@ -179,16 +179,16 @@ The real Windows 10 (1803+)/Server 2016+ mechanism this task names:
 - **The hard constraint this task brief itself names, confirmed against the
   real API contract**: this mechanism moves a **section-backed mapping**,
   not raw anonymous `VirtualAlloc` memory. `VirtualAlloc`-committed memory
-  (which is exactly what every `crates/vmem` reservation is — see §1.1,
+  (which is exactly what every `crates/aligned-vmem` reservation is — see §1.1,
   there is no section object anywhere in this crate) has no section handle
   to re-map elsewhere; you cannot `MapViewOfFile3` a `VirtualAlloc` region.
   **Adopting this mechanism would require re-architecting every segment's
   underlying memory model from `VirtualAlloc`/anonymous-mmap to
   file-mapping-backed** (a pagefile-backed section on Windows, `memfd`/
   shared anonymous mapping analogue on Linux) — a foundational change to
-  `crates/vmem`'s entire reservation strategy, not an additive function. This
+  `crates/aligned-vmem`'s entire reservation strategy, not an additive function. This
   is a materially larger commitment than the task brief's framing ("does
-  `crates/vmem` already wrap anything close") suggests when read at face
+  `crates/aligned-vmem` already wrap anything close") suggests when read at face
   value: the honest answer is not just "no, needs new FFI" but "no, and the
   new FFI needs a different backing-store model than every allocation this
   crate has ever made."
@@ -212,7 +212,7 @@ The real Windows 10 (1803+)/Server 2016+ mechanism this task names:
 - `mremap(old_addr, old_size, new_size, MREMAP_MAYMOVE[, new_addr])` —
   POSIX/Linux-specific (glibc/musl wrap the raw syscall; this crate would
   need a new raw `extern "C"` declaration, following the exact pattern
-  `libc_mmap`/`libc_munmap` already establish at `crates/vmem/src/lib.rs`
+  `libc_mmap`/`libc_munmap` already establish at `crates/aligned-vmem/src/lib.rs`
   lines 1247-1260, since the crate deliberately has no `libc` dependency —
   §1.1).
 - **Constraint directly relevant to §3's finding**: `mremap`'s `old_addr`
@@ -240,7 +240,7 @@ The real Windows 10 (1803+)/Server 2016+ mechanism this task names:
   silent corruption of whichever block does NOT end up at the address the
   allocator's segment-lookup arithmetic (§3.4) expects it at.
 - Granularity: page-size multiples (4 KiB on x86-64 Linux, matching this
-  crate's `PAGE` constant, `crates/vmem/src/lib.rs:111`; up to 64 KiB on
+  crate's `PAGE` constant, `crates/aligned-vmem/src/lib.rs:111`; up to 64 KiB on
   some `aarch64` configs per that same file's own `MAX_REALISTIC_PAGE_SIZE`
   doc, lines 75-93). No allocation-granularity distinction the way Windows
   has one.
@@ -255,12 +255,12 @@ reservation strategy to section-object-backed mappings first (§1.2). Any
 future design that wanted to pursue this would either need to accept a
 Linux-only implementation (with Windows falling back to the existing copy
 path — a real, but real-COST, platform-parity gap for a crate whose stated
-target from `crates/vmem`'s own doc comment is being cross-platform "the
+target from `crates/aligned-vmem`'s own doc comment is being cross-platform "the
 one crate whose ENTIRE purpose is the unsafe OS calls" for BOTH `mmap`- and
 `VirtualAlloc`-based hosts), or would need to fund the section-object
 rearchitecture on Windows as a prerequisite. Neither option is free, and
 this asymmetry is itself evidence the mechanism's true cost is higher than
-"add one function to `crates/vmem`."
+"add one function to `crates/aligned-vmem`."
 
 ---
 
@@ -747,7 +747,7 @@ open question the way §5.1's is for 4a.
   based reservation model** does not work at all, independent of the
   segment-sharing question: placeholder-VA/`MEM_REPLACE_PLACEHOLDER`
   fundamentally operates on section-object-backed mappings, and
-  `crates/vmem` (confirmed by reading it in full, §1.1) uses plain
+  `crates/aligned-vmem` (confirmed by reading it in full, §1.1) uses plain
   anonymous `VirtualAlloc`, which has no section handle to remap (§1.2). This
   would require rearchitecting the ENTIRE Windows reservation strategy, not
   adding one function.
@@ -774,7 +774,7 @@ open question the way §5.1's is for 4a.
 
 ## 9. Files/lines this document is grounded in
 
-- `crates/vmem/src/lib.rs` — read in FULL (1394 lines). §1's complete
+- `crates/aligned-vmem/src/lib.rs` — read in FULL (1394 lines). §1's complete
   inventory of what it does/doesn't provide: `reserve_aligned`/
   `try_reserve_aligned` (lines 353-386, over-reserve+trim, kernel-chosen
   base only), `release` (388-410), `decommit`/`decommit_lazy`/`recommit`
@@ -1037,7 +1037,7 @@ touch.** §1.2 is explicit and independent of both §2.4 and §3: Windows'
 placeholder-VA / `MEM_REPLACE_PLACEHOLDER` mechanism only moves
 section-object-backed mappings (`MapViewOfFile3` against a
 `CreateFileMapping2`/`NtCreateSection` section handle), and every reservation
-`crates/vmem` makes is plain anonymous `VirtualAlloc` with no section handle
+`crates/aligned-vmem` makes is plain anonymous `VirtualAlloc` with no section handle
 to remap — "adopting this mechanism would require re-architecting every
 segment's underlying memory model... a foundational change... not an
 additive function" (§1.2's own words). This is a backing-store

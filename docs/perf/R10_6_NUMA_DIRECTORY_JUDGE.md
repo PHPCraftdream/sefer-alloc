@@ -411,7 +411,7 @@ A prototype session for Approach A is warranted when ANY of:
    node dimension added.
 2. **Local-first / foreign-fallback preservation.** A test that constructs
    segments on two nodes (via the numa-shim `mock` feature, which allows
-   scripting `current_node()` returns — `crates/numa/src/lib.rs:96–122`) and
+   scripting `current_node()` returns — `crates/numa-shim/src/lib.rs:96–122`) and
    verifies the directory returns a local-node segment even when a
    foreign-node segment appears earlier in the bitmap.
 3. **R8-2 authoritative miss under NUMA.** A per-node-bitmap miss (all nodes

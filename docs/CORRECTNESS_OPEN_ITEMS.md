@@ -93,7 +93,7 @@ scoping decision is the pending step, not implementation).
     - **Status:** OPEN, not urgent — numa-shim has not yet had its first
       crates.io publish (task #657, itself blocked), so the "free to convert
       only until first publish" deadline that made the aligned-vmem half
-      URGENT has not fired for numa-shim yet. `crates/numa/Cargo.toml`'s
+      URGENT has not fired for numa-shim yet. `crates/numa-shim/Cargo.toml`'s
       `mock = []` feature retains the same Cargo-feature-unification hazard
       the aligned-vmem half had (documented in its own `Cargo.toml` comment,
       explicitly cross-referencing the aligned-vmem conversion as proof the
@@ -103,16 +103,16 @@ scoping decision is the pending step, not implementation).
       mechanical shape (Cargo.toml + cfg-gated call sites + CI rows) as the
       aligned-vmem conversion task #962 just completed, which is now the
       reference implementation to follow.
-    - **Evidence:** `crates/numa/Cargo.toml`'s `mock = []` feature and its
+    - **Evidence:** `crates/numa-shim/Cargo.toml`'s `mock = []` feature and its
       own doc comment (updated by task #962 to cite the aligned-vmem
-      precedent); `crates/vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs`
+      precedent); `crates/aligned-vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs`
       + the removed `mock = []` (the pattern to mirror).
 
 62. **MIPS targets: release decision to fail compilation at compile time rather than accept buildable-but-broken targets.** (Filed 2026-08-16, task #1017, finding R4-1 of `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`.) MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux: MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while the crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) because `libc_mmap` issues `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set, but the failure is silent (no diagnostic points to the constant error). The crate previously documented MIPS as "not supported" but still allowed compilation, publishing a buildable-but-broken target.
 
    - **Status:** RESOLVED (release decision applied) — MIPS targets now fail compilation with a clear diagnostic (`compile_error!`) that explains the constant mismatch and points to this index entry for the decision record. The crate already uses the same pattern for unsupported Unix targets (task #918/finding H2C7); this extends it to architecture-specific broken targets. Adding MIPS support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values, gated on that architecture only.
    - **Decision rationale:** Fail-fast at compile time is preferable to publishing a buildable target that fails silently at runtime on every reservation call. The `EBADF` failure is documented but opaque to downstream users; a compile-time error with a diagnostic pointing at the specific problem (wrong constants) makes it explicit what must change to add support.
-   - **Evidence:** the `compile_error!` gated on `any(target_arch = "mips", target_arch = "mips64")` in `crates/vmem/src/lib.rs`; the **MIPS** bullet in `crates/vmem/README.md`'s "Reasoned-from-spec targets" section (now marked "not supported (compile_error!)"); `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md` finding R4-1 (evidence root)
+   - **Evidence:** the `compile_error!` gated on `any(target_arch = "mips", target_arch = "mips64")` in `crates/aligned-vmem/src/lib.rs`; the **MIPS** bullet in `crates/aligned-vmem/README.md`'s "Reasoned-from-spec targets" section (now marked "not supported (compile_error!)"); `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md` finding R4-1 (evidence root)
 
 11. **Coverage/process gap: `npm run check`'s
     clippy gate did not catch pre-existing example/test lint+compile errors
@@ -538,7 +538,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    measured — see that doc's "Platform measured" line). The crash is in
    Measurement B: the `write_volatile` re-fault loop immediately after
    `HeapCore::dbg_decomp_decommit_payload`. Root cause: Windows
-   `MEM_DECOMMIT` (`crates/vmem/src/lib.rs`'s `cfg(windows)`
+   `MEM_DECOMMIT` (`crates/aligned-vmem/src/lib.rs`'s `cfg(windows)`
    `decommit_pages_impl`) genuinely UNMAPS the payload pages, unlike Linux
    `MADV_DONTNEED`, which keeps the VA mapping resident and transparently
    re-faults a fresh zero page on next write. The example's Measurement B
@@ -549,7 +549,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    never makes. **Confirmed unrelated to R30-1's `small_cur` fix**: the
    crash reproduces identically with that fix applied or reverted, and
    lives in a code path (`dbg_decomp_decommit_payload` → `os::decommit_pages`
-   → `crates/vmem`) R30-1's diff never touches; isolated by running just
+   → `crates/aligned-vmem`) R30-1's diff never touches; isolated by running just
    the R30-1-relevant hooks' pre-fill/A/C/A' loops (which never call
    `dbg_decomp_decommit_payload`) natively on Windows for hundreds of
    iterations with no crash. **Needs (future round):** either gate
@@ -1735,7 +1735,7 @@ resolved" below.)_
       via `workflow_dispatch`/inspecting the Actions run history directly).
     - **Evidence:** commit `dc003c957b40baacaa147ff35e81884e27b0b1b4`'s
       full commit body (verification section); `.github/workflows/ci.yml`
-      `numa-shim-macos-miri` job; `crates/numa/src/lib.rs` (the `not(miri)`
+      `numa-shim-macos-miri` job; `crates/numa-shim/src/lib.rs` (the `not(miri)`
       guard on the macOS platform-stub `cfg`, ~line 763);
       `docs/reviews/2026-08-06-numa-shim-publish-readiness-review.md`;
       `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
@@ -1841,7 +1841,7 @@ resolved" below.)_
     - **Evidence:** commit `9ecada3d25bcbdf33e9b184c4233685e5b6a243f`
       (`racy-ptr-cell`); commit `7c8621f` (`sefer-region`, `size-classes`,
       `tagged-index-stack`); `crates/racy-ptr-cell/src/lib.rs`,
-      `crates/region/src/lib.rs` (the `sefer-region` package),
+      `crates/sefer-region/src/lib.rs` (the `sefer-region` package),
       `crates/size-classes/src/lib.rs`,
       `crates/tagged-index-stack/src/lib.rs` (each crate's
       `#![deny(missing_docs)]` attribute);
@@ -1877,7 +1877,7 @@ resolved" below.)_
            runs, or restructuring the test to avoid the intentional leak.
         2. **CLOSED by task #716** (commit `81ecfe3`). `tests/lazy_commit.rs`'s
            `sequential_commit_range_grows_incrementally` read uninitialized
-           memory under miri (`crates/vmem/tests/lazy_commit.rs:287`);
+           memory under miri (`crates/aligned-vmem/tests/lazy_commit.rs:287`);
            task #716 gated the offending assertion with `#[cfg(not(miri))]`
            and re-ran it under miri to confirm the UB report disappeared.
            Independently re-confirmed clean during task #776's own
@@ -1892,7 +1892,7 @@ resolved" below.)_
            task #844 had changed `reserve_aligned_raw` under miri to return
            a 3-element tuple `(NonNull<u8>, NonNull<u8>, usize)`. Fixed by
            removing `_granted_huge` from both destructuring patterns
-           (`crates/vmem/src/lib.rs:2239` and `:2250`). A miri compilation
+           (`crates/aligned-vmem/src/lib.rs:2239` and `:2250`). A miri compilation
            gate (`RUSTFLAGS="--cfg miri" cargo check -p aligned-vmem --all-features`)
            has been added to `aligned-vmem-gates` job in `.github/workflows/ci.yml`
            to catch this class of error in future (does NOT require miri
@@ -1949,7 +1949,7 @@ resolved" below.)_
       exact 16 KiB value rather than the generic invariant. A second,
       distinct consequence of this same unverified-constant gap was found
       and fixed in round 8 (task #897, finding U1):
-      `try_reserve_aligned_exact` (`crates/vmem/src/lib.rs`) used to skip
+      `try_reserve_aligned_exact` (`crates/aligned-vmem/src/lib.rs`) used to skip
       its own alignment-of-the-returned-base check whenever
       `align <= page_size()`, reasoning that `mmap` always returns
       page-aligned addresses in that range — true only if `page_size()`
@@ -1961,7 +1961,7 @@ resolved" below.)_
       error and no diagnostic. Fixed by making the check unconditional
       (the `align > page_size()` conjunct measured zero syscalls saved —
       see the fix's own comment in `lib.rs` — so removing it is free).
-    - **Evidence:** `crates/vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
+    - **Evidence:** `crates/aligned-vmem/src/lib.rs`'s `_SC_PAGESIZE` constant
       definition and its own doc comment cite the per-OS header values
       directly; no BSD runner exists in `.github/workflows/ci.yml`'s
       current matrix for this crate.
@@ -2013,13 +2013,13 @@ resolved" below.)_
     INFO, left untouched by task #726's visibility narrowing.)
 
     - **Status:** OPEN — cosmetic/defensive, not a live bug.
-    - **Current-number-or-verdict:** `crates/numa/src/lib.rs`'s
+    - **Current-number-or-verdict:** `crates/numa-shim/src/lib.rs`'s
       `CURRENT_NODE_SLOT` thread-local is `RefCell<u32>`; `Cell<u32>` would
       be strictly sufficient (only ever `get`/`set` a `Copy` value) and
       would structurally rule out the §B17 reentrant-borrow hazard this
       same module documents and defends against for its sibling `CALLS`
       cell (`record()`'s `try_borrow_mut`) — `set_current_node` still calls
-      a PANICKING `RefCell::borrow_mut()` (`crates/numa/src/lib.rs:149` as
+      a PANICKING `RefCell::borrow_mut()` (`crates/numa-shim/src/lib.rs:149` as
       of task #726), not the `try_borrow_mut` pattern its sibling was
       deliberately given.
     - **Evidence:**
@@ -2037,13 +2037,13 @@ resolved" below.)_
 
     - **Status:** OPEN — undecided; load-bearing for task #657 (numa-shim's
       own crates.io publish gate).
-    - **Current-number-or-verdict:** `crates/numa/src/lib.rs:231`'s
+    - **Current-number-or-verdict:** `crates/numa-shim/src/lib.rs:231`'s
       `reserve_on_node(..) -> Option<aligned_vmem::Reservation>` exposes a
       SIBLING crate's own public type directly in `numa-shim`'s public API
       — a semver-major bump in `aligned-vmem` (e.g. `0.2` → `0.3` changing
       `Reservation`'s shape) forces a corresponding `numa-shim` semver bump
       too, even if nothing in `numa-shim`'s own code changed. `grep -rn
-      "pub use aligned_vmem" crates/numa/` returns zero hits — there is no
+      "pub use aligned_vmem" crates/numa-shim/` returns zero hits — there is no
       re-export/newtype wrapper, and no doc note discussing the coupling.
     - **Evidence:**
       `docs/reviews/2026-08-07-numa-shim-rust-intel-audit.md` §A3.
@@ -2100,7 +2100,7 @@ resolved" below.)_
       integration-level regression test item 44 above also asks for —
       both share the same missing infrastructure.
 
-46. **[T, filed 2026-08-11, task #821] `crates/region` depends on `captrack`
+46. **[T, filed 2026-08-11, task #821] `crates/sefer-region` depends on `captrack`
     v0.1.1 (exact-pinned) as a dev-dependency for a single ignored probe test.**
     `captrack` is a heavy dependency (proc macro, `ctor` constructor with a
     background thread, supply-chain side effects). The workspace-root
@@ -2117,7 +2117,7 @@ resolved" below.)_
     side-effect profile without an explicit review.
 
     **Standalone-build verification (empirical, not reasoned):** A fresh copy
-    of `crates/region/` was extracted to `C:\temp\sefer-region-standalone-test`,
+    of `crates/sefer-region/` was extracted to `C:\temp\sefer-region-standalone-test`,
     outside this workspace (no parent `[workspace]` Cargo.toml, no
     `.cargo/config.toml` with `CAPTRACK_AUTODUMP=0`). Commands run:
     - `cargo build --tests` — clean compile, no visible side effect
@@ -2137,31 +2137,31 @@ resolved" below.)_
     round decides to swap it for the std-only alternative that was drafted and
     declined in task #821.
 
-48. **`aligned-vmem`'s `decommit()` silently fails to release physical memory (or zero-fill on `recommit`) on macOS — `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, unlike Linux.** First confirmed as a REAL, failing test (not just a documented risk) by CI on 2026-08-13, the FIRST time this crate's real (non-mock, non-miri) test suite ever ran against real macOS CI — round 4 (task #867/R1) added the CI row that finally exercises the real macOS backend instead of the `mock` stub, but the push to `origin/main` was deferred for two more rounds, so this is the first time the row actually executed. `decommit_recommit_roundtrip` (`crates/vmem/tests/smoke.rs`) failed: a byte written before `decommit`+`recommit` (`0x77` = 119) was still present after the cycle, where Linux/Windows both correctly read back `0`. **The underlying hazard itself was NOT newly discovered — it was already known repo-wide since Round 9** (see "Prior knowledge" below); only this extracted crate's own docs/tests had never reflected it until the fix commit below. `9c777bc`'s commit message calling this "a real, previously-undiscovered functional gap" is accurate only about this crate's own docs/tests, not about the repository as a whole — corrected here (round 6, task #883) after an independent review flagged the overstatement.
+48. **`aligned-vmem`'s `decommit()` silently fails to release physical memory (or zero-fill on `recommit`) on macOS — `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, unlike Linux.** First confirmed as a REAL, failing test (not just a documented risk) by CI on 2026-08-13, the FIRST time this crate's real (non-mock, non-miri) test suite ever ran against real macOS CI — round 4 (task #867/R1) added the CI row that finally exercises the real macOS backend instead of the `mock` stub, but the push to `origin/main` was deferred for two more rounds, so this is the first time the row actually executed. `decommit_recommit_roundtrip` (`crates/aligned-vmem/tests/smoke.rs`) failed: a byte written before `decommit`+`recommit` (`0x77` = 119) was still present after the cycle, where Linux/Windows both correctly read back `0`. **The underlying hazard itself was NOT newly discovered — it was already known repo-wide since Round 9** (see "Prior knowledge" below); only this extracted crate's own docs/tests had never reflected it until the fix commit below. `9c777bc`'s commit message calling this "a real, previously-undiscovered functional gap" is accurate only about this crate's own docs/tests, not about the repository as a whole — corrected here (round 6, task #883) after an independent review flagged the overstatement.
     - **Prior knowledge (repo-wide, pre-dating this "discovery" by multiple rounds):** the exact same hazard — Darwin `MADV_DONTNEED` being advisory/lazy with no zero-fill guarantee — was already documented in at least four places before this item was filed: `.github/workflows/ci.yml` (the `test-macos` job's own comment, a few lines above the step that went red, currently around line 810: "MADV_DONTNEED on Darwin is advisory/lazy (no zero-fill guarantee)"); `src/alloc_core/alloc_core_small_pool.rs` (a production code comment, currently around lines 1002-1021, stating the same fact as the load-bearing risk area for the `virgin-zero-skip` feature); and two `virgin-zero-skip` design docs, `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` (around lines 115-116 and 358) and `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` (around line 32), whose entire safety argument is built on this fact. The honest story is: the repo knew this when `aligned-vmem` was extracted from `src/alloc_core/os.rs`, the extraction lost that knowledge, and CI finally made the gap fail loudly rather than "discovering" something new.
-    - **R9_5 mis-citation, also corrected here:** `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md:115-116` cites "`crates/vmem/src/lib.rs` §decommit note" as its source for this fact. `git log --oneline -S "advisory" -- crates/vmem/src/lib.rs` shows that note was created BY commit `9c777bc` (dated 2026-08-13) — i.e. R9_5's citation was unverifiable/forward-referencing a note that did not exist when R9_5 was written (2026-07-20). It is now accurate as of `9c777bc`, purely by coincidence of the fix landing there. See the one-line notes added to both design docs (R9_5 near lines 115-116/358, R11_8 near line 32) in this same task.
+    - **R9_5 mis-citation, also corrected here:** `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md:115-116` cites "`crates/aligned-vmem/src/lib.rs` §decommit note" as its source for this fact. `git log --oneline -S "advisory" -- crates/aligned-vmem/src/lib.rs` shows that note was created BY commit `9c777bc` (dated 2026-08-13) — i.e. R9_5's citation was unverifiable/forward-referencing a note that did not exist when R9_5 was written (2026-07-20). It is now accurate as of `9c777bc`, purely by coincidence of the fix landing there. See the one-line notes added to both design docs (R9_5 near lines 115-116/358, R11_8 near line 32) in this same task.
     - **Status:** OPEN — mitigated across more surface than the original `9c777bc` fix covered. As of round 6 (tasks #880-886): the test is scoped to not assert the false guarantee on the Darwin family (macOS/iOS/tvOS/watchOS); `decommit()`'s rustdoc, `recommit()`'s rustdoc, `decommit_lazy()`'s rustdoc, the crate-root module doc, `recommit_pages_impl`'s code comment, AND `README.md`'s new "Platform caveats" section all carry a consistent Darwin-scoped caveat (task #880/S1, task #881/S5, task #885/S7); the empirical root-cause oracle (task #882/S2) has now run on real macOS CI and settled the H1-vs-H2 question (see Root cause below, updated round 7 / task #888); `decommit_lazy_roundtrip`'s own vacuousness (S4's second limb) is recorded below, not yet fixed. The underlying functional gap itself is NOT fixed. `decommit()`'s core purpose — "return page-granular physical backing to the OS" — is silently unmet on the Darwin family for ordinary (non-huge) reservations: RSS does not decrease, and re-access after `recommit` returns stale data instead of a fresh zero page.
     - **Current-number-or-verdict:** confirmed via real CI (`test macos (production)` job, run `31676133649`, landing SHA `e60e46a`) — deterministic, not flaky (byte value matches exactly what was written before decommit). Linux (`aligned-vmem package gates`, `test workspace members`) and Windows (`test windows (production)`) both passed the same assertion in the same run, confirming the guarantee genuinely holds on those two platforms and the gap is Darwin-specific.
-    - **Root cause:** `recommit_pages_impl`'s Unix implementation (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) is an unconditional no-op for ALL Unix platforms, justified by a comment claiming "re-access after MADV_DONTNEED is implicit — fresh zeroed pages on demand" — true on Linux, false on the Darwin family. `decommit`'s own eager path calls `madvise(MADV_DONTNEED)` uniformly across all Unix too. **This explanation was ASSERTED, not ESTABLISHED, when first written (task #882):** it was inferred from a single failing byte, which was equally consistent with a different hypothesis — the `madvise(2)` syscall itself FAILING on that CI runner for an unrelated reason (H2), since `libc_madvise` discards `madvise`'s return value by design (task #719) and nothing in the crate could previously distinguish "syscall succeeded but Darwin's semantics didn't reclaim the pages" (H1) from "syscall itself failed" (H2). Task #882 added an empirical oracle: under the `bench-internals` feature, `libc_madvise` now also records attempt/success counts into two new `#[doc(hidden)]` statics, `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` (accessors `aligned_vmem::unix_madvise_attempts()`/`unix_madvise_successes()`, reset via the existing `reset_bench_internals_counters()`), and a new macOS-gated test, `macos_decommit_madvise_syscall_actually_succeeds` (`crates/vmem/tests/smoke.rs`), that asserts the `madvise` syscall itself returns success (`0`) for BOTH the eager (`decommit`, `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call sites. **Updated round 7 (task #888, finding T1):** commit `1dbd6b4` was pushed and CI run `31692217669` (job `94421845398`, `test macos (production)`, image `macos-26-arm64`) ran green — `macos_decommit_madvise_syscall_actually_succeeds` passed, with `unix_madvise_attempts() == 2 && unix_madvise_successes() == 2`, ruling out H2 (the syscall itself did not fail). **This does NOT by itself confirm H1** — the H1 argument has two halves observed in TWO DIFFERENT CI runs: the stale-byte evidence (`decommit_recommit_roundtrip`'s pre-scoping failure) comes from run `31676133649`/commit `e60e46a`, before that assertion was scoped off Darwin, while the madvise-success evidence above comes from run `31692217669`/commit `1dbd6b4`; no single run has observed both the stale byte AND the successful `madvise` syscall in the same process. **Correct wording: H2 is ruled out by run `31692217669`; combined with run `31676133649`'s stale byte, H1 (advisory-only semantics) is the only remaining explanation** — NOT "H1 confirmed by CI".
+    - **Root cause:** `recommit_pages_impl`'s Unix implementation (`crates/aligned-vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) is an unconditional no-op for ALL Unix platforms, justified by a comment claiming "re-access after MADV_DONTNEED is implicit — fresh zeroed pages on demand" — true on Linux, false on the Darwin family. `decommit`'s own eager path calls `madvise(MADV_DONTNEED)` uniformly across all Unix too. **This explanation was ASSERTED, not ESTABLISHED, when first written (task #882):** it was inferred from a single failing byte, which was equally consistent with a different hypothesis — the `madvise(2)` syscall itself FAILING on that CI runner for an unrelated reason (H2), since `libc_madvise` discards `madvise`'s return value by design (task #719) and nothing in the crate could previously distinguish "syscall succeeded but Darwin's semantics didn't reclaim the pages" (H1) from "syscall itself failed" (H2). Task #882 added an empirical oracle: under the `bench-internals` feature, `libc_madvise` now also records attempt/success counts into two new `#[doc(hidden)]` statics, `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` (accessors `aligned_vmem::unix_madvise_attempts()`/`unix_madvise_successes()`, reset via the existing `reset_bench_internals_counters()`), and a new macOS-gated test, `macos_decommit_madvise_syscall_actually_succeeds` (`crates/aligned-vmem/tests/smoke.rs`), that asserts the `madvise` syscall itself returns success (`0`) for BOTH the eager (`decommit`, `MADV_DONTNEED`) and lazy (`decommit_lazy`, `MADV_FREE_REUSABLE`) call sites. **Updated round 7 (task #888, finding T1):** commit `1dbd6b4` was pushed and CI run `31692217669` (job `94421845398`, `test macos (production)`, image `macos-26-arm64`) ran green — `macos_decommit_madvise_syscall_actually_succeeds` passed, with `unix_madvise_attempts() == 2 && unix_madvise_successes() == 2`, ruling out H2 (the syscall itself did not fail). **This does NOT by itself confirm H1** — the H1 argument has two halves observed in TWO DIFFERENT CI runs: the stale-byte evidence (`decommit_recommit_roundtrip`'s pre-scoping failure) comes from run `31676133649`/commit `e60e46a`, before that assertion was scoped off Darwin, while the madvise-success evidence above comes from run `31692217669`/commit `1dbd6b4`; no single run has observed both the stale byte AND the successful `madvise` syscall in the same process. **Correct wording: H2 is ruled out by run `31692217669`; combined with run `31676133649`'s stale byte, H1 (advisory-only semantics) is the only remaining explanation** — NOT "H1 confirmed by CI".
     - **Darwin lazy-path alternative fix (round-6 review S9, spec-read, not verified on hardware, not a recommendation to implement without further review):** three connected observations. (1) On Darwin, `decommit_lazy` issues `MADV_FREE_REUSABLE` but nothing in this crate ever issues the paired `MADV_FREE_REUSE` before re-touching pages (`recommit_pages_impl`'s Unix implementation is an unconditional `Ok(())`, confirmed by reading it) — Apple documents these as a required pair, so this is a physical-footprint-accounting-drift concern (not a memory-safety issue), distinct from this item's own eager-`decommit` finding. (2) `decommit_lazy`'s own rustdoc describes the general "lazy is cheaper, reclaimed only under pressure" ordering (Linux `MADV_FREE` semantics), but on macOS/iOS specifically that ordering is INVERTED on the RSS axis: `MADV_FREE_REUSABLE` drops footprint immediately there, while eager `decommit`'s `MADV_DONTNEED` drops nothing at all — the opposite of the general case (on tvOS/watchOS, `decommit_lazy` falls back to the same `MADV_DONTNEED` as the eager path, so there both are equally no-ops). (3) Because of (2), a cheaper but PARTIAL alternative to the `MAP_FIXED` re-map idea below exists and is worth recording: route macOS/iOS's eager `decommit` to `MADV_FREE_REUSABLE` and issue `MADV_FREE_REUSE` from `recommit` — this would close the "return physical backing to the OS" half of `decommit`'s promise on macOS/iOS but NOT the "reads as zero" half (since `MADV_FREE_REUSABLE` preserves contents if the pages are re-touched before reclaim). **tvOS/watchOS coverage (round 7, task #895, TC3 — synchronized with `decommit_lazy`'s rustdoc and `madv_free_advice`'s doc comment, which this bullet must keep agreeing with if either changes):** this crate's cfg currently only names macOS/iOS for `MADV_FREE_REUSABLE`, so as written this alternative would not extend to tvOS/watchOS — but `MADV_FREE_REUSABLE`'s value comes from XNU, the kernel all four Darwin targets share, so it MAY work identically there too; this is REASONED-FROM-SPEC, not verified on tvOS/watchOS hardware or a tvOS/watchOS build target (neither is available to this crate's CI), not an established "no `MADV_FREE_REUSABLE` there" fact. Only re-mapping is confirmed to close both halves on all four targets; the lazy-path alternative's tvOS/watchOS coverage is an open question, not a settled no.
     - **Next trigger:** a future round should implement a real Darwin fix — the standard technique is re-`mmap`(`MAP_FIXED | MAP_ANONYMOUS`) over the decommitted range instead of (or in addition to) `madvise`, which forces the kernel to actually replace the mapping with fresh zero pages; needs its own safety analysis (interaction with concurrent access to the same reservation, `is_huge()` state, the existing `huge_pages` feature's `MAP_HUGETLB` path) and its own review round rather than a rushed fix under a CI-green-checking task. Until then, `decommit()`'s Darwin-family behavior should be treated as "hint only, no RSS/zero-fill guarantee" — the same posture already documented for the huge-page case.
-    - **S4 remainder (round-6 closing review SC1, partially fixed):** the round-6 review's S4 finding had two limbs — "macOS lost its only decommit effect-oracle" (closed by task #882's new counters/test above) and "`decommit_lazy_roundtrip` (`crates/vmem/tests/smoke.rs`) is vacuous on EVERY platform, not just macOS" (still not fixed — that test only checks a post-recommit write/read round-trips, never whether `madvise` had any effect; its rustdoc previously claimed otherwise, corrected in the closing pass). The new oracle's counters are `unix`-wide, not macOS-specific (`libc_madvise` is `#[cfg(all(unix, not(miri)))]`), so the same assertion style would close the Linux half too — but no CI row currently runs `bench-internals` against the real (non-mock) Unix backend on Linux (the Linux rows in `ci.yml` are default-features, `--all-features` which turns `mock` on, or `fault-injection lazy-commit` without `bench-internals`). Closing this fully needs either a new Linux CI row or accepting the gap stays macOS-only for now.
-    - **Evidence:** CI run `31676133649` (`gh run view 31676133649 --json jobs`), job `test macos (production)`, step "Run cargo test -p aligned-vmem --features ... --no-fail-fast", failure at `crates/vmem/tests/smoke.rs:174` (pre-fix line number) — `assertion left == right failed: recommitted page must be zeroed / left: 119 / right: 0`; fixed in commit (this task's own commit, landing after `e60e46a`). Discovery-framing and mis-citation correction: `docs/reviews/2026-08-13-aligned-vmem-round6-review.md` finding S3 (task #883). Round-6 closing review: `docs/reviews/2026-08-13-aligned-vmem-round6-closing-review.md`, findings SC1-SC10.
+    - **S4 remainder (round-6 closing review SC1, partially fixed):** the round-6 review's S4 finding had two limbs — "macOS lost its only decommit effect-oracle" (closed by task #882's new counters/test above) and "`decommit_lazy_roundtrip` (`crates/aligned-vmem/tests/smoke.rs`) is vacuous on EVERY platform, not just macOS" (still not fixed — that test only checks a post-recommit write/read round-trips, never whether `madvise` had any effect; its rustdoc previously claimed otherwise, corrected in the closing pass). The new oracle's counters are `unix`-wide, not macOS-specific (`libc_madvise` is `#[cfg(all(unix, not(miri)))]`), so the same assertion style would close the Linux half too — but no CI row currently runs `bench-internals` against the real (non-mock) Unix backend on Linux (the Linux rows in `ci.yml` are default-features, `--all-features` which turns `mock` on, or `fault-injection lazy-commit` without `bench-internals`). Closing this fully needs either a new Linux CI row or accepting the gap stays macOS-only for now.
+    - **Evidence:** CI run `31676133649` (`gh run view 31676133649 --json jobs`), job `test macos (production)`, step "Run cargo test -p aligned-vmem --features ... --no-fail-fast", failure at `crates/aligned-vmem/tests/smoke.rs:174` (pre-fix line number) — `assertion left == right failed: recommitted page must be zeroed / left: 119 / right: 0`; fixed in commit (this task's own commit, landing after `e60e46a`). Discovery-framing and mis-citation correction: `docs/reviews/2026-08-13-aligned-vmem-round6-review.md` finding S3 (task #883). Round-6 closing review: `docs/reviews/2026-08-13-aligned-vmem-round6-closing-review.md`, findings SC1-SC10.
 
-49. **`aligned-vmem` has ten FFI call sites relying on the edition-2021 implicit `unsafe fn` body instead of an explicit `unsafe {}` block with its own `// SAFETY:` comment — none unsound today, but edition 2024 makes `unsafe_op_in_unsafe_fn` a hard error at all ten.** Measured via `RUSTFLAGS="-W unsafe_op_in_unsafe_fn" cargo clippy`: `crates/vmem/src/lib.rs` Windows arm (`winapi_virtual_release`, two `VirtualAlloc`/`VirtualFree` sites), Unix arm (`libc_munmap`, `mmap`, `munmap`, two `madvise` sites — needs `--target x86_64-unknown-linux-gnu`), and one `std::alloc::dealloc` site under `--cfg miri`. The one concrete bug within this (rustfmt gluing the `mmap` call's `// SAFETY:` comment onto the trailing comment of the preceding unrelated `let _ = huge;` line, misattributing it) was fixed in task #894 (review finding T7, `docs/reviews/2026-08-13-aligned-vmem-round7-review.md`); the other nine sites are unfixed and tracked here as record-only — small mechanical migration, worth doing together if/when an edition-2024 bump is ever on the table for this crate.
+49. **`aligned-vmem` has ten FFI call sites relying on the edition-2021 implicit `unsafe fn` body instead of an explicit `unsafe {}` block with its own `// SAFETY:` comment — none unsound today, but edition 2024 makes `unsafe_op_in_unsafe_fn` a hard error at all ten.** Measured via `RUSTFLAGS="-W unsafe_op_in_unsafe_fn" cargo clippy`: `crates/aligned-vmem/src/lib.rs` Windows arm (`winapi_virtual_release`, two `VirtualAlloc`/`VirtualFree` sites), Unix arm (`libc_munmap`, `mmap`, `munmap`, two `madvise` sites — needs `--target x86_64-unknown-linux-gnu`), and one `std::alloc::dealloc` site under `--cfg miri`. The one concrete bug within this (rustfmt gluing the `mmap` call's `// SAFETY:` comment onto the trailing comment of the preceding unrelated `let _ = huge;` line, misattributing it) was fixed in task #894 (review finding T7, `docs/reviews/2026-08-13-aligned-vmem-round7-review.md`); the other nine sites are unfixed and tracked here as record-only — small mechanical migration, worth doing together if/when an edition-2024 bump is ever on the table for this crate.
     - **Status:** CLOSED — see "Recently resolved" below for the full closure narrative.
 
 50. **`aligned-vmem` — `page_size()`'s sanity-guard rejection branch has never executed anywhere.** (Filed round 8, task #903, finding U11 of `docs/reviews/2026-08-13-aligned-vmem-round8-review.md`. The U10 half — Windows `bench-internals` reserve-path counters — was closed per task #917: see "Recently resolved" §50-U10 below.)
     - **Status:** OPEN — record-only; no code fix in scope for either half (see each half's own note on why a cheap fix is not appropriate here).
-    - **Current-number-or-verdict, U11 half (`page_size()` guard):** the guard at `crates/vmem/src/lib.rs:390-406` and `query_os_page_size()`'s three `#[cfg]` arms (named by symbol rather than line range, task #908/V2C3, after the `:409-445` range this bullet previously cited was truncated by an unrelated comment edit one commit later — task #907's `+2` insertion above it) are structurally untestable — the queried value comes from a private `fn` with no injection seam, and the result caches in a process-wide atomic (`PAGE_SIZE_CACHE`, `:168`) on first call, so even a hypothetical test could not re-run the guard within one process. The guard's REJECTION branch (queried `< PAGE`, or non-power-of-two) has never executed in any test or CI run in this repository. Item 43's card cites this guard as the reason a wrong `_SC_PAGESIZE` constant "silently returns garbage" rather than crashing. **Corrected round-8 closing review (task #904, UC3):** this bullet originally said round 8's U1 finding "makes the guard's untested acceptance-side load-bearing" in the present tense — stale on arrival, since task #897 (merge `491afe9`, this same round) already removed that dependency by making `try_reserve_aligned_exact`'s alignment check unconditional (it no longer consults `page_size()` at all). The guard's acceptance side is now cosmetic, not load-bearing.
+    - **Current-number-or-verdict, U11 half (`page_size()` guard):** the guard at `crates/aligned-vmem/src/lib.rs:390-406` and `query_os_page_size()`'s three `#[cfg]` arms (named by symbol rather than line range, task #908/V2C3, after the `:409-445` range this bullet previously cited was truncated by an unrelated comment edit one commit later — task #907's `+2` insertion above it) are structurally untestable — the queried value comes from a private `fn` with no injection seam, and the result caches in a process-wide atomic (`PAGE_SIZE_CACHE`, `:168`) on first call, so even a hypothetical test could not re-run the guard within one process. The guard's REJECTION branch (queried `< PAGE`, or non-power-of-two) has never executed in any test or CI run in this repository. Item 43's card cites this guard as the reason a wrong `_SC_PAGESIZE` constant "silently returns garbage" rather than crashing. **Corrected round-8 closing review (task #904, UC3):** this bullet originally said round 8's U1 finding "makes the guard's untested acceptance-side load-bearing" in the present tense — stale on arrival, since task #897 (merge `491afe9`, this same round) already removed that dependency by making `try_reserve_aligned_exact`'s alignment check unconditional (it no longer consults `page_size()` at all). The guard's acceptance side is now cosmetic, not load-bearing.
     - **Why not fixed now:** the cheap remedies each have a real cost: a `#[cfg(feature = "bench-internals")] fn dbg_set_page_size_for_test` would be a safe `pub fn` mutating a value the alignment fast path trusts, precisely the shape CLAUDE.md's benchmark-hook rule warns against; splitting the guard into a pure `fn sanitize_page_size(queried: usize) -> usize` and testing that in isolation is the clean version and costs one small refactor, deliberately left for a future round rather than folded into this hygiene bundle.
     - **Next trigger:** round 8's U1 fix already landed (`491afe9`, this same round), so this guard's untested acceptance side is purely cosmetic now; the remaining trigger is the `sanitize_page_size` extraction described above, which would make the REJECTION branch testable without a benchmark-hook-shaped seam.
     - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-review.md` finding U11 (filed INFO, not code defect).
 
-51. **`aligned-vmem` review campaign's standard local verification matrix never compiles this crate's `#[cfg(unix)]` code on the Windows host every round has run on.** (Filed round 8, task #904, finding UC5 of `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md`.) `try_reserve_aligned_exact` (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) — the function round 8's U1 finding fixed — and `decommit_contract_violation_never_reaches_madvise` (`crates/vmem/tests/smoke.rs`, `#[cfg(all(unix, ...))]`) — the test round 8's U7/UC4 work touched — were BOTH `#[cfg]`'d out entirely on the campaign's `x86_64-pc-windows-msvc` host, on every command in round 8's stated verification matrix (2 `cargo test` rows, 3 clippy rows, `cargo fmt`, the drift guard). "42 passing, 47 passing, three clippy rows clean" was true and said nothing about either. Round 8's closing review closed the gap for that round only by running `cargo check`/`cargo clippy --target x86_64-unknown-linux-gnu --all-targets` against the merged tree (both clean) — a command not previously part of any round's stated matrix.
+51. **`aligned-vmem` review campaign's standard local verification matrix never compiles this crate's `#[cfg(unix)]` code on the Windows host every round has run on.** (Filed round 8, task #904, finding UC5 of `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md`.) `try_reserve_aligned_exact` (`crates/aligned-vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) — the function round 8's U1 finding fixed — and `decommit_contract_violation_never_reaches_madvise` (`crates/aligned-vmem/tests/smoke.rs`, `#[cfg(all(unix, ...))]`) — the test round 8's U7/UC4 work touched — were BOTH `#[cfg]`'d out entirely on the campaign's `x86_64-pc-windows-msvc` host, on every command in round 8's stated verification matrix (2 `cargo test` rows, 3 clippy rows, `cargo fmt`, the drift guard). "42 passing, 47 passing, three clippy rows clean" was true and said nothing about either. Round 8's closing review closed the gap for that round only by running `cargo check`/`cargo clippy --target x86_64-unknown-linux-gnu --all-targets` against the merged tree (both clean) — a command not previously part of any round's stated matrix.
     - **Status:** OPEN — the one-off check was run and passed for round 8's diff (task #904); the matrix itself has not been permanently amended anywhere durable other than this item.
     - **Current-number-or-verdict:** confirmed clean for round 8's diff: `cargo check -p aligned-vmem --target x86_64-unknown-linux-gnu --features "lazy-commit huge-pages fault-injection bench-internals" --all-targets` and the equivalent `cargo clippy ... -- -D warnings` both pass on this host (`x86_64-unknown-linux-gnu` is already installed via rustup — no new toolchain component needed). Cost measured: seconds once the target's std is cached, a few minutes cold.
-    - **Next trigger:** any future round of this campaign that touches `crates/vmem/src/lib.rs` or `crates/vmem/tests/*.rs` should add this command to its own verification pass (in addition to, not instead of, the existing default-target matrix) before merging, not just before pushing — the campaign's existing "confirm CI green" step already catches it post-push, but that is one round later than the campaign's own zero-trust-review convention intends. `--all-targets` is load-bearing: without it, `tests/` is not built and Unix-only tests are not checked.
+    - **Next trigger:** any future round of this campaign that touches `crates/aligned-vmem/src/lib.rs` or `crates/aligned-vmem/tests/*.rs` should add this command to its own verification pass (in addition to, not instead of, the existing default-target matrix) before merging, not just before pushing — the campaign's existing "confirm CI green" step already catches it post-push, but that is one round later than the campaign's own zero-trust-review convention intends. `--all-targets` is load-bearing: without it, `tests/` is not built and Unix-only tests are not checked.
     - **Evidence:** `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md` finding UC5.
 
 52. **`decommit_lazy` leaves free BSD reclaim on the table** (Filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4.) **CLOSED** — see "Recently resolved" below for the full closure narrative.
@@ -2172,12 +2172,12 @@ resolved" below.)_
 
     - **Status:** OPEN — tracked for completeness as hygiene, not blocking.
     - **Current-number-or-verdict:**
-      - **V-29:** `crates/vmem/tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
-      - **V-31:** Several small untested corners listed for completeness, none blocking: `release`'s early return for null pointers (`crates/vmem/src/lib.rs:1075-1078`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` method; `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, at `crates/vmem/tests/smoke.rs:739-740`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
-    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `crates/vmem/tests/min_page.rs:8-10`; `crates/vmem/src/lib.rs:160` (`MIN_PAGE` definition); `crates/vmem/src/lib.rs:1075-1078` (`release`'s null early return); `crates/vmem/tests/smoke.rs:739-740`.
+      - **V-29:** `crates/aligned-vmem/tests/min_page.rs:8-10` (`min_page_equals_page`) asserts `MIN_PAGE == PAGE` where `pub const MIN_PAGE: usize = PAGE;` (`crates/aligned-vmem/src/lib.rs:160`) — the compiler guarantees this equality, so the test cannot fail. Its sibling `min_page_is_4kib` is fine.
+      - **V-31:** Several small untested corners listed for completeness, none blocking: `release`'s early return for null pointers (`crates/aligned-vmem/src/lib.rs:1075-1078`); `ReservationParts`'s derived `PartialEq`/`Eq`; the deprecated `Reservation::is_empty` method; `leak_zeroed_pages` with an exact-multiple size (only `3 * PAGE + 7` is tested, at `crates/aligned-vmem/tests/smoke.rs:739-740`); the `try_reserve_aligned` `size + align` overflow case (addressed elsewhere as V-11).
+    - **Evidence:** `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` findings V-29 and V-31; `crates/aligned-vmem/tests/min_page.rs:8-10`; `crates/aligned-vmem/src/lib.rs:160` (`MIN_PAGE` definition); `crates/aligned-vmem/src/lib.rs:1075-1078` (`release`'s null early return); `crates/aligned-vmem/tests/smoke.rs:739-740`.
 
 55. **`sefer-region`'s packaged benchmark can attempt a write outside its own
-   package root when run standalone** (`crates/region/benches/region_bench.rs`)
+   package root when run standalone** (`crates/sefer-region/benches/region_bench.rs`)
    (Filed 2026-08-09, task #792, from the static release audit's finding F14.)
    Moved from the "Recently resolved" section to `[T]` in this same edit — the item's
    own text explicitly explains why it cannot be closed (no fix reachable from
@@ -2219,7 +2219,7 @@ resolved" below.)_
      verification this item currently only reasons about from source, and
      records the real observed behavior.
    - **Evidence:** `docs/reviews/2026-08-09-sefer-region-static-release-audit.md`
-     finding F14; `crates/region/benches/region_bench.rs` (the benchmark file
+     finding F14; `crates/sefer-region/benches/region_bench.rs` (the benchmark file
      itself, which now documents the exposure honestly rather than claiming
      a fix that does not exist).
 
@@ -2229,7 +2229,7 @@ resolved" below.)_
 
     - **Status:** OPEN — not urgent, because the compile-only check catches the known FFI ABI mismatch risk (item 44), but the runtime exact-size reservation path is unverified on 32-bit targets.
     - **Next trigger:** when a 32-bit Linux runtime test runner becomes available in CI (e.g., via GitHub Actions `i686-unknown-linux-gnu` self-hosted runner or QEMU-based emulation), add a `cargo test --target i686-unknown-linux-gnu` step to the `aligned-vmem-gates` job. Until then, the compile-only check is the best available coverage.
-    - **Evidence:** the `cargo check --target i686-unknown-linux-{gnu,musl} --all-targets` steps in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only); `crates/vmem/src/lib.rs` `try_reserve_aligned_exact` function (the 32-bit-gated exact-size reservation path); item 44 (the `OffT` fix that this compile-only check guards against regressions).
+    - **Evidence:** the `cargo check --target i686-unknown-linux-{gnu,musl} --all-targets` steps in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only); `crates/aligned-vmem/src/lib.rs` `try_reserve_aligned_exact` function (the 32-bit-gated exact-size reservation path); item 44 (the `OffT` fix that this compile-only check guards against regressions).
 
 59. **[T] CI-coverage gap: Linux MAP_HUGETLB and Windows MEM_LARGE_PAGES success paths depend on configured hugetlb pool or SeLockMemoryPrivilege, neither present in standard CI.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
 
@@ -2237,7 +2237,7 @@ resolved" below.)_
 
     - **Status:** OPEN — not urgent, because the fallback path is the same code exercised on non-huge-page systems, and the `is_huge()` predicate correctly reports the failure (test arm verifies `granted_huge == false`). However, the actual huge-page success path is unverified in CI.
     - **Next trigger:** when a CI runner with configured hugetlb pool (Linux) or SeLockMemoryPrivilege (Windows) becomes available, add a dedicated `test-huge-pages` job that runs `cargo test --features huge-pages` with appropriate hugetlb pool setup (e.g., `sudo sysctl vm.nr_hugepages=128` on Linux). Until then, the success paths remain unverified.
-    - **Evidence:** `crates/vmem/src/lib.rs` `libc_mmap` function (Linux `MAP_HUGETLB | MAP_HUGE_2MB` handling); `crates/vmem/src/lib.rs` `winapi_virtual_reserve` function (Windows `MEM_LARGE_PAGES` handling); `crates/vmem/tests/huge_pages.rs` (the test that would exercise the success path if hugetlb were available); `/proc/sys/vm/nr_hugepages` on standard runners (observed to be 0).
+    - **Evidence:** `crates/aligned-vmem/src/lib.rs` `libc_mmap` function (Linux `MAP_HUGETLB | MAP_HUGE_2MB` handling); `crates/aligned-vmem/src/lib.rs` `winapi_virtual_reserve` function (Windows `MEM_LARGE_PAGES` handling); `crates/aligned-vmem/tests/huge_pages.rs` (the test that would exercise the success path if hugetlb were available); `/proc/sys/vm/nr_hugepages` on standard runners (observed to be 0).
 
 60. **[T] CI-coverage gap: BSD, Android, tvOS and watchOS branches are reasoned-from-spec, not empirically executed on real hardware.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
 
@@ -2245,7 +2245,7 @@ resolved" below.)_
 
     - **Status:** OPEN — not urgent, because the unconditional alignment check in `unix_reserve` prevents violation of reserve alignment even if `_SC_PAGESIZE` values were wrong, and decommit correctness is verified on Linux/macOS which are the primary deployment targets. However, the BSD/Darwin/Android branches remain empirically unverified.
     - **Next trigger:** when a FreeBSD/NetBSD/OpenBSD/DragonFly CI runner becomes available (self-hosted or via a service like Cirrus CI), add a `test-bsd` job. Similarly, if iOS/tvOS/watchOS or Android CI runners become available, add corresponding jobs. Until then, these platforms remain spec-verified only.
-    - **Evidence:** item 43 (BSD `_SC_PAGESIZE` values, partially open); item 48 (Darwin `MADV_DONTNEED` behavior, partially open); `.github/workflows/ci.yml` (no BSD/iOS/tvOS/watchOS/Android jobs); `crates/vmem/src/lib.rs` platform-specific constants (FreeBSD/NetBSD/OpenBSD/DragonFly `_SC_PAGESIZE` values, Android-specific handling, Darwin-family `decommit_lazy` behavior).
+    - **Evidence:** item 43 (BSD `_SC_PAGESIZE` values, partially open); item 48 (Darwin `MADV_DONTNEED` behavior, partially open); `.github/workflows/ci.yml` (no BSD/iOS/tvOS/watchOS/Android jobs); `crates/aligned-vmem/src/lib.rs` platform-specific constants (FreeBSD/NetBSD/OpenBSD/DragonFly `_SC_PAGESIZE` values, Android-specific handling, Darwin-family `decommit_lazy` behavior).
 
 61. **[T] CI-coverage gap: Miri in workflow is used as `cargo check --cfg miri`, not as an interpreter test — it does not verify runtime semantics of native mmap/munmap/madvise.** (Filed 2026-08-16, TaskList #1023, from aligned-vmem prerelease-audit-r4 "Coverage gaps" section.)
 
@@ -2253,7 +2253,7 @@ resolved" below.)_
 
     - **Status:** OPEN — item 41 already documents that `aligned-vmem` has no dedicated `cargo miri test` CI step. This item is the same gap, phrased as a runtime-semantics concern rather than a missing CI step.
     - **Next trigger:** when a future round adds the missing `cargo miri test -p aligned-vmem` CI step recommended by item 41 (miri execution, not just compilation check), the runtime semantics gap will be closed. Until then, miri coverage is compile-only.
-    - **Evidence:** the `--cfg miri` `cargo check` step in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only, not `cargo miri test`); item 41 (the existing open item documenting the missing `cargo miri test` CI step); `crates/vmem/src/lib.rs` FFI call sites (mmap/munmap/madvise on Unix, VirtualAlloc/VirtualFree on Windows — the runtime semantics that miri would catch if actually run).
+    - **Evidence:** the `--cfg miri` `cargo check` step in `.github/workflows/ci.yml`'s `aligned-vmem-gates` job (compile-only, not `cargo miri test`); item 41 (the existing open item documenting the missing `cargo miri test` CI step); `crates/aligned-vmem/src/lib.rs` FFI call sites (mmap/munmap/madvise on Unix, VirtualAlloc/VirtualFree on Windows — the runtime semantics that miri would catch if actually run).
 
 63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
@@ -2299,7 +2299,7 @@ resolved" below.)_
      leaves the value unattached to the handle it describes. All three are
      cheap now (crates.io carries only 0.1.0; 0.2.0 is unpublished) and
      expensive afterwards.
-   - **Evidence:** `crates/vmem/src/lib.rs` — `Reservation`'s field list and
+   - **Evidence:** `crates/aligned-vmem/src/lib.rs` — `Reservation`'s field list and
      the "Validity scope" section of `as_ptr`'s rustdoc (the lazy exception
      added by task #1037); `reserve_aligned_lazy`'s rustdoc (promises only
      `initial_commit` is committed on Windows); `validate_initial_commit`
@@ -2345,7 +2345,7 @@ resolved" below.)_
      `into_full_parts_preserves_granted_huge`: "A huge-page arm runs when the
      OS actually grants huge pages, with an else arm asserting instance ==
      platform so the test is not vacuous on a runner without a hugetlb pool."
-     The test in `crates/vmem/tests/smoke.rs` has no such branch — it is a flat
+     The test in `crates/aligned-vmem/tests/smoke.rs` has no such branch — it is a flat
      sequence of metadata assertions (`full_parts.granted_huge ==
      original_is_huge`, then field-by-field equality, then a `!reconstructed
      .is_huge()` check). Verified for this card by reading the current test,
@@ -2353,8 +2353,8 @@ resolved" below.)_
      then not written, or belonged to a different test.
    - **Scope check performed:** the wording exists ONLY in the immutable commit
      body. `grep -niE "huge-page arm|else arm|not vacuous on a runner"` across
-     both CHANGELOGs, this index, `crates/vmem/tests/*.rs` and
-     `crates/vmem/src/*.rs` returns nothing. Git history is not rewritten for
+     both CHANGELOGs, this index, `crates/aligned-vmem/tests/*.rs` and
+     `crates/aligned-vmem/src/*.rs` returns nothing. Git history is not rewritten for
      this — the same non-retroactive posture CLAUDE.md already takes for the
      R30-12 commit-prefix taxonomy ("Explicitly NOT a history rewrite").
    - **Next trigger:** none. Close this card if the cited test is ever rewritten
@@ -2370,7 +2370,7 @@ resolved" below.)_
 
    - **Status:** OPEN — decision pending. Owner's choice, not technical.
    - **Current number/verdict:**
-     *Impact count:* 35 total usages across `crates/vmem/` (grep -rn):
+     *Impact count:* 35 total usages across `crates/aligned-vmem/` (grep -rn):
      - `decommit_reclaims_and_zeroes`: 20 occurrences (1 definition in lib.rs:985,
        3 doc intra-doc links in lib.rs, 1 in lib.rs:1043 call, 1 in lib.rs:1147,
        1 in lib.rs:2018, 1 in lib.rs:2029, 1 in CHANGELOG.md:19, 2 in README.md,
@@ -2380,7 +2380,7 @@ resolved" below.)_
      - `can_decommit_reclaim_and_zero`: 15 occurrences (1 definition in lib.rs:1042,
        1 intra-doc link in lib.rs:964, 2 in lib.rs examples, 1 in CHANGELOG.md:25,
        3 in test file names, 5 in test file calls, 2 in test file docs)
-     *Scope:* all 35 CODE / doc-comment usages are inside `crates/vmem/`; the
+     *Scope:* all 35 CODE / doc-comment usages are inside `crates/aligned-vmem/`; the
      root crate's `src/`, `benches/` and `examples/` contain none, so a rename
      is zero external API breakage for consumers of the parent `sefer-alloc`
      crate and stays confined to the `aligned-vmem` subcrate's own surface.
@@ -2439,14 +2439,14 @@ resolved" below.)_
 
 50-U10. **`aligned-vmem` — the U10 half of item 50 ("Windows `bench-internals` reserve-path counters have zero test coverage") rested on a FALSE premise and is closed.** (Filed round 8, task #903, finding U10 of `docs/reviews/2026-08-13-aligned-vmem-round8-review.md`; re-flagged as stale by R7-9 and closed by task #1045.)
 
-   - **Root cause:** item 50's U10 half asserted the counters are "exercised by NOTHING in `crates/vmem/tests/` — confirmed via `grep -rn \"windows_reserve_commit\" crates/vmem/tests/` returning no output". That grep does NOT return no output. Three test functions in two files exercise the counters, verified by re-running the grep and mapping every hit back to its enclosing `fn`:
-     - `crates/vmem/tests/bench_internals_counters.rs::bench_internals_counters_existence_and_reset` — asserts `windows_reserve_commit_calls() >= 1` after a live reservation (Windows-gated), then asserts all three counters read `0` after `reset_bench_internals_counters()`.
-     - `crates/vmem/tests/huge_pages.rs::reserve_aligned_huge_2mib_still_two_call_path_unprivileged` — asserts `single_calls + two_call_pairs == 1`, i.e. exactly one dispatch path was taken.
-     - `crates/vmem/tests/huge_pages.rs::reserve_aligned_huge_4mib_still_two_call_path` — asserts `single_calls == 0` AND `two_call_pairs == 1`.
+   - **Root cause:** item 50's U10 half asserted the counters are "exercised by NOTHING in `crates/aligned-vmem/tests/` — confirmed via `grep -rn \"windows_reserve_commit\" crates/aligned-vmem/tests/` returning no output". That grep does NOT return no output. Three test functions in two files exercise the counters, verified by re-running the grep and mapping every hit back to its enclosing `fn`:
+     - `crates/aligned-vmem/tests/bench_internals_counters.rs::bench_internals_counters_existence_and_reset` — asserts `windows_reserve_commit_calls() >= 1` after a live reservation (Windows-gated), then asserts all three counters read `0` after `reset_bench_internals_counters()`.
+     - `crates/aligned-vmem/tests/huge_pages.rs::reserve_aligned_huge_2mib_still_two_call_path_unprivileged` — asserts `single_calls + two_call_pairs == 1`, i.e. exactly one dispatch path was taken.
+     - `crates/aligned-vmem/tests/huge_pages.rs::reserve_aligned_huge_4mib_still_two_call_path` — asserts `single_calls == 0` AND `two_call_pairs == 1`.
    - **Why this closes U10 rather than merely correcting it:** U10's stated "Next trigger" was a direct assertion that a given shape advances one counter and not the other. `reserve_aligned_huge_4mib_still_two_call_path` IS that assertion, in both directions, and it is discriminating — it fails if the dispatch condition regresses either way. The oracle U10 asked for already exists.
    - **What this closure does NOT claim:** the finer rustdoc claim that a large-page retry "issues a second syscall but is still counted as 1" remains unasserted by any test; it is a syscall-count claim, and no test counts syscalls. Only the DISPATCH claim is covered. Recorded so this closure is not later read as broader than it is.
-   - **A correction inside this correction (task #1045):** the first draft of this closure entry cited four test functions, of which TWO do not exist under the names given (`reserve_aligned_huge_2mib_fast_path_or_two_call`, `reset_works`) and a third (`lazy_commit.rs::windows_lazy_reserve_saves_commit_charge`) exists but contains no reference to these counters at all — `grep -rn "windows_reserve_commit" crates/vmem/tests/lazy_commit.rs` is empty. That is the same failure mode as the claim being fixed: replacing a mis-citation with a new mis-citation (cf. task #900/U2). The inventory above was re-derived mechanically from the grep, not restated from a report.
-   - **Files changed:** `docs/CORRECTNESS_OPEN_ITEMS.md` (item 50's U10 half removed from the open card, this closure entry added); `crates/vmem/src/lib.rs` (`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`'s rustdoc lost its stale "third best-effort retry" clause — the two-call path never requests `MEM_LARGE_PAGES`, per the code comment's own task #921/V-7 attribution).
+   - **A correction inside this correction (task #1045):** the first draft of this closure entry cited four test functions, of which TWO do not exist under the names given (`reserve_aligned_huge_2mib_fast_path_or_two_call`, `reset_works`) and a third (`lazy_commit.rs::windows_lazy_reserve_saves_commit_charge`) exists but contains no reference to these counters at all — `grep -rn "windows_reserve_commit" crates/aligned-vmem/tests/lazy_commit.rs` is empty. That is the same failure mode as the claim being fixed: replacing a mis-citation with a new mis-citation (cf. task #900/U2). The inventory above was re-derived mechanically from the grep, not restated from a report.
+   - **Files changed:** `docs/CORRECTNESS_OPEN_ITEMS.md` (item 50's U10 half removed from the open card, this closure entry added); `crates/aligned-vmem/src/lib.rs` (`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS`'s rustdoc lost its stale "third best-effort retry" clause — the two-call path never requests `MEM_LARGE_PAGES`, per the code comment's own task #921/V-7 attribution).
 
 1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**
    (`tests/r14_4_promotion_free_correctness.rs`) — **RESOLVED** by an urgent
@@ -2524,7 +2524,7 @@ resolved" below.)_
      under load) proves this: the adversarial mechanism worked, but the
      DELTA measurement was corrupted by concurrent noise.
    - **Fix (a), commit `8d68715`:** introduced a `static SERIAL: Mutex<()>`
-     guard (following the pattern from `crates/vmem/tests/smoke.rs`) that
+     guard (following the pattern from `crates/aligned-vmem/tests/smoke.rs`) that
      all three `#[test]` functions in this file hold for their entire
      bodies. With the serial guard, each test has exclusive access to the
      global counters, eliminating the concurrent noise source. Because the
@@ -2717,7 +2717,7 @@ resolved" below.)_
    - **Closure narrative:** `numa-shim`'s round reached its own §C10 finding
      in task #726 (commit `53b3ca2`) and applied EXACTLY the policy this
      item's "Next trigger" prescribed — a doc-only fix
-     (`crates/numa/Cargo.toml`'s `mock = []` feature comment, the `mock`
+     (`crates/numa-shim/Cargo.toml`'s `mock = []` feature comment, the `mock`
      module's own rustdoc, and a new `README.md` section), citing task
      #715's reasoning — but the review found this card was never updated
      in that commit, the same "update the card in the SAME commit"
@@ -2726,8 +2726,8 @@ resolved" below.)_
      policy for the identical finding shape, so this item is closed
      rather than left open with a stale forward-reference.
    - **Current-number-or-verdict:** `aligned-vmem`'s `mock` feature
-     (`crates/vmem/Cargo.toml`) AND `numa-shim`'s `mock` feature
-     (`crates/numa/Cargo.toml`) are both Cargo features (not `--cfg`
+     (`crates/aligned-vmem/Cargo.toml`) AND `numa-shim`'s `mock` feature
+     (`crates/numa-shim/Cargo.toml`) are both Cargo features (not `--cfg`
      flags), each documented with a Cargo-feature-unification warning in
      three places (`Cargo.toml`, the `mock` module's own doc, `README.md`).
      Task #715 (commit `e5f6700`) explicitly evaluated and DEFERRED the
@@ -2741,9 +2741,9 @@ resolved" below.)_
      rewrite of the whole test-invocation surface and CI matrix for
      EITHER crate. Task #726 (commit `53b3ca2`) applied the identical
      reasoning to `numa-shim`.
-   - **Evidence:** `crates/vmem/Cargo.toml`'s `mock = []` feature comment
+   - **Evidence:** `crates/aligned-vmem/Cargo.toml`'s `mock = []` feature comment
      (the "CARGO FEATURE-UNIFICATION HAZARD" block) and
-     `crates/numa/Cargo.toml`'s `mock = []` feature comment both state
+     `crates/numa-shim/Cargo.toml`'s `mock = []` feature comment both state
      the deferral explicitly: "Revisit if/when this crate gains external
      consumers and the hazard is reported for real." (Cited by feature
      name, not line range — round-5 closing review QC6 found a line-range
@@ -3664,7 +3664,7 @@ resolved" below.)_
       index entry.
 
 41. **SyncRegion one-shot convenience methods missing reentrancy cross-references**
-   (`crates/region/src/sync_region.rs`, methods `clear` and `get_cloned`) — **RESOLVED**
+   (`crates/sefer-region/src/sync_region.rs`, methods `clear` and `get_cloned`) — **RESOLVED**
    by the release-prep review's finding F5 closure (2026-08-09). The round-2 closing review
    (`docs/reviews/2026-08-08-sefer-region-round2-closing-review.md`, finding F) flagged that
    of the seven one-shot convenience methods (`insert`, `remove`, `contains`, `len`,
@@ -3674,7 +3674,7 @@ resolved" below.)_
    actually execute user code under the lock — yet neither points to the deadlock hazard section.
 
    - **Root cause, confirmed:** the type-level `## Reentrancy` section at
-     `crates/region/src/sync_region.rs:45-58` does document the hazard thoroughly
+     `crates/sefer-region/src/sync_region.rs:45-58` does document the hazard thoroughly
      (it explicitly names `clear` and `get_cloned` on lines 47-48), but the per-method
      rustdoc pages for those two methods have no inline reference to it. A reader who
      arrives at `SyncRegion::clear`'s or `SyncRegion::get_cloned`'s rustdoc via a search
@@ -3685,17 +3685,17 @@ resolved" below.)_
    - **Verification:** `cargo doc -p sefer-region --all-features --no-deps` generates
      without broken-intra-doc-link warnings; the new links resolve correctly on the
      rendered docs.
-   - **Files changed:** `crates/region/src/sync_region.rs`, `docs/CORRECTNESS_OPEN_ITEMS.md`.
+   - **Files changed:** `crates/sefer-region/src/sync_region.rs`, `docs/CORRECTNESS_OPEN_ITEMS.md`.
     only; the BSD half of item 43 stays OPEN in the main index above — no
     BSD CI runner exists for this crate).
 
     - **Confirmation:** commit `1dbd6b4` was pushed and CI run `31692217669`
       (job `94421845398`, `test macos (production)`, image
       `macos-26-arm64`) ran green, executing
-      `apple_silicon_page_size_is_16_kib` (`crates/vmem/tests/smoke.rs`) —
+      `apple_silicon_page_size_is_16_kib` (`crates/aligned-vmem/tests/smoke.rs`) —
       `ok`. `page_size()` returned exactly `16384` on real aarch64 Darwin
       hardware, confirming the `_SC_PAGESIZE = 29` cfg-table entry
-      (`crates/vmem/src/lib.rs`, task #714) is the correct constant for the
+      (`crates/aligned-vmem/src/lib.rs`, task #714) is the correct constant for the
       macOS family, not merely a value that compiles.
     - **Task/round:** task #888 (round 7, finding T1 of
       `docs/reviews/2026-08-13-aligned-vmem-round7-review.md`), following
@@ -3718,11 +3718,11 @@ resolved" below.)_
       - `OffT = i64` for everything else, including 32-bit BSD/Darwin (which have a 64-bit off_t natively)
 
       The `mmap` extern's `offset` parameter is now typed as `OffT` instead of `i64`. This allows `i686-unknown-linux-gnu` and `armv7-unknown-linux-gnueabihf` to build correctly again with the CORRECT ABI, rather than being rejected outright. The original `compile_error!` (task #911) was removed entirely, not narrowed.
-    - **Evidence:** task #914 commit, per-target `OffT` type alias definitions and the `mmap`/`munmap`/`madvise`/`sysconf` extern block in `crates/vmem/src/lib.rs`, plus verification on current targets. Historical note: the original compile_error!-based fix (task #911) was caught as a publish-blocking regression by the round-10 closing review (H2C1) and corrected in the same round (task #914) before 0.2.0 shipped.
+    - **Evidence:** task #914 commit, per-target `OffT` type alias definitions and the `mmap`/`munmap`/`madvise`/`sysconf` extern block in `crates/aligned-vmem/src/lib.rs`, plus verification on current targets. Historical note: the original compile_error!-based fix (task #911) was caught as a publish-blocking regression by the round-10 closing review (H2C1) and corrected in the same round (task #914) before 0.2.0 shipped.
 
 45. **`aligned-vmem` Linux HugeTLB path leaks entire pinned huge-page mapping when system's default huge-page size is not 2 MiB.** — **CLOSED** (task #909, finding H1 of `docs/reviews/2026-08-13-aligned-vmem-independent-review.md`).
 
-    Before this fix, `libc_mmap` (`crates/vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) requested huge pages via plain `MAP_HUGETLB` with NO size-encoding flag (no `MAP_HUGE_2MB`/`MAP_HUGE_1GB` etc.). On Linux, that means the kernel uses the SYSTEM'S CONFIGURED DEFAULT huge-page size — which is set via the `default_hugepagesz=` kernel boot parameter and can be 1 GiB on HPC/database-tuned hosts, NOT universally 2 MiB. But `LINUX_HUGE_PAGE_SIZE` was hard-coded to 2 MiB, and `unix_reserve`'s guard validated callers' `size`/`align` against that 2 MiB constant before allowing a huge-page reservation attempt. `try_reserve_aligned_exact` then returned `reservation_len = size` (the caller's REQUESTED size) as if that's the real OS reservation length — but if the kernel actually used a 1 GiB huge page (because that's the configured default), the true mapping is 1 GiB, not 2 MiB. Later, `release_reservation` called `munmap(reservation, reservation_len)` using that wrong, too-small length. Linux's HugeTLB `munmap` requires the length argument to be a multiple of the ACTUAL underlying huge-page size the mapping used. A 2 MiB length is not a multiple of 1 GiB, so this munmap call failed with EINVAL — and `libc_munmap` silently discards the return value by design. Result: the entire 1 GiB virtual-memory mapping AND its pinned physical huge page leaked permanently and were never released. Repeating this exhausts the system's HugeTLB pool. This finding corrects/falsifies the prior "durable premise" established by task #714 and reconfirmed by later reviews (`docs/reviews/2026-08-07-aligned-vmem-rust-intel-audit.md` and `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`) that "the default is always 2 MiB on mainstream x86_64/aarch64 Linux" — that premise was wrong, because `default_hugepagesz=` is independently configurable per-host regardless of architecture.
+    Before this fix, `libc_mmap` (`crates/aligned-vmem/src/lib.rs`, `#[cfg(all(unix, not(miri)))]`) requested huge pages via plain `MAP_HUGETLB` with NO size-encoding flag (no `MAP_HUGE_2MB`/`MAP_HUGE_1GB` etc.). On Linux, that means the kernel uses the SYSTEM'S CONFIGURED DEFAULT huge-page size — which is set via the `default_hugepagesz=` kernel boot parameter and can be 1 GiB on HPC/database-tuned hosts, NOT universally 2 MiB. But `LINUX_HUGE_PAGE_SIZE` was hard-coded to 2 MiB, and `unix_reserve`'s guard validated callers' `size`/`align` against that 2 MiB constant before allowing a huge-page reservation attempt. `try_reserve_aligned_exact` then returned `reservation_len = size` (the caller's REQUESTED size) as if that's the real OS reservation length — but if the kernel actually used a 1 GiB huge page (because that's the configured default), the true mapping is 1 GiB, not 2 MiB. Later, `release_reservation` called `munmap(reservation, reservation_len)` using that wrong, too-small length. Linux's HugeTLB `munmap` requires the length argument to be a multiple of the ACTUAL underlying huge-page size the mapping used. A 2 MiB length is not a multiple of 1 GiB, so this munmap call failed with EINVAL — and `libc_munmap` silently discards the return value by design. Result: the entire 1 GiB virtual-memory mapping AND its pinned physical huge page leaked permanently and were never released. Repeating this exhausts the system's HugeTLB pool. This finding corrects/falsifies the prior "durable premise" established by task #714 and reconfirmed by later reviews (`docs/reviews/2026-08-07-aligned-vmem-rust-intel-audit.md` and `docs/reviews/2026-08-09-aligned-vmem-round-closing-review.md`) that "the default is always 2 MiB on mainstream x86_64/aarch64 Linux" — that premise was wrong, because `default_hugepagesz=` is independently configurable per-host regardless of architecture.
 
     - **Fix:** added `MAP_HUGE_2MB` constant (`21 << 26 = 0x54000000`, taken from Linux kernel `include/uapi/linux/mman.h`), OR'd it into the `mmap` flags alongside `MAP_HUGETLB`, and updated `LINUX_HUGE_PAGE_SIZE`'s doc to state that the crate NOW explicitly pins the huge-page request to 2 MiB rather than relying on — and being wrong about — the system default being "always 2 MiB." This makes the fix fail-closed: if 2 MiB huge pages specifically aren't configured/available on the host, the mmap call fails cleanly (returns null → the crate's normal OOM/error path), rather than silently succeeding with a mismatched size and leaking on munmap.
     - **Trade-off (functional narrowing):** before this fix, `reserve_aligned_huge(1 GiB, 1 GiB)` on a `default_hugepagesz=1G` host with a provisioned 1 GiB pool worked correctly — the crate got a genuine 1 GiB huge page (`is_huge() == true`), no leak. With the explicit `MAP_HUGE_2MB` request, the crate can no longer obtain huge pages of any size OTHER than 2 MiB, on any host, ever. This is a fail-closed functional narrowing (leak prevention wins, but the general "any huge-page size" case is gone unless a future round queries `/proc/meminfo`'s `Hugepagesize:` or records the kernel-rounded length instead of assuming 2 MiB).
@@ -3736,17 +3736,17 @@ resolved" below.)_
     - **Fix:** widened the regex from `\bwhen\b` to `\bwhen(ever)?\b` in `scripts/vmem-doc-drift-guard.mjs`'s `SCOPE` alternation — exactly the one-word scope-list addition this item's own "Next trigger" specified, no `lib.rs` prose touched.
     - **Verification:** `node scripts/vmem-doc-drift-guard.mjs` now exits 0 (`OK: no unconditional over-reserve/trim statements found`); `HARD_FAIL` (`unconditional`) is untouched, so a genuinely unconditional sentence containing "whenever" would still be convicted — the widening only affects the SCOPE alternative, not the hard-fail path. `npm run check`'s `vmem-doc-drift-guard` step, previously the sole failing step, now passes.
     - **Note for whoever re-cites this item:** the two sentences' line numbers had already drifted from this item's own citation (`lib.rs:1017,1042` at filing time, `:1032,:1057` after round 3's doc edits moved them) before this closure — recorded here as a live instance of the exact staleness class this campaign's own conventions exist to catch, caught only because the guard itself re-ran and re-reported current line numbers rather than the citation being trusted at face value.
-    - **Evidence:** `scripts/vmem-doc-drift-guard.mjs`'s `SCOPE` regex (the one-line diff); `crates/vmem/src/lib.rs` (the two `from_raw_parts` sentences, unchanged); `docs/CORRECTNESS_OPEN_ITEMS.md` (this closure).
+    - **Evidence:** `scripts/vmem-doc-drift-guard.mjs`'s `SCOPE` regex (the one-line diff); `crates/aligned-vmem/src/lib.rs` (the two `from_raw_parts` sentences, unchanged); `docs/CORRECTNESS_OPEN_ITEMS.md` (this closure).
 
 42a. **`aligned-vmem`'s `mock` Cargo-feature-unification hazard (item 42's aligned-vmem half)** — **CLOSED** (2026-08-16, task #962, per the maintainer decision recorded in this session: "делаем 2" — convert, do not just document the risk).
 
     Cargo unifies features across a build's WHOLE dependency graph, not per edge: `mock` REPLACES the real syscall backend with a thread-local recording stub, so if ANY crate anywhere downstream of a build (including a sibling workspace member's own `[dev-dependencies]`) enabled `aligned-vmem/mock`, every OTHER consumer in that SAME build would silently get the mock backend too — no compile error, no warning. First flagged task #715 (rust-intel audit MEDIUM §C10), deferred at the time with an explicit "free only until 0.2.0's first publish" deadline (task #658) recorded in `Cargo.toml`'s own feature comment. That deadline arrived with 0.2.0 queued for publish (this item moved to `[A]`/URGENT, task #934/C-9, for exactly that reason).
 
-    - **Fix:** converted `mock` from a Cargo feature to the build-time `--cfg aligned_vmem_mock` flag (enabled via `RUSTFLAGS="--cfg aligned_vmem_mock"`), matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg flags are passed only explicitly per build invocation and do not unify across the dependency graph, closing the hazard structurally rather than by documentation/convention alone. Confirmed before converting that the hazard had zero present cost (grep across the whole workspace: `aligned-vmem/mock` was not actually enabled anywhere), so the conversion carried no breaking-change cost despite touching 13 files (`crates/vmem/{Cargo.toml,README.md,src/{lib,mock,fault_injection}.rs,tests/{mock,mock_reentrancy,fault_injection,lazy_commit,smoke}.rs}`, `.github/workflows/ci.yml`, root `Cargo.toml`, `crates/numa/Cargo.toml` — the last two comment-only cross-reference updates).
+    - **Fix:** converted `mock` from a Cargo feature to the build-time `--cfg aligned_vmem_mock` flag (enabled via `RUSTFLAGS="--cfg aligned_vmem_mock"`), matching this repo's own `cfg(loom)`/`cfg(kani)` precedent — cfg flags are passed only explicitly per build invocation and do not unify across the dependency graph, closing the hazard structurally rather than by documentation/convention alone. Confirmed before converting that the hazard had zero present cost (grep across the whole workspace: `aligned-vmem/mock` was not actually enabled anywhere), so the conversion carried no breaking-change cost despite touching 13 files (`crates/aligned-vmem/{Cargo.toml,README.md,src/{lib,mock,fault_injection}.rs,tests/{mock,mock_reentrancy,fault_injection,lazy_commit,smoke}.rs}`, `.github/workflows/ci.yml`, root `Cargo.toml`, `crates/numa-shim/Cargo.toml` — the last two comment-only cross-reference updates).
     - **CI:** every step that previously relied on `--all-features` to reach mock coverage (which it can no longer do — mock is not a Cargo feature) got a dedicated `RUSTFLAGS: "--cfg aligned_vmem_mock"` step instead: `aligned-vmem-gates` (clippy + test, plus the `--cfg miri` row now also carrying `--cfg aligned_vmem_mock` to preserve its previously-incidental mock+miri type coverage), `test-windows`, `test-macos`, `test-workspace`. The feature-powerset job's comment corrected (5 features now, not 6 — mock sits entirely outside cargo-hack's feature space).
-    - **Verification:** a clean `cargo build -p aligned-vmem` produces zero `unexpected_cfgs` warnings (the new `[lints.rust] unexpected_cfgs` check-cfg declaration in `crates/vmem/Cargo.toml` covers the flag); `cargo test` WITH vs WITHOUT `RUSTFLAGS="--cfg aligned_vmem_mock"` flips `mock.rs` (0↔12), `mock_reentrancy.rs` (0↔2), `fault_injection.rs` (5↔0), and `lazy_commit.rs` (12↔11) exactly as intended; clippy clean on every arm; `cargo doc --all-features --no-deps` clean; `cargo test -p numa-shim --features mock` still green (28/28, confirming numa-shim's own SEPARATE `mock` feature — deliberately left unconverted, see item 42's remaining card above — was not disturbed); `ci.yml` re-parses as valid YAML; the full `npm run check` workspace gate is ALL GREEN.
+    - **Verification:** a clean `cargo build -p aligned-vmem` produces zero `unexpected_cfgs` warnings (the new `[lints.rust] unexpected_cfgs` check-cfg declaration in `crates/aligned-vmem/Cargo.toml` covers the flag); `cargo test` WITH vs WITHOUT `RUSTFLAGS="--cfg aligned_vmem_mock"` flips `mock.rs` (0↔12), `mock_reentrancy.rs` (0↔2), `fault_injection.rs` (5↔0), and `lazy_commit.rs` (12↔11) exactly as intended; clippy clean on every arm; `cargo doc --all-features --no-deps` clean; `cargo test -p numa-shim --features mock` still green (28/28, confirming numa-shim's own SEPARATE `mock` feature — deliberately left unconverted, see item 42's remaining card above — was not disturbed); `ci.yml` re-parses as valid YAML; the full `npm run check` workspace gate is ALL GREEN.
     - **Not closed by this task:** `numa-shim`'s own `mock` Cargo feature carries the identical hazard and remains unconverted, deliberately — its own first publish (task #657) has not happened yet, so its "free to convert" window has not closed. See item 42's remaining card (renumbered 42, scope narrowed) for that half.
-    - **Evidence:** commit (task #962, this session); `crates/vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs` declaration and the removed `mock = []`; `.github/workflows/ci.yml`'s new `RUSTFLAGS: "--cfg aligned_vmem_mock"` steps.
+    - **Evidence:** commit (task #962, this session); `crates/aligned-vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs` declaration and the removed `mock = []`; `.github/workflows/ci.yml`'s new `RUSTFLAGS: "--cfg aligned_vmem_mock"` steps.
 
 57. **`scripts/bench-table.mjs` has been unable to build `benches/global_alloc.rs` since task #583, ~11 days before discovery.** — **CLOSED** (2026-08-16, found and fixed by a user report of `npm run bench:table` failing).
 
@@ -3761,7 +3761,7 @@ resolved" below.)_
 
     Fully resolved across two passes of the same campaign. Pass 1 (P3-8): `libc_munmap` and miri's `release_reservation` wrapped in explicit `unsafe {}` with per-operation `// SAFETY:` comments; the third original site, `libc_madvise_hugepage`, was deleted entirely by a separate finding (II-5) that removed the whole function (the sole remaining `MADV_HUGEPAGE` call was ineffective) — a deleted function has no migration debt. Pass 2 (closing-review, task #997): the remaining six sites this item's own measurement command names were wrapped the same way — the Windows `release_reservation`'s `winapi_virtual_release` call (see `fn release_reservation`), `winapi_virtual_reserve`'s `VirtualAlloc` call (see `fn winapi_virtual_reserve`), `winapi_virtual_decommit`'s `VirtualFree` call (see `fn winapi_virtual_decommit`), `winapi_virtual_release`'s own `VirtualFree` call (see `fn winapi_virtual_release`), the Unix `release_reservation`'s `libc_munmap` call (see `fn release_reservation`), and `libc_madvise`'s `madvise` call (see `fn libc_madvise`). Also fixed two NEW sites introduced by a different round after this item was first filed: `benches/vmem_bench.rs`'s `fault_pages` helper (`base.add(offset)` and `ptr::write_volatile(...)`, added by task #985/II-19), which had its own `unsafe_op_in_unsafe_fn` debt from day one. Re-measured with this item's own prescribed command (`RUSTFLAGS="-W unsafe_op_in_unsafe_fn" cargo clippy -p aligned-vmem --all-targets --features "lazy-commit huge-pages fault-injection bench-internals"`, both on the default target and `--target x86_64-unknown-linux-gnu` for the Unix-only sites) — zero warnings on both, confirmed independently before closing this card.
 
-    - **Evidence:** `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md` findings P3-8 (pass 1 + pass 2 fixes) and II-5 (the `libc_madvise_hugepage` removal); direct fixes in `crates/vmem/src/lib.rs` at the six call sites cited above and `crates/vmem/benches/vmem_bench.rs`'s `fault_pages`.
+    - **Evidence:** `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md` findings P3-8 (pass 1 + pass 2 fixes) and II-5 (the `libc_madvise_hugepage` removal); direct fixes in `crates/aligned-vmem/src/lib.rs` at the six call sites cited above and `crates/aligned-vmem/benches/vmem_bench.rs`'s `fault_pages`.
 
 52. **[T, INFO] `decommit_lazy` leaves free BSD reclaim on the table** — **CLOSED** (filed 2026-08-14, task #934/C-9, from `docs/reviews/2026-08-14-aligned-vmem-pre-release-review.md` finding V-4).
 

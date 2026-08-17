@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 description = "100% Rust NUMA detection and binding — no C/C++ libraries (no libnuma, no hwloc). Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. macOS/miri no-op. Zero crate deps by default. forbid(unsafe_code)-friendly for consumers."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
-homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa-shim"
 documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management"]
@@ -21,7 +21,7 @@ categories = ["os", "memory-management"]
 # REPLACES the real platform backend (not merely additive) and would surface
 # the test-only recording module as if it were ordinary reference API —
 # aligned-vmem's own `mock` has since been converted to the build-time
-# `--cfg aligned_vmem_mock` flag (task #962, `../vmem/Cargo.toml`); numa-shim's
+# `--cfg aligned_vmem_mock` flag (task #962, `../aligned-vmem/Cargo.toml`); numa-shim's
 # own `mock` remains a Cargo feature, and its conversion is deliberately
 # deferred (docs/CORRECTNESS_OPEN_ITEMS.md item 42).
 [package.metadata.docs.rs]
@@ -47,12 +47,12 @@ vmem-integration = ["dep:aligned-vmem"]
 # library dependency of anything else) — never in a library's own
 # `[dependencies]`, and never in a `[dev-dependencies]` entry reachable from
 # more than one build target in the same workspace. Same policy as
-# `aligned-vmem`'s own `mock` (a Cargo feature at the time, `../vmem/Cargo.toml`,
+# `aligned-vmem`'s own `mock` (a Cargo feature at the time, `../aligned-vmem/Cargo.toml`,
 # task #715): a stronger fix (a build-time `--cfg` flag instead of a Cargo
 # feature, matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
 # unify) has since been PROVEN next door — aligned-vmem's `mock` WAS
 # converted to the `--cfg aligned_vmem_mock` build flag (task #962,
-# `../vmem/Cargo.toml`). The SAME conversion for numa-shim remains
+# `../aligned-vmem/Cargo.toml`). The SAME conversion for numa-shim remains
 # deliberately DEFERRED to this crate's own upcoming round (still
 # unpublished, task #657, zero external consumers) per
 # docs/CORRECTNESS_OPEN_ITEMS.md item 42. Revisit if/when this crate gains
@@ -60,7 +60,7 @@ vmem-integration = ["dep:aligned-vmem"]
 mock = []
 
 [dependencies]
-aligned-vmem = { version = "0.2", path = "../vmem", optional = true }
+aligned-vmem = { version = "0.2", path = "../aligned-vmem", optional = true }
 
 [lib]
 name = "numa_shim"

@@ -587,7 +587,7 @@ mimalloc's per-thread page-local free list (their tcache equivalent) shines.
 The win at T≥2 comes from our better scaling (no shared bin); the loss at T=1
 is the single-thread per-op overhead the tcache is designed to remove.
 
-Also: `crates/malloc-bench/` is a standalone library crate with the same
+Also: `crates/malloc-bench-rs/` is a standalone library crate with the same
 larson/mstress workloads, generic over any `GlobalAlloc`. No separate
 `benches/larson.rs` or `benches/mstress.rs` criterion bench exists; the MT
 macro-bench lives in `examples/` because criterion's per-iter model

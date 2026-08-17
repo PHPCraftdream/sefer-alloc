@@ -1129,9 +1129,9 @@ for completeness.
 
     > **Current state**
     > - **Status:** design-only, deferred — reasoned-but-unmeasured performance idea.
-    > - **Current number/verdict:** NEED-MEASUREMENT — no measured victim exists today. On 64-bit Unix, `crates/vmem/src/lib.rs`'s `unix_reserve` (task #944/P-1 compiled out the exact-size fast path) usually over-reserves `size + align` bytes in one `mmap` call and keeps the whole mapping, except on Linux when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, where an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). The cost of over-reserving is extra virtual address space held per reservation (cheap for small aligns like 4 KiB, larger for big aligns like 4 MiB). The 32-bit exact-size fast path (`try_reserve_aligned_exact` in `crates/vmem/src/lib.rs`) shows the shape of a possible fix: try an exact-size `mmap` first, check if the base is already `align`-aligned (hit), and fall back to the over-reserve on a miss. However, porting this to 64-bit is a real measured-tradeoff decision, not a one-line fix: on a miss, the fast path costs 3 syscalls (mmap + munmap + over-reserve mmap) vs the current flat 1 syscall. The break-even analysis between syscall savings (on hits) and retry cost (on misses) needs a real measured gate before implementation — the same class of question that led to the 32-bit fast path's own retreat-to-64-bit-removal (see `unix_reserve`'s own doc comment in `crates/vmem/src/lib.rs` for the documented reasoning).
+    > - **Current number/verdict:** NEED-MEASUREMENT — no measured victim exists today. On 64-bit Unix, `crates/aligned-vmem/src/lib.rs`'s `unix_reserve` (task #944/P-1 compiled out the exact-size fast path) usually over-reserves `size + align` bytes in one `mmap` call and keeps the whole mapping, except on Linux when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, where an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). The cost of over-reserving is extra virtual address space held per reservation (cheap for small aligns like 4 KiB, larger for big aligns like 4 MiB). The 32-bit exact-size fast path (`try_reserve_aligned_exact` in `crates/aligned-vmem/src/lib.rs`) shows the shape of a possible fix: try an exact-size `mmap` first, check if the base is already `align`-aligned (hit), and fall back to the over-reserve on a miss. However, porting this to 64-bit is a real measured-tradeoff decision, not a one-line fix: on a miss, the fast path costs 3 syscalls (mmap + munmap + over-reserve mmap) vs the current flat 1 syscall. The break-even analysis between syscall savings (on hits) and retry cost (on misses) needs a real measured gate before implementation — the same class of question that led to the 32-bit fast path's own retreat-to-64-bit-removal (see `unix_reserve`'s own doc comment in `crates/aligned-vmem/src/lib.rs` for the documented reasoning).
     > - **Next trigger:** a round with access to a 64-bit Unix target and a reservation-heavy workload pattern that demonstrates `align`-amplified VA pressure is a real problem (not merely theoretical), measured via `aligned-vmem`'s `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` bench-internals counters to determine the actual hit rate of the huge-page exact-size path on 64-bit (these counters track the huge-page path on 64-bit, not the general over-reserve path).
-    > - **Evidence:** `unix_reserve` doc comment in `crates/vmem/src/lib.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/vmem/src/lib.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/vmem/src/lib.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4).
+    > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/lib.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/lib.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/lib.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4).
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
@@ -1226,7 +1226,7 @@ for completeness.
    > - **Status:** NULL — deliberately NOT changed, after two independent reviews raised it (R6-8 → task #1040, commit `84bc9ac`; R7-4 → task #1048, which re-confirmed the verdict rather than re-litigating it).
    > - **Current number/verdict:** the finding observes that for `huge && align == 2 MiB`, an exact `mmap(size, MAP_HUGETLB)` that returns NULL is followed by the general path's `mmap(size + align, MAP_HUGETLB)` before the ordinary fallback — two failing huge attempts per logical reserve on a host with no hugetlb pool. The premise "the second attempt is guaranteed to fail too" is FALSE in general: the two calls request DIFFERENT sizes (`size` vs `size + align`), so a fragmented or bounded pool can satisfy one and refuse the other. Skipping straight to the ordinary fallback would trade a rare-but-real success for one saved syscall on an already-cold path. Both reports state the premise without addressing this.
    > - **Next trigger:** a syscall-count or latency measurement ON A LINUX HOST WITH AND WITHOUT a configured hugetlb pool, showing the saved syscall outweighs the lost success case. Until such a measurement exists, the answer stays NULL. Note the measurement is structurally unreachable from this project's current dev host (Windows) and CI (no hugetlb runner — correctness item 59), which is why it has not been produced.
-   > - **Evidence:** commit `84bc9ac`'s body (the counterexample, written out in full); `unix_reserve` in `crates/vmem/src/lib.rs` (the exact-size attempt and the over-reserve attempt, with their differing size arguments); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-8 and `...-r7.md` § R7-4 (the two raisings).
+   > - **Evidence:** commit `84bc9ac`'s body (the counterexample, written out in full); `unix_reserve` in `crates/aligned-vmem/src/lib.rs` (the exact-size attempt and the over-reserve attempt, with their differing size arguments); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-8 and `...-r7.md` § R7-4 (the two raisings).
    Full history: this entry (filed 2026-08-17, task #1048).
 
 53. **R7-5 — 64-bit Unix `reserve` retains `size + align` of VA per reservation (aligned-vmem). INFO, deliberate trade-off, not a bug.**
@@ -1249,7 +1249,7 @@ for completeness.
    >   attempt, not the generic 64-bit ordinary path — so a new counter or probe
    >   is part of the trigger. Needs a Linux host; structurally unreachable from
    >   this project's Windows dev host.
-   > - **Evidence:** `crates/vmem/src/lib.rs` — the module-doc sentence "On 64-bit
+   > - **Evidence:** `crates/aligned-vmem/src/lib.rs` — the module-doc sentence "On 64-bit
    >   Unix, the exact-size fast path is compiled out entirely", `unix_reserve`'s
    >   32-bit-gated exact arm, and the `target_pointer_width = "32"` gate on the
    >   exact-size helper (cited by SYMBOL, not by line number: this round's own
@@ -1273,7 +1273,7 @@ for completeness.
    >   `os_windows`/`os_unix`/`os_miri` modules and return named raw results from
    >   the backend boundary. R7 states directly that mixing this refactor into
    >   0.2.0's release fixes is the wrong trade.
-   > - **Evidence:** `crates/vmem/src/lib.rs` — the `RawReservation` struct and
+   > - **Evidence:** `crates/aligned-vmem/src/lib.rs` — the `RawReservation` struct and
    >   its doc comment ("Private struct for raw reservation results from backend
    >   functions / Named to prevent transposing `base` and `reservation`"), cited
    >   by symbol: batch G's draft called those doc lines a "module doc" at
@@ -1289,7 +1289,7 @@ for completeness.
     > - **Status:** deferred, low-priority — observability added; measurement of real-world alignment/privilege/size distributions on Windows workloads is required before any further speculative-window optimization.
     > - **Current number/verdict:** design-note filed — the `win_reserve_commit` fast-path threshold was extended to `GetLargePageMinimum()` to speculative-try large pages, but the existing `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/`WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS` counters only count SUCCESSFUL completions, not the syscall cost of failed large-page attempts. The retry fallback can incur up to two additional `VirtualAlloc` calls and one `VirtualFree` on alignment failure before falling through to the two-call path, but this syscall overhead was not observable. **Updated R5-4 (task #1028):** the failure surface is now split across TWO `bench-internals`-gated counters, because a single counter could not honestly cover both modes — `WINDOWS_LARGE_PAGE_RETRY_FAILURES` (`aligned_vmem::windows_large_page_retry_failures()`) counts ONLY the case where the initial large-page `VirtualAlloc` failed AND the ordinary-page retry ALSO returned NULL, and `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES` (`aligned_vmem::windows_large_page_alignment_failures()`) counts the case where an allocation succeeded but returned a misaligned base, forcing a `VirtualFree` and fallthrough. Before R5-4 the second mode was documented as covered but never actually incremented (its guard tested `!huge_granted`, which is false exactly when the initial large-page attempt succeeded).
     > - **Next trigger:** measure real-world alignment/privilege/size distributions on target Windows workloads; ONLY if **the SUM of `WINDOWS_LARGE_PAGE_RETRY_FAILURES` and `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES`** over `WINDOWS_RESERVE_COMMIT_SINGLE_CALLS` shows a material failure rate should the speculative window be narrowed or removed. Reading either counter alone under-reports the speculative window's true cost. The current threshold (`GetLargePageMinimum()`) remains in place — this is observability-only, not a premature optimization removal.
-    > - **Evidence:** `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md` (finding R4-5); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r5.md` (finding R5-4, which caught the never-incremented second mode); `crates/vmem/src/lib.rs` (both counter declarations at `WINDOWS_LARGE_PAGE_RETRY_FAILURES` and `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES`, their two distinct increment sites in `win_reserve_commit` — the both-returned-NULL branch and the post-call alignment check respectively, accessors `windows_large_page_retry_failures()` / `windows_large_page_alignment_failures()`, both reset in `reset_bench_internals_counters()`); `crates/vmem/tests/bench_internals_counters.rs` (diagnostic-surface + reset test); `crates/vmem/Cargo.toml` (bench-internals feature documentation).
+    > - **Evidence:** `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md` (finding R4-5); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r5.md` (finding R5-4, which caught the never-incremented second mode); `crates/aligned-vmem/src/lib.rs` (both counter declarations at `WINDOWS_LARGE_PAGE_RETRY_FAILURES` and `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES`, their two distinct increment sites in `win_reserve_commit` — the both-returned-NULL branch and the post-call alignment check respectively, accessors `windows_large_page_retry_failures()` / `windows_large_page_alignment_failures()`, both reset in `reset_bench_internals_counters()`); `crates/aligned-vmem/tests/bench_internals_counters.rs` (diagnostic-surface + reset test); `crates/aligned-vmem/Cargo.toml` (bench-internals feature documentation).
     Full history: tasks #1022, #1028.
 
 44. **R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**
@@ -1691,7 +1691,7 @@ for completeness.
    >   wave" item 6 (the trigger for this reconfirmation);
    >   `docs/perf/R24_8_DEALLOC_BATCH_INTERNALS_GATE.md` (trigger 3's actual
    >   firing, pre-dating this task); `src/global/sefer_alloc.rs`,
-   >   `src/registry/heap_core_dealloc_batch.rs`, `crates/region/src/region.rs`,
+   >   `src/registry/heap_core_dealloc_batch.rs`, `crates/sefer-region/src/region.rs`,
    >   `crates/ring-mpsc/src/lib.rs`, `crates/tagged-index-stack/src/lib.rs`
    >   (the files read for this reconfirmation).
    > - **BENCH-REVIEW CROSS-REF (2026-08-04, R34-2/task #521):** the
@@ -2021,7 +2021,7 @@ for completeness.
     >     found the reservation-path share of that signal small — 4.3-4.8%
     >     — leaving the TLS-access-shape question still genuinely open as a
     >     cheap check, not as a backlog item).
-    >   - **(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa/`
+    >   - **(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa-shim/`
     >     (833 lines) + `src/alloc_core/numa.rs` (125 lines) exist as the
     >     in-crate seam, but `numa-aware` is **not part of `production`**, so
     >     every NUMA-touching site compiles out of the shipped configuration
@@ -2131,7 +2131,7 @@ for completeness.
     > - **Status:** deferred — documented here, not implemented this round.
     > - **Current number/verdict:** NOT MEASURED (no benchmark run this
     >   round; this is a code-reading-only finding from an independent review
-    >   of `aligned-vmem`'s round-3 fix pass, not a gate report). `crates/vmem/src/lib.rs`'s
+    >   of `aligned-vmem`'s round-3 fix pass, not a gate report). `crates/aligned-vmem/src/lib.rs`'s
     >   `win_reserve_commit` (called from `try_reserve_aligned_huge` with
     >   `extra_commit_flags = MEM_LARGE_PAGES`, always through the single-call
     >   fast path since huge-page requests use `align <= WIN_ALLOCATION_GRANULARITY`)
@@ -2201,10 +2201,10 @@ for completeness.
     >   dedicated Windows-only round), OR (class 2 specifically) evidence
     >   that real consumers hit `ERROR_NOT_ENOUGH_MEMORY`-shaped first
     >   failures where the retry also fails.
-    > - **Evidence:** `crates/vmem/src/lib.rs` `win_reserve_commit`
+    > - **Evidence:** `crates/aligned-vmem/src/lib.rs` `win_reserve_commit`
     >   (single-call fast path, `extra_commit_flags` branch) and
     >   `try_reserve_aligned_huge` (its `MEM_LARGE_PAGES` caller); confirmed
-    >   via `grep -rn GetLargePageMinimum crates/vmem/src/` returning zero
+    >   via `grep -rn GetLargePageMinimum crates/aligned-vmem/src/` returning zero
     >   matches as of this entry. Class 2: the unconditional retry is the
     >   `if extra_commit_flags != 0` branch inside the `None` arm of the
     >   single-call path's `match NonNull::new(p ...)` (the retry's own

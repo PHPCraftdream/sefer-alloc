@@ -358,7 +358,7 @@ For `no_std` + `alloc` targets, disable the `std` feature:
 default build is `#![forbid(unsafe_code)]` at the top; the only
 `unsafe` comes from `slotmap`'s core wrapped by a thin typed
 membrane. No version-scoped audit record for `slotmap` is tracked by
-this project (see `crates/region/README.md` "## Safety").
+this project (see `crates/sefer-region/README.md` "## Safety").
 
 `SeferAlloc` (the `#[global_allocator]` below) is a separate, OS-backed
 segment allocator: SEGMENT-aligned (4 MiB) OS-backed spans, self-hosted
@@ -534,10 +534,10 @@ details but independently useful libraries:
 
 ```
 sefer-alloc
- ├── sefer-region       (crates/region)             — typed handle store (Handle<T>/Region<T>)
- ├── aligned-vmem       (crates/vmem)               — OS virtual-memory aperture           (feature: alloc-core)
- ├── numa-shim          (crates/numa)               — NUMA detection + binding             (feature: numa-aware)
- ├── malloc-bench-rs    (crates/malloc-bench)       — portable GlobalAlloc bench harness   (standalone, dev-only)
+ ├── sefer-region       (crates/sefer-region)             — typed handle store (Handle<T>/Region<T>)
+ ├── aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture           (feature: alloc-core)
+ ├── numa-shim          (crates/numa-shim)               — NUMA detection + binding             (feature: numa-aware)
+ ├── malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness   (standalone, dev-only)
  ├── racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
  ├── size-classes       (crates/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
  ├── tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
@@ -564,7 +564,7 @@ Per-crate status:
 | `sefer-region` | [![Crates.io](https://img.shields.io/crates/v/sefer-region.svg)](https://crates.io/crates/sefer-region) | [![Documentation](https://docs.rs/sefer-region/badge.svg)](https://docs.rs/sefer-region) |
 | `aligned-vmem` | [![Crates.io](https://img.shields.io/crates/v/aligned-vmem.svg)](https://crates.io/crates/aligned-vmem) | [![Documentation](https://docs.rs/aligned-vmem/badge.svg)](https://docs.rs/aligned-vmem) |
 | `numa-shim` | [![Crates.io](https://img.shields.io/crates/v/numa-shim.svg)](https://crates.io/crates/numa-shim) | [![Documentation](https://docs.rs/numa-shim/badge.svg)](https://docs.rs/numa-shim) |
-| `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
+| `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
 | `racy-ptr-cell` | [![Crates.io](https://img.shields.io/crates/v/racy-ptr-cell.svg)](https://crates.io/crates/racy-ptr-cell) | [![Documentation](https://docs.rs/racy-ptr-cell/badge.svg)](https://docs.rs/racy-ptr-cell) |
 | `size-classes` | [![Crates.io](https://img.shields.io/crates/v/size-classes.svg)](https://crates.io/crates/size-classes) | [![Documentation](https://docs.rs/size-classes/badge.svg)](https://docs.rs/size-classes) |
 | `tagged-index-stack` | [![Crates.io](https://img.shields.io/crates/v/tagged-index-stack.svg)](https://crates.io/crates/tagged-index-stack) | [![Documentation](https://docs.rs/tagged-index-stack/badge.svg)](https://docs.rs/tagged-index-stack) |
@@ -592,13 +592,13 @@ the line to begin with the attribute, not a `//` prefix.
 
 | Crate | Path | Unsafe story |
 |---|---|---|
-| `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
-| `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
-| `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
+| `aligned-vmem` | `crates/aligned-vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
+| `numa-shim` | `crates/numa-shim/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
+| `malloc-bench-rs` | `crates/malloc-bench-rs/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
 | `racy-ptr-cell` | `crates/racy-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
 | `globalalloc-model` | `crates/globalalloc-model/` | `#![allow(unsafe_code)]` — single documented reason: the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout); every impl + call carries `// SAFETY:` |
 | `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/region/README.md` "## Safety") |
+| `sefer-region` | `crates/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/sefer-region/README.md` "## Safety") |
 | `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
 | `tagged-index-stack` | `crates/tagged-index-stack/` | `#![forbid(unsafe_code)]` — lock-free via a single packed `AtomicUsize` head word; ABA tag in the high bits, no raw-pointer derefs |
 | `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |

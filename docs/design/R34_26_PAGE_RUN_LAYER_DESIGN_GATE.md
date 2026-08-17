@@ -31,7 +31,7 @@ victim workload) is not met (§7).
 |---|---|
 | Was the `medium-classes` failure architectural (carve/grow), not just "missing size classes"? | **Yes — confirmed by two independent lines of evidence.** R10-2 §4.2 ("ANY allocator that packs densely must move on a cross-class realloc") and R22-6's closed-form LCM proof (in-place grow is geometrically impossible within a 4 MiB segment for the medium ladder: the LCM chain = 15 MiB ≫ 4 MiB). |
 | Does the page-run layer address the architectural root cause? | **Yes, in principle.** A multi-`SEGMENT` arena (8–16 MiB) gives enough room for both density AND in-place adjacent-run grow if designed with a buddy/run bitmap from the start — the exact combination R10-2 §5 item 1 envisioned but the 4 MiB segment made geometrically impossible. |
-| **Mandatory precondition: does this project have a real consumer in 256 KiB–2 MiB?** | **No.** Exhaustive search (§7): every workload in this repo touching that range is a synthetic adversarial harness purpose-built to interrogate the realloc axis, not a real-world consumer pattern. The larson/mstress workloads (`crates/malloc-bench`) generate sizes "mostly 16..512 B, rarely up to ~8 KiB" — they never reach 256 KiB. |
+| **Mandatory precondition: does this project have a real consumer in 256 KiB–2 MiB?** | **No.** Exhaustive search (§7): every workload in this repo touching that range is a synthetic adversarial harness purpose-built to interrogate the realloc axis, not a real-world consumer pattern. The larson/mstress workloads (`crates/malloc-bench-rs`) generate sizes "mostly 16..512 B, rarely up to ~8 KiB" — they never reach 256 KiB. |
 | Should a prototype be built now? | **No — NEED-MORE-DATA, lean NO-GO.** Without a demonstrated consumer, the page-run layer is speculative architecture. The idea is sound and remains a reusable CONDITIONAL-GO starting point (R11-7), but the project's own consistent standard ("gate heavyweight subsystems on measured pain, not hypothetical pain" — R9-4/R10-4/R11-7/R12-13/R22-18) bars investing implementation effort now. |
 | What evidence would reopen this? | §10: (1) a real profiling trace showing material allocation/realloc volume in 256 KiB–2 MiB, OR (2) a `MAX_SEGMENTS`-bound workload, OR (3) the carve/grow model itself changes. |
 
@@ -211,8 +211,8 @@ without a real consumer would violate the standard every prior round upheld.
 
 Exhaustive search for a real consumer in the 256 KiB–2 MiB range:
 
-**a) `crates/malloc-bench` (larson/mstress workloads).** The shared workload
-crate's `pick_size` function (`crates/malloc-bench/src/lib.rs:140-147`) generates
+**a) `crates/malloc-bench-rs` (larson/mstress workloads).** The shared workload
+crate's `pick_size` function (`crates/malloc-bench-rs/src/lib.rs:140-147`) generates
 "mostly 16..512 B, rarely up to ~8 KiB" allocation sizes:
 
 ```text
@@ -566,7 +566,7 @@ All cited documents were read in FULL, not excerpted from memory:
 - `docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md` §3 (P1 item 3)
 - `docs/perf/OPEN_ITEMS.md` item 3 (page-run layer), item 6 (remap), items 5
   (run-origin oracle)
-- `crates/malloc-bench/src/lib.rs` `pick_size` (lines 140–147 — size distribution)
+- `crates/malloc-bench-rs/src/lib.rs` `pick_size` (lines 140–147 — size distribution)
 - `examples/_shared/paired_ab_medium_workload.rs` (the R10-2 harness)
 - `examples/r13_8_medium_working_set_judge.rs` (the MAX_SEGMENTS probe)
 - `examples/malloc_macro.rs` (the larson/mstress driver)

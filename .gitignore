@@ -1,7 +1,7 @@
 /target
 # This workspace overrides CARGO_TARGET_DIR to a shared location outside the
 # repo (see .cargo/config.toml comments + the dev-machine env var), so any
-# `target/` directory found IN-TREE (e.g. `crates/region/target/`) is never
+# `target/` directory found IN-TREE (e.g. `crates/sefer-region/target/`) is never
 # real cargo build output — it's a tool writing a relative "target/..." path
 # from the crate's own CWD. First seen from captrack's `autodump` feature
 # (writes `target/captrack-pgo/profile-*.json` on process exit unless

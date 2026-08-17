@@ -3,7 +3,7 @@
 **Task:** aligned-vmem round 4 code-quality review finding — document the
 Windows `VirtualAlloc2` opportunity and its trade-offs. The Windows
 `align > 64 KiB` two-call reservation path
-(`crates/vmem/src/lib.rs:1497-1589`) — the crate's own flagship
+(`crates/aligned-vmem/src/lib.rs:1497-1589`) — the crate's own flagship
 allocator-segment use case (e.g. `align=4MiB, size=4MiB` is
 `src/alloc_core/os.rs`'s only reservation shape) — currently costs 2
 syscalls and holds `size + align` bytes of virtual address space to
@@ -13,7 +13,7 @@ usable). `VirtualAlloc2` (Windows 10 1803+ / Server 2016+) accepts a
 `MemExtendedParameterAddressRequirements` with arbitrary alignment,
 allowing a single syscall with NO over-reserve.
 
-**Outcome: DESIGN-ONLY.** No `crates/vmem/src/`, `Cargo.toml`, or `tests/`
+**Outcome: DESIGN-ONLY.** No `crates/aligned-vmem/src/`, `Cargo.toml`, or `tests/`
 file is modified. The deliverable is this doc, which documents the
 opportunity, its trade-offs, and the open decision it is gated on
 (Windows-version-floor policy + GetProcAddress-vs-link-time choice).
@@ -83,7 +83,7 @@ reasoned from the Win32/BSD API specifications.
 
 ## 1. Current Windows `align > 64 KiB` implementation — the inefficiency to fix
 
-### 1.1 The two-call path (crates/vmem/src/lib.rs:1497-1589)
+### 1.1 The two-call path (crates/aligned-vmem/src/lib.rs:1497-1589)
 
 For `align > 64 KiB`, the current code takes a deliberately over-reserved
 region and finds an aligned window inside it:
@@ -397,7 +397,7 @@ real trade-off surface; the BSD note is contextual information only.
 
 ### 4.2 What this note does NOT deliver
 
-1. **No implementation** — no `crates/vmem/src/`, `Cargo.toml`, or `tests/`
+1. **No implementation** — no `crates/aligned-vmem/src/`, `Cargo.toml`, or `tests/`
    changes. This is a design-note documenting an open opportunity, not a code
    change.
 2. **No measured speedup claim** — there are no measured numbers to cite. R32-13

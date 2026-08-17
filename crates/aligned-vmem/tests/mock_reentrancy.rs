@@ -20,7 +20,7 @@
 //!
 //! # How the reentrancy is constructed
 //!
-//! [`mock::record`] (`crates/vmem/src/mock.rs`) does, in order:
+//! [`mock::record`] (`crates/aligned-vmem/src/mock.rs`) does, in order:
 //! 1. `RECORDING.set(true)`
 //! 2. `CALLS.try_with(|c| c.borrow_mut().push(call))`
 //! 3. `RECORDING.set(false)`

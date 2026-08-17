@@ -31,7 +31,7 @@ env:
   # (needless_range_loop in `refill_class`, manual_is_multiple_of in
   # `class_for`, 4x doc_lazy_continuation in the `tcache` doc comment) plus
   # a handful of test-file / sibling-crate findings (manual_is_multiple_of
-  # in `crates/numa`, manual_dangling_ptr in `tests/numa_seam.rs`,
+  # in `crates/numa-shim`, manual_dangling_ptr in `tests/numa_seam.rs`,
   # zero_repeat_side_effects / assertions_on_constants in two other test
   # files, annotated `#[allow]` with rationale where the lint's suggested
   # fix would have changed test semantics) were fixed or explicitly
@@ -105,7 +105,7 @@ jobs:
       - name: Check whether this version is already published
         # Distinct concern from cargo-semver-checks above (see that step's
         # comment): this checks whether the version currently in
-        # crates/region/Cargo.toml is already present in the crates.io
+        # crates/sefer-region/Cargo.toml is already present in the crates.io
         # sparse index, which cargo-semver-checks does not check and a
         # rustdoc-shape-only "no change" verdict can coexist with.
         #
@@ -119,7 +119,7 @@ jobs:
         # independent of this step -- `cargo publish` itself rejects an
         # already-taken version at crates.io, so nothing is unguarded by
         # making this informational. Bump the version in
-        # crates/region/Cargo.toml only when actually preparing a new
+        # crates/sefer-region/Cargo.toml only when actually preparing a new
         # release, not to silence this warning.
         run: |
           set -euo pipefail
@@ -128,7 +128,7 @@ jobs:
           echo "Local sefer-region version: $version"
           index_json=$(curl -sSf https://index.crates.io/se/fe/sefer-region)
           if echo "$index_json" | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
-            echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/region/Cargo.toml only when preparing an actual new release."
+            echo "::warning::sefer-region $version is already published on crates.io. This is expected on ordinary commits after a release -- CI does not block on it (an actual \`cargo publish\` of an already-taken version fails at crates.io itself regardless). Bump the version in crates/sefer-region/Cargo.toml only when preparing an actual new release."
           else
             echo "OK: sefer-region $version is not yet on crates.io."
           fi
@@ -226,7 +226,7 @@ jobs:
       # every major-breaking lint is skipped as "already accounted for" --
       # exactly what 0.2.0's documented BREAKING change
       # (`Reservation::from_raw_parts` gained a `granted_huge` parameter, see
-      # crates/vmem/CHANGELOG.md) requires. The step is kept anyway because it
+      # crates/aligned-vmem/CHANGELOG.md) requires. The step is kept anyway because it
       # becomes discriminating the moment 0.2.0 is the published baseline: a
       # later 0.2.1/0.2.x that breaks API shape then fails here. Until then,
       # do NOT read a green result from this step as "no unintended breaking
@@ -796,7 +796,7 @@ jobs:
       # compile its `#[cfg(feature = "mock")]` dispatch arms instead of the
       # real OS integration (`mbind(2)` on Linux, `VirtualAllocExNuma` on
       # Windows) gated `#[cfg(not(feature = "mock"))]` in
-      # `crates/numa/src/lib.rs`. The shim crate itself IS tested on real
+      # `crates/numa-shim/src/lib.rs`. The shim crate itself IS tested on real
       # kernels per-PR (`numa-shim-windows`/`numa-shim-macos`, `-p numa-shim`
       # without `mock`), but that covers only the shim IN ISOLATION — not
       # whether `sefer-alloc` built with `numa-aware` and WITHOUT
@@ -1808,7 +1808,7 @@ jobs:
           components: clippy
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
-      # task #778 (round-closing review, F9): crates/numa had NO clippy
+      # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
       # coverage anywhere in this file -- the four numa-shim-* jobs all ran
       # cargo test only, so a clippy regression here (e.g. the
       # GetCurrentProcess-unused-in-default-features bug F9 itself fixed)
@@ -1863,7 +1863,7 @@ jobs:
 
   numa-shim-macos-miri:
     # Publish-readiness task #635 (P1, F1 of the 2026-08-06 numa-shim review):
-    # `crates/numa/src/lib.rs`'s `#[cfg(target_os = "macos")] mod platform`
+    # `crates/numa-shim/src/lib.rs`'s `#[cfg(target_os = "macos")] mod platform`
     # block (the macOS stub) was missing the `not(miri)` guard that its three
     # sibling platform blocks (Linux, Windows, the unsupported-platform
     # fallback) all carry. Under macOS + miri simultaneously, BOTH that block

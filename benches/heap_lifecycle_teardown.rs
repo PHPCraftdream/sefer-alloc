@@ -23,7 +23,7 @@
 //!       real "spin up a worker, do some work, let it die" workload.
 //!
 //! These three were previously blended together in ad-hoc, inconsistent ways
-//! across `examples/malloc_macro.rs` / `crates/malloc-bench/src/lib.rs` (per
+//! across `examples/malloc_macro.rs` / `crates/malloc-bench-rs/src/lib.rs` (per
 //! the review, those run teardown before/around the stop-timer boundary
 //! inconsistently). This bench reports all three as **separate,
 //! non-summed** `bench_function`s / groups, so each can be read off

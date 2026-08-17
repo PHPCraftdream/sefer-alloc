@@ -2,7 +2,7 @@
 //! handed up to the safe Cartographer.
 //!
 //! This module is now a **thin wrapper** over the `aligned-vmem` crate
-//! (`crates/vmem`), which carries all the platform-specific OS syscalls
+//! (`crates/aligned-vmem`), which carries all the platform-specific OS syscalls
 //! (`mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/`VirtualFree` on
 //! Windows). The `unsafe` live in `aligned_vmem`; this file exposes a safe
 //! interface that matches the original `os.rs` contract so the rest of
@@ -167,7 +167,7 @@ impl Segment {
     /// (4 MiB) aligned — only the span's byte length shrinks — so
     /// [`segment_base_of_ptr`] continues to resolve the correct segment base
     /// for an exact-span segment exactly as it does for a whole-segment one.
-    /// `crates/vmem::reserve_aligned(size, align)` already supports
+    /// `crates/aligned-vmem::reserve_aligned(size, align)` already supports
     /// `size != align` on every backend (see the `exact-span-large` feature
     /// doc in `Cargo.toml` for the full backend-support argument); this
     /// constructor is a thin non-rounding sibling of [`reserve`](Self::reserve),

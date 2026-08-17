@@ -2,13 +2,13 @@
 
 **Task:** task #849 (bench-only, observation-only). Measurement of `try_reserve_aligned_exact`'s hit rate across 4 alignment regimes on Unix/WSL2, to inform whether the V20/P17 align-threshold guard proposal should be implemented. This is the "measure first" half of the project's two-step convention — no guard was implemented, only diagnostic counters were read. The ~57% measured hit rate (not the predicted ~0.1%) means the fast path is very likely still a net win even for large aligns on this platform+kernel, so the guard's premise does not hold here.
 
-**Date:** 2026-08-12. **Base revision:** `main` @ `76ac08f` (task #842) plus this task's own uncommitted diff (`crates/vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs`, `crates/vmem/Cargo.toml`). (Resolved: this diff was committed as `35d51e6` — see the reproduction section for the exact commit hash.)
+**Date:** 2026-08-12. **Base revision:** `main` @ `76ac08f` (task #842) plus this task's own uncommitted diff (`crates/aligned-vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs`, `crates/aligned-vmem/Cargo.toml`). (Resolved: this diff was committed as `35d51e6` — see the reproduction section for the exact commit hash.)
 
 ---
 
 ## 1. What was measured
 
-Added a new `bench-internals`-gated example, `crates/vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs`, using the existing `unix_exact_reserve_attempts()`/`unix_exact_reserve_hits()`/`reset_bench_internals_counters()` diagnostic counters (added in task #504). The example measures `try_reserve_aligned_exact`'s hit rate across 4 alignment regimes:
+Added a new `bench-internals`-gated example, `crates/aligned-vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs`, using the existing `unix_exact_reserve_attempts()`/`unix_exact_reserve_hits()`/`reset_bench_internals_counters()` diagnostic counters (added in task #504). The example measures `try_reserve_aligned_exact`'s hit rate across 4 alignment regimes:
 
 1. **page-size (4 KiB)** — the trivial 100%-by-construction case (any mmap result is already page-aligned).
 2. **existing default arm (64 KiB)** — the same alignment the existing benchmark uses.
@@ -93,7 +93,7 @@ cargo fmt --check -p aligned-vmem                # clean
 cargo doc --features "lazy-commit huge-pages fault-injection" --no-deps   # clean
 ```
 
-The new example is gated on `[[example.required-features = ["bench-internals"]]]` in `crates/vmem/Cargo.toml`, so `cargo clippy --all-targets` (default features) does not try to compile it against cfg'd-out accessor functions — this is the same "default clippy row must actually build" hazard task #846 found with a backwards cfg_attr, caught here before it shipped.
+The new example is gated on `[[example.required-features = ["bench-internals"]]]` in `crates/aligned-vmem/Cargo.toml`, so `cargo clippy --all-targets` (default features) does not try to compile it against cfg'd-out accessor functions — this is the same "default clippy row must actually build" hazard task #846 found with a backwards cfg_attr, caught here before it shipped.
 
 ---
 
@@ -112,7 +112,7 @@ measurement, documented in the prior b228e69 commit)
 ### 7.2 Exact reproduction commands
 
 ```bash
-cd crates/vmem
+cd crates/aligned-vmem
 cargo build --release --features bench-internals \
   --example v20_849_unix_exact_reserve_hit_rate
 for i in $(seq 1 30); do \
@@ -135,8 +135,8 @@ Measured from commit `35d51e6` (task #849) — see `git show 35d51e6` for the fu
 
 ## 9. Files touched by this task
 
-- `crates/vmem/Cargo.toml` — new `[[example]]` entry with `required-features = ["bench-internals"]`.
-- `crates/vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs` — new measurement example (bench-internals-gated).
+- `crates/aligned-vmem/Cargo.toml` — new `[[example]]` entry with `required-features = ["bench-internals"]`.
+- `crates/aligned-vmem/examples/v20_849_unix_exact_reserve_hit_rate.rs` — new measurement example (bench-internals-gated).
 - `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE.md` — this report.
 - `docs/perf/_raw_r_v20_849_unix_exact_reserve_hit_rate.log` — raw per-run output (gitignore exception).
 - `docs/perf/R_V20_849_UNIX_EXACT_RESERVE_HIT_RATE_summary.csv` — machine-readable summary.

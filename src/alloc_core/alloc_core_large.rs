@@ -111,7 +111,7 @@ impl AllocCore {
     /// GENUINELY FRESH OS reservation whose every byte the OS zero-fills by
     /// construction (Windows `VirtualAlloc` MEM_COMMIT, Unix zero-filled
     /// anonymous `mmap`). Under **miri** the bool is ALWAYS `false`, even for
-    /// a fresh reservation: `crates/vmem`'s miri aperture falls back to bare
+    /// a fresh reservation: `crates/aligned-vmem`'s miri aperture falls back to bare
     /// `std::alloc::alloc`, which does NOT zero (vmem's own
     /// `leak_zeroed_pages` documents and works around exactly this), so a
     /// fresh miri reservation carries NO zero guarantee and the caller must
@@ -165,7 +165,7 @@ impl AllocCore {
         // `mmap`/`VirtualAlloc` path) REQUIRES the usable size to be an exact
         // multiple of SEGMENT for the over-reserve + trim arithmetic to hold
         // (`base_addr + usable <= region_addr + over`, `over = usable * 2`).
-        // That is NOT a real backend constraint: both `crates/vmem` backends
+        // That is NOT a real backend constraint: both `crates/aligned-vmem` backends
         // (`win_reserve_commit` / `unix_reserve`) over-reserve `size + align`
         // (not `size * 2`) and trim to an `align`-aligned `size`-byte span
         // for ARBITRARY `size` — `try_reserve_aligned`'s only size contract

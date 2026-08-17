@@ -54,7 +54,7 @@ workload shapes rather than inventing new ones.
   slower-cadence judge this project already trusts for GO/NO-GO
   decisions. bench-scale-tool's calibrate-once-then-fixed-N model
   (confirmed against its actual 0.1.0 source in this session's earlier
-  work on `crates/region`, not assumed from its doc comments) is
+  work on `crates/sefer-region`, not assumed from its doc comments) is
   designed for a FASTER, lower-fidelity "did I just make this
   obviously worse" pulse check — the kind of thing a developer runs
   between edits, not the kind of thing that generates a citable
@@ -86,12 +86,12 @@ fast loop for the same reason: different cadence, different tool, same
 codebase).
 
 A root-level `bench-iters.txt` manifest is needed (matching the
-established pattern from `crates/region/benches/bench-iters.txt`, added
+established pattern from `crates/sefer-region/benches/bench-iters.txt`, added
 under task #656/#792). Unlike `sefer-region`'s crate-local manifest — which
 exists specifically because a STANDALONE-extracted `sefer-region` tarball
 has no ancestor `[workspace]`-declaring `Cargo.toml` to walk up to — the
 root `sefer-alloc` crate IS the workspace root itself, so `Harness`'s
-default ancestor-walk resolution (confirmed in `crates/region/src/
+default ancestor-walk resolution (confirmed in `crates/sefer-region/src/
 region_bench.rs`'s own comment, verified against bench-scale-tool 0.1.0's
 real source: walks up from `CARGO_MANIFEST_DIR` for the nearest
 `[workspace]`-declaring `Cargo.toml`) finds the root `Cargo.toml`

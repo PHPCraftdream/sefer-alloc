@@ -693,7 +693,7 @@ to the same node.
 
 - **Policy tuning** (MPOL_INTERLEAVE vs MPOL_BIND vs MPOL_PREFERRED): the MVP
   ships `MPOL_PREFERRED` (soft preference — the kernel falls back to any node on
-  memory pressure; see `crates/numa/src/lib.rs`), NOT the harder `MPOL_BIND`.
+  memory pressure; see `crates/numa-shim/src/lib.rs`), NOT the harder `MPOL_BIND`.
   Interleave is for HPC workloads; whether to expose a stricter `MPOL_BIND` mode
   is to be decided based on measurement results.
 - **NUMA-aware pinning runner**: synergy with the `pinning` feature (already has

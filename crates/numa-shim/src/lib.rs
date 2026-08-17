@@ -1001,7 +1001,7 @@ mod platform {
     /// equivalent to Linux `mbind(2)`.
     ///
     /// Strategy (mirrors `aligned-vmem`'s own Windows reservation,
-    /// `win_reserve_commit` in `crates/vmem/src/lib.rs`): over-reserve
+    /// `win_reserve_commit` in `crates/aligned-vmem/src/lib.rs`): over-reserve
     /// `size + align` bytes as ADDRESS SPACE ONLY (`MEM_RESERVE`, no
     /// `MEM_COMMIT`), find the aligned chunk inside, then commit only the
     /// caller-requested `size` bytes at that aligned sub-range (`MEM_COMMIT`,

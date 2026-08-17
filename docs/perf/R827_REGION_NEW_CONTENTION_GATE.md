@@ -18,7 +18,7 @@ This gate measures the actual cost of contention on `NEXT_REGION_ID` by comparin
 
 Measured on commit `a935e79cc2f589880402452a79e0186861f70bb6` (adds the `shared_fetch_add` decomposition arm; see the closing-review update above).
 
-This commit includes ONLY the harness implementation (`crates/region/benches/region_new_contention_gate.rs`) plus doc-comment fixes elsewhere in the crate found by the same review — no measurement results. The harness code is immutable at this SHA for the numbers below. (Prior harness identities, superseded by this measurement: `59c079c` — the original two-arm harness, still a valid citation for the historical two-arm-only numbers this report previously carried; `8a6e190` — amended out before any measurement, never a valid citation.)
+This commit includes ONLY the harness implementation (`crates/sefer-region/benches/region_new_contention_gate.rs`) plus doc-comment fixes elsewhere in the crate found by the same review — no measurement results. The harness code is immutable at this SHA for the numbers below. (Prior harness identities, superseded by this measurement: `59c079c` — the original two-arm harness, still a valid citation for the historical two-arm-only numbers this report previously carried; `8a6e190` — amended out before any measurement, never a valid citation.)
 
 ## Methodology
 

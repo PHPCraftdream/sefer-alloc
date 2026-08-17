@@ -3,7 +3,7 @@
 //! # Driven by `malloc-bench-rs` (no duplicate workload)
 //!
 //! The larson/mstress workload lives ONCE, in the publishable `malloc-bench-rs`
-//! crate (`crates/malloc-bench/src/lib.rs`, `Workload::{Larson, Mstress}` +
+//! crate (`crates/malloc-bench-rs/src/lib.rs`, `Workload::{Larson, Mstress}` +
 //! `run`/`run_with`/`sweep`/`sweep_with`). This example is a thin driver over
 //! that crate: it selects the workloads, the thread sweep, and the allocators,
 //! and — under the `pinning` feature — passes an `on_thread_start` hook

@@ -2136,7 +2136,7 @@ impl AllocCore {
     ///       NOT by the passed layout. A grown-in-place block stays a Large
     ///       segment, so `dealloc(ptr, new_layout)` frees the whole segment
     ///       correctly regardless of `new_size`.
-    ///   (b) `crates/vmem` reserves large segments with
+    ///   (b) `crates/aligned-vmem` reserves large segments with
     ///       `VirtualAlloc(MEM_RESERVE|MEM_COMMIT)` over the WHOLE span;
     ///       the large-cache keeps pages committed on deposit. The entire
     ///       `span_usable` region is committed and writable — growing into

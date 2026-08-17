@@ -10,7 +10,7 @@ own testability?*
 Inventory surveyed: `scripts/*.mjs` (12 runners), `benches/` (15 targets, incl.
 the R6-OPT-A judge family), `tests/` (~190 files, incl. 3 differential-model
 tests and 18 loom models), `fuzz/fuzz_targets/` (3 targets),
-`crates/malloc-bench` (already-extracted single-file crate),
+`crates/malloc-bench-rs` (already-extracted single-file crate),
 `examples/` (process-probe binaries), plus the confined-unsafe two-tier seam and
 `#[doc(hidden)]` `dbg_*` accessor patterns from `CLAUDE.md` / README.
 
@@ -69,7 +69,7 @@ zero non-dev dependencies.
 
 ## C2. `malloc-bench-rs` — the larson/mstress macro-benchmark harness
 
-**What it is / files.** `crates/malloc-bench/src/lib.rs` (~600 lines, single-file
+**What it is / files.** `crates/malloc-bench-rs/src/lib.rs` (~600 lines, single-file
 seam crate, publish-ready metadata already in `Cargo.toml`: description,
 keywords, docs.rs link, MIT/Apache-2.0). Generic-over-`GlobalAlloc` MT harness:
 larson (server churn with cross-thread mailbox handoff) + mstress (batch
@@ -340,7 +340,7 @@ and be linked from the README); optional 50-line inventory-check xtask.
 
 ### Extract as a crate/tool (in order of value ÷ effort)
 
-1. **Publish `malloc-bench-rs`** (`crates/malloc-bench`) — already extracted,
+1. **Publish `malloc-bench-rs`** (`crates/malloc-bench-rs`) — already extracted,
    publish-ready metadata; add the per-thread pin hook so
    `examples/malloc_macro.rs`'s duplicate can be retired. *Effort: days.
    Value: high (pure-Rust mimalloc-bench).*
