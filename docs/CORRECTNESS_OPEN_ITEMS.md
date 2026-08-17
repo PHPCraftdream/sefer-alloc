@@ -2269,9 +2269,18 @@ resolved" below.)_
 68. **CLOSED** by task #1052 (option (c): asymmetry accepted as-is, no rename).
    See "Recently resolved" below for the full closure narrative.
 
+69. **CLOSED** by task #1063 (added the missing `serial_guard()` call to `windows_virtualfree_release_failures_accessor_exists`). See "Recently resolved" below for the full closure narrative.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+69. **Flaky test: `safe_decommit_over_never_committed_tail_succeeds` intermittently read `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS` as 0 instead of 1 under full-suite parallel load** — **CLOSED** by task #1063.
+
+   - **Discovery:** task #1056 (2026-08-17), during zero-trust verification of an unrelated doc-only fix (item 49 formatting) — the first `npm run check` run FAILED on this test with zero other changes in flight besides a markdown edit; the test binary was not even rebuilt, ruling out the edit as a cause.
+   - **Root cause:** every counter-touching test in `crates/aligned-vmem/tests/lazy_commit.rs` wraps its body in `let _guard = serial_guard();` EXCEPT `windows_virtualfree_release_failures_accessor_exists`, which called `aligned_vmem::reset_bench_internals_counters()` unguarded. Under parallel test execution, that unguarded reset could land inside `safe_decommit_over_never_committed_tail_succeeds`'s own `serial_guard()`-protected read→decommit→read window — `serial_guard()` only serializes callers who ALSO take it, so an unguarded resetter is invisible to it — zeroing `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS` mid-window and making the delta read 0 instead of 1. Confirmed load/timing-dependent: the failure disappeared on an isolated re-run and passed 15/15 in a tight rerun loop.
+   - **Fix:** added `let _guard = serial_guard();` as the first line of `windows_virtualfree_release_failures_accessor_exists`'s body (`crates/aligned-vmem/tests/lazy_commit.rs`), matching every other counter-touching test in the file. One-line fix.
+   - **Evidence:** `npm run check` run during task #1056 (`crush` session `t54-a-item49`), failing step `test (aligned-vmem --all-features)`, assertion `VirtualFree(MEM_DECOMMIT) attempts left: 0, right: 1` at `crates/aligned-vmem/tests/lazy_commit.rs:687`.
 
 68. **Name asymmetry in `Reservation` decommit capability API** (`Reservation::decommit_reclaims_and_zeroes()`, associated `const fn`, compile-time capability query, vs. `Reservation::can_decommit_reclaim_and_zero()`, instance method combining compile-time capability with runtime `is_huge()`) — **CLOSED** by task #1052, no code change (option (c): asymmetry accepted as-is).
 

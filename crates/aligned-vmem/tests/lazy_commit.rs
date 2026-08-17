@@ -700,6 +700,15 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
 #[test]
 #[cfg(all(windows, feature = "bench-internals", not(aligned_vmem_mock)))]
 fn windows_virtualfree_release_failures_accessor_exists() {
+    // item 69: this test's unguarded `reset_bench_internals_counters()` call
+    // below could race with another test's own `serial_guard()`-protected
+    // read/decommit/read window, since an unguarded resetter is invisible to
+    // the guard. Every other counter-touching test in this file takes the
+    // guard first; this one didn't, and that gap produced an observed
+    // intermittent `windows_virtualfree_decommit_failures()`-delta failure
+    // in `safe_decommit_over_never_committed_tail_succeeds` under parallel
+    // `npm run check` load.
+    let _guard = serial_guard();
     // This test verifies that the `windows_virtualfree_release_failures()`
     // accessor exists, compiles, and returns 0 when no failures have occurred.
     // A path-activation test for real VirtualFree(MEM_RELEASE) failures is
