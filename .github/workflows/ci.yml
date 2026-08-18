@@ -928,6 +928,21 @@ jobs:
       # `shell: bash` is set) fails the step if cargo fails even through
       # the tee pipe; the grep then fails it unless the forced test's name
       # appears in the harness output.
+      #
+      # Task #1099/I4 (2026-08-18): the `$RUNNER_TEMP/<name>.log` path in
+      # these three rows is UNVERIFIED on a real windows runner, where it
+      # is a mixed-separator Windows path (`D:\a\_temp/x.log`) handed to
+      # MSYS tee/grep. Expected to work by construction — Actions'
+      # `shell: bash` on windows-latest resolves to Git-for-Windows bash,
+      # and Win32 path handling accepts both separators — but it has not
+      # been exercised by a completed CI run yet (the rows and this note
+      # land in the same wave). Left as-is deliberately: switching to a
+      # relative filename in the step's working directory would be an
+      # equally unverified change churned for its own sake, and the
+      # failure mode if the analysis is wrong is LOUD (a red step with
+      # grep/tee's "No such file" naming the path), not a silent
+      # green. If the first run of these rows goes red that way, replace
+      # "$RUNNER_TEMP/x.log" with "x.log" in the three steps.
       - run: |
           cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-lazy.log"
           grep -F "test forced_page::lazy_initial_commit_call_sites_survive_a_forced_64k_page ... ok" "$RUNNER_TEMP/forced-page-lazy.log"
