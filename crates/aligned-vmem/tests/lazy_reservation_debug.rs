@@ -30,13 +30,41 @@ fn debug_shows_the_watermark() {
         "initial Debug must show the watermark: {s0}"
     );
 
-    r.ensure_committed(8 * page_size()).expect("grow");
-    let s1 = format!("{r:?}");
-    assert!(
-        s1.contains(&format!("committed_len: {}", r.committed_len())),
-        "grown Debug must show the updated watermark: {s1}"
-    );
-    assert_ne!(s0, s1, "growing the watermark must change the rendering");
+    // The growth arm needs a watermark that CAN grow. Where lazy commit is not
+    // honored — under `aligned_vmem_mock`, and on any platform whose backend
+    // commits the whole span at reserve time — the initial watermark is
+    // already `len()`, so `ensure_committed` of anything smaller is a no-op and
+    // the rendering is CORRECTLY unchanged. The first version of this test
+    // asserted the rendering must differ unconditionally and went red in the
+    // gate's mock row for exactly that reason; the regime is now branched on
+    // explicitly and announced, so neither arm can pass vacuously unnoticed.
+    if initial < r.len() {
+        let target = (initial + page_size()).min(r.len());
+        assert!(
+            target > initial,
+            "growth target must be strictly above the watermark"
+        );
+        r.ensure_committed(target).expect("grow");
+        let s1 = format!("{r:?}");
+        assert!(
+            s1.contains(&format!("committed_len: {}", r.committed_len())),
+            "grown Debug must show the updated watermark: {s1}"
+        );
+        assert_ne!(s0, s1, "growing the watermark must change the rendering");
+        eprintln!(
+            "regime: growable watermark ({initial} -> {})",
+            r.committed_len()
+        );
+    } else {
+        assert_eq!(
+            initial,
+            r.len(),
+            "a non-growable watermark must be exactly the full span"
+        );
+        eprintln!(
+            "regime: watermark already at the full span ({initial}) — growth arm not applicable"
+        );
+    }
 }
 
 /// The rendering exposes exactly the intended fields and nothing else — in
