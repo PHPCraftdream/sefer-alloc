@@ -77,6 +77,25 @@ pub struct LazyReservation {
     committed: usize,
 }
 
+/// Hand-written for the same reason [`Reservation`'s](Reservation) is: the
+/// type's whole point is one piece of diagnostically decisive state — the
+/// watermark — and it must be visible in a panic message. Field selection
+/// follows the same principle as `Reservation`'s impl: print only what is
+/// already publicly observable (`committed_len()`, and the inner reservation,
+/// whose own `Debug` prints exactly its public observables). The inner
+/// reservation is rendered, not borrowed out — formatting goes through
+/// `Debug`, so no `&Reservation` escapes and the H1 sealing (task #1104)
+/// is unaffected.
+#[cfg(feature = "lazy-commit")]
+impl core::fmt::Debug for LazyReservation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LazyReservation")
+            .field("committed_len", &self.committed_len())
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
 #[cfg(feature = "lazy-commit")]
 impl LazyReservation {
     /// Wrap a freshly-created lazy reservation, recording what the backend
