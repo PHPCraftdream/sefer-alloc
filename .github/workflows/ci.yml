@@ -200,6 +200,27 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
+      # Task #1095 (H1): the page-size-override FLOOR test — the only test
+      # pinning the task #1085 fix (set_page_size_override must reject a page
+      # below the host's real one; a declared publication blocker). The test
+      # file is `#![cfg(aligned_vmem_page_size_override)]`-gated at the top
+      # level, so without the cfg it compiles ZERO tests and passes
+      # green-and-dead. The test-windows forced-page rows set that cfg but
+      # build only ROOT-crate test targets, and this job's -p aligned-vmem
+      # rows build the package's own test targets without the cfg — so before
+      # this row the test executed in no CI row anywhere (plain `cargo test
+      # -p aligned-vmem --all-features --test page_size_override` prints
+      # "running 0 tests"). Same task #1086 self-verifying shape as the
+      # mock-release row above (tee + grep -F under `shell: bash`, so
+      # -o pipefail applies); ubuntu's $RUNNER_TEMP is a clean POSIX path,
+      # so the Windows mixed-separator note in test-windows does not apply
+      # to this row.
+      - run: |
+          cargo test -p aligned-vmem --all-features --test page_size_override 2>&1 | tee "$RUNNER_TEMP/page-size-override.log"
+          grep -F "test override_floor_is_the_real_os_page_size ... ok" "$RUNNER_TEMP/page-size-override.log"
+        shell: bash
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # Task #851: miri compilation gate. NO miri interpreter required — this
       # is just `cargo check` with the `miri` cfg set, which catches the
       # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.

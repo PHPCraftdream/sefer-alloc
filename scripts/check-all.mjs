@@ -196,7 +196,17 @@
 //      boundary; carries expectTest — without the cfg this feature set
 //      compiles ZERO tests in that file and the row would pass green on
 //      an empty binary.)
-//   44. npm run iai                                                (deterministic judge,
+//   44. cargo test -p aligned-vmem --all-features --test page_size_override
+//      under RUSTFLAGS "--cfg aligned_vmem_page_size_override"   (task
+//      #1095/H1: the task #1085 real-page-floor test — the only test
+//      pinning that publication blocker, and before this row it executed
+//      in NO gate row anywhere: steps 41-43 build root-crate test
+//      targets, which never compile the aligned-vmem package's own
+//      integration tests, and the -p aligned-vmem rows in the group
+//      above never set the cfg. Carries expectTest — the file is
+//      cfg-gated at the top level, so a lost cfg means an empty green
+//      binary, the steps-41-43 M6 class.)
+//   45. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -754,10 +764,45 @@ const steps = [
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
     expectTest: 'retain_decommitted_retained_meta_bytes_oracle_forced_pages',
   },
+  {
+    // Task #1095 (H1): the page-size-override FLOOR test — the only test
+    // pinning the task #1085 fix (set_page_size_override must reject a
+    // page below the host's real one; a declared publication blocker).
+    // The whole file is gated `#![cfg(aligned_vmem_page_size_override)]`
+    // at the top level, so a lost cfg compiles ZERO tests and the target
+    // passes green-and-dead on an empty binary — the exact M6 class the
+    // three rows above carry expectTest for. Why this row had to be NEW
+    // rather than folded into them: those rows build ROOT-crate test
+    // binaries (--test lazy_initial_commit_forced_page et al.) — RUSTFLAGS
+    // reaches the aligned-vmem LIBRARY there, but cargo never builds the
+    // aligned-vmem PACKAGE's own integration-test targets for them, and
+    // every row that DOES build those targets (-p aligned-vmem
+    // --all-features / mock / mock-release / default) runs without the
+    // cfg — so before this row the test executed in NO row anywhere
+    // (counterfactual on record: the plain command prints "running 0
+    // tests", exit 0). expectTest only, not expectWork: libtest prints
+    // its per-test line on every run cached or not, and unlike the
+    // aligned-vmem group above no `cargo clean -p aligned-vmem`
+    // invalidation precedes this tail-of-array row. Placed after step 43
+    // so all four `--cfg aligned_vmem_page_size_override` rows share the
+    // array tail; the fingerprint is separate from 41-43 anyway (the
+    // aligned-vmem package's own --all-features test target, not a
+    // root-crate target). Mirrors the ci.yml aligned-vmem-gates row added
+    // in the same task. On this 4 KiB host the test is host-adaptive
+    // (prints the real page, pins the boundaries; the discriminating
+    // floor arm goes live only on >4 KiB hosts) — the row's job is to
+    // keep the file's override-cfg compilation live in the mandatory
+    // local gate everywhere.
+    name: 'test (aligned-vmem page-size-override floor, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem', '--all-features', '--test', 'page_size_override'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    expectTest: 'override_floor_is_the_real_os_page_size',
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x17 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x18 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 1 doc + 1 optional semver + 1 page-size-override floor test at the array tail, task #1095], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
