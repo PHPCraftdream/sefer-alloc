@@ -23,10 +23,12 @@ use crate::page_size::page_size;
 ///   See [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes).
 ///
 /// `start` and `end` must be multiples of [`page_size()`] and within the span.
-/// A no-op if the range is empty — and a VIOLATED range (`start > end`, or an
-/// endpoint not a multiple of [`page_size()`]) is also a silent no-op in a
-/// release build; see "Contract violations, by build profile" below for the
-/// debug-build tripwire and the fallible [`try_decommit`] form.
+/// A no-op if the range is empty AND page-aligned — and a VIOLATED range
+/// (`start > end`, or an endpoint not a multiple of [`page_size()`] — which
+/// includes an empty MISALIGNED range such as `decommit(ptr, 1, 1)`) is a
+/// silent no-op in a release build; see "Contract violations, by build
+/// profile" below for the debug-build tripwire and the fallible
+/// [`try_decommit`] form.
 ///
 /// # Safety
 ///

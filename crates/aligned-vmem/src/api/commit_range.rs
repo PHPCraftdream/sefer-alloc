@@ -17,9 +17,10 @@ use crate::page_size::page_size;
 /// returns `true`.
 ///
 /// `start` and `end` must be multiples of the runtime page size ([`page_size()`])
-/// with `start <= end`. A well-formed no-op (empty range, `start == end`)
-/// returns `true`; any other contract violation (misaligned, or `start > end`)
-/// returns `false` (task #712: an earlier version of this function clamped a
+/// with `start <= end`. A well-formed no-op (an empty PAGE-ALIGNED range,
+/// `start == end`) returns `true`; any other contract violation (misaligned,
+/// or `start > end`) returns `false` (task #712: an earlier version of this
+/// function clamped a
 /// contract violation to the WRITE-PERMITTING `true` sentinel, which already
 /// caused a real crash — see
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>

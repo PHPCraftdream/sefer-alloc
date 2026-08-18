@@ -510,7 +510,12 @@ impl Reservation {
     /// A no-op if the range is out of bounds (`end > self.len()`); an empty
     /// range is a no-op only when page-ALIGNED — an empty MISALIGNED range
     /// (`start == end`, endpoints not page multiples, e.g. `decommit(1, 1)`)
-    /// is a contract violation like any other (see `# Panics`, task #1084/M2).
+    /// is a contract violation like any other, with the SAME profile split
+    /// as every other violated range: a silent no-op in a RELEASE build
+    /// (the forwarded free function returns at `start >= end` once the
+    /// `debug_assert!` is compiled out) and a tripwire panic in a DEBUG
+    /// build (see `# Panics`; task #1084/M2 wrote the split into `# Panics`,
+    /// task #1097/L4 qualified this summary line to match).
     ///
     /// **Contract violations, by build profile (task #1051):** this method
     /// forwards to the free [`decommit`] function UNFILTERED, so a violated
@@ -713,15 +718,16 @@ impl Reservation {
     /// ensures `[start, end)` is within the reservation's usable span.
     ///
     /// Returns `true` if the range is now committed (or the call was a well-formed
-    /// no-op — empty range, `start == end`), and `false` if the OS refused to
+    /// no-op — an empty PAGE-ALIGNED range, `start == end`), and `false` if the
+    /// OS refused to
     /// commit the pages (commit-charge exhaustion / true OOM) OR the offsets
     /// violated the contract below. On `false` the caller MUST NOT write into
     /// `[start, end)`. Never panics. For the cause use [`Self::try_recommit`].
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`](crate::page_size::page_size)).
-    /// A well-formed no-op (empty range, `start == end`) returns `true`; any
-    /// other contract violation (misaligned, or `start > end`, or `end > self.len()`)
-    /// returns `false`.
+    /// A well-formed no-op (an empty PAGE-ALIGNED range, `start == end`)
+    /// returns `true`; any other contract violation (misaligned, or
+    /// `start > end`, or `end > self.len()`) returns `false`.
     #[must_use]
     pub fn recommit(&self, start: usize, end: usize) -> bool {
         // Bounds check: the range must be within the reservation's usable span.
@@ -766,9 +772,9 @@ impl Reservation {
     /// For the cause use [`Self::try_commit_range`].
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`](crate::page_size::page_size)).
-    /// A well-formed no-op (empty range, `start == end`) returns `true`; any
-    /// other contract violation (misaligned, or `start > end`, or `end > self.len()`)
-    /// returns `false`.
+    /// A well-formed no-op (an empty PAGE-ALIGNED range, `start == end`)
+    /// returns `true`; any other contract violation (misaligned, or
+    /// `start > end`, or `end > self.len()`) returns `false`.
     #[must_use]
     #[cfg(feature = "lazy-commit")]
     #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]

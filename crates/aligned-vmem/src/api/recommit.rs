@@ -12,8 +12,9 @@ use crate::page_size::page_size;
 /// re-access reads back zeroed pages or the pre-decommit contents is not
 /// guaranteed either way — see [`decommit`](crate::api::decommit)'s Darwin caveat for why.
 ///
-/// Returns `true` if the range is now committed (or the call was a well-formed
-/// no-op — empty range, `start == end`), and `false` if the OS refused to
+/// Returns `true` if the range is now committed (or the call was a
+/// well-formed no-op — an empty PAGE-ALIGNED range, `start == end`), and
+/// `false` if the OS refused to
 /// commit the pages (commit-charge exhaustion / true OOM) OR the offsets
 /// violated the contract below. On `false` the caller MUST NOT write into
 /// `[base+start, base+end)`. Never panics. For the cause use [`try_recommit`].
