@@ -181,7 +181,17 @@ jobs:
       # Task #962: mock-backend test coverage under the `--cfg aligned_vmem_mock`
       # build flag (previously this coverage came from `--all-features`, which
       # can no longer turn on mock — it is not a Cargo feature anymore).
-      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals"
+      # Task #1101: tee + grep postcondition, same self-verifying shape as
+      # the mock-release row below — tests/mock.rs and
+      # tests/mock_reentrancy.rs are BOTH `#![cfg(aligned_vmem_mock)]`-gated
+      # at the top level, so a typo'd cfg compiles them to ZERO tests with
+      # exit 0 (green-and-dead); the two greps require one named test per
+      # FILE. `shell: bash` for -o pipefail (see the mock-release row).
+      - run: |
+          cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
       # Task #1086 (L10): the RELEASE half of the mock decommit-contract
@@ -1008,7 +1018,16 @@ jobs:
       # Since task #962 the mock backend is enabled via the build-time
       # --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features (which can
       # no longer reach it).
-      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+      # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+      # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+      # greps require one named test per file. The same task #1099/I4
+      # mixed-separator caveat that covers the forced-page rows' $RUNNER_TEMP
+      # paths above applies to this row's log path unchanged.
+      - run: |
+          cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
 
@@ -1047,7 +1066,14 @@ jobs:
       # with all optional features enabled. This is the only row that runs
       # tests/mock.rs on macOS. Since task #962 the mock backend is enabled via
       # the build-time --cfg aligned_vmem_mock flag (RUSTFLAGS), not --all-features.
-      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+      # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+      # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+      # greps require one named test per file.
+      - run: |
+          cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
 
@@ -1130,7 +1156,14 @@ jobs:
       # step above no longer compiles it — this row runs `mock.rs` /
       # `mock_reentrancy.rs` (and `smoke.rs` under the recording backend)
       # with all remaining optional features enabled.
-      - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast
+      # Task #1101: tee + grep postcondition (task #1086 shape) — both mock
+      # test FILES compile to zero tests on a typo'd cfg with exit 0, so the
+      # greps require one named test per file.
+      - run: |
+          cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test records_reserve_and_decommit ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+          grep -F "test reentrancy_is_silently_dropped_with_outer_record_intact ... ok" "$RUNNER_TEMP/vmem-mock-debug.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
       # rust-intel audit finding (task #699, HIGH, 2026-08-09):

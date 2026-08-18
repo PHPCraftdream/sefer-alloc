@@ -90,8 +90,9 @@
 //      lazy-commit+huge-pages+fault-injection+bench-internals) and
 //      clippy (x86_64-unknown-linux-gnu, bench-internals only); clippy
 //      (--cfg aligned_vmem_mock via RUSTFLAGS, full feature set); test
-//      (default, --all-features, mock via RUSTFLAGS, and since task #1086
-//      mock via RUSTFLAGS --release --test reservation_decommit_contract);
+//      (default, --all-features, mock via RUSTFLAGS — expectTest-asserted
+//      since task #1101 — and since task #1086 mock via RUSTFLAGS
+//      --release --test reservation_decommit_contract);
 //      doc (--all-features, warnings-as-errors); semver-checks (optional,
 //      skipped if cargo-semver-checks not installed).
 //   29-30. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
@@ -480,11 +481,34 @@ const steps = [
     // in api/reserve.rs turned this row red with 2 failed tests while
     // every other local row stayed green; see the task #1082 commit
     // body). Mirrors CI's row exactly (features + the RUSTFLAGS cfg).
+    //
+    // Task #1101: the row now also carries expectTest — an ARRAY of two
+    // names, one per cfg-gated test FILE this full-suite row compiles
+    // (tests/mock.rs and tests/mock_reentrancy.rs are BOTH
+    // `#![cfg(aligned_vmem_mock)]`-gated at the top level). Before this,
+    // the row's only postcondition was expectWork, which a typo'd cfg
+    // still satisfies (the crate recompiles under any RUSTFLAGS — only
+    // the mock files compile to ZERO tests): verified on this tree, the
+    // real cfg runs 14 + 2 tests, the one-character typo
+    // `--cfg aligned_vmem_mok` runs 0 + 0, both exit 0. ONE name PER
+    // FILE is the right granularity because the two files share this
+    // row's single RUSTFLAGS cfg (a lost/typo'd flag kills both gates,
+    // so either name catches it) while per-FILE drift (a renamed test,
+    // an edited #![cfg] gate, a deleted file) is independent — a single
+    // sentinel would leave the other file silently droppable, the exact
+    // #1095/H1 asymmetry this row closes for the mock debug arm.
+    // reservation_decommit_contract.rs (the mock-release row's
+    // expectTest above) is NOT file-level cfg-gated and needs no
+    // sentinel here.
     name: 'test (aligned-vmem --cfg aligned_vmem_mock --features "lazy-commit huge-pages fault-injection bench-internals")',
     cmd: 'cargo',
     args: ['test', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals'],
     env: { RUSTFLAGS: '--cfg aligned_vmem_mock' },
     expectWork: 'aligned-vmem',
+    expectTest: [
+      'records_reserve_and_decommit',
+      'reentrancy_is_silently_dropped_with_outer_record_intact',
+    ],
   },
   {
     // Task #1086 (L10): the mock RELEASE test row — the release half of
@@ -877,21 +901,37 @@ for (const step of steps) {
   // not), so unlike expectWork this cannot false-RED on a warm cache. A
   // FAILING test never reaches this check (its non-zero exit fails the
   // step above); this check catches only the silent-absence case.
-  if (
-    step.expectTest &&
-    !out.includes(`test ${step.expectTest} ... ok`)
-  ) {
-    console.log(
-      `\n[check-all] FAIL at step: ${step.name} (exit 0 but the expected test ` +
-        `did not run: no 'test ${step.expectTest} ... ok' line in the step ` +
-        `output. For a forced-page or cfg-gated row this means the ` +
-        `--cfg aligned_vmem_page_size_override / --cfg aligned_vmem_mock ` +
-        `RUSTFLAGS was lost or typo'd, a required feature was dropped, or the ` +
-        `test/module was renamed — the gated half compiled OUT (see task ` +
-        `#1086/M6)`,
+  //
+  // Task #1101: `expectTest` may now be an ARRAY of names — every listed
+  // name must appear — because one cargo row can compile SEVERAL
+  // independently cfg-gated test FILES (the mock test row runs the whole
+  // `-p aligned-vmem` suite, in which BOTH tests/mock.rs and
+  // tests/mock_reentrancy.rs are `#![cfg(aligned_vmem_mock)]`-gated; a
+  // single name would leave the second file's gate silently droppable).
+  // A bare string is normalized to a one-element array, so every
+  // pre-#1101 row's pass/fail behavior is unchanged.
+  if (step.expectTest) {
+    const expectedTestNames = Array.isArray(step.expectTest)
+      ? step.expectTest
+      : [step.expectTest];
+    const missingTestNames = expectedTestNames.filter(
+      (name) => !out.includes(`test ${name} ... ok`),
     );
-    allOk = false;
-    break;
+    if (missingTestNames.length > 0) {
+      console.log(
+        `\n[check-all] FAIL at step: ${step.name} (exit 0 but the expected ` +
+          `${missingTestNames.length === 1 ? 'test did not run' : 'tests did not all run'}: ` +
+          `no ${missingTestNames.map((name) => `'test ${name} ... ok'`).join(' and no ')} ` +
+          `line${missingTestNames.length === 1 ? '' : 's'} in the step ` +
+          `output. For a forced-page or cfg-gated row this means the ` +
+          `--cfg aligned_vmem_page_size_override / --cfg aligned_vmem_mock ` +
+          `RUSTFLAGS was lost or typo'd, a required feature was dropped, or the ` +
+          `test/module was renamed — the gated half compiled OUT (see task ` +
+          `#1086/M6)`,
+      );
+      allOk = false;
+      break;
+    }
   }
   console.log(`\n[check-all] OK: ${step.name}`);
 }
