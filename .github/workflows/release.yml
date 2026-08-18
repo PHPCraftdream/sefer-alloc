@@ -240,13 +240,13 @@ jobs:
         # numa-shim) has a per-crate changelog yet" stopped being true when
         # `crates/aligned-vmem/CHANGELOG.md` landed (it predates the guard's
         # own skip branch and ships in `cargo package -p aligned-vmem --list`).
-        # The skip branch now keys on the FILE EXISTING, not on the crate
-        # name: a member crate with a per-crate changelog gets guarded
-        # against ITS OWN file (both header shapes this workspace uses are
-        # accepted -- bracketed `## [0.3.0]` at the root, unbracketed
-        # `## 0.2.0` in aligned-vmem), and only genuinely changelog-less
-        # members (sefer-region, malloc-bench-rs, numa-shim) are skipped
-        # with the explicit reason.
+        #
+        # Task #1115 CORRECTS the directory resolution: instead of assuming
+        # the package name equals the directory name (which diverged before
+        # commit c75aa59), resolve the manifest path via `cargo metadata` by
+        # package name. Fail-closed: unknown package or missing changelog now
+        # exits 1 instead of silently skipping (the old skip reproduced the
+        # task-#1102 bug class — fail-open on directory/name mismatch).
         if: ${{ steps.target.outputs.dry_run != 'true' }}
         shell: bash
         run: |
@@ -254,26 +254,39 @@ jobs:
           NAME='${{ steps.target.outputs.name }}'
           if [[ "$NAME" == "sefer-alloc" ]]; then
             CHANGELOG=CHANGELOG.md
-          elif [[ -f "crates/$NAME/CHANGELOG.md" ]]; then
-            CHANGELOG="crates/$NAME/CHANGELOG.md"
           else
-            {
-              echo "## CHANGELOG guard skipped"
-              echo ""
-              echo "CHANGELOG guard only applies to crates that HAVE a changelog;"
-              echo "member crate \`$NAME\` has no per-crate changelog -- see task L4/#617."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "Guard skipped: $NAME has no per-crate changelog (task L4/#617)."
-            exit 0
+            # Resolve directory from cargo metadata by package name, not by
+            # directory-name assumption. jq is preinstalled on GitHub's
+            # ubuntu-latest runner images.
+            MANIFEST_PATH=$(cargo metadata --no-deps --format-version 1 | jq -r --arg n "$NAME" '.packages[]|select(.name==$n)|.manifest_path')
+            if [[ -z "$MANIFEST_PATH" ]]; then
+              echo "::error::Unknown package '$NAME' - not found in cargo metadata" >&2
+              exit 1
+            fi
+            CHANGELOG="$(dirname "$MANIFEST_PATH")/CHANGELOG.md"
+          fi
+          if [[ ! -f "$CHANGELOG" ]]; then
+            echo "::error::CHANGELOG not found at $CHANGELOG" >&2
+            echo "::error::Either add crates/$(basename "$(dirname "$CHANGELOG")")/CHANGELOG.md or update this guard" >&2
+            exit 1
           fi
           VERSION='${{ steps.version.outputs.version }}'
           # Both header shapes in this workspace: `## [0.3.0]` (root) and
-          # `## 0.2.0` (aligned-vmem). VERSION contains only digits/dots, so
-          # interpolating it into this ERE is safe.
-          CHANGELOG_SECTIONS=$(grep -E "^## \[?${VERSION}\]?" "$CHANGELOG" || true)
+          # `## 0.2.0` (aligned-vmem). Dots and plus signs in VERSION are escaped
+          # to avoid treating them as regex wildcards; the trailing alternation
+          # allows only closing bracket, space, or line-end so prerelease-suffixed
+          # sections (e.g. 0.3.0-rc.1) don't prefix-match 0.3.0.
+          # `\\.` / `\\+` (not `\.` / `\+`): inside double quotes bash's
+          # pattern-replacement collapses a single backslash before a
+          # non-special char, so `\.` would interpolate the dot UNescaped
+          # (verified against GNU bash 5.2 — task #1115 counterfactual).
+          ESCAPED_VERSION="${VERSION//./\\.}"
+          ESCAPED_VERSION="${ESCAPED_VERSION//+/\\+}"
+          ANCHORED_PATTERN="^## \[?${ESCAPED_VERSION}\]?(\]|$| )"
+          CHANGELOG_SECTIONS=$(grep -E "$ANCHORED_PATTERN" "$CHANGELOG" || true)
 
-          # Count matching sections
-          MATCH_COUNT=$(echo "$CHANGELOG_SECTIONS" | grep -c "${VERSION}" || true)
+          # Count matching sections using the same anchored pattern
+          MATCH_COUNT=$(grep -cE "$ANCHORED_PATTERN" "$CHANGELOG" || true)
 
           echo "Checking $CHANGELOG for version $VERSION..."
           echo "Found $MATCH_COUNT section(s) matching [${VERSION}]"
