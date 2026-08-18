@@ -1423,3 +1423,100 @@ fn every_undecided_feature_has_exactly_one_owner_with_a_next_trigger() {
         errors.join("\n"),
     );
 }
+
+/// Task #1116: the R34-24 archive split (task #1109) generated each
+/// "Recently resolved" pointer line in `docs/CORRECTNESS_OPEN_ITEMS.md`
+/// from only the FIRST PHYSICAL LINE of the moved entry's header — for
+/// wrapped headers that produced a pointer with an unclosed `**` and no
+/// verdict token (9 odd-`**` / 19 verdict-less pointers measured at filing),
+/// so a round-start reader met e.g. `2. **Clippy dead-code ... was not`
+/// with no status. The pointers were regenerated in full (task #1116,
+/// `tmp/regen-recently-resolved-pointers.mjs`, script not committed); this
+/// test is the mechanical assertion that the defect cannot silently recur
+/// on the next split: every pointer line must carry a BALANCED `**` count
+/// (complete headline) and, before the boilerplate "full closure narrative"
+/// suffix, a verdict token (RESOLVED / CLOSED / REJECTED, case-insensitive —
+/// two entries carry lowercase verdicts inside their headlines).
+///
+/// Doc-only guard: reads doc text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn correctness_index_recently_resolved_pointers_carry_verdicts() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let index_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
+    let text = fs::read_to_string(&index_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+    let lines: Vec<&str> = text.lines().collect();
+
+    let section_start = lines
+        .iter()
+        .position(|l| l.starts_with("## Recently resolved"))
+        .expect("docs/CORRECTNESS_OPEN_ITEMS.md has a '## Recently resolved' section");
+    let section_end = section_start
+        + lines[section_start + 1..]
+            .iter()
+            .position(|l| l.starts_with("## "))
+            .unwrap_or(lines.len() - section_start - 1);
+
+    let pointers: Vec<(usize, &str)> = lines[section_start + 1..=section_end]
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (section_start + 1 + i, *l))
+        .filter(|(_, l)| {
+            l.starts_with("- ")
+                && l.contains("full closure narrative")
+                && l.contains("CORRECTNESS_OPEN_ITEMS_ARCHIVE.md")
+        })
+        .collect();
+    assert!(
+        !pointers.is_empty(),
+        "found zero pointer lines in docs/CORRECTNESS_OPEN_ITEMS.md's 'Recently \
+         resolved' section — either the section was restructured or the R34-24 \
+         split's pointers were removed; this test's non-vacuity assumption \
+         needs re-checking, not a silently-passing empty-set check."
+    );
+
+    let mut errors: Vec<String> = Vec::new();
+    for (line_no, line) in &pointers {
+        let bold_count = line.matches("**").count();
+        if bold_count % 2 != 0 {
+            errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line has an ODD `**` \
+                 count ({bold_count}) — an unbalanced headline, the exact task-#1116 \
+                 defect (a pointer generated from only the first physical line of a \
+                 wrapped archive header). Regenerate it from the entry's full first \
+                 paragraph in docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md:\n  {}",
+                line_no + 1,
+                line.chars().take(120).collect::<String>()
+            ));
+        }
+        // Strip the boilerplate suffix before the verdict check, else the
+        // suffix's own "Recently resolved — full closure trail" text matches.
+        let suffix_at = line.find("— full closure narrative");
+        let headline = match suffix_at {
+            Some(at) => &line[..at],
+            None => line,
+        };
+        let has_verdict = ["resolved", "closed", "rejected"]
+            .iter()
+            .any(|v| headline.to_ascii_lowercase().contains(v));
+        if !has_verdict {
+            errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line carries NO verdict \
+                 token (RESOLVED/CLOSED/REJECTED) before its 'full closure narrative' \
+                 suffix — a round-start reader cannot tell the item is closed (the \
+                 R34-24 property the split exists to create). Regenerate it from the \
+                 entry's full first paragraph in \
+                 docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md:\n  {}",
+                line_no + 1,
+                line.chars().take(120).collect::<String>()
+            ));
+        }
+    }
+
+    assert!(
+        errors.is_empty(),
+        "every 'Recently resolved' pointer in docs/CORRECTNESS_OPEN_ITEMS.md must \
+         carry a balanced `**` headline and a verdict token (task #1116):\n{}",
+        errors.join("\n"),
+    );
+}
