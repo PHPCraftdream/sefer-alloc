@@ -49,19 +49,26 @@ fn method_trips_the_tripwire_on_a_violated_range_in_debug() {
     r.decommit(4 * ps, 2 * ps);
 }
 
-/// The method's OWN two early returns — out-of-bounds `end` and the empty
-/// range — happen BEFORE the forward, so they must not panic even in
-/// debug: the tripwire only ever sees a range that passed the bounds
-/// check. Pins the distinction the `# Panics` section draws between
-/// "violated range" (panics in debug) and "empty / out of bounds"
-/// (never panics).
+/// The method's OWN early return — out-of-bounds `end > self.len()` —
+/// happens BEFORE the forward, so it must not panic even in debug: the
+/// tripwire only ever sees a range that passed the bounds check.
+///
+/// An EMPTY range is NOT pre-checked. Task #1084/M2 corrected this comment
+/// (and the `# Panics` section it mirrored), which both previously claimed
+/// the method had "two early returns" including an empty-range one that
+/// never existed in the code: `decommit(0, 0)` below avoids the tripwire
+/// only because an empty PAGE-ALIGNED range is WELL-FORMED at the
+/// free-function layer, not because this method intercepted it. The
+/// distinction is pinned by `method_trips_on_an_empty_misaligned_range_
+/// in_debug` below with `decommit(1, 1)` — same "empty" range, misaligned
+/// endpoints, tripwire fires.
 #[test]
 #[cfg(debug_assertions)]
 fn method_bounds_check_precedes_the_tripwire_in_debug() {
     let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit(0, SPAN + ps); // end > self.len(): method-level silent skip
-    r.decommit(0, 0); // empty range: well-formed no-op
+    r.decommit(0, 0); // empty PAGE-ALIGNED range: forwarded, well-formed at the free layer
     r.decommit_lazy(0, SPAN + ps); // lazy twin, same bounds-first shape
 }
 
@@ -90,6 +97,13 @@ fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
 /// made the doc true by deleting the diagnostic would ALSO have to change
 /// this test's outcome — it does not, because release behavior is unchanged
 /// by the doc-only fix.
+///
+/// Task #1084/M2 added the empty-MISALIGNED lines (`(1, 1)`, `(ps + 1,
+/// ps + 1)`): the free function's release filter skips them via `start >=
+/// end`, pinning the release half of the corrected `# Panics` section —
+/// an empty misaligned range is a contract violation (debug: tripwire;
+/// release: silent no-op), not the unconditional no-op the pre-#1084 doc
+/// promised.
 #[test]
 #[cfg(not(debug_assertions))]
 fn method_silently_skips_a_violated_range_in_release() {
@@ -99,6 +113,8 @@ fn method_silently_skips_a_violated_range_in_release() {
     r.decommit(1, 2 * ps); // misaligned start
     r.decommit(0, 2 * ps + 1); // misaligned end
     r.decommit(0, SPAN + ps); // out of bounds
+    r.decommit(1, 1); // empty AND misaligned (M2): release-profile silent no-op
+    r.decommit(ps + 1, ps + 1); // same shape at a non-zero offset
     drop(r); // still a live reservation, releasable exactly once
 }
 
@@ -228,6 +244,160 @@ fn method_try_decommit_huge_skip_returns_ok_and_counts() {
             huge_decommit_attempts(),
             0,
             "no huge attempt may be counted for an ordinary reservation"
+        );
+    }
+}
+
+// ── task #1084, finding M2: the empty-misaligned range ──────────────────────
+
+/// M2 (task #1084): `r.decommit(1, 1)` — EMPTY, IN bounds, MISALIGNED — must
+/// trip the free function's debug tripwire through the safe method. The
+/// pre-#1084 `# Panics` section claimed "empty and out-of-bounds ranges are
+/// checked by this method first and never panic"; only the out-of-bounds
+/// half was true. The method forwards the empty range unfiltered, and the
+/// free layer classifies it as a contract violation because `1` is not a
+/// multiple of `page_size()` — the same classification `try_decommit` gives
+/// it (`Err`), and the same classification a NON-empty misaligned range
+/// always had. `decommit(0, 0)` (empty AND aligned) stays the well-formed
+/// no-op, pinned by `method_bounds_check_precedes_the_tripwire_in_debug`.
+///
+/// Pinning test, not a before/after counterfactual: task #1084/M2 resolved
+/// the finding by correcting the DOC to match this (intended, task #1051/
+/// #1079) behavior, so observable behavior is unchanged by the fix by
+/// design. The test's bite was verified at task #1084 by temporarily
+/// applying each rejected alternative fix and observing this test fail:
+/// (a) an empty-range pre-filter at the top of the method — fails with
+/// "test did not panic as expected"; (b) widening the free function's
+/// `decommit_range_is_well_formed` to bless any empty range — same failure,
+/// and it would also silently change `try_decommit(1, 1)` from `Err` to
+/// `Ok`, the exact M3-shaped input-validation weakening this round exists
+/// to prevent. A test that passes before AND after a doc-only fix is the
+/// expected shape here; what it must NOT be is vacuous, which the two
+/// temporary-alternative runs demonstrate.
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "violates the range contract")]
+fn method_trips_on_an_empty_misaligned_range_in_debug() {
+    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    r.decommit(1, 1); // empty, in bounds, misaligned endpoints
+}
+
+// ── task #1084, finding M3: validation order vs the huge-page skip ──────────
+
+/// M3 (task #1084): on a reservation with `is_huge() == true`, a malformed
+/// range must still be reported as `Err` — `Reservation::try_decommit`'s
+/// range-contract validation now runs BEFORE the huge-page skip, mirroring
+/// the free `try_decommit`'s validate-first order. Before the fix the huge
+/// early-return sat ahead of all validation, so `r.try_decommit(1, 3)` on a
+/// huge reservation returned `Ok(())` — a caller who deliberately chose
+/// the fallible form to detect a malformed range was told everything was
+/// fine. The method's own doc promise (`Err(VmemError::invalid_argument())`)
+/// and the free function agreed; only the method deviated.
+///
+/// **Why this test synthesizes the huge flag instead of requesting real
+/// huge pages:** `reserve_aligned_huge` grants large pages only when the
+/// OS can — Windows needs SeLockMemoryPrivilege enabled AND a working
+/// locked-pages quota, Linux a configured hugetlb pool. Observed on this
+/// file's authoring host (2026-08-18, Windows, privilege granted and
+/// enabled in-process via `AdjustTokenPrivileges`, process working set
+/// raised to 64 MiB, 9.6 GiB physical memory still available):
+/// `VirtualAlloc(MEM_LARGE_PAGES)` fails system-wide with
+/// ERROR_WORKING_SET_QUOTA_EXCEEDED (1450), so a real grant — and with it
+/// a `reserve_aligned_huge`-based test's huge arm — is unreachable on that
+/// host and on every host this crate's CI runs. Such a test would silently
+/// take its ordinary-fallback arm everywhere and carry no regression value
+/// at all. The huge skip, however, reads ONLY the `granted_huge` flag and
+/// issues no OS call, so a flag-synthesizing reservation exercises the
+/// exact code path under test with no fidelity loss FOR THIS PATH. The
+/// synthesis is confined to this test's own `Reservation` value; see the
+/// SAFETY comment at the reconstruction call for why it is sound and why
+/// production callers must not copy it.
+///
+/// Counterfactual (observed at task #1084 on the authoring host, debug
+/// build, this test): FAILED before the fix at the first `.is_err()`
+/// assert — `try_decommit(1, 3)` on the huge-flagged reservation returned
+/// `Ok(())` — and, under `bench-internals`, left
+/// `huge_decommit_attempts() == 3` after the malformed calls (each
+/// incremented the skip's counter before returning `Ok`). Passes after the
+/// fix, with the malformed calls leaving the counter at 0. The well-formed
+/// `Ok` + counter==1 shape additionally pins, on EVERY host, what
+/// `method_try_decommit_huge_skip_returns_ok_and_counts` can only pin
+/// where the OS really grants large pages.
+#[test]
+fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
+    use aligned_vmem::ReservationFullParts;
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let size = 2 * 1024 * 1024;
+    let ordinary = reserve_aligned(size, size).expect("reserve 2 MiB");
+    // All five pointer/size fields verbatim from a live reservation; only
+    // the flag is synthesized (overridden in the `ReservationFullParts::new`
+    // call below).
+    let parts = ordinary.into_full_parts();
+    let huge_flagged = ReservationFullParts::new(
+        parts.base,
+        parts.len,
+        parts.reservation,
+        parts.reservation_len,
+        parts.align,
+        /* granted_huge = */ true,
+    );
+    // SAFETY: every pointer/size field is genuine — taken verbatim from a
+    // live `reserve_aligned` reservation via `into_full_parts`, so
+    // `base`/`reservation` are live and exclusively owned, all layout
+    // invariants `from_raw_parts` asserts hold, and the reconstructed
+    // handle's `Drop` releases the mapping exactly once (no double release:
+    // `into_full_parts` consumed the original). The ONE deviation from
+    // `from_raw_parts`' documented Safety contract is `granted_huge: true`
+    // over an ordinary-page reservation. That contract bullet exists
+    // because a wrong flag makes `is_huge()` misreport and downstream
+    // decommit-availability DECISIONS wrong — the crate's own rustdoc for
+    // the wrong value states the consequence is "not a crash or undefined
+    // behavior", i.e. a wrong report, not a memory-safety hazard. The
+    // misreport is precisely this test's subject: the huge-page skip reads
+    // only this flag and issues no OS call, and the test must reach
+    // `is_huge() == true` on hosts where the OS cannot grant large pages
+    // at all (see the doc comment above). Production callers must NOT copy
+    // this — pass a truthful `granted_huge`.
+    let r = unsafe { huge_flagged.into_reservation() };
+    assert!(r.is_huge(), "synthetic flag must produce is_huge() == true");
+
+    #[cfg(feature = "bench-internals")]
+    aligned_vmem::reset_bench_internals_counters();
+
+    let ps = page_size();
+    assert!(
+        r.try_decommit(1, 3).is_err(),
+        "misaligned non-empty range must be Err even on a huge reservation"
+    );
+    assert!(
+        r.try_decommit(1, 1).is_err(),
+        "misaligned EMPTY range must be Err even on a huge reservation \
+         (M2's range shape, M3's path)"
+    );
+    assert!(
+        r.try_decommit(2 * ps, ps).is_err(),
+        "start > end must be Err even on a huge reservation"
+    );
+    assert!(
+        r.try_decommit(0, size).is_ok(),
+        "a well-formed range must still be Ok on a huge reservation \
+         (skip, not error)"
+    );
+
+    // Mechanism oracle (bench-internals builds only): the three malformed
+    // calls above must not have incremented the huge-attempt counter —
+    // validation now precedes the skip. Pre-fix this read 4 (every call,
+    // malformed included, hit the skip's counter before returning Ok).
+    #[cfg(feature = "bench-internals")]
+    {
+        use aligned_vmem::huge_decommit_attempts;
+        assert_eq!(
+            huge_decommit_attempts(),
+            1,
+            "only the ONE well-formed call may count as a huge attempt; \
+             malformed ranges are rejected before the skip"
         );
     }
 }

@@ -10,6 +10,7 @@ use crate::bench_internals::HUGE_DECOMMIT_ATTEMPTS;
 use crate::error::VmemError;
 use crate::os::release_reservation;
 use crate::page::PAGE;
+use crate::page_size::page_size;
 use crate::reservation_full_parts::ReservationFullParts;
 use crate::reservation_parts::ReservationParts;
 
@@ -506,7 +507,10 @@ impl Reservation {
     /// old data may be observed after a decommit+recommit roundtrip.
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`](crate::page_size::page_size)).
-    /// A no-op if the range is empty or out of bounds (`end > self.len()`).
+    /// A no-op if the range is out of bounds (`end > self.len()`); an empty
+    /// range is a no-op only when page-ALIGNED — an empty MISALIGNED range
+    /// (`start == end`, endpoints not page multiples, e.g. `decommit(1, 1)`)
+    /// is a contract violation like any other (see `# Panics`, task #1084/M2).
     ///
     /// **Contract violations, by build profile (task #1051):** this method
     /// forwards to the free [`decommit`] function UNFILTERED, so a violated
@@ -514,8 +518,12 @@ impl Reservation {
     /// [`page_size()`](crate::page_size::page_size)) follows that function's
     /// documented profile split exactly — a silent no-op in a RELEASE build
     /// (no OS call, nothing recorded), a tripwire panic in a DEBUG build.
-    /// [`Self::try_decommit`] is the fallible form: it reports the violation
-    /// as `Err` on every profile and never trips the tripwire.
+    /// One exception: on a huge-page reservation the huge skip below
+    /// precedes the forward, so even a violated range is a silent no-op
+    /// there on every profile (see `# Panics`). [`Self::try_decommit`] is
+    /// the fallible form: it reports the violation as `Err` on every
+    /// profile — including huge reservations (task #1084/M3) — and never
+    /// trips the tripwire.
     ///
     /// See [`decommit`] for platform divergence notes (Windows crashes on write
     /// before recommit, Linux does not), huge-page incompatibility, and Darwin
@@ -527,15 +535,26 @@ impl Reservation {
     ///
     /// DEBUG builds only, and only for a contract-violating range (`start >
     /// end`, or an endpoint not a multiple of the runtime
-    /// [`page_size()`](crate::page_size::page_size)): the forwarded free
-    /// [`decommit`]'s `debug_assert!` tripwire fires (task #1051). Empty and
-    /// out-of-bounds (`end > self.len()`) ranges are checked by this method
-    /// first and never panic; RELEASE builds silently skip a violated range.
-    /// This is the free function's own documented panic surface reached
-    /// through the safe method, not a new one (task #1079 rewrote this doc,
-    /// which previously promised "the same silent-skip behavior as the free
-    /// `decommit` function" with no profile qualifier and no `# Panics`
-    /// section).
+    /// [`page_size()`](crate::page_size::page_size)) on a NON-huge
+    /// reservation: the forwarded free [`decommit`]'s `debug_assert!`
+    /// tripwire fires (task #1051). That includes an EMPTY MISALIGNED range
+    /// such as `decommit(1, 1)` — emptiness is NOT a pre-check (task #1084,
+    /// finding M2, rewrote this section, which previously claimed "empty and
+    /// out-of-bounds ranges are checked by this method first and never
+    /// panic"; only the out-of-bounds half of that sentence was true). The
+    /// two classes that never panic on any profile: out-of-bounds
+    /// (`end > self.len()`), the one range class this method itself
+    /// pre-checks, and an empty PAGE-ALIGNED range (`start == end`, both
+    /// endpoints multiples of `page_size()`), which forwards as
+    /// well-formed. On a huge-page reservation ([`Self::is_huge`] == `true`)
+    /// nothing ever reaches the tripwire: the huge skip below precedes the
+    /// forward, so every range — violated or not — is a silent no-op there.
+    /// RELEASE builds silently skip a violated range. This is the free
+    /// function's own documented panic surface reached through the safe
+    /// method, not a new one (task #1079 added this `# Panics` section to a
+    /// doc that previously promised "the same silent-skip behavior as the
+    /// free `decommit` function" with no profile qualifier; task #1084
+    /// corrected its empty-range claim).
     pub fn decommit(&self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
@@ -571,8 +590,13 @@ impl Reservation {
     /// Fallible [`Self::decommit`]: `Ok(())` on success (or a well-formed
     /// no-op — an empty page-aligned range), `Err(VmemError::invalid_argument())`
     /// if the offsets violated the contract (misaligned, `start > end`, or
-    /// `end > self.len()`). Never panics on any build profile: the violation
-    /// is rejected here, before the eager path's tripwire can see it.
+    /// `end > self.len()`) — on EVERY reservation kind, huge included
+    /// (task #1084/M3: the huge-page skip used to sit ahead of validation
+    /// and answer `Ok(())` for a malformed range on a huge reservation,
+    /// disagreeing with both this promise and the free [`try_decommit`]'s
+    /// validate-first order). Never panics on any build profile: the
+    /// violation is rejected here, before the eager path's tripwire can
+    /// see it.
     ///
     /// This is the safe, bounds-checked alternative to the free [`try_decommit`]
     /// function for callers already holding a `Reservation` — and the form to
@@ -585,10 +609,14 @@ impl Reservation {
     /// `unsafe fn` with a raw-pointer signature.
     ///
     /// Note what is deliberately NOT an error (mirroring the free
-    /// [`try_decommit`]): the OS refusing or ignoring the request, and a
-    /// huge-page reservation — this method skips the backend call entirely,
-    /// same as [`Self::decommit`], incrementing the same `bench-internals`
+    /// [`try_decommit`]): the OS refusing or ignoring the request, and —
+    /// FOR A WELL-FORMED RANGE — a huge-page reservation: this method skips
+    /// the backend call entirely, same as [`Self::decommit`], incrementing
+    /// the same `bench-internals`
     /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter and returning `Ok(())`.
+    /// A malformed range is `Err` even on a huge reservation: validation
+    /// runs before the skip, so the skip's counter is incremented only by
+    /// well-formed calls (task #1084/M3).
     /// Decommit is best-effort by nature; use
     /// [`Self::decommit_reclaims_and_zeroes`] to learn what the platform
     /// actually does.
@@ -597,12 +625,33 @@ impl Reservation {
         if end > self.len() {
             return Err(VmemError::invalid_argument());
         }
+        // Range-contract validation BEFORE the huge-page skip (task #1084,
+        // finding M3). The huge early-return below used to sit ahead of ALL
+        // validation, so on a reservation with `is_huge() == true` a
+        // malformed range — the exact input a caller uses the fallible form
+        // to detect — was answered `Ok(())`, contradicting both this
+        // method's own `Err` contract and the free `try_decommit`'s
+        // validate-first order. The three conditions mirror the free
+        // function's private `decommit_range_is_well_formed`
+        // (`api/decommit.rs`), which re-checks after the forward, so the
+        // two layers cannot drift apart silently —
+        // `method_try_decommit_reports_malformed_range_on_huge_flagged_
+        // reservation` and `method_try_decommit_reports_violations_and_
+        // never_panics` (tests/reservation_decommit_contract.rs) pin the
+        // agreement, on huge-flagged and ordinary reservations
+        // respectively.
+        let ps = page_size();
+        if start > end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
+            return Err(VmemError::invalid_argument());
+        }
         // Huge-page reservations: skip the backend call entirely (finding R6-7).
         // Same reasoning and same cfg placement rule as `Self::decommit` above —
         // the `if`/`return` are unconditional, only the counter is gated.
-        // `Ok(())` is the honest answer: the free `try_decommit` deliberately
-        // does not report OS refusal/ignore as an error either, so skipping
-        // the useless syscall changes nothing observable.
+        // `Ok(())` is the honest answer — but only for a range that passed
+        // the validation above; a malformed range never reaches this point
+        // (task #1084/M3): the free `try_decommit` deliberately does not
+        // report OS refusal/ignore as an error, so skipping the useless
+        // syscall changes nothing observable for a well-formed range.
         if self.is_huge() {
             #[cfg(feature = "bench-internals")]
             HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
