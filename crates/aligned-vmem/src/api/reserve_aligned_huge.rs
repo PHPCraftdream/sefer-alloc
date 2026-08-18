@@ -106,10 +106,11 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// `align == 2 MiB` of slack, not `align > 2 MiB`). This cost is
 /// REASONED-FROM-SPEC (documented kernel
 /// reservation semantics; no hugetlb-configured host exists in this
-/// crate's CI to measure it on) and is deliberately not trimmed away:
-/// the over-reserved mapping is kept whole as one soundness-driven unit
-/// (a single `munmap` at the mapping base), and the pool trade-off has
-/// no measurable host available.
+/// crate's CI to measure it on) and, when huge pages are granted via
+/// this over-reserve path, is deliberately not trimmed away: the
+/// over-reserved mapping is then kept whole as one soundness-driven
+/// unit (a single `munmap` at the mapping base), and the pool
+/// trade-off has no measurable host available.
 // Historical notes (task #776, #714, #848, #843):
 //
 // - task #776, F3: Linux huge-page request additionally requires both size

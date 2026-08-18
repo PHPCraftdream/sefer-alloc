@@ -17,13 +17,15 @@
 //
 // This is intentionally not a blunt "this string must never appear" check:
 // "over-reserve" and "trim" legitimately appear in correctly-conditional
-// sentences (e.g. reserve_aligned's own rustdoc at lib.rs:741-749, which
-// correctly describes the conditional fast-path vs slow-path behavior).
+// sentences (e.g. `reserve_aligned`'s own rustdoc at
+// src/api/reserve.rs:15-33 — its location since the a4b8e50 modules-per-file
+// split; previously lib.rs:741-749 — which correctly describes the
+// conditional fast-path vs slow-path behavior).
 //
 // KNOWN LIMITATION:
-//   1. In lib.rs, this guard scans only ///  /  //! rustdoc comments, not
-//      regular // implementation comments. The dispatch-condition drift
-//      class (Q2) lives in // comments and is a separate tooling problem
+//   1. In every scanned .rs file, this guard scans only /// / //! rustdoc
+//      comments, not regular // implementation comments. The dispatch-condition
+//      drift class (Q2) lives in // comments and is a separate tooling problem
 //      - this guard's per-sentence predicate is not suited to it.
 //   2. The SCOPE list is a heuristic that will require point additions as
 //      the text evolves. It was derived from actual historical drifts and
@@ -33,13 +35,34 @@
 //   node scripts/vmem-doc-drift-guard.mjs
 
 import { REPO_ROOT, run } from './lib.mjs';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
+import { join, relative } from 'path';
 
 async function main() {
   const vmemDir = `${REPO_ROOT}/crates/aligned-vmem`;
 
+  // Scan scope (task #1078): ALL of crates/aligned-vmem/src/**. The a4b8e50
+  // modules-per-file split moved this guard's subject out of src/lib.rs into
+  // src/api/*.rs, src/os/*.rs, src/reservation*.rs, ..., and this list had
+  // been frozen at the pre-split three files — every drift in the new modules
+  // was invisible (a live violation shipped under that false green: task
+  // #1069's reserve_aligned_huge.rs pool-cost note). The walk is recursive so
+  // a future subdirectory cannot become silently invisible either (same
+  // rationale as verify-aligned-vmem-bench-internals-exhaustive.mjs's
+  // listRsFilesRecursive), and sorted so output is deterministic.
+  // Deliberately NOT scanned: tests/, benches/, examples/ (internal prose,
+  // never rendered as crate documentation; the per-sentence scope-word
+  // heuristic is tuned for public rustdoc, and extending the bar to test
+  // commentary would pressure exactly the blanket suppression this guard must
+  // never grow) and CHANGELOG.md (a historical record of what was true at
+  // each version — re-qualifying past entries against current behavior would
+  // falsify that record).
+  const rsFiles = listRsFilesRecursive(`${vmemDir}/src`).sort();
+  if (rsFiles.length === 0) {
+    throw new Error('no .rs files found under crates/aligned-vmem/src — scan surface lost');
+  }
   const filePaths = [
-    `${vmemDir}/src/lib.rs`,
+    ...rsFiles,
     `${vmemDir}/Cargo.toml`,
     `${vmemDir}/README.md`,
   ];
@@ -49,7 +72,7 @@ async function main() {
   for (const filePath of filePaths) {
     const content = readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
-    const relativePath = filePath.replace(`${REPO_ROOT}/`, '');
+    const relativePath = relative(REPO_ROOT, filePath).split('\\').join('/');
     const isRsFile = filePath.endsWith('.rs');
 
     if (isRsFile) {
@@ -95,7 +118,7 @@ async function main() {
   }
 
   if (violations.length > 0) {
-    console.log('\n[vmem-doc-drift-guard] FAIL: Found sentences with "over-reserv" or "trim" but without qualifying context:');
+    console.log(`\n[vmem-doc-drift-guard] FAIL: Found sentences with "over-reserv" or "trim" but without qualifying context (scanned ${rsFiles.length} .rs files under src/ + Cargo.toml + README.md):`);
     violations.forEach(v => {
       console.log(`\n  ${v.path}:${v.lineNum}`);
       console.log(`  ${v.sentence}`);
@@ -104,7 +127,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('[vmem-doc-drift-guard] OK: no unconditional over-reserve/trim statements found');
+  console.log(`[vmem-doc-drift-guard] OK: no unconditional over-reserve/trim statements found (scanned ${rsFiles.length} .rs files under src/ + Cargo.toml + README.md)`);
 }
 
 // Split text into sentences, treating headers (# and - at start of line) as sentence boundaries
@@ -151,6 +174,22 @@ function splitIntoSentences(text) {
   }
 
   return sentences;
+}
+
+// Recursively list every .rs file under dir (absolute paths, unsorted —
+// callers sort). Recursive on purpose: this guard's subject moved once
+// already (a4b8e50); a flat readdir here is how that false green happened.
+function listRsFilesRecursive(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listRsFilesRecursive(full));
+    } else if (entry.isFile() && entry.name.endsWith('.rs')) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
