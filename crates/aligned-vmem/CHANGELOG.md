@@ -114,6 +114,56 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **[correctness fix, MEDIUM, publish blocker] `set_page_size_override` accepted
+  a page SMALLER than the machine's real one, while the module's own "Why this
+  is a safe `fn`" section claimed — WITHOUT qualification — that the override
+  "can only make validation STRICTER ... never accepts one the real page would
+  reject" (task #1085 / finding M1).** On a 16/64 KiB-page host (macOS ARM64,
+  aarch64-64k Linux) `set_page_size_override(Some(4096))` was accepted, so
+  `Reservation::decommit(0, 4096)` passed range validation and reached
+  `madvise(base, 4096, MADV_DONTNEED)` — where the kernel rounds the LENGTH up
+  to the real page and discards all 16 KiB, destroying 12 KiB of live data
+  outside the requested range through a 100%-safe API. The setter now also
+  requires `ps >=` the real page, queried FRESH so the check bypasses the
+  override cache (comparing against the cache would wrongly reject a legal
+  64 KiB → 16 KiB downshift while failing to pin the invariant that matters).
+  The safety section is rewritten from unconditional to conditional and records
+  the one residual assumption honestly: if the OS query itself fails on a
+  big-page host the floor degrades to `PAGE` — the same degraded assumption
+  `page_size()` already makes with no override armed. The seam stays behind
+  `--cfg aligned_vmem_page_size_override` and is unreachable in a shipped build;
+  the fix exists because the SAFETY CLAIM was false as written, and a crate
+  about to be published should have that claim true by construction.
+
+- **[correctness fix, MEDIUM, publish blocker] `Reservation::try_decommit`
+  answered `Ok(())` for a malformed range on a huge-page reservation (task
+  #1084 / finding M3).** The `is_huge()` early return sat ahead of ALL range
+  validation, while the free `try_decommit` validates first and this method's
+  own rustdoc promises `Err(VmemError::invalid_argument())` on a contract
+  violation. A caller who deliberately chose the FALLIBLE form precisely to
+  detect a bad range was told everything was fine. Validation now runs before
+  the skip, using the exact negation of the free function's own predicate (which
+  re-checks after the forward, so the two layers cannot drift apart silently).
+  Behavior changes only for huge + malformed; the eager `decommit` is
+  deliberately unchanged and its huge-path silence is now documented instead.
+
+- **[docs, MEDIUM, publish blocker] `Reservation::decommit`'s `# Panics` section
+  was itself false about empty ranges (task #1084 / finding M2).** It claimed
+  "Empty and out-of-bounds ranges are checked by this method first and never
+  panic"; only the out-of-bounds half was true. There is no empty-range check in
+  the body, so `decommit(1, 1)` — empty, in bounds, MISALIGNED — forwards to the
+  free function and trips its `debug_assert!`, a panic reachable from 100%-safe
+  code in every debug build. Resolved by correcting the DOC, not the code: the
+  free predicate deliberately blesses only page-ALIGNED empty ranges, the
+  method's single pre-check exists to uphold the forwarded `unsafe fn`'s safety
+  contract (emptiness is not a safety matter), and — decisive — widening the
+  predicate to bless any empty range would silently flip the free
+  `try_decommit(1, 1)` from `Err` to `Ok`, weakening exactly the validation the
+  M3 fix above strengthens. A method-layer `start == end` filter is additionally
+  the shape task #1079 already rejected for disarming the tripwire. Note the
+  coverage gap this surfaced and did NOT close (filed as task #1094): nothing
+  pins the free `try_decommit(1, 1)` → `Err`, so that flip would pass unnoticed.
+
 - **`Reservation::decommit`'s rustdoc promised "the same silent-skip behavior
   as the free `decommit` function" for a contract-violating range — half
   true: RELEASE silently skips, but DEBUG panics via the forwarded free
