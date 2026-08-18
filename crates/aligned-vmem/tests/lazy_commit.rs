@@ -625,7 +625,7 @@ fn safe_decommit_over_never_committed_tail_succeeds() {
     // Reserve 4 MiB, commit only the first 64 KiB.
     let initial = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
-    let r = reserve_aligned_lazy(span, span, initial)
+    let mut r = reserve_aligned_lazy(span, span, initial)
         .expect("lazy reserve")
         .into_reservation();
     let base = r.as_ptr();

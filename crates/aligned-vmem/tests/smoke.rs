@@ -1436,7 +1436,7 @@ fn try_reserve_overflow_is_invalid_argument_on_all_platforms() {
 #[test]
 fn reservation_decommit_in_bounds_matches_free_function() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Write a pattern so we can verify the range after decommit/recommit.
@@ -1486,7 +1486,7 @@ fn reservation_decommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::decommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_decommit_out_of_bounds_is_safe_no_op() {
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Out-of-bounds range should be a safe no-op.
@@ -1503,7 +1503,7 @@ fn reservation_decommit_out_of_bounds_is_safe_no_op() {
 #[test]
 fn reservation_recommit_in_bounds_matches_free_function() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Write a pattern.
@@ -1532,7 +1532,7 @@ fn reservation_recommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::recommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_recommit_out_of_bounds_returns_false() {
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Out-of-bounds range should return false.
@@ -1544,7 +1544,7 @@ fn reservation_recommit_out_of_bounds_returns_false() {
 #[test]
 fn reservation_try_recommit_in_bounds_matches_free_function() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Try recommit on a valid range (empty range is a valid no-op).
@@ -1562,7 +1562,7 @@ fn reservation_try_recommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::try_recommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_try_recommit_out_of_bounds_returns_invalid_argument() {
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Out-of-bounds range should be invalid_argument.
@@ -1577,7 +1577,7 @@ fn reservation_try_recommit_out_of_bounds_returns_invalid_argument() {
 #[test]
 fn reservation_decommit_lazy_in_bounds_matches_free_function() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Lazy decommit a page-aligned range.
@@ -1591,7 +1591,7 @@ fn reservation_decommit_lazy_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::decommit_lazy` rejects out-of-bounds calls.
 #[test]
 fn reservation_decommit_lazy_out_of_bounds_is_safe_no_op() {
-    let r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
+    let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
     // Out-of-bounds range should be a safe no-op.
@@ -1619,7 +1619,7 @@ fn reservation_commit_range_in_bounds_matches_free_function() {
     // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
     // `.expect` panicked in CI. Hoist `ps` and pass it instead.
     let ps = page_size();
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
+    let mut r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
 
@@ -1649,7 +1649,7 @@ fn reservation_commit_range_out_of_bounds_returns_false() {
     // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
     // `.expect` panicked in CI. Hoist `ps` and pass it instead.
     let ps = page_size();
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
+    let mut r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
 
@@ -1673,7 +1673,7 @@ fn reservation_try_commit_range_in_bounds_matches_free_function() {
     // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
     // `.expect` panicked in CI. Hoist `ps` and pass it instead.
     let ps = page_size();
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
+    let mut r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
 
@@ -1704,7 +1704,7 @@ fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
     // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
     // `.expect` panicked in CI. Hoist `ps` and pass it instead.
     let ps = page_size();
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
+    let mut r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
 

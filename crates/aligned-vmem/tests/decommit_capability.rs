@@ -227,7 +227,7 @@ fn huge_decommit_attempts_increments_on_huge_reservation() {
     // if huge pages are not available (no hugetlb pool, unprivileged, etc.),
     // but the counter should still increment if `is_huge()` reports true.
     let size = 2 * MIB; // Linux huge-page size
-    let reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+    let mut reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
 
     if reservation.is_huge() {
         reservation.decommit(0, size);
@@ -289,7 +289,7 @@ fn huge_decommit_attempts_does_not_increment_on_ordinary_reservation() {
     let baseline = huge_decommit_attempts();
 
     // Reserve with ordinary pages — should never report as huge
-    let ordinary_r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+    let mut ordinary_r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
     assert!(
         !ordinary_r.is_huge(),
         "ordinary reservation should never report as huge"

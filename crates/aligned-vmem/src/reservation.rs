@@ -494,6 +494,12 @@ impl Reservation {
     /// the underlying implementation with `self.as_ptr()` as base and
     /// automatically ensures `[start, end)` is within the reservation's usable span.
     ///
+    /// Takes `&mut self` (task #1113): OS-state mutation requires exclusive
+    /// access, so a shared `&Reservation` can reach none of the seven state
+    /// mutators. This is what structurally seals the `LazyReservation`
+    /// watermark (finding H1, task #1104): a leaked `&Reservation` is now
+    /// read-only by construction, not by policing.
+    ///
     /// **Programmatically check platform guarantees:** use
     /// [`Self::decommit_reclaims_and_zeroes`] to query whether the current
     /// platform guarantees reclaim+zero-fill semantics.
@@ -565,7 +571,7 @@ impl Reservation {
     /// doc that previously promised "the same silent-skip behavior as the
     /// free `decommit` function" with no profile qualifier; task #1084
     /// corrected its empty-range claim).
-    pub fn decommit(&self, start: usize, end: usize) {
+    pub fn decommit(&mut self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return;
@@ -630,7 +636,7 @@ impl Reservation {
     /// Decommit is best-effort by nature; use
     /// [`Self::decommit_reclaims_and_zeroes`] to learn what the platform
     /// actually does.
-    pub fn try_decommit(&self, start: usize, end: usize) -> Result<(), VmemError> {
+    pub fn try_decommit(&mut self, start: usize, end: usize) -> Result<(), VmemError> {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return Err(VmemError::invalid_argument());
@@ -698,7 +704,7 @@ impl Reservation {
     /// and other caveats. Under the `bench-internals` feature, the
     /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter is incremented when decommit
     /// is called on a huge-page reservation (same logic as `Self::decommit`).
-    pub fn decommit_lazy(&self, start: usize, end: usize) {
+    pub fn decommit_lazy(&mut self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return;
@@ -734,7 +740,7 @@ impl Reservation {
     /// returns `true`; any other contract violation (misaligned, or
     /// `start > end`, or `end > self.len()`) returns `false`.
     #[must_use]
-    pub fn recommit(&self, start: usize, end: usize) -> bool {
+    pub fn recommit(&mut self, start: usize, end: usize) -> bool {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return false;
@@ -752,7 +758,7 @@ impl Reservation {
     ///
     /// This is the safe, bounds-checked alternative to the free [`try_recommit`]
     /// function for callers already holding a `Reservation`.
-    pub fn try_recommit(&self, start: usize, end: usize) -> Result<(), VmemError> {
+    pub fn try_recommit(&mut self, start: usize, end: usize) -> Result<(), VmemError> {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return Err(VmemError::invalid_argument());
@@ -783,7 +789,7 @@ impl Reservation {
     #[must_use]
     #[cfg(feature = "lazy-commit")]
     #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
-    pub fn commit_range(&self, start: usize, end: usize) -> bool {
+    pub fn commit_range(&mut self, start: usize, end: usize) -> bool {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return false;
@@ -801,7 +807,7 @@ impl Reservation {
     /// function for callers already holding a `Reservation`.
     #[cfg(feature = "lazy-commit")]
     #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
-    pub fn try_commit_range(&self, start: usize, end: usize) -> Result<(), VmemError> {
+    pub fn try_commit_range(&mut self, start: usize, end: usize) -> Result<(), VmemError> {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
             return Err(VmemError::invalid_argument());

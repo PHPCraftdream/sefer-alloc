@@ -30,6 +30,7 @@ use super::lazy_commit_is_honored::lazy_commit_is_honored;
 /// concurrently must serialise, and under the raw primitives nothing ever said
 /// so. `&mut self` makes the compiler ask for the synchronisation that was
 /// always necessary, instead of leaving it to be discovered in production.
+/// (After task #1113, the raw `Reservation` also follows this rule.)
 ///
 /// # The watermark is a guarantee, not a prohibition
 ///
@@ -54,14 +55,13 @@ use super::lazy_commit_is_honored::lazy_commit_is_honored;
 /// deliberate: the raw pointer above — every USE of which is already
 /// `unsafe` — and [`into_reservation`](Self::into_reservation), which
 /// consumes this handle, so the watermark cannot outlive its own
-/// tracking. A borrowed `&Reservation` was briefly offered as a read-only
-/// convenience and removed: every OS-state mutator on `Reservation` takes
-/// `&self`, so any such borrow is a 100%-safe bypass of the watermark
-/// (publication audit finding H1, task #1104). The read-only queries
-/// callers actually need — [`len`](Self::len), [`as_ptr`](Self::as_ptr),
-/// [`align`](Self::align) — are proxied directly on this type; anything
-/// else lives behind [`into_reservation`](Self::into_reservation) on
-/// purpose.
+/// tracking. A borrowed `&Reservation` was removed at task #1104; after
+/// task #1113 the OS-state mutators on `Reservation` take `&mut self`,
+/// so even a leaked `&Reservation` can no longer mutate OS state — the
+/// seal is structural. The read-only queries callers actually need —
+/// [`len`](Self::len), [`as_ptr`](Self::as_ptr), [`align`](Self::align) —
+/// are proxied directly on this type; anything else lives behind
+/// [`into_reservation`](Self::into_reservation) on purpose.
 ///
 /// A `LazyReservation` is never huge-page backed — the lazy constructors always
 /// request ordinary pages — so there is no `is_huge()` here. It would be a

@@ -45,7 +45,7 @@ static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[cfg(debug_assertions)]
 #[should_panic(expected = "violates the range contract")]
 fn method_trips_the_tripwire_on_a_violated_range_in_debug() {
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     // A SAFE call: the panic comes from the FORWARDED free function's
     // debug_assert!, proving no pre-filter sits between the method and it.
@@ -68,7 +68,7 @@ fn method_trips_the_tripwire_on_a_violated_range_in_debug() {
 #[test]
 #[cfg(debug_assertions)]
 fn method_bounds_check_precedes_the_tripwire_in_debug() {
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit(0, SPAN + ps); // end > self.len(): method-level silent skip
     r.decommit(0, 0); // empty PAGE-ALIGNED range: forwarded, well-formed at the free layer
@@ -83,7 +83,7 @@ fn method_bounds_check_precedes_the_tripwire_in_debug() {
 /// `decommit_lazy`) fails this test in every debug run.
 #[test]
 fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit_lazy(4 * ps, 2 * ps); // start > end
     r.decommit_lazy(1, 2 * ps); // misaligned start
@@ -110,7 +110,7 @@ fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn method_silently_skips_a_violated_range_in_release() {
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit(4 * ps, 2 * ps); // start > end
     r.decommit(1, 2 * ps); // misaligned start
@@ -140,7 +140,7 @@ fn method_records_nothing_for_a_violated_range_in_release_mock() {
 
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     mock::reset();
-    let r = reserve_aligned(SPAN, SPAN).expect("mock reserve chains to real backend");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("mock reserve chains to real backend");
     let ps = page_size();
     let _ = mock::drain(); // discard this test's own Reserve record
 
@@ -183,7 +183,7 @@ fn method_records_nothing_for_a_violated_range_in_release_mock() {
 #[test]
 fn method_try_decommit_reports_violations_and_never_panics() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     assert!(
         r.try_decommit(4 * ps, 2 * ps).is_err(),
@@ -230,7 +230,7 @@ fn method_try_decommit_huge_skip_returns_ok_and_counts() {
     reset_bench_internals_counters();
 
     let size = 2 * 1024 * 1024; // Linux huge-page size
-    let r = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+    let mut r = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
 
     if r.is_huge() {
         assert!(
@@ -285,7 +285,7 @@ fn method_try_decommit_huge_skip_returns_ok_and_counts() {
 #[cfg(debug_assertions)]
 #[should_panic(expected = "violates the range contract")]
 fn method_trips_on_an_empty_misaligned_range_in_debug() {
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     r.decommit(1, 1); // empty, in bounds, misaligned endpoints
 }
 
@@ -418,7 +418,7 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     // prose without touching this test; the enumeration is what carries
     // the weight. Production callers must NOT copy this synthesis — pass
     // a truthful `granted_huge`.
-    let r = unsafe { huge_flagged.into_reservation() };
+    let mut r = unsafe { huge_flagged.into_reservation() };
     assert!(r.is_huge(), "synthetic flag must produce is_huge() == true");
 
     #[cfg(feature = "bench-internals")]

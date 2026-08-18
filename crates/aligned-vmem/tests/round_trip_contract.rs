@@ -149,7 +149,7 @@ fn reconstructed_reservation_is_actually_usable() {
     let expected_reservation = parts.reservation;
     let expected_reservation_len = parts.reservation_len;
     let expected_align = parts.align; // Check that align is preserved
-    let reconstructed: Reservation = unsafe { parts.into_reservation() };
+    let mut reconstructed: Reservation = unsafe { parts.into_reservation() };
 
     // Verify reconstruction preserves key fields.
     assert_eq!(reconstructed.as_ptr(), expected_base);
