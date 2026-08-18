@@ -572,8 +572,3 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
     #[cfg(not(feature = "bench-internals"))]
     let _ = ret;
 }
-
-// ===========================================================================
-// Unix path: mmap / munmap / madvise. Raw bindings declared locally — no libc
-// dependency.
-// ===========================================================================

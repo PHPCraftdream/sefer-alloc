@@ -49,7 +49,14 @@ use crate::page_size::page_size;
 /// write-permitting sentinel, so silently skipping on a contract violation is
 /// safe. A `try_decommit_lazy` could be added as a future additive API decision.
 ///
-/// `start`/`end` contract and safety are identical to [`decommit`](crate::api::decommit).
+/// `start`/`end` requirements and the `# Safety` contract are the same as
+/// [`decommit`](crate::api::decommit)'s, with ONE deliberate behavioral
+/// difference (settled by task #1072): a VIOLATED range here is a silent
+/// no-op on EVERY build profile. The eager [`decommit`](crate::api::decommit)
+/// trips its `debug_assert!` tripwire in debug builds, and
+/// [`try_decommit`](crate::api::try_decommit) reports the violation as `Err`
+/// on every profile; this lazy variant has neither. See `decommit`'s
+/// "Contract violations, by build profile" paragraph for the full split.
 ///
 /// # Safety
 ///

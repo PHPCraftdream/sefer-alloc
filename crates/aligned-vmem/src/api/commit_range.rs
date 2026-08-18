@@ -51,7 +51,9 @@ use crate::page_size::page_size;
 /// entire span is already committed eagerly on those platforms). This does
 /// NOT relax the range/liveness contract above; it only states that issuing
 /// several legal calls from different threads at once is not itself a new
-/// hazard.
+/// hazard. (Scalability caveat, not a safety one: with the `fault-injection`
+/// feature compiled in, the pre-syscall hook's `FAULT_STATE` mutex serializes
+/// concurrent callers — see the hook comment in [`try_commit_range`].)
 #[must_use]
 #[cfg(feature = "lazy-commit")]
 #[cfg_attr(docsrs, doc(cfg(feature = "lazy-commit")))]
@@ -91,9 +93,16 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
     {
         // Real-path fault injection (feature `fault-injection`, DISTINCT from
         // `mock`): consult the armed hooks immediately before the real
-        // syscall. When neither hook is armed this is two relaxed loads that
-        // branch-predict not-taken — negligible on the production path, and
-        // compiled out entirely when the feature is off.
+        // syscall. Cost when the feature is compiled in (task #1068/F4
+        // corrected this comment, which previously claimed "two relaxed
+        // loads"): even with NOTHING armed, every real commit pays one atomic
+        // read-modify-write (`FAIL_NEXT::fetch_update`) plus an unconditional
+        // uncontended `FAULT_STATE` mutex acquire — the `target` check happens
+        // under the lock — serializing concurrent committers process-wide for
+        // as long as the feature is on (task #1021/R4-8 traded the old
+        // two-atomics fast path for arm/fire atomicity). Acceptable because
+        // the feature is test-only by design; when it is off, this block is
+        // compiled out entirely and the production path is unchanged.
         #[cfg(feature = "fault-injection")]
         if fault_injection::should_fail_commit() {
             // task #713: this is a SIMULATED failure — no real syscall ran,

@@ -73,8 +73,12 @@ impl VmemError {
     }
 
     /// A genuine OS refusal whose specific error code is unavailable — under
-    /// miri (no real `errno`/`GetLastError` exists to read), or the rare case
-    /// where the platform's own `raw_os_error()` itself returns `None`.
+    /// miri (no real `errno`/`GetLastError` exists to read), the rare case
+    /// where the platform's own `raw_os_error()` itself returns `None`, or
+    /// (task #1068/F2) the crate's own rejection of the kernel's R7-11
+    /// address-zero `mmap` grant on Unix (`mmap` succeeded and the crate
+    /// unmapped the grant itself, so no syscall refused anything and there
+    /// is no real code to report).
     /// Distinct from [`invalid_argument`](Self::invalid_argument):
     /// `is_invalid_argument()` is `false` here — the OS (or its miri stand-in)
     /// genuinely refused the operation, the cause is simply unknown.

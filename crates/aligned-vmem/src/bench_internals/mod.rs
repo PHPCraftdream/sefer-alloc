@@ -1,6 +1,6 @@
 //! `bench-internals`: path-activation counters (task #504, F11 step 1).
 //!
-//! Three independent questions, one instrument family each:
+//! Five independent questions, one instrument family each:
 //!
 //! - Unix: on 32-bit, `unix_reserve` tries an EXACT-size `mmap` first
 //!   (`try_reserve_aligned_exact`) and only falls through to the over-reserve

@@ -121,9 +121,12 @@ fn unix_reserve(
         #[cfg(feature = "bench-internals")]
         UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
 
-        // SAFETY: anonymous private MAP_HUGETLB mapping of exactly `size` bytes.
-        let p = unsafe { libc_mmap(size, true) };
-        if !p.is_null() {
+        // SAFETY: anonymous private MAP_HUGETLB mapping of exactly `size`
+        // bytes. The error cause is captured inside `libc_mmap` at the
+        // failing syscall; this fast path discards it — any failure falls
+        // through to the general over-reserve path below, which performs its
+        // own mmap and error reporting.
+        if let Ok(p) = unsafe { libc_mmap(size, true) } {
             let region_addr = p.addr();
             // Real runtime check (not debug_assert!): the kernel's huge-page-
             // alignment guarantee is unverified behavior this crate is
@@ -154,7 +157,9 @@ fn unix_reserve(
     // address-space economy is not a concern on 64-bit.
     //
     // R3-1/R4-2 fix: skip 32-bit generic exact path when huge-page exact-size fast path
-    // was already tried above (lines 2707-2738). Without this check, a 32-bit host
+    // was already tried above (the `huge && align == LINUX_HUGE_PAGE_SIZE`
+    // fast-path block at the top of this function — named, not line-numbered,
+    // per the task #908/V2C1 convention). Without this check, a 32-bit host
     // with hugetlb pool == 0 would call `try_reserve_aligned_exact(size, align, huge=true)`
     // after the specialized huge-exact path just failed with the same MAP_HUGETLB call,
     // causing `UNIX_EXACT_RESERVE_ATTEMPTS` to be incremented twice for one logical reserve.
@@ -188,27 +193,34 @@ fn unix_reserve(
     let granted_huge;
     let region_ptr = unsafe {
         // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` — anonymous
-        // private mapping; the kernel chooses the address or returns MAP_FAILED
-        // (mapped to null by `libc_mmap`).
-        let p = libc_mmap(over, huge);
-        if p.is_null() {
-            // Retry without huge pages if the huge request was the cause.
-            if huge {
-                // SAFETY: same call, ordinary pages.
-                let p2 = libc_mmap(over, false);
-                if p2.is_null() {
-                    // Nothing was mapped; no cleanup needed, so capturing
-                    // here is already the immediate-capture the task requires.
-                    return Err(VmemError::last_os_error());
-                }
-                granted_huge = false; // Fallback to ordinary pages
-                p2
-            } else {
-                return Err(VmemError::last_os_error());
+        // private mapping; the kernel chooses the address or returns
+        // MAP_FAILED (mapped to `Err` by `libc_mmap`, which captures the
+        // cause at the failing syscall itself — task #713's immediate-capture
+        // discipline, enforced inside `libc_mmap` since task #1068/F2, so no
+        // call site can capture after an intervening syscall).
+        match libc_mmap(over, huge) {
+            Ok(p) => {
+                granted_huge = HUGE_SUPPORTED && huge; // Huge pages requested and actually supported
+                p
             }
-        } else {
-            granted_huge = HUGE_SUPPORTED && huge; // Huge pages requested and actually supported
-            p
+            Err(e) => {
+                // Retry without huge pages if the huge request was the cause.
+                if !huge {
+                    return Err(e);
+                }
+                // Set before the retry: if the retry refuses, the `?` below
+                // returns from this function and `granted_huge` is dead; if
+                // it succeeds, the reservation fell back from the requested
+                // huge pages to ordinary ones.
+                granted_huge = false;
+                // SAFETY: same call, ordinary pages. The `?` is pure
+                // propagation: the retry's own refusal is the proximate cause
+                // of the reservation failure, so its error (captured inside
+                // `libc_mmap` at the failing syscall) is the one reported —
+                // unchanged from the pre-#1068 behavior, which read the
+                // retry's errno last.
+                libc_mmap(over, false)?
+            }
         }
     };
     // task #717: `.addr()`/`.with_addr()` (strict-provenance) replace the
@@ -269,7 +281,8 @@ fn unix_reserve(
 /// Returns `(base, reservation, reservation_len, granted_huge)` where
 /// `granted_huge` is `true` iff `huge` was `true` and the mapping succeeded.
 ///
-/// task #713: a genuine `mmap` failure captures its [`VmemError`]
+/// task #713 (capture enforced inside `libc_mmap` since task #1068/F2): a
+/// genuine `mmap` failure captures its [`VmemError`]
 /// IMMEDIATELY, before returning. An alignment miss (the exact address `mmap`
 /// handed back doesn't satisfy `align`) is NOT an OS refusal — it maps to
 /// [`VmemError::invalid_argument`] instead of a stale/irrelevant error code.
@@ -290,16 +303,11 @@ fn try_reserve_aligned_exact(
 ) -> Result<(NonNull<u8>, NonNull<u8>, usize, bool), VmemError> {
     #[cfg(feature = "bench-internals")]
     UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-    let region_ptr = unsafe {
-        // SAFETY: anonymous private mapping of exactly `size` bytes.
-        let p = libc_mmap(size, huge);
-        if p.is_null() {
-            // Nothing was mapped; no cleanup needed, so capturing here is
-            // already the immediate-capture the task requires.
-            return Err(VmemError::last_os_error());
-        }
-        p
-    };
+    // SAFETY: anonymous private mapping of exactly `size` bytes. The error
+    // cause is captured inside `libc_mmap` at the failing syscall (task #713
+    // immediate-capture, enforced there since task #1068/F2); the `?` below
+    // is pure propagation of that already-captured cause.
+    let region_ptr = unsafe { libc_mmap(size, huge) }?;
     // task #776 (F8): `.addr()` reads the address without exposing
     // provenance, completing the strict-provenance discipline task #717
     // applied to `unix_reserve`'s slow path -- this is the Unix FAST path
@@ -874,8 +882,13 @@ extern "C" {
     pub(crate) fn sysconf(name: i32) -> core::ffi::c_long;
 }
 
+/// Raw `mmap` wrapper. `Ok(p)` is a successful mapping at a usable address;
+/// `Err` carries the cause captured AT the failing syscall: `last_os_error()`
+/// for a genuine `MAP_FAILED` refusal, or
+/// [`VmemError::os_refusal_unknown_code`] for the R7-11 address-zero grant
+/// this crate rejects (no syscall failed there, so no real code exists).
 #[cfg(all(unix, not(miri)))]
-unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
+unsafe fn libc_mmap(len: usize, huge: bool) -> Result<*mut core::ffi::c_void, VmemError> {
     #[cfg_attr(
         not(all(
             any(target_os = "linux", target_os = "android"),
@@ -907,17 +920,30 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
     // task #776 (F8): `.addr()` for the same reason as the fast-path fix
     // above -- a comparison-only read, not a round-trip.
     if p.addr() == MAP_FAILED {
-        return core::ptr::null_mut();
+        // task #713, enforced here since task #1068/F2: capture errno AT the
+        // failing syscall, before any other FFI call (including cleanup) can
+        // clobber it. Returning it inside the Result keeps every caller on
+        // the immediate-capture discipline by construction — no call site can
+        // accidentally capture after an intervening syscall anymore.
+        return Err(VmemError::last_os_error());
     }
     // R7-11: POSIX does not guarantee that `mmap(NULL, ...)` never returns address zero.
     // If the kernel returns a successful mapping at address zero, we must unmap it
     // to avoid leaking it before returning an error. The crate does not support
     // address-zero mappings (no caller expects or can safely use them).
+    //
+    // task #1068/F2: on THIS sub-path no syscall failed — `mmap` succeeded and
+    // the `munmap` is cleanup — so there is no valid errno to capture. A
+    // caller-side `last_os_error()` after the cleanup would report whatever
+    // stale code the `munmap` (or earlier unrelated code) left behind: a
+    // fabricated OS cause, exactly the class task #713's immediate-capture
+    // discipline exists to eliminate. Report the no-real-code refusal
+    // sentinel instead.
     if p.cast::<u8>().is_null() {
         unsafe { libc_munmap(p.cast(), len) };
-        return core::ptr::null_mut();
+        return Err(VmemError::os_refusal_unknown_code());
     }
-    p
+    Ok(p)
 }
 
 #[cfg(all(unix, not(miri)))]
