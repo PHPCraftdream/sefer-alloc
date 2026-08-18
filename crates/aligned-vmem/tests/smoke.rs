@@ -1612,10 +1612,14 @@ fn reservation_commit_range_in_bounds_matches_free_function() {
     // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
     // safe methods, so they take the explicit door out and keep testing exactly
     // what they were written to test.
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+    // task #1075: `initial_commit` validates against the RUNTIME `page_size()`
+    // (`validate_initial_commit`), not the compile-time `PAGE` constant, so a
+    // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
+    // `.expect` panicked in CI. Hoist `ps` and pass it instead.
+    let ps = page_size();
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
-    let ps = page_size();
 
     // Commit a range via the safe method.
     let committed = r.commit_range(0, 4 * ps);
@@ -1638,10 +1642,14 @@ fn reservation_commit_range_out_of_bounds_returns_false() {
     // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
     // safe methods, so they take the explicit door out and keep testing exactly
     // what they were written to test.
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+    // task #1075: `initial_commit` validates against the RUNTIME `page_size()`
+    // (`validate_initial_commit`), not the compile-time `PAGE` constant, so a
+    // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
+    // `.expect` panicked in CI. Hoist `ps` and pass it instead.
+    let ps = page_size();
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
-    let ps = page_size();
 
     // Out-of-bounds range should return false.
     let result = r.commit_range(2 * MIB + ps, 2 * MIB + 2 * ps);
@@ -1658,10 +1666,14 @@ fn reservation_try_commit_range_in_bounds_matches_free_function() {
     // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
     // safe methods, so they take the explicit door out and keep testing exactly
     // what they were written to test.
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+    // task #1075: `initial_commit` validates against the RUNTIME `page_size()`
+    // (`validate_initial_commit`), not the compile-time `PAGE` constant, so a
+    // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
+    // `.expect` panicked in CI. Hoist `ps` and pass it instead.
+    let ps = page_size();
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
-    let ps = page_size();
 
     // Try commit on a valid range (empty range is a valid no-op).
     let result = r.try_commit_range(0, 0);
@@ -1685,10 +1697,14 @@ fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
     // these four tests are the task #947/A-2 regressions for `Reservation`'s OWN
     // safe methods, so they take the explicit door out and keep testing exactly
     // what they were written to test.
-    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, PAGE)
+    // task #1075: `initial_commit` validates against the RUNTIME `page_size()`
+    // (`validate_initial_commit`), not the compile-time `PAGE` constant, so a
+    // bare `PAGE` is rejected on a 16 KiB-page host (macOS ARM64) and this
+    // `.expect` panicked in CI. Hoist `ps` and pass it instead.
+    let ps = page_size();
+    let r = reserve_aligned_lazy(2 * MIB, 2 * MIB, ps)
         .expect("lazy reserve")
         .into_reservation();
-    let ps = page_size();
 
     // Out-of-bounds range should be invalid_argument.
     let result = r.try_commit_range(2 * MIB + ps, 2 * MIB + 2 * ps);
