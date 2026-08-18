@@ -45,6 +45,32 @@
 // text as the violation that motivated it) is never flagged by a script
 // that did not exist when it landed.
 //
+// COMMENT-ONLY REFINEMENT (task #1117, lint half): Both direction checks are
+// refined to distinguish comment-only src/ changes from real code changes.
+// Two real defects this refinement catches:
+//
+// - `09f4d16` (docs(vmem): prefix) changed the public `Display` string of
+//   `VmemError` — real shipping code under a docs prefix. The original script
+//   printed a direction-2 WARNING and exited 0; the warning was skimmed past.
+//
+// - `b11d8be` (fix(perf)) had an entirely doc-comment-only `src/` delta —
+//   direction 1 is PATH-based (`crates/aligned-vmem/src/…` counts as shipping
+//   code) so it passed, though nothing but `///` comments changed.
+//
+// The fix adds a diff-content check: for perf-runtime / perf-opt-in /
+// fix-perf commits, at least one CHANGED line (added or removed, ignoring the
+// leading +/- of the diff hunk and blank diff lines) in a non-measurement-only
+// path must NOT match the comment/attribute patterns (see hasNonCommentChange).
+//
+// For docs/docs-config prefixes, direction 2 is upgraded to ERROR when the
+// src/ delta contains at least one NON-COMMENT changed line — this catches the
+// `09f4d16` shape. A docs commit whose src/ delta is comment-only is legitimate
+// and must NOT error (that's most docs(vmem) commits). For bench prefixes,
+// direction 2 remains at WARNING in all cases — the bench-internals accessor
+// pattern (`#[cfg(feature = "bench-internals")]` / `#[doc(hidden)] pub(crate) static
+// ..._FAILURES: AtomicU64`) is a legitimate diagnostic-only pattern and is
+// explicitly documented in the file header (commits 88592d7, d772d99).
+//
 // Two independent directions, both heuristic tripwires, not a precise
 // classifier:
 //
@@ -57,26 +83,30 @@
 //       because R30-12's sanctioned taxonomy has no bare `perf:` member —
 //       every real perf commit must say WHICH kind it is.
 //
+//       REFINEMENT (task #1117): even when the commit does touch src/ or
+//       Cargo.toml, FAIL if every changed line in those paths is comment-only
+//       (matches `^\s*(///|//!|//)`). This catches the `b11d8be` shape — a
+//       fix(perf) commit whose src/ delta is entirely `///` doc comments.
+//
 //   (2) `bench(...)`/`docs(...)`-prefixed commit whose diff DOES touch
 //       something outside docs/, examples/, benches/, tests/, scripts/
-//       (i.e. touches src/ or Cargo.toml) -> WARN. This is a hidden-
-//       runtime-change-under-an-innocuous-prefix shape — the opposite
-//       direction, optional per this task's own brief ("сделай, если время
-//       позволяет, но не обязательно"). Kept at WARN, not FAIL: unlike
-//       direction (1) (which has real precedent — R30-12's own three named
-//       examples — and a crisp definition), this direction has no observed
-//       real instance in this repo's history yet (verified empty at the
-//       time this script was written — see this file's own non-vacuity
-//       run), and "touches src/" is a much noisier signal for `bench`/`docs`
-//       prefixes than for `perf` ones: `bench(...)` legitimately touches
-//       `benches/*.rs` (already excluded) but a bench harness occasionally
-//       needs a tiny `#[cfg(bench-internals)]` accessor added to `src/` (the
-//       R25-1/dbg_* hook pattern CLAUDE.md's own "Active rules" section
-//       documents at length) without that being a hidden runtime change for
-//       PRODUCTION users — a bench-internals-gated diagnostic accessor is
-//       exactly this shape and is not itself the R30-12 defect class. FAIL
-//       would produce a real false-positive on that legitimate pattern;
-//       WARN surfaces it for a human to judge without blocking the commit.
+//       (i.e. touches src/ or Cargo.toml) -> ERROR for docs/docs-config,
+//       WARNING for bench (direction 2). This is a hidden-runtime-change-under-
+//       an-innocuous-prefix shape — the opposite direction.
+//
+//       For docs/docs-config: upgraded to ERROR after a wide-range scan showed
+//       no false positives on historically-legitimate commits; the `09f4d16`
+//       shape (a docs(vmem) commit that changed the public `Display` string of
+//       `VmemError`) is exactly the real defect this catches. A docs commit whose
+//       src/ delta is comment-only (matches hasNonCommentChange's patterns) is
+//       NOT an error — that's most docs(vmem) commits, which legitimately fix
+//       doc-comment content without changing behavior.
+//
+//       For bench: stays at WARNING because legitimate bench-internals
+//       diagnostic accessor patterns exist (e.g. `#[cfg(feature =
+//       "bench-internals")]` / `#[doc(hidden)] pub(crate) static ..._FAILURES:
+//       AtomicU64` — see commits 88592d7, d772d99). A bench commit whose src/
+//       delta is comment-only is also just a warning, same as docs.
 //
 // Direction (1) is FAIL (exit 1): unlike a brand-new rule with zero
 // real-world track record, R30-12 already has three independently-verified
@@ -111,6 +141,52 @@ import { REPO_ROOT } from './lib.mjs';
 // via `git log -1 --format=%H 3f7db16` before hardcoding.
 const R30_12_RULE_COMMIT = '3f7db1629d389c18ae987120f4094aaccf04f81f';
 
+// Commits that ALREADY EXISTED when task #1114/#1117 strengthened the two
+// checks below (direction 1 gained a "the src/ delta must contain a
+// non-comment line" content test; direction 2's docs-prefix warning became an
+// ERROR). CLAUDE.md's R30-12 is explicitly non-retroactive — "no historical
+// commit message is retagged or amended by this rule; it governs new commits
+// going forward only" — and the R14-10 raw-log rule and the R24-6
+// `dbg_push_to_ring` decision are two more precedents in the same file for
+// declining exactly this kind of retroactive cleanup. Without this list the
+// mandatory pre-push gate would be permanently RED on landed history that
+// cannot be fixed, which is worse than useless: a gate nobody can make green
+// is a gate everybody learns to ignore.
+//
+// SELF-CLEANING, deliberately: an entry that no longer fails is itself a
+// FAILURE (see the check after the scan). An exception that has silently
+// stopped applying is how a suppression list rots into a blanket.
+//
+// Each entry states WHY, because "grandfathered" without a reason is the
+// shape this campaign keeps finding and correcting.
+const GRANDFATHERED = new Map([
+  [
+    'fb7dac8',
+    'LANDED (in origin/main) before this check existed. docs(vmem) prefix on a ' +
+      'commit whose src/ delta includes a changed assert! panic-message string. ' +
+      'Recorded, not amended: rewriting pushed history is what R30-12 forbids.',
+  ],
+  [
+    '09f4d16',
+    'docs(vmem) prefix on a commit that changed VmemError\'s public Display ' +
+      'string. Recorded in docs/CORRECTNESS_OPEN_ITEMS.md item 78 (task #1117) ' +
+      'with the full evidence, including that this script WARNED at the time ' +
+      'and the warning was skimmed past — which is why the warning is now an ' +
+      'error for every commit after this list.',
+  ],
+  [
+    'b11d8be',
+    'fix(perf) prefix on a commit whose entire src/ delta is doc comments. ' +
+      'Recorded in item 78 (task #1117).',
+  ],
+  [
+    'c766951',
+    'fix(perf) prefix on a commit with NO src/ path at all (docs/ + tests/ ' +
+      'only). Caught by this very check within an hour of the check landing — ' +
+      'the correct slot was bench: or docs(...). Recorded in item 78.',
+  ],
+]);
+
 // A local run with no explicit range and no configured upstream falls back
 // to the last DEFAULT_LOOKBACK commits. Chosen by looking at this repo's own
 // cadence (`git log --oneline -60` at the time this script was written shows
@@ -125,7 +201,14 @@ const DEFAULT_LOOKBACK = 40;
 // change for direction (1) — and inside of which alone it should NOT
 // (`bench`/`docs(...)` should stay confined to these). Prefix-matched
 // against each changed path's repo-relative POSIX form.
-const MEASUREMENT_ONLY_PREFIXES = ['docs/', 'examples/', 'benches/', 'tests/', 'scripts/'];
+const MEASUREMENT_ONLY_PREFIXES = [
+  'docs/',
+  'examples/',
+  'benches/',
+  'tests/',
+  'scripts/',
+  '.github/', // CI workflows are infrastructure, not shipping code
+];
 
 // Repo-ROOT doc files (not under any prefix above, since they have no
 // directory component at all) that are unambiguously documentation —
@@ -133,6 +216,8 @@ const MEASUREMENT_ONLY_PREFIXES = ['docs/', 'examples/', 'benches/', 'tests/', '
 // routinely alongside a docs-only or bench-only commit (verified: every
 // commit in this script's own non-vacuity range that touched a root file
 // touched exactly one of these three). Exact basename match, not a prefix.
+// Also includes any CHANGELOG.md file anywhere in the repo (e.g. in crate
+// subdirectories) as these are always documentation.
 const MEASUREMENT_ONLY_ROOT_FILES = new Set(['CHANGELOG.md', 'README.md', 'CLAUDE.md']);
 
 function git(args) {
@@ -181,8 +266,20 @@ function toPosix(p) {
 
 function isMeasurementOnlyPath(path) {
   const p = toPosix(path);
-  if (MEASUREMENT_ONLY_ROOT_FILES.has(p)) return true;
-  return MEASUREMENT_ONLY_PREFIXES.some((prefix) => p.startsWith(prefix));
+  // Check if the basename is a measurement-only file (e.g. CHANGELOG.md anywhere in the tree)
+  const basename = p.split('/').pop();
+  if (MEASUREMENT_ONLY_ROOT_FILES.has(basename)) return true;
+
+  // Root-level prefix check (e.g. "docs/", "examples/")
+  if (MEASUREMENT_ONLY_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
+
+  // Segment-aware check: match if a segment boundary precedes a measurement-only directory
+  // (e.g. "crates/vmem/examples/x.rs" or "crates/aligned-vmem/benches/y.rs")
+  // This fixes false positive on commit 2d86fcf where src changes were in crates/vmem/examples/
+  // The regex ensures a real / boundary before the dir name, not just substring match
+  // (so "src/examples_support.rs" or "crates/foo/tests_util/" do NOT match)
+  const SEGMENT_AWARE_RE = /(^|\/)(docs|examples|benches|tests|scripts|\.github)\//;
+  return SEGMENT_AWARE_RE.test(p);
 }
 
 /** Returns the list of changed paths for one commit (`git show --stat`,
@@ -191,6 +288,69 @@ function isMeasurementOnlyPath(path) {
  * human `--stat` summary table (this script's header comment describes the
  * check as scanning `--stat`; `--name-only` is `--stat`'s machine-readable
  * sibling flag on the same `git show`, not a different command). */
+/** Returns true if the commit has at least one non-comment changed line
+ * in the given paths. Parses `git show --unified=0 --format=` to get the diff
+ * body and checks each changed line (ignoring the leading +/- and blank lines)
+ * against comment/attribute patterns. A changed line is considered a COMMENT/
+ * metadata line if it matches any of:
+ *   - `^\s*(///|//!|//)` — Rust doc/comment lines
+ *   - `^\s*#(?!\[)` — TOML/YAML/shell # comments (not Rust attributes) —
+ *     fixes false positives on commits c76e91f, fcb96ba
+ *   - `^\s*#\[[^\n]*\]\s*$` — bare Rust attribute lines like `#[inline]` or
+ *     `#[cfg(...)]` (metadata alone, not an algorithm/behavior delta) —
+ *     fixes false positive on commit 338d50f
+ * Any line not matching these patterns is considered a real code change. */
+function hasNonCommentChange(sha, paths) {
+  const nonMeasurementPaths = paths.filter((p) => !isMeasurementOnlyPath(p));
+  if (nonMeasurementPaths.length === 0) return false;
+
+  // Get the full diff with no context lines
+  const diff = git(['show', '--unified=0', '--format=', sha]);
+  const lines = diff.split(/\r?\n/);
+
+  // Track which file we're currently in the diff for
+  let currentFile = null;
+  let hasNonComment = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check for file header: "diff --git a/path b/path"
+    const fileMatch = line.match(/^diff --git a\/\S+ b\/(\S+)/);
+    if (fileMatch) {
+      currentFile = toPosix(fileMatch[1]);
+      continue;
+    }
+
+    // Skip if we're not in a file we care about, or if it's a hunk header
+    if (!currentFile || !nonMeasurementPaths.includes(currentFile)) continue;
+    if (line.startsWith('@@') || line.startsWith('diff --git')) continue;
+    if (line.startsWith('---') || line.startsWith('+++')) continue;
+
+    // Check for actual changed lines (added or removed, not context)
+    if (line.startsWith('+') || line.startsWith('-')) {
+      // Remove the leading +/- to get the actual content
+      const content = line.slice(1);
+
+      // Skip empty lines
+      if (!content.trim()) continue;
+
+      // Check if it's a COMMENT/metadata line
+      const isComment =
+        /^\s*(\/\/\/|\/\/!|\/\/)/.test(content) || // Rust doc/comments
+        /^\s*#(?!\[)/.test(content) || // TOML/YAML/shell # comments (not attributes) - fixes c76e91f, fcb96ba
+        /^\s*#\[[^\n]*\]\s*$/.test(content); // Bare Rust attributes like #[inline] - fixes 338d50f
+
+      if (!isComment) {
+        hasNonComment = true;
+        break;
+      }
+    }
+  }
+
+  return hasNonComment;
+}
+
 function changedPaths(sha) {
   const out = git(['show', '--name-only', '--format=', sha]).trim();
   return out ? out.split(/\r?\n/).filter(Boolean).map(toPosix) : [];
@@ -264,7 +424,7 @@ function main() {
     process.exit(0);
   }
 
-  const failures = [];
+  let failures = [];
   const warnings = [];
 
   for (const sha of clipped) {
@@ -295,6 +455,21 @@ function main() {
             `(${paths.length} path(s): ${paths.slice(0, 6).join(', ')}${paths.length > 6 ? ', …' : ''}); ` +
             `use bench: or docs(config): instead if no shipping/opt-in code actually changed.`,
         );
+        continue;
+      }
+
+      // REFINEMENT (task #1117): check if the src/ delta is comment-only
+      if (!hasNonCommentChange(sha, outside)) {
+        const claim = kind === 'perf-runtime'
+          ? 'a production-default runtime change'
+          : kind === 'perf-opt-in'
+            ? 'an opt-in runtime change'
+            : 'a shipping/opt-in code fix in perf-sensitive code';
+        failures.push(
+          `${short} "${subject}" — prefix claims ${claim}, but every changed line in src/ is comment-only ` +
+            `(matches \\s*(///|//!|//)); use bench:/docs(config): (or docs(...)) instead.`,
+        );
+        continue;
       }
       continue;
     }
@@ -307,13 +482,28 @@ function main() {
       // name when it's the trigger, since a feature-composition change in
       // Cargo.toml is exactly the R30-12 "production default changed" case.
       if (outside.length > 0) {
-        warnings.push(
-          `${short} "${subject}" — prefix reads as measurement/docs-only, but ${outside.length} ` +
-            `changed path(s) fall outside docs/examples/benches/tests/scripts/: ` +
-            `${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''} — verify no ` +
-            `shipping/opt-in behavior actually changed (a bench-internals-gated diagnostic-only ` +
-            `accessor in src/ is a known legitimate exception; a real algorithm/default change is not).`,
-        );
+        // REFINEMENT (task #1117): split verdict by prefix type
+        const hasNonComment = hasNonCommentChange(sha, outside);
+        const isDocs = kind === 'docs-config' || kind === 'docs-other';
+
+        if (isDocs && hasNonComment) {
+          failures.push(
+            `DIRECTION-2 NON-COMMENT src/ CHANGE: ${short} "${subject}" — prefix reads as measurement/docs-only, ` +
+              `but ${outside.length} changed path(s) fall outside docs/examples/benches/tests/scripts/ ` +
+              `with at least one non-comment changed line: ${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''} — ` +
+              `this shape previously shipped a real Display change (09f4d16). Verify no shipping/opt-in behavior actually changed ` +
+              `(a bench-internals-gated diagnostic-only accessor in src/ is a known legitimate exception; ` +
+              `a real algorithm/default change is not).`,
+          );
+        } else {
+          warnings.push(
+            `${short} "${subject}" — prefix reads as measurement/docs-only, but ${outside.length} ` +
+              `changed path(s) fall outside docs/examples/benches/tests/scripts/ ` +
+              `(${hasNonComment ? 'with non-comment' : 'comment-only'} src/ delta): ` +
+              `${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''} — verify no ` +
+              `shipping/opt-in behavior actually changed.`,
+          );
+        }
       }
       continue;
     }
@@ -325,8 +515,52 @@ function main() {
   console.log(`[verify-commit-prefixes] linted ${clipped.length} commit(s)`);
 
   if (warnings.length > 0) {
-    console.log(`\n[verify-commit-prefixes] ${warnings.length} WARNING(s) (direction 2 — hidden runtime change?):`);
+    console.log(`\n[verify-commit-prefixes] ${warnings.length} WARNING(s) (direction 2 — comment-only src/ delta):`);
     for (const w of warnings) console.log(`  - ${w}`);
+  }
+
+  // Grandfathering (task #1117): drop failures whose SHA is on the
+  // pre-existing list, and FAIL if a listed SHA stopped failing — a
+  // suppression entry that no longer suppresses anything is how an exception
+  // list rots into a blanket, so it must be removed consciously.
+  const failingShas = new Set(
+    failures.flatMap((f) => {
+      const m = f.match(/\b([0-9a-f]{7,40})\b/);
+      return m ? [m[1].slice(0, 7)] : [];
+    }),
+  );
+  const exempted = [];
+  const staleExemptions = [];
+  for (const [sha, why] of GRANDFATHERED) {
+    if (failingShas.has(sha)) exempted.push(`${sha} — ${why}`);
+    else staleExemptions.push(sha);
+  }
+  if (exempted.length > 0) {
+    console.log(
+      `\n[verify-commit-prefixes] ${exempted.length} grandfathered commit(s) — ` +
+        `pre-existing when this check was strengthened (task #1117); recorded in ` +
+        `docs/CORRECTNESS_OPEN_ITEMS.md item 78, NOT amended (R30-12 is non-retroactive):`,
+    );
+    for (const e of exempted) console.log(`  - ${e}`);
+  }
+  failures = failures.filter((f) => {
+    const m = f.match(/\b([0-9a-f]{7,40})\b/);
+    return !(m && GRANDFATHERED.has(m[1].slice(0, 7)));
+  });
+  if (staleExemptions.length > 0) {
+    // Only meaningful when the scanned range actually covered those commits;
+    // a narrow range legitimately excludes them.
+    const scanned = new Set(clipped.map((s) => s.slice(0, 7)));
+    const reallyStale = staleExemptions.filter((s) => scanned.has(s));
+    if (reallyStale.length > 0) {
+      console.log(
+        `\n[verify-commit-prefixes] STALE EXEMPTION(S): ${reallyStale.join(', ')} — ` +
+          `listed in GRANDFATHERED but no longer failing. Remove the entry (and its ` +
+          `item-78 line if the record is now moot) rather than leaving a suppression ` +
+          `that suppresses nothing.`,
+      );
+      failures.push(`stale grandfather entries: ${reallyStale.join(', ')}`);
+    }
   }
 
   if (failures.length > 0) {
