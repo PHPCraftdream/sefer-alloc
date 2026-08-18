@@ -72,16 +72,77 @@
 //       followed within 300 chars by `NAME.is_none(`/`NAME.is_err`/`!NAME`/
 //       `NAME.unwrap_err(`.
 //
+// ## Production provenance rule (task #1080)
+//
+// The fold-only flow above has a structural blind spot in production: every
+// `src/**` call site passes VARIABLES (`initial_commit`, `start_offset`, ...)
+// into the validated positions, so nothing ever folds and the guard raised
+// ZERO candidates from `src/` — a green run said nothing about production.
+// Task #1074's real escape (raw `meta_end + LAZY_FIRST_CHUNK` sums) was
+// invisible to it for exactly this reason.
+//
+// For files under `src/` only, every scanned argument at every scanned call
+// site must additionally carry PROVENANCE, independently of (and in addition
+// to) the fold flow, which keeps working unchanged over the whole repo:
+//   - strict   — argument 3 of the free-function reserve family
+//                (`reserve_aligned_lazy` / `try_reserve_aligned_lazy`): the
+//                task #1074 `initial_commit` position. Must fold, be an
+//                approved terminal, or RESOLVE to one; a raw expression
+//                here FAILS.
+//   - pagefree — every other scanned position (reserve arg 1, range-family
+//                free args 2,3, method args 1,2): same resolution, but an
+//                opaque PAGE-free expression is ACCEPTED (an
+//                invariant-carried value); only a textual `PAGE` token fails
+//                (word-boundary match, so `MAX_REALISTIC_PAGE_SIZE` does not
+//                trip it) — the task #1077 class.
+//
+// Resolution recursions, depth budget 4: a bare lowercase identifier that is
+// a PARAMETER of its enclosing fn resolves through ALL textual callers of
+// that fn across the src/ index (every actual at the parameter's position
+// must qualify); any other bare identifier resolves through ALL its same-
+// file `let` bindings (over-approximation is deliberate — one bad same-named
+// local flags; Rust has no same-scope shadowing across fns, so this is
+// conservative in the safe direction). Approved terminal forms (both modes):
+// a qualified `lazy_initial_commit(..)` call (the task #1074 rounding
+// helper, any arguments), `..page_size()` itself, or
+// `align_up(x, ..page_size())` (last argument checked).
+//
+// Prod findings reuse suppressions S1 (marker) and S3 (negative context),
+// and are deduplicated against fold findings by (line, arg index).
+//
+// The ONE in-tree marker is `src/alloc_core/os.rs`'s `reserve_capacity_exact`
+// call (see the comment block above it): both arguments are value-proven
+// runtime-page multiples but form-opaque to the walker — `reserved_len` is
+// `usable.saturating_mul(4).min(16 * SEGMENT).max(usable)` (integer ×4 /
+// min / max over page-multiples preserves page-multiplicity), and
+// `initial_commit` is `usable`, whose cfg-active `exact-span-large` arm is
+// `align_up(needed, aligned_vmem::page_size())` and whose feature-OFF arm is
+// a whole-SEGMENT multiple (4 MiB is a multiple of every supported runtime
+// page ≤ 64 KiB); the guard reads text without cfg-evaluation, so both arms
+// are checked. Runtime-pinned by tests/large_reserved_capacity.rs (task
+// #1077's 64 KiB-multiple boundary assertion) and by
+// `validate_initial_commit` itself. The runtime complement to this whole
+// rule is tests/lazy_initial_commit_forced_page.rs (forced-page regression).
+//
 // ## KNOWN BLIND SPOTS (do not treat a green run as proof of absence)
 //
-//   - Values flowing through local variables or cross-file consts are
-//     invisible: `crates/aligned-vmem/tests/lazy_commit.rs`'s
-//     `windows_lazy_reserve_saves_commit_charge` binds `let initial = PAGE;`
-//     and passes `initial` — valid only because the test is `#[cfg(windows)]`-
-//     gated where runtime pages are 4 KiB, and this guard cannot see it.
-//   - Task #1074's production escape flowed meta-end sums through a helper
-//     function before they reached the validated positions; this purely
-//     syntactic guard would NOT have caught it.
+//   - Method-call RHS opacity: a PAGE-free method or qualified call (e.g.
+//     `meta.committed_payload_end_of()`, `SegLayout::small_meta_end()`) is
+//     accepted without walking its body — unless it is reached via a
+//     param/binding chain that leads back to a raw `PAGE` token or (in
+//     strict mode) to a non-approved raw expression.
+//   - cfg-blindness is DELIBERATE: the guard reads text without cfg
+//     evaluation, so cfg'd-OUT arms are checked too (both arms of
+//     `alloc_core_large.rs`'s `usable` are qualified — see the os.rs marker
+//     for the one site where this matters).
+//   - `crates/**` remains fold-only: the production provenance rule covers
+//     `src/` only, so a `let initial = PAGE;` in a non-src/ test (e.g.
+//     `crates/aligned-vmem/tests/lazy_commit.rs`'s `#[cfg(windows)]`-gated
+//     `windows_lazy_reserve_saves_commit_charge`, valid only because
+//     runtime pages are 4 KiB there) is still invisible.
+//   - Unresolvable identifiers (struct fields, captured variables) are
+//     FLAGGED rather than waved through — conservative in the safe
+//     direction.
 //   - `#[should_panic]` and `matches!(x, Err(_))` negative forms are not
 //     recognized (none exist in-tree today).
 //   - String/char-literal blanking is heuristic (raw-string corner cases; a
@@ -92,9 +153,13 @@
 // ## Self-test
 //
 // Before scanning the real tree, the detector runs over embedded fixture
-// Rust sources through the SAME scanSource(path, source) code path the file
-// walker uses. A guard that never fired is unproven; the fixtures are the
-// firing proof, and they run FIRST, always.
+// Rust sources through the SAME scanSource(path, source, prodCtx) code path
+// the file walker uses. A guard that never fired is unproven; the fixtures are
+// the firing proof, and they run FIRST, always. Prod-rule fixtures (F13+,
+// P13+) use `src/__selftest__/<id>.rs` paths so the production provenance rule
+// engages, and their caller-search index is built from ALL prod-fixture
+// sources, so the cross-file fixtures (F15a/b, P15a/b, P18a/b) resolve each
+// other.
 //
 // Usage:
 //   node scripts/verify-vmem-page-constant-call-sites.mjs
@@ -509,9 +574,184 @@ function negativeContext(blanked, nameStart, closeParen) {
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Production provenance rule (task #1080) — see the header section. Active
+// only for files whose repo-relative path starts with `src/`. `qualify`
+// decides whether ONE scanned argument carries acceptable provenance;
+// `mode` is 'strict' (reserve arg 3) or 'pagefree' (every other position).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PROD_PREFIX = 'src/';
+const PROD_DEPTH_BUDGET = 4;
+const RE_LAZY_INITIAL_COMMIT = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*lazy_initial_commit\s*\(/;
+const RE_PAGE_SIZE_CALL = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*page_size\s*\(\s*\)$/;
+const RE_ALIGN_UP_CALL = /^(?:[A-Za-z_][A-Za-z0-9_]*::)*align_up\s*\(/;
+const RE_LOWER_IDENT = /^[a-z_][A-Za-z0-9_]*$/;
+const RE_PAGE_TOKEN = /\bPAGE\b/; // `_` is a word char: MAX_REALISTIC_PAGE_SIZE does NOT match
+const RE_FN_DEF = /\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+
+/** Per-file `const NAME: usize` defs of a blanked source (shared by the
+ * fold flow's per-file map and the cross-file prod index). */
+function collectDefs(blanked) {
+  const defs = new Map();
+  for (const m of blanked.matchAll(CONST_DEF_RE)) defs.set(m[1], m[2].trim());
+  return defs;
+}
+
+/** The last `fn NAME(` in `blanked` starting before `offset`, with its
+ * parameter names (leading `mut`/`&`/`&mut` stripped; non-identifier
+ * patterns like `self` skipped). Null when no fn encloses the offset. */
+function findEnclosingFn(blanked, offset) {
+  let best = null;
+  for (const m of blanked.matchAll(RE_FN_DEF)) {
+    if (m.index >= offset) break;
+    best = m;
+  }
+  if (!best) return null;
+  const pl = extractArgs(blanked, best.index + best[0].length - 1);
+  const params = [];
+  if (pl) {
+    pl.args.forEach((p) => {
+      const t = p.text.replace(/^(?:&\s*mut\s+|&\s*|mut\s+)/, '').trim();
+      const id = /^[A-Za-z_][A-Za-z0-9_]*/.exec(t);
+      // `self` is the receiver, not a positional parameter: a method call
+      // `x.foo(a, b)` does not pass it inside the parentheses, so counting
+      // it would shift every later parameter's position by one.
+      if (!id || id[0] === 'self') return;
+      params.push({ name: id[0], pos: params.length + 1 });
+    });
+  }
+  return { name: best[1], params };
+}
+
+/** ALL `let (mut )?IDENT (: <type>)? = <RHS>;` bindings of `ident` in
+ * `blanked`. The RHS is captured by scanning forward from the `=` while
+ * tracking ()/[]/{} depth and stopping at the first depth-0 `;`, so
+ * multi-line (and block) RHS forms are captured whole. */
+function letBindingsOf(blanked, ident) {
+  const out = [];
+  const re = new RegExp(`\\blet\\s+(?:mut\\s+)?${ident}\\b`, 'g');
+  for (const m of blanked.matchAll(re)) {
+    let i = m.index + m[0].length;
+    while (i < blanked.length && /\s/.test(blanked[i])) i++;
+    if (blanked[i] === ':') {
+      // optional `: <type>` — scan to the `=` that ends it
+      const eq = blanked.indexOf('=', i);
+      if (eq === -1) continue;
+      i = eq;
+    }
+    if (blanked[i] !== '=' || blanked[i + 1] === '=') continue;
+    let depth = 0;
+    let end = -1;
+    for (let j = i + 1; j < blanked.length; j++) {
+      const ch = blanked[j];
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') {
+        depth--;
+        if (depth < 0) break;
+      } else if (ch === ';' && depth === 0) {
+        end = j;
+        break;
+      }
+    }
+    if (end === -1) continue;
+    let s = i + 1;
+    let e = end;
+    while (s < e && /\s/.test(blanked[s])) s++;
+    while (e > s && /\s/.test(blanked[e - 1])) e--;
+    if (e > s) out.push({ rhs: blanked.slice(s, e), rhsStart: s });
+  }
+  return out;
+}
+
+/** ALL textual call sites of `fnName` across the cross-file index, excluding
+ * the definitions themselves (a match whose preceding non-space token is
+ * `fn`). Uppercase-qualified callers (`Segment::reserve_lazy(..)`) ARE
+ * callers here — the skip-form rule is about the scanned vmem API, not
+ * about wrapper functions. */
+function callerSitesOf(files, fnName) {
+  const sites = [];
+  const re = new RegExp(`\\b${fnName}\\s*\\(`, 'g');
+  for (const fe of files) {
+    for (const m of fe.blanked.matchAll(re)) {
+      let i = m.index - 1;
+      while (i >= 0 && /\s/.test(fe.blanked[i])) i--;
+      let j = i;
+      while (j >= 0 && /[A-Za-z0-9_]/.test(fe.blanked[j])) j--;
+      if (fe.blanked.slice(j + 1, i + 1) === 'fn') continue; // the definition
+      const call = extractArgs(fe.blanked, m.index + m[0].length - 1);
+      if (!call) continue;
+      sites.push({ ctx: { rel: fe.rel, blanked: fe.blanked, defs: fe.defs, files }, args: call.args });
+    }
+  }
+  return sites;
+}
+
+/** Provenance decision for one scanned argument (task #1080). `offset` is
+ * the argument's start offset in `fileCtx.blanked` — the enclosing-fn
+ * search needs it. Returns {ok, reason?}. */
+function qualify(exprText, fileCtx, depth, mode, offset) {
+  if (depth > PROD_DEPTH_BUDGET) return { ok: false, reason: 'unresolved within depth budget' };
+  const t = exprText.trim();
+  // Folded = auditable; the existing 64 KiB-bar candidate flow owns folded
+  // values (its own suppressions and findings apply).
+  if (foldExpr(t, fileCtx.defs) !== null) return { ok: true };
+  // Approved terminal forms.
+  if (RE_LAZY_INITIAL_COMMIT.test(t)) return { ok: true };
+  if (RE_PAGE_SIZE_CALL.test(t)) return { ok: true };
+  const au = RE_ALIGN_UP_CALL.exec(t);
+  if (au) {
+    const inner = extractArgs(t, au[0].length - 1);
+    if (inner && inner.args.length > 0 && RE_PAGE_SIZE_CALL.test(inner.args[inner.args.length - 1].text)) {
+      return { ok: true };
+    }
+  }
+  // Bare lowercase identifier → parameter mode or binding mode.
+  if (RE_LOWER_IDENT.test(t)) {
+    const fn = findEnclosingFn(fileCtx.blanked, offset);
+    if (!fn) return { ok: false, reason: 'no enclosing fn' };
+    const param = fn.params.find((p) => p.name === t);
+    if (param) {
+      const sites = callerSitesOf(fileCtx.files, fn.name);
+      if (sites.length === 0) {
+        return { ok: false, reason: `parameter ${t} has no textual caller` };
+      }
+      for (const site of sites) {
+        const actual = site.args[param.pos - 1];
+        if (!actual) {
+          return { ok: false, reason: `caller of ${fn.name} supplies no argument at parameter position ${param.pos}` };
+        }
+        const r = qualify(actual.text, site.ctx, depth + 1, mode, actual.start);
+        if (!r.ok) return r;
+      }
+      return { ok: true };
+    }
+    const binds = letBindingsOf(fileCtx.blanked, t);
+    if (binds.length === 0) {
+      return { ok: false, reason: `identifier ${t} has no binding and is not a parameter` };
+    }
+    for (const b of binds) {
+      const r = qualify(b.rhs, fileCtx, depth + 1, mode, b.rhsStart);
+      if (!r.ok) return r;
+    }
+    return { ok: true };
+  }
+  // Opaque non-identifier expression that did not fold.
+  if (mode === 'strict') {
+    return { ok: false, reason: 'raw expression in the initial_commit position is not an approved rounding form' };
+  }
+  if (RE_PAGE_TOKEN.test(t)) {
+    return { ok: false, reason: 'compile-time PAGE token in a page_size()-validated position (task #1077 class)' };
+  }
+  return { ok: true }; // invariant-carried value — opaque but PAGE-free
+}
+
 /** Scan one Rust source (fixture or real file) through the exact same path.
- * Returns { findings, stats }; `path` is only used for reporting. */
-function scanSource(path, source) {
+ * Returns { findings, prodFindings, stats }; `path` is only used for
+ * reporting. `prodCtx` ({ files: [{ rel, blanked, defs }] }) is the
+ * cross-file index for the production provenance rule; when absent for a
+ * `src/` path, a single-file index is built from the source itself. */
+function scanSource(path, source, prodCtx) {
   const blanked = blankRust(source);
   const originalLines = source.split('\n'); // S1 reads the ORIGINAL text
   const lineStarts = [0];
@@ -528,11 +768,22 @@ function scanSource(path, source) {
   };
 
   // Per-file const bindings (blanked text: commented-out consts cannot match).
-  const defs = new Map();
-  for (const m of blanked.matchAll(CONST_DEF_RE)) defs.set(m[1], m[2].trim());
+  const defs = collectDefs(blanked);
 
-  const stats = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0 };
+  const stats = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0, prodChecked: 0, prodFindings: 0 };
   const findings = [];
+  const prodFindings = [];
+  const prodPending = [];
+
+  // Production provenance rule (task #1080): `src/` files only. The scanned
+  // file must be able to see itself in the index (same-file wrapper callers).
+  const isProd = path.startsWith(PROD_PREFIX);
+  let selfCtx = null;
+  if (isProd) {
+    const files = prodCtx ? prodCtx.files.slice() : [];
+    if (!files.some((f) => f.rel === path)) files.push({ rel: path, blanked, defs });
+    selfCtx = { rel: path, blanked, defs, files };
+  }
 
   for (const name of Object.keys(FREE_FN_ARGS)) {
     const re = new RegExp(`\\b${name}\\s*\\(`, 'g');
@@ -552,6 +803,36 @@ function scanSource(path, source) {
       const call = extractArgs(blanked, openParen);
       if (!call) continue;
       const callLine = lineOf(nameStart);
+
+      // Production provenance rule (task #1080) — src/ files only; EVERY
+      // scanned argument at EVERY scanned (non-skip) call site, independently
+      // of the fold-candidate flow below (which keeps running unchanged).
+      if (isProd) {
+        const isReserveFree =
+          form === 'free' && (name === 'reserve_aligned_lazy' || name === 'try_reserve_aligned_lazy');
+        for (const idx of argIndexes) {
+          const a = call.args[idx - 1];
+          if (!a) continue;
+          stats.prodChecked++;
+          const mode = isReserveFree && idx === 3 ? 'strict' : 'pagefree';
+          const q = qualify(a.text, selfCtx, 0, mode, a.start);
+          if (q.ok) continue;
+          // S1 — same original-text marker window as the fold flow.
+          const argLine = lineOf(a.start);
+          const lines = new Set([callLine, callLine - 1, callLine - 2, argLine]);
+          const marked = [...lines].some((ln) => ln >= 1 && (originalLines[ln - 1] ?? '').includes(MARKER));
+          if (marked) {
+            stats.s1++;
+            continue;
+          }
+          // S3 — negative-assertion context, same as the fold flow.
+          if (negativeContext(blanked, nameStart, call.closeParen)) {
+            stats.s3++;
+            continue;
+          }
+          prodPending.push({ line: callLine, argIdx: idx, path, name, argText: a.text, reason: q.reason });
+        }
+      }
 
       // Fold every scanned arg; collect the ones that fold to a non-64KiB
       // multiple as candidate findings.
@@ -611,7 +892,16 @@ function scanSource(path, source) {
       }
     }
   }
-  return { findings, stats };
+
+  // Deduplicate the prod findings against the fold flow by (line, argIdx):
+  // if the fold flow already emitted an unsuppressed finding for the same
+  // argument, the prod rule must not double-report it.
+  for (const p of prodPending) {
+    if (findings.some((f) => f.line === p.line && f.argIdx === p.argIdx)) continue;
+    prodFindings.push(p);
+    stats.prodFindings++;
+  }
+  return { findings, prodFindings, stats };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -675,6 +965,51 @@ fn probe() {
 
 fn probe(seg: usize) {
     let r = vmem::reserve_aligned_lazy(seg, seg, PAGE);
+}
+`,
+  },
+  {
+    id: 'F13',
+    mustFlag: true,
+    prod: true,
+    purpose: 'task #1080/#1074 revert shape — raw meta_end + LAZY_FIRST_CHUNK binding flows into initial_commit (strict, binding mode)',
+    source: `fn probe() {
+    let meta_end = 73728;
+    let initial_commit = meta_end + LAZY_FIRST_CHUNK;
+    let r = vmem::reserve_aligned_lazy(4194304, 4194304, initial_commit).expect("x");
+}
+`,
+  },
+  {
+    id: 'F14',
+    mustFlag: true,
+    prod: true,
+    purpose: 'task #1077 shape — align_up(.., os::PAGE) binding flows into a range position (pagefree; arg 2 folds to a 64 KiB multiple so ONLY the prod rule fires)',
+    source: `fn probe(base: *mut u8, required_end: usize) {
+    let new_span_usable = align_up(required_end, os::PAGE).min(4194304);
+    vmem::commit_range(base, 65536, new_span_usable);
+}
+`,
+  },
+  {
+    id: 'F15a',
+    mustFlag: true,
+    prod: true,
+    purpose: 'task #1080 param→caller chain — the wrapper boundary arg resolves through ANOTHER fixture file\'s raw-sum binding (strict)',
+    source: `pub(crate) fn reserve_lazy(initial_commit: usize) -> Option<Reservation> {
+    let reservation = vmem::reserve_aligned_lazy(4194304, 4194304, initial_commit)?.into_reservation();
+    Some(reservation)
+}
+`,
+  },
+  {
+    id: 'F15b',
+    mustFlag: false,
+    prod: true,
+    purpose: "F15a's sole textual caller — no scanned API call of its own; exists so the cross-file index resolves F15a",
+    source: `fn probe() {
+    let initial_commit = 192512 + LAZY_FIRST_CHUNK;
+    let r = reserve_lazy(initial_commit).expect("x");
 }
 `,
   },
@@ -794,15 +1129,116 @@ fn probe(ps: usize) {
 }
 `,
   },
+  {
+    id: 'P13',
+    mustFlag: false,
+    prod: true,
+    purpose: 'current production shape (alloc_core_small.rs) — identifier whose binding calls the approved lazy_initial_commit helper',
+    source: `fn probe() {
+    let meta_end = SegLayout::small_meta_end();
+    let initial_commit = SegLayout::lazy_initial_commit(meta_end, aligned_vmem::page_size());
+    let r = aligned_vmem::reserve_aligned_lazy(4194304, 4194304, initial_commit).expect("x");
+}
+`,
+  },
+  {
+    id: 'P14',
+    mustFlag: false,
+    prod: true,
+    purpose: 'align_up(x, aligned_vmem::page_size()) directly in the initial_commit position (approved terminal)',
+    source: `fn probe(needed: usize) {
+    let r = vmem::reserve_aligned_lazy(4194304, 4194304, align_up(needed, aligned_vmem::page_size())).expect("x");
+}
+`,
+  },
+  {
+    id: 'P15a',
+    mustFlag: false,
+    prod: true,
+    purpose: 'os.rs wrapper shape — range args are parameters resolved through a cross-file caller with PAGE-free bindings',
+    source: `fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
+    unsafe { vmem::commit_range(base, start_offset, end_offset) }
+}
+`,
+  },
+  {
+    id: 'P15b',
+    mustFlag: false,
+    prod: true,
+    purpose: "P15a's sole textual caller — frontier identifiers bound to a method call and a PAGE-free align_up chain",
+    source: `fn probe(base: *mut u8, meta: &Meta, carve_end: usize) {
+    let frontier = meta.committed_payload_end_of();
+    let new_frontier = align_up(carve_end, 262144).min(4194304);
+    commit_pages(base, frontier, new_frontier);
+}
+`,
+  },
+  {
+    id: 'P16',
+    mustFlag: false,
+    prod: true,
+    purpose: 'the PAGE inside MAX_REALISTIC_PAGE_SIZE must NOT match the word-boundary PAGE token check (pagefree opaque-accept)',
+    source: `fn probe(base: *mut u8) {
+    let span = 65536;
+    let required_end = span + 1;
+    vmem::commit_range(base, span, align_up(required_end, os::MAX_REALISTIC_PAGE_SIZE));
+}
+`,
+  },
+  {
+    id: 'P17',
+    mustFlag: false,
+    prod: true,
+    purpose: 'otherwise-flagging src shape suppressed by a pageguard:allow marker on the line above (S1, prod flow)',
+    source: `fn probe() {
+    let initial_commit = 73728 + LAZY_FIRST_CHUNK;
+    // pageguard:allow — deliberate raw-sum boundary shape (fixture P17)
+    let r = vmem::reserve_aligned_lazy(4194304, 4194304, initial_commit).expect("x");
+}
+`,
+  },
+  {
+    id: 'P18a',
+    mustFlag: false,
+    prod: true,
+    purpose: 'os.rs:331 shape — wrapper whose initial_commit param is fed aligned_vmem::page_size() by its sole cross-file caller',
+    source: `pub(crate) fn reserve_lazy_for_measurement(initial_commit: usize) -> Option<Reservation> {
+    let reservation = vmem::reserve_aligned_lazy(4194304, 4194304, initial_commit)?.into_reservation();
+    Some(reservation)
+}
+`,
+  },
+  {
+    id: 'P18b',
+    mustFlag: false,
+    prod: true,
+    purpose: "P18a's sole textual caller — passes the approved page_size() terminal",
+    source: `fn probe() {
+    let seg = reserve_lazy_for_measurement(aligned_vmem::page_size())?;
+    let _ = seg;
+}
+`,
+  },
 ];
 
 function runSelfTest() {
+  // Prod-rule fixtures engage the production provenance rule via their
+  // `src/__selftest__/...` paths; the caller-search index is built from ALL
+  // prod-fixture sources so the cross-file fixtures resolve each other.
+  const prodCtx = {
+    files: FIXTURES.filter((fx) => fx.prod).map((fx) => {
+      const blanked = blankRust(fx.source);
+      return { rel: `src/__selftest__/${fx.id}.rs`, blanked, defs: collectDefs(blanked) };
+    }),
+  };
   let bad = 0;
   for (const fx of FIXTURES) {
-    const { findings } = scanSource(`__selftest__/${fx.id}.rs`, fx.source);
-    const ok = fx.mustFlag ? findings.length >= 1 : findings.length === 0;
+    const path = `${fx.prod ? 'src/' : ''}__selftest__/${fx.id}.rs`;
+    const { findings, prodFindings } = scanSource(path, fx.source, fx.prod ? prodCtx : undefined);
+    const total = findings.length + prodFindings.length;
+    const ok = fx.mustFlag ? total >= 1 : total === 0;
     if (!ok) bad++;
-    console.log(`  [${ok ? 'ok' : 'BAD'}] ${fx.id} — ${fx.purpose}${ok ? '' : ` (got ${findings.length} finding(s))`}`);
+    console.log(`  [${ok ? 'ok' : 'BAD'}] ${fx.id} — ${fx.purpose}${ok ? '' : ` (got ${total} finding(s))`}`);
   }
   return bad;
 }
@@ -834,13 +1270,24 @@ function main() {
   }
 
   console.log(`\n[${SCRIPT}] phase 2/2: scanning the real tree from the repo root\n`);
-  const totals = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0 };
+  const totals = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0, prodChecked: 0, prodFindings: 0 };
   const findings = [];
+  const prodFindings = [];
+  // Cross-file index for the production provenance rule (task #1080), built
+  // ONCE from the root crate's production tree.
+  const prodCtx = {
+    files: walkRs(join(REPO_ROOT, 'src')).map((file) => {
+      const rel = relative(REPO_ROOT, file).split('\\').join('/');
+      const blanked = blankRust(readFileSync(file, 'utf8'));
+      return { rel, blanked, defs: collectDefs(blanked) };
+    }),
+  };
   const files = walkRs(REPO_ROOT);
   for (const file of files) {
     const rel = relative(REPO_ROOT, file).split('\\').join('/');
-    const r = scanSource(rel, readFileSync(file, 'utf8'));
+    const r = scanSource(rel, readFileSync(file, 'utf8'), rel.startsWith('src/') ? prodCtx : undefined);
     findings.push(...r.findings);
+    prodFindings.push(...r.prodFindings);
     for (const k of Object.keys(totals)) totals[k] += r.stats[k];
   }
 
@@ -850,16 +1297,23 @@ function main() {
         `page_size()-validated positions reject it on 16/64 KiB-page hosts (e.g. macOS ARM64 CI)`,
     );
   }
+  for (const f of prodFindings) {
+    console.log(
+      `  FAIL ${f.path}:${f.line} — ${f.name}(...) arg ${f.argIdx} '${f.argText}' [production provenance] ${f.reason}`,
+    );
+  }
 
   const suppressed = totals.s1 + totals.s2a + totals.s2b + totals.s3;
   console.log(
     `\n[${SCRIPT}] scanned ${files.length} file(s), examined ${totals.calls} call site(s); ` +
       `${totals.candidates} candidate arg(s) raised: ${suppressed} suppressed ` +
       `(S1(marker)=${totals.s1} S2a(non-floor)=${totals.s2a} S2b(inverted)=${totals.s2b} ` +
-      `S3(negative-ctx)=${totals.s3}), ${findings.length} finding(s).`,
+      `S3(negative-ctx)=${totals.s3}), ${findings.length} finding(s); ` +
+      `production provenance rule (src/ only): ${totals.prodChecked} arg(s) checked, ` +
+      `${totals.prodFindings} prod finding(s).`,
   );
 
-  if (findings.length > 0) {
+  if (findings.length + prodFindings.length > 0) {
     console.log(
       `\n[${SCRIPT}] FAIL — fix the call (use page_size()/ps-derived values, or a 64 KiB multiple), ` +
         `or mark the deliberate site with a \`// pageguard:allow\` comment on the call line.`,

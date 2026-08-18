@@ -881,6 +881,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
+      # Task #1080: the forced-page lazy-commit call-site regression — drives
+      # the REAL bootstrap.rs/alloc_core_small.rs lazy-reservation call sites
+      # under a simulated 64 KiB runtime page so the task #1074 compile-time-
+      # PAGE bug class fails loudly on this 4 KiB-page runner. The override is
+      # the test-only --cfg aligned_vmem_page_size_override build flag (the
+      # task #962 conversion pattern: a Cargo feature would unify across the
+      # dependency graph; a cfg flag is explicit per-build only).
+      - run: cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # The magazine-in-isolation config (fastbin without decommit) exercises the
       # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
       # production run above.

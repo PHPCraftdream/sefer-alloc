@@ -133,15 +133,21 @@ fault-injection = ["lazy-commit"]
 # zero cost when disabled (increments compiled out entirely).
 bench-internals = []
 
-# `aligned_vmem_mock` is a build-time cfg (set via
-# `RUSTFLAGS="--cfg aligned_vmem_mock"`), NOT a Cargo feature — cfg flags do
-# not unify across the build's dependency graph, which is the whole point of
-# the task #962 conversion. Declaring it here keeps `unexpected_cfgs` silent
-# for this crate (same pattern as the root workspace's `loom`/`kani`
-# declaration, which this crate does not inherit — it has no
-# `[lints] workspace = true`).
+# `aligned_vmem_mock` and `aligned_vmem_page_size_override` are build-time
+# cfgs (set via `RUSTFLAGS="--cfg aligned_vmem_mock"` /
+# `RUSTFLAGS="--cfg aligned_vmem_page_size_override"`), NOT Cargo features
+# — cfg flags do not unify across the build's dependency graph, which is the
+# whole point of the task #962 conversion. The second entry is the test-only
+# page-size injection cfg (task #1080): the same task-#962 rationale — a
+# Cargo feature would unify across the dependency graph, while the cfg is
+# turned on ONLY by the explicit per-build invocations that pass it
+# (`RUSTFLAGS="--cfg aligned_vmem_page_size_override"` — the check-all step
+# and the ci.yml `test-windows` row). Declaring both here keeps
+# `unexpected_cfgs` silent for this crate (same pattern as the root
+# workspace's `loom`/`kani` declaration, which this crate does not inherit —
+# it has no `[lints] workspace = true`).
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(aligned_vmem_mock)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(aligned_vmem_mock)', 'cfg(aligned_vmem_page_size_override)'] }
 
 [dependencies]
 

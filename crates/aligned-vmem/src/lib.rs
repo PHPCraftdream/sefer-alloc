@@ -151,6 +151,9 @@ pub mod mock;
 #[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
 pub mod fault_injection;
 
+#[cfg(aligned_vmem_page_size_override)]
+pub mod page_size_override;
+
 mod min_page;
 mod page;
 mod page_size;

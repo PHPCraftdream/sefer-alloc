@@ -255,6 +255,19 @@ impl Segment {
             return None;
         }
         // `into_reservation()` — same rationale as the sibling constructors.
+        //
+        // task #1080: both arguments are value-proven runtime-page multiples
+        // but form-opaque to the guard's text walker — `reserved_len` is
+        // `usable.saturating_mul(4).min(16 * SEGMENT).max(usable)` (integer
+        // ×4 / min / max over page-multiples preserves page-multiplicity),
+        // and `initial_commit` is `usable`, whose cfg-active
+        // `exact-span-large` arm is `align_up(needed, page_size())` and whose
+        // feature-OFF arm is a whole-SEGMENT multiple (4 MiB is a multiple
+        // of every supported runtime page ≤ 64 KiB); cfg-blind by design,
+        // both arms are checked. Runtime-pinned by
+        // tests/large_reserved_capacity.rs (task #1077's 64 KiB-multiple
+        // boundary assertion) and by `validate_initial_commit` itself.
+        // pageguard:allow — production provenance marker (task #1080)
         let reservation =
             vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit)?.into_reservation();
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);

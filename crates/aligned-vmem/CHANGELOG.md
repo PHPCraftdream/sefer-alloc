@@ -131,6 +131,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   fires through the method, release silently skips with a mock call-log
   no-record oracle — since every pre-existing oracle observed only the free
   functions. (task #1079)
+- **`page_size_override::set_page_size_override(Option<usize>)`** — test-only
+  injection of a simulated runtime page size (e.g. 64 KiB on a 4 KiB host),
+  so consumers of this crate can exercise their `page_size()`-validated call
+  paths against the exact failure mode that is invisible on small-page hosts
+  by construction (values aligned to the compile-time `PAGE` only). Compiled
+  solely under the build-time `--cfg aligned_vmem_page_size_override` flag —
+  deliberately NOT a Cargo feature, the same task-#962 conversion rationale
+  as `--cfg aligned_vmem_mock`: a feature unifies across the dependency
+  graph and would let any downstream feature resolution enable the override,
+  while a cfg flag is explicit per-build only. Safe by design: the override
+  can only make validation STRICTER (every validator compares against
+  `page_size()`), OS calls stay legal (a larger power-of-two multiple is
+  also a real-page multiple), and misaligned ranges are rejected or silently
+  skipped — fail-closed degradation, never UB. First consumer:
+  sefer-alloc's forced-page lazy-commit call-site regression
+  (`tests/lazy_initial_commit_forced_page.rs`, task #1080). (task #1080)
 
 #### Prerelease audit round 7 (`docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md`)
 

@@ -99,7 +99,9 @@ loom = "0.7"
 # `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that gates the
 # loom model-check harness; `kani` gates the kani proof harnesses (root only).
 # Declare both so `unexpected cfg` warnings are silent across the workspace.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)'] }
+# The third entry gates the root crate's forced-page test module (task #1080;
+# same task-#962 cfg-flag pattern as aligned-vmem's own lints entry).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -473,6 +475,15 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "all
 # every CI/local `cargo test` invocation that exercises this internals-facing
 # test suite passes `internals` alongside `production` on the command line
 # instead (see `scripts/check-matrix.mjs` and `.github/workflows/ci.yml`).
+# Task #1080 — the forced-page lazy-commit call-site regression test
+# (`tests/lazy_initial_commit_forced_page.rs`) needs the test-only
+# aligned-vmem page-size override, which since the task #962 conversion
+# pattern is a build-time cfg flag
+# (`RUSTFLAGS="--cfg aligned_vmem_page_size_override"`), NOT a cargo feature
+# — deliberately NOT forwarded from `internals` so no downstream feature
+# resolution can turn the override on; the test's runtime half is compiled
+# only in invocations that pass the flag (check-all step + ci.yml
+# `test-windows` row).
 internals = []
 
 # R8-3 (task #216): `alloc-segment-directory` joined `production` once the two

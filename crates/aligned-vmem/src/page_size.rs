@@ -8,7 +8,8 @@ use crate::os::{GetSystemInfo, SystemInfo, WIN_ALLOCATION_GRANULARITY};
 
 /// Cache for [`page_size`]. `0` means "not yet queried"; a real page size is
 /// always a non-zero power of two so `0` is an unambiguous sentinel.
-static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
+/// `pub(crate)` so the `page_size_override` test seam can store into it.
+pub(crate) static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 
 /// Internal implementation of page size validation.
 #[inline]

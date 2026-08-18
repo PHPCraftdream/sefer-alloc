@@ -142,9 +142,27 @@
 //      three times (#1067 mock.rs, #1074 bootstrap+siblings, #1075 smoke.rs
 //      x4) and is invisible on this 4 KiB-page Windows host by construction;
 //      runs its counterfactual fixture self-test first, then scans src/,
-//      crates/, tests/, benches/, examples/. See that script's own header
-//      for the scanned-position table, suppressions, and blind spots.)
-//   38. npm run iai                                                (deterministic judge,
+//      crates/, tests/, benches/, examples/. Task #1080 adds the production
+//      provenance rule for src/: every scanned argument must fold, be an
+//      approved rounding form (lazy_initial_commit / page_size /
+//      align_up(.., page_size())), or resolve to one through parameter→
+//      caller and let-binding chains — closing the "every src/ arg is a
+//      variable, so nothing folds" blind spot that made the fold-only
+//      guard silent on production; the static complement to the forced-page
+//      runtime regression in tests/lazy_initial_commit_forced_page.rs.
+//      See that script's own header for the scanned-position table,
+//      suppressions, and blind spots.)
+//   38. cargo test --features "production small-segment-lazy-commit internals"
+//      --test lazy_initial_commit_forced_page   (task #1080: the forced-page
+//      lazy-commit call-site regression under RUSTFLAGS
+//      "--cfg aligned_vmem_page_size_override" — the task #962 cfg-flag
+//      conversion pattern, mirroring the ci.yml `test-windows` row. Placed
+//      LAST among the array steps so the RUSTFLAGS change's cache
+//      invalidation is paid once at the end, not between the existing
+//      test/clippy rows. This single feature set covers BOTH lazy legs:
+//      `production` implies `primordial-lazy-commit`, and the explicit
+//      `small-segment-lazy-commit` adds the small-segment leg.)
+//   39. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -549,17 +567,46 @@ const steps = [
     // escaped three times in one campaign (task #1067 tests/mock.rs, task
     // #1074 bootstrap.rs + 5 siblings in production code, task #1075 smoke.rs
     // x4) and that NO local test can catch on this 4 KiB-page Windows host,
-    // where PAGE == page_size() by construction. Runs the fixture self-test
-    // (the permanent counterfactual: must-flag and must-pass shapes) before
-    // scanning the tree. See the script's own header.
-    name: 'verify-vmem-page-constant-call-sites (task #1076 page-constant guard)',
+    // where PAGE == page_size() by construction. Task #1080 adds the
+    // production provenance rule for src/: every scanned argument must fold,
+    // be an approved rounding form (lazy_initial_commit / page_size /
+    // align_up(.., page_size())), or resolve to one through parameter→caller
+    // and let-binding chains — the static complement to the forced-page
+    // runtime regression in tests/lazy_initial_commit_forced_page.rs. Runs
+    // the fixture self-test (the permanent counterfactual: must-flag and
+    // must-pass shapes) before scanning the tree. See the script's own
+    // header.
+    name: 'verify-vmem-page-constant-call-sites (task #1076 page-constant + task #1080 production provenance guard)',
     cmd: 'node',
     args: ['scripts/verify-vmem-page-constant-call-sites.mjs'],
+  },
+  {
+    // Task #1080: the forced-page lazy-commit call-site regression — the
+    // RUNTIME complement to the static guard immediately above. Drives the
+    // REAL bootstrap.rs/alloc_core_small.rs lazy-reservation call sites
+    // under a simulated 64 KiB runtime page so the task #1074 compile-time-
+    // PAGE bug class fails loudly on this 4 KiB-page host. The page-size
+    // override is the test-only --cfg aligned_vmem_page_size_override build
+    // flag (the task #962 conversion pattern — a Cargo feature would unify
+    // across the dependency graph; a cfg flag is explicit per-build only),
+    // passed via RUSTFLAGS exactly like the mock clippy row earlier in this
+    // file. Deliberately the LAST array step, immediately before the
+    // post-loop iai run: a RUSTFLAGS change invalidates cargo's fingerprint
+    // cache, and paying that invalidation once at the end is cheaper than
+    // re-running the existing test/clippy rows above under a different
+    // RUSTFLAGS. The feature set covers BOTH lazy legs: `production` implies
+    // `primordial-lazy-commit`, and the explicit `small-segment-lazy-commit`
+    // adds the small-segment leg (the runtime module's cfg requires at least
+    // one). Mirrors the ci.yml `test-windows` forced-page row.
+    name: 'test (forced-page lazy-commit call-site regression, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '--features', 'production small-segment-lazy-commit internals', '--test', 'lazy_initial_commit_forced_page'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
   },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x5, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
