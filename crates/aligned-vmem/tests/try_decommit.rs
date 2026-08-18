@@ -44,6 +44,31 @@ fn empty_range_is_a_well_formed_no_op() {
     );
 }
 
+/// The empty range's MISALIGNED twin must be `Err`, not the no-op: only a
+/// page-ALIGNED empty range is well-formed. Task #1094 closed the gap where
+/// NOTHING pinned this — widening the free function's
+/// `decommit_range_is_well_formed` to bless any empty range (the rejected
+/// alternative (b) from task #1084/M2) flips exactly these calls from `Err`
+/// to `Ok` while every pre-existing test in this file stays green.
+#[test]
+fn empty_misaligned_range_is_reported() {
+    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let ps = page_size();
+
+    // SAFETY (both): `r` is live. Each call is rejected on argument shape
+    // before any OS call, so no out-of-span access can occur.
+    unsafe {
+        assert!(
+            try_decommit(r.as_ptr(), 1, 1).is_err(),
+            "empty AND misaligned (offset 0 + 1) is a contract violation, not a no-op"
+        );
+        assert!(
+            try_decommit(r.as_ptr(), ps + 1, ps + 1).is_err(),
+            "empty AND misaligned at a non-zero offset: same violation shape"
+        );
+    }
+}
+
 /// The three contract violations, each reported rather than swallowed.
 #[test]
 fn contract_violations_are_reported() {
