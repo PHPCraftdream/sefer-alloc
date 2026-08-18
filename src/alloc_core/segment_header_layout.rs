@@ -234,6 +234,43 @@ impl Layout {
         );
         align_up(Self::primordial_meta_end(), real_page)
     }
+    /// Task #1074: the `initial_commit` byte count every lazy-reservation
+    /// call site must pass to `aligned_vmem::reserve_aligned_lazy` for a
+    /// segment whose metadata ends at `meta_end` — the metadata region plus
+    /// [`LAZY_FIRST_CHUNK`](super::alloc_core_small::LAZY_FIRST_CHUNK) of
+    /// first payload, rounded UP to a multiple of `page_size`.
+    ///
+    /// Why the round-up is mandatory (the macOS ARM64 16 KiB-page release
+    /// blocker, CI run 32083383999): the vmem contract (since commit
+    /// `dd6d027` / task #1037) requires `initial_commit` to be a multiple
+    /// of the RUNTIME page size, NOT the compile-time `PAGE` (4 KiB).
+    /// `meta_end` is a `const fn` and can only align to `PAGE` (see
+    /// [`small_decommit_start`]'s identical rationale), so the tight sum is
+    /// a 4 KiB multiple that a 16/64 KiB-page host REJECTS in
+    /// `validate_initial_commit` — `reserve_aligned_lazy` returns `None`
+    /// and `AllocCore::new()` fails wholesale. Because `LAZY_FIRST_CHUNK`
+    /// is a multiple of every supported page size,
+    /// `align_up(meta_end + LFC, ps) == align_up(meta_end, ps) + LFC`, so
+    /// this stays IDENTICAL to the B3 retain-decommit frontier reset
+    /// (`small_decommit_start() + LAZY_FIRST_CHUNK`) — pinned by
+    /// `tests/lazy_initial_commit_page_sizes.rs`.
+    ///
+    /// `page_size` is a PARAMETER (not a runtime query) so tests can
+    /// table-drive this across 4/16/64 KiB page sizes on ANY host — the
+    /// counterfactual a 4 KiB-only development host cannot produce by
+    /// running the real reservation path. Production call sites pass
+    /// `aligned_vmem::page_size()`.
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
+    pub(crate) fn lazy_initial_commit(meta_end: usize, page_size: usize) -> usize {
+        debug_assert!(page_size > 0 && page_size.is_power_of_two());
+        align_up(
+            meta_end + super::alloc_core_small::LAZY_FIRST_CHUNK,
+            page_size,
+        )
+    }
     /// Number of metadata pages in a small segment.
     ///
     /// R12-11 (task #262): the ONLY consumer is `PageMap::init_in_place`'s

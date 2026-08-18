@@ -16,8 +16,6 @@
 //! there is NO `unsafe` block in this file. So the crate's structural promise
 //! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
 
-#[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
-use super::alloc_core_small::LAZY_FIRST_CHUNK;
 use super::os::Segment;
 use super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
 use super::segment_table::{self, SegmentTable};
@@ -48,13 +46,14 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // R7-B6 (primordial lazy commit): under `primordial-lazy-commit` AND NOT
     // `numa-aware` (Windows; Unix/miri fall back to the eager, fully-committed
     // path inside `aligned_vmem::reserve_aligned_lazy` itself), commit ONLY
-    // `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` up front instead of the
-    // whole 4 MiB segment. `primordial_meta_end()` is the exact byte offset
-    // past every region this function writes below (header, page map, bin
-    // table, [bitmaps under miri], remote ring, registry array, hash table,
-    // free-list array + top) — see `Layout::primordial_meta_end`'s doc and
-    // the const-assert in `segment_header.rs` pinning
-    // `primordial_meta_end() + LAZY_FIRST_CHUNK <= SEGMENT`. Everything this
+    // the metadata + first-chunk prefix — `primordial_meta_end() +
+    // LAZY_FIRST_CHUNK` rounded UP to the runtime OS page size (task #1074) —
+    // instead of the whole 4 MiB segment. `primordial_meta_end()` is the exact
+    // byte offset past every region this function writes below (header, page
+    // map, bin table, [bitmaps under miri], remote ring, registry array, hash
+    // table, free-list array + top) — see `Layout::primordial_meta_end`'s doc
+    // and the const-assert in `segment_header.rs` pinning the sum (with
+    // page-rounding slack) within SEGMENT. Everything this
     // function writes therefore lands strictly inside the committed prefix by
     // construction — there is no write-before-commit hazard: the whole
     // metadata region is committed BEFORE any of the writes below run, not
@@ -96,15 +95,24 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // this arm on the eager `Segment::reserve` path.
     #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
     let segment = {
-        let initial_commit = Layout::primordial_meta_end() + LAZY_FIRST_CHUNK;
-        // Uphold `reserve_lazy`'s full documented contract (non-zero, PAGE
-        // multiple, `<= SEGMENT`), not just the size bound — both hold by
-        // construction here (`primordial_meta_end()` is `align_up(_, PAGE)` and
-        // `LAZY_FIRST_CHUNK` is a const-asserted PAGE multiple), but assert all
-        // three so a future layout change that broke either fails loudly.
+        // Task #1074: round UP to the RUNTIME OS page size. The tight sum is a
+        // multiple of the compile-time `PAGE` (4 KiB) only, which
+        // `aligned_vmem::validate_initial_commit` (commit dd6d027, task #1037)
+        // rejects on any host whose real page size exceeds 4 KiB — this was
+        // the macOS ARM64 (16 KiB-page) release blocker that made
+        // `AllocCore::new()` return `None` (CI run 32083383999, job `test
+        // macos (production)`: 454656 % 16384 = 12288 ≠ 0).
+        let initial_commit =
+            Layout::lazy_initial_commit(Layout::primordial_meta_end(), aligned_vmem::page_size());
+        // Uphold `reserve_lazy`'s full documented contract (non-zero, RUNTIME
+        // page-size multiple, `<= SEGMENT`) — all three hold by construction
+        // (`lazy_initial_commit` rounds to the runtime page size, and the
+        // const-assert in `segment_header.rs` bounds the rounded value with
+        // slack), but assert them anyway so a future layout change that broke
+        // either fails loudly.
         debug_assert!(
             initial_commit != 0
-                && initial_commit.is_multiple_of(aligned_vmem::PAGE)
+                && initial_commit.is_multiple_of(aligned_vmem::page_size())
                 && initial_commit <= super::os::SEGMENT
         );
         Segment::reserve_lazy(initial_commit)?
@@ -309,7 +317,10 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //      stay fully eager (P2 gate).
     //
     //   2. `primordial-lazy-commit` AND NOT `numa-aware` AND real Windows
-    //      (not miri): `meta_end + LAZY_FIRST_CHUNK`. `Segment::reserve_lazy`
+    //      (not miri): the page-rounded `meta_end + LAZY_FIRST_CHUNK`
+    //      (task #1074 — exactly what `Segment::reserve_lazy` committed; on
+    //      the 4 KiB pages every real Windows host has, identical to the
+    //      tight sum). `Segment::reserve_lazy`
     //      did a REAL partial commit via the Windows 2-phase
     //      `VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)` prefix,
     //      and the frontier accurately reflects it.
@@ -359,7 +370,10 @@ pub(crate) fn primordial() -> Option<Primordial> {
             windows,
             not(miri)
         ))]
-        meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+        meta.set_committed_payload_end(Layout::lazy_initial_commit(
+            meta_end,
+            aligned_vmem::page_size(),
+        ));
         #[cfg(all(
             feature = "primordial-lazy-commit",
             not(feature = "numa-aware"),

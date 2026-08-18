@@ -190,8 +190,17 @@ impl AllocCore {
             let n_segments = needed.div_ceil(SEGMENT);
             n_segments * SEGMENT
         };
+        // Task #1074: round to the RUNTIME OS page size, not the compile-time
+        // `PAGE` — under `large-reserved-capacity` this value flows into
+        // `Segment::reserve_capacity_exact` as BOTH the span size and the
+        // `initial_commit`, and `aligned_vmem::validate_initial_commit`
+        // (commit dd6d027, task #1037) requires multiples of the runtime
+        // `page_size()` — a 4 KiB-only multiple is rejected on 16/64 KiB-page
+        // hosts and the large allocation fails. A whole-`SEGMENT` multiple
+        // (the feature-OFF arm above) is already a page-size multiple for
+        // every page size this crate supports (≤ 64 KiB ≪ 4 MiB).
         #[cfg(feature = "exact-span-large")]
-        let usable = align_up(needed, super::os::PAGE);
+        let usable = align_up(needed, aligned_vmem::page_size());
 
         // OPT-E: try the large-segment cache first.
         // Scan all slots for a compatible entry: usable_size >= usable (the
@@ -529,7 +538,10 @@ impl AllocCore {
             // multiple internally (`os.rs`) — that rounding is exactly what
             // `exact-span-large` exists to skip, so this path must call the
             // non-rounding sibling `reserve_exact` instead when the feature
-            // is on (`usable` here is already page-exact, computed above).
+            // is on (`usable` here is already runtime-page-exact, computed
+            // above — task #1074 rounds it to `aligned_vmem::page_size()` so
+            // the lazy `reserve_capacity_exact` args below satisfy the vmem
+            // contract on 16/64 KiB-page hosts too).
             // With the feature OFF, `usable` is already a SEGMENT multiple,
             // so `Segment::reserve`'s internal rounding is a no-op — this
             // `#[cfg]` split changes nothing observable for the default path.

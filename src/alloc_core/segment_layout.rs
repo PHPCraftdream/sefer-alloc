@@ -130,6 +130,37 @@ impl SegmentLayout {
         super::segment_header::Layout::primordial_decommit_start()
     }
 
+    /// Task #1074 test-only forwarder: the ORDINARY small segment's lazy
+    /// `initial_commit` for a HYPOTHETICAL page size (tests table-drive
+    /// 4/16/64 KiB; the real call sites pass `aligned_vmem::page_size()`).
+    /// Exposes `Layout::lazy_initial_commit(SMALL_META_END, page_size)`.
+    /// Test-only public surface (`#[doc(hidden)]` convention — see
+    /// `lib.rs`); not stable public API.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
+    pub fn small_lazy_initial_commit(page_size: usize) -> usize {
+        super::segment_header::Layout::lazy_initial_commit(Self::SMALL_META_END, page_size)
+    }
+
+    /// Task #1074 test-only forwarder: the PRIMORDIAL segment's lazy
+    /// `initial_commit` for a HYPOTHETICAL page size — exposes
+    /// `Layout::lazy_initial_commit(PRIMORDIAL_META_END, page_size)`. See
+    /// [`small_lazy_initial_commit`](Self::small_lazy_initial_commit).
+    /// Test-only public surface; not stable public API.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
+    pub fn primordial_lazy_initial_commit(page_size: usize) -> usize {
+        super::segment_header::Layout::lazy_initial_commit(Self::PRIMORDIAL_META_END, page_size)
+    }
+
     /// Convert an address to the SEGMENT-aligned base of the segment that
     /// contains it (the O(1) owner-lookup primitive).
     #[must_use]

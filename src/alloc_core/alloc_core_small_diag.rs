@@ -217,7 +217,8 @@ impl AllocCore {
     /// payload pages are committed. Returns `None` if `ptr` is foreign or not
     /// a small/primordial segment. Returns `SEGMENT` on the eager path
     /// (feature-OFF, Unix, miri, or `numa-aware`); on the lazy path returns
-    /// `small_meta_end() + LAZY_FIRST_CHUNK` for a fresh segment.
+    /// the page-rounded `small_meta_end() + LAZY_FIRST_CHUNK` for a fresh
+    /// segment (task #1074 — equal to the tight sum on 4 KiB-page hosts).
     #[doc(hidden)]
     #[must_use]
     #[cfg(any(

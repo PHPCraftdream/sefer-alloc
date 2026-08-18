@@ -228,9 +228,12 @@ impl Segment {
     /// `reserved_len` can commit just the missing tail
     /// ([`super::commit_pages`]) instead of moving the allocation.
     ///
-    /// `initial_commit` must be a non-zero multiple of `PAGE` and
-    /// `<= reserved_len`; `reserved_len` must itself be a non-zero multiple of
-    /// `PAGE` (forwarded from `vmem::reserve_aligned_lazy`'s contract).
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`, not the compile-time `PAGE` — task #1074:
+    /// the vmem lazy contract rejects 4 KiB-only multiples on 16/64 KiB-page
+    /// hosts) and `<= reserved_len`; `reserved_len` must itself be a non-zero
+    /// multiple of the runtime page size (forwarded from
+    /// `vmem::reserve_aligned_lazy`'s contract).
     /// Returns `None` on OOM or a contract violation.
     ///
     /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy) /
@@ -268,9 +271,12 @@ impl Segment {
     /// [`reserve_small_segment`](super::alloc_core_small)'s lazy branch,
     /// factored here so `bootstrap::primordial` can call it without
     /// duplicating the raw `aligned_vmem` plumbing outside this seam.
-    /// `initial_commit` must be a non-zero multiple of `PAGE` and
-    /// `<= SEGMENT`; the caller (`bootstrap::primordial`) upholds this via a
-    /// `debug_assert!` mirroring `reserve_small_segment`'s identical
+    /// `initial_commit` must be a non-zero multiple of the RUNTIME page size
+    /// (`aligned_vmem::page_size()`, not the compile-time `PAGE` — task #1074:
+    /// the vmem lazy contract rejects 4 KiB-only multiples on 16/64 KiB-page
+    /// hosts) and `<= SEGMENT`; the caller (`bootstrap::primordial`) upholds
+    /// this via `Layout::lazy_initial_commit` plus a `debug_assert!`
+    /// mirroring `reserve_small_segment`'s identical
     /// contract. Returns `None` on OOM or a contract violation.
     ///
     /// `not(numa-aware)`: the sole caller (`bootstrap::primordial`) only

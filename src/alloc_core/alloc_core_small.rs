@@ -94,9 +94,17 @@ const _: () = {
         LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(super::os::PAGE),
         "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
     );
+    // Task #1074: the page-rounded `lazy_initial_commit` adds at most one
+    // MAX_REALISTIC_PAGE_SIZE (64 KiB) of rounding on top of the tight sum,
+    // so the slack is part of the bound: this pins the ROUNDED initial
+    // commit within one SEGMENT for every page size this crate supports.
     assert!(
-        super::segment_header::Layout::small_meta_end() + LAZY_FIRST_CHUNK <= super::os::SEGMENT,
-        "metadata + LAZY_FIRST_CHUNK must fit within one SEGMENT"
+        super::segment_header::Layout::small_meta_end()
+            + LAZY_FIRST_CHUNK
+            + super::os::MAX_REALISTIC_PAGE_SIZE
+            <= super::os::SEGMENT,
+        "metadata + LAZY_FIRST_CHUNK + one MAX_REALISTIC_PAGE_SIZE of page-rounding \
+         slack must fit within one SEGMENT"
     );
     assert!(
         GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(super::os::PAGE),
@@ -1984,14 +1992,23 @@ impl AllocCore {
             #[cfg(feature = "small-segment-lazy-commit")]
             let mut seg = {
                 let meta_end = SegLayout::small_meta_end();
-                // initial_commit = metadata pages + first payload chunk.
-                // Both `meta_end` and `LAZY_FIRST_CHUNK` are page-aligned,
-                // so their sum is page-aligned (vmem contract).
-                let initial_commit = meta_end + LAZY_FIRST_CHUNK;
-                // `initial_commit <= SEGMENT` by construction: meta_end is
-                // ~80 KiB (non-hardened) or ~336 KiB (hardened), and
-                // LAZY_FIRST_CHUNK is 256 KiB, so their sum is well under
-                // 4 MiB. The const-assert below pins this.
+                // initial_commit = metadata pages + first payload chunk,
+                // rounded UP to the RUNTIME OS page size via
+                // `SegLayout::lazy_initial_commit` (task #1074). The tight sum
+                // is aligned only to the COMPILE-TIME `PAGE` (4 KiB) — `meta_end`
+                // is a `const fn` and cannot query the real page size — so on a
+                // 16/64 KiB-page host it is NOT a `page_size()` multiple and
+                // `aligned_vmem::validate_initial_commit` (commit dd6d027,
+                // task #1037) rejects the reservation, failing
+                // `AllocCore::new()` wholesale (the macOS ARM64 release
+                // blocker, CI run 32083383999).
+                let initial_commit =
+                    SegLayout::lazy_initial_commit(meta_end, aligned_vmem::page_size());
+                // `initial_commit <= SEGMENT` by construction: the tight sum is
+                // 335872 B (328 KiB, non-hardened) or 598016 B (584 KiB,
+                // hardened), and the round-up adds less than one
+                // MAX_REALISTIC_PAGE_SIZE (64 KiB) — the const-assert at the
+                // top of this file pins the sum PLUS that slack within SEGMENT.
                 debug_assert!(initial_commit <= SEGMENT);
                 aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit).inspect(|_| {
                     os::SEGMENTS_RESERVED_TOTAL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -2011,7 +2028,8 @@ impl AllocCore {
                 #[cfg(feature = "small-segment-lazy-commit")]
                 {
                     let meta_end = SegLayout::small_meta_end();
-                    let initial_commit = meta_end + LAZY_FIRST_CHUNK;
+                    let initial_commit =
+                        SegLayout::lazy_initial_commit(meta_end, aligned_vmem::page_size());
                     seg = aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)
                         .inspect(|_| {
                             os::SEGMENTS_RESERVED_TOTAL
@@ -2116,7 +2134,11 @@ impl AllocCore {
         //      disturbed by a later partial commit).
         //
         //   2. `small-segment-lazy-commit` AND NOT `numa-aware` AND real
-        //      Windows (not miri): `meta_end + LAZY_FIRST_CHUNK`. This is the
+        //      Windows (not miri): the page-rounded `meta_end +
+        //      LAZY_FIRST_CHUNK` (task #1074 — rounded UP to the runtime OS
+        //      page size, exactly what the reservation committed; on the 4
+        //      KiB pages every real Windows host has, identical to the tight
+        //      sum). This is the
         //      ONLY platform where `reserve_aligned_lazy_raw` is GENUINELY
         //      lazy — a real 2-phase `VirtualAlloc(MEM_RESERVE)` then
         //      `VirtualAlloc(MEM_COMMIT)` on the metadata + first chunk
@@ -2173,7 +2195,10 @@ impl AllocCore {
                 windows,
                 not(miri)
             ))]
-            meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+            meta.set_committed_payload_end(SegLayout::lazy_initial_commit(
+                meta_end,
+                aligned_vmem::page_size(),
+            ));
             #[cfg(all(
                 feature = "small-segment-lazy-commit",
                 not(feature = "numa-aware"),
