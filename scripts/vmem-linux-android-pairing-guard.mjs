@@ -12,10 +12,12 @@
 // published docs promised applied only on Linux. Android is not exercised
 // in CI, so no test can catch this drift; only a static guard can.
 //
-// RULE (per sentence):
-//   A sentence is a VIOLATION if it mentions the word "linux" AND one of
-//   the PAIR-GATED mechanism markers below, WITHOUT any Android satisfier
-//   in that same sentence. Mechanisms whose cfg is the Linux/Android pair:
+// RULE (per doc block / paragraph):
+//   A doc block (for .rs files: a contiguous /// or //! block; for README.md
+//   / Cargo.toml: a paragraph = maximal run of non-blank lines) is a
+//   VIOLATION if it mentions the word "linux" AND one of the PAIR-GATED
+//   mechanism markers below, WITHOUT any Android satisfier ANYWHERE IN THE
+//   SAME BLOCK/PARAGRAPH. Mechanisms whose cfg is the Linux/Android pair:
 //   MAP_HUGETLB, MAP_HUGE_<size> (e.g. MAP_HUGE_2MB), LINUX_HUGE_PAGE_SIZE,
 //   HUGE_SUPPORTED, MADV_HUGEPAGE, MADV_FREE (the lazy-decommit advice
 //   routed by `madv_free_advice`), "hugetlb", "huge page(s)".
@@ -30,7 +32,8 @@
 //   target_os = "android")`, so describing the arm as the bare
 //   `target_os = "linux"` arm is stale by construction. This pins the
 //   inverse drift direction too: prose claiming which OSes an arm covers
-//   must not contradict the arm's actual shape.
+//   must not contradict the arm's actual shape. This rule is evaluated over
+//   the whole doc block/paragraph.
 //
 // PREPROCESSING (before the "linux" word test, to avoid false triggers):
 //   - Rust target triples (`i686-unknown-linux-gnu`,
@@ -40,29 +43,37 @@
 //     stripped for the same reason.
 //   - Constant NAMES (`LINUX_HUGE_PAGE_SIZE`) never trigger the "linux"
 //     word test: underscores are word characters, so \blinux\b does not
-//     match inside the identifier. A sentence whose only "Linux" is the
+//     match inside the identifier. A block/paragraph whose only "Linux" is the
 //     constant name is provenance, not an OS enumeration.
 //
 // SCAN SURFACE: identical to scripts/vmem-doc-drift-guard.mjs (task
 // #1078): every .rs file under crates/aligned-vmem/src/** recursively
 // (rustdoc /// and //! blocks only), plus crates/aligned-vmem/Cargo.toml
-// and crates/aligned-vmem/README.md (every non-blank line, per-line).
-// Deliberately NOT scanned: tests/, benches/, examples/ (internal prose,
-// never rendered as crate documentation) and CHANGELOG.md (a historical
-// record of what was true at each version — re-qualifying past entries
-// against current behavior would falsify that record).
+// and crates/aligned-vmem/README.md (every non-blank line, joined into
+// paragraphs by blank-line separation). Deliberately NOT scanned: tests/,
+// benches/, examples/ (internal prose, never rendered as crate documentation)
+// and CHANGELOG.md (a historical record of what was true at each version —
+// re-qualifying past entries against current behavior would falsify that record).
 //
-// KNOWN-DRIFT ALLOWLIST: sentences that DO violate the rule today but live
-// in files outside the fixing task's scope. Each entry names the file, a
-// regex matching the offending sentence, and a reason. The allowlist is
-// SELF-CLEANING: an entry that no longer matches anything is itself a
-// FAILURE ("stale allowlist entry") so the list cannot silently rot — when
-// the drift is fixed, the guard forces the entry's removal. Entries are
+// KNOWN-DRIFT ALLOWLIST: blocks/paragraphs that DO violate the rule today
+// but live in files outside the fixing task's scope. Each entry names the
+// file, a regex matching the offending block/paragraph, and a reason. The
+// allowlist is SELF-CLEANING: an entry that no longer matches anything is
+// itself a FAILURE ("stale allowlist entry") so the list cannot silently rot —
+// when the drift is fixed, the guard forces the entry's removal. Entries are
 // printed in the OK output so the debt stays visible, never silent.
 //
+// NOTE: The paragraph-join widening in task #1114 made some entries stale
+// because the wider window now includes an Android satisfier elsewhere in the
+// paragraph (e.g., a sentence that mentions Android later in the same doc block
+// forgives an earlier Linux-only claim). This is a semantic change, not a fix:
+// the drift is still real at the sentence level, but the guard's window is
+// intentionally coarser to catch the wrapped-line and cross-sentence blind spots
+// that shipped (task #1105/#1114). See KNOWN LIMITATIONS item 5.
+//
 // KNOWN LIMITATIONS (same posture as vmem-doc-drift-guard.mjs):
-//   1. Per-sentence heuristics cannot fully decide English semantics. The
-//      marker list covers the mechanisms whose cfg IS the pair today; a
+//   1. Per-block/paragraph heuristics cannot fully decide English semantics.
+//      The marker list covers the mechanisms whose cfg IS the pair today; a
 //      future mechanism needs its marker added here.
 //   2. The decommit-reclaim enumeration family ("guaranteed on
 //      Linux/Windows") is NOT policed: eager decommit's backend runs on
@@ -73,10 +84,10 @@
 //   3. Inverse-direction coverage ("says Linux and Android where the code
 //      is Linux-only") is only pinned by the stale-arm rule; a general
 //      inverse check would require parsing cfg expressions out of code,
-//      which prose cannot be reliably correlated with sentence-by-sentence.
-//   4. The Android satisfier is WORD PRESENCE ANYWHERE IN THE SENTENCE, so
-//      a sentence whose NORMATIVE claim is Linux-only still passes if it
-//      names Android incidentally — e.g. by quoting the cfg it describes.
+//      which prose cannot be reliably correlated with block-by-block.
+//   4. The Android satisfier is WORD PRESENCE ANYWHERE IN THE BLOCK/PARAGRAPH,
+//      so a block whose NORMATIVE claim is Linux-only still passes if it names
+//      Android incidentally — e.g. by quoting the cfg it describes.
 //      "except on Linux with `huge-pages` enabled (the check's cfg is
 //      `any(target_os = "linux", target_os = "android")`)" is the original
 //      M1 defect's wording plus a cfg quote, and this guard reports it
@@ -89,6 +100,19 @@
 //      the same English-semantics wall as limitation 1 — so it is recorded
 //      rather than fixed. Practical consequence: this guard catches a
 //      DROPPED Android mention, not a DEMOTED one.
+//   5. The rule window is the WHOLE DOC BLOCK / PARAGRAPH, so a Linux-only
+//      claim in one sentence is forgiven if ANY OTHER sentence in the same
+//      block mentions Android (the window is now coarser, deliberately — the
+//      wrapped-line and cross-sentence blind spots it closes were the actual
+//      shipped defect shape, task #1105/#1114). This is an intentional
+//      tradeoff: the defect class that shipped was hard-wrapped text and
+//      multi-sentence prose where "Linux" and the pair marker were split,
+//      which per-sentence scanning missed entirely.
+//   6. Paragraph joining for README.md/Cargo.toml is by BLANK-LINE SEPARATION:
+//      a hard-wrapped paragraph is one window, but prose split by a blank line
+//      or a table/list boundary is still separate windows. This matches the
+//      actual defect shape (hard-wrapped prose in README.md) without
+//      over-aggregating unrelated content.
 //
 // Usage (from repo root):
 //   node scripts/vmem-linux-android-pairing-guard.mjs
@@ -96,7 +120,7 @@
 // Counterfactual (recorded from the guard's own development, task #1105):
 //   reintroducing the pre-fix wording — `except on Linux with huge-pages
 //   enabled` — in src/api/reserve_aligned_huge.rs makes this guard FAIL
-//   naming that sentence; the fixed wording (`except on Linux AND Android`)
+//   naming that block; the fixed wording (`except on Linux AND Android`)
 //   passes.
 
 import { REPO_ROOT } from './lib.mjs';
@@ -137,22 +161,10 @@ const KNOWN_DRIFT = [
       'huge-pages feature comment block repeats the reserve_aligned_huge.rs summary; Cargo.toml was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/Cargo.toml',
-    sentenceRegex: /\(Linux `MADV_HUGEPAGE`\)/,
-    reason:
-      'same huge-pages feature comment block (Cargo.toml is scanned per-line, so the sentence starts mid-block); Cargo.toml was outside task #1105/agent-B file scope — reported to the orchestrator',
-  },
-  {
     file: 'crates/aligned-vmem/src/api/decommit.rs',
     sentenceRegex: /on both Windows and Linux, decommit \*\*does not work\*\* on huge-page reservations/,
     reason:
       'decommit.rs was outside task #1105/agent-B file scope — reported to the orchestrator (the README and reserve_aligned_huge.rs siblings WERE fixed)',
-  },
-  {
-    file: 'crates/aligned-vmem/src/api/decommit.rs',
-    sentenceRegex: /On Linux, `MADV_DONTNEED`\/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted/,
-    reason:
-      'decommit.rs was outside task #1105/agent-B file scope — reported to the orchestrator (the README sibling sentence WAS fixed)',
   },
   {
     file: 'crates/aligned-vmem/src/api/decommit_lazy.rs',
@@ -170,19 +182,7 @@ const KNOWN_DRIFT = [
     file: 'crates/aligned-vmem/src/bench_internals/huge.rs',
     sentenceRegex: /incompatible with huge-page reservations on both Windows and Linux/,
     reason:
-      'bench_internals/huge.rs was outside task #1105/agent-B file scope — reported to the orchestrator (both this bullet-header sentence and the following "On Linux, madvise..." sentence are the same debt; the latter has its own entry)',
-  },
-  {
-    file: 'crates/aligned-vmem/src/bench_internals/huge.rs',
-    sentenceRegex: /On Linux, `madvise` on a `MAP_HUGETLB` mapping only works at huge-page granularity/,
-    reason:
       'bench_internals/huge.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
-  },
-  {
-    file: 'crates/aligned-vmem/src/os/unix.rs',
-    sentenceRegex: /now-falsified premise that "the default is always 2 MiB on mainstream x86_64\/aarch64 Linux"/,
-    reason:
-      'LEGITIMATE, not pending drift: a verbatim quote of the premise task #909 falsified — rewording it to add Android would falsify the historical record (the premise as originally held was phrased about Linux)',
   },
   {
     file: 'crates/aligned-vmem/src/reservation.rs',
@@ -198,12 +198,6 @@ const KNOWN_DRIFT = [
   },
   {
     file: 'crates/aligned-vmem/src/reservation.rs',
-    sentenceRegex: /Huge-page reservation: decommit never works, even on Linux\/Windows/,
-    reason:
-      'reservation.rs (```text example block) was outside task #1105/agent-B file scope — reported to the orchestrator',
-  },
-  {
-    file: 'crates/aligned-vmem/src/reservation.rs',
     sentenceRegex: /Windows crashes on write before recommit, Linux does not/,
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
@@ -214,6 +208,30 @@ const KNOWN_DRIFT = [
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
+  // Newly surfaced by task #1114 paragraph-join widening:
+  {
+    file: 'crates/aligned-vmem/src/reservation.rs',
+    sentenceRegex: /Returns `true` if the current platform's \*\*ordinary native backend\*\* guarantees.*Linux \(all targets\).*MADV_FREE/,
+    reason:
+      'newly surfaced by the task #1114 paragraph-join widening — the doc block for `decommit_reclaims_and_zeroes()` mentions Linux and MADV_FREE (a pair-gated mechanism) in different sentences, with no Android satisfier — reported, not yet fixed',
+  },
+  {
+    file: 'crates/aligned-vmem/src/reservation.rs',
+    sentenceRegex: /Wrap a pre-existing OS reservation.*64 KiB on some Linux configurations.*huge pages/,
+    reason:
+      'newly surfaced by the task #1114 paragraph-join widening — the doc block for `from_raw_parts` mentions Linux and "huge pages" (a pair-gated mechanism) in different sentences, with no Android satisfier — reported, not yet fixed',
+  },
+  // NOTE: The following entries became stale after task #1114's paragraph-join
+  // widening because the wider window now includes an Android satisfier elsewhere
+  // in the paragraph. This is a semantic change, not a fix — the drift is still
+  // real at the sentence level, but the guard's intentionally coarser window now
+  // forgives it. Documented in KNOWN LIMITATIONS item 5.
+  //
+  // - crates/aligned-vmem/Cargo.toml: /\(Linux `MADV_HUGEPAGE`\)/ — stale
+  // - crates/aligned-vmem/src/api/decommit.rs: /On Linux, `MADV_DONTNEED`\/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted/ — stale
+  // - crates/aligned-vmem/src/bench_internals/huge.rs: /On Linux, `madvise` on a `MAP_HUGETLB` mapping only works at huge-page granularity/ — stale
+  // - crates/aligned-vmem/src/reservation.rs: /Huge-page reservation: decommit never works, even on Linux\/Windows/ — stale
+  // - crates/aligned-vmem/src/os/unix.rs: /now-falsified premise that "the default is always 2 MiB on mainstream x86_64\/aarch64 Linux"/ — stale (LEGITIMATE quote, but the wider window now forgives it because the block includes "Android" elsewhere)
 ];
 
 function main() {
@@ -258,18 +276,25 @@ function main() {
       }
       flush();
     } else {
-      // Cargo.toml / README.md have no doc-block marker; scan per line
-      // (each line split into sentences), reporting exact line numbers.
+      // Cargo.toml / README.md have no doc-block marker; join contiguous
+      // non-blank lines into paragraphs (a paragraph = maximal run of non-blank
+      // lines), then check each paragraph as a unit.
+      let currentParagraph = [];
+      const flushParagraph = () => {
+        if (currentParagraph.length > 0) {
+          checkDocComment(currentParagraph, violations, relativePath, false);
+          currentParagraph = [];
+        }
+      };
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
-        if (!trimmed) continue;
-        checkDocComment(
-          [{ lineNum: i + 1, content: trimmed }],
-          violations,
-          relativePath,
-          false
-        );
+        if (!trimmed) {
+          flushParagraph();
+        } else {
+          currentParagraph.push({ lineNum: i + 1, content: trimmed });
+        }
       }
+      flushParagraph();
     }
   }
 
@@ -293,7 +318,7 @@ function main() {
   let failed = false;
   if (fresh.length > 0) {
     console.log(
-      `\n[vmem-linux-android-pairing-guard] FAIL: sentences naming only Linux for a Linux/Android-pair-gated mechanism (scanned ${rsFiles.length} .rs files under src/ + Cargo.toml + README.md):`
+      `\n[vmem-linux-android-pairing-guard] FAIL: blocks/paragraphs naming only Linux for a Linux/Android-pair-gated mechanism (scanned ${rsFiles.length} .rs files under src/ + Cargo.toml + README.md):`
     );
     for (const v of fresh) {
       console.log(`\n  ${v.path}:${v.lineNum}  [${v.rule}]`);
@@ -323,59 +348,40 @@ function main() {
   }
 }
 
-// Split text into sentences on . ! ? (same approach as
-// scripts/vmem-doc-drift-guard.mjs's splitter, simplified: no header
-// boundary special-case, which only affected which fragment a trailing
-// header line landed in — irrelevant to a per-sentence trigger test).
-function splitIntoSentences(text) {
-  const out = [];
-  let current = '';
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    current += char;
-    if (char === '.' || char === '!' || char === '?') {
-      if (current.trim()) out.push(current.trim());
-      current = '';
-    }
-  }
-  if (current.trim()) out.push(current.trim());
-  return out;
-}
-
 function checkDocComment(docLines, violations, filePath, stripDocPrefix) {
   const docText = docLines
     .map(l => (stripDocPrefix ? l.content.slice(3).trim() : l.content))
     .join(' ');
-  const sentences = splitIntoSentences(docText);
 
-  for (const sentence of sentences) {
-    // Rule 2: stale bare-`target_os = "linux"` arm description —
-    // unconditional; those arms are the pair since task #944/U-2.
-    if (STALE_ARM.test(sentence)) {
-      violations.push({
-        path: filePath,
-        lineNum: docLines[0].lineNum,
-        sentence,
-        rule: 'stale-arm',
-      });
-      continue;
-    }
-    // Rule 1: Linux word (post-strip) + pair marker, no Android satisfier.
-    const stripped = sentence
-      .replace(TARGET_TRIPLE, ' ')
-      .replace(PATH_LIKE, ' ');
-    if (
-      LINUX_WORD.test(stripped) &&
-      PAIR_MARKERS.test(sentence) &&
-      !ANDROID_SATISFIERS.test(stripped)
-    ) {
-      violations.push({
-        path: filePath,
-        lineNum: docLines[0].lineNum,
-        sentence,
-        rule: 'linux-only-pair-mechanism',
-      });
-    }
+  // Rule 2: stale bare-`target_os = "linux"` arm description —
+  // unconditional; those arms are the pair since task #944/U-2.
+  // Evaluated over the whole block/paragraph.
+  if (STALE_ARM.test(docText)) {
+    violations.push({
+      path: filePath,
+      lineNum: docLines[0].lineNum,
+      sentence: docText,
+      rule: 'stale-arm',
+    });
+    // Don't return early: a block can violate both rules.
+  }
+
+  // Rule 1: Linux word (post-strip) + pair marker, no Android satisfier.
+  // Evaluated over the whole block/paragraph, not per-sentence.
+  const stripped = docText
+    .replace(TARGET_TRIPLE, ' ')
+    .replace(PATH_LIKE, ' ');
+  if (
+    LINUX_WORD.test(stripped) &&
+    PAIR_MARKERS.test(docText) &&
+    !ANDROID_SATISFIERS.test(stripped)
+  ) {
+    violations.push({
+      path: filePath,
+      lineNum: docLines[0].lineNum,
+      sentence: docText,
+      rule: 'linux-only-pair-mechanism',
+    });
   }
 }
 
