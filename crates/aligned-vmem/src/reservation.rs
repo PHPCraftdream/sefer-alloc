@@ -4,7 +4,7 @@ use core::sync::atomic::Ordering;
 
 #[cfg(feature = "lazy-commit")]
 use crate::api::{commit_range, try_commit_range};
-use crate::api::{decommit, decommit_lazy, recommit, try_recommit};
+use crate::api::{decommit, decommit_lazy, recommit, try_decommit, try_recommit};
 #[cfg(feature = "bench-internals")]
 use crate::bench_internals::HUGE_DECOMMIT_ATTEMPTS;
 use crate::error::VmemError;
@@ -506,15 +506,36 @@ impl Reservation {
     /// old data may be observed after a decommit+recommit roundtrip.
     ///
     /// `start` and `end` must be multiples of the runtime page size ([`page_size()`](crate::page_size::page_size)).
-    /// A no-op if the range is empty, is out of bounds (`end > self.len()`), or
-    /// if the offsets violate the page-size multiple contract (the same
-    /// silent-skip behavior as the free [`decommit`] function).
+    /// A no-op if the range is empty or out of bounds (`end > self.len()`).
+    ///
+    /// **Contract violations, by build profile (task #1051):** this method
+    /// forwards to the free [`decommit`] function UNFILTERED, so a violated
+    /// range (`start > end`, or an endpoint not a multiple of
+    /// [`page_size()`](crate::page_size::page_size)) follows that function's
+    /// documented profile split exactly — a silent no-op in a RELEASE build
+    /// (no OS call, nothing recorded), a tripwire panic in a DEBUG build.
+    /// [`Self::try_decommit`] is the fallible form: it reports the violation
+    /// as `Err` on every profile and never trips the tripwire.
     ///
     /// See [`decommit`] for platform divergence notes (Windows crashes on write
     /// before recommit, Linux does not), huge-page incompatibility, and Darwin
     /// zero-fill caveats. Under the `bench-internals` feature, the
     /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter is incremented when decommit
     /// is called on a huge-page reservation.
+    ///
+    /// # Panics
+    ///
+    /// DEBUG builds only, and only for a contract-violating range (`start >
+    /// end`, or an endpoint not a multiple of the runtime
+    /// [`page_size()`](crate::page_size::page_size)): the forwarded free
+    /// [`decommit`]'s `debug_assert!` tripwire fires (task #1051). Empty and
+    /// out-of-bounds (`end > self.len()`) ranges are checked by this method
+    /// first and never panic; RELEASE builds silently skip a violated range.
+    /// This is the free function's own documented panic surface reached
+    /// through the safe method, not a new one (task #1079 rewrote this doc,
+    /// which previously promised "the same silent-skip behavior as the free
+    /// `decommit` function" with no profile qualifier and no `# Panics`
+    /// section).
     pub fn decommit(&self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
@@ -547,6 +568,53 @@ impl Reservation {
         unsafe { decommit(self.as_ptr(), start, end) };
     }
 
+    /// Fallible [`Self::decommit`]: `Ok(())` on success (or a well-formed
+    /// no-op — an empty page-aligned range), `Err(VmemError::invalid_argument())`
+    /// if the offsets violated the contract (misaligned, `start > end`, or
+    /// `end > self.len()`). Never panics on any build profile: the violation
+    /// is rejected here, before the eager path's tripwire can see it.
+    ///
+    /// This is the safe, bounds-checked alternative to the free [`try_decommit`]
+    /// function for callers already holding a `Reservation` — and the form to
+    /// reach for when [`Self::decommit`]'s DEBUG-build tripwire is itself
+    /// unwelcome. Until task #1079 this was the one fallible pair with no
+    /// safe-method twin: `recommit`/`try_recommit` and `commit_range`/
+    /// `try_commit_range` already existed at both layers, and
+    /// [`Self::decommit`]'s forwarded tripwire message ("Use try_decommit
+    /// for the fallible form") pointed safe-API callers straight at an
+    /// `unsafe fn` with a raw-pointer signature.
+    ///
+    /// Note what is deliberately NOT an error (mirroring the free
+    /// [`try_decommit`]): the OS refusing or ignoring the request, and a
+    /// huge-page reservation — this method skips the backend call entirely,
+    /// same as [`Self::decommit`], incrementing the same `bench-internals`
+    /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter and returning `Ok(())`.
+    /// Decommit is best-effort by nature; use
+    /// [`Self::decommit_reclaims_and_zeroes`] to learn what the platform
+    /// actually does.
+    pub fn try_decommit(&self, start: usize, end: usize) -> Result<(), VmemError> {
+        // Bounds check: the range must be within the reservation's usable span.
+        if end > self.len() {
+            return Err(VmemError::invalid_argument());
+        }
+        // Huge-page reservations: skip the backend call entirely (finding R6-7).
+        // Same reasoning and same cfg placement rule as `Self::decommit` above —
+        // the `if`/`return` are unconditional, only the counter is gated.
+        // `Ok(())` is the honest answer: the free `try_decommit` deliberately
+        // does not report OS refusal/ignore as an error either, so skipping
+        // the useless syscall changes nothing observable.
+        if self.is_huge() {
+            #[cfg(feature = "bench-internals")]
+            HUGE_DECOMMIT_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+        // SAFETY: `self.as_ptr()` is a valid reservation base, and we've just
+        // verified `[start, end)` is within `self.len()`. The free function
+        // re-validates the page-size contract itself and reports a violation
+        // as `Err` — which is exactly why this method never needs to panic.
+        unsafe { try_decommit(self.as_ptr(), start, end) }
+    }
+
     /// Lazy decommit variant: hint the OS it MAY reclaim `[start, end)` under memory
     /// pressure, cheaper than [`Self::decommit`] (Linux `MADV_FREE`, macOS/iOS
     /// `MADV_FREE_REUSABLE`, FreeBSD/DragonFly `MADV_FREE`, NetBSD/OpenBSD
@@ -557,6 +625,14 @@ impl Reservation {
     /// function for callers already holding a `Reservation`. It delegates to the
     /// underlying implementation with `self.as_ptr()` as base and automatically
     /// ensures `[start, end)` is within the reservation's usable span.
+    ///
+    /// `start` and `end` must be multiples of the runtime page size
+    /// ([`page_size()`](crate::page_size::page_size)); an empty or
+    /// out-of-bounds (`end > self.len()`) range is a no-op, and a VIOLATED
+    /// range (`start > end`, or a misaligned endpoint) is a silent no-op on
+    /// EVERY build profile — the deliberate eager/lazy asymmetry settled by
+    /// task #1072: the eager [`Self::decommit`] trips a debug-build
+    /// tripwire, this lazy variant has none on any profile.
     ///
     /// See [`decommit_lazy`] for the platform-specific cost inversion on macOS/iOS
     /// (this variant actually drops RSS immediately there, unlike the eager path)

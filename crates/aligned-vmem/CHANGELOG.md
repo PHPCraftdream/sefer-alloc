@@ -43,6 +43,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   refusing or ignoring the request is deliberately NOT an error: decommit is
   best-effort by nature, and reporting that as `Err` would promise a portable
   guarantee the platforms do not give.
+- **`Reservation::try_decommit()`** — the safe-method twin of the free
+  `try_decommit()` above, completing the family at both layers the way
+  `recommit`/`try_recommit` and `commit_range`/`try_commit_range` already
+  were: `Ok(())` on success or a well-formed no-op,
+  `Err(VmemError::invalid_argument())` on a violated range (misaligned,
+  `start > end`, or `end > self.len()`), never panics on any profile.
+  Huge-page reservations take the same early-exit as `Reservation::decommit`
+  (skip the backend call, count the attempt, `Ok(())` — OS refusal is
+  deliberately not an error). Closes the doc-trail dead end where
+  `Reservation::decommit`'s forwarded tripwire message says "Use
+  try_decommit for the fallible form", pointing safe-API callers at an
+  `unsafe fn` with a raw-pointer signature (task #1079). Purely additive:
+  no existing signature changed.
 - `MIN_PAGE` constant as an alias for `PAGE` with clearer semantics
 - `page_size()` function to query the actual OS page size at runtime
 - `ReservationParts` typed wrapper and `into_reservation_parts()` method
@@ -100,6 +113,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Windows single-call fast path for `align <= WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) on full-span commit; when requesting large pages (`MEM_LARGE_PAGES`), the threshold widens to `GetLargePageMinimum()` (typically 2 MiB).
 
 ### Fixed
+
+- **`Reservation::decommit`'s rustdoc promised "the same silent-skip behavior
+  as the free `decommit` function" for a contract-violating range — half
+  true: RELEASE silently skips, but DEBUG panics via the forwarded free
+  function's task-#1051 `debug_assert!` tripwire, and the safe method
+  carried no `# Panics` section.** The doc now states the profile split
+  accurately (mirroring the free function's already-correct "Contract
+  violations, by build profile" vocabulary instead of paraphrasing it) and
+  carries `# Panics`. Doc-only — no behavior changed; the deliberate choice
+  NOT to pre-filter inside the method (which would have made the old doc
+  true but disarmed the tripwire for every safe-API caller) is recorded in
+  task #1079. `Reservation::decommit_lazy`'s doc gained the matching
+  opposite statement: silent no-op on EVERY profile (the task-#1072
+  asymmetry). New `tests/reservation_decommit_contract.rs` pins the safe
+  METHOD layer's per-profile behavior in both directions — debug tripwire
+  fires through the method, release silently skips with a mock call-log
+  no-record oracle — since every pre-existing oracle observed only the free
+  functions. (task #1079)
 
 #### Prerelease audit round 7 (`docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r7.md`)
 
