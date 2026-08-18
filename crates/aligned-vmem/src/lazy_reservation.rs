@@ -50,6 +50,19 @@ use super::lazy_commit_is_honored::lazy_commit_is_honored;
 /// tracked path is what you get without asking, and the bypass now requires
 /// deliberately reaching for a differently-named function.
 ///
+/// After task #1104 there are exactly two doors out, and both are
+/// deliberate: the raw pointer above — every USE of which is already
+/// `unsafe` — and [`into_reservation`](Self::into_reservation), which
+/// consumes this handle, so the watermark cannot outlive its own
+/// tracking. A borrowed `&Reservation` was briefly offered as a read-only
+/// convenience and removed: every OS-state mutator on `Reservation` takes
+/// `&self`, so any such borrow is a 100%-safe bypass of the watermark
+/// (publication audit finding H1, task #1104). The read-only queries
+/// callers actually need — [`len`](Self::len), [`as_ptr`](Self::as_ptr),
+/// [`align`](Self::align) — are proxied directly on this type; anything
+/// else lives behind [`into_reservation`](Self::into_reservation) on
+/// purpose.
+///
 /// A `LazyReservation` is never huge-page backed — the lazy constructors always
 /// request ordinary pages — so there is no `is_huge()` here. It would be a
 /// constant `false` dressed up as a question.
@@ -158,12 +171,6 @@ impl LazyReservation {
     #[must_use]
     pub fn into_reservation(self) -> Reservation {
         self.inner
-    }
-
-    /// Borrow the underlying reservation for its read-only queries.
-    #[must_use]
-    pub const fn as_reservation(&self) -> &Reservation {
-        &self.inner
     }
 
     /// Base pointer of the usable span. See [`Reservation::as_ptr`].

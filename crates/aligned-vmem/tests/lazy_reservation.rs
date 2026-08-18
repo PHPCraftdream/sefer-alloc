@@ -63,7 +63,6 @@ fn geometry_is_forwarded_unchanged() {
     assert_eq!(r.align(), SPAN);
     assert!(!r.is_empty());
     assert!(!r.as_ptr().is_null());
-    assert_eq!(r.as_reservation().len(), SPAN);
 }
 
 /// `ensure_committed` is idempotent and monotone — the property that removes
