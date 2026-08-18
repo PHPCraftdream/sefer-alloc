@@ -1319,11 +1319,24 @@ function scanSetRsFiles() {
     }
     return out.split(/\r?\n/).filter(Boolean);
   };
-  const tracked = run(['ls-files', '--cached', '--', '*.rs']);
-  const untracked = run(['ls-files', '--others', '--exclude-standard', '--', '*.rs']);
+  // DEDUPE WITHIN each list before anything else (task #1108). `git ls-files
+  // --cached` emits a conflicted path ONCE PER MERGE STAGE, so during an
+  // unresolved merge a single file appears two or three times: the printed
+  // count gains phantom files, the file is scanned (and any finding in it
+  // reported) once per stage, and "the count is a property of the commit" —
+  // the whole reason task #1088/L7 moved the scan set into git — stops
+  // holding. Reproduced during the OH3 review: a real conflict on
+  // `crates/aligned-vmem/src/page.rs` made this script print
+  // `scanned 560 file(s) (560 tracked + 0 untracked)` and ALL GREEN, with two
+  // phantom entries and the conflicted file examined three times.
+  const tracked = [...new Set(run(['ls-files', '--cached', '--', '*.rs']))];
+  const untracked = [...new Set(run(['ls-files', '--others', '--exclude-standard', '--', '*.rs']))];
   // --cached and --others are disjoint by git's semantics ("others" = NOT in
   // the index); assert it so the printed tracked/untracked split can never
-  // double-count a file.
+  // double-count a file ACROSS the two lists. Note what this assert does and
+  // does not buy: cross-list duplication is what it catches; WITHIN-list
+  // duplication (the merge-stage case above) it never could, which is why the
+  // dedupe is done at the source rather than left to this check.
   const seen = new Set(tracked);
   const dup = untracked.filter((f) => seen.has(f));
   if (dup.length > 0) {

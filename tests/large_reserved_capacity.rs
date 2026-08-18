@@ -331,6 +331,16 @@ fn single_growth_commit_boundary_is_real_page_safe() {
          explicitly-justified branch"
     );
 
+    // The `|| span_after == reserved_before` disjunct below is UNREACHABLE
+    // under the regime pin directly above, which fails this test on exactly
+    // that equality (task #1108, from the OH3 readonly review). It is kept
+    // deliberately, and the choice is worth stating because dropping it is
+    // defensible too: keeping it means the assertion is already correct for
+    // the world where a future round relaxes the pin to admit a near-ceiling
+    // grow as a second scenario, instead of being newly wrong there. The cost
+    // is that the message names an acceptance criterion this test can no
+    // longer reach — which is why the message now says so rather than
+    // implying the clamp case is live.
     let max_realistic_page = 64 * KIB;
     assert!(
         span_after.is_multiple_of(max_realistic_page) || span_after == reserved_before,
@@ -338,10 +348,11 @@ fn single_growth_commit_boundary_is_real_page_safe() {
          (MAX_REALISTIC_PAGE_SIZE — superset of the 4/16/64 KiB page sizes \
          this crate supports) OR exactly the segment's reserved_capacity \
          ({reserved_before} — the `.min(reserved_capacity)` clamp's legitimate \
-         landing spot, itself a runtime-page multiple). A value that is NEITHER \
-         means the grow target was computed with the compile-time PAGE constant \
-         and will be rejected by vmem's runtime page-size validation on 16/64 \
-         KiB hosts (task #1077)"
+         landing spot, itself a runtime-page multiple; UNREACHABLE while the \
+         regime pin above stands, kept for the world where it is relaxed). A \
+         value that is NEITHER means the grow target was computed with the \
+         compile-time PAGE constant and will be rejected by vmem's runtime \
+         page-size validation on 16/64 KiB hosts (task #1077)"
     );
 
     let new_layout = Layout::from_size_align(new_size, old_layout.align()).unwrap();

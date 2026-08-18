@@ -514,8 +514,13 @@ impl Reservation {
     /// as every other violated range: a silent no-op in a RELEASE build
     /// (the forwarded free function returns at `start >= end` once the
     /// `debug_assert!` is compiled out) and a tripwire panic in a DEBUG
-    /// build (see `# Panics`; task #1084/M2 wrote the split into `# Panics`,
-    /// task #1097/L4 qualified this summary line to match).
+    /// build — EXCEPT on a huge-page reservation, where the huge skip runs
+    /// BEFORE the forward, so there a violated range is a silent no-op on
+    /// EVERY profile and the debug tripwire never fires (see `# Panics`;
+    /// task #1084/M2 wrote the split into `# Panics`, task #1097/L4
+    /// qualified this summary line to match, task #1108 added the huge
+    /// exception that the paragraph below and `# Panics` both already
+    /// stated but this sentence did not).
     ///
     /// **Contract violations, by build profile (task #1051):** this method
     /// forwards to the free [`decommit`] function UNFILTERED, so a violated
