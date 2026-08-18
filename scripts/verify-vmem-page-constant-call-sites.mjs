@@ -180,15 +180,15 @@
 //   node scripts/verify-vmem-page-constant-call-sites.mjs
 //   npm run check   (wired in alongside the other verify-* guards)
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { REPO_ROOT } from './lib.mjs';
 
 const SCRIPT = 'verify-vmem-page-constant-call-sites';
 const BAR = 65536; // 64 KiB — see "The 64 KiB bar" above
 const FLOOR = 4096; // compile-time PAGE floor — S2a's threshold
 const MARKER = 'pageguard:allow';
-const SKIP_DIRS = new Set(['target', '.git', 'docs', 'node_modules']);
 
 // Free-function forms: name -> scanned 1-based argument indexes.
 const FREE_FN_ARGS = {
@@ -1280,17 +1280,35 @@ function runSelfTest() {
 // Tree walk + main
 // ─────────────────────────────────────────────────────────────────────────────
 
-function walkRs(dir, out = []) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      walkRs(full, out);
-    } else if (entry.isFile() && entry.name.endsWith('.rs')) {
-      out.push(full);
-    }
+// task #1088 (L7): the scan set is the TRACKED tree (`git ls-files`), not
+// whatever untracked files happen to sit on this host. The pre-#1088 walker
+// (readdirSync + a hand-maintained SKIP_DIRS list) consulted no .gitignore,
+// so gitignored scratch copies (a stale `tmp/sefer_backup.rs` etc.) were
+// scanned alongside the real sources — making both the verdict (a stale copy
+// of an old alloc_core.rs could flip the guard RED with long-fixed call
+// sites) and the summary's "scanned N file(s)" count host-dependent and NOT
+// reproducible from a clean clone. Deriving the list from the index makes the
+// count a property of the commit: it equals `git ls-files -- '*.rs'` by
+// construction. Accepted trade-off: a brand-new file is not scanned until
+// tracked (guard coverage for it starts at `git add`). ls-files output is
+// sorted, which also makes the scan order deterministic. Precedent for a
+// guard shelling out to git: scripts/verify-commit-prefixes.mjs.
+function trackedRsFiles() {
+  let out;
+  try {
+    out = execFileSync('git', ['ls-files', '--', '*.rs'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+  } catch (err) {
+    // Fail loudly, never silently fall back to a filesystem walk — a silent
+    // fallback would resurrect exactly the host-dependence this function
+    // exists to remove.
+    throw new Error(
+      `[${SCRIPT}] git ls-files failed (${err.message}); the scan set MUST be the tracked tree`,
+    );
   }
-  return out;
+  return out.split(/\r?\n/).filter(Boolean);
 }
 
 function main() {
@@ -1310,18 +1328,33 @@ function main() {
   const findings = [];
   const prodFindings = [];
   // Cross-file index for the production provenance rule (task #1080), built
-  // ONCE from the root crate's production tree.
+  // ONCE from the root crate's production tree — the SAME tracked list as the
+  // main scan below, filtered to src/, so the two can never disagree about
+  // what the production tree is (task #1088/L7).
+  const tracked = trackedRsFiles();
   const prodCtx = {
-    files: walkRs(join(REPO_ROOT, 'src')).map((file) => {
-      const rel = relative(REPO_ROOT, file).split('\\').join('/');
-      const blanked = blankRust(readFileSync(file, 'utf8'));
-      return { rel, blanked, defs: collectDefs(blanked) };
-    }),
+    files: tracked
+      .filter((rel) => rel.startsWith('src/'))
+      .map((rel) => {
+        const blanked = blankRust(readFileSync(join(REPO_ROOT, rel), 'utf8'));
+        return { rel, blanked, defs: collectDefs(blanked) };
+      }),
   };
-  const files = walkRs(REPO_ROOT);
-  for (const file of files) {
-    const rel = relative(REPO_ROOT, file).split('\\').join('/');
-    const r = scanSource(rel, readFileSync(file, 'utf8'), rel.startsWith('src/') ? prodCtx : undefined);
+  // Count of files actually read+scanned. In a clean tree this equals
+  // tracked.length (== `git ls-files -- '*.rs' | wc -l`); a tracked file
+  // missing from the working tree (deleted without `git rm`) is skipped
+  // loudly below and excluded from the count.
+  let scanned = 0;
+  for (const rel of tracked) {
+    let source;
+    try {
+      source = readFileSync(join(REPO_ROOT, rel), 'utf8');
+    } catch {
+      console.log(`[${SCRIPT}] WARNING: tracked file missing on disk, skipped: ${rel}`);
+      continue;
+    }
+    scanned++;
+    const r = scanSource(rel, source, rel.startsWith('src/') ? prodCtx : undefined);
     findings.push(...r.findings);
     prodFindings.push(...r.prodFindings);
     for (const k of Object.keys(totals)) totals[k] += r.stats[k];
@@ -1370,7 +1403,8 @@ function main() {
     );
   }
   console.log(
-    `\n[${SCRIPT}] scanned ${files.length} file(s), examined ${totals.calls} call site(s); ` +
+    `\n[${SCRIPT}] scanned ${scanned} file(s) (${tracked.length} tracked .rs in the index; ` +
+      `the scan set is the tracked tree, see trackedRsFiles) — examined ${totals.calls} call site(s); ` +
       `${totals.candidates} candidate arg(s) raised: ${suppressed} suppressed ` +
       `(S1(marker)=${totals.s1} S2a(non-floor)=${totals.s2a} S2b(inverted)=${totals.s2b} ` +
       `S3(negative-ctx)=${totals.s3}), ${findings.length} finding(s); ` +

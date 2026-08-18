@@ -203,11 +203,28 @@ fn single_growth_within_reserved_capacity_is_in_place_and_preserves_data() {
 /// any of #1074's six converted call sites still passes that file; this test is
 /// the shape that closes that hole for THIS call site.
 ///
+/// Path-activation oracle (task #1088/L8, CLAUDE.md's R30-8 rule): pointer
+/// identity does NOT prove the grow mechanism fired. OPT-G's plain
+/// committed-span check (`payload_off + new_eff <= span_usable`) returns the
+/// SAME pointer with `span_usable` UNCHANGED when the request already fits —
+/// `try_grow_large_reserved_capacity` is never called — so `assert_eq!(grown, p)`
+/// holds in both worlds. The discriminator is the committed span itself: the
+/// grow path stamps `span_usable` only on commit success, strictly past its
+/// old value (its entry condition is `required_end > span_usable`), so
+/// `span_after > span_before` holds IFF the mechanism activated. Pointer
+/// identity is still asserted, but only as the relocation premise it actually
+/// proves (a moved pointer would make the boundary assertion observe a
+/// DIFFERENT segment's span).
+///
 /// `try_grow_large_reserved_capacity` computes its commit endpoint as
 /// `align_up(required_end, <align>).min(reserved_capacity)` and, on commit
 /// success, stores it as the segment's new `span_usable` — so
 /// `dbg_span_usable_of` after an in-place grow reads back exactly the value the
-/// call site passed to `os::commit_pages`. When `<align>` was the compile-time
+/// call site passed to `os::commit_pages`. The endpoint is a 64 KiB multiple
+/// UNLESS the `.min(reserved_capacity)` clamp bites, in which case it equals
+/// `reserved_capacity` exactly (itself a runtime-`page_size()` multiple) —
+/// both are validator-safe on every host, so the assertion below accepts
+/// exactly that disjunction. When `<align>` was the compile-time
 /// `os::PAGE` (4 KiB), a 16/64 KiB-page host rejected the commit
 /// (`vmem::try_commit_range` validates endpoints against the RUNTIME page
 /// size) and the grow silently degraded to the slow path — a state no 4 KiB
@@ -225,10 +242,18 @@ fn single_growth_commit_boundary_is_real_page_safe() {
     let p = ac.alloc(old_layout);
     assert!(!p.is_null(), "OOM allocating {old_size} bytes");
 
+    // Premise captures BEFORE the grow: the committed span (the activation
+    // oracle's baseline) and the reserved ceiling (the `.min` clamp's landing
+    // spot — reserved_capacity is not modified by an in-place grow, so the
+    // post-grow comparison below reads the same value the grow path clamps
+    // against).
+    let span_before = ac.dbg_span_usable_of(p);
+    let reserved_before = ac.dbg_reserved_capacity_of(p);
+
     // Grow within reserved_capacity so the in-place commit-and-grow fires.
-    // The same-pointer assert doubles as the path-activation oracle: if the
-    // growth relocated, the boundary assert below would not be observing the
-    // grow call site's value at all.
+    // Pointer identity here is only the RELOCATION premise: if the growth
+    // relocated, the boundary assert below would be observing a different
+    // segment's span, not the grow call site's value.
     let new_size = old_size + 64 * KIB;
     // SAFETY (R6-MS-1/2): `p` is a live allocation from this AllocCore made
     // with `old_layout`, consumed by this call exactly once.
@@ -241,22 +266,46 @@ fn single_growth_commit_boundary_is_real_page_safe() {
          observing the grow call site's computed value"
     );
 
+    // PATH-ACTIVATION ORACLE (task #1088/L8): the committed span must have
+    // STRICTLY advanced. It cannot advance without the grow mechanism: the
+    // plain committed-span short-circuit (`payload_off + new_eff <=
+    // span_usable`) returns the same pointer with `span_usable` untouched,
+    // and the grow path stamps a value strictly past the old one (entry
+    // condition `required_end > span_usable`, success-only stamp). So
+    // equality here means the mechanism did NOT fire and the boundary
+    // assertion below would be pinning the ORIGINAL span, not the grow
+    // endpoint — the exact non-discriminating case the old pointer-identity
+    // oracle could not see (R30-8 class).
+    let span_after = ac.dbg_span_usable_of(grown);
+    assert!(
+        span_after > span_before,
+        "path-activation oracle: span_usable after the grow ({span_after}) must \
+         EXCEED its pre-grow value ({span_before}) — equality means realloc took \
+         the no-grow short-circuit (the request already fit the committed span) \
+         and the boundary assertion below would be observing the ORIGINAL span, \
+         not the grow call site's computed endpoint"
+    );
+
     // THE observation: post-grow `span_usable` is exactly the endpoint the
     // call site passed to `os::commit_pages` (stamped only on commit
     // success by `set_span_usable_at` in `try_grow_large_reserved_capacity`).
-    let span_after = ac.dbg_span_usable_of(grown);
-    // Mirrors `os::MAX_REALISTIC_PAGE_SIZE` (pub(crate), not reachable from
-    // an integration test): 64 KiB is the documented compile-time superset
-    // of the 4/16/64 KiB runtime page sizes this crate supports.
+    //
+    // The endpoint is a 64 KiB multiple OR, when the `.min(reserved_capacity)`
+    // clamp bites (`align_up(required_end, 64 KiB) > reserved_capacity`),
+    // exactly `reserved_capacity` — a runtime-`page_size()` multiple, not
+    // necessarily a 64 KiB one. Both are validator-safe on every host; a
+    // value that is NEITHER is the reverted-to-`os::PAGE` bug.
     let max_realistic_page = 64 * KIB;
     assert!(
-        span_after.is_multiple_of(max_realistic_page),
+        span_after.is_multiple_of(max_realistic_page) || span_after == reserved_before,
         "post-grow span_usable ({span_after}) must be a multiple of 64 KiB \
          (MAX_REALISTIC_PAGE_SIZE — superset of the 4/16/64 KiB page sizes \
-         this crate supports); a merely 4 KiB-aligned value means the grow \
-         target was computed with the compile-time PAGE constant and will be \
-         rejected by vmem's runtime page-size validation on 16/64 KiB hosts \
-         (task #1077)"
+         this crate supports) OR exactly the segment's reserved_capacity \
+         ({reserved_before} — the `.min(reserved_capacity)` clamp's legitimate \
+         landing spot, itself a runtime-page multiple). A value that is NEITHER \
+         means the grow target was computed with the compile-time PAGE constant \
+         and will be rejected by vmem's runtime page-size validation on 16/64 \
+         KiB hosts (task #1077)"
     );
 
     let new_layout = Layout::from_size_align(new_size, old_layout.align()).unwrap();
