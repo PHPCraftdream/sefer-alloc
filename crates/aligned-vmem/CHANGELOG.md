@@ -135,6 +135,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the fix exists because the SAFETY CLAIM was false as written, and a crate
   about to be published should have that claim true by construction.
 
+  **Follow-up (task #1095 / finding H1, same wave): the regression test above
+  ran in NO gate row, locally or in CI, until this wave.**
+  `tests/page_size_override.rs` is `#![cfg(aligned_vmem_page_size_override)]`-
+  gated at the file level, and the six places that set that cfg all target
+  ROOT-crate test targets (`--test lazy_initial_commit_forced_page` et al.):
+  RUSTFLAGS reaches this crate's LIBRARY there, but cargo never builds this
+  PACKAGE's own integration-test targets for them, while every row that does
+  build them runs without the cfg. So the only oracle pinning a declared
+  publication blocker executed nowhere, and `cargo test -p aligned-vmem
+  --all-features --test page_size_override` printed "running 0 tests", exit 0.
+  Two self-verifying rows were added — one in `scripts/check-all.mjs` carrying
+  `expectTest: 'override_floor_is_the_real_os_page_size'`, one in ci.yml's
+  `aligned-vmem-gates` job with the equivalent `tee` + `grep -F` postcondition
+  — so that a lost or typo'd cfg turns the row RED instead of green-and-dead.
+
 - **[correctness fix, MEDIUM, publish blocker] `Reservation::try_decommit`
   answered `Ok(())` for a malformed range on a huge-page reservation (task
   #1084 / finding M3).** The `is_huge()` early return sat ahead of ALL range
