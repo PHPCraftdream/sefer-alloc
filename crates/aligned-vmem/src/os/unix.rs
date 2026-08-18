@@ -978,8 +978,10 @@ unsafe fn libc_mmap(len: usize, huge: bool) -> Result<*mut core::ffi::c_void, Vm
     // caller-side `last_os_error()` after the cleanup would report whatever
     // stale code the `munmap` (or earlier unrelated code) left behind: a
     // fabricated OS cause, exactly the class task #713's immediate-capture
-    // discipline exists to eliminate. Report the no-real-code refusal
-    // sentinel instead.
+    // discipline exists to eliminate. Report the no-code sentinel instead
+    // (task #1106/L2: this is NOT a refusal — `mmap` succeeded and nothing
+    // was refused; the sentinel's own doc distinguishes this source from the
+    // genuine-refusal sources that share it).
     if p.cast::<u8>().is_null() {
         unsafe { libc_munmap(p.cast(), len) };
         return Err(VmemError::os_refusal_unknown_code());

@@ -15,10 +15,9 @@ use core::fmt;
 ///   (Windows).
 /// - [`os_code`](Self::os_code) is `None` for [`VmemError::invalid_argument`]
 ///   — a contract violation (e.g. non-power-of-two `align`, zero `size`)
-///   detected before any syscall — **and also** for an OS refusal whose code
-///   is unavailable (under miri, where no real `errno`/`GetLastError` exists
-///   to read, or the rare case where the platform's own `raw_os_error()`
-///   itself returns `None`). Use [`is_invalid_argument`](Self::is_invalid_argument)
+///   detected before any syscall — **and also** for a no-code failure on
+///   the OS side (see [`os_refusal_unknown_code`](Self::os_refusal_unknown_code)).
+///   Use [`is_invalid_argument`](Self::is_invalid_argument)
 ///   to tell the two `None` cases apart — task #712/#713 (2026-08-09): an
 ///   earlier version of this type stored the raw code as a bare `u32`
 ///   defaulting to `0` when unavailable, making "no OS code available"
@@ -28,7 +27,7 @@ use core::fmt;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VmemError {
     /// Raw OS error code, or `None` when this is an invalid-argument error OR
-    /// a genuine OS refusal whose code is unavailable.
+    /// a no-code failure on the OS side.
     code: Option<u32>,
     /// `true` when the error is a caller contract violation (no OS involved).
     invalid_arg: bool,
@@ -72,16 +71,27 @@ impl VmemError {
         }
     }
 
-    /// A genuine OS refusal whose specific error code is unavailable — under
-    /// miri (no real `errno`/`GetLastError` exists to read), the rare case
-    /// where the platform's own `raw_os_error()` itself returns `None`, or
-    /// (task #1068/F2) the crate's own rejection of the kernel's R7-11
-    /// address-zero `mmap` grant on Unix (`mmap` succeeded and the crate
-    /// unmapped the grant itself, so no syscall refused anything and there
-    /// is no real code to report).
+    /// A no-code failure on the OS side — the operation failed without a
+    /// real OS error code to report. Three sources (task #1106/L2 — an
+    /// earlier revision of this doc called ALL of them a "genuine OS
+    /// refusal", which is false for the third):
+    /// - under miri (no real `errno`/`GetLastError` exists to read) — a
+    ///   genuine refusal by the miri stand-in;
+    /// - the rare case where the platform's own `raw_os_error()` itself
+    ///   returns `None` — a genuine OS refusal with an unavailable cause;
+    /// - (task #1068/F2) the crate's own rejection of the kernel's R7-11
+    ///   address-zero `mmap` grant on Unix — `mmap` SUCCEEDED and the crate
+    ///   unmapped the grant itself, so no syscall refused anything and there
+    ///   is no real code to report. This source is not a refusal by the OS
+    ///   at all; it shares this sentinel because it is equally not a caller
+    ///   contract violation, and the type carries no further discrimination
+    ///   (crate still at 0.2.0, unpublished — a distinct kind was judged not
+    ///   worth the public-API surface; see the task #1106/L2 record).
+    ///
     /// Distinct from [`invalid_argument`](Self::invalid_argument):
-    /// `is_invalid_argument()` is `false` here — the OS (or its miri stand-in)
-    /// genuinely refused the operation, the cause is simply unknown.
+    /// `is_invalid_argument()` is `false` here — the failure originated on
+    /// the OS side (or in the crate's response to an unusable OS grant), not
+    /// in the caller's arguments.
     #[must_use]
     #[inline]
     pub const fn os_refusal_unknown_code() -> Self {
@@ -92,8 +102,8 @@ impl VmemError {
     }
 
     /// The raw OS error code. `None` for
-    /// [`invalid_argument`](Self::invalid_argument) OR for a genuine OS
-    /// refusal whose code is unavailable
+    /// [`invalid_argument`](Self::invalid_argument) OR for a no-code failure
+    /// on the OS side
     /// ([`os_refusal_unknown_code`](Self::os_refusal_unknown_code)) — use
     /// [`is_invalid_argument`](Self::is_invalid_argument) to tell those two
     /// `None` cases apart.
@@ -146,7 +156,12 @@ impl fmt::Display for VmemError {
         } else {
             match self.code {
                 Some(code) => write!(f, "OS virtual-memory error (code {code})"),
-                None => f.write_str("OS virtual-memory error (unknown OS error code)"),
+                None => f.write_str(
+                    "OS virtual-memory error (unknown OS error code — either a \
+                     genuine OS refusal with an unreadable cause, or the crate \
+                     rejected an unusable OS grant, e.g. a granted address-zero \
+                     mapping)",
+                ),
             }
         }
     }

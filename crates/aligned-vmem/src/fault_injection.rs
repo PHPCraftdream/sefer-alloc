@@ -7,8 +7,21 @@
 //! that needs the REAL OS backend under test (real segment reservations, real
 //! commit accounting, real page-fault behaviour) cannot use it. This module
 //! changes nothing about which backend runs: [`crate::try_commit_range`]
-//! always calls the real per-OS `commit_range_impl`. It only splices two armed
-//! checks in front of that call so a test can deterministically force a
+//! calls the real per-OS `commit_range_impl` — **but only when the
+//! `aligned_vmem_mock` cfg is NOT set** (task #1106/L1). Under
+//! `aligned_vmem_mock`, `try_commit_range`'s real-path branch — the single
+//! call site of `should_fail_commit` — is compiled out and replaced by the
+//! mock backend, so this module's hooks are never consulted: the mock's own
+//! fault script (`crate::mock::fail_next_commit` etc. — a separate mechanism,
+//! compiled only under the mock cfg) takes precedence, and arming THESE hooks
+//! is silently inert. CI deliberately builds exactly that combination
+//! (`.github/workflows/ci.yml` sets the mock cfg alongside the full feature
+//! set including `fault-injection`), so the combination is real, not
+//! theoretical; the hooks are `allow(dead_code)` in
+//! it rather than rejected, because the mock rows exercise the same feature
+//! set and a `compile_error!` on the combination would break them. Outside
+//! the mock cfg, this module splices two armed checks in front of the real
+//! backend call so a test can deterministically force a
 //! specific call to report `VmemError::os_refusal_unknown_code()` (task #713:
 //! not `last_os_error()` — no real syscall runs for a simulated fault, so
 //! there is no real OS code to report) instead of touching the OS —
@@ -70,6 +83,7 @@ static FAIL_NEXT: AtomicU32 = AtomicU32::new(0);
 /// Arm the "fail the next N real commits" hook. The next `n` calls to the
 /// real commit path ([`crate::try_commit_range`] / [`crate::commit_range`])
 /// return `Err`/`false` without touching the OS. `n == 0` disarms.
+/// Inert under the `aligned_vmem_mock` cfg — see the module doc.
 ///
 /// Uses `Relaxed`, not `Release` like `arm_fail_at`: `FAIL_NEXT` carries no
 /// payload to publish across threads, so there is nothing a stronger ordering
@@ -89,6 +103,7 @@ pub fn arm_fail_next(n: u32) {
 ///
 /// Resets the internal call counter, so arming always counts from zero.
 /// Checked AFTER [`arm_fail_next`]'s hook.
+/// Inert under the `aligned_vmem_mock` cfg — see the module doc.
 ///
 /// task #1021/R4-8: This function now uses a Mutex to serialize arming with
 /// the self-disarm in `should_fail_commit`, preventing the concurrent re-arm
