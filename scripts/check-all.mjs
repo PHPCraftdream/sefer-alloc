@@ -36,10 +36,11 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-26. aligned-vmem package gates — 15 steps (2 cache-invalidation
+//   12-27. aligned-vmem package gates — 16 steps (2 cache-invalidation
 //      cleans + 5 clippy rows + 3 cross-target unix rows (1 check + 2
-//      clippy) + 1 mock clippy row + 2 test rows + 1 doc row + 1 optional
-//      semver row). NOTE the position: this group sits BEFORE the two
+//      clippy) + 1 mock clippy row + 3 test rows (2 real-backend + 1
+//      mock) + 1 doc row + 1 optional semver row). NOTE the position:
+//      this group sits BEFORE the two
 //      remaining PER_PR_ROWS rows in the runtime array, not after them
 //      (task #1047 checked the order against the array after the header
 //      had claimed the opposite since the group's introduction, commit
@@ -61,12 +62,14 @@
 //      `--cfg aligned_vmem_mock` arm was excluded "to keep the local
 //      check fast" with no measurement behind it; the mock clippy row is
 //      now included (~2.5 s after invalidation, measured — see the row's
-//      own comment), and the mock TEST row stays excluded because it
-//      FAILS on a clean tree at HEAD (`decommit`'s debug_assert fires on
-//      the contract-violating call that tests/mock.rs's
-//      decommit_silently_skips_contract_violating_offsets expects to be
-//      silently skipped — a pre-existing crate issue outside this gate
-//      task's scope, recorded in the task #1071 commit). (3) CACHE REPLAY
+//      own comment), and since task #1082 the mock TEST row is included
+//      too (measured ~3.8 s after invalidation / ~1.5 s warm — see the
+//      row's own comment): task #1071 had kept it out because it FAILED
+//      on a clean tree at HEAD, task #1072 resolved that blocker
+//      (profile-gated silent-skip tests; the eager `decommit`'s rustdoc
+//      and README split), and task #1082 closed the dangling follow-up
+//      that #1072's commit body had left recorded only inside closed
+//      correctness item 51. (3) CACHE REPLAY
 //      — a cargo step's exit-0 could mean "cargo found a fresh cache",
 //      not "the lints ran" (the failing push's gate log shows the
 //      cross-target clippy row printing only `Finished ... 0.74s` before
@@ -76,47 +79,47 @@
 //      NOT invalidate the cross-target dir — and every cargo row in the
 //      group carries `expectWork: 'aligned-vmem'`, which FAILS the step
 //      unless its own output shows a real Checking/Compiling/Documenting
-//      line (see the run-loop comment). STILL excluded (CI covers both):
+//      line (see the run-loop comment). STILL excluded (CI covers it):
 //      the i686 cross-targets and the RUSTFLAGS `--cfg miri` check row
-//      (item 51/task #1059 history), and mock-backend TEST execution
-//      (see (2)). Rows: clippy (default, huge-pages, bench-internals,
+//      (item 51/task #1059 history). Rows: clippy (default,
+//      huge-pages, bench-internals,
 //      lazy-commit+huge-pages+fault-injection+bench-internals,
 //      --all-features); cross-target check + clippy
 //      (x86_64-unknown-linux-gnu,
 //      lazy-commit+huge-pages+fault-injection+bench-internals) and
 //      clippy (x86_64-unknown-linux-gnu, bench-internals only); clippy
 //      (--cfg aligned_vmem_mock via RUSTFLAGS, full feature set); test
-//      (default, --all-features); doc (--all-features,
+//      (default, --all-features, mock via RUSTFLAGS); doc (--all-features,
 //      warnings-as-errors); semver-checks (optional, skipped if
 //      cargo-semver-checks not installed).
-//   27-28. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   28-29. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   29. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   30. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   30. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   31. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
 //      structural complement to 25 — 25 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   31. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   32. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   32. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   33. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   33. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   34. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   34. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   35. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -124,19 +127,19 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   35. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
+//   36. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
 //      #1067/F7: exhaustive completeness check that every
 //      `pub fn ...() -> u64` counter accessor in
 //      crates/aligned-vmem/src/bench_internals/ is CALLED by
 //      tests/bench_internals_counters.rs — the hand-maintained list there
 //      claims exhaustiveness and had silently drifted; see that script's
 //      own header)
-//   36. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
+//   37. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
 //      prove the stale-cross-checkout-artifact output sniffer — imported
 //      above and consulted on every failed step — still detects the literal
 //      task #1073 panic signature and stays narrow on the three negative
 //      fixtures; see that script's own header)
-//   37. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
+//   38. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
 //      static guard against compile-time PAGE constants in
 //      page_size()-validated argument positions — the class that escaped
 //      three times (#1067 mock.rs, #1074 bootstrap+siblings, #1075 smoke.rs
@@ -152,17 +155,27 @@
 //      runtime regression in tests/lazy_initial_commit_forced_page.rs.
 //      See that script's own header for the scanned-position table,
 //      suppressions, and blind spots.)
-//   38. cargo test --features "production small-segment-lazy-commit internals"
+//   39. cargo test --features "production small-segment-lazy-commit internals"
 //      --test lazy_initial_commit_forced_page   (task #1080: the forced-page
 //      lazy-commit call-site regression under RUSTFLAGS
 //      "--cfg aligned_vmem_page_size_override" — the task #962 cfg-flag
 //      conversion pattern, mirroring the ci.yml `test-windows` row. Placed
-//      LAST among the array steps so the RUSTFLAGS change's cache
-//      invalidation is paid once at the end, not between the existing
-//      test/clippy rows. This single feature set covers BOTH lazy legs:
-//      `production` implies `primordial-lazy-commit`, and the explicit
-//      `small-segment-lazy-commit` adds the small-segment leg.)
-//   39. npm run iai                                                (deterministic judge,
+//      at the END of the array steps (with step 40 directly after it) so
+//      the RUSTFLAGS change's cache invalidation is paid once at the end,
+//      not between the existing test/clippy rows. This single feature set
+//      covers BOTH lazy legs: `production` implies `primordial-lazy-commit`,
+//      and the explicit `small-segment-lazy-commit` adds the small-segment
+//      leg.)
+//   40. cargo test --features "production internals bench-internals"
+//      --test decomp_hooks_forced_page   (task #1081: the forced-page
+//      decomp-hook page-alignment regression, same
+//      "--cfg aligned_vmem_page_size_override" RUSTFLAGS as step 39, so
+//      the pair shares one invalidation boundary at the array's end.
+//      Numbering-drift note (task #1082): this row's header entry was
+//      MISSING from task #1081's own commit — the header jumped straight
+//      from 39 (this row's predecessor) to "npm run iai", under-counting
+//      the step list by one until renumbered here.)
+//   41. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -399,12 +412,11 @@ const steps = [
     // reason to keep the crate's mock backend unverifiable locally.
     // Mirrors CI's aligned-vmem-gates mock clippy row exactly (features +
     // --all-targets + -D warnings + the RUSTFLAGS cfg). The mock TEST row
-    // stays excluded: it FAILS on a clean tree at HEAD
-    // (tests/mock.rs's decommit_silently_skips_contract_violating_offsets
-    // calls the contract-violating decommit that api/decommit.rs's
-    // debug_assert rejects — a pre-existing crate issue, not a gate
-    // issue; see the task #1071 commit), so mock-backend RUNTIME behavior
-    // stays CI-only.
+    // that task #1071 excluded here (it failed on a clean tree at HEAD:
+    // tests/mock.rs's decommit_silently_skips_contract_violating_offsets
+    // vs api/decommit.rs's debug_assert) was added back by task #1082 —
+    // task #1072 resolved that blocker and #1082 closed the follow-up
+    // (see the mock test row's own comment).
     name: 'clippy (aligned-vmem --cfg aligned_vmem_mock --features "lazy-commit huge-pages fault-injection bench-internals")',
     cmd: 'cargo',
     args: ['clippy', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--all-targets', '--', '-D', 'warnings'],
@@ -415,6 +427,32 @@ const steps = [
     name: 'test (aligned-vmem --all-features)',
     cmd: 'cargo',
     args: ['test', '-p', 'aligned-vmem', '--all-features'],
+    expectWork: 'aligned-vmem',
+  },
+  {
+    // Task #1082 (F9): the mock TEST row — the last mock-arm exclusion
+    // left standing, closed on the merits. CI has run this exact row
+    // (ci.yml aligned-vmem-gates) since task #962; locally task #1071
+    // kept it out because it FAILED on a clean tree at HEAD, and task
+    // #1072 resolved that blocker (profile-gated silent-skip tests;
+    // eager `decommit` rustdoc/README split) but recorded "adding that
+    // row remains the planned follow-up" only inside closed correctness
+    // item 51's Update block — a flag living one storey below the index
+    // this file's own convention exists to surface. Measured cost:
+    // ~3.8 s after `cargo clean -p aligned-vmem` invalidation / ~1.5 s
+    // warm (task #1082 commit) — the same order as the mock clippy row
+    // (~2.5 s, #1071), so "for speed" is not a defensible exclusion
+    // here either. This is the ONLY local row that EXECUTES the mock
+    // backend: the mock clippy row compiles it without running it, and
+    // every real-backend row compiles a different cfg arm entirely —
+    // counterfactually verified (a one-line mock-recording regression
+    // in api/reserve.rs turned this row red with 2 failed tests while
+    // every other local row stayed green; see the task #1082 commit
+    // body). Mirrors CI's row exactly (features + the RUSTFLAGS cfg).
+    name: 'test (aligned-vmem --cfg aligned_vmem_mock --features "lazy-commit huge-pages fault-injection bench-internals")',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_mock' },
     expectWork: 'aligned-vmem',
   },
   {
@@ -624,7 +662,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x6, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x6, aligned-vmem x16 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 3 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
