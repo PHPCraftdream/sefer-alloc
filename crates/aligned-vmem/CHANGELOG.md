@@ -8,6 +8,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **`impl Debug for LazyReservation`** (task #1107) — prints `committed_len()`
+  FIRST, then the inner reservation through its own `Debug`. The watermark is
+  the type's whole reason to exist and was previously invisible in a panic
+  message or an `{:?}`. Written so as not to reintroduce the H1 bypass removed
+  in the same wave: the inner handle is rendered, never borrowed out, and the
+  guard that pins that property passes unmodified.
 - Safe `Reservation` methods for page-level memory management: `decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`, `try_commit_range`
 - **`LazyReservation`** — a `Reservation` that also tracks how much of itself is
   committed, so callers of the lazy path no longer have to invent that
@@ -113,6 +119,62 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Windows single-call fast path for `align <= WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) on full-span commit; when requesting large pages (`MEM_LARGE_PAGES`), the threshold widens to `GetLargePageMinimum()` (typically 2 MiB).
 
 ### Fixed
+
+- **[BREAKING, HIGH, publication blocker] `LazyReservation::as_reservation()` is
+  REMOVED: it was a 100%-safe bypass of the watermark the type exists to
+  guarantee (task #1104, finding H1 of the 2026-08-18 publication-readiness
+  audit, whose NO-GO verdict rested on it).** All seven of `Reservation`'s
+  OS-state mutators take `&self`, not `&mut self`, so a borrowed `&Reservation`
+  handed out by a `&self` accessor let safe code change the mapping under the
+  watermark: `r.as_reservation().decommit(0, page_size())` left
+  `committed_len()` promising a prefix that Windows had already decommitted —
+  a caller range-checking against it before writing gets
+  `STATUS_ACCESS_VIOLATION`. Committing PAST the watermark via
+  `commit_range`/`recommit` through the same borrow was equally available.
+  Deleted rather than narrowed to a read-only view type: its only caller in the
+  entire repository needed `len()`, already proxied directly, and a view type is
+  one `impl Deref<Target = Reservation>` away from resurrecting every mutator.
+  The two remaining exits are deliberate and documented on the type — the raw
+  `as_ptr()` (every USE of which is already `unsafe`) and the CONSUMING
+  `into_reservation()`. Pinned by `tests/lazy_reservation_no_borrowed_reservation.rs`,
+  which fails on the token, on any `&Reservation` code line in `src/`, on a
+  `Deref`/`AsRef`/`Borrow` route, or on any change to the type's public method
+  set. Affects only consumers built against the unpublished 0.2.0 tree;
+  crates.io still serves 0.1.0, which never had `LazyReservation`.
+
+- **[docs, MEDIUM, publish blocker] the public huge-page contract promised a
+  Linux-only exception that the code applies to Android as well (task #1105,
+  finding M1).** `reserve_aligned_huge`'s rustdoc and the README said the extra
+  2 MiB-multiple requirement holds "except on Linux with `huge-pages` enabled",
+  while the check is gated
+  `any(target_os = "linux", target_os = "android")` — so an Android caller got
+  `invalid_argument()` for a request the published docs said would be accepted.
+  The crate's own tests already treated the contract as Linux/Android-common:
+  the tests were right and the shipping documentation was wrong. 35 sites
+  corrected across the rustdoc, `os/unix.rs`, `lib.rs` and the README, sweeping
+  BOTH directions (three "non-Linux Unix" phrasings were wrong about Android;
+  four comments described a `target_os = "linux"` cfg arm that does not exist).
+  Android is not built in CI, so no test can catch this class — a new
+  `scripts/vmem-linux-android-pairing-guard.mjs` flags a sentence naming Linux
+  next to a pair-gated mechanism marker with no Android satisfier.
+
+- **[docs, LOW] three publication-audit discrepancies in documentation and the
+  error model (task #1106, findings L1/L2/L3).** (1) The `fault-injection`
+  module doc claimed `try_commit_range` "always" reaches the real backend while
+  its own function doc 100 lines down said the hook is compiled out under
+  `aligned_vmem_mock` — five CI rows build exactly that combination; the doc now
+  states the precedence, and a `compile_error!` was deliberately NOT used
+  because those rows are intentional. (2) A SUCCESSFUL zero-address `mmap`,
+  which the crate rejects and unmaps, was reported through
+  `os_refusal_unknown_code()` and documented as a "genuine OS refusal"; the
+  doc and `Display` now distinguish "the crate rejected an unusable OS grant"
+  from a real refusal. A distinct error kind was considered and rejected on
+  evidence: no site anywhere matches on which source produced the sentinel.
+  (3) The README promised the whole `cfg(unix)` family while `os/unix.rs`
+  holds `compile_error!` arms rejecting every Unix family outside
+  Linux/Android and Darwin/BSD, and all of MIPS — replaced by an enumerated
+  matrix, each row keyed to the arm enforcing it, with CI-verified separated
+  from reasoned-from-spec.
 
 - **[correctness fix, MEDIUM, publish blocker] `set_page_size_override` accepted
   a page SMALLER than the machine's real one, while the module's own "Why this
