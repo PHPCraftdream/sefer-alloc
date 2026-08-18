@@ -2315,14 +2315,26 @@ for completeness.
       `Ir=10` threshold lives solely in the workflow `env:`. A 29% regression
       passes the local gate green. With the workflow off, **nothing anywhere
       now enforces an instruction-count threshold.**
-    - **Next trigger:** any decision to attribute or fix the regression; any
-      move to re-enable a trigger (which must fix the self-lock first, or it
-      reproduces the same red streak). **Time-boxed:** the Callgrind artifacts
-      that would allow per-function attribution WITHOUT a Linux/Valgrind
-      bisect are retained 30 days — `perf-gate-callgrind-30980354559` (green
-      side) expires ~2026-09-04. After that only a bisect recovers this.
-      Note the trap: fixing the self-lock by adding `if: always()` OVERWRITES
-      the frozen baseline and destroys the only remaining reference point.
+    - **Next trigger:** any decision to attribute or fix the regression (task
+      #1091 owns this); any move to re-enable a trigger (which must fix the
+      self-lock first, or it reproduces the same red streak). Note the trap:
+      fixing the self-lock by adding `if: always()` OVERWRITES the frozen
+      baseline and destroys the only remaining reference point.
+    - **CORRECTION — this is NOT GitHub-dependent and NOT deadline-bound.**
+      An earlier draft of this card (and task #1090's notes) claimed
+      attribution needs either the 30-day Callgrind artifacts or "a bisect on
+      Linux+Valgrind, and this host is Windows". **That is false.**
+      `scripts/iai.mjs` — the `npm run iai` judge already wired into
+      `npm run check` — drives the whole `perf_gate_iai` bench through **WSL +
+      Valgrind/Callgrind**, with its own Linux target dir (`/tmp/sefer-iai`)
+      and the runner version pinned to `Cargo.toml`'s `^0.14`. Verified on
+      this host: `valgrind-3.22.0`, cargo present in WSL, 16 cores. So both
+      endpoints AND every bisect midpoint are measurable locally, offline,
+      deterministically (Callgrind `Ir` is contention-independent), with no
+      GitHub involvement at all — which also matches the owner's directive to
+      stop loading GitHub with perf runs. The archived artifacts
+      (`perf-gate-callgrind-30980354559`, expiring ~2026-09-04) are now only a
+      convenience shortcut, not the critical path.
     - **Suspect range:** `42d8d223..42d42061`, 153 commits (the R34
       release-readiness remediation waves, which landed densely). Unread
       first-glance candidate by subject only, NOT a code-level conclusion:
