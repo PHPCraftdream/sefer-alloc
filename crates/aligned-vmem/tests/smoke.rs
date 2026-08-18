@@ -923,6 +923,7 @@ fn decommit_contract_violation_never_reaches_madvise() {
         // this is still a contract violation under the crate's real
         // validation base and must be rejected the same way.
         unsafe {
+            // pageguard:allow — deliberate validation-base oracle (tasks #902/#904): rejection is the point.
             aligned_vmem::decommit(base, PAGE, 2 * PAGE);
         }
     }
@@ -981,6 +982,7 @@ fn decommit_lazy_contract_violation_never_reaches_madvise() {
         // SAFETY: same live reservation; same contract argument as the
         // eager test's validation-base arm above.
         unsafe {
+            // pageguard:allow — deliberate validation-base oracle (tasks #902/#904): rejection is the point.
             decommit_lazy(base, PAGE, 2 * PAGE);
         }
     }

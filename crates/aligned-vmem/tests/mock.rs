@@ -366,6 +366,7 @@ fn decommit_release_silently_skips_contract_violating_offsets() {
         // this is still a contract violation under the crate's real
         // validation base and must be silently skipped the same way.
         unsafe {
+            // pageguard:allow — deliberate validation-base oracle (task #906/#908): PAGE is passed precisely because it is PAGE-aligned but NOT page_size()-aligned on this arm.
             decommit(base, PAGE, 2 * PAGE);
         }
         let calls = mock::drain();
@@ -411,6 +412,7 @@ fn decommit_lazy_silently_skips_contract_violating_offsets() {
         // SAFETY: same live reservation; same contract argument as the
         // eager test's validation-base arm above.
         unsafe {
+            // pageguard:allow — deliberate validation-base oracle (task #906/#908): PAGE is passed precisely because it is PAGE-aligned but NOT page_size()-aligned on this arm.
             decommit_lazy(base, PAGE, 2 * PAGE);
         }
         let calls = mock::drain();

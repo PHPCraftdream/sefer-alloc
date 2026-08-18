@@ -101,6 +101,7 @@ fn validation_uses_the_runtime_page_size_not_the_compile_time_floor() {
         // Host floor == runtime size: a `PAGE` offset is valid, and the test
         // still asserts that rather than skipping.
         // SAFETY: live reservation, in-span page-aligned range.
+        // pageguard:allow — guarded by `if ps == PAGE` above: on this arm PAGE IS the runtime page size.
         assert!(unsafe { try_decommit(r.as_ptr(), PAGE, 2 * PAGE) }.is_ok());
         return;
     }

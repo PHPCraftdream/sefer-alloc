@@ -136,7 +136,15 @@
 //      above and consulted on every failed step — still detects the literal
 //      task #1073 panic signature and stays narrow on the three negative
 //      fixtures; see that script's own header)
-//   37. npm run iai                                                (deterministic judge,
+//   37. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
+//      static guard against compile-time PAGE constants in
+//      page_size()-validated argument positions — the class that escaped
+//      three times (#1067 mock.rs, #1074 bootstrap+siblings, #1075 smoke.rs
+//      x4) and is invisible on this 4 KiB-page Windows host by construction;
+//      runs its counterfactual fixture self-test first, then scans src/,
+//      crates/, tests/, benches/, examples/. See that script's own header
+//      for the scanned-position table, suppressions, and blind spots.)
+//   38. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -534,10 +542,24 @@ const steps = [
     cmd: 'node',
     args: ['scripts/stale-artifact-diagnosis.mjs', '--self-test'],
   },
+  {
+    // Task #1076: static guard against passing the compile-time 4 KiB `PAGE`
+    // constant (or any non-64 KiB multiple) into argument positions that
+    // aligned-vmem validates against the RUNTIME page_size() — the class that
+    // escaped three times in one campaign (task #1067 tests/mock.rs, task
+    // #1074 bootstrap.rs + 5 siblings in production code, task #1075 smoke.rs
+    // x4) and that NO local test can catch on this 4 KiB-page Windows host,
+    // where PAGE == page_size() by construction. Runs the fixture self-test
+    // (the permanent counterfactual: must-flag and must-pass shapes) before
+    // scanning the tree. See the script's own header.
+    name: 'verify-vmem-page-constant-call-sites (task #1076 page-constant guard)',
+    cmd: 'node',
+    args: ['scripts/verify-vmem-page-constant-call-sites.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
