@@ -56,6 +56,15 @@ fn debug_shows_the_watermark() {
             r.committed_len()
         );
     } else {
+        // HONEST LIMIT of this arm (task #1118, from the @oh review): this
+        // `assert_eq!` is TAUTOLOGICAL given the branch condition — `initial >=
+        // len` plus the type invariant `committed <= inner.len()` forces
+        // equality — so it pins the invariant, not the rendering. In this
+        // regime the only live assertion ABOUT `Debug` is the pre-branch
+        // `s0.contains("committed_len: {initial}")`, and because `committed ==
+        // len` here, this test structurally cannot distinguish a `Debug` impl
+        // that printed `inner.len()` where it meant `self.committed`. Stated
+        // rather than left for the next reviewer to rediscover.
         assert_eq!(
             initial,
             r.len(),
@@ -65,6 +74,15 @@ fn debug_shows_the_watermark() {
             "regime: watermark already at the full span ({initial}) — growth arm not applicable"
         );
     }
+    // NOTE on the two `eprintln!`s above (task #1118): libtest CAPTURES stdout
+    // and stderr for a PASSING test, so a green `npm run check` log shows
+    // neither line — `grep -c "regime: "` on it returns 0. They surface only
+    // under `--nocapture` or when the test FAILS, which is the case they were
+    // written for. Commit `66baf1f`'s body claimed "a reader of the log can now
+    // see WHICH regime executed"; that is false for a green run, and the
+    // anti-vacuity work is done by the branch plus the `assert_eq!`, not by the
+    // announcement. Recorded here rather than by amending that commit, per this
+    // project's non-retroactive posture.
 }
 
 /// The rendering exposes exactly the intended fields and nothing else — in

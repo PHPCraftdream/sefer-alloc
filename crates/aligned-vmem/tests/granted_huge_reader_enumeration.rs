@@ -180,6 +180,17 @@ const REDERIVE_MSG: &str = "the granted_huge/is_huge reader enumeration changed:
 /// consciously, which is the point of the pin.
 fn expected_for(rel: &str) -> (usize, usize, usize, usize) {
     // (is_huge_calls, granted_huge_member_reads, bare_is_huge, bare_granted_huge)
+    // The table is keyed on PATHS, and the default arm is `(0, 0, 0, 0)` — so a
+    // FILE SPLIT is the failure mode with the most confusing message (task
+    // #1118, from the @oh review). Splitting e.g. `src/os/unix.rs` into modules
+    // moves its 7 tokens to paths that fall through to the default, and the
+    // test then fails talking about a SAFETY comment in
+    // `tests/reservation_decommit_contract.rs` — a different file entirely.
+    // This crate did exactly such a split ten commits before this note
+    // (`a4b8e50`, `lib.rs` -> modules), so it is not hypothetical. If you are
+    // reading this because a split just turned the test red: move each path's
+    // counts to its new file(s); the reader SET is what the SAFETY argument
+    // depends on, not which file holds it.
     match rel {
         "src/reservation.rs" => (4, 3, 5, 8),
         "src/reservation_full_parts.rs" => (0, 1, 0, 4),

@@ -25,8 +25,13 @@ use super::internal::{
 /// `size` not aligned to `page_size()` would create an unwritable tail that
 /// cannot be committed via the public API.
 ///
-/// The returned [`Reservation`](crate::Reservation) frees the ENTIRE VA reservation on drop
-/// regardless of how much was committed. For the failure cause use
+/// The returned [`LazyReservation`](crate::LazyReservation) frees the ENTIRE VA
+/// reservation on drop regardless of how much was committed. (Until task #1118
+/// this sentence named `Reservation` — the wrong type. This function has
+/// returned `Option<LazyReservation>` since task #1051 introduced the
+/// watermark-owning wrapper; the reviewer who found it noted that a
+/// publication-readiness wave spent three commits resealing exactly this type
+/// without reading its own entry point's rustdoc.) For the failure cause use
 /// [`try_reserve_aligned_lazy`].
 #[must_use]
 #[cfg(feature = "lazy-commit")]

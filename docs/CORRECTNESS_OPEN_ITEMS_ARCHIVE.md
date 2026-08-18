@@ -38,6 +38,25 @@ the main index's "Recently resolved" section.
 
 ---
 
+## Structure — how this file differs from its perf sibling (task #1118)
+
+`docs/perf/OPEN_ITEMS_ARCHIVE.md`, the file this archive's shape was copied
+from, additionally carries a `## Table of contents` with anchor links and a
+`###` heading per item, so a pointer in the main index resolves by clicking.
+This file does NOT: its entries are plain `NN. **…**` list items, so following
+a pointer means "scroll and find item N". That gap is recorded rather than
+closed, for one concrete reason: **item numbers here collide.** The closure
+trail inherited two entries numbered `3` (the sequence runs `1 2 3 3 4 5 15 30
+…`), a defect that predates the R34-24 split (task #1109) and was carried
+across verbatim by design, since the split's whole contract was byte-identical
+relocation. Adding anchors on top of colliding numbers would manufacture two
+identical anchor targets and make "follow item N" LESS reliable, not more.
+
+Sequence, if a future round wants to close this: renumber the collisions
+first (a real edit to historical entries, so it needs its own decision), THEN
+add the TOC and per-item headings. Doing it in the other order bakes the
+ambiguity into link targets.
+
 ## Recently resolved — full closure trail
 
 *(Entries below are in the order they appeared in the main index's
