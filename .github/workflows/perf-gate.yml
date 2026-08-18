@@ -10,19 +10,44 @@ name: perf-gate
 # "every push/PR" — this is a separate, non-blocking workflow that never
 # appears in required-checks for a normal merge.
 #
-# Trigger surface:
+# DISABLED 2026-08-18 (owner decision, task #1090): no automatic perf runs on
+# GitHub. Both automatic triggers are commented out rather than deleted, so
+# re-arming is a one-line uncomment, not an archaeology exercise.
+#
+# `workflow_dispatch:` is deliberately left ACTIVE and is the only remaining
+# trigger — it never fires on its own; a human has to press "Run workflow".
+# It also cannot be removed alongside the others: GitHub Actions rejects a
+# workflow file whose `on:` block has no trigger at all, so keeping exactly
+# this one is what lets the file stay valid (and lintable) while running
+# nothing.
+#
+# Trigger surface (original three entries; the two AUTOMATIC ones are now
+# commented out below, the manual one is not):
 #   - schedule: nightly, so drift is caught within 24h even if no one asks.
 #   - workflow_dispatch: on-demand, for "did my in-flight branch regress?"
-#     without waiting for the nightly cron.
+#     without waiting for the nightly cron. — STILL ACTIVE.
 #   - pull_request (labeled): opt-in per-PR run for perf-sensitive changes —
 #     add the `perf` label to a PR to run the gate on it; unlabeled PRs never
 #     trigger this workflow at all.
+#
+# READ THIS BEFORE RE-ENABLING — the gate is not merely idle, it is STUCK.
+# It failed 13 nights running (2026-08-06 .. 2026-08-18) and could not
+# recover on its own, because `IAI_CALLGRIND_REGRESSION` below applies to the
+# `--save-baseline=main` run too (contradicting that step's own comment), and
+# the "Save the main iai baseline" step has no `if: always()` — so a failing
+# run never records a new baseline. The baseline is therefore frozen at
+# 42d8d223 (last green: run 30980354559, 2026-08-05), and every later run
+# compares against it and fails again. Uncommenting a trigger without fixing
+# that reproduces the same red streak; note also that fixing it by adding
+# `if: always()` OVERWRITES the frozen baseline, destroying the only
+# remaining reference point for the unexplained ~10-13% Ir regression in
+# 42d8d223..42d42061.
 on:
-  schedule:
-    - cron: '30 3 * * *' # nightly, offset from ci.yml's weekly NUMA cron
+  # schedule:
+  #   - cron: '30 3 * * *' # nightly, offset from ci.yml's weekly NUMA cron
   workflow_dispatch:
-  pull_request:
-    types: [labeled]
+  # pull_request:
+  #   types: [labeled]
 
 env:
   CARGO_TERM_COLOR: always
@@ -57,6 +82,12 @@ jobs:
     # add, so without this guard every unrelated label would also trigger a
     # full Valgrind run. schedule/workflow_dispatch are unaffected (this
     # condition only matters for the `pull_request` event).
+    #
+    # Currently INERT, deliberately kept: the `pull_request` trigger is
+    # commented out above (2026-08-18), so `github.event_name` can only ever
+    # be `workflow_dispatch` and the first clause is always true. Left in
+    # place so re-enabling the trigger restores the guard with it, rather
+    # than silently re-opening the any-label hole this condition closes.
     if: >-
       github.event_name != 'pull_request' ||
       github.event.label.name == 'perf'

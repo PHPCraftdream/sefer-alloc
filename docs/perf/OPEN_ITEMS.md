@@ -2275,6 +2275,64 @@ for completeness.
       `decommit_calls` / `segments_released_total` stderr deltas and the
       zero-rule in its module doc; `docs/PROFILE_FLAMEGRAPHS.md` §0/§1/§5.
 
+56. **[A] An unexplained ~10-13% `Ir` regression is real, unattributed, and
+    now unmonitored — the nightly gate that found it was red for 13 nights
+    and has been switched off.** (Filed 2026-08-18, task #1090.)
+
+    - **Status:** OPEN. The gate's automatic triggers were commented out in
+      `.github/workflows/perf-gate.yml` by owner decision — no automatic perf
+      runs on GitHub. `workflow_dispatch` remains the only trigger (a human
+      must press "Run workflow"); it is kept because Actions rejects an `on:`
+      block with no trigger at all. **The regression itself was NOT
+      investigated and is NOT fixed** — only the alarm was silenced.
+    - **Current-number-or-verdict:** run `32098094538` (2026-08-18) reported
+      21 of 85 benches over the `Ir=10` limit, worst `large_alloc_free_cycle`
+      +29.00%, with most churn arms clustered at +10…+13.8%. **Read these as
+      a 13-day CUMULATIVE delta against a stale baseline, not a per-night
+      regression** — see the self-lock below. Corroborating the frozen-base
+      model: the count sat at exactly "60 without regressions; 25 regressed"
+      on 08-08, 08-14, 08-16 and 08-17, moving only on 08-18.
+    - **The self-lock (why it could never recover):** `IAI_CALLGRIND_REGRESSION`
+      is set at workflow `env:` level, so it applies to the nightly
+      `--save-baseline=main` run too — contradicting that step's own comment
+      ("A main-branch / scheduled / dispatched run instead (re)RECORDS the
+      baseline"). When the bench step exits non-zero, the next step
+      `Save the main iai baseline` is SKIPPED (it has no `if: always()`;
+      verified in run `32098094538`'s step list, where the sibling
+      `Upload Callgrind artifacts` — which does have it — succeeded). So a
+      failing run never records a new baseline, and the baseline is frozen at
+      `42d8d223` (last green: run `30980354559`, 2026-08-05).
+    - **Retracted hypothesis (do not re-derive):** an rustc bump was proposed
+      as the cause, on the observation that mimalloc's C-compiled rows held or
+      improved (`mimalloc_bootstrap_proxy` −3.55% `Ir`) while every Rust row
+      rose. **Falsified by direct check** — `rustc 1.97.1 (8bab26f4f
+      2026-07-14)` in BOTH the last green (`30980354559`) and the red
+      (`32098094538`). The toolchain never moved; the regression is code, and
+      the mimalloc observation now reads the opposite way (our code changed,
+      the build environment did not).
+    - **Local gate cannot substitute:** `npm run check`'s iai step asserts
+      only that Ir was produced (`[iai] PASS — 85 bench(es) produced Ir`); the
+      `Ir=10` threshold lives solely in the workflow `env:`. A 29% regression
+      passes the local gate green. With the workflow off, **nothing anywhere
+      now enforces an instruction-count threshold.**
+    - **Next trigger:** any decision to attribute or fix the regression; any
+      move to re-enable a trigger (which must fix the self-lock first, or it
+      reproduces the same red streak). **Time-boxed:** the Callgrind artifacts
+      that would allow per-function attribution WITHOUT a Linux/Valgrind
+      bisect are retained 30 days — `perf-gate-callgrind-30980354559` (green
+      side) expires ~2026-09-04. After that only a bisect recovers this.
+      Note the trap: fixing the self-lock by adding `if: always()` OVERWRITES
+      the frozen baseline and destroys the only remaining reference point.
+    - **Suspect range:** `42d8d223..42d42061`, 153 commits (the R34
+      release-readiness remediation waves, which landed densely). Unread
+      first-glance candidate by subject only, NOT a code-level conclusion:
+      `3d57a26 fix(perf): close F1 — HeapCore stack-pressure budget didn't
+      cover production medium-classes` — a stack-pressure budget sits on every
+      alloc/dealloc path, which fits the near-uniform spread across churn arms.
+    - **Evidence:** `.github/workflows/perf-gate.yml`'s own DISABLED header
+      block; GitHub runs `30980354559` (green), `32098094538` (red);
+      13 consecutive scheduled failures 2026-08-06 … 2026-08-18.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
