@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.2.0 - 2026-08-16
+## 0.2.0 - Unreleased
 
 ### Added
 
@@ -162,7 +162,57 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   M3 fix above strengthens. A method-layer `start == end` filter is additionally
   the shape task #1079 already rejected for disarming the tripwire. Note the
   coverage gap this surfaced and did NOT close (filed as task #1094): nothing
-  pins the free `try_decommit(1, 1)` → `Err`, so that flip would pass unnoticed.
+  pins the free `try_decommit(1, 1)` → `Err`, so that flip would pass
+  unnoticed. (Gap closed in the same wave by task #1094:
+  `empty_misaligned_range_is_reported` in `tests/try_decommit.rs` pins
+  `(1, 1)` and `(ps + 1, ps + 1)` → `Err`, with the widening re-applied
+  temporarily to show the new test red under it.)
+
+- **[docs, LOW] `Reservation::decommit`'s SUMMARY line still made an
+  unqualified claim about empty misaligned ranges two paragraphs above its
+  own corrected `# Panics` section (task #1097 / finding L4).** The M2 fix
+  above rewrote `# Panics` but left the summary saying an empty MISALIGNED
+  range "is a contract violation like any other" with no profile split —
+  while in a RELEASE build `decommit(1, 1)` IS a silent no-op (the free
+  function returns at `start >= end` once the `debug_assert!` is compiled
+  out), so a consumer skimming only the summary read a violation promise
+  the release build does not keep. The summary now states the profile
+  split inline. The same unconditional shape was swept across the family:
+  the free `decommit`'s "a no-op if the range is empty" became "empty AND
+  page-aligned" with the empty-misaligned case named in the violated-range
+  clause, and the `recommit`/`commit_range` "well-formed no-op (empty
+  range, `start == end`)" parentheticals at both layers became "an empty
+  PAGE-ALIGNED range" (the old parenthetical implied empty ⇒ well-formed,
+  false for misaligned endpoints). `decommit_lazy` (both layers) and both
+  `try_decommit` layers were already qualified — reviewed, unchanged.
+
+- **[docs + test, LOW] the synthetic-`granted_huge` SAFETY comment and the
+  pre-fix counter figures in `tests/reservation_decommit_contract.rs`, and
+  the forced-page-suite description in `tests/page_size_override.rs`
+  (tasks #1098/L2 and #1096/L1).** The SAFETY comment on
+  `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`
+  now discloses BOTH `from_raw_parts` contract bullets its synthesis
+  violates (the accuracy bullet AND the Windows single-call
+  `MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES` commit-state bullet —
+  previously only the first was cited), and its PRIMARY justification is
+  now the re-derived reader enumeration — `is_huge()` itself,
+  `can_decommit_reclaim_and_zero()` (a pure query the review's own
+  enumeration had missed), and the three decommit-family huge-skips;
+  `Drop` and `from_raw_parts`' assert block read nothing — instead of the
+  weaker "the rustdoc says it is not UB" intent argument. A new mechanical
+  guard, `tests/granted_huge_reader_enumeration.rs`, pins that reader set
+  so a future reader breaks a stated invariant rather than silently
+  invalidating prose. The pre-fix `huge_decommit_attempts()` figures
+  ("== 3 after the malformed calls", "this read 4") were DERIVED, not
+  observed — the pre-fix test aborts at the first `.is_err()` assert with
+  the counter at 1 — and are now labeled as such, with the values observed
+  for real via a temporarily relaxed probe under the temporarily reverted
+  fix order. `tests/page_size_override.rs` claimed the root crate's
+  forced-page suites "arm 64 KiB, then downshift to 16 KiB with no restore
+  in between"; they actually iterate [16 KiB, 64 KiB] (an UPSHIFT) with
+  the restore guard constructed inside the loop, or arm a single 64 KiB —
+  comment corrected; the justified design (floor = fresh real-page query,
+  not the armed cache value) is unchanged and still correct.
 
 - **`Reservation::decommit`'s rustdoc promised "the same silent-skip behavior
   as the free `decommit` function" for a contract-violating range — half
