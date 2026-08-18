@@ -150,6 +150,21 @@
 //   - On a hypothetical >64 KiB-page host even `16 * PAGE` fails at runtime
 //     but passes this guard — the bar is 64 KiB, not "any page size".
 //
+// ## Summary-line counter semantics (task #1083)
+//
+// The fold flow and the production-provenance flow keep SEPARATE counter
+// buckets, and each set is a true partition:
+//   - fold flow: candidates = S1 + S2a + S2b + S3 + findings — every
+//     candidate arg is attributed to exactly one bucket, the FIRST
+//     suppression stage that fires (S1 filters per candidate; S2a/S2b/S3
+//     take the whole surviving set and stop the pipeline for that call).
+//   - prod flow: prodChecked = prodQualified + prodS1 + prodS3 +
+//     prodDeduped + prodFindings.
+// main() ASSERTS both identities before printing them, so a future counter
+// drift fails the run loudly instead of printing a self-contradictory
+// summary (the pre-#1083 bug: prod-flow S1/S3 events shared the fold
+// counters, printing "53 suppressed" over 52 candidate arg(s) raised).
+//
 // ## Self-test
 //
 // Before scanning the real tree, the detector runs over embedded fixture
@@ -770,7 +785,15 @@ function scanSource(path, source, prodCtx) {
   // Per-file const bindings (blanked text: commented-out consts cannot match).
   const defs = collectDefs(blanked);
 
-  const stats = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0, prodChecked: 0, prodFindings: 0 };
+  const stats = {
+    calls: 0, candidates: 0,
+    // Fold-flow buckets (a true partition of `candidates`, task #1083):
+    s1: 0, s2a: 0, s2b: 0, s3: 0,
+    // Prod-flow buckets (a true partition of `prodChecked`, task #1083) —
+    // kept SEPARATE from the fold buckets so prod-flow suppression events
+    // can never leak into the fold sentence's sum again.
+    prodChecked: 0, prodQualified: 0, prodS1: 0, prodS3: 0, prodDeduped: 0, prodFindings: 0,
+  };
   const findings = [];
   const prodFindings = [];
   const prodPending = [];
@@ -816,18 +839,23 @@ function scanSource(path, source, prodCtx) {
           stats.prodChecked++;
           const mode = isReserveFree && idx === 3 ? 'strict' : 'pagefree';
           const q = qualify(a.text, selfCtx, 0, mode, a.start);
-          if (q.ok) continue;
-          // S1 — same original-text marker window as the fold flow.
+          if (q.ok) {
+            stats.prodQualified++;
+            continue;
+          }
+          // S1 — same original-text marker window as the fold flow; counted
+          // in the PROD bucket (task #1083): a prod-flow suppression is not
+          // a fold candidate and must not enter the fold sentence's sum.
           const argLine = lineOf(a.start);
           const lines = new Set([callLine, callLine - 1, callLine - 2, argLine]);
           const marked = [...lines].some((ln) => ln >= 1 && (originalLines[ln - 1] ?? '').includes(MARKER));
           if (marked) {
-            stats.s1++;
+            stats.prodS1++;
             continue;
           }
-          // S3 — negative-assertion context, same as the fold flow.
+          // S3 — negative-assertion context, same as the fold flow (PROD bucket).
           if (negativeContext(blanked, nameStart, call.closeParen)) {
-            stats.s3++;
+            stats.prodS3++;
             continue;
           }
           prodPending.push({ line: callLine, argIdx: idx, path, name, argText: a.text, reason: q.reason });
@@ -897,7 +925,12 @@ function scanSource(path, source, prodCtx) {
   // if the fold flow already emitted an unsuppressed finding for the same
   // argument, the prod rule must not double-report it.
   for (const p of prodPending) {
-    if (findings.some((f) => f.line === p.line && f.argIdx === p.argIdx)) continue;
+    if (findings.some((f) => f.line === p.line && f.argIdx === p.argIdx)) {
+      // Already reported by the fold flow for the same (line, arg) — its own
+      // bucket in the prod partition (task #1083).
+      stats.prodDeduped++;
+      continue;
+    }
     prodFindings.push(p);
     stats.prodFindings++;
   }
@@ -1270,7 +1303,10 @@ function main() {
   }
 
   console.log(`\n[${SCRIPT}] phase 2/2: scanning the real tree from the repo root\n`);
-  const totals = { calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0, prodChecked: 0, prodFindings: 0 };
+  const totals = {
+    calls: 0, candidates: 0, s1: 0, s2a: 0, s2b: 0, s3: 0,
+    prodChecked: 0, prodQualified: 0, prodS1: 0, prodS3: 0, prodDeduped: 0, prodFindings: 0,
+  };
   const findings = [];
   const prodFindings = [];
   // Cross-file index for the production provenance rule (task #1080), built
@@ -1303,14 +1339,45 @@ function main() {
     );
   }
 
+  // Task #1083 — assert the printed arithmetic BEFORE printing it. Each fold
+  // candidate is attributed to exactly one bucket (S1/S2a/S2b/S3/finding) and
+  // each prod-checked arg to exactly one bucket (qualified/S1/S3/deduped/
+  // finding). A counter drift must fail the run here instead of printing a
+  // self-contradictory summary (the pre-#1083 bug printed "53 suppressed"
+  // over 52 raised because prod-flow S1/S3 events shared the fold counters).
   const suppressed = totals.s1 + totals.s2a + totals.s2b + totals.s3;
+  const foldAccounted = suppressed + findings.length;
+  if (foldAccounted !== totals.candidates) {
+    throw new Error(
+      `[${SCRIPT}] counter invariant violated: ${totals.candidates} candidate arg(s) raised, ` +
+        `but the fold buckets account for ${foldAccounted} (${suppressed} suppressed + ` +
+        `${findings.length} finding(s)) — every candidate must land in exactly one of ` +
+        `S1/S2a/S2b/S3/finding; the scanSource() fold counters have drifted. ` +
+        `Fix the counters, not this assert.`,
+    );
+  }
+  const prodSuppressed = totals.prodS1 + totals.prodS3;
+  const prodAccounted =
+    totals.prodQualified + prodSuppressed + totals.prodDeduped + totals.prodFindings;
+  if (prodAccounted !== totals.prodChecked) {
+    throw new Error(
+      `[${SCRIPT}] counter invariant violated: ${totals.prodChecked} prod arg(s) checked, ` +
+        `but the prod buckets account for ${prodAccounted} (${totals.prodQualified} qualified + ` +
+        `${prodSuppressed} suppressed + ${totals.prodDeduped} deduped + ` +
+        `${totals.prodFindings} finding(s)) — every checked arg must land in exactly one of ` +
+        `qualified/S1/S3/deduped/finding; the scanSource() prod counters have drifted. ` +
+        `Fix the counters, not this assert.`,
+    );
+  }
   console.log(
     `\n[${SCRIPT}] scanned ${files.length} file(s), examined ${totals.calls} call site(s); ` +
       `${totals.candidates} candidate arg(s) raised: ${suppressed} suppressed ` +
       `(S1(marker)=${totals.s1} S2a(non-floor)=${totals.s2a} S2b(inverted)=${totals.s2b} ` +
       `S3(negative-ctx)=${totals.s3}), ${findings.length} finding(s); ` +
-      `production provenance rule (src/ only): ${totals.prodChecked} arg(s) checked, ` +
-      `${totals.prodFindings} prod finding(s).`,
+      `production provenance rule (src/ only): ${totals.prodChecked} arg(s) checked — ` +
+      `${totals.prodQualified} qualified, ${prodSuppressed} suppressed ` +
+      `(S1(marker)=${totals.prodS1} S3(negative-ctx)=${totals.prodS3}), ` +
+      `${totals.prodDeduped} deduped into fold finding(s), ${totals.prodFindings} prod finding(s).`,
   );
 
   if (findings.length + prodFindings.length > 0) {
