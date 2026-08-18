@@ -2240,6 +2240,41 @@ for completeness.
     >   card by task #960 (aligned-vmem 0.2.0 pre-publish audit,
     >   2026-08-16, finding 4).
 
+55. **[D] Two wall-clock gaps vs mimalloc measured on a quiet host, and the
+    profiling plan to attribute them — DEFERRED by the owner, nothing
+    measured yet.** (Filed 2026-08-18. Full plan: `docs/perf/PROFILING_NEXT_STEPS_PLAN.md`.)
+
+    - **Status:** OPEN / DEFERRED — owner explicitly parked this. No arm has
+      been run; the plan file carries no measured numbers and therefore owes
+      no raw logs or summary CSV (it is a plan, not a gate report). The
+      moment any arm runs, its output becomes a gate report and inherits the
+      full evidence obligations.
+    - **Current-number-or-verdict:** `bench_direct_alloc` 16 B — **3.28×
+      slower** than mimalloc (36.7 vs 11.2 ns/pair);
+      `bench_global_alloc_churn_with_teardown` 1024 B — **2.25× slower**
+      (99.0 vs 43.9 ns/pair). Both from the QUIET-host `npm run bench:table`
+      run of 2026-08-18; the same day's earlier run is VOID (taken under a
+      concurrent full gate; its own control-arm drift guard fired at
+      `mimalloc median -25.20%, System median -27.70%`). Correction recorded
+      in the plan file: on the loaded run the teardown gap read 1.40× and
+      appeared to be mostly shared physics — on the quiet host our
+      256 B→1024 B jump is ×3.22 vs mimalloc's ×1.97, so **pool-cap
+      exhaustion is the dominant term, not a residual**. Everything else is
+      at or ahead of parity (`bench_churn_alloc` 1024 B is 8.46× FASTER).
+    - **Next trigger:** any decision to attack either gap; any revival of the
+      pool-cap lever (which must repeat R26-1's subprocess-per-arm isolation
+      + resolved-cap hard assert — R25-5's un-isolated "cap 4→8 wins on
+      latency AND RSS" did not reproduce on the RSS axis); any refresh of
+      `docs/PROFILE_FLAMEGRAPHS.md`, whose recipe stands but whose findings
+      predate the segment pool and the large cache.
+    - **Evidence:** `docs/perf/PROFILING_NEXT_STEPS_PLAN.md` (the plan, the
+      tool-per-question split, and the three constraints that decide whether
+      a flamegraph run is worth anything — chiefly that profiling criterion
+      spends ~84% of CPU in criterion's own KDE statistics unless
+      `--profile-time` is used); `benches/global_alloc.rs`'s own
+      `decommit_calls` / `segments_released_total` stderr deltas and the
+      zero-rule in its module doc; `docs/PROFILE_FLAMEGRAPHS.md` §0/§1/§5.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
