@@ -42,8 +42,9 @@
 //! `Reservation::reservation_ptr` / `reservation_len` fields expose the full
 //! reservation; `Reservation::as_ptr` / `len` expose the aligned usable span,
 //! plus page-granularity decommit/recommit so you can hint the OS to return
-//! physical memory while keeping the address-space reservation (on Linux and
-//! Windows this is guaranteed to return physical backing; on the Darwin family
+//! physical memory while keeping the address-space reservation (on Linux,
+//! Android, and Windows this is guaranteed to return physical backing; on the
+//! Darwin family
 //! — macOS/iOS/tvOS/watchOS — and the BSDs, this reclaim is advisory-only and
 //! provides no zero-fill guarantee, see [`decommit`]'s Darwin caveat). If you are building an
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB

@@ -41,7 +41,7 @@ Runnable form: `tests/readme_example.rs`.
 
 | API | Purpose |
 |---|---|
-| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned. On 32-bit Unix, first tries an exact-size mmap fast path; on a miss, or on 64-bit Unix (where the fast path is compiled out — see P-1 below), over-reserves `size + align` and keeps the full mapping. On Windows, over-reserves `size + align` and keeps the full mapping when `align > WIN_ALLOCATION_GRANULARITY` (typically 64 KiB); for `align <= WIN_ALLOCATION_GRANULARITY` uses a single-call fast path with no over-reserve (threshold widens to `GetLargePageMinimum()` when requesting large pages). On 32-bit Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate; scope: 32-bit only — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). On 64-bit Unix, every reservation usually over-reserves in one `mmap` call — the exact-size fast path never runs, so these hit-rate numbers do not apply there (task #944, finding P-1: `try_reserve_aligned_exact` is gated `target_pointer_width = "32"`). Exception on Linux: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). |
+| `reserve_aligned(size, align) -> Option<Reservation>` | Reserve `size` bytes whose base is `align`-aligned. On 32-bit Unix, first tries an exact-size mmap fast path; on a miss, or on 64-bit Unix (where the fast path is compiled out — see P-1 below), over-reserves `size + align` and keeps the full mapping. On Windows, over-reserves `size + align` and keeps the full mapping when `align > WIN_ALLOCATION_GRANULARITY` (typically 64 KiB); for `align <= WIN_ALLOCATION_GRANULARITY` uses a single-call fast path with no over-reserve (threshold widens to `GetLargePageMinimum()` when requesting large pages). On 32-bit Unix, a fast-path miss holds `size + align` bytes of virtual address space for the reservation's lifetime (measured hit rate: 34.4% at 64 KiB align, 46.7% at 1 MiB, 56.7% at 4 MiB — commit `35d51e6`, task #849; measured on WSL2/Linux, x86_64; 30-run aggregate; scope: 32-bit only — the hit rate is kernel- and ASLR-dependent and is not expected to transfer to other Unix platforms). On 64-bit Unix, every reservation usually over-reserves in one `mmap` call — the exact-size fast path never runs, so these hit-rate numbers do not apply there (task #944, finding P-1: `try_reserve_aligned_exact` is gated `target_pointer_width = "32"`). Exception on Linux and Android: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). |
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the requested reservation length (not necessarily the actual OS reservation size). |
 | `Reservation::into_parts() -> (*mut u8, usize, usize)` | Take the raw reservation, suppress `Drop`, for self-hosted release (legacy tuple form). |
 | `Reservation::into_reservation_parts() -> ReservationParts` | Take the raw reservation, suppress `Drop`, for self-hosted release (typed form). |
@@ -49,8 +49,8 @@ Runnable form: `tests/readme_example.rs`.
 | `release_parts(ReservationParts)` (unsafe) | Release a reservation taken via `into_reservation_parts`, exactly once (typed form). |
 | `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
 | `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
-| `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Hint the OS to return page-granular physical backing (guaranteed on Linux/Windows, best-effort on Darwin/BSDs with no zero-fill guarantee) / re-commit it. |
-| `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
+| `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Hint the OS to return page-granular physical backing (guaranteed on Linux/Android/Windows, best-effort on Darwin/BSDs with no zero-fill guarantee) / re-commit it. |
+| `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux/Android `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
 | `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
 | `PAGE` | Minimum decommit granularity constant (4 KiB) — superseded by `page_size()` on hosts with larger pages (see `MIN_PAGE` for the underlying constant). |
 | `MIN_PAGE` | Underlying minimum page size constant (4 KiB). |
@@ -62,7 +62,8 @@ discards the cause. Optional features: `lazy-commit` (incremental commit:
 `reserve_aligned_lazy` + `commit_range`; the `alloc-lazy-commit` name is kept
 as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
 to `lazy-commit` now), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
-`MEM_LARGE_PAGES`, best-effort with fallback — **on Linux, `size` and `align`
+`MEM_LARGE_PAGES`, best-effort with fallback — **on Linux and Android,
+`size` and `align`
 must both additionally be multiples of the huge-page size (2 MiB), or the
 request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path; the two-call path never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
 to ordinary pages — see the function's own rustdoc for the full technical
@@ -117,7 +118,7 @@ instead. Since task #1051 the eager `decommit` additionally trips a
 `debug_assert!` on a violated range in DEBUG builds (zero cost — and still a
 silent no-op — in release); `decommit_lazy` silently skips on every profile,
 and `try_decommit` reports the violation as `Err` on every profile.
-- On Linux with `huge-pages` enabled, `reserve_aligned_huge`/
+- On Linux and Android with `huge-pages` enabled, `reserve_aligned_huge`/
   `try_reserve_aligned_huge` additionally require `size` and `align` to both
   be multiples of the huge-page size (2 MiB) — see that function's own
   rustdoc.
@@ -156,9 +157,9 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
 - **Windows: a write before recommit is a hard crash, not a soft re-fault.**
   `MEM_DECOMMIT` genuinely unmaps the pages, so writing into
   `[base+start, base+end)` before calling `recommit` raises a
-  `STATUS_ACCESS_VIOLATION` on Windows. On Linux, `MADV_DONTNEED` keeps the
+  `STATUS_ACCESS_VIOLATION` on Windows. On Linux and Android, `MADV_DONTNEED` keeps the
   mapping resident and transparently re-faults a fresh zero page on the next
-  write, so code that is safe on Linux can crash on Windows. This exact
+  write, so code that is safe on Linux or Android can crash on Windows. This exact
   divergence has already crashed an in-repo consumer — see
   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
   item 6 for the incident record.
@@ -169,15 +170,15 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
   uncommitted tail raises a `STATUS_ACCESS_VIOLATION`. This is different from
   eager reservations (`reserve_aligned`), where the entire `len()` span is
   writable from the start.
-- **Huge pages: decommit does nothing, on either OS.** When a reservation
+- **Huge pages: decommit does nothing, on every OS that can grant them.** When a reservation
   came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
-  `decommit` does not work on it on either Windows or Linux: `VirtualFree`
+  `decommit` does not work on it on Windows, Linux, or Android: `VirtualFree`
   fails on large-page regions on Windows, and `madvise` on a `MAP_HUGETLB`
-  mapping only accepts huge-page-granular offsets on Linux, so a
+  mapping only accepts huge-page-granular offsets on Linux/Android, so a
   `page_size()`-granular call gets `EINVAL` and does nothing. The effect is
   indistinguishable from a silent no-op — RSS does not drop and reads return
   the old data. Use `reserve_aligned` instead if you need working decommit.
-  **Note:** Huge-page support on Linux (`reserve_aligned_huge` with the
+  **Note:** Huge-page support on Linux and Android (`reserve_aligned_huge` with the
   `huge-pages` feature) requires kernel >= 3.8 for correct `MAP_HUGE_2MB`
   size encoding. On kernels older than 3.8, the size bits are ignored and
   the system's configured default huge-page size is used instead of the
@@ -185,7 +186,7 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
 - **Darwin (macOS/iOS/tvOS/watchOS): no zero-fill, no RSS return, on ordinary
   reservations too.**
   `MADV_DONTNEED` is advisory-only for anonymous memory on Darwin, so unlike
-  Linux it does not reliably unmap the physical pages: a decommit +
+  Linux and Android it does not reliably unmap the physical pages: a decommit +
   `recommit` round trip on any Darwin target can still observe the old data
   instead of a fresh zero page, even for a non-huge reservation. Confirmed as a real,
   failing-test-level gap by this crate's first real-macOS CI run on
@@ -199,7 +200,7 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
 - **BSD (FreeBSD/DragonFly/NetBSD/OpenBSD): the same advisory-only eager
   `decommit` caveat as Darwin, but lazy `decommit_lazy` genuinely reclaims.**
   `MADV_DONTNEED` is advisory-only for anonymous memory on the four BSDs too
-  — like Darwin and unlike Linux, eager `decommit` does not reliably unmap
+  — like Darwin, and unlike Linux and Android, eager `decommit` does not reliably unmap
   the physical pages there, so the same "no zero-fill, no RSS return" gap
   applies. Unlike eager `decommit`, though, `decommit_lazy`'s `MADV_FREE`
   advice on BSD (as on Darwin's `MADV_FREE_REUSABLE`) DOES do something real:
@@ -233,7 +234,7 @@ The following targets are supported but have not been empirically verified in CI
 - **Android (bionic)** — 32-bit targets use a 32-bit `off_t` by default (matching glibc behavior without `_FILE_OFFSET_BITS=64`); this is reasoned from bionic's design documentation, not CI-verified.
 - **32-bit musl Linux** (e.g., `armv7-unknown-linux-musleabihf`) — `off_t` is correctly declared as 64-bit on all musl architectures (musl uses 64-bit `off_t` on all architectures), so the crate's dual-arch `OffT` type is safe; the i686-unknown-linux-musl target is compile-checked in CI (see the CI-verified list above), but other 32-bit musl targets are not.
 - **Apple platforms beyond macOS** (iOS, tvOS, watchOS) — constants and behavior are derived from Apple's unified documentation; no CI runner currently tests these targets.
-- **MIPS** — **not supported (compile_error!)**. MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux. MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while this crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) but the failure is silent (no diagnostic points to the constant error). Rather than compile a buildable-but-broken crate, MIPS targets fail compilation with a clear diagnostic. This is a release decision; see `docs/CORRECTNESS_OPEN_ITEMS.md` for the decision record. Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values.
+- **MIPS** — **not supported (compile_error!)**. MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux/Android. MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while this crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) but the failure is silent (no diagnostic points to the constant error). Rather than compile a buildable-but-broken crate, MIPS targets fail compilation with a clear diagnostic. This is a release decision; see `docs/CORRECTNESS_OPEN_ITEMS.md` for the decision record. Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values.
 
 **Note:** The absence of CI verification for a target means only that this project's own test suite has not executed on that platform. The platform-specific constants (e.g., `MADV_DONTNEED = 4`, Linux's `_SC_PAGESIZE = 30`, macOS's `_SC_PAGESIZE = 29`) are sourced from the respective OS's official documentation and header files. If you use this crate on a reasoned-from-spec target and encounter issues, please file a bug report — the intent is to support the full `cfg(unix)` and `cfg(windows)` families.
 

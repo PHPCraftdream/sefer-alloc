@@ -7,11 +7,12 @@ use crate::Reservation;
 use super::internal::{finish_reservation_huge, validate_size_align};
 
 /// Reserve `size` bytes aligned to `align`, requesting OS **large / huge
-/// pages** (Linux `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`).
-/// Currently a **no-op on macOS and other non-Linux Unix** — it falls back to
+/// pages** (Linux/Android `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`).
+/// Currently a **no-op on macOS and other Unix that is neither Linux nor
+/// Android** — it falls back to
 /// an ordinary reservation, identical to [`reserve_aligned`](crate::api::reserve_aligned).
 ///
-/// **Transparent-huge-page hinting (Linux `MADV_HUGEPAGE`) is not used:** it
+/// **Transparent-huge-page hinting (Linux/Android `MADV_HUGEPAGE`) is not used:** it
 /// cannot affect an already-explicitly-huge `MAP_HUGETLB` mapping (the pages
 /// are already huge), so issuing it would be a wasted syscall. This crate's
 /// strategy is the explicit hugetlbfs path only.
@@ -27,8 +28,10 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// method.
 ///
 /// Base/align/size contract is otherwise identical to [`reserve_aligned`](crate::api::reserve_aligned),
-/// **except on Linux with `huge-pages` enabled**: `size` and `align` must BOTH
-/// additionally be multiples of the Linux huge-page size (2 MiB) — a request
+/// **except on Linux AND Android with `huge-pages` enabled** (the check's
+/// cfg is `any(target_os = "linux", target_os = "android")` + `feature =
+/// "huge-pages"`): `size` and `align` must BOTH
+/// additionally be multiples of the huge-page size (2 MiB) — a request
 /// that only satisfies `reserve_aligned`'s own weaker `PAGE`-multiple contract
 /// is rejected with `VmemError::invalid_argument()` before any syscall runs,
 /// even though such a request could previously succeed there via the documented
@@ -77,9 +80,10 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// large pages, so the result never has
 /// [`Reservation::is_huge`](crate::Reservation::is_huge) == `true`.
 ///
-/// **Decommit incompatibility:** on both Windows and Linux, [`decommit`](crate::api::decommit) and
+/// **Decommit incompatibility:** on Windows, Linux, and Android alike, [`decommit`](crate::api::decommit) and
 /// [`decommit_lazy`](crate::api::decommit_lazy) **do not work** on huge-page reservations. On Windows,
-/// `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions. On Linux,
+/// `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions. On Linux
+/// and Android,
 /// `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted only at
 /// huge-page granularity, so any [`page_size()`](crate::page_size::page_size)-granular offset gets `EINVAL`
 /// and does nothing. The behavior is therefore indistinguishable from a silent
@@ -87,13 +91,14 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// old (stale) data rather than zeroed pages. Use [`reserve_aligned`](crate::api::reserve_aligned) instead
 /// if you need decommit functionality.
 ///
-/// **Linux hugetlb pool over-reserve (`align > 2 MiB`):** when huge pages
+/// **Linux/Android hugetlb pool over-reserve (`align > 2 MiB`):** when huge pages
 /// are actually granted through the over-reserve path — which is every
 /// granted `align > 2 MiB` request (the exact-size fast path exists only
 /// for `align == LINUX_HUGE_PAGE_SIZE`, 2 MiB), and an `align == 2 MiB`
 /// request only when that fast path misses — the whole `size + align`-byte
-/// `MAP_HUGETLB` mapping is kept for the reservation's lifetime, and Linux
-/// reserves pool pages for a private hugetlb mapping's entire length at
+/// `MAP_HUGETLB` mapping is kept for the reservation's lifetime, and the
+/// Linux kernel reserves pool pages for a private hugetlb mapping's entire
+/// length at
 /// `mmap` time (no `MAP_NORESERVE` is passed). The exactly `align` bytes
 /// of never-touched slack are therefore charged against the bounded
 /// `nr_hugepages` pool until the reservation is released: a
@@ -114,8 +119,11 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 // Historical notes (task #776, #714, #848, #843):
 //
 // - task #776, F3: Linux huge-page request additionally requires both size
-//   and align to be multiples of the Linux huge-page size (2 MiB), rejecting
-//   PAGE-multiple requests that `reserve_aligned` accepts. This was added to
+//   and align to be multiples of the huge-page size (2 MiB), rejecting
+//   PAGE-multiple requests that `reserve_aligned` accepts. (Android joined
+//   the same `any(target_os = "linux", target_os = "android")` cfg arm in
+//   task #944/U-2, so this contract has been Linux/Android-common since
+//   then.) This was added to
 //   close a real `munmap` mapping leak (task #714); the trade-off is a
 //   stricter contract in exchange for provable correctness.
 //
@@ -126,7 +134,7 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 //   it is `align <= WIN_ALLOCATION_GRANULARITY`, 64 KiB.)
 //
 // - task #843, V4: decommit does not work on huge-page reservations on either
-//   platform (Windows: VirtualFree fails; Linux: MADV_DONTNEED/MADV_FREE
+//   platform (Windows: VirtualFree fails; Linux/Android: MADV_DONTNEED/MADV_FREE
 //   requires huge-page granularity).
 #[must_use]
 #[cfg(feature = "huge-pages")]

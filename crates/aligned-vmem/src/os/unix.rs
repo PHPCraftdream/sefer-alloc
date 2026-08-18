@@ -30,8 +30,8 @@ pub(crate) fn reserve_aligned_raw(
 
 /// Unix reservation shared by the eager and huge paths. When `huge` is `true`
 /// the exact-size fast path and over-reserve fallback both request
-/// `MAP_HUGETLB` (Linux) and fall back to ordinary pages if the huge mapping
-/// fails.
+/// `MAP_HUGETLB` (Linux/Android) and fall back to ordinary pages if the huge
+/// mapping fails.
 ///
 /// Returns `(base, reservation, reservation_len, granted_huge)` where
 /// `granted_huge` is `true` iff `huge` was `true` and the huge-page request
@@ -47,8 +47,9 @@ pub(crate) fn reserve_aligned_raw(
 /// before this task); the final returned error is always the over-reserve
 /// attempt's own.
 ///
-/// task #714 (rust-intel audit MEDIUM §F1): on Linux, `huge` requests
-/// `MAP_HUGETLB`, and Linux's `mmap(2)` "Huge TLB mappings" section requires
+/// task #714 (rust-intel audit MEDIUM §F1): on Linux and Android, `huge`
+/// requests `MAP_HUGETLB`, and the Linux kernel's `mmap(2)` "Huge TLB
+/// mappings" section requires
 /// BOTH `munmap(2)`'s `addr` and `length` to be multiples of the huge page
 /// size (`man 2 mmap`: "the length ... must also be huge page aligned" for
 /// `MAP_HUGETLB`; the kernel additionally guarantees an anonymous
@@ -62,7 +63,8 @@ pub(crate) fn reserve_aligned_raw(
 /// REASONED-FROM-SPEC, NOT empirically verified (per this task's own
 /// instruction: no hugetlb-configured host is in this project's CI). Fixed
 /// by requiring `size` AND `align` to both be multiples of
-/// [`LINUX_HUGE_PAGE_SIZE`] before attempting a Linux huge-page reservation
+/// [`LINUX_HUGE_PAGE_SIZE`] before attempting a Linux/Android huge-page
+/// reservation
 /// at all — with both huge-page-aligned, `over = size + align` is also
 /// huge-page-aligned, so the whole-mapping `munmap` calls this function makes
 /// (release_reservation unmaps the entire `reservation_len` span) are
@@ -90,7 +92,7 @@ fn unix_reserve(
     {
         return Err(VmemError::invalid_argument());
     }
-    // II-4 (2026-08-16 audit finding): Linux exact-size huge-page fast path
+    // II-4 (2026-08-16 audit finding): Linux/Android exact-size huge-page fast path
     // for `align == LINUX_HUGE_PAGE_SIZE` (2 MiB). The kernel guarantees an
     // anonymous MAP_HUGETLB mapping with addr == NULL starts at a huge-page-
     // aligned address (see the doc comment above), so an exact-size mmap
@@ -269,7 +271,7 @@ fn unix_reserve(
     // LINUX_HUGE_PAGE_SIZE` request — the II-4 fast path above covers only
     // `align == LINUX_HUGE_PAGE_SIZE` — plus an `align == 2 MiB` request
     // whose exact-size attempt missed), the cost is not merely VA:
-    // `libc_mmap` passes no `MAP_NORESERVE`, and Linux reserves hugetlb
+    // `libc_mmap` passes no `MAP_NORESERVE`, and the Linux kernel reserves hugetlb
     // pool pages for a private `MAP_HUGETLB` mapping's entire length at
     // mmap time, so the whole `over`-byte span — including the slack — is
     // charged against the bounded `nr_hugepages` pool for the
@@ -380,7 +382,7 @@ fn try_reserve_aligned_exact(
     // SAFETY: non-null and proven `align`-aligned.
     let base = unsafe { NonNull::new_unchecked(region_ptr as *mut u8) };
     // `granted_huge` reflects what was actually requested AND what the OS supports.
-    // On non-Linux Unix the `huge` flag is silently ignored, so we report false.
+    // On Unix that is neither Linux nor Android the `huge` flag is silently ignored, so we report false.
     // This is correct because `MAP_HUGETLB` fails the WHOLE `mmap` call when
     // 2 MiB hugetlb pages are unavailable (an all-or-nothing kernel behavior),
     // so "the caller asked for huge and mmap succeeded" implies a grant.
@@ -438,9 +440,9 @@ pub(crate) unsafe fn recommit_pages_impl(
     _start: usize,
     _end: usize,
 ) -> Result<(), VmemError> {
-    // On Linux, re-access after MADV_DONTNEED is implicit — the kernel
-    // actually unmaps the physical pages, so the next write re-faults a
-    // fresh zero page. No syscall, cannot fail, on Linux.
+    // On Linux and Android, re-access after MADV_DONTNEED is implicit — the
+    // kernel actually unmaps the physical pages, so the next write re-faults
+    // a fresh zero page. No syscall, cannot fail, on Linux and Android.
     //
     // CAVEAT (confirmed as a real, failing-test-level gap by this crate's
     // first real-macOS CI run, 2026-08-13 -- the underlying hazard was
@@ -492,7 +494,7 @@ pub(crate) fn reserve_aligned_huge_raw(
 }
 
 /// Select the lazy-decommit `madvise` advice for this platform.
-/// Linux: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; FreeBSD/DragonFly:
+/// Linux/Android: `MADV_FREE`; macOS/iOS: `MADV_FREE_REUSABLE`; FreeBSD/DragonFly:
 /// `MADV_FREE` (5); NetBSD/OpenBSD: `MADV_FREE` (6). tvOS/watchOS are routed
 /// to the `MADV_DONTNEED` fallback below (the `cfg` arms below match only
 /// `any(target_os = "macos", target_os = "ios")`, not tvOS/watchOS — see
@@ -588,10 +590,12 @@ const MAP_ANON: i32 = 0x20;
 const MAP_ANON: i32 = 0x1000;
 
 /// task #918 (finding H2C7): Compile-time error for Unix targets without a
-/// `MAP_ANON` definition. Several real `cfg(unix)` targets (e.g. Android
-/// `aarch64-linux-android`, illumos `x86_64-unknown-illumos`, Solaris
-/// `x86_64-pc-solaris`) set `unix` but do NOT match either of the two
-/// `MAP_ANON` cfg arms above (Linux or Darwin/BSD). Without this guard,
+/// `MAP_ANON` definition. Several real `cfg(unix)` targets (e.g. illumos
+/// `x86_64-unknown-illumos`, Solaris `x86_64-pc-solaris`) set `unix` but do
+/// NOT match either of the two `MAP_ANON` cfg arms above (Linux/Android or
+/// Darwin/BSD). (Android's `aarch64-linux-android` was on this example list
+/// before task #944/U-2 wired it into the Linux/Android arm — it matches that
+/// arm now, so it is no longer an example.) Without this guard,
 /// `libc_mmap` fails with a bare `error[E0425]: cannot find value MAP_ANON
 /// in this scope` — fails closed (no unsoundness), but with an unattributable
 /// compiler error rather than a clear diagnostic naming the actual reason
@@ -647,14 +651,14 @@ compile_error!(
      for the release decision record."
 );
 
-/// Linux `MAP_HUGETLB` (request huge pages at mmap time).
+/// Linux/Android `MAP_HUGETLB` (request huge pages at mmap time).
 ///
 /// Same architecture caveat as `MAP_ANON` above: `0x40000` is correct on
 /// x86/x86_64/aarch64/arm/riscv/powerpc, wrong on MIPS (`0x80000` per
 /// `arch/mips/include/uapi/asm/mman.h`) — see the note above `MAP_ANON` for
 /// the full rationale and failure mode. Android's bionic libc runs on the
 /// Linux kernel, so the Linux value applies directly; Android is covered by
-/// the same `target_os = "linux"` arm.
+/// the same cfg arm (`any(target_os = "linux", target_os = "android")`).
 #[cfg(all(
     unix,
     not(miri),
@@ -663,7 +667,7 @@ compile_error!(
 ))]
 const MAP_HUGETLB: i32 = 0x40000;
 
-/// Linux `MAP_HUGE_2MB` (request 2 MiB huge pages at mmap time).
+/// Linux/Android `MAP_HUGE_2MB` (request 2 MiB huge pages at mmap time).
 ///
 /// This flag explicitly requests the 2 MiB huge page size, overriding the
 /// system's configured default huge-page size (set via the kernel boot
@@ -681,8 +685,8 @@ const MAP_HUGETLB: i32 = 0x40000;
 /// was introduced in Linux 3.8 (2013); on older kernels these bits are not
 /// interpreted by the `MAP_HUGETLB` path and the system's default huge-page size
 /// is used instead. Android's bionic libc runs on the Linux kernel, so the
-/// Linux value applies directly; Android is covered by the same
-/// `target_os = "linux"` arm.
+/// Linux value applies directly; Android is covered by the same cfg arm
+/// (`any(target_os = "linux", target_os = "android")`).
 #[cfg(all(
     unix,
     not(miri),
@@ -692,12 +696,14 @@ const MAP_HUGETLB: i32 = 0x40000;
 const MAP_HUGE_2MB: i32 = 21 << 26;
 
 /// task #852 (W2): `HUGE_SUPPORTED` is true only on Linux or Android with the
-/// `huge-pages` feature enabled. Non-Linux Unix (macOS, iOS, BSD, etc.) do NOT
+/// `huge-pages` feature enabled. Unix that is neither Linux nor Android
+/// (macOS, iOS, BSD, etc.) does NOT
 /// support `MAP_HUGETLB` — the `libc_mmap` function silently ignores the `huge`
 /// parameter on those platforms. This constant is used to ensure `granted_huge`
 /// reports the ACTUAL grant, not just the request. Android's bionic libc runs on
-/// the Linux kernel, so Android is covered by the same `target_os = "linux"`
-/// arm and gets huge-page support when the feature is enabled.
+/// the Linux kernel, so Android is covered by the same cfg arm
+/// (`any(target_os = "linux", target_os = "android")`)
+/// and gets huge-page support when the feature is enabled.
 #[cfg(all(
     unix,
     not(miri),
@@ -715,7 +721,8 @@ const HUGE_SUPPORTED: bool = true;
 ))]
 const HUGE_SUPPORTED: bool = false;
 
-/// task #909: the Linux huge page size this crate explicitly requests via
+/// task #909: the huge-page size (2 MiB, named `LINUX_HUGE_PAGE_SIZE` after
+/// its origin) this crate explicitly requests via
 /// `MAP_HUGE_2MB` (not the system's configured default). Before this fix,
 /// the crate used plain `MAP_HUGETLB` and relied on a now-falsified premise
 /// that "the default is always 2 MiB on mainstream x86_64/aarch64 Linux" —
@@ -733,7 +740,8 @@ const HUGE_SUPPORTED: bool = false;
 /// REASONED-FROM-SPEC, not empirically verified on a real hugetlb-configured host
 /// with a non-2-MiB default `default_hugepagesz` (none is in this project's CI).
 /// Android's bionic libc runs on the Linux kernel, so the Linux value applies
-/// directly; Android is covered by the same `target_os = "linux"` arm.
+/// directly; Android is covered by the same cfg arm
+/// (`any(target_os = "linux", target_os = "android")`).
 #[cfg(all(
     unix,
     not(miri),
@@ -748,7 +756,7 @@ const MAP_FAILED: usize = usize::MAX;
 // above, both unused under `mock`.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
 const MADV_DONTNEED: i32 = 4;
-/// Linux `MADV_FREE` (lazy reclaim under pressure).
+/// Linux/Android `MADV_FREE` (lazy reclaim under pressure).
 #[cfg(all(unix, not(miri), any(target_os = "linux", target_os = "android")))]
 // mock (task #646/F8): see MADV_DONTNEED above.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
