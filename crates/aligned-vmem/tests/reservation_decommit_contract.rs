@@ -15,9 +15,12 @@
 //! Profile mechanics: `cargo test` builds tests in debug, so the
 //! `#[cfg(debug_assertions)]` tests below are what CI's debug rows run; the
 //! `#[cfg(not(debug_assertions))]` tests compile into `--release` runs.
-//! CI has NO `--release` row for this package (item 72 in
-//! `docs/CORRECTNESS_OPEN_ITEMS.md`), so the release half executes only on
-//! local `cargo test --release` runs until the owner adds one.
+//! Since task #1086 (L10) both the aligned-vmem-gates job (ci.yml) and the
+//! local gate (scripts/check-all.mjs) run a `--release` +
+//! `--cfg aligned_vmem_mock` row scoped to THIS test target, so the release
+//! half — including the mock release oracle below — executes in CI and
+//! locally (a plain whole-package `--release` row remains open as item 72
+//! in `docs/CORRECTNESS_OPEN_ITEMS.md`).
 
 use aligned_vmem::{page_size, reserve_aligned};
 
@@ -125,7 +128,11 @@ fn method_silently_skips_a_violated_range_in_release() {
 /// really exercised the method (a "no records" assert with no positive
 /// control could pass vacuously if the recorder itself were broken).
 /// Mock+release only: in mock+debug the tripwire panics first, and without
-/// the mock cfg there is no recorder.
+/// the mock cfg there is no recorder. Executed by the task #1086 (L10)
+/// mock-release rows (ci.yml aligned-vmem-gates + scripts/check-all.mjs),
+/// which also assert this test's name appears in the output — a typo'd
+/// `--cfg aligned_vmem_mock` turns those rows red instead of compiling
+/// this test silently away.
 #[test]
 #[cfg(all(aligned_vmem_mock, not(debug_assertions)))]
 fn method_records_nothing_for_a_violated_range_in_release_mock() {

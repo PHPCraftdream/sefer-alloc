@@ -166,12 +166,52 @@ fn page_size_and_range_hooks_report_the_runtime_page_safe_boundary() {
     assert!(start < SegmentLayout::SEGMENT);
 }
 
+// L9 (task #1086): the forced-page half must run WITHOUT
+// `small-segment-lazy-commit` — the decommit/recommit hooks' `# Safety`
+// contract requires a fully committed payload, and under that feature a
+// fresh small segment commits only the lazy initial chunk. Before this
+// guard the exclusion was a comment promise only: a hand-run build with
+// BOTH the override cfg and the feature (e.g. a `--all-features` cargo
+// test) compiled the module in and called the unsafe hooks on a partially
+// committed segment with no diagnostic (verified: the forced test
+// compiled and listed under `--features "production
+// small-segment-lazy-commit internals bench-internals"` plus the cfg).
+// The cfg pair below mirrors the module gate with the feature flipped,
+// so that combination now fails the BUILD instead. The wired rows
+// (scripts/check-all.mjs and the ci.yml test-windows job) use
+// `--features "production internals bench-internals"` — no
+// small-segment-lazy-commit — so they are unaffected.
+#[cfg(all(
+    aligned_vmem_page_size_override,
+    feature = "small-segment-lazy-commit",
+    not(feature = "numa-aware"),
+    not(miri)
+))]
+compile_error!(
+    "tests/decomp_hooks_forced_page.rs: the forced-page decomp-hook test \
+     requires the small segment to be reserved eagerly (fully committed) — \
+     the dbg_decomp_decommit_payload / dbg_decomp_recommit_payload # Safety \
+     precondition. Rebuild without the small-segment-lazy-commit feature \
+     (the wired rows use --features production internals bench-internals)."
+);
+
 /// Forced-page half (task #1080's `--cfg aligned_vmem_page_size_override`
 /// seam): drives the REAL decommit/recommit hooks on a REAL reserved segment
 /// under 16 KiB and 64 KiB runtime pages. ONE test on purpose — the override
 /// is process-global (see the file-level docs).
+///
+/// The hooks' documented `# Safety` precondition is a fully committed
+/// payload, which holds only when the small segment is reserved EAGERLY —
+/// i.e. WITHOUT `small-segment-lazy-commit` (under that feature a fresh
+/// small segment commits only the lazy initial chunk). Task #1086 (L9)
+/// makes that precondition mechanical rather than a comment: the cfg
+/// below excludes the feature, and the `compile_error!` guard directly
+/// above this module turns the contradictory combination (override cfg +
+/// the feature ON) into a loud build failure instead of a silent unsafe
+/// call on a partially committed segment.
 #[cfg(all(
     aligned_vmem_page_size_override,
+    not(feature = "small-segment-lazy-commit"),
     not(feature = "numa-aware"),
     not(miri)
 ))]
@@ -198,9 +238,29 @@ mod forced_page {
     fn decomp_hooks_decommit_recommit_page_aligned_under_forced_pages() {
         let _serial = super::SERIAL.lock().unwrap_or_else(|p| p.into_inner());
 
+        // The host's REAL page, queried before any override is armed: the
+        // override seam (since task #1085) correctly REJECTS forcing a
+        // page smaller than the real one — a below-real override would
+        // loosen every page-multiple validator below what the hardware
+        // rounds to. On a 64 KiB-page host that rejects this loop's
+        // 16 KiB arm, so an unusable arm is SKIPPED here rather than
+        // asserted-accepted; `executed` then keeps the skip honest — if
+        // EVERY arm were below the real page the test would otherwise
+        // pass having verified nothing.
+        let real_page = aligned_vmem::page_size();
+        let mut executed = 0usize;
+
         // Both sizes where the tight const boundary and the runtime-safe
         // boundary diverge for every known layout (see the pure test above).
         for &forced in &[16 * 1024, 64 * 1024] {
+            if forced < real_page {
+                eprintln!(
+                    "skipping the {forced}-byte forced-page arm: the host's real \
+                     page is {real_page} bytes, and the override seam correctly \
+                     rejects forcing a smaller page (task #1085)"
+                );
+                continue;
+            }
             // Guard FIRST: everything after this line runs under the
             // override, and a panic unwinds through this Drop before any
             // sibling observation. Restores the real page at the end of EACH
@@ -243,7 +303,9 @@ mod forced_page {
             // Drive the REAL hooks on a real reserved segment. Under plain
             // `production` (no `small-segment-lazy-commit`) the small segment
             // is reserved eagerly, so the hooks' documented `# Safety`
-            // precondition ("payload fully committed") genuinely holds.
+            // precondition ("payload fully committed") genuinely holds —
+            // enforced mechanically by the module cfg + compile_error! guard
+            // (task #1086/L9), not just by this comment.
             let mut a = AllocCore::new().expect("AllocCore::new must survive the forced page");
             let handle = a
                 .dbg_decomp_reserve_and_keep()
@@ -275,6 +337,16 @@ mod forced_page {
             // Drop the allocator BEFORE the guard restores the real page
             // size (same ordering discipline as the #1080 forced-page test).
             drop(a);
+            executed += 1;
         }
+
+        assert!(
+            executed >= 1,
+            "no forced-page arm was executable on this host (real page \
+             {real_page} bytes): every candidate forced page was below the \
+             real page and was skipped — this host cannot run the \
+             forced-page decomp-hook oracle, and passing vacuously would be \
+             worse than failing loudly"
+        );
     }
 }

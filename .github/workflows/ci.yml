@@ -184,6 +184,22 @@ jobs:
       - run: cargo test -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals"
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
+      # Task #1086 (L10): the RELEASE half of the mock decommit-contract
+      # oracle — `method_records_nothing_for_a_violated_range_in_release_mock`
+      # (tests/reservation_decommit_contract.rs) is gated
+      # all(aligned_vmem_mock, not(debug_assertions)), and before this row no
+      # row anywhere combined the mock cfg with --release, so it executed
+      # nowhere. Scoped to the one test target to keep the release-compile
+      # cost minimal; the grep keeps the row self-verifying the same way the
+      # forced-page rows above are. Explicit `shell: bash` for `-o pipefail`
+      # (the linux default shell runs without it, which would let a cargo
+      # failure hide behind the tee pipeline's exit status).
+      - run: |
+          cargo test --release -p aligned-vmem --features "lazy-commit huge-pages fault-injection bench-internals" --test reservation_decommit_contract 2>&1 | tee "$RUNNER_TEMP/reservation-decommit-release-mock.log"
+          grep -F "test method_records_nothing_for_a_violated_range_in_release_mock ... ok" "$RUNNER_TEMP/reservation-decommit-release-mock.log"
+        shell: bash
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_mock"
       # Task #851: miri compilation gate. NO miri interpreter required — this
       # is just `cargo check` with the `miri` cfg set, which catches the
       # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.
@@ -881,21 +897,49 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
-      # Task #1080: the forced-page lazy-commit call-site regression — drives
-      # the REAL bootstrap.rs/alloc_core_small.rs lazy-reservation call sites
-      # under a simulated 64 KiB runtime page so the task #1074 compile-time-
-      # PAGE bug class fails loudly on this 4 KiB-page runner. The override is
-      # the test-only --cfg aligned_vmem_page_size_override build flag (the
-      # task #962 conversion pattern: a Cargo feature would unify across the
-      # dependency graph; a cfg flag is explicit per-build only).
-      - run: cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page
+      # Task #1086 (M6): each forced-page row is now self-verifying —
+      # without the grep, a typo'd RUSTFLAGS cfg name (e.g. `--cfg
+      # aligned_vmem_page_size_overide`) silently compiles the forced
+      # module OUT and the row still passes green on the file's ungated
+      # pure tests (exit 0 with 1-2 tests), the same vacuous-green class
+      # the local gate's expectWork/expectTest assertions exist for (tasks
+      # #1071/#1086). `bash -eo pipefail` (the Actions default when
+      # `shell: bash` is set) fails the step if cargo fails even through
+      # the tee pipe; the grep then fails it unless the forced test's name
+      # appears in the harness output.
+      - run: |
+          cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-lazy.log"
+          grep -F "test forced_page::lazy_initial_commit_call_sites_survive_a_forced_64k_page ... ok" "$RUNNER_TEMP/forced-page-lazy.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # Task #1081: the decomp-hook forced-page regression — drives the REAL
       # R29-3 decommit/recommit hooks under simulated 16/64 KiB runtime pages
       # (same override seam as the row above; the F6 small_meta_end()
       # boundary violation is invisible on 4 KiB hosts by construction).
-      - run: cargo test --features "production internals bench-internals" --test decomp_hooks_forced_page
+      # Same task #1086 self-verifying shape as the row above.
+      - run: |
+          cargo test --features "production internals bench-internals" --test decomp_hooks_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-decomp.log"
+          grep -F "test forced_page::decomp_hooks_decommit_recommit_page_aligned_under_forced_pages ... ok" "$RUNNER_TEMP/forced-page-decomp.log"
+        shell: bash
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+      # Task #1087: the segment-state reconciliation oracle
+      # (tests/segment_state_reconciliation_oracle.rs) — two rows mirroring
+      # the two verified invocation shapes: the LAZY arm on the host's real
+      # page (no RUSTFLAGS), and the FORCED-page arm through the same
+      # override seam as the rows above. Both carry the grep assertion:
+      # that file deliberately compiles ZERO tests in the (no-override,
+      # no-lazy) combination, so a dropped feature or a typo'd cfg would
+      # otherwise pass green on an empty binary.
+      - run: |
+          cargo test --features "production internals bench-internals small-segment-lazy-commit" --test segment_state_reconciliation_oracle 2>&1 | tee "$RUNNER_TEMP/reconciliation-lazy.log"
+          grep -F "test retain_decommitted_retained_meta_bytes_oracle_lazy_real_page ... ok" "$RUNNER_TEMP/reconciliation-lazy.log"
+        shell: bash
+      - run: |
+          cargo test --features "production internals bench-internals" --test segment_state_reconciliation_oracle 2>&1 | tee "$RUNNER_TEMP/reconciliation-forced.log"
+          grep -F "test retain_decommitted_retained_meta_bytes_oracle_forced_pages ... ok" "$RUNNER_TEMP/reconciliation-forced.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # The magazine-in-isolation config (fastbin without decommit) exercises the

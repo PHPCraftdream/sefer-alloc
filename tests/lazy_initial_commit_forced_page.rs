@@ -206,10 +206,22 @@ mod forced_page {
         // and a panic unwinds through this Drop before sibling tests run.
         let _restore = RestorePageSize;
 
-        // Force the runtime page-size query to 64 KiB ...
+        // Force the runtime page-size query to 64 KiB ... Since task #1085
+        // the seam also rejects a value smaller than the host's REAL page;
+        // for this 64 KiB-only test that rejection is the RIGHT failure,
+        // not something to skip past — there is no second arm to fall back
+        // to, so a host that cannot run the forced-64 KiB oracle must fail
+        // loudly rather than pass vacuously (every real Windows
+        // configuration — 4 KiB x64, 64 KiB ARM64 — accepts 64 KiB, so the
+        // assert is unreachable there; it trips only on hypothetical
+        // larger-page hosts).
         assert!(
             aligned_vmem::page_size_override::set_page_size_override(Some(64 * 1024)),
-            "64 KiB is a power of two >= PAGE; the override seam must accept it"
+            "64 KiB is a power of two >= PAGE and >= every real Windows page \
+             size; the override seam must accept it (a rejection here means \
+             the host's real page exceeds 64 KiB — see task #1085's \
+             below-real-page rejection rule — and this host cannot run the \
+             forced-page oracle)"
         );
         // ... and PROVE the configuration took effect before trusting any
         // observation made under it (R26-4 evidence discipline: assert the

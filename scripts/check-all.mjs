@@ -36,10 +36,11 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-27. aligned-vmem package gates — 16 steps (2 cache-invalidation
+//   12-28. aligned-vmem package gates — 17 steps (2 cache-invalidation
 //      cleans + 5 clippy rows + 3 cross-target unix rows (1 check + 2
-//      clippy) + 1 mock clippy row + 3 test rows (2 real-backend + 1
-//      mock) + 1 doc row + 1 optional semver row). NOTE the position:
+//      clippy) + 1 mock clippy row + 4 test rows (2 real-backend + 1
+//      mock + 1 mock-release, task #1086/L10) + 1 doc row + 1 optional
+//      semver row). NOTE the position:
 //      this group sits BEFORE the two
 //      remaining PER_PR_ROWS rows in the runtime array, not after them
 //      (task #1047 checked the order against the array after the header
@@ -89,37 +90,38 @@
 //      lazy-commit+huge-pages+fault-injection+bench-internals) and
 //      clippy (x86_64-unknown-linux-gnu, bench-internals only); clippy
 //      (--cfg aligned_vmem_mock via RUSTFLAGS, full feature set); test
-//      (default, --all-features, mock via RUSTFLAGS); doc (--all-features,
-//      warnings-as-errors); semver-checks (optional, skipped if
-//      cargo-semver-checks not installed).
-//   28-29. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//      (default, --all-features, mock via RUSTFLAGS, and since task #1086
+//      mock via RUSTFLAGS --release --test reservation_decommit_contract);
+//      doc (--all-features, warnings-as-errors); semver-checks (optional,
+//      skipped if cargo-semver-checks not installed).
+//   29-30. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   30. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   31. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   31. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   32. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
 //      structural complement to 25 — 25 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   32. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   33. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   33. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   34. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   34. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   35. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   35. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   36. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -127,19 +129,19 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   36. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
+//   37. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
 //      #1067/F7: exhaustive completeness check that every
 //      `pub fn ...() -> u64` counter accessor in
 //      crates/aligned-vmem/src/bench_internals/ is CALLED by
 //      tests/bench_internals_counters.rs — the hand-maintained list there
 //      claims exhaustiveness and had silently drifted; see that script's
 //      own header)
-//   37. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
+//   38. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
 //      prove the stale-cross-checkout-artifact output sniffer — imported
 //      above and consulted on every failed step — still detects the literal
 //      task #1073 panic signature and stays narrow on the three negative
 //      fixtures; see that script's own header)
-//   38. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
+//   39. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
 //      static guard against compile-time PAGE constants in
 //      page_size()-validated argument positions — the class that escaped
 //      three times (#1067 mock.rs, #1074 bootstrap+siblings, #1075 smoke.rs
@@ -155,27 +157,46 @@
 //      runtime regression in tests/lazy_initial_commit_forced_page.rs.
 //      See that script's own header for the scanned-position table,
 //      suppressions, and blind spots.)
-//   39. cargo test --features "production small-segment-lazy-commit internals"
+//   40. cargo test --features "production internals bench-internals
+//      small-segment-lazy-commit" --test segment_state_reconciliation_oracle
+//      (task #1087: the segment-state reconciliation oracle, LAZY arm on
+//      the host's real page. Carries expectTest because that file
+//      deliberately compiles ZERO tests in the (no-override, no-lazy)
+//      combination — see the step's own comment. Sits BEFORE the
+//      forced-page rows so the RUSTFLAGS flip below happens once and
+//      stays.)
+//   41. cargo test --features "production small-segment-lazy-commit internals"
 //      --test lazy_initial_commit_forced_page   (task #1080: the forced-page
 //      lazy-commit call-site regression under RUSTFLAGS
 //      "--cfg aligned_vmem_page_size_override" — the task #962 cfg-flag
 //      conversion pattern, mirroring the ci.yml `test-windows` row. Placed
-//      at the END of the array steps (with step 40 directly after it) so
-//      the RUSTFLAGS change's cache invalidation is paid once at the end,
-//      not between the existing test/clippy rows. This single feature set
-//      covers BOTH lazy legs: `production` implies `primordial-lazy-commit`,
-//      and the explicit `small-segment-lazy-commit` adds the small-segment
-//      leg.)
-//   40. cargo test --features "production internals bench-internals"
+//      at the END of the array steps (with steps 42-43 directly after it)
+//      so the RUSTFLAGS change's cache invalidation is paid once at the
+//      end, not between the existing test/clippy rows. This single feature
+//      set covers BOTH lazy legs: `production` implies
+//      `primordial-lazy-commit`, and the explicit
+//      `small-segment-lazy-commit` adds the small-segment leg; since task
+//      #1086 (M6) the row carries expectTest — the forced test's name must
+//      appear in the output — so a typo'd or lost cfg fails the step
+//      instead of passing green-and-dead.)
+//   42. cargo test --features "production internals bench-internals"
 //      --test decomp_hooks_forced_page   (task #1081: the forced-page
 //      decomp-hook page-alignment regression, same
-//      "--cfg aligned_vmem_page_size_override" RUSTFLAGS as step 39, so
+//      "--cfg aligned_vmem_page_size_override" RUSTFLAGS as step 41, so
 //      the pair shares one invalidation boundary at the array's end.
 //      Numbering-drift note (task #1082): this row's header entry was
 //      MISSING from task #1081's own commit — the header jumped straight
 //      from 39 (this row's predecessor) to "npm run iai", under-counting
-//      the step list by one until renumbered here.)
-//   41. npm run iai                                                (deterministic judge,
+//      the step list by one until renumbered here. Carries expectTest
+//      since task #1086/M6, same as step 41.)
+//   43. cargo test --features "production internals bench-internals"
+//      --test segment_state_reconciliation_oracle   (task #1087: the
+//      reconciliation oracle's FORCED-page arm, same override RUSTFLAGS
+//      and same feature set as step 42 so the pair shares one fingerprint
+//      boundary; carries expectTest — without the cfg this feature set
+//      compiles ZERO tests in that file and the row would pass green on
+//      an empty binary.)
+//   44. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -456,6 +477,33 @@ const steps = [
     expectWork: 'aligned-vmem',
   },
   {
+    // Task #1086 (L10): the mock RELEASE test row — the release half of
+    // tests/reservation_decommit_contract.rs's decommit-contract oracle.
+    // `method_records_nothing_for_a_violated_range_in_release_mock` is
+    // gated `all(aligned_vmem_mock, not(debug_assertions))`, and before
+    // this row NO row anywhere combined the mock cfg with --release: the
+    // mock row above (debug) cannot compile it, and correctness item 72's
+    // recorded plain-`--release` estimate covers a row that does not
+    // activate the mock cfg — so the test executed nowhere. Scoped to the
+    // one test target so the cost is a single release compile of the crate
+    // plus one test binary: measured 16.0s cold / ~0.5s warm on the dev
+    // host (task #1086). Deliberately carries `expectTest` (NOT
+    // `expectWork`): libtest prints its per-test lines on every run
+    // cached or not, but the Compiling line expectWork needs appears only
+    // cold — and measured, `cargo clean -p aligned-vmem` (the group's
+    // invalidation steps above) does NOT remove the release-profile
+    // artifacts, so an expectWork here would false-RED on every warm run.
+    // The expectTest assertion is what makes this row self-verifying: a
+    // typo'd `--cfg aligned_vmem_mock` compiles the mock half OUT and
+    // turns this row red instead of green-and-dead. Mirrors CI's
+    // aligned-vmem-gates mock-release row (added in the same task).
+    name: 'test (aligned-vmem --release --cfg aligned_vmem_mock --features "lazy-commit huge-pages fault-injection bench-internals" --test reservation_decommit_contract)',
+    cmd: 'cargo',
+    args: ['test', '--release', '-p', 'aligned-vmem', '--features', 'lazy-commit huge-pages fault-injection bench-internals', '--test', 'reservation_decommit_contract'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_mock' },
+    expectTest: 'method_records_nothing_for_a_violated_range_in_release_mock',
+  },
+  {
     // Item 64 (task #1030 follow-up): default-feature runtime test —
     // ci.yml's separate 'test workspace members' job runs this, and the local
     // gate should match it. The clippy row above validates compile-time, but
@@ -619,6 +667,27 @@ const steps = [
     args: ['scripts/verify-vmem-page-constant-call-sites.mjs'],
   },
   {
+    // Task #1087: the segment-state reconciliation oracle, LAZY arm —
+    // drives the REAL dbg_force_decommit_retain_for retain leg and the
+    // dbg_segment_state_reconciliation committed-bytes accounting on the
+    // host's real page under `small-segment-lazy-commit` (the task #1081
+    // meta_bytes fix's runtime oracle; see
+    // tests/segment_state_reconciliation_oracle.rs). expectTest is
+    // load-bearing: this feature combination compiles EXACTLY ONE test,
+    // and the oracle file is deliberately built so the (no-override,
+    // no-lazy) combination compiles ZERO tests — so dropping
+    // `small-segment-lazy-commit` from this row's features (or any future
+    // gate drift) makes the binary pass green with 0 tests unless the
+    // test's name is required to appear. Placed BEFORE the two forced-page
+    // rows below so the RUSTFLAGS flip into
+    // `--cfg aligned_vmem_page_size_override` happens once and stays (the
+    // fingerprint-boundary rationale those rows' own comments document).
+    name: 'test (segment-state reconciliation oracle, lazy real page)',
+    cmd: 'cargo',
+    args: ['test', '--features', 'production internals bench-internals small-segment-lazy-commit', '--test', 'segment_state_reconciliation_oracle'],
+    expectTest: 'retain_decommitted_retained_meta_bytes_oracle_lazy_real_page',
+  },
+  {
     // Task #1080: the forced-page lazy-commit call-site regression — the
     // RUNTIME complement to the static guard immediately above. Drives the
     // REAL bootstrap.rs/alloc_core_small.rs lazy-reservation call sites
@@ -640,6 +709,10 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--features', 'production small-segment-lazy-commit internals', '--test', 'lazy_initial_commit_forced_page'],
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    // Task #1086 (M6): without this, a typo'd RUSTFLAGS cfg name compiles
+    // the forced module OUT and this row still passes green on the file's
+    // one ungated pure test (exit 0, 1 passed).
+    expectTest: 'forced_page::lazy_initial_commit_call_sites_survive_a_forced_64k_page',
   },
   {
     // Task #1081: the decomp-hook forced-page regression — drives the REAL
@@ -658,11 +731,33 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--features', 'production internals bench-internals', '--test', 'decomp_hooks_forced_page'],
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    // Task #1086 (M6): same class as the row above — without this the row
+    // passes green on the file's two ungated pure tests when the cfg is
+    // lost (exit 0, 2 passed).
+    expectTest: 'forced_page::decomp_hooks_decommit_recommit_page_aligned_under_forced_pages',
+  },
+  {
+    // Task #1087: the segment-state reconciliation oracle, FORCED-page arm
+    // — same `--cfg aligned_vmem_page_size_override` seam and the SAME
+    // feature set as the decomp-hook row immediately above (so the pair
+    // shares one fingerprint boundary), driving the eager-policy
+    // reconciliation accounting under simulated 16/64 KiB pages. This arm
+    // is the only non-vacuous eager-policy oracle for the meta_bytes fix
+    // (on a 4 KiB host the tight and page-rounded boundaries coincide —
+    // see the oracle file's own doc). expectTest is load-bearing for the
+    // same reason as the two rows above, only more so: without the cfg
+    // this feature set compiles ZERO tests in that file, so a lost cfg
+    // would otherwise pass green on an empty binary (0 tests, exit 0).
+    name: 'test (segment-state reconciliation oracle, forced pages, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '--features', 'production internals bench-internals', '--test', 'segment_state_reconciliation_oracle'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    expectTest: 'retain_decommitted_retained_meta_bytes_oracle_forced_pages',
   },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x6, aligned-vmem x16 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 3 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x17 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
@@ -719,6 +814,36 @@ for (const step of steps) {
         `in the step output; cargo served a cached result, so the ` +
         `cache-invalidation steps ahead of the aligned-vmem group did not take ` +
         `effect. See the task #1071 hole-3 notes in this file's header.)`,
+    );
+    allOk = false;
+    break;
+  }
+  // Task #1086 (M6): `expectTest` is expectWork's RUNTIME twin — a step
+  // carrying `expectTest: '<full libtest name>'` must show that exact
+  // `test <name> ... ok` line in its own output, turning "exit 0" into
+  // "exit 0 AND the cfg-gated test provably compiled in and ran". Built
+  // for the forced-page rows: their forced modules compile only under
+  // `#[cfg(aligned_vmem_page_size_override)]`, so a typo'd RUSTFLAGS
+  // `--cfg aligned_vmem_page_size_overide` (the exact scenario of task
+  // #1086) makes the module vanish with NO warning and NO non-zero exit —
+  // the binary still passes green on the file's ungated pure tests, and
+  // the runtime half of the compile-time-PAGE defence is silently gone.
+  // The test-name line is printed by libtest on EVERY run (cached or
+  // not), so unlike expectWork this cannot false-RED on a warm cache. A
+  // FAILING test never reaches this check (its non-zero exit fails the
+  // step above); this check catches only the silent-absence case.
+  if (
+    step.expectTest &&
+    !out.includes(`test ${step.expectTest} ... ok`)
+  ) {
+    console.log(
+      `\n[check-all] FAIL at step: ${step.name} (exit 0 but the expected test ` +
+        `did not run: no 'test ${step.expectTest} ... ok' line in the step ` +
+        `output. For a forced-page or cfg-gated row this means the ` +
+        `--cfg aligned_vmem_page_size_override / --cfg aligned_vmem_mock ` +
+        `RUSTFLAGS was lost or typo'd, a required feature was dropped, or the ` +
+        `test/module was renamed — the gated half compiled OUT (see task ` +
+        `#1086/M6)`,
     );
     allOk = false;
     break;
