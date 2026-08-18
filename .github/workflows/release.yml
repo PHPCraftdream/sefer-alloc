@@ -233,50 +233,69 @@ jobs:
         # crate is wrong in both directions: a root-crate section can
         # coincidentally share a version number with an unrelated member-crate
         # tag (false pass), or a member crate can have no matching root
-        # section even though its own release is fine (false fail). None of
-        # the member crates (aligned-vmem, sefer-region, malloc-bench-rs,
-        # numa-shim) has a per-crate changelog yet, so for them this guard is
-        # skipped with an explicit reason rather than inventing a per-crate
-        # changelog scheme here.
+        # section even though its own release is fine (false fail).
+        #
+        # Task #1102 CORRECTS this block's original premise: "None of the
+        # member crates (aligned-vmem, sefer-region, malloc-bench-rs,
+        # numa-shim) has a per-crate changelog yet" stopped being true when
+        # `crates/aligned-vmem/CHANGELOG.md` landed (it predates the guard's
+        # own skip branch and ships in `cargo package -p aligned-vmem --list`).
+        # The skip branch now keys on the FILE EXISTING, not on the crate
+        # name: a member crate with a per-crate changelog gets guarded
+        # against ITS OWN file (both header shapes this workspace uses are
+        # accepted -- bracketed `## [0.3.0]` at the root, unbracketed
+        # `## 0.2.0` in aligned-vmem), and only genuinely changelog-less
+        # members (sefer-region, malloc-bench-rs, numa-shim) are skipped
+        # with the explicit reason.
         if: ${{ steps.target.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           NAME='${{ steps.target.outputs.name }}'
-          if [[ "$NAME" != "sefer-alloc" ]]; then
+          if [[ "$NAME" == "sefer-alloc" ]]; then
+            CHANGELOG=CHANGELOG.md
+          elif [[ -f "crates/$NAME/CHANGELOG.md" ]]; then
+            CHANGELOG="crates/$NAME/CHANGELOG.md"
+          else
             {
               echo "## CHANGELOG guard skipped"
               echo ""
-              echo "CHANGELOG guard only applies to the root \`sefer-alloc\` crate;"
-              echo "member crate \`$NAME\` has no per-crate changelog yet -- see task L4/#617."
+              echo "CHANGELOG guard only applies to crates that HAVE a changelog;"
+              echo "member crate \`$NAME\` has no per-crate changelog -- see task L4/#617."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "Guard skipped: CHANGELOG.md is sefer-alloc's changelog only; $NAME has no per-crate changelog yet (task L4/#617)."
+            echo "Guard skipped: $NAME has no per-crate changelog (task L4/#617)."
             exit 0
           fi
           VERSION='${{ steps.version.outputs.version }}'
-          CHANGELOG_SECTIONS=$(grep -E "^## \[${VERSION}\]" CHANGELOG.md || true)
+          # Both header shapes in this workspace: `## [0.3.0]` (root) and
+          # `## 0.2.0` (aligned-vmem). VERSION contains only digits/dots, so
+          # interpolating it into this ERE is safe.
+          CHANGELOG_SECTIONS=$(grep -E "^## \[?${VERSION}\]?" "$CHANGELOG" || true)
 
           # Count matching sections
           MATCH_COUNT=$(echo "$CHANGELOG_SECTIONS" | grep -c "${VERSION}" || true)
 
-          echo "Checking CHANGELOG.md for version $VERSION..."
+          echo "Checking $CHANGELOG for version $VERSION..."
           echo "Found $MATCH_COUNT section(s) matching [${VERSION}]"
 
           # Require exactly ONE matching section
           if [[ "$MATCH_COUNT" -ne 1 ]]; then
-            echo "::error::Expected exactly one CHANGELOG section for version $VERSION, found $MATCH_COUNT" >&2
-            echo "::error::Ensure CHANGELOG.md has been consolidated from [Unreleased] into a dated [${VERSION}] section before publishing" >&2
+            echo "::error::Expected exactly one CHANGELOG section for version $VERSION in $CHANGELOG, found $MATCH_COUNT" >&2
+            echo "::error::Ensure $CHANGELOG has been consolidated into a dated ${VERSION} section before publishing" >&2
             exit 1
           fi
 
-          # Verify that the matching section is NOT marked as "(unreleased)"
-          if echo "$CHANGELOG_SECTIONS" | grep -q "(unreleased)"; then
-            echo "::error::CHANGELOG section for version $VERSION is marked as (unreleased)" >&2
-            echo "::error::Consolidate CHANGELOG.md by moving [Unreleased] content into [${VERSION}] and remove the '(unreleased)' marker" >&2
+          # Verify that the matching section is NOT still marked unreleased.
+          # Case-insensitive so it catches both this workspace's shapes:
+          # `## [0.3.0] (unreleased)` (root) and `## 0.2.0 - Unreleased`
+          # (aligned-vmem, task #1099/I2).
+          if echo "$CHANGELOG_SECTIONS" | grep -qi "unreleased"; then
+            echo "::error::CHANGELOG section for version $VERSION is marked unreleased" >&2
+            echo "::error::Stamp the real release date in $CHANGELOG's ${VERSION} header before publishing" >&2
             exit 1
           fi
 
-          echo "✓ CHANGELOG.md has proper dated section for version $VERSION"
+          echo "✓ $CHANGELOG has proper dated section for version $VERSION"
 
       - name: Guard — main CI workflow must be green for this commit
         # K8 (task #603): `publish` has no `needs:` on the main `CI` workflow
