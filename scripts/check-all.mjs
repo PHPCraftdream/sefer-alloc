@@ -131,7 +131,12 @@
 //      tests/bench_internals_counters.rs — the hand-maintained list there
 //      claims exhaustiveness and had silently drifted; see that script's
 //      own header)
-//   36. npm run iai                                                (deterministic judge,
+//   36. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
+//      prove the stale-cross-checkout-artifact output sniffer — imported
+//      above and consulted on every failed step — still detects the literal
+//      task #1073 panic signature and stays narrow on the three negative
+//      fixtures; see that script's own header)
+//   37. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -144,6 +149,7 @@
 
 import { REPO_ROOT, run } from './lib.mjs';
 import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
+import { staleArtifactDiagnosis } from './stale-artifact-diagnosis.mjs';
 
 // R30-5 (task #454): every row in `scripts/check-matrix.mjs`'s `PER_PR_ROWS`
 // (the single source of truth also consumed by `scripts/run-check-matrix.mjs`,
@@ -515,10 +521,23 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs'],
   },
+  {
+    // Task #1073: self-test for the stale-artifact output sniffer above —
+    // feeds it the literal observed failing output (the task #1073
+    // `read scripts/check-matrix.mjs: Os { code: 3, kind: NotFound }`
+    // panic) plus three negative fixtures, and fails unless all four
+    // expectations hold. Wired in as a step (not left as a
+    // direct-invocation-only script) for the same reason
+    // scripts/argv-roundtrip-test.mjs is: a detector that has never fired
+    // is not proven, and an unwired detector rots silently. Milliseconds.
+    name: 'stale-artifact-diagnosis (task #1073 self-test)',
+    cmd: 'node',
+    args: ['scripts/stale-artifact-diagnosis.mjs', '--self-test'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
@@ -542,6 +561,14 @@ for (const step of steps) {
     ...(step.env ? { env: { ...process.env, ...step.env } } : {}),
   });
   if (code !== 0) {
+    // Task #1073: if the failure output carries the stale cross-checkout
+    // artifact signature (a test panicking with io::Error NotFound while
+    // reading a repo file), print the real cause next to the failure —
+    // advisory only, never a replacement for the step's own red.
+    const staleArtifact = staleArtifactDiagnosis(out);
+    if (staleArtifact) {
+      console.log(`\n[check-all] DIAGNOSIS (task #1073): ${staleArtifact}`);
+    }
     console.log(`\n[check-all] FAIL at step: ${step.name} (exit ${code})`);
     allOk = false;
     break;
