@@ -120,18 +120,25 @@ fn fail_next_commit_injects_recommit_failure() {
 fn fail_next_commit_injects_commit_range_failure() {
     use aligned_vmem::{commit_range, reserve_aligned_lazy};
     mock::reset();
-    // `initial_commit` (the 3rd argument) validates against the compile-time
-    // `PAGE` constant (task #947/A-1's contract for `reserve_aligned_lazy`),
-    // so `PAGE` is correct there; the `commit_range` boundaries below
-    // validate against the runtime `page_size()` instead (see the comment
-    // at that call).
-    let r = reserve_aligned_lazy(4 * MIB, 4 * MIB, PAGE).expect("lazy reserve");
+    // task #1067 (F6): BOTH `initial_commit` (the 3rd argument) and the
+    // `commit_range` boundaries below validate against the RUNTIME
+    // `page_size()`, not the compile-time `PAGE` constant --
+    // `validate_initial_commit` (`src/api/internal.rs`) rejects any
+    // `initial_commit` that is not a nonzero multiple of `page_size()`
+    // (`reserve_aligned_lazy`'s own rustdoc states this contract), and
+    // that validation runs BEFORE the mock/real backend split, so it
+    // applies here too. The comment this replaces claimed `PAGE` was the
+    // correct 3rd argument and passed a bare `PAGE` (4 KiB), which
+    // `validate_initial_commit` rejects outright on any host whose runtime
+    // page size is 16 KiB (Apple Silicon) -- a latent `.expect("lazy
+    // reserve")` panic masked only by CI's mock row running on 4 KiB-page
+    // ubuntu-latest. Same fix shape as task #959's
+    // `fail_next_commit_injects_recommit_failure` above; `ps` is a
+    // `page_size()` multiple by construction and serves both call sites.
+    let ps = page_size();
+    let r = reserve_aligned_lazy(4 * MIB, 4 * MIB, ps).expect("lazy reserve");
     let base = r.as_ptr();
     mock::fail_next_commit(1);
-    // task #959: `commit_range`'s boundaries must be multiples of the
-    // runtime `page_size()`, not `PAGE` -- see the identical fix in
-    // `fail_next_commit_injects_recommit_failure` above for the mechanism.
-    let ps = page_size();
     // SAFETY: base is a live reservation.
     unsafe {
         assert!(!commit_range(base, ps, 2 * ps), "commit fault armed");

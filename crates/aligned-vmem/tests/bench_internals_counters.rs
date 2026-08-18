@@ -56,13 +56,23 @@ fn bench_internals_counters_existence_and_reset() {
     // exactly once, creating a compile-time check that the accessor surface
     // matches the counter surface. If a new counter is added without a
     // corresponding accessor, this line will fail to compile.
+    // Completeness in the OTHER direction -- an accessor ADDED to
+    // `src/bench_internals/` but missing from this list -- is NOT
+    // compile-checkable: task #1067 (F7) found exactly that drift
+    // (`windows_large_page_plain_fallback_successes`, added by R7-3, had
+    // been absent here ever since). It is now enforced structurally by
+    // `scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs`
+    // (wired into `npm run check`), which enumerates every
+    // `pub fn ...() -> u64` accessor in `src/bench_internals/*.rs` and
+    // requires each one to be CALLED somewhere in this file.
     use aligned_vmem::{
         huge_decommit_attempts, unix_exact_reserve_attempts, unix_exact_reserve_hits,
         unix_madvise_attempts, unix_madvise_successes, unix_munmap_failures,
-        windows_large_page_alignment_failures, windows_large_page_retry_failures,
-        windows_reserve_commit_calls, windows_reserve_commit_single_calls,
-        windows_reserve_commit_two_call_pairs, windows_virtualfree_decommit_attempts,
-        windows_virtualfree_decommit_failures, windows_virtualfree_release_failures,
+        windows_large_page_alignment_failures, windows_large_page_plain_fallback_successes,
+        windows_large_page_retry_failures, windows_reserve_commit_calls,
+        windows_reserve_commit_single_calls, windows_reserve_commit_two_call_pairs,
+        windows_virtualfree_decommit_attempts, windows_virtualfree_decommit_failures,
+        windows_virtualfree_release_failures,
     };
 
     // Reserve 4 * page_size() to ensure we can decommit at least one page
@@ -116,6 +126,7 @@ fn bench_internals_counters_existence_and_reset() {
     assert_eq!(windows_reserve_commit_two_call_pairs(), 0);
     assert_eq!(windows_large_page_retry_failures(), 0);
     assert_eq!(windows_large_page_alignment_failures(), 0);
+    assert_eq!(windows_large_page_plain_fallback_successes(), 0);
     assert_eq!(unix_madvise_attempts(), 0);
     assert_eq!(unix_madvise_successes(), 0);
     assert_eq!(unix_munmap_failures(), 0);

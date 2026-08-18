@@ -124,7 +124,14 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   35. npm run iai                                                (deterministic judge,
+//   35. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
+//      #1067/F7: exhaustive completeness check that every
+//      `pub fn ...() -> u64` counter accessor in
+//      crates/aligned-vmem/src/bench_internals/ is CALLED by
+//      tests/bench_internals_counters.rs — the hand-maintained list there
+//      claims exhaustiveness and had silently drifted; see that script's
+//      own header)
+//   36. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -495,10 +502,23 @@ const steps = [
     cmd: 'node',
     args: ['scripts/vmem-doc-drift-guard.mjs'],
   },
+  {
+    // task #1067 (F7): the accessor-existence test
+    // (crates/aligned-vmem/tests/bench_internals_counters.rs) imports each
+    // accessor by name — an EXISTENCE check with no completeness direction.
+    // R7-3 added windows_large_page_plain_fallback_successes without the
+    // test gaining it, and nothing noticed across several rounds of gate
+    // runs. This step enumerates EVERY `pub fn ...() -> u64` accessor in
+    // crates/aligned-vmem/src/bench_internals/ and requires each to be
+    // CALLED by that test — see the script's own header.
+    name: 'verify-aligned-vmem-bench-internals-exhaustive (vmem accessor completeness)',
+    cmd: 'node',
+    args: ['scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x4, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
