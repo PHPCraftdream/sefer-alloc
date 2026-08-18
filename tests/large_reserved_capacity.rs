@@ -233,6 +233,20 @@ fn single_growth_within_reserved_capacity_is_in_place_and_preserves_data() {
 /// superset of every page size this crate supports — fails on ANY host
 /// (including this 4 KiB one) when the call site is reverted to `os::PAGE`,
 /// which is exactly the counterfactual a host-local test CAN produce.
+///
+/// REGIME PIN (OH3 finding I1, CLAUDE.md R30-8): the disjunction above is
+/// only discriminating while the clamp does NOT bite. In the clamped regime
+/// with `align_up(required_end, 4 KiB) >= reserved_capacity`, the correct
+/// call site and a reverted-to-`os::PAGE` one store the SAME value
+/// (`reserved_capacity`), so the disjunction would pass in both worlds. This
+/// test therefore pins the non-clamped regime with
+/// `assert_ne!(span_after, reserved_before)`: with these sizes the clamp is
+/// unreachable (`reserved_capacity` is 4× the page-rounded usable request —
+/// `LARGE_RESERVED_CAP_GROWTH_FACTOR` — while this grow only adds 64 KiB
+/// past the first page-tight commit), so equality can only mean the sizes or
+/// the growth factor drifted toward the ceiling, and the pin fails loudly
+/// there instead of letting the assertion degrade into the both-worlds-pass
+/// regime.
 #[test]
 #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
 fn single_growth_commit_boundary_is_real_page_safe() {
@@ -295,6 +309,28 @@ fn single_growth_commit_boundary_is_real_page_safe() {
     // exactly `reserved_capacity` — a runtime-`page_size()` multiple, not
     // necessarily a 64 KiB one. Both are validator-safe on every host; a
     // value that is NEITHER is the reverted-to-`os::PAGE` bug.
+
+    // REGIME PIN (OH3/I1, R30-8): the disjunction below cannot discriminate
+    // the correct implementation from the reverted one once the clamp bites
+    // with `align_up(required_end, 4 KiB) >= reserved_capacity` (both worlds
+    // store exactly `reserved_capacity`), so this test must stay in the
+    // NON-clamped regime for the boundary assertion to mean anything. With
+    // these sizes that is guaranteed by a wide margin — see the REGIME PIN
+    // paragraph in this test's doc comment — so equality here is a size/
+    // growth-factor drift toward the ceiling, not a legitimate clamp: fail
+    // loudly and re-pin, do not silently enter the both-worlds-pass regime.
+    assert_ne!(
+        span_after, reserved_before,
+        "regime pin: the `.min(reserved_capacity)` clamp BIT — span_usable \
+         after the grow ({span_after}) equals the reserved ceiling \
+         ({reserved_before}). In that regime (once `align_up(required_end, \
+         4 KiB) >= reserved_capacity`) the boundary assertion below passes \
+         identically under the correct implementation and under a \
+         reverted-to-`os::PAGE` call site, so it proves nothing; re-pin this \
+         test's sizes away from the ceiling or make the clamp case an \
+         explicitly-justified branch"
+    );
+
     let max_realistic_page = 64 * KIB;
     assert!(
         span_after.is_multiple_of(max_realistic_page) || span_after == reserved_before,
