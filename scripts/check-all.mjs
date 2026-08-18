@@ -590,7 +590,7 @@ const steps = [
     // flag (the task #962 conversion pattern — a Cargo feature would unify
     // across the dependency graph; a cfg flag is explicit per-build only),
     // passed via RUSTFLAGS exactly like the mock clippy row earlier in this
-    // file. Deliberately the LAST array step, immediately before the
+    // file. Deliberately among the LAST array steps, immediately before the
     // post-loop iai run: a RUSTFLAGS change invalidates cargo's fingerprint
     // cache, and paying that invalidation once at the end is cheaper than
     // re-running the existing test/clippy rows above under a different
@@ -603,10 +603,28 @@ const steps = [
     args: ['test', '--features', 'production small-segment-lazy-commit internals', '--test', 'lazy_initial_commit_forced_page'],
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
   },
+  {
+    // Task #1081: the decomp-hook forced-page regression — drives the REAL
+    // R29-3 dbg_decomp_decommit_payload/dbg_decomp_recommit_payload hooks
+    // (and the two F10b accessor hooks) under simulated 16/64 KiB runtime
+    // pages, same override seam and same RUSTFLAGS as the forced-page row
+    // above (so the two rows share the fingerprint invalidation). The F6
+    // defect (payload start computed from the const small_meta_end(), 4
+    // KiB-aligned only) is invisible on this 4 KiB-page host by construction
+    // — forcing a larger page is the only way the hooks' boundary violation
+    // fails loudly here. `production` implies alloc-decommit (the hooks'
+    // gate); deliberately WITHOUT small-segment-lazy-commit so the reserved
+    // segment is eager (fully committed), matching the hooks' documented
+    // # Safety precondition. Mirrors the ci.yml test-windows forced-page row.
+    name: 'test (forced-page decomp-hook page-alignment regression, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '--features', 'production internals bench-internals', '--test', 'decomp_hooks_forced_page'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x5, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x6, aligned-vmem x15 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 2 test + 1 doc + 1 optional semver], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

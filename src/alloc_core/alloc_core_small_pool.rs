@@ -1342,12 +1342,27 @@ impl AllocCore {
     ///
     /// `base` MUST be a live segment base whose payload is fully committed.
     /// The payload pages are returned to the OS; any live data is discarded.
+    ///
+    /// Task #1081 (F6): the decommit starts at the RUNTIME-page-safe boundary
+    /// `small_decommit_start()`, not the tight `small_meta_end()` — the same
+    /// R8-6 (task #219) rule the production decommit call sites in this same
+    /// file already follow. `small_meta_end()` is a `const fn` aligned only to
+    /// the compile-time `PAGE` (4 KiB; non-hardened value 73728), and
+    /// `os::decommit_pages`'s contract ("offsets MUST be page-aligned", per
+    /// `aligned_vmem::decommit`'s range-contract `debug_assert!`, task #1072)
+    /// is checked against the RUNTIME `page_size()` — so on a 16/64 KiB-page
+    /// host the old value panicked the hook (73728 % 16384 == 8192). Task
+    /// #1074 converted this hook's two neighbours to the runtime query and
+    /// missed this pair; task #1072 then made the previously-silent violation
+    /// loud — neither commit considered the combination. `SEGMENT` (4 MiB, the
+    /// end offset) is a multiple of every supported page size (4/16/64 KiB),
+    /// so only the start offset needed fixing.
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
     pub unsafe fn dbg_decomp_decommit_payload(base: *mut u8) {
-        let payload_start = SegLayout::small_meta_end();
+        let payload_start = SegLayout::small_decommit_start();
         os::decommit_pages(base, payload_start, SEGMENT);
     }
 
@@ -1382,25 +1397,50 @@ impl AllocCore {
     #[must_use]
     #[allow(unsafe_code)] // R31-6: unsafe fn boundary, mirrors dbg_decomp_decommit_payload.
     pub unsafe fn dbg_decomp_recommit_payload(base: *mut u8) -> bool {
-        let payload_start = SegLayout::small_meta_end();
+        // Task #1081 (F6): same fix as `dbg_decomp_decommit_payload` above —
+        // recommit must start at the runtime-page-safe boundary, or the twin
+        // silently returns `false` on a 16/64 KiB-page host (the vmem layer
+        // skips a contract-violating range), leaving the caller's write loop
+        // writing into genuinely unmapped pages under Windows
+        // `VirtualFree(MEM_DECOMMIT)` semantics.
+        let payload_start = SegLayout::small_decommit_start();
         os::recommit_pages(base, payload_start, SEGMENT)
     }
 
-    /// R29-3: the `[payload_start, payload_end)` byte range of a small
-    /// segment's payload (`[small_meta_end(), SEGMENT)`).
+    /// R29-3: the `[payload_start, payload_end)` byte range a small segment's
+    /// DECOMMIT/RECOMMIT hooks actually touch —
+    /// `[small_decommit_start(), SEGMENT)`, the runtime-page-safe boundary.
+    ///
+    /// Task #1081 (F6 sweep): was the TIGHT `[small_meta_end(), SEGMENT)`. On
+    /// a >4 KiB-page host the hooks (post-F6) decommit from
+    /// `small_decommit_start()`, so reporting the tight start made the
+    /// consumers (`examples/r29_3_decomposition_gate.rs`,
+    /// `examples/r32_13_windows_reserve_commit_decomposition_gate.rs`)
+    /// first-touch and re-fault a range that disagrees with what was actually
+    /// decommitted, and `payload_pages` (computed as `(end - start) /
+    /// dbg_decomp_page_size()`) mixed a non-page-multiple start with the
+    /// runtime page size. Value-identical on 4 KiB-page hosts (where
+    /// `small_decommit_start() == small_meta_end()`).
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_payload_range() -> (usize, usize) {
-        (SegLayout::small_meta_end(), SEGMENT)
+        (SegLayout::small_decommit_start(), SEGMENT)
     }
 
-    /// R29-3: the OS page size.
+    /// R29-3: the OS page size. Task #1081 (F10b): the RUNTIME page size
+    /// (`aligned_vmem::page_size()`), matching the two neighbours task #1074
+    /// already converted — was the compile-time `os::PAGE` (4 KiB), which on a
+    /// 16 KiB host made consumers report `payload_pages` 4x too high and step
+    /// their touch loops at 4 KiB granularity while the hooks decommitted at
+    /// 16 KiB granularity. Value-identical on 4 KiB-page hosts, so no
+    /// published measurement's basis changes (the R29-3 / R32-13 reports were
+    /// generated on 4 KiB-page hosts).
     #[cfg(feature = "internals")]
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_page_size() -> usize {
-        os::PAGE
+        aligned_vmem::page_size()
     }
 
     /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile every registered segment
@@ -1464,9 +1504,27 @@ impl AllocCore {
                     let is_cur = base == small_cur;
 
                     if decommitted {
-                        // Payload pages returned to OS; only metadata region
-                        // stays committed.
-                        let meta_bytes = SegLayout::small_meta_end() as u64;
+                        // Payload pages returned to OS; only the committed
+                        // prefix below the decommit boundary stays mapped.
+                        // Task #1081 (F6 sweep): was the TIGHT
+                        // `small_meta_end()` — same const-vs-runtime-page
+                        // class as the decomp hooks above; it under-reported
+                        // on >4 KiB-page hosts by the boundary round-up (and
+                        // by the retained initial chunk under the lazy
+                        // policy, whose decommit starts at
+                        // `small_decommit_start() + LAZY_FIRST_CHUNK` — see
+                        // `decommit_empty_segment_impl`'s frontier reset).
+                        // cfg-accurate for both policy worlds. No runtime
+                        // oracle exists: the retain-decommitted state this
+                        // arm classifies has zero production callers today
+                        // (verified by reading; see
+                        // docs/CORRECTNESS_OPEN_ITEMS.md item 74).
+                        #[cfg(feature = "small-segment-lazy-commit")]
+                        let meta_bytes = (SegLayout::small_decommit_start()
+                            + super::alloc_core_small::LAZY_FIRST_CHUNK)
+                            as u64;
+                        #[cfg(not(feature = "small-segment-lazy-commit"))]
+                        let meta_bytes = SegLayout::small_decommit_start() as u64;
                         rec.small_decommitted_retained.count += 1;
                         rec.small_decommitted_retained.committed_bytes += meta_bytes;
                         rec.small_decommitted_retained.reserved_bytes += seg_bytes;

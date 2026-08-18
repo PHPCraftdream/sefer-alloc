@@ -891,6 +891,13 @@ jobs:
       - run: cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page
         env:
           RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+      # Task #1081: the decomp-hook forced-page regression — drives the REAL
+      # R29-3 decommit/recommit hooks under simulated 16/64 KiB runtime pages
+      # (same override seam as the row above; the F6 small_meta_end()
+      # boundary violation is invisible on 4 KiB hosts by construction).
+      - run: cargo test --features "production internals bench-internals" --test decomp_hooks_forced_page
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # The magazine-in-isolation config (fastbin without decommit) exercises the
       # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
       # production run above.

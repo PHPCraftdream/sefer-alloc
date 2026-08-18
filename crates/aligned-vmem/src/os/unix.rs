@@ -320,8 +320,14 @@ fn unix_reserve(
 /// callers / diagnostics.
 ///
 /// NOTE: This function is only used on 32-bit targets for address-space
-/// economy. On 64-bit, `unix_reserve` always over-reserves (1 syscall)
-/// because the fast path is a net syscall loss at all hit rates.
+/// economy. On 64-bit, `unix_reserve` over-reserves (1 syscall) for every
+/// ordinary request — the 32-bit-only exact-size fast path is a net syscall
+/// loss at all hit rates — with ONE exception: the exact-size `MAP_HUGETLB`
+/// attempt inside `unix_reserve` itself (Linux AND Android, `huge-pages`
+/// feature, `align == LINUX_HUGE_PAGE_SIZE`) is NOT gated on pointer width,
+/// so it still fires on 64-bit. See `api/reserve.rs` and the crate-level
+/// docs for that documented exception. (Task #1081/F10a corrected the
+/// earlier "always" wording, which contradicted them.)
 #[cfg(all(unix, not(miri), target_pointer_width = "32"))]
 fn try_reserve_aligned_exact(
     size: usize,

@@ -266,6 +266,23 @@ impl Layout {
     ))]
     pub(crate) fn lazy_initial_commit(meta_end: usize, page_size: usize) -> usize {
         debug_assert!(page_size > 0 && page_size.is_power_of_two());
+        // Task #1081 (F10c): symmetric with `small_decommit_start` /
+        // `primordial_decommit_start` — the const-asserts task #1074 added
+        // (`alloc_core_small.rs` / `segment_header.rs`:
+        // `meta_end + LAZY_FIRST_CHUNK + MAX_REALISTIC_PAGE_SIZE <= SEGMENT`)
+        // bound this function's result by exactly this constant's rounding
+        // headroom, so the one function those asserts constrain is the one
+        // that must check the assumption. A `page_size` beyond 64 KiB is
+        // outside the supported set: the round-up could exceed the
+        // const-asserts' slack and the reservation would no longer fit one
+        // segment. (No supported target has pages > 64 KiB today; this is
+        // symmetry-hardening, not a live bug.)
+        debug_assert!(
+            page_size <= MAX_REALISTIC_PAGE_SIZE,
+            "page_size ({page_size}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the const-assert slack bound (meta_end + LAZY_FIRST_CHUNK + one \
+             MAX_REALISTIC_PAGE_SIZE <= SEGMENT) no longer covers the round-up"
+        );
         align_up(
             meta_end + super::alloc_core_small::LAZY_FIRST_CHUNK,
             page_size,
