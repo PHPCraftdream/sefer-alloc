@@ -262,6 +262,33 @@ fn unix_reserve(
     // `munmap` at `region_ptr` (provably page-aligned by `mmap`'s contract)
     // instead of two at potentially misaligned offsets. Cost: up to `align`
     // bytes of untouched VA held for the reservation's lifetime (no RSS).
+    //
+    // task #1069 (audit F9 half 1 — documented, deliberately NOT changed):
+    // that "(no RSS)" price is the ORDINARY-pages case only. When a huge
+    // request is GRANTED through this tail (every granted `align >
+    // LINUX_HUGE_PAGE_SIZE` request — the II-4 fast path above covers only
+    // `align == LINUX_HUGE_PAGE_SIZE` — plus an `align == 2 MiB` request
+    // whose exact-size attempt missed), the cost is not merely VA:
+    // `libc_mmap` passes no `MAP_NORESERVE`, and Linux reserves hugetlb
+    // pool pages for a private `MAP_HUGETLB` mapping's entire length at
+    // mmap time, so the whole `over`-byte span — including the slack — is
+    // charged against the bounded `nr_hugepages` pool for the
+    // reservation's lifetime. The slack (head + tail combined) is exactly
+    // `align` bytes regardless of where the kernel placed the region
+    // (`over - size`), so a `size == align == 4 MiB` request charges
+    // 4 pool pages per segment for 2 needed — 2×, II-4's own "up to 2x"
+    // arithmetic (the F9 audit's "roughly 33% pool overhead" headline does
+    // not match: the slack is 50% of the charge in that shape).
+    // REASONED-FROM-SPEC (documented kernel hugetlb reservation semantics;
+    // no hugetlb-configured host in this project's CI to verify or measure
+    // on — docs/CORRECTNESS_OPEN_ITEMS.md item 59). A head/tail trim WOULD
+    // be munmap-conformant in this specific case (the guard at the top of
+    // this function forces `size`/`align` to 2 MiB multiples and the
+    // kernel guarantees a 2 MiB-aligned base, so every trim boundary is
+    // huge-page-aligned), but re-adding trims would partially reverse task
+    // #842's deliberate one-munmap soundness design for a win that cannot
+    // be measured on any host available to this project — recorded with
+    // that revisit trigger in docs/perf/OPEN_ITEMS.md item 48 instead.
     Ok((
         base,
         // SAFETY: `region_ptr` is confirmed non-null above (both the `p` and

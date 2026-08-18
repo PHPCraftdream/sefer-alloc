@@ -86,6 +86,30 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// no-op: the caller's RSS does not decrease, and subsequent reads return the
 /// old (stale) data rather than zeroed pages. Use [`reserve_aligned`](crate::api::reserve_aligned) instead
 /// if you need decommit functionality.
+///
+/// **Linux hugetlb pool over-reserve (`align > 2 MiB`):** when huge pages
+/// are actually granted through the over-reserve path — which is every
+/// granted `align > 2 MiB` request (the exact-size fast path exists only
+/// for `align == LINUX_HUGE_PAGE_SIZE`, 2 MiB), and an `align == 2 MiB`
+/// request only when that fast path misses — the whole `size + align`-byte
+/// `MAP_HUGETLB` mapping is kept for the reservation's lifetime, and Linux
+/// reserves pool pages for a private hugetlb mapping's entire length at
+/// `mmap` time (no `MAP_NORESERVE` is passed). The exactly `align` bytes
+/// of never-touched slack are therefore charged against the bounded
+/// `nr_hugepages` pool until the reservation is released: a
+/// `size == align == 4 MiB` workload consumes 4 pool pages per segment
+/// for 2 needed (2×), reaching pool exhaustion — and the silent
+/// ordinary-page fallback — with half the segments an exact charge would
+/// allow. Workloads bounding the hugetlb pool should prefer
+/// `align == 2 MiB` shapes, which the exact-size fast path serves with
+/// zero over-reserve whenever it hits (and whose miss cost is at most
+/// `align == 2 MiB` of slack, not `align > 2 MiB`). This cost is
+/// REASONED-FROM-SPEC (documented kernel
+/// reservation semantics; no hugetlb-configured host exists in this
+/// crate's CI to measure it on) and is deliberately not trimmed away:
+/// the over-reserved mapping is kept whole as one soundness-driven unit
+/// (a single `munmap` at the mapping base), and the pool trade-off has
+/// no measurable host available.
 // Historical notes (task #776, #714, #848, #843):
 //
 // - task #776, F3: Linux huge-page request additionally requires both size
