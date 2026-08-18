@@ -1514,10 +1514,13 @@ impl AllocCore {
                         // policy, whose decommit starts at
                         // `small_decommit_start() + LAZY_FIRST_CHUNK` — see
                         // `decommit_empty_segment_impl`'s frontier reset).
-                        // cfg-accurate for both policy worlds. No runtime
-                        // oracle exists: the retain-decommitted state this
-                        // arm classifies has zero production callers today
-                        // (verified by reading; see
+                        // cfg-accurate for both policy worlds. Task #1087
+                        // (finding M4): this state has zero PRODUCTION
+                        // callers but is test-reachable —
+                        // `dbg_force_decommit_retain_for` (same gate, this
+                        // file) drives exactly the retain leg, and
+                        // `tests/segment_state_reconciliation_oracle.rs`
+                        // pins this formula in both policy worlds (see
                         // docs/CORRECTNESS_OPEN_ITEMS.md item 74).
                         #[cfg(feature = "small-segment-lazy-commit")]
                         let meta_bytes = (SegLayout::small_decommit_start()
