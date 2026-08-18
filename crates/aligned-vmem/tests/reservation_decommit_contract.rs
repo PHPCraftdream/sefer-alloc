@@ -355,18 +355,61 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     // `base`/`reservation` are live and exclusively owned, all layout
     // invariants `from_raw_parts` asserts hold, and the reconstructed
     // handle's `Drop` releases the mapping exactly once (no double release:
-    // `into_full_parts` consumed the original). The ONE deviation from
-    // `from_raw_parts`' documented Safety contract is `granted_huge: true`
-    // over an ordinary-page reservation. That contract bullet exists
-    // because a wrong flag makes `is_huge()` misreport and downstream
-    // decommit-availability DECISIONS wrong — the crate's own rustdoc for
-    // the wrong value states the consequence is "not a crash or undefined
-    // behavior", i.e. a wrong report, not a memory-safety hazard. The
-    // misreport is precisely this test's subject: the huge-page skip reads
-    // only this flag and issues no OS call, and the test must reach
-    // `is_huge() == true` on hosts where the OS cannot grant large pages
-    // at all (see the doc comment above). Production callers must NOT copy
-    // this — pass a truthful `granted_huge`.
+    // `into_full_parts` consumed the original). The deviations from
+    // `from_raw_parts`' documented Safety contract are exactly TWO bullets,
+    // both violated by `granted_huge: true` over an ordinary-page
+    // reservation:
+    //
+    // 1. The accuracy bullet: `granted_huge` MUST reflect whether the OS
+    //    actually granted huge pages. Its stated consequence for a wrong
+    //    value is a wrong `is_huge()` report and wrong downstream
+    //    decommit-availability decisions — "not a crash or undefined
+    //    behavior".
+    // 2. The Windows commit-state compatibility bullet: `granted_huge ==
+    //    true` requires creation with `MEM_RESERVE | MEM_COMMIT |
+    //    MEM_LARGE_PAGES` in a single call, and an adopted reservation of
+    //    unknown provenance MUST pass `false`. This ordinary reservation
+    //    was not created with `MEM_LARGE_PAGES`, so on Windows this is the
+    //    bullet most directly violated; its stated consequence is likewise
+    //    only an `is_huge()` "value inconsistent with the reservation's
+    //    actual state" — non-UB.
+    //
+    // PRIMARY justification — why neither violation can become a
+    // memory-safety hazard in this crate TODAY — is the complete
+    // enumeration of every reader of `granted_huge`/`is_huge()` in
+    // `crates/aligned-vmem/src/` (re-derived for task #1098, not copied
+    // from the review, and mechanically pinned by
+    // `tests/granted_huge_reader_enumeration.rs`, which fails when the
+    // reader set changes so this argument cannot silently rot):
+    //
+    // - `Reservation::is_huge` (src/reservation.rs) — pure query, returns
+    //   the field.
+    // - `Reservation::can_decommit_reclaim_and_zero` (src/reservation.rs)
+    //   — pure advisory query, `platform_const && !self.is_huge()`; no
+    //   syscall, no unsafe. (NOTE: the #1098 review's own enumeration
+    //   missed this one; re-derivation found it. It does not change the
+    //   verdict — it is a query, not an act.)
+    // - three huge-skips in the decommit family — `Self::decommit`,
+    //   `Self::try_decommit`, `Self::decommit_lazy` (src/reservation.rs),
+    //   each `if self.is_huge() { count; return; }` — the flag can only
+    //   SUPPRESS a backend OS call.
+    //
+    // Confirmed non-readers: `Drop` releases via `reservation`/
+    // `reservation_len`/`align` only; `from_raw_parts`' assert block
+    // validates layout only (the flag passes through to the field
+    // untouched). The remaining field touches are copies/observations
+    // that cannot branch on it (the `Debug` impl, `into_full_parts`,
+    // `ReservationFullParts::into_reservation`, `finish_reservation`).
+    // A wrong flag therefore changes two pure query RESULTS and whether
+    // up to three decommit backend calls are issued — never memory
+    // safety, never release behavior, never an unsafe block's
+    // preconditions. SECONDARY, and deliberately weaker: the rustdoc
+    // consequence quotes above say "not a crash or undefined behavior" —
+    // but that is intent stated for one bullet, and a future refactor
+    // that makes `is_huge()` gate something real would invalidate the
+    // prose without touching this test; the enumeration is what carries
+    // the weight. Production callers must NOT copy this synthesis — pass
+    // a truthful `granted_huge`.
     let r = unsafe { huge_flagged.into_reservation() };
     assert!(r.is_huge(), "synthetic flag must produce is_huge() == true");
 
