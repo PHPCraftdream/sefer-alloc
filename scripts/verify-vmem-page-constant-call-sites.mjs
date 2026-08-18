@@ -1280,35 +1280,58 @@ function runSelfTest() {
 // Tree walk + main
 // ─────────────────────────────────────────────────────────────────────────────
 
-// task #1088 (L7): the scan set is the TRACKED tree (`git ls-files`), not
-// whatever untracked files happen to sit on this host. The pre-#1088 walker
-// (readdirSync + a hand-maintained SKIP_DIRS list) consulted no .gitignore,
-// so gitignored scratch copies (a stale `tmp/sefer_backup.rs` etc.) were
-// scanned alongside the real sources — making both the verdict (a stale copy
-// of an old alloc_core.rs could flip the guard RED with long-fixed call
-// sites) and the summary's "scanned N file(s)" count host-dependent and NOT
-// reproducible from a clean clone. Deriving the list from the index makes the
-// count a property of the commit: it equals `git ls-files -- '*.rs'` by
-// construction. Accepted trade-off: a brand-new file is not scanned until
-// tracked (guard coverage for it starts at `git add`). ls-files output is
-// sorted, which also makes the scan order deterministic. Precedent for a
-// guard shelling out to git: scripts/verify-commit-prefixes.mjs.
-function trackedRsFiles() {
-  let out;
-  try {
-    out = execFileSync('git', ['ls-files', '--', '*.rs'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    });
-  } catch (err) {
-    // Fail loudly, never silently fall back to a filesystem walk — a silent
-    // fallback would resurrect exactly the host-dependence this function
-    // exists to remove.
+// task #1088 (L7) + OH3 (finding I3): the scan set is the TRACKED tree PLUS
+// untracked-but-not-gitignored files (`git ls-files --cached` ∪ `git
+// ls-files --others --exclude-standard`), not whatever happens to sit on
+// this host. Two blind-spot eras preceded this union:
+//   - pre-#1088: the walker (readdirSync + a hand-maintained SKIP_DIRS list)
+//     consulted no .gitignore, so gitignored scratch copies (a stale
+//     `tmp/sefer_backup.rs` etc.) were scanned alongside the real sources —
+//     a stale copy could flip the guard RED (or green) with long-fixed call
+//     sites, and the summary's "scanned N file(s)" count was host-dependent,
+//     NOT reproducible from a clean clone.
+//   - #1088/L7 (tracked-only) fixed that but opened the opposite hole: a
+//     brand-new source file was invisible until `git add`, and `npm run
+//     check` is the PRE-PUSH gate — "new file, not yet staged" is exactly
+//     the state a developer is in mid-task, so the guard could go green on
+//     a tree containing a fresh violating call site (OH3 finding I3).
+// The union closes both at once: gitignored scratch stays excluded
+// (clean-clone reproducibility — on a fresh checkout the untracked set is
+// empty and the count reduces to the tracked count by construction), while
+// an untracked-but-not-ignored .rs file — by this repo's convention a file
+// that WILL be committed, since it is not ignored — is scanned from the
+// moment it is written. Coverage for it therefore starts at file creation,
+// not at `git add`. ls-files output is sorted; the concatenated union is
+// re-sorted, so the scan order stays deterministic. Precedent for a guard
+// shelling out to git: scripts/verify-commit-prefixes.mjs.
+function scanSetRsFiles() {
+  const run = (args) => {
+    let out;
+    try {
+      out = execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+    } catch (err) {
+      // Fail loudly, never silently fall back to a filesystem walk — a silent
+      // fallback would resurrect exactly the host-dependence this function
+      // exists to remove.
+      throw new Error(
+        `[${SCRIPT}] git ${args.join(' ')} failed (${err.message}); the scan set MUST come from git's index/untracked query`,
+      );
+    }
+    return out.split(/\r?\n/).filter(Boolean);
+  };
+  const tracked = run(['ls-files', '--cached', '--', '*.rs']);
+  const untracked = run(['ls-files', '--others', '--exclude-standard', '--', '*.rs']);
+  // --cached and --others are disjoint by git's semantics ("others" = NOT in
+  // the index); assert it so the printed tracked/untracked split can never
+  // double-count a file.
+  const seen = new Set(tracked);
+  const dup = untracked.filter((f) => seen.has(f));
+  if (dup.length > 0) {
     throw new Error(
-      `[${SCRIPT}] git ls-files failed (${err.message}); the scan set MUST be the tracked tree`,
+      `[${SCRIPT}] scan-set invariant violated: ${dup.length} file(s) appeared in BOTH the tracked and untracked lists (${dup[0]} ...) — git semantics guarantee disjointness; fix the query, not this assert.`,
     );
   }
-  return out.split(/\r?\n/).filter(Boolean);
+  return { tracked, untracked, union: [...tracked, ...untracked].sort() };
 }
 
 function main() {
@@ -1328,12 +1351,12 @@ function main() {
   const findings = [];
   const prodFindings = [];
   // Cross-file index for the production provenance rule (task #1080), built
-  // ONCE from the root crate's production tree — the SAME tracked list as the
-  // main scan below, filtered to src/, so the two can never disagree about
-  // what the production tree is (task #1088/L7).
-  const tracked = trackedRsFiles();
+  // ONCE from the root crate's production tree — the SAME scan set (tracked ∪
+  // untracked-not-ignored, OH3/I3) as the main scan below, filtered to src/,
+  // so the two can never disagree about what the production tree is.
+  const { tracked, untracked, union } = scanSetRsFiles();
   const prodCtx = {
-    files: tracked
+    files: union
       .filter((rel) => rel.startsWith('src/'))
       .map((rel) => {
         const blanked = blankRust(readFileSync(join(REPO_ROOT, rel), 'utf8'));
@@ -1341,11 +1364,12 @@ function main() {
       }),
   };
   // Count of files actually read+scanned. In a clean tree this equals
-  // tracked.length (== `git ls-files -- '*.rs' | wc -l`); a tracked file
-  // missing from the working tree (deleted without `git rm`) is skipped
-  // loudly below and excluded from the count.
+  // tracked.length + untracked.length (on a clean CHECKOUT the untracked
+  // query returns nothing, so it equals `git ls-files -- '*.rs' | wc -l`);
+  // a file missing from the working tree (deleted without `git rm`) is
+  // skipped loudly below and excluded from the count.
   let scanned = 0;
-  for (const rel of tracked) {
+  for (const rel of union) {
     let source;
     try {
       source = readFileSync(join(REPO_ROOT, rel), 'utf8');
@@ -1403,8 +1427,8 @@ function main() {
     );
   }
   console.log(
-    `\n[${SCRIPT}] scanned ${scanned} file(s) (${tracked.length} tracked .rs in the index; ` +
-      `the scan set is the tracked tree, see trackedRsFiles) — examined ${totals.calls} call site(s); ` +
+    `\n[${SCRIPT}] scanned ${scanned} file(s) (${tracked.length} tracked + ${untracked.length} untracked-not-ignored .rs; ` +
+      `scan set = tracked ∪ untracked-but-not-gitignored, see scanSetRsFiles) — examined ${totals.calls} call site(s); ` +
       `${totals.candidates} candidate arg(s) raised: ${suppressed} suppressed ` +
       `(S1(marker)=${totals.s1} S2a(non-floor)=${totals.s2a} S2b(inverted)=${totals.s2b} ` +
       `S3(negative-ctx)=${totals.s3}), ${findings.length} finding(s); ` +
