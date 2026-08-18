@@ -141,11 +141,22 @@ fn override_floor_is_the_real_os_page_size() {
     }
 
     // (b) The floor is the REAL page, NOT the previously-armed override.
-    // The forced-page suites' exact shape: arm 64 KiB, then downshift to
-    // 16 KiB with no restore in between — the smaller value must still be
-    // accepted whenever it is >= the real page. This pins the rule against
-    // the wrong variant "monotonic vs the current cache value", which would
-    // reject every legal downshift.
+    // The forced-page suites' actual shape (task #1096 corrected this
+    // comment, which claimed they "arm 64 KiB, then downshift to 16 KiB
+    // with no restore in between"): every root-crate suite that arms the
+    // override UPSHIFTS or arms a single value, and constructs its
+    // restore guard INSIDE the loop — `decomp_hooks_forced_page.rs` and
+    // `segment_state_reconciliation_oracle.rs` iterate [16 KiB, 64 KiB]
+    // with a per-iteration restore; `lazy_initial_commit_forced_page.rs`
+    // arms one 64 KiB. No existing suite downshifts; THIS loop (64 KiB
+    // then 16 KiB, no restore between iterations) is itself the only
+    // downshift, and the smaller value must still be accepted whenever it
+    // is >= the real page — 16 KiB over a 4 KiB host is a legal override.
+    // That pins the rule against the wrong variant "monotonic vs the
+    // current cache value", which would reject every legal downshift. The
+    // design is right on its own merits regardless of the suites' shape:
+    // comparing against the armed value instead of a fresh real-page query
+    // is what would be wrong.
     set_page_size_override(None);
     for &forced in &[64 * 1024, 16 * 1024] {
         if forced < real {

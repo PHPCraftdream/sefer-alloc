@@ -320,14 +320,22 @@ fn method_trips_on_an_empty_misaligned_range_in_debug() {
 /// SAFETY comment at the reconstruction call for why it is sound and why
 /// production callers must not copy it.
 ///
-/// Counterfactual (observed at task #1084 on the authoring host, debug
-/// build, this test): FAILED before the fix at the first `.is_err()`
-/// assert — `try_decommit(1, 3)` on the huge-flagged reservation returned
-/// `Ok(())` — and, under `bench-internals`, left
-/// `huge_decommit_attempts() == 3` after the malformed calls (each
-/// incremented the skip's counter before returning `Ok`). Passes after the
-/// fix, with the malformed calls leaving the counter at 0. The well-formed
-/// `Ok` + counter==1 shape additionally pins, on EVERY host, what
+/// Counterfactual: the pre-fix FAILURE was observed at task #1084 on the
+/// authoring host (debug build, this test): it FAILED at the first
+/// `.is_err()` assert — `try_decommit(1, 3)` on the huge-flagged
+/// reservation returned `Ok(())` — and the test aborted there, before
+/// calls 2-4 ever ran. The `== 3` / `== 4` counter figures below were
+/// therefore NOT observed in that run — the pre-fix counter at the moment
+/// of that abort could be at most 1 (the first call's increment). They
+/// are DERIVED (each pre-fix call incremented the skip's counter exactly
+/// once before returning `Ok`), and were separately OBSERVED for real at
+/// task #1096: with the fix order temporarily reverted (skip ahead of
+/// validation) and a relaxed, assert-nothing probe running the same four
+/// calls, the counter read 3 after the three malformed calls and 4
+/// after the well-formed fourth, all four returning `Ok(())`. Passes
+/// after the fix, with the malformed calls leaving the counter at 0 and
+/// the well-formed call leaving it at 1. The well-formed `Ok` +
+/// counter==1 shape additionally pins, on EVERY host, what
 /// `method_try_decommit_huge_skip_returns_ok_and_counts` can only pin
 /// where the OS really grants large pages.
 #[test]
@@ -438,8 +446,10 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
 
     // Mechanism oracle (bench-internals builds only): the three malformed
     // calls above must not have incremented the huge-attempt counter —
-    // validation now precedes the skip. Pre-fix this read 4 (every call,
-    // malformed included, hit the skip's counter before returning Ok).
+    // validation now precedes the skip. Pre-fix this read 4 — derived
+    // at task #1084 (the pre-fix test aborts at the first assert, counter
+    // at 1) and observed via the task-#1096 relaxed probe: every call,
+    // malformed included, hit the skip's counter before returning Ok.
     #[cfg(feature = "bench-internals")]
     {
         use aligned_vmem::huge_decommit_attempts;
