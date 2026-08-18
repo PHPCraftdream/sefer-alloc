@@ -2390,18 +2390,37 @@ impl AllocCore {
     /// exceeds `reserved_capacity` — the segment has no more VA to grow into
     /// and the caller must fall through to the slow path.
     ///
-    /// # Why committing `page_round(required_end)`, not `required_end` itself
+    /// # Why committing a REAL-PAGE-SAFE round of `required_end`, not
+    /// `required_end` itself
     ///
     /// `commit_pages` (like every commit/decommit primitive in this crate)
-    /// requires page-aligned offsets — `required_end` is an arbitrary byte
-    /// count (a payload size), not necessarily page-aligned. Rounding UP to
-    /// the next page boundary (capped at `reserved_capacity`, which is
-    /// itself always page-aligned — see [`os::Segment::reserve_capacity_exact`]'s
-    /// contract) commits a whole number of pages while still covering
-    /// `required_end`; the extra few bytes up to the page boundary are
-    /// committed but not yet claimed by any allocation — exactly the same
-    /// "commit whole pages, track the logical frontier separately" pattern
+    /// requires offsets aligned to the RUNTIME OS page size — `required_end`
+    /// is an arbitrary byte count (a payload size), not necessarily
+    /// page-aligned at all. Rounding UP to the next
+    /// [`os::MAX_REALISTIC_PAGE_SIZE`] (64 KiB) boundary (capped at
+    /// `reserved_capacity`, which is itself always a runtime-page multiple —
+    /// see [`os::Segment::reserve_capacity_exact`]'s contract) commits a
+    /// whole number of pages on EVERY host page size while still covering
+    /// `required_end`; the extra bytes up to the boundary are committed but
+    /// not yet claimed by any allocation — exactly the same "commit whole
+    /// pages, track the logical frontier separately" pattern
     /// `alloc-lazy-commit`'s `committed_payload_end` uses for small segments.
+    ///
+    /// Task #1077 (the fifth escape of the compile-time-page-constant bug
+    /// class): this used to round to the compile-time `os::PAGE` (4 KiB),
+    /// but `os::commit_pages` -> `aligned_vmem::try_commit_range` validates
+    /// its endpoint against the RUNTIME `aligned_vmem::page_size()` — on a
+    /// 16 KiB (Apple Silicon) or 64 KiB (aarch64-linux-64k) host a
+    /// 4-KiB-only multiple is rejected as `invalid_argument`, the commit
+    /// returns `false`, and the grow silently degrades to the slow
+    /// alloc+copy+free path: no memory-safety consequence, but the
+    /// `large-reserved-capacity` feature is a permanent no-op there and
+    /// `tests/large_reserved_capacity.rs`'s same-pointer assertions are a
+    /// latent red. 64 KiB is a superset multiple of every page size this
+    /// crate supports (see `os::MAX_REALISTIC_PAGE_SIZE`'s invariant), so
+    /// one rounding serves all hosts; the ≤ ~60 KiB of extra committed
+    /// tail per grow is negligible against the ≥ 4x reserved headroom
+    /// (`LARGE_RESERVED_CAP_GROWTH_FACTOR`).
     #[cfg(feature = "large-reserved-capacity")]
     #[inline]
     fn try_grow_large_reserved_capacity(&mut self, base: *mut u8, required_end: usize) -> bool {
@@ -2413,7 +2432,15 @@ impl AllocCore {
         // `required_end > span_usable` is guaranteed by the call site (this
         // is only reached after the committed-span check already failed),
         // so the commit range below is always non-empty.
-        let new_span_usable = align_up(required_end, super::os::PAGE).min(reserved_capacity);
+        // task #1077: MAX_REALISTIC_PAGE_SIZE (64 KiB), NOT the compile-time
+        // `PAGE` (4 KiB) — see the doc block above; the runtime-page-size
+        // validator in `try_commit_range` rejects 4-KiB-only multiples on
+        // 16/64 KiB-page hosts. The `.min(reserved_capacity)` clamp stays
+        // validator-safe: `reserved_capacity` is itself a runtime-page
+        // multiple (built from `usable`, which task #1074 already rounds to
+        // `aligned_vmem::page_size()` in `alloc_large_slow`).
+        let new_span_usable =
+            align_up(required_end, super::os::MAX_REALISTIC_PAGE_SIZE).min(reserved_capacity);
         if !os::commit_pages(base, span_usable, new_span_usable) {
             // Commit-charge exhaustion / genuine OOM on the incremental
             // commit: leave the header untouched (span_usable unchanged —

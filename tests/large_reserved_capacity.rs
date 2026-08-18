@@ -38,6 +38,13 @@
 //!   (e) WITHOUT the feature, `reserved_capacity` always equals
 //!       `span_usable` (the inert inherited value) — the default/production
 //!       path is untouched.
+//!   (f) task #1077: the grow's stored committed boundary (`span_usable`
+//!       right after a grow — exactly the value the call site computed and
+//!       passed to `os::commit_pages`) must be a multiple of 64 KiB
+//!       (`os::MAX_REALISTIC_PAGE_SIZE`), the compile-time superset of
+//!       every runtime page size — observed AT THE CALL SITE through the
+//!       header, not via a helper's arithmetic (the #1080 lesson: a test
+//!       that pins a helper passes even when the call site is reverted).
 //!
 //! ## Counterfactual reasoning (what a revert makes fail)
 //!
@@ -181,6 +188,76 @@ fn single_growth_within_reserved_capacity_is_in_place_and_preserves_data() {
             );
         }
     }
+
+    let new_layout = Layout::from_size_align(new_size, old_layout.align()).unwrap();
+    // SAFETY (R6-MS-1/2): live allocation, freed exactly once with the
+    // matching (new) layout.
+    unsafe { ac.dealloc(grown, new_layout) };
+}
+
+/// (f) task #1077: the OPT-G grow's NEW committed-span boundary must be a
+/// multiple of `MAX_REALISTIC_PAGE_SIZE` (64 KiB), observed at the CALL SITE
+/// through the header value the grow actually stores — NOT through a helper's
+/// arithmetic. Task #1080 recorded that `tests/lazy_initial_commit_page_sizes.rs`
+/// (added by task #1074) pins `Layout::lazy_initial_commit`'s math, so reverting
+/// any of #1074's six converted call sites still passes that file; this test is
+/// the shape that closes that hole for THIS call site.
+///
+/// `try_grow_large_reserved_capacity` computes its commit endpoint as
+/// `align_up(required_end, <align>).min(reserved_capacity)` and, on commit
+/// success, stores it as the segment's new `span_usable` — so
+/// `dbg_span_usable_of` after an in-place grow reads back exactly the value the
+/// call site passed to `os::commit_pages`. When `<align>` was the compile-time
+/// `os::PAGE` (4 KiB), a 16/64 KiB-page host rejected the commit
+/// (`vmem::try_commit_range` validates endpoints against the RUNTIME page
+/// size) and the grow silently degraded to the slow path — a state no 4 KiB
+/// host can expose through pointer identity alone, because the 4 KiB commit
+/// succeeds there. Asserting the stored boundary is a 64 KiB multiple — a
+/// superset of every page size this crate supports — fails on ANY host
+/// (including this 4 KiB one) when the call site is reverted to `os::PAGE`,
+/// which is exactly the counterfactual a host-local test CAN produce.
+#[test]
+#[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
+fn single_growth_commit_boundary_is_real_page_safe() {
+    let mut ac = AllocCore::new().expect("primordial");
+    let old_size = just_above_small_max();
+    let old_layout = layout(old_size);
+    let p = ac.alloc(old_layout);
+    assert!(!p.is_null(), "OOM allocating {old_size} bytes");
+
+    // Grow within reserved_capacity so the in-place commit-and-grow fires.
+    // The same-pointer assert doubles as the path-activation oracle: if the
+    // growth relocated, the boundary assert below would not be observing the
+    // grow call site's value at all.
+    let new_size = old_size + 64 * KIB;
+    // SAFETY (R6-MS-1/2): `p` is a live allocation from this AllocCore made
+    // with `old_layout`, consumed by this call exactly once.
+    let grown = unsafe { ac.realloc(p, old_layout, new_size) };
+    assert!(!grown.is_null(), "realloc growth must not fail");
+    assert_eq!(
+        grown, p,
+        "premise: the growth must take the in-place reserved-capacity path — \
+         a relocation here means the boundary assertion below would not be \
+         observing the grow call site's computed value"
+    );
+
+    // THE observation: post-grow `span_usable` is exactly the endpoint the
+    // call site passed to `os::commit_pages` (stamped only on commit
+    // success by `set_span_usable_at` in `try_grow_large_reserved_capacity`).
+    let span_after = ac.dbg_span_usable_of(grown);
+    // Mirrors `os::MAX_REALISTIC_PAGE_SIZE` (pub(crate), not reachable from
+    // an integration test): 64 KiB is the documented compile-time superset
+    // of the 4/16/64 KiB runtime page sizes this crate supports.
+    let max_realistic_page = 64 * KIB;
+    assert!(
+        span_after.is_multiple_of(max_realistic_page),
+        "post-grow span_usable ({span_after}) must be a multiple of 64 KiB \
+         (MAX_REALISTIC_PAGE_SIZE — superset of the 4/16/64 KiB page sizes \
+         this crate supports); a merely 4 KiB-aligned value means the grow \
+         target was computed with the compile-time PAGE constant and will be \
+         rejected by vmem's runtime page-size validation on 16/64 KiB hosts \
+         (task #1077)"
+    );
 
     let new_layout = Layout::from_size_align(new_size, old_layout.align()).unwrap();
     // SAFETY (R6-MS-1/2): live allocation, freed exactly once with the
