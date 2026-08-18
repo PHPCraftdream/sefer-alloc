@@ -51,7 +51,7 @@ pub fn page_size() -> usize {
 }
 
 #[cfg(all(unix, not(miri)))]
-fn query_os_page_size() -> usize {
+pub(crate) fn query_os_page_size() -> usize {
     // SAFETY: `sysconf(_SC_PAGESIZE)` takes an integer name and returns a
     // `c_long` (the page size, or -1 on error). No pointers involved.
     let v = unsafe { sysconf(_SC_PAGESIZE) };
@@ -63,7 +63,7 @@ fn query_os_page_size() -> usize {
 }
 
 #[cfg(all(windows, not(miri)))]
-fn query_os_page_size() -> usize {
+pub(crate) fn query_os_page_size() -> usize {
     // SAFETY: `GetSystemInfo` fills the caller-provided `SYSTEM_INFO`; the
     // struct is stack-allocated and fully written by the call.
     let mut info = SystemInfo::default();
@@ -85,7 +85,7 @@ fn query_os_page_size() -> usize {
 }
 
 #[cfg(miri)]
-fn query_os_page_size() -> usize {
+pub(crate) fn query_os_page_size() -> usize {
     // Miri has no real OS page; use the crate's constant granularity.
     PAGE
 }

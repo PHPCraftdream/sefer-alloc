@@ -13,15 +13,34 @@
 //! # Why this is a safe `fn`
 //!
 //! [`set_page_size_override`] takes no pointers and touches no allocator
-//! metadata, so it cannot introduce UB by itself — and the override can only
-//! make validation STRICTER. Every validator in this crate
-//! (`validate_initial_commit`, the commit/decommit range validators) compares
-//! against `page_size()`; forcing a *larger* power-of-two page only rejects
-//! more requests, never accepts one the real page would reject. The OS calls
-//! that do pass validation remain legal: a 64 KiB multiple is also a multiple
-//! of every smaller real page, so `VirtualAlloc`/`mmap` accept the ranges
-//! unchanged. Misaligned ranges are rejected (reserve/commit) or silently
-//! skipped (decommit) — fail-closed degradation, never UB.
+//! metadata, so it cannot introduce UB by itself — and the acceptance rule
+//! keeps any stored override on the SAFE side of the real page size: a
+//! value is stored only if it is a power of two, at least `PAGE`, and NOT
+//! SMALLER than the machine's real OS page size (a fresh,
+//! cache-bypassing query — task #1085). Every validator in this crate
+//! (`validate_initial_commit`, the commit/decommit range validators)
+//! compares against `page_size()`; a stored override is therefore always
+//! `>=` the real page, and for powers of two "larger" implies "multiple":
+//! every byte range that passes validation under the override is also a
+//! multiple of the real page. The override can only make validation
+//! STRICTER — it can never accept what the real page size would reject.
+//! The OS calls that do pass validation remain legal: a 64 KiB multiple is
+//! also a multiple of every smaller real page, so `VirtualAlloc`/`mmap`
+//! accept the ranges unchanged. Misaligned ranges are rejected
+//! (reserve/commit) or silently skipped (decommit) — fail-closed
+//! degradation, never UB.
+//!
+//! Residual assumption, inherited rather than override-specific: the floor
+//! is the OS query validated by the same rule [`crate::page_size`] uses, so
+//! if the OS query itself fails and falls back to `PAGE` on a host whose
+//! true hardware page is larger, the floor degrades to `PAGE` — exactly
+//! the degraded assumption the crate's own `page_size()` already makes
+//! with no override armed. Before task #1085 this section claimed the
+//! stricter-only property WITHOUT the real-page floor, which was false
+//! whenever a caller forced a page smaller than the real one (e.g.
+//! `Some(4096)` on a 16 KiB-page host): validators would accept 4 KiB
+//! multiples and the OS rounds a decommit LENGTH up to the real page,
+//! silently discarding live data outside the requested range.
 //!
 //! # Reachability
 //!
@@ -48,17 +67,39 @@
 
 use core::sync::atomic::Ordering;
 
-use super::page_size::{validate_page_size_impl, PAGE_SIZE_CACHE};
+use super::page_size::{query_os_page_size, validate_page_size_impl, PAGE_SIZE_CACHE};
+
+/// The REAL OS page size right now, as a fresh validated query that ignores
+/// [`PAGE_SIZE_CACHE`] entirely (task #1085).
+///
+/// Unlike [`crate::page_size`], this never reads (or writes) the cache, so
+/// while an override is armed it still reports the true OS value. The
+/// acceptance floor below must compare against the machine's REAL page, not
+/// the cached (possibly overridden) one: comparing against the cache would
+/// both falsely reject legal downshifts to a still-legal page and fail to
+/// pin the invariant that actually matters — the effective page size is
+/// always >= the real one, so every page-multiple validator stays at least
+/// as strict as the no-override behavior.
+fn real_os_page_size_fresh() -> usize {
+    validate_page_size_impl(query_os_page_size())
+}
 
 /// Set (`Some`) or clear (`None`) the process-global page-size override seen
 /// by [`crate::page_size`], returning whether the request took effect.
 ///
 /// - `Some(ps)`: `ps` is validated with the SAME rule [`crate::page_size`]
 ///   applies to OS queries (`validate_page_size_impl`: at least `PAGE` and a
-///   power of two). Unlike the OS-query path there is NO silent fallback to
-///   `PAGE` — an invalid `ps` is REJECTED: the function returns `false` and
-///   leaves the cache untouched. On success `ps` is stored and `true` is
-///   returned.
+///   power of two), PLUS the task-#1085 real-page floor: `ps` must not be
+///   SMALLER than the machine's real OS page size (queried fresh, bypassing
+///   the override cache). An override below the real page would loosen every
+///   page-multiple validator below reality — the OS rounds decommit lengths
+///   up to the real page, silently discarding live data outside the requested
+///   range (the exact hazard on 16/64 KiB-page hosts such as macOS ARM64 and
+///   aarch64-64k Linux). An override EQUAL to the real page is accepted (a
+///   harmless no-op). Unlike the OS-query path there is NO silent fallback
+///   to `PAGE` — an invalid or below-real `ps` is REJECTED: the function
+///   returns `false` and leaves the cache untouched. On success `ps` is
+///   stored and `true` is returned.
 /// - `None`: stores `0` (the "not yet queried" sentinel), so the next
 ///   [`crate::page_size`] call re-queries the real OS. Always returns `true`.
 ///
@@ -75,7 +116,11 @@ pub fn set_page_size_override(new: Option<usize>) -> bool {
             // otherwise — so "result == input" IS the acceptance test, with
             // one benign overlap: the valid value PAGE itself maps to PAGE.
             let validated = validate_page_size_impl(ps);
-            if validated == ps {
+            // Task #1085 (finding M1): the override must also never fall
+            // BELOW the machine's real page size (see
+            // `real_os_page_size_fresh` for why the query bypasses the
+            // cache).
+            if validated == ps && ps >= real_os_page_size_fresh() {
                 PAGE_SIZE_CACHE.store(ps, Ordering::Relaxed);
                 true
             } else {
