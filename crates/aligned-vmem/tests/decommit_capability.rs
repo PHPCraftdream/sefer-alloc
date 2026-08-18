@@ -27,16 +27,35 @@ const MIB: usize = 1024 * 1024;
 /// without any regression guard. A future maintainer adding a new target could
 /// erroneously return `true` on a platform where decommit is advisory-only,
 /// or `false` on a platform where it actually guarantees reclaim+zero-fill.
+/// The mock arm (task #1066) is the counterfactual for the cfg fix: dropping
+/// `aligned_vmem_mock` from the exclusion list would silently regress the
+/// query to `true` under the mock with no red test.
 #[test]
 fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
-    // On Linux and Windows, decommit is guaranteed to reclaim and zero-fill
+    // On Linux and Windows (native backend), decommit is guaranteed to reclaim
+    // and zero-fill
     #[cfg(all(
         any(target_os = "linux", target_os = "android", target_os = "windows"),
-        not(miri)
+        not(miri),
+        not(aligned_vmem_mock)
     ))]
     assert!(
         Reservation::decommit_reclaims_and_zeroes(),
         "Linux and Windows (native) should guarantee reclaim+zero-fill semantics"
+    );
+
+    // Under the `aligned_vmem_mock` cfg the recording backend's decommit never
+    // touches the OS, so the capability must answer `false` even on a
+    // Linux/Windows host (task #1066) — the same substitution the sibling query
+    // `lazy_commit_is_honored()` already excludes.
+    #[cfg(all(
+        any(target_os = "linux", target_os = "android", target_os = "windows"),
+        aligned_vmem_mock
+    ))]
+    assert!(
+        !Reservation::decommit_reclaims_and_zeroes(),
+        "under `--cfg aligned_vmem_mock`, decommit records without touching the OS: \
+         the capability query must answer false"
     );
 
     // Under miri, the capability is false even on Linux/Windows targets
@@ -123,7 +142,9 @@ fn can_decommit_reclaim_and_zero_returns_false_for_huge_reservations() {
 ///
 /// What breaks if this test is deleted: the instance-level query could diverge from
 /// the platform-level query for ordinary reservations, breaking the documented
-/// relationship (instance query = platform query && !is_huge).
+/// relationship (instance query = platform query && !is_huge). The mock arm
+/// (task #1066) pins the instance query to the platform query's new `false`
+/// answer under the `aligned_vmem_mock` cfg.
 #[test]
 fn can_decommit_reclaim_and_zero_matches_platform_for_ordinary_reservations() {
     use aligned_vmem::reserve_aligned;
@@ -137,10 +158,24 @@ fn can_decommit_reclaim_and_zero_matches_platform_for_ordinary_reservations() {
     // For ordinary reservations, the instance query should match the platform query
     #[cfg(not(miri))]
     {
-        #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+        #[cfg(all(
+            any(target_os = "linux", target_os = "android", target_os = "windows"),
+            not(aligned_vmem_mock)
+        ))]
         assert!(
             ordinary_r.can_decommit_reclaim_and_zero(),
             "ordinary reservation on Linux/Windows should support reclaim+zero-fill"
+        );
+
+        // Under the mock cfg the platform query is false, so the instance query
+        // must be too for this ordinary (non-huge) reservation (task #1066).
+        #[cfg(all(
+            any(target_os = "linux", target_os = "android", target_os = "windows"),
+            aligned_vmem_mock
+        ))]
+        assert!(
+            !ordinary_r.can_decommit_reclaim_and_zero(),
+            "under `--cfg aligned_vmem_mock`, even ordinary reservations must report false"
         );
 
         #[cfg(any(

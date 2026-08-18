@@ -278,6 +278,13 @@ impl Reservation {
     /// - **huge-page reservations** (those with [`Self::is_huge`] == `true`) — decommit
     ///   silently fails there (see the free [`decommit`] function's rustdoc for details).
     /// - **miri** — under miri, the backend is a no-op that doesn't model RSS or reclaim.
+    /// - **the `aligned_vmem_mock` cfg** (`RUSTFLAGS="--cfg aligned_vmem_mock"`) — the
+    ///   recording mock backend's decommit logs the call WITHOUT touching the OS, so it
+    ///   reclaims nothing and zeroes nothing (task #1066). Excluded for the same reason
+    ///   the sibling capability query `lazy_commit_is_honored()` (feature `lazy-commit`)
+    ///   excludes it: this family answers for the backend actually linked into the
+    ///   compilation, and the miri bullet above is already that same substituted-backend
+    ///   category rather than a platform property.
     ///
     /// For an instance-level query that accounts for huge pages, use
     /// [`Self::can_decommit_reclaim_and_zero`].
@@ -297,7 +304,8 @@ impl Reservation {
     ///
     /// This is a compile-time constant per platform: the return value is the same
     /// for all calls within a single compilation unit, determined by the target
-    /// OS triple and whether miri is active. It provides programmatic access to the
+    /// OS triple, whether miri is active, and whether the `aligned_vmem_mock` recording
+    /// backend is compiled in. It provides programmatic access to the
     /// platform-specific guarantee that [`Self::decommit`]'s rustdoc describes in prose.
     #[must_use]
     #[inline]
@@ -311,7 +319,8 @@ impl Reservation {
             target_os = "dragonfly",
             target_os = "netbsd",
             target_os = "openbsd",
-            miri
+            miri,
+            aligned_vmem_mock
         )))
     }
 
@@ -323,11 +332,12 @@ impl Reservation {
     /// and does **not** issue any runtime syscall or observe whether a prior `decommit`
     /// call actually succeeded. Specifically:
     ///
-    /// - On Linux/Windows (native, not miri), `true` means the platform guarantees that
+    /// - On Linux/Windows (native — not miri, not the `aligned_vmem_mock` cfg), `true` means the platform guarantees that
     ///   `decommit` will return physical backing and zero-fill on next access via
     ///   `MADV_DONTNEED` / `MEM_DECOMMIT`. Backend syscall failures (e.g. rare kernel
     ///   failures) are silently discarded and not reflected in this query's return value.
-    /// - On Darwin/BSDs or under miri, `false` means decommit is advisory-only with no
+    /// - On Darwin/BSDs, under miri, or under the `aligned_vmem_mock` cfg, `false` means
+    ///   decommit is advisory-only (Darwin/BSDs) or a recorded no-op (miri, mock) with no
     ///   reclaim or zero-fill guarantee.
     /// - On huge-page reservations (any platform), `false` because decommit is a silent
     ///   no-op: the OS never releases the backing, and reads return the old data.
@@ -342,7 +352,8 @@ impl Reservation {
     /// - the reservation's huge-page status (via [`Self::is_huge`]).
     ///
     /// Returns `false` if EITHER condition fails:
-    /// - the platform doesn't guarantee reclaim+zero-fill (Darwin/BSDs, or miri), or
+    /// - the platform doesn't guarantee reclaim+zero-fill (Darwin/BSDs, miri, or the
+    ///   `aligned_vmem_mock` cfg), or
     /// - this reservation uses huge pages (huge-page decommit is a silent no-op).
     ///
     /// Use this when you have an actual `Reservation` and need to know whether decommit
@@ -355,7 +366,8 @@ impl Reservation {
     /// ```text
     /// let ordinary = reserve_aligned(1024 * 1024, 4096).expect("reserve");
     /// // On Linux/Windows (native): ordinary.can_decommit_reclaim_and_zero() == true
-    /// // On Darwin/BSD or under miri: ordinary.can_decommit_reclaim_and_zero() == false
+    /// // On Darwin/BSD, under miri, or under `aligned_vmem_mock`:
+    /// // ordinary.can_decommit_reclaim_and_zero() == false
     /// ```
     ///
     /// Huge-page reservation: decommit never works, even on Linux/Windows:
