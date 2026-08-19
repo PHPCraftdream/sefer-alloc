@@ -88,11 +88,14 @@
 //       (matches `^\s*(///|//!|//)`). This catches the `b11d8be` shape — a
 //       fix(perf) commit whose src/ delta is entirely `///` doc comments.
 //
-//   (2) `bench(...)`/`docs(...)`-prefixed commit whose diff DOES touch
-//       something outside docs/, examples/, benches/, tests/, scripts/
-//       (i.e. touches src/ or Cargo.toml) -> ERROR for docs/docs-config,
-//       WARNING for bench (direction 2). This is a hidden-runtime-change-under-
-//       an-innocuous-prefix shape — the opposite direction.
+//   (2) `bench(...)`/`docs(...)`/`build(...)`/bare `build:`-prefixed commit
+//       whose diff DOES touch something outside docs/, examples/, benches/,
+//       tests/, scripts/ (i.e. touches src/ or Cargo.toml) -> ERROR for
+//       docs/docs-config, WARNING for bench and for build (direction 2).
+//       This is a hidden-runtime-change-under-an-innocuous-prefix shape —
+//       the opposite direction. `build` was added task #1168 (OX3/F7); see
+//       the "BUILD: EXTENSION" note below for why it is WARNING-only, not
+//       ERROR like docs.
 //
 //       For docs/docs-config: upgraded to ERROR after a wide-range scan showed
 //       no false positives on historically-legitimate commits; the `09f4d16`
@@ -107,6 +110,45 @@
 //       "bench-internals")]` / `#[doc(hidden)] pub(crate) static ..._FAILURES:
 //       AtomicU64` — see commits 88592d7, d772d99). A bench commit whose src/
 //       delta is comment-only is also just a warning, same as docs.
+//
+// BUILD: EXTENSION (task #1168, OX3/F7): direction 2 now ALSO covers bare
+// `build:` and scoped `build(...)`  — a THIRD, separate branch from the
+// docs/bench one above, always WARNING (never promoted to ERROR).
+//
+// Why this branch exists at all: `39279b5` (docs(vmem): prefix, task #1160)
+// and `cecdeec` (bare build: prefix, task #1164) make the EXACT SAME
+// comment-only claim-strengthening edit to the same two files
+// (`crates/aligned-vmem/src/api/decommit.rs`,
+// `crates/aligned-vmem/src/api/reserve_aligned_huge.rs`) — both change a
+// doc comment's claim about what CI evidence proves, on a publishable
+// (docs.rs-facing) surface, with zero non-comment src/ delta. Direction 2
+// flagged `39279b5` (docs prefix) but was silent on `cecdeec` (build
+// prefix) purely because `build` was outside BENCH_OR_DOCS_RE — the same
+// defect class direction 2 exists to catch, just reachable through a
+// prefix the original check never examined.
+//
+// Why `build` gets its OWN WARNING-only branch instead of being folded into
+// the docs/bench branch at ERROR severity: `build` is a standard
+// conventional-commit TYPE for tooling/CI/dependency/structural work, not a
+// "no shipping code changed" claim the way `docs(...)`/`bench(...)` are
+// within R30-12's own five-prefix taxonomy (`build` isn't even IN that
+// taxonomy). A wide-range scan of every `build:`/`build(...)` commit since
+// the R30-12 rule commit (60 commits, `git log
+// 3f7db1629d389c18ae987120f4094aaccf04f81f..cecdeec` filtered to `^build`)
+// found 10 that legitimately touch src/ or Cargo.toml with REAL
+// (non-comment) content — `a4b8e50`'s module-per-file split, `c75aa59`'s
+// crate-directory rename, `d72b6d7`'s version bump, dependency
+// hoists/removals (`56d0764`, `57c4510`), and more — none of them a
+// claim-strengthening defect; promoting this branch to ERROR the way docs
+// is would have made all 10 false positives, in direct tension with the
+// "must not start noise on legacy commits" requirement direction 2 has
+// always had to clear before being tightened. Only 6 of the 60 have a
+// comment-only src/ delta (the actual defect shape) and all 6 are the same
+// family as `cecdeec` — a doc-comment claim revised on
+// `crates/aligned-vmem/src/**`. WARNING, not ERROR, keeps this branch
+// visible to a reviewer without blocking the much larger set of legitimate
+// build: commits that touch src/ for real reasons unrelated to claim
+// strength.
 //
 // Direction (1) is FAIL (exit 1): unlike a brand-new rule with zero
 // real-world track record, R30-12 already has three independently-verified
@@ -387,10 +429,18 @@ const BENCH_OR_DOCS_RE = /^(bench|docs)\(([^)]*)\)!?:/;
 const BENCH_BARE_RE = /^bench:/;
 const DOCS_BARE_RE = /^docs:/;
 const FIX_PERF_RE = /^fix\(perf\)!?:/;
+// `build:` / `build(scope):` — task #1168 (OX3/F7): NOT part of R30-12's
+// five-prefix perf taxonomy at all (build is a standard conventional-commit
+// type for tooling/CI/dependency/structural changes, unrelated to the
+// perf-vs-measurement axis R30-12 governs). Classified separately from
+// 'docs-other'/'bench' below — see the 'build' branch in the direction-2
+// switch for why it gets its own WARNING-only treatment rather than being
+// folded into docs' ERROR tier.
+const BUILD_RE = /^build(\(([^)]*)\))?!?:/;
 
 /** Classify one commit's subject prefix. Returns one of:
  *   'perf-runtime' | 'perf-opt-in' | 'perf-other-scope' | 'perf-bare' |
- *   'bench' | 'docs-config' | 'docs-other' | 'fix-perf' | 'other' */
+ *   'bench' | 'docs-config' | 'docs-other' | 'fix-perf' | 'build' | 'other' */
 function classifySubject(subject) {
   const scoped = PERF_SCOPED_RE.exec(subject);
   if (scoped) {
@@ -417,6 +467,10 @@ function classifySubject(subject) {
   // below instead of silently falling through to 'other' (which direction-2
   // never examines).
   if (DOCS_BARE_RE.test(subject)) return 'docs-other';
+  // build: / build(scope): — task #1168. Checked after every perf/bench/docs
+  // branch (none of those prefixes start with "build") and before the final
+  // 'other' fallthrough.
+  if (BUILD_RE.test(subject)) return 'build';
   return 'other';
 }
 
@@ -585,6 +639,51 @@ function main() {
               `shipping/opt-in behavior actually changed.`,
           );
         }
+      }
+      continue;
+    }
+
+    if (kind === 'build') {
+      // task #1168 (OX3/F7): `build:`/`build(scope):` gets its OWN direction-2
+      // branch, deliberately separate from the docs/bench branch above and
+      // deliberately WARNING-ONLY (never promoted to ERROR the way docs is).
+      // Rationale, checked against this repo's own history before writing
+      // this branch (60 build:/build(...) commits since the R30-12 rule
+      // commit, cited exactly in this file's own header comment below):
+      // `build` is a standard conventional-commit TYPE for tooling/CI/
+      // dependency/structural work, not a claim of "no shipping code
+      // changed" the way `docs(...)`/`bench(...)` are within R30-12's own
+      // taxonomy — 10 of those 60 commits legitimately touch src/ or
+      // Cargo.toml with REAL (non-comment) content (e.g. `a4b8e50`'s
+      // module-per-file split, `c75aa59`'s crate-directory rename,
+      // `d72b6d7`'s version bump, dependency hoists/removals) and are not
+      // mis-scoped — promoting this branch to ERROR the way docs is would
+      // have flagged all 10 as false positives on legitimate history. But a
+      // comment-only src/ delta under `build:` is exactly the same
+      // hidden-claim-strengthening shape direction 2 exists to catch
+      // (confirmed on this repo's own history: `39279b5` under `docs(vmem):`
+      // and `cecdeec` under bare `build:` are the SAME comment-only change
+      // to the SAME two files, `crates/aligned-vmem/src/api/decommit.rs` and
+      // `crates/aligned-vmem/src/api/reserve_aligned_huge.rs` — task #1160
+      // vs task #1164 — and only the docs-prefixed one was ever flagged
+      // before this branch existed). So: always WARNING (both comment-only
+      // and non-comment paths), never ERROR — visible to a reviewer without
+      // blocking the many legitimate build: commits that touch src/ for
+      // real.
+      const paths = changedPaths(sha);
+      const outside = paths.filter((p) => !isMeasurementOnlyPath(p));
+      if (outside.length > 0) {
+        const hasNonComment = hasNonCommentChange(sha, outside);
+        warnings.push(
+          `${short} "${subject}" — "build:" prefix is not part of R30-12's perf taxonomy, but ${outside.length} ` +
+            `changed path(s) fall outside docs/examples/benches/tests/scripts/ ` +
+            `(${hasNonComment ? 'with non-comment' : 'comment-only'} src/ delta): ` +
+            `${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''} — ` +
+            `if this is a claim/evidence-strengthening comment change on a publishable surface ` +
+            `(the 39279b5/cecdeec shape — task #1168), verify the claim is no stronger than what ` +
+            `was actually run/observed; a real build/tooling/dependency change (module splits, ` +
+            `renames, version bumps) is the common legitimate case and needs no action.`,
+        );
       }
       continue;
     }
