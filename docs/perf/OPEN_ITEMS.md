@@ -1101,7 +1101,8 @@ for completeness.
     > - **Status:** design-only, deferred — reasoned-but-unmeasured performance idea.
     > - **Current number/verdict:** NEED-MEASUREMENT — no measured victim exists today. On 64-bit Unix, `crates/aligned-vmem/src/os/unix.rs`'s `unix_reserve` (task #944/P-1 compiled out the exact-size fast path) usually over-reserves `size + align` bytes in one `mmap` call and keeps the whole mapping, except on Linux when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, where an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base). The cost of over-reserving is extra virtual address space held per reservation (cheap for small aligns like 4 KiB, larger for big aligns like 4 MiB). The 32-bit exact-size fast path (`try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs`) shows the shape of a possible fix: try an exact-size `mmap` first, check if the base is already `align`-aligned (hit), and fall back to the over-reserve on a miss. However, porting this to 64-bit is a real measured-tradeoff decision, not a one-line fix: on a miss, the fast path costs 3 syscalls (mmap + munmap + over-reserve mmap) vs the current flat 1 syscall. The break-even analysis between syscall savings (on hits) and retry cost (on misses) needs a real measured gate before implementation — the same class of question that led to the 32-bit fast path's own retreat-to-64-bit-removal (see `unix_reserve`'s own doc comment in `crates/aligned-vmem/src/os/unix.rs` for the documented reasoning).
     > - **Pool-cost addition (2026-08-18, task #1069, F9 half 1 of `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md`):** this card's VA-only pricing understates the case where Linux huge pages are actually GRANTED through the over-reserve path — every granted `align > LINUX_HUGE_PAGE_SIZE` request (the II-4 exact-size fast path covers only `align == 2 MiB`; II-4's fix is the closed MEDIUM that landed as commits `539e1ae`/`a088a0c`), plus an `align == 2 MiB` request whose fast-path attempt missed. `libc_mmap` passes no `MAP_NORESERVE`, and Linux reserves hugetlb pool pages for a private `MAP_HUGETLB` mapping's entire length at `mmap` time, so the whole `size + align` span — including the exactly-`align`-byte slack — is charged against the bounded `nr_hugepages` pool for the reservation's lifetime, not merely held as cheap VA. For `size == align == 4 MiB` that is 4 pool pages charged per segment for 2 needed (2×, II-4's own "up to 2x" arithmetic; the F9 audit's "roughly 33%" headline is arithmetically wrong — the slack is 50% of the charge in that shape). Still deliberately not changed, same verdict as above: a head/tail trim would be provably munmap-conformant for this case (the `unix_reserve` guard forces 2-MiB multiples and the kernel guarantees a 2-MiB-aligned base, so every trim boundary is huge-page-aligned), but re-adding trims partially reverses task #842's deliberate keep-whole-mapping soundness design, and the win is unmeasurable on any host this project has. The pool dimension is now documented at the code site (`unix_reserve`'s keep-whole-mapping comment) and in `reserve_aligned_huge`'s rustdoc.
-    > - **Next trigger:** a round with access to a 64-bit Unix target and a reservation-heavy workload pattern that demonstrates `align`-amplified VA pressure is a real problem (not merely theoretical), measured via `aligned-vmem`'s `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` bench-internals counters to determine the actual hit rate of the huge-page exact-size path on 64-bit (these counters track the huge-page path on 64-bit, not the general over-reserve path). For the POOL dimension specifically, the trigger additionally requires a hugetlb-configured host (`nr_hugepages > 0`), which correctness item 59 records as absent from this project's CI.
+    > - **Next trigger:** a round with access to a 64-bit Unix target and a reservation-heavy workload pattern that demonstrates `align`-amplified VA pressure is a real problem (not merely theoretical), measured via `aligned-vmem`'s `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` bench-internals counters to determine the actual hit rate of the huge-page exact-size path on 64-bit (these counters track the huge-page path on 64-bit, not the general over-reserve path). For the POOL dimension specifically, the trigger requires a hugetlb-configured host (`nr_hugepages > 0`).
+    > - **CORRECTION (2026-08-19, task #1182) — the "no hugetlb host" premise above is STALE since task #1152; the compound trigger has NOT fired even though the host half now exists.** `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` job (tasks #1151/#1152, line 351) configures a real `nr_hugepages=64` pool (`echo 64 | sudo tee /proc/sys/vm/nr_hugepages`, line 409) and hard-asserts a real `MAP_HUGETLB` grant via a path-activation oracle before running `huge_pages.rs`/`decommit_capability.rs`/`reservation_decommit_contract.rs` — correctness item 59's Linux half (59a) is CLOSED for dispatch and kernel-acceptance on exactly this host (`docs/CORRECTNESS_OPEN_ITEMS.md` item 59a). So the HOST half of this card's compound trigger is satisfied. **But the WORKLOAD half is not:** every `reserve_aligned_huge` call in those three test files uses the shape `reserve_aligned_huge(size, size)` — `align == size`, never `align > size` — in a single call, never a loop (`grep -nE "for [a-zA-Z_]+ in |loop \{" crates/aligned-vmem/tests/huge_pages.rs crates/aligned-vmem/tests/decommit_capability.rs crates/aligned-vmem/tests/reservation_decommit_contract.rs` → zero hits, confirmed against those three files exactly — the job's own test list). The one test that reads `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` (`reserve_aligned_huge_exact_size_for_2mib_align`, `crates/aligned-vmem/tests/huge_pages.rs:214-259`) is a single-reservation path-activation sentinel (`assert_eq!(attempts, 1)`), not a hit-rate measurement over a reservation-heavy workload, and it never itself exercises `align > 2 MiB` (the shape the POOL-cost addition above is about). **Correction to an earlier draft of this bullet, caught in zero-trust review of task #1182 before it was committed:** that draft said the only 4 MiB test is Windows-only, which is FALSE. `huge_pages.rs:429`'s `reserve_aligned_huge_4mib_still_two_call_path` is indeed `#[cfg(all(windows, feature = "bench-internals", not(miri)))]` and irrelevant to the Linux pool — but `huge_pages.rs:99`'s `reserve_aligned_huge_ordinary_page_sized_request_succeeds` calls `reserve_aligned_huge(4 * MIB, 4 * MIB)` under NO `cfg` gate at all, so it DOES run in this job and DOES take the `align > 2 MiB` path, once. That does not move this trigger: one reservation, no counter read, no pool observation — the shape is exercised, nothing about it is measured, which is exactly the workload half that is missing. **Verdict: NOT FIRED.** The blocking condition changed from "no host to run this on" to "a host exists, but nothing run on it yet measures `align`-amplified VA/pool pressure under a reservation-heavy workload" — the trigger's workload half, unchanged from the original wording. Producing the missing measurement needs: (a) a new test/bench in the `aligned-vmem-hugetlb-real` job's test set (or a new job) that reserves many times with `align > size` (e.g. `align = 2 × size` or `align = 4 MiB, size = 4 MiB` per the pool-cost addition's own worked example) in a loop, and (b) reads `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` (VA/hit-rate dimension) and/or pool occupancy such as `/proc/sys/vm/nr_hugepages` free count or a `bench-internals` pool counter if one is added (POOL dimension) before and after. No such harness exists in the job's three test files as of this correction (`grep -nE "align.*2 \*|align > size|LINUX_HUGE_PAGE_SIZE \* 2" crates/aligned-vmem/tests/huge_pages.rs crates/aligned-vmem/tests/decommit_capability.rs crates/aligned-vmem/tests/reservation_decommit_contract.rs` → zero hits; the crate's other test files do use `align > size` shapes for unrelated ordinary-page tests, e.g. `smoke.rs:227` — none of those files run under the real hugetlb pool). This gap is also perf-index item 57's P1 (task #1188), filed the same task as this correction — #1188 is the natural owner of building that missing harness, not a new item here.
     > - **Evidence:** `unix_reserve` doc comment in `crates/aligned-vmem/src/os/unix.rs` (32-bit fast path gating), `try_reserve_aligned_exact` in `crates/aligned-vmem/src/os/unix.rs` (32-bit exact-size fast path implementation), `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (64-bit over-reserve path). Filed from `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`, Part I finding 4 (P2-4); pool-cost addition from `docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md` F9 (task #1069), which re-raises II-4's residual `align > 2 MiB` half.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
@@ -1196,7 +1197,8 @@ for completeness.
    > **Current state**
    > - **Status:** NULL — deliberately NOT changed, after two independent reviews raised it (R6-8 → task #1040, commit `84bc9ac`; R7-4 → task #1048, which re-confirmed the verdict rather than re-litigating it).
    > - **Current number/verdict:** the finding observes that for `huge && align == 2 MiB`, an exact `mmap(size, MAP_HUGETLB)` that returns NULL is followed by the general path's `mmap(size + align, MAP_HUGETLB)` before the ordinary fallback — two failing huge attempts per logical reserve on a host with no hugetlb pool. The premise "the second attempt is guaranteed to fail too" is FALSE in general: the two calls request DIFFERENT sizes (`size` vs `size + align`), so a fragmented or bounded pool can satisfy one and refuse the other. Skipping straight to the ordinary fallback would trade a rare-but-real success for one saved syscall on an already-cold path. Both reports state the premise without addressing this.
-   > - **Next trigger:** a syscall-count or latency measurement ON A LINUX HOST WITH AND WITHOUT a configured hugetlb pool, showing the saved syscall outweighs the lost success case. Until such a measurement exists, the answer stays NULL. Note the measurement is structurally unreachable from this project's current dev host (Windows) and CI (no hugetlb runner — correctness item 59), which is why it has not been produced.
+   > - **Next trigger:** a syscall-count or latency measurement ON A LINUX HOST WITH AND WITHOUT a configured hugetlb pool, showing the saved syscall outweighs the lost success case. Until such a measurement exists, the answer stays NULL.
+   > - **CORRECTION (2026-08-19, task #1182) — "structurally unreachable... no hugetlb runner" is STALE since task #1152; not re-derived, see item 48's fuller correction above for the verified detail.** A WITH-pool host now exists in CI (`aligned-vmem-hugetlb-real` job, `.github/workflows/ci.yml:351`; correctness item 59a CLOSED for dispatch/kernel-acceptance). What is still missing is the MEASUREMENT itself, not the host: no test in that job's three test files counts syscalls or times the two-attempt sequence this card describes (`huge && align == 2 MiB` exact-mmap-NULL-then-larger-mmap) — every reservation in those files is a single non-looped call, confirmed by the same grep item 48's correction cites. WITHOUT-pool is trivially available on any default runner (the standing case before task #1151). **Verdict: NOT FIRED** — same reasoning as item 48: the host half of the blocker is gone, the measurement itself was never built. This is part of perf-index item 57's P3 (task #1189), which explicitly owns "Linux huge exact miss retries a larger huge `mmap`" as one of its three speculative-path candidates needing counters/measurement.
    > - **Evidence:** commit `84bc9ac`'s body (the counterexample, written out in full); `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (the exact-size attempt and the over-reserve attempt, with their differing size arguments); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-8 and `...-r7.md` § R7-4 (the two raisings).
    > - **Duplicate record (2026-08-18, task #1069):** half 2 of finding F9 (`docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md`, "the pool-exhausted path also pays a guaranteed-doomed extra syscall") re-raised this exact observation, repeating the "guaranteed to fail for the same reason" premise the counterexample above refutes — the third raising, as this entry's title anticipated. Recorded as a duplicate; no change, verdict stays NULL.
    Full history: this entry (filed 2026-08-17, task #1048).
@@ -2314,6 +2316,75 @@ for completeness.
     - **Evidence:** `.github/workflows/perf-gate.yml`'s own DISABLED header
       block; GitHub runs `30980354559` (green), `32098094538` (red);
       13 consecutive scheduled failures 2026-08-06 … 2026-08-18.
+
+57. **[A] `aligned-vmem` third-audit perf candidates (P1/P3) — owners assigned,
+    nothing measured yet; P2 has no separate owner (absorbed into #1180).**
+    (Filed 2026-08-19, task #1182, from
+    `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`
+    §"Производительность", revision `000c076`.)
+
+    - **Status:** OPEN, unmeasured — each candidate is a code-reading-only
+      finding from a static (no build/test/CI) audit; none has a benchmark
+      run against it yet. Owner tasks are filed (#1188, #1189) but had not
+      landed as of this entry.
+    - **Current-number-or-verdict:**
+      - **P1 (report lines 163-167) → task #1188.** On 64-bit Unix, the exact
+        huge fast path only fires at `align == 2 MiB`; a request with
+        `align > 2 MiB` takes the general `mmap(size + align)` path and keeps
+        the whole mapping. Worked example from the report: `size == align ==
+        4 MiB` reserves 8 MiB — four 2-MiB huge pages for two needed. Against
+        a bounded, pre-allocated HugeTLB pool (not cheap VA) that is up to 2×
+        occupancy per such reservation. Trimming head/tail to whole huge pages
+        post-hoc would cut steady-state occupancy but not the admission cost
+        of the initial oversized `mmap`; the report's own recommendation is to
+        measure pool occupancy, fallback rate, and extra-syscall cost on the
+        real-HugeTLB runner before attempting an exact-size/aligned strategy.
+        This is the same `align > 2 MiB` pool-cost dimension item 48 above
+        already tracks (`docs/perf/OPEN_ITEMS.md` item 48's 2026-08-18 "Pool-
+        cost addition"); #1188 is that dimension's implementation owner.
+      - **P2 (report lines 169-171) — no separate owner.** Safe
+        `Reservation::try_decommit` reads page size and validates the range;
+        free `try_decommit` and infallible `decommit` each repeat part of
+        that work. Cheap next to the syscall itself but nonzero for
+        empty/invalid/skipped calls. The report's own recommendation —
+        merge into one private dispatch with a single `page_size` snapshot —
+        is ABSORBED into task #1180 (the `DecommitOutcome` phase already
+        unifying this dispatch for `docs/CORRECTNESS_OPEN_ITEMS.md` item
+        90/91's M4); not filed as a standalone perf task.
+      - **P3 (report lines 173-177) → task #1189.** Three speculative
+        platform paths, none with activation counters today: (a) Linux huge
+        exact-size miss retries a larger huge `mmap` before the ordinary
+        fallback — may help under transient fragmentation, so item 52 above
+        already rejects removing it without counters; (b) Windows large-page
+        request can pay a failed large allocation, an ordinary retry, a
+        release from misalignment, and a two-call fallback — needs a
+        Windows-native profile of the existing counters (cross-reference item
+        47 above, the two doomed-syscall classes on the same path); (c) the
+        generic 64-bit Unix over-reserve deliberately trades one syscall for
+        a larger VA span — no generic retry without workload evidence (item
+        48 above). #1189 also owns the report's companion coverage gap C2
+        (no direct oracle on HugeTLB release: `UNIX_MUNMAP_FAILURES` is never
+        checked around `Drop` in the real-HugeTLB CI job).
+    - **Next trigger:** #1188 and #1189 landing (or being re-scoped/rejected
+      with a measured verdict); #1180 landing closes P2's absorption.
+    - **Why this index, not only `docs/CORRECTNESS_OPEN_ITEMS.md`:** this
+      material is a perf finding from a `docs/reviews/*` audit that a
+      correctness-index card (item 90's "3 perf candidates" header count,
+      item 91's full ownership record) already cross-references but never
+      placed here, despite this index's own Scope covering exactly this case
+      ("perf gate report explicitly flags them as a follow-up" — the
+      correctness index's item 90/91 do the flagging). `docs/perf/OPEN_ITEMS.md`
+      was untouched by the commit range that landed items 89-91
+      (`git diff 967b821..000c076 --stat` does not list this file), which is
+      the gap this entry closes. Full ownership narrative, independence
+      caveat, and cross-references to M1-M4/#1172/#1173/#1174/#1180 live in
+      `docs/CORRECTNESS_OPEN_ITEMS.md` item 91 — not duplicated here.
+    - **Evidence:** `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`
+      lines 163-177 (§P1-P3, re-read this task); `docs/CORRECTNESS_OPEN_ITEMS.md`
+      items 90 and 91 (owner assignments, independence caveat); item 48 above
+      (the pre-existing `align > 2 MiB` pool-cost card P1 restates); item 52
+      above (the Linux speculative-retry NULL verdict P3(a) restates); item 47
+      above (the Windows doomed-syscall classes P3(b) relates to).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
