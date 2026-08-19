@@ -60,8 +60,19 @@
 //   - Rust target triples (`i686-unknown-linux-gnu`,
 //     `armv7-unknown-linux-musleabihf`, ...) are stripped: "linux" between
 //     hyphens is part of a triple, not an OS statement.
-//   - Path-like tokens with >= 2 slashes (`include/uapi/linux/mman.h`) are
-//     stripped for the same reason.
+//   - Path-like tokens with >= 2 slashes ENDING IN A FILE EXTENSION
+//     (`include/uapi/linux/mman.h`, `docs/perf/OPEN_ITEMS.md`, GitHub URLs)
+//     are stripped for the same reason. Task #1125 narrowed this from the
+//     original "any token with >= 2 slashes": that form erased the trigger
+//     word itself in prose like `Linux/glibc/musl` — a slash-separated OS
+//     enumeration is not a path — so a true drift written that shape passed
+//     green ("Linux/glibc/musl `MADV_FREE`" was a MISS). Requiring a
+//     file-extension suffix (`\S*/\S*/\S*\.<ext>`) keeps every real path in
+//     the scanned corpus stripped (`include/uapi/linux/mman.h` in
+//     os/unix.rs is the one linux-bearing example) while OS enumerations
+//     survive to the `\blinux\b` test. Verified against the corpus: no
+//     previously-stripped token that now survives reintroduces a false
+//     trigger.
 //   - Constant NAMES (`LINUX_HUGE_PAGE_SIZE`) never trigger the "linux"
 //     word test: underscores are word characters, so \blinux\b does not
 //     match inside the identifier. A block/paragraph whose only "Linux" is the
@@ -160,6 +171,27 @@
 //      continuation lines do not begin with `|` would be joined with the
 //      following row's window; no such cell exists in the scanned files
 //      today.
+//   7. A Linux-only claim split across TWO ITEMS OF ONE LIST is NOT caught
+//      (task #1125, F4): `- Huge pages are requested with `MAP_HUGETLB`.`
+//      followed by `- That request path is taken on Linux.` is two windows
+//      under the LIST_MARKER rule — the marker item has no "linux" word,
+//      the Linux item has no pair marker — so neither window fires. The
+//      pre-#1121 whole-block window DID catch this shape (verified on the
+//      `51816b4^` guard), and rustdoc lists are this crate's dominant doc
+//      structure, so this is a real loss. It is accepted rather than fixed
+//      because the only automatic repair — re-widening the window toward
+//      the whole doc block — is exactly what #1121 reverted: a report-only
+//      "advisory" block-level pass was prototyped against the real corpus
+//      and produced exactly 2 findings, BOTH of them the known #1114
+//      whole-block artifacts the NOTE above already documents as not-drift
+//      (`decommit_reclaims_and_zeroes`' Linux/MADV_DONTNEED bullets and
+//      `from_raw_parts`' page-size remark) — zero new signal, two standing
+//      false positives a maintainer must dismiss every run, i.e. the
+//      false-positive pressure that caused the narrowing, reintroduced in
+//      diluted form. Recorded as this limitation instead. This also closes
+//      a gap in limitation 5's framing: #1121's commit body priced the
+//      narrowing in neighbouring PARAGRAPHS only and never named this
+//      one-list shape.
 //
 // Usage (from repo root):
 //   node scripts/vmem-linux-android-pairing-guard.mjs
@@ -179,6 +211,11 @@
 //      with another entry's drift is NOT reported stale (all matching
 //      entries bind, not just the first).
 //   6. Clean tree: exit 0 with the full allowlist listed.
+//   7. (task #1125, F8) A drift written as a slash-separated OS enumeration
+//      — `Cheaper lazy reclaim — Linux/glibc/musl `MADV_FREE`` — FAILS
+//      (PATH_LIKE no longer erases the "Linux" word: it requires a file
+//      extension, so `Linux/glibc/musl` is not treated as a path). The
+//      pre-#1125 guard passed this shape green.
 
 import { REPO_ROOT } from './lib.mjs';
 import { readFileSync, readdirSync } from 'fs';
@@ -202,8 +239,10 @@ const STALE_ARM =
 
 // Rust target triples (i686-unknown-linux-gnu, x86_64-pc-solaris, ...)
 const TARGET_TRIPLE = /\b[A-Za-z0-9_]+-(?:unknown|pc|apple)-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*\b/g;
-// Path-ish tokens with at least two slashes (include/uapi/linux/mman.h)
-const PATH_LIKE = /\S*\/\S*\/\S*/g;
+// Path-ish tokens with at least two slashes ending in a file extension
+// (include/uapi/linux/mman.h). NOT bare slash-enumerations (`Linux/glibc/musl`)
+// — see the PREPROCESSING note in the header (task #1125).
+const PATH_LIKE = /\S*\/\S*\/\S*\.[A-Za-z][A-Za-z0-9]*\b/g;
 
 // Known drift outside the M1 fixing task's file scope (task #1105, agent B:
 // reserve_aligned_huge.rs / os/unix.rs / lib.rs / README.md only). Each
