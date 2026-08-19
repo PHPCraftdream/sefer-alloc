@@ -25,9 +25,21 @@
 // test prints itself (e.g. `println!("[oracle] ARMED: ...")`) to make an
 // otherwise output-indistinguishable branch (armed vs. unarmed) observable
 // in the CI log. See `extractLiteralMarkers` below; it is resolved against
-// a literal `println!("...")` occurrence in a candidate source file, not
-// against a `#[should_panic]`/`#[ignore]` attribute pair (a marker doesn't
-// name a `fn`, so that check does not apply to it).
+// a LIVE (not commented-out) `println!("...")` occurrence that sits AFTER a
+// preceding `assert!`/`assert_eq!`/`assert_ne!`/`debug_assert*!` call inside
+// SOME enclosing `fn` in a candidate source file (see
+// `resolveMarkerLocation`, task #1167/F4) — not against a
+// `#[should_panic]`/`#[ignore]` attribute pair (a marker doesn't name a
+// `fn`, so that check does not apply to it). Deleting the `println!`,
+// commenting it out, or moving it ahead of the assertion it exists to gate
+// on WITHIN ITS OWN FUNCTION all now surface as a resolution failure. This
+// is a real, but bounded, fix — a marker carries no `fn` name (unlike a
+// `test <name> ... ok` sentinel), so the resolver cannot tell "some
+// enclosing fn with a preceding assert" apart from "the ONE specific fn
+// this marker is meant to gate on": a print relocated into a DIFFERENT
+// test function that also has its own preceding assert still resolves.
+// See `resolveMarkerLocation`'s own doc comment for the precise, verified
+// (not assumed) boundary of what this catches and what it does not.
 //
 // WHAT THIS SCRIPT DOES — a pure text scan, no cargo invocation:
 //   1. Parse ci.yml. For every `- run: |` / `- run: <cmd>` step, find any
@@ -263,14 +275,15 @@ function extractSentinels(stepText) {
  * indistinguishable armed/unarmed outcome observable in CI's log). Unlike a
  * `test <name> ... ok` sentinel, a marker sentinel is not resolved against a
  * `#[should_panic]`/`#[ignore]` attribute pair (it does not name a `fn` at
- * all) — it is instead resolved against a literal `println!("<same
- * text>"` occurrence in one of the step's candidate test-source files, the
- * closest equivalent of "this string still corresponds to something real in
- * the source" available for a non-fn-named string. This exists specifically
- * so a marker sentinel counts toward `checkedCount`/`MIN_SENTINEL_COUNT`
- * (deleting the `println!` that emits it, or the CI line that greps for it,
- * both surface as a floor/count change) without widening the `fn`-attribute
- * matching logic above to cover a case it was never designed for.
+ * all) — it is instead resolved against a literal, LIVE (not commented-out)
+ * `println!("<same text>")` occurrence that sits AFTER at least one
+ * `assert!`/`assert_eq!`/`assert_ne!`/`debug_assert*!` call inside the SAME
+ * enclosing `fn` (see `resolveMarkerLocation` below — task #1167/F4). This
+ * exists specifically so a marker sentinel counts toward
+ * `checkedCount`/`MIN_SENTINEL_COUNT` (deleting the `println!` that emits
+ * it, or the CI line that greps for it, both surface as a floor/count
+ * change) without widening the `fn`-attribute matching logic above to cover
+ * a case it was never designed for.
  */
 function extractLiteralMarkers(stepText) {
   const markers = [];
@@ -365,6 +378,144 @@ function resolveTestLocation(candidateFiles, sentinelName) {
   return null;
 }
 
+/** Escape a literal string for safe embedding inside a RegExp source. */
+function escapeRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Task #1167 (F4, closing a gap review @ox found in the original task #1162
+ * resolver): resolve a marker sentinel's literal to a LIVE `println!(...)`
+ * call site that sits after at least one `assert!`/`assert_eq!`/
+ * `assert_ne!`/`debug_assert*!` invocation inside the SAME enclosing `fn`.
+ *
+ * THE GAP THIS CLOSES: the original resolver (`src.includes(...)`, task
+ * #1162) only checked that the literal text appeared ANYWHERE in one of the
+ * candidate files — with no check that the occurrence was live code (a
+ * commented-out `// println!("...")` still satisfies `String.includes`) and
+ * no check that the print actually followed the assertion it is meant to
+ * make observable. Commenting out the `println!`, or moving it above the
+ * `is_huge()`/kernel-acceptance assert it exists to gate on (or into an
+ * unrelated test entirely), left the guard AND the CI `grep -F` both green
+ * while the oracle itself was fully disarmed — the exact "green and dead"
+ * defect class task #1162 was written to prevent in the first place.
+ *
+ * WHAT THIS CHECKS (deliberately NOT a general Rust parser — see the
+ * module-level scope note above the marker resolver's header comment for
+ * why a full evaluator was rejected for the analogous `#[cfg]` case; the
+ * same cost/benefit applies here):
+ *   1. The literal must appear as a LIVE (non-commented) `println!("<lit>")`
+ *      or `println!("<lit>");` occurrence — a line whose content up to the
+ *      match is not a `//` line comment is treated as live. This does not
+ *      attempt to strip `/* ... *\/` block comments or macro-generated
+ *      code; see the "NOT COVERED" note below.
+ *   2. The occurrence must be textually inside a `fn ... { ... }` body
+ *      (found by walking outward via brace-depth tracking from the matched
+ *      line to the nearest enclosing top-level `fn`), and at least one
+ *      `assert!`/`assert_eq!`/`assert_ne!`/`debug_assert!`/`debug_assert_eq!`/
+ *      `debug_assert_ne!` invocation must appear on an EARLIER line inside
+ *      that same function body. This pins the print's ordering relative to
+ *      the assertion it is meant to gate on, without needing to parse
+ *      statement boundaries or control flow.
+ *
+ * NOT COVERED (documented gap, same spirit as the `#[cfg]` gap noted
+ * above — verified by an actual counterfactual during this task, not
+ * assumed): this is a textual/line-order heuristic scoped to "some
+ * enclosing fn with some preceding assert", NOT "the ONE specific fn this
+ * marker's ci.yml comment/doc says it belongs to" — a marker sentinel, by
+ * construction (see extractLiteralMarkers above), carries no fn name to
+ * check against, so nothing here can tell that a print resolved inside the
+ * WRONG function. Two concrete cases, both checked:
+ *   - relocating the print ABOVE the assert it exists to gate on, in its
+ *     OWN function: CAUGHT (no preceding assert found at that position).
+ *   - relocating the print into a DIFFERENT, unrelated `#[test] fn` in the
+ *     same candidate file that also happens to contain a preceding
+ *     `assert!`: NOT CAUGHT — the resolver finds that occurrence, sees an
+ *     earlier assert in ITS enclosing fn, and reports it resolved. This is
+ *     a real, confirmed residual gap of the marker-sentinel design itself
+ *     (not just this resolver): closing it would require the marker
+ *     sentinel to carry the name of the test function it belongs to (a
+ *     format change to how markers are declared in ci.yml, out of scope
+ *     for a task confined to this one file), or a source-level convention
+ *     making marker text unique to its owning function (which this repo's
+ *     `[oracle] ARMED: ...` markers already mostly are, informally, but
+ *     nothing enforces it). It would also NOT catch a `println!` moved
+ *     into an `if false { ... }` branch still physically below the assert
+ *     in the same function, or one moved behind an early `return`/
+ *     `continue` that never reaches it on the path the assert also sits
+ *     on — both need real control-flow analysis of Rust source, out of
+ *     scope for a text-scanning CI guard (the same trade-off already made
+ *     for `#[cfg]` predicates above).
+ * What this DOES close is the two defects this task was filed to fix:
+ * commenting the print out, and relocating it ahead of the assert it is
+ * meant to gate on within its own function — both now fail loudly instead
+ * of passing silently. It does NOT close the cross-function relocation
+ * case; that residual gap is intentionally not oversold as fixed here.
+ */
+function resolveMarkerLocation(candidateFiles, literal) {
+  const escaped = escapeRegExp(literal);
+  const liveRe = new RegExp(`println!\\("${escaped}"\\)`);
+  const assertRe = /\b(?:debug_)?assert(?:_eq|_ne)?!\s*\(/;
+  const fnOpenRe = /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+\s*[(<][\s\S]*?\{?\s*$/;
+
+  for (const file of candidateFiles) {
+    if (!fs.existsSync(file)) continue;
+    const src = fs.readFileSync(file, 'utf8');
+    const lines = src.split(/\r?\n/);
+
+    for (let idx = 0; idx < lines.length; idx++) {
+      const line = lines[idx];
+      const m = liveRe.exec(line);
+      if (m === null) continue;
+      // Liveness: nothing before the match on this line may open a `//` line
+      // comment. Checking only `line.trimStart().startsWith('//')` would miss
+      // a trailing-comment form (`foo(); // println!("<lit>")`), which is
+      // exactly the "text present but not live code" case this resolver
+      // exists to reject — the doc comment above promised "content up to the
+      // match", so the check has to actually be that (task #1167, zero-trust
+      // review of this file's own first revision). A `//` inside an earlier
+      // string literal on the same line would be a false reject, i.e. a loud
+      // FAIL, not a silent pass — fail-closed, and not observed in this repo.
+      if (line.slice(0, m.index).includes('//')) continue;
+
+      // Found a live occurrence. Walk upward to find the nearest enclosing
+      // top-level `fn` header (brace-depth 0 relative to this line), and
+      // check for a preceding assert inside that same function.
+      let depth = 0;
+      let fnLine = -1;
+      let sawAssertBeforeMarker = false;
+      for (let k = idx - 1; k >= 0; k--) {
+        const l = lines[k];
+        const closes = (l.match(/\}/g) || []).length;
+        const opens = (l.match(/\{/g) || []).length;
+        // Walking upward: a `}` on an earlier line closes a nested block
+        // relative to our marker line, so it INCREASES the depth we must
+        // unwind before we're back at the marker's own enclosing scope.
+        depth += closes - opens;
+        if (depth < 0) {
+          // We've walked past the `{` that opens the marker's own
+          // enclosing block. Check whether that line is a `fn` header.
+          if (fnOpenRe.test(l) && /\bfn\s+\w+/.test(l)) {
+            fnLine = k;
+            break;
+          }
+          // Not a fn header at this depth (e.g. an `if`/`match` arm) —
+          // keep walking outward one more level.
+          depth = 0;
+          continue;
+        }
+        if (assertRe.test(l)) sawAssertBeforeMarker = true;
+      }
+
+      if (fnLine === -1) continue; // could not locate an enclosing fn; try next occurrence
+      if (!sawAssertBeforeMarker) continue; // live, but not proven to gate on an assert; try next occurrence
+
+      return { file, line: idx + 1, fnLine: fnLine + 1 };
+    }
+  }
+  return null;
+}
+
 /** List every .rs file directly under a tests/ directory (non-recursive is enough — this repo's tests/ dirs are flat). */
 function listTestFiles(testsDir) {
   const abs = path.join(REPO_ROOT, testsDir);
@@ -398,17 +549,16 @@ function verifyCiSentinels() {
 
       for (const marker of markers) {
         checkedCount++;
-        const found = candidateFiles.some((f) => {
-          if (!fs.existsSync(f)) return false;
-          const src = fs.readFileSync(f, 'utf8');
-          return src.includes(`println!("${marker.raw}")`) || src.includes(`println!("${marker.raw}");`);
-        });
-        if (!found) {
+        const resolved = resolveMarkerLocation(candidateFiles, marker.raw);
+        if (!resolved) {
           errors.push(
             `step starting at ci.yml:${step.startLine}: marker sentinel "${marker.raw}" was not found ` +
-              `as a literal \`println!("${marker.raw}")\` in any candidate file ` +
+              `as a LIVE \`println!("${marker.raw}")\` occurring after a preceding \`assert!\`/\`assert_eq!\`/` +
+              `\`assert_ne!\`/\`debug_assert*!\` inside the same enclosing \`fn\`, in any candidate file ` +
               `(${candidateFiles.length > 0 ? candidateFiles.map((f) => path.relative(REPO_ROOT, f)).join(', ') : '<no candidates>'}). ` +
-              `An unresolvable marker sentinel is a failure: it cannot be verified to still name a real print site.`,
+              `An unresolvable marker sentinel is a failure: either the print was deleted, commented out, ` +
+              `or moved ahead of (or outside) the assertion it exists to gate on — any of which disarms the ` +
+              `oracle this marker is supposed to prove executed.`,
           );
         }
       }
