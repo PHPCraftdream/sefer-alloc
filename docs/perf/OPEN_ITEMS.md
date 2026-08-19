@@ -776,37 +776,7 @@ for completeness.
    >   `R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §8 (the 2026-07-30 addendum)
    >   and `scripts/r31_12_repair_r30_6_data.mjs` as independent verification.
 
-32. **The "wrong allocator layer" defect class — a gate report must name the
-    exact entry point under test and why that layer is the decision-relevant
-    one (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).**
-
-   > **Current state**
-   > - **Status:** CLOSED this round — codified as a CLAUDE.md rule (see
-   >   "Active rules", sibling to the R26-4 config-evidence rule and the
-   >   R30-8 mechanism-activation rule), not left as a narrative-only finding.
-   > - **Current number/verdict:** third instance of one meta-pattern —
-   >   R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the
-   >   wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this
-   >   rule). R30-3 (task #452) built a judge that satisfied every rule that
-   >   existed at the time — including R30-8's own path-activation oracle,
-   >   honestly reporting ~3% activation and correctly diagnosing
-   >   `carve_block_with_refill`'s 31-block free-list dilution — and still
-   >   shipped a wrong NO-GO verdict, because it measured
-   >   `AllocCore::alloc_zeroed` (bypassing the magazine) instead of
-   >   `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s
-   >   `#[global_allocator]` actually uses, which retains virginity across an
-   >   entire magazine refill via `PerClass::virgin_mask`). Caught and
-   >   reopened in R31-0 (task #471, commit `dece4a7`), see this file's item
-   >   25 (REOPENED).
-   > - **Next trigger:** none — this is a standing rule, not a pending
-   >   remeasurement. A future gate report that measures below the layer a
-   >   feature actually ships at (e.g. bare `AllocCore` instead of
-   >   `HeapCore`/`SeferAlloc`) without stating why that lower layer is still
-   >   decision-relevant violates the new CLAUDE.md rule and should be
-   >   caught in that task's own zero-trust review, not deferred here.
-   > - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P1-3;
-   >   `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`; CLAUDE.md
-   >   "Active rules" (the new rule this item's closure added).
+**(Item 32 — the "wrong allocator layer" defect class — moved to "Recently resolved" below by task #1143, 2026-08-19, per R34-24: it was fully CLOSED with "Next trigger: none" but had been left in this active `[D]` tier with no closure pointer. Full text preserved there, inline, rather than in a new `docs/perf/OPEN_ITEMS_ARCHIVE.md` section — that file is out of this task's declared edit scope.)**
 
 33. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 31 full
     independent review (`docs/reviews/2026-07-31-r31-full-review.md` §7
@@ -1318,7 +1288,7 @@ for completeness.
     > - **Current number/verdict:** `FLUSH_N=16` shows the only gate-1 (bulk-free Ir) win (−1.5% at N=1024) but triggers the kill condition on gate 3 (oscillating live-set): 2.42× Ir regression, 20× refill-event-count regression (1→20 refills per 20 rounds), independently confirmed via both an Ir judge and a native tcache-hit-rate counter. `FLUSH_N=4`/`FLUSH_N=12` show no gate-1 win at all (+14.4%/+0.7%) with gate 2/3 also flat-or-worse.
     > - **Next trigger:** none named as promising — a genuinely different mechanism (not a half-flush-RATIO tuning) would be needed; R25-8's conditional run-encoded free-batch design study is the only currently-planned follow-up touching this region, and it is a different mechanism, not a FLUSH_N retune. If `FLUSH_N=16` (or any `FLUSH_N == TCACHE_CAP`) is ever revisited for any reason, first fix the independent `virgin_mask >>= FLUSH_N` compile-time overflow this task found at that exact boundary (release-profile-only; `cargo check` in dev profile does NOT catch it) — see the report §6.
     > - **Evidence:** `R25_3_FLUSH_N_SWEEP_GATE.md` (full report); `R25_3_FLUSH_N_SWEEP_GATE_summary.csv`.
-   Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L13`.
+   Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L44`. (Corrected task #1143, 2026-08-19: this pointer previously cited a nonexistent `§ L13`; the archive's own back-link comment at its `### L44` section — "Back-link: `docs/perf/OPEN_ITEMS.md`, item 44 ... 'R25-3 — `FLUSH_N` sweep ...'" — confirms `L44` is this item's correct archive section.)
 
 16. **R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;
     R29-3/task #434). Trigger (b) FIRED and ANSWERED by R32-13/task #504 —
@@ -2384,6 +2354,7 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F9 [P2] — R32-8's decay-clock-throttle measures the BENEFIT (ns/call saved in a high-throughput regime) but argues the COST (retention in a low-throughput regime) qualitatively, violating CLAUDE.md's same-regime cost/benefit rule.** Closed by R33-6 (task #511, commits `5bd7c04` + `8a04452`) — built a subprocess-per-arm retention-cost harness with hard-asserted config evidence + path-activation oracle; measured the retention cost is bounded at ≤1 segment per missed interval in the low-throughput regime. See `docs/perf/R33_6_DECAY_THROTTLE_RETENTION_COST_summary.csv`.
 - **F10 [P3] — R32-3 is the round's only `perf(runtime)` shipping change with no gate report, no CSV, no raw log (verdict-resting numbers existed only in the commit message).** Closed by R33-12 (task #517, commit `96ae245`) — backfilled `docs/perf/R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE.md` + `_summary.csv` + two `_raw_*.log` files + checked derive script; reproduces the original commit message's numbers exactly (−120 Ir `realloc_grow`, four kill-gates byte-exact at 0 delta). NOTE: the CSV's `doc_commit` column was initially the PARENT of the landing commit (R33-8's `git rev-parse HEAD` fallback, see item 41); corrected to `96ae245` in R34-2.
 - **F11 [P2] — Round 32 has no `### Round 32` heading in CHANGELOG.md; a bolded "Runtime improvements this round: 0" sits directly above eight runtime improvements.** Closed (PARTIALLY) by R33-7 (task #512, commit `182b222`) — split Round 32's runtime improvements into their own `#### Runtime improvements` subsection with an accurate "Runtime improvements this round: 7" line. RESIDUAL (Round-33 review G6 [P3]): Round 31's section still carries the same collision shape ("Runtime improvements this round: 0" two lines above a heading listing R31-10's promoted runtime improvement), and Rounds 31/32 are out of section order (`grep -n "^### Round"` gives 33, 31, 32, 30…). The residual is filed in `docs/CORRECTNESS_OPEN_ITEMS.md` (reporting-honesty/process scope).
+- **Item 32 — the "wrong allocator layer" defect class: a gate report must name the exact entry point under test and why that layer is decision-relevant (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).** CLOSED — codified as a standing CLAUDE.md rule (see "Active rules"), not a pending remeasurement; moved here by task #1143 (2026-08-19) per R34-24 — the card's own Status already read "CLOSED this round" with "Next trigger: none" but had been left sitting in the `[D]` tier (a tier defined as "implement only if trigger/victim materializes", which does not describe a rule-codification with no further action) with no "Recently resolved" pointer, the exact stale-tier-placement defect the R34-24 rule targets. Third instance of one meta-pattern: R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this rule) — R30-3 (task #452) satisfied every rule that existed at the time, including R30-8's own path-activation oracle, and still shipped a wrong NO-GO verdict because it measured `AllocCore::alloc_zeroed` (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s `#[global_allocator]` actually uses, retaining virginity across a magazine refill via `PerClass::virgin_mask`). Caught and reopened in R31-0 (task #471, commit `dece4a7`; see this file's item 25). See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
 
 ### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
 
