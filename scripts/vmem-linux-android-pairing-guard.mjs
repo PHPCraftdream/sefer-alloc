@@ -102,8 +102,9 @@
 //     together. Measured against the corpus at landing: `URL_TOKEN`
 //     yields 21 matches over the scanned surface, 13 of them unique
 //     strings (the raw `https?://` occurrence count is 23 — the two
-//     adjacent badge-link pairs on README.md line 3 are each swallowed
-//     into ONE match by the greedy `\S+`), and none contains a `linux`
+//     adjacent badge-link pairs on README.md lines 3 and 4 (Crates.io,
+//     docs.rs) are each swallowed into ONE match by the greedy `\S+`),
+//     and none contains a `linux`
 //     word or an Android satisfier under either count (the one
 //     android-bearing URL, `android.googlesource.com/...` in
 //     os/unix.rs:814, sits in a `//` code comment outside the `///`
@@ -120,9 +121,9 @@
 //     occurrences in the scanned surface are `// ` line comments inside
 //     code/text-fence examples in rustdoc and README.md alike (a space
 //     after the slashes — never matched by `\/\/\S+` in the first
-//     place); there is not one protocol-relative URL to strip. A silent miss is the failure
-//     direction this header's limitation 5 calls "the worse failure",
-//     and the scheme is now MANDATORY.
+//     place); there is not one protocol-relative URL to strip. A
+//     silent miss is the failure direction this header's limitation 5
+//     calls "the worse failure", and the scheme is now MANDATORY.
 //   - Constant NAMES (`LINUX_HUGE_PAGE_SIZE`) never trigger the "linux"
 //     word test: underscores are word characters, so \blinux\b does not
 //     match inside the identifier. A block/paragraph whose only "Linux" is the
@@ -257,22 +258,50 @@
 //      documented two counterfactual WINS (counterfactuals 8 and 9
 //      below) while silently gaining this false-positive class — one
 //      wave after #1128's commit title said "the window narrowing's
-//      real price was never named". Measured against the corpus: ZERO
-//      loose list items exist in the scanned surface today (README.md,
-//      Cargo.toml, and every .rs doc block — a shape probe counting
-//      blank lines followed by a >=2-space-indented non-structural line
-//      inside a list-marker-started window found none), so there is no
-//      live false positive; README is publish-facing and edited often,
-//      so the shape can appear. Loose-list awareness (a blank line
-//      followed by an indented continuation does NOT end the window)
-//      was measured and rejected: the naive form re-merges 5
-//      blank-delimited paragraph windows in reservation.rs (indent-3
-//      continuation paragraphs, none of them inside a list) — exactly
-//      the distant-satisfier merge #1129 killed — and the correct form
-//      needs list-marker-column plus indented-code-block tracking (a
-//      blank line followed by a >=4-space indent inside an item is a
-//      CODE BLOCK in CommonMark, not a continuation paragraph) all for
-//      ZERO shapes to fix in today's corpus. Documented here instead.
+//      real price was never named". CORRECTION (task #1134): this
+//      item's published measurements were both false, and both for
+//      the same reason — the shape probe behind them was built on
+//      THIS GUARD's window units, whose `content` is stored already
+//      `.trim()`ed, so all 3,050 doc units in the scanned surface
+//      present indent 0 and the probe's `indent >= 2` test can never
+//      fire. "ZERO loose list items exist" is exactly what a probe
+//      blind to indent returns; re-measured on the RAW source, the
+//      same definition finds 3 loose items — blank doc lines
+//      reservation.rs:872, :915, :961, continuing the `- ` bullets
+//      at :865, :911 (nested), :957 — and 5 blank-delimited
+//      continuation paragraphs in total (:883 and :969 are second
+//      paragraphs of the :865/:957 items); README.md and Cargo.toml
+//      have none. And "none of them inside a list" was BACKWARDS:
+//      all 5 are continuation paragraphs of `- ` items — the
+//      loose-item reunification the fix would be FOR, not the
+//      distant-satisfier merge #1129 killed. The class, recorded as
+//      the transferable lesson (third appearance this campaign; task
+//      #1125's `git grep -c` counting LINES not MATCHES was the same
+//      shape): a probe built on a normalised representation cannot
+//      measure a property the normalisation erases — a tool-choice
+//      error, not an arithmetic one. The DECISION stands — document,
+//      do not implement — but on ground that holds and is
+//      mechanically checkable: VERDICT-SET IDENTITY under both
+//      window builders, not a shape count. This guard's full rule
+//      (both rules, all preprocessing) run as shipped AND with naive
+//      loose-list awareness (a blank line followed by a
+//      >=2-space-indented non-structural continuation does NOT end
+//      the window) yields 11 violations each — the SAME 11, empty
+//      delta both ways, identical even on the joined sentence text —
+//      and all 13 allowlist entries stay active under both.
+//      Loose-list awareness is rejected on that ground plus the
+//      unrefuted complexity case: the naive form's 5 re-merges are
+//      benign as measured but unguarded by any rule, and the correct
+//      form needs list-marker-column plus indented-code-block
+//      tracking (a blank line followed by a >=4-space indent inside
+//      an item is a CODE BLOCK in CommonMark, not a continuation
+//      paragraph — and :915's continuation is claimable by BOTH the
+//      outer `- reservation_len` bullet (:889) and the nested `-
+//      **Windows:**` item (:911); only column tracking decides). If
+//      a future edit splits a Linux claim from its satisfier across
+//      one of these blanks, the guard fires LOUDLY (exit 1 naming
+//      the bullet) — that is the reopen trigger, not a silent miss.
+//      Documented here instead.
 //
 // Usage (from repo root):
 //   node scripts/vmem-linux-android-pairing-guard.mjs
