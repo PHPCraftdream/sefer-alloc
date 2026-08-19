@@ -81,7 +81,11 @@ pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
     #[cfg(not(aligned_vmem_mock))]
     // SAFETY: forwarded from the caller's contract; the per-OS routine touches
     // only kernel page-state, never the bytes.
-    unsafe {
-        decommit_pages_impl(base, start, end, DecommitKind::Lazy)
-    };
+    //
+    // task #1180 (PUB-R2 phase 2): `decommit_pages_impl` now reports the
+    // backend's own accept/refuse outcome (needed by the EAGER `try_decommit`
+    // path). This LAZY entry point stays infallible BY SIGNATURE — out of
+    // this task's scope, see its own "No fallible form" doc paragraph above —
+    // so the outcome is discarded here exactly as it always was.
+    let _ = unsafe { decommit_pages_impl(base, start, end, DecommitKind::Lazy) };
 }

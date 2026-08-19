@@ -211,11 +211,16 @@ fn method_try_decommit_reports_violations_and_never_panics() {
     );
 }
 
-/// `Reservation::try_decommit`'s huge-page branch always reports `Ok(())`
+/// `Reservation::try_decommit`'s huge-page branch always reports `Ok(_)`
 /// for a well-formed range (the free `try_decommit` deliberately does not
-/// report OS refusal as an error either) — but which of the TWO huge-page
-/// branches it took (real backend vs. skip-and-count) is platform- and
-/// kernel-dependent since task #1140, so this test asserts on `[0,
+/// report OS refusal as an error either) — since task #1180 the `Ok` payload
+/// is a [`aligned_vmem::DecommitOutcome`], `Skipped` for the branch this test
+/// targets (see below); before task #1180 this was a bare `Ok(())` with no
+/// payload distinguishing skip from a genuine backend call, which is the
+/// historical shape the "Regression note" and counter narrative below
+/// describe. Which of the TWO huge-page branches it took (real backend vs.
+/// skip-and-count) is platform- and kernel-dependent since task #1140, so
+/// this test asserts on `[0,
 /// page_size())` — a range that is well-formed but never a
 /// `LINUX_HUGE_PAGE_SIZE` (2 MiB) multiple — to stay on the skip branch
 /// unconditionally regardless of host kernel version. Mirrors
@@ -259,6 +264,7 @@ fn method_try_decommit_reports_violations_and_never_panics() {
 fn method_try_decommit_huge_skip_returns_ok_and_counts() {
     use aligned_vmem::{
         huge_decommit_attempts, page_size, reserve_aligned_huge, reset_bench_internals_counters,
+        DecommitOutcome,
     };
 
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -269,9 +275,12 @@ fn method_try_decommit_huge_skip_returns_ok_and_counts() {
     let ps = page_size();
 
     if r.is_huge() {
-        assert!(
-            r.try_decommit(0, ps).is_ok(),
-            "huge skip must report Ok — OS refusal is deliberately not an error"
+        assert_eq!(
+            r.try_decommit(0, ps),
+            Ok(DecommitOutcome::Skipped),
+            "huge skip must report Ok(Skipped) — OS refusal is deliberately \
+             not an error, and a Rust-level skip must not be conflated with \
+             a genuinely-issued-and-accepted backend call (task #1180)"
         );
         assert_eq!(
             huge_decommit_attempts(),
@@ -550,10 +559,13 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     // rather than the skip path this test targets. `[0, ps)` is page-aligned
     // and in-bounds (well-formed) but never a 2-MiB multiple, so it stays on
     // the skip path unconditionally, on every platform and kernel version.
-    assert!(
-        r.try_decommit(0, ps).is_ok(),
-        "a well-formed range must still be Ok on a huge reservation \
-         (skip, not error)"
+    // task #1180: `Ok(DecommitOutcome::Skipped)`, not a bare `Ok(())` — see
+    // this test's own module-level doc note on the historical `Ok(())` shape.
+    assert_eq!(
+        r.try_decommit(0, ps),
+        Ok(aligned_vmem::DecommitOutcome::Skipped),
+        "a well-formed range must still be Ok(Skipped) on a huge reservation \
+         (skip, not error, and not conflated with a genuine backend call)"
     );
 
     // Mechanism oracle (bench-internals builds only): the three malformed

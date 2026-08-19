@@ -1,3 +1,4 @@
+use crate::decommit_outcome::DecommitOutcome;
 use crate::error::VmemError;
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
@@ -194,9 +195,15 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     #[cfg(not(aligned_vmem_mock))]
     // SAFETY: forwarded from the caller's contract; the per-OS routine touches
     // only kernel page-state, never the bytes.
-    unsafe {
-        decommit_pages_impl(base, start, end, DecommitKind::Eager)
-    };
+    //
+    // task #1180 (PUB-R2 phase 2): `decommit_pages_impl` now reports the
+    // backend's own accept/refuse outcome. This function stays infallible BY
+    // SIGNATURE (see its own doc and `# Safety`'s "Contract violations"
+    // section) — the outcome is deliberately discarded here, exactly as it
+    // always was before this task (which only changed WHERE the discard
+    // happens, from inside `libc_madvise`/`winapi_virtual_decommit`
+    // unconditionally, to here). Use [`try_decommit`] to observe it.
+    let _ = unsafe { decommit_pages_impl(base, start, end, DecommitKind::Eager) };
 }
 
 /// Whether `[start, end)` is a well-formed decommit range: `start <= end` and
@@ -231,8 +238,76 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
     start <= end && start.is_multiple_of(ps) && end.is_multiple_of(ps)
 }
 
+/// Task #1180 (PUB-R2 phase 2), poached finding P2: the single private
+/// dispatch point for every `try_decommit`-shaped caller — the free
+/// [`try_decommit`] AND [`Reservation::try_decommit`](crate::Reservation::try_decommit) — issuing exactly
+/// ONE `page_size_or_poison()` snapshot (`ps`, taken here and nowhere else in
+/// either caller) and calling the real backend exactly once when a call is
+/// warranted.
+///
+/// Before this task, `Reservation::try_decommit` re-validated the range
+/// itself (its own `page_size_or_poison()` load) and then, on the non-huge/
+/// eligible-huge path, forwarded to the free `try_decommit`, which validated
+/// AGAIN (a second `page_size_or_poison()` load) before finally calling
+/// [`decommit`] a third time removed from the original caller. Three relaxed
+/// atomic loads and two redundant validations for one logical operation —
+/// cheap next to the syscall when one is actually issued, but wasted work on
+/// every EMPTY/INVALID/SKIPPED call, which is exactly the population that
+/// never reaches a syscall to amortize it against. This function is now the
+/// only place that reads `page_size_or_poison()` on the `try_decommit`
+/// dispatch path and the only place that calls the backend, called by BOTH
+/// public entry points after each does its OWN validation (the free function
+/// has no bounds/huge concept to check first; the method's bounds check and
+/// huge-skip decision must run before this is even reached, since a skip
+/// must never touch the backend at all) — so the total atomic-load count for
+/// ANY call through either entry point is now exactly one, not two or three.
+///
+/// Returns `Ok(DecommitOutcome::Advised)` / `Ok(DecommitOutcome::Refused(_))`
+/// for a genuinely-issued backend call, mapped straight from
+/// `decommit_pages_impl`'s own `Result`. Never returns `Skipped` — that
+/// variant is produced by the CALLERS (the free function's own empty-range
+/// short-circuit, and `Reservation::try_decommit`'s huge-skip branch), never
+/// by this function, which is reached only when a call has already been
+/// decided.
+///
+/// # Safety
+///
+/// Same contract as [`decommit`]: `base` must be the usable base of a live
+/// reservation owned by the caller, and `[base+start, base+end)` — already
+/// validated well-formed and NON-EMPTY by the caller — must lie within its
+/// usable span.
+pub(crate) unsafe fn dispatch_try_decommit(
+    base: *mut u8,
+    start: usize,
+    end: usize,
+) -> DecommitOutcome {
+    #[cfg(aligned_vmem_mock)]
+    {
+        mock::record(mock::Call::Decommit {
+            base: base.addr(),
+            start,
+            end,
+        });
+        // The mock backend never touches the OS (see the module-level doc in
+        // `mock.rs`), so there is no real syscall outcome to report — treat a
+        // recorded mock call as accepted, matching the pre-#1180 `Ok(())`
+        // this function's callers gave under `mock`.
+        DecommitOutcome::Advised
+    }
+    #[cfg(not(aligned_vmem_mock))]
+    {
+        // SAFETY: forwarded from this function's own `# Safety` contract.
+        match unsafe { decommit_pages_impl(base, start, end, DecommitKind::Eager) } {
+            Ok(()) => DecommitOutcome::Advised,
+            Err(e) => DecommitOutcome::Refused(e),
+        }
+    }
+}
+
 /// Fallible [`decommit`]: the same operation, with a channel for the one thing
-/// `decommit` cannot report.
+/// `decommit` cannot report — **and, since task #1180 (PUB-R2 phase 2), a
+/// channel for the OS's own accept/refuse answer too**, not just argument
+/// validity.
 ///
 /// Of this crate's state-changing primitives, `decommit`/[`decommit_lazy`](crate::api::decommit_lazy) were
 /// the only pair with no fallible twin — and also the only ones that do nothing
@@ -243,24 +318,44 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
 ///
 /// [`VmemError::invalid_argument`] if `start > end`, or either endpoint is not
 /// a multiple of the runtime [`page_size()`](crate::page_size::page_size). An empty page-aligned range
-/// (`start == end`) is a well-formed no-op and returns `Ok(())`.
+/// (`start == end`) is a well-formed no-op and returns `Ok(DecommitOutcome::Skipped)`.
 ///
-/// Note what is deliberately NOT an error: the OS refusing or ignoring the
-/// request. `decommit` is best-effort by nature — on Darwin and the BSDs
+/// [`VmemError::os_refusal_unknown_code`] if the one-time OS page-size query
+/// itself failed — the caller's arguments are not at fault; see
+/// [`page_size()`](crate::page_size::page_size)'s "If the one-time OS query fails" paragraph.
+///
+/// Note what is deliberately NOT reported as an `Err` (the outer `Result`
+/// keeps reporting only caller-contract validity, exactly as before this
+/// task): the OS refusing or ignoring the request is `Ok(DecommitOutcome::Refused(_))`,
+/// not `Err`. `decommit` is best-effort by nature — on Darwin and the BSDs
 /// `MADV_DONTNEED` is advisory, and on a huge-page reservation eligibility
 /// depends on the platform, the requested range, and (on Linux/Android) the
 /// running kernel — see [`decommit`]'s "Huge-page granularity" section above
-/// for the exact split. Reporting an ineligible or advisory-only case as
-/// `Err` would promise a portable guarantee the platforms do not give. Use
+/// for the exact split. Promoting an OS refusal to `Err` would conflate "your
+/// arguments were rejected" with "the platform declined to honor a
+/// well-formed request", which is exactly the ambiguity
+/// [`DecommitOutcome`] exists to separate. Use
 /// [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes) to learn what the platform
-/// actually does.
+/// actually does; [`DecommitOutcome::Advised`]/[`DecommitOutcome::Refused`] tell
+/// you what THIS call did, not what it accomplished (see that type's own doc).
+///
+/// This free function always either short-circuits on an empty range
+/// (`Ok(DecommitOutcome::Skipped)`) or forwards to the real backend — it has
+/// no [`Reservation::is_huge`](crate::Reservation::is_huge) to consult, so unlike
+/// [`Reservation::try_decommit`](crate::Reservation::try_decommit) it can never produce `Skipped` for a
+/// non-empty range; every non-empty well-formed range here becomes either
+/// `Advised` or `Refused`.
 ///
 /// # Safety
 ///
 /// Identical to [`decommit`]: `base` must be the usable base of a live
 /// reservation owned by the caller, and `[base+start, base+end)` must lie
 /// within its usable span.
-pub unsafe fn try_decommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+pub unsafe fn try_decommit(
+    base: *mut u8,
+    start: usize,
+    end: usize,
+) -> Result<DecommitOutcome, VmemError> {
     // Failed OS page-size query: fail closed, reported as an OS-side no-code
     // failure — the caller's arguments are NOT at fault, so this must not
     // read as `invalid_argument` (see `page_size`'s "If the one-time OS
@@ -272,10 +367,10 @@ pub unsafe fn try_decommit(base: *mut u8, start: usize, end: usize) -> Result<()
         return Err(VmemError::invalid_argument());
     }
     if start == end {
-        return Ok(());
+        return Ok(DecommitOutcome::Skipped);
     }
     // SAFETY: forwarded from this function's own `# Safety` contract, which is
-    // identical to `decommit`'s.
-    unsafe { decommit(base, start, end) };
-    Ok(())
+    // identical to `decommit`'s; the range was just validated well-formed and
+    // non-empty above.
+    Ok(unsafe { dispatch_try_decommit(base, start, end) })
 }

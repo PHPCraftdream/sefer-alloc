@@ -61,12 +61,19 @@
 //!
 //! For most of these pairs the infallible form forwards to the `try_*` form
 //! and discards the cause, so both stay in perfect lockstep. **The decommit
-//! family is the exception:** [`try_decommit`] forwards to the infallible
-//! [`decommit`] (not the other way around), and the underlying OS
-//! error/refusal is not observable through either form — `decommit`'s
-//! contract is deliberately silent on OS-level outcome (best-effort by
-//! nature; see [`decommit`]'s own rustdoc), and `try_decommit`'s `Result`
-//! reports range-contract validity only, not what the OS actually did.
+//! family is the exception, in the OPPOSITE direction:** [`decommit`] and
+//! [`try_decommit`] are siblings, not a forward/wrap pair — both call the
+//! same per-OS backend directly (each discarding or keeping its own copy of
+//! the outcome), rather than one calling the other. `decommit`'s contract is
+//! deliberately silent on OS-level outcome (best-effort by nature; see
+//! [`decommit`]'s own rustdoc) — it discards the backend's answer.
+//! [`try_decommit`]'s outer `Result` still reports range-contract validity
+//! only (unchanged) — but since task #1180 its `Ok` payload is a
+//! [`DecommitOutcome`] (`Skipped` / `Advised` / `Refused`), which DOES
+//! observe what the OS actually did with a well-formed, non-empty range:
+//! whether a backend call was issued at all, and if so, whether the kernel
+//! accepted or refused it. Before task #1180 this was a bare `Ok(())`,
+//! indistinguishable from every other well-formed outcome.
 //!
 //! # Example
 //!
@@ -155,6 +162,9 @@
 
 pub mod error;
 pub use error::VmemError;
+
+mod decommit_outcome;
+pub use decommit_outcome::DecommitOutcome;
 
 #[cfg(aligned_vmem_mock)]
 #[cfg_attr(docsrs, doc(cfg(aligned_vmem_mock)))]

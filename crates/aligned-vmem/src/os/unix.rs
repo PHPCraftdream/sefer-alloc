@@ -427,7 +427,7 @@ pub(crate) unsafe fn decommit_pages_impl(
     start: usize,
     end: usize,
     kind: DecommitKind,
-) {
+) -> Result<(), VmemError> {
     // task #957 (NUM-1): guard the `end - start` subtraction below against an
     // inverted range (caller contract violation) so a debug build panics with
     // an attributable message rather than the subtraction silently wrapping.
@@ -441,6 +441,12 @@ pub(crate) unsafe fn decommit_pages_impl(
     // SAFETY: caller guarantees `[base+start, +len)` is within a live
     // reservation owned by them, so the offset stays in-bounds.
     let addr = unsafe { base.add(start) };
+    // task #1180 (PUB-R2 phase 2): `libc_madvise` now reports the syscall's
+    // own accept/refuse outcome instead of discarding it unconditionally.
+    // `decommit_lazy` (the `DecommitKind::Lazy` caller) still discards this
+    // `Result` at its own call site -- it is out of this task's scope and
+    // keeps its pre-existing infallible `()` signature; only the eager
+    // `try_decommit` path threads it through to `DecommitOutcome`.
     match kind {
         // SAFETY: caller guarantees `[base+start, +len)` is within a live
         // mapping; `madvise` touches only kernel page-state.
@@ -1124,25 +1130,26 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
 // mock (task #646/F8): only caller is decommit_pages_impl above, itself
 // unused under `mock`.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
-unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
+unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) -> Result<(), VmemError> {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region.
-    // task #719: the return value is deliberately discarded -- `madvise`
-    // failing here means the OS did not reclaim the pages (the mapping stays
-    // exactly as valid and readable/writable as before the call), not a
-    // memory-safety concern; [`decommit`]/[`decommit_lazy`]'s own public
-    // contracts already document decommit as an OS-cooperative hint whose
-    // failure mode is "the physical pages were not actually returned", never
-    // a dangling/invalid mapping.
+    // task #719 / task #1180 (PUB-R2 phase 2): `madvise` failing here means
+    // the OS did not reclaim the pages (the mapping stays exactly as valid and
+    // readable/writable as before the call), not a memory-safety concern --
+    // [`decommit`]/[`decommit_lazy`]'s own public contracts already document
+    // decommit as an OS-cooperative hint whose failure mode is "the physical
+    // pages were not actually returned", never a dangling/invalid mapping.
+    // Until task #1180 this return value was discarded unconditionally
+    // (`let _ = ret;` below every build); it is now surfaced to callers as a
+    // `Result` so `try_decommit` can report `DecommitOutcome::Refused` --
+    // `decommit`/`decommit_lazy` (the infallible free functions) still
+    // discard it at their own call sites, unaffected by this change.
     //
     // task #882: under `bench-internals` ONLY, also record whether the
     // syscall itself succeeded (returned `0`) or failed (returned `-1`) into
     // `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` -- see those statics'
-    // docs for why (settling item 48's H1-vs-H2 root-cause question). The
-    // discard above is unconditional and unchanged for every non-bench build;
-    // this is a read of the same return value the plain build throws away,
-    // not a new syscall or a change to what `libc_madvise` returns to its
-    // caller (still `()` either way), so it is zero-cost when the feature is
-    // off.
+    // docs for why (settling item 48's H1-vs-H2 root-cause question). This is
+    // a read of the same return value every build now observes, not a new
+    // syscall.
     // SAFETY: `madvise` is safe for any address/len within a live mmap region; advice is a valid constant.
     let ret = unsafe { madvise(addr as *mut core::ffi::c_void, len, advice) };
     #[cfg(feature = "bench-internals")]
@@ -1152,6 +1159,9 @@ unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
             UNIX_MADVISE_SUCCESSES.fetch_add(1, Ordering::Relaxed);
         }
     }
-    #[cfg(not(feature = "bench-internals"))]
-    let _ = ret;
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(VmemError::last_os_error())
+    }
 }

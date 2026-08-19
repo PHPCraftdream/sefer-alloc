@@ -349,7 +349,7 @@ pub(crate) unsafe fn decommit_pages_impl(
     start: usize,
     end: usize,
     _kind: DecommitKind,
-) {
+) -> Result<(), VmemError> {
     // task #957 (NUM-1): guard the `end - start` subtraction below against an
     // inverted range (caller contract violation) so a debug build panics with
     // an attributable message rather than the subtraction silently wrapping.
@@ -364,7 +364,14 @@ pub(crate) unsafe fn decommit_pages_impl(
     // region (not necessarily committed); `MEM_DECOMMIT` returns the physical pages,
     // and decommitting an already-uncommitted sub-range is a defined safe no-op.
     let addr = unsafe { base.add(start) };
-    unsafe { winapi_virtual_decommit(addr, len) };
+    // task #1180 (PUB-R2 phase 2): `winapi_virtual_decommit` now reports
+    // `VirtualFree(MEM_DECOMMIT)`'s own accept/refuse outcome instead of
+    // discarding it unconditionally. `decommit`/`decommit_lazy` (the
+    // infallible free functions, both of which route through this same
+    // Windows impl since there is no lazy/eager split here) still discard
+    // this `Result` at their own call sites; only `try_decommit` threads it
+    // through to `DecommitOutcome`.
+    unsafe { winapi_virtual_decommit(addr, len) }
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -525,14 +532,21 @@ unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
 #[cfg(all(windows, not(miri)))]
 // mock (task #646/F8): see decommit_pages_impl above.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]
-unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
+unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) -> Result<(), VmemError> {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a MEM_RESERVEd region;
     // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
-    // task #921/V-8: the return value is deliberately discarded. A failure here would
-    // indicate a bug in this crate's own bookkeeping (not a recoverable external condition),
-    // and the failure mode is a leak, never unsafety. The failure is known to be reachable
-    // in practice (e.g. the huge-page decommit case documented in `decommit`'s rustdoc), so
+    // task #921/V-8: the return value used to be discarded unconditionally. A
+    // failure here would indicate a bug in this crate's own bookkeeping (not
+    // a recoverable external condition), and the failure mode is a leak,
+    // never unsafety. The failure is known to be reachable in practice (e.g.
+    // the huge-page decommit case documented in `decommit`'s rustdoc), so
     // this is not a theoretical concern.
+    //
+    // task #1180 (PUB-R2 phase 2): the return value is now surfaced as a
+    // `Result` so `try_decommit` can report `DecommitOutcome::Refused` with
+    // the captured `GetLastError()`. `decommit`/`decommit_lazy` (the
+    // infallible free functions) still discard it at their own call sites,
+    // unaffected by this change.
     //
     // task P2-6 (2026-08-16 audit finding): increment the failure counter
     // under `bench-internals` so at least diagnostic visibility exists. The
@@ -547,12 +561,16 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
     // SAFETY: `VirtualFree` with `MEM_DECOMMIT` is safe for any address/len within a `MEM_RESERVE`d region;
     // decommitting an already-uncommitted sub-range is a defined safe no-op per the Windows API contract.
     let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT) };
-    #[cfg(feature = "bench-internals")]
     if ret == 0 {
+        // task #713's capture-timing contract: read immediately after the
+        // failing call, before any other FFI call.
+        let err = VmemError::last_os_error();
+        #[cfg(feature = "bench-internals")]
         WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
+        Err(err)
+    } else {
+        Ok(())
     }
-    #[cfg(not(feature = "bench-internals"))]
-    let _ = ret;
 }
 
 #[cfg(all(windows, not(miri)))]

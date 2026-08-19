@@ -13,6 +13,7 @@ mod reserve_aligned_huge;
 #[cfg(feature = "lazy-commit")]
 mod reserve_aligned_lazy;
 
+pub(crate) use decommit::dispatch_try_decommit;
 pub use decommit::{decommit, try_decommit};
 pub use decommit_lazy::decommit_lazy;
 pub use leak_zeroed_pages::leak_zeroed_pages;

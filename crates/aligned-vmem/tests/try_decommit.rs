@@ -9,7 +9,7 @@
 //! "does nothing" is CORRECT rather than a mistake — `decommit`'s single
 //! `start >= end` early return conflates the two, and `try_decommit` must not.
 
-use aligned_vmem::{page_size, reserve_aligned, try_decommit, PAGE};
+use aligned_vmem::{page_size, reserve_aligned, try_decommit, DecommitOutcome, PAGE};
 
 const SPAN: usize = 2 * 1024 * 1024;
 
@@ -24,6 +24,18 @@ fn well_formed_range_succeeds() {
         out.is_ok(),
         "a page-aligned, non-empty, in-span range must succeed"
     );
+    // task #1180: a fresh, in-span, page-aligned, non-empty range on an
+    // ordinary (non-huge) reservation always reaches the real backend and is
+    // accepted on every platform this crate supports (Linux `madvise`/
+    // Windows `VirtualFree` both accept a decommit of freshly-committed
+    // pages) — never `Skipped` (that requires a huge reservation) and never
+    // `Refused` (there is nothing here for the OS to reject).
+    assert_eq!(
+        out.unwrap(),
+        DecommitOutcome::Advised,
+        "a well-formed range on an ordinary reservation must be genuinely \
+         advised to the OS, not skipped or refused"
+    );
 }
 
 /// An empty page-aligned range is a deliberate no-op, NOT a contract violation.
@@ -33,15 +45,17 @@ fn empty_range_is_a_well_formed_no_op() {
     let ps = page_size();
 
     // SAFETY: `r` is live; an empty range touches nothing.
-    assert!(
-        unsafe { try_decommit(r.as_ptr(), 0, 0) }.is_ok(),
-        "empty range at offset 0"
+    let a = unsafe { try_decommit(r.as_ptr(), 0, 0) };
+    assert!(a.is_ok(), "empty range at offset 0");
+    assert_eq!(
+        a.unwrap(),
+        DecommitOutcome::Skipped,
+        "an empty range issues no backend call — Skipped, not Advised"
     );
     // SAFETY: as above.
-    assert!(
-        unsafe { try_decommit(r.as_ptr(), 2 * ps, 2 * ps) }.is_ok(),
-        "empty range at a non-zero page-aligned offset"
-    );
+    let b = unsafe { try_decommit(r.as_ptr(), 2 * ps, 2 * ps) };
+    assert!(b.is_ok(), "empty range at a non-zero page-aligned offset");
+    assert_eq!(b.unwrap(), DecommitOutcome::Skipped);
 }
 
 /// The empty range's MISALIGNED twin must be `Err`, not the no-op: only a

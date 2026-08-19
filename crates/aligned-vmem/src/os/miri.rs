@@ -51,8 +51,10 @@ pub(crate) unsafe fn decommit_pages_impl(
     _start: usize,
     _end: usize,
     _kind: DecommitKind,
-) {
-    // Miri models no RSS; decommit is a no-op.
+) -> Result<(), VmemError> {
+    // Miri models no RSS; decommit is a no-op that always "succeeds" (task
+    // #1180, PUB-R2 phase 2: there is no real syscall under miri to refuse).
+    Ok(())
 }
 
 #[cfg(miri)]

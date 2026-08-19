@@ -108,6 +108,35 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **BREAKING (pre-publish): `try_decommit` (both the free function and
+  `Reservation::try_decommit`) now returns `Result<DecommitOutcome, VmemError>`
+  instead of `Result<(), VmemError>` (task #1180, PUB-R2 phase 2).** The new
+  `DecommitOutcome` enum (`#[non_exhaustive]`) names three cases the old bare
+  `Ok(())` collapsed into one indistinguishable signal: `Skipped` (no backend
+  call was made — an empty range, or a huge-page reservation's Rust-level
+  skip), `Advised` (the backend call was made and the OS/kernel accepted it —
+  does **not** mean physical pages were actually reclaimed; that gap is task
+  #1174, not this one), and `Refused(VmemError)` (the backend call was made
+  and the OS/kernel refused it, carrying the captured OS error). The outer
+  `Result` keeps its pre-existing meaning unchanged — `Err` still reports only
+  caller-contract validity (a malformed range, or a failed page-size query);
+  an OS refusal is `Ok(DecommitOutcome::Refused(_))`, never `Err`. This closes
+  the gap `Reservation::can_decommit_reclaim_and_zero`'s own rustdoc already
+  told callers to work around by "judging by `decommit`/`try_decommit`'s
+  return value" for a huge-page reservation on Linux/Android kernel >= 5.18 —
+  advice that was previously impossible to follow, since neither return value
+  carried the needed signal. `libc_madvise` (Unix) and
+  `winapi_virtual_decommit` (Windows) — and the `decommit_pages_impl` layer
+  both sit under — now surface the syscall's own accept/refuse outcome as a
+  `Result` instead of discarding it unconditionally; the infallible
+  `decommit`/`decommit_lazy` free functions and safe methods are UNCHANGED in
+  signature and still discard that outcome at their own call sites, by
+  design. **Migration:** `try_decommit(...).is_ok()` / `.is_err()` call sites
+  compile and behave unchanged (`DecommitOutcome` does not affect `Result`'s
+  `Ok`/`Err` classification); a caller that matched on `Ok(())` needs to match
+  on `Ok(DecommitOutcome::Skipped | DecommitOutcome::Advised | DecommitOutcome::Refused(_))`
+  instead, or call the new `is_skipped()`/`is_advised()`/`is_refused()`
+  helpers. 0.2.0 is unpublished, so the change costs nothing.
 - **BREAKING (pre-publish): `reserve_aligned_lazy` / `try_reserve_aligned_lazy`
   now return `LazyReservation`** instead of `Reservation`. Callers that keep
   their own commit bookkeeping add `.into_reservation()`. Chosen over adding a
