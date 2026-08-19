@@ -138,12 +138,14 @@
 // splits into 44 / 6 / 10. The 44 touch NOTHING outside docs/examples/
 // benches/tests/scripts/.github/ (`outside.length === 0` under this
 // script's own isMeasurementOnlyPath). The 10 DO touch something outside
-// those prefixes with REAL (non-comment) content: `a4b8e50`'s
-// module-per-file split, `c75aa59`'s crate-directory rename, `d72b6d7`'s
-// version bump, dependency hoists/removals (`56d0764`, `57c4510`), and —
-// worth naming because they are the least obvious members of this bucket —
-// `503f703`/`f3020fd`, whose only outside-prefix path is `.gitignore`, and
-// `eb6935b`/`fabe6b4`, whose only outside-prefix path is `package.json`.
+// those prefixes with REAL (non-comment) content — all ten, enumerated in
+// full (task #1185): `a4b8e50`'s module-per-file split, `c75aa59`'s
+// crate-directory rename, `d72b6d7`'s version bump, `5daa90c`'s
+// forced-page call-site regression test + guard rule, dependency
+// hoists/removals (`56d0764`, `57c4510`), and — worth naming because they
+// are the least obvious members of this bucket — `503f703`/`f3020fd`,
+// whose only outside-prefix path is `.gitignore`, and `eb6935b`/`fabe6b4`,
+// whose only outside-prefix path is `package.json`.
 // Those four touch NO `src/` or `Cargo.toml` path at all (verified per
 // commit, task #1178), yet each adds one non-comment line to a repo-root
 // file that no measurement-only prefix covers, which is exactly why they
@@ -689,11 +691,17 @@ function main() {
       // `build` is a standard conventional-commit TYPE for tooling/CI/
       // dependency/structural work, not a claim of "no shipping code
       // changed" the way `docs(...)`/`bench(...)` are within R30-12's own
-      // taxonomy — 10 of those 60 commits legitimately touch src/ or
-      // Cargo.toml with REAL (non-comment) content (e.g. `a4b8e50`'s
-      // module-per-file split, `c75aa59`'s crate-directory rename,
-      // `d72b6d7`'s version bump, dependency hoists/removals) and are not
-      // mis-scoped — promoting this branch to ERROR the way docs is would
+      // taxonomy — 10 of those 60 commits legitimately carry REAL
+      // (non-comment) content OUTSIDE the measurement-only prefixes and are
+      // not mis-scoped. SIX of the ten reach `src/` or a `Cargo.toml`
+      // (`5daa90c`, `a4b8e50`'s module-per-file split, `c75aa59`'s
+      // crate-directory rename, `d72b6d7`'s version bump, and the
+      // dependency hoist/removal pair `56d0764`/`57c4510`); the other FOUR
+      // touch NEITHER — `503f703`/`f3020fd` reach only `.gitignore`, and
+      // `eb6935b`/`fabe6b4` only `package.json` (task #1185: this sentence
+      // previously said all 10 "touch src/ or Cargo.toml", false for
+      // exactly those four; the header comment below enumerates all ten).
+      // Promoting this branch to ERROR the way docs is would
       // have flagged all 10 as false positives on legitimate history. But a
       // comment-only src/ delta under `build:` is exactly the same
       // hidden-claim-strengthening shape direction 2 exists to catch
