@@ -13,7 +13,10 @@
 // in CI, so no test can catch this drift; only a static guard can.
 //
 // RULE (per WINDOW — a paragraph, list item, or table row, with wrapped
-// continuation lines joined; see WINDOW RULE below):
+// continuation lines joined; see WINDOW RULE below — where "list item"
+// means the blank-line-delimited run inside it, because a LOOSE item
+// containing a blank line is scanned as N windows, not one; see KNOWN
+// LIMITATIONS 8):
 //   A WINDOW is a VIOLATION if it mentions the word "linux" AND one of the
 //   PAIR-GATED mechanism markers below, WITHOUT any Android satisfier
 //   ANYWHERE IN THE SAME WINDOW. Mechanisms whose cfg is the Linux/Android pair:
@@ -28,7 +31,9 @@
 // hard-wrap fix): a window is one SEMANTIC UNIT of documentation, built as a
 // maximal run of WRAPPED CONTINUATION lines —
 //   - a line that is blank (a `///` with nothing after it in .rs files, an
-//     empty line in README.md/Cargo.toml) ENDS the current window;
+//     empty line in README.md/Cargo.toml) ENDS the current window — even
+//     inside a list item, so a LOOSE item is N windows (KNOWN LIMITATIONS
+//     8, task #1132/F4);
 //   - a line that STARTS a new structural item — a Markdown table row (a
 //     line beginning with `|`, in README.md) or a list item (`- `, `* `,
 //     `+ `, `1. `, ...) — STARTS a new window;
@@ -92,14 +97,32 @@
 //     positive is allowlistable was sound; only its "verified, zero such
 //     tokens" claim and the header's "GitHub URLs are stripped" sentence
 //     were false. Fixed by stripping URLs whole: `URL_TOKEN`
-//     (`(?:https?:)?\/\/\S+`) runs as its own preprocessing step BEFORE
+//     (`https?:\/\/\S+`) runs as its own preprocessing step BEFORE
 //     TARGET_TRIPLE/PATH_LIKE, so a URL's host AND path are removed
-//     together. Measured against the corpus at landing: the 23 URL tokens
-//     in the scanned surface contain no `linux` word and no Android
-//     satisfier (the one android-bearing URL,
-//     `android.googlesource.com/...` in os/unix.rs:814, sits in a `//`
-//     code comment outside the `///` scan surface), so the rule changes
-//     no current finding or allowlist entry.
+//     together. Measured against the corpus at landing: `URL_TOKEN`
+//     yields 21 matches over the scanned surface, 13 of them unique
+//     strings (the raw `https?://` occurrence count is 23 — the two
+//     adjacent badge-link pairs on README.md line 3 are each swallowed
+//     into ONE match by the greedy `\S+`), and none contains a `linux`
+//     word or an Android satisfier under either count (the one
+//     android-bearing URL, `android.googlesource.com/...` in
+//     os/unix.rs:814, sits in a `//` code comment outside the `///`
+//     scan surface), so the rule changes no current finding or allowlist
+//     entry.
+//     CORRECTION (task #1132, F2): #1130 shipped `URL_TOKEN` with an
+//     OPTIONAL scheme (`(?:https?:)?\/\/\S+`), which bought a SILENT
+//     MISS: any token starting `//` with no space after it was deleted
+//     BEFORE the `\blinux\b` test ran, so a `.rs` doc line
+//     `//Linux-only: this path is not taken elsewhere.` next to a
+//     `MAP_HUGETLB` mention passed GREEN (exit 0 on the #1130 guard;
+//     exit 1 on the pre-#1130 guard — reproduced in a scratch copy).
+//     The optional branch bought nothing: all 15 non-scheme `//`
+//     occurrences in the scanned surface are `// ` line comments inside
+//     code/text-fence examples in rustdoc and README.md alike (a space
+//     after the slashes — never matched by `\/\/\S+` in the first
+//     place); there is not one protocol-relative URL to strip. A silent miss is the failure
+//     direction this header's limitation 5 calls "the worse failure",
+//     and the scheme is now MANDATORY.
 //   - Constant NAMES (`LINUX_HUGE_PAGE_SIZE`) never trigger the "linux"
 //     word test: underscores are word characters, so \blinux\b does not
 //     match inside the identifier. A block/paragraph whose only "Linux" is the
@@ -219,6 +242,37 @@
 //      a gap in limitation 5's framing: #1121's commit body priced the
 //      narrowing in neighbouring PARAGRAPHS only and never named this
 //      one-list shape.
+//   8. A blank line ends a window EVEN INSIDE A LIST ITEM (task #1132,
+//      F4): a LOOSE Markdown list item — a bullet whose continuation
+//      paragraph is separated from it by a blank line, ONE item when
+//      rendered — is scanned as N windows, so the RULE's "list item"
+//      unit is really "the blank-line-delimited run inside the item".
+//      A bullet whose own text claims Linux for a pair-gated mechanism
+//      while its blank-separated continuation paragraph carries the
+//      Android satisfier FALSE-POSITIVES (reproduced in a scratch copy:
+//      exit 1 naming the bullet on this guard, exit 0 on the pre-#1129
+//      guard, which joined the continuation because blank lines did not
+//      end its windows). This is the price #1129's narrowing never
+//      named: its commit fixed the whole-file Cargo.toml window and
+//      documented two counterfactual WINS (counterfactuals 8 and 9
+//      below) while silently gaining this false-positive class — one
+//      wave after #1128's commit title said "the window narrowing's
+//      real price was never named". Measured against the corpus: ZERO
+//      loose list items exist in the scanned surface today (README.md,
+//      Cargo.toml, and every .rs doc block — a shape probe counting
+//      blank lines followed by a >=2-space-indented non-structural line
+//      inside a list-marker-started window found none), so there is no
+//      live false positive; README is publish-facing and edited often,
+//      so the shape can appear. Loose-list awareness (a blank line
+//      followed by an indented continuation does NOT end the window)
+//      was measured and rejected: the naive form re-merges 5
+//      blank-delimited paragraph windows in reservation.rs (indent-3
+//      continuation paragraphs, none of them inside a list) — exactly
+//      the distant-satisfier merge #1129 killed — and the correct form
+//      needs list-marker-column plus indented-code-block tracking (a
+//      blank line followed by a >=4-space indent inside an item is a
+//      CODE BLOCK in CommonMark, not a continuation paragraph) all for
+//      ZERO shapes to fix in today's corpus. Documented here instead.
 //
 // Usage (from repo root):
 //   node scripts/vmem-linux-android-pairing-guard.mjs
@@ -254,6 +308,11 @@
 //      next to a huge-page mention does NOT fire (URL_TOKEN strips the URL
 //      whole; pre-fix the host-only PATH_LIKE match left `/torvalds/linux`
 //      behind and false-positived — exit 1 on the #1128 guard).
+//  10. (task #1132, F2) A `.rs` doc line `//Linux-only: this path is not
+//      taken elsewhere.` next to a `MAP_HUGETLB` mention FAILS naming that
+//      window (under #1130's optional-scheme `URL_TOKEN` the token was
+//      deleted as a pseudo-URL BEFORE the `\blinux\b` test — a silent
+//      miss, exit 0; the scheme is now mandatory).
 
 import { REPO_ROOT } from './lib.mjs';
 import { readFileSync, readdirSync } from 'fs';
@@ -295,9 +354,11 @@ const TARGET_TRIPLE = /\b[A-Za-z0-9_]+-(?:unknown|pc|apple)-[A-Za-z0-9_]+(?:-[A-
 const PATH_LIKE = /\S*\/\S*\/\S*\.[A-Za-z][A-Za-z0-9]*\b/g;
 // URLs, stripped WHOLE (host + path) as their own preprocessing step —
 // runs BEFORE PATH_LIKE so a URL is never partially stripped down to its
-// linux-bearing path tail (task #1130, F4). Scheme-anchored `https?://`,
-// or a protocol-relative `//` form.
-const URL_TOKEN = /(?:https?:)?\/\/\S+/g;
+// linux-bearing path tail (task #1130, F4). Scheme-anchored `https?://`
+// ONLY (task #1132, F2): the scheme was optional in #1130, which ate
+// any `//`-prefixed token with no space after it before the `\blinux\b`
+// test — see the PREPROCESSING correction in the header.
+const URL_TOKEN = /https?:\/\/\S+/g;
 
 // Known drift outside the M1 fixing task's file scope (task #1105, agent B:
 // reserve_aligned_huge.rs / os/unix.rs / lib.rs / README.md only). Each
