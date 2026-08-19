@@ -123,6 +123,28 @@ fn init_page_size_cache() -> usize {
 /// decommit granularity guess could make the OS round a length up across
 /// live data; refusing to decommit loses nothing but an optimization,
 /// while guessing risks silent data loss.
+///
+/// **One bookkeeping value keeps moving even in the degraded state (task
+/// #1156, finding F15):**
+/// `LazyReservation::shrink_committed` (feature `lazy-commit`; not an
+/// intra-doc link here — `page_size` is compiled unconditionally and
+/// `LazyReservation` is not, so a real link would break whenever
+/// `lazy-commit` is off, e.g. under plain `--no-default-features`) lowers
+/// its own watermark unconditionally, even though the `decommit` call it
+/// issues underneath is the no-op described
+/// above. The watermark is rounded UP using the conservative [`PAGE`] value
+/// this degraded state substitutes for the unknown real page size, so the
+/// dropped range can be smaller than a true page on a host with a larger
+/// real page — but `shrink_committed` documents the watermark as this
+/// crate's own bookkeeping guarantee, "not a claim about residency", so a
+/// lowered watermark under poison is consistent with that contract, not a
+/// violation of it: no committed byte the caller is entitled to is released
+/// (the underlying `decommit` did nothing), only the handle's own record of
+/// what it considers committed moves. No other primitive's return value
+/// (`bool`, `Result`) is affected by this — `shrink_committed` is the one
+/// entry point in this enumeration with no fallible/boolean signature to
+/// report the degraded state through, because it never had one even outside
+/// the degraded state.
 #[must_use]
 #[inline]
 pub fn page_size() -> usize {

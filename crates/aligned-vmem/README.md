@@ -55,7 +55,8 @@ Runnable form: `tests/readme_example.rs`.
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Hint the OS to return page-granular physical backing (guaranteed on Linux/Android/Windows, best-effort on Darwin/BSDs with no zero-fill guarantee) / re-commit it. |
 | `try_decommit(base, start, end)` (unsafe) `-> Result<(), VmemError>` | Fallible twin of `decommit`: an empty page-aligned range is a well-formed `Ok(())` no-op; a violated range (misaligned, or `start > end`) is reported as `Err` on every build profile — `decommit` itself only reports a violation via a DEBUG-only `debug_assert!` and stays silent in release. |
 | `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux/Android `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
-| `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
+| `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. Infallible: if the one-time OS query itself fails (not observed on any supported platform), this still returns the conservative `PAGE` floor rather than panicking — see `try_page_size` and the platform-caveats section below for what that degraded state means for other entry points. |
+| `try_page_size() -> Result<usize, VmemError>` | Fallible twin of `page_size()`: `Err(VmemError::os_refusal_unknown_code())` if the one-time OS page-size query failed, `Ok` with the identical value `page_size()` would return otherwise. Lets a caller detect the degraded state upfront instead of discovering it through `try_decommit`/`try_recommit` errors later. |
 | `PAGE` | Minimum decommit granularity constant (4 KiB) — superseded by `page_size()` on hosts with larger pages (see `MIN_PAGE` for the underlying constant). |
 | `MIN_PAGE` | Underlying minimum page size constant (4 KiB). |
 | `leak_zeroed_pages(size) -> Option<NonNull<u8>>` | Reserve zeroed, process-lifetime-leaked pages (for pre-main / `GlobalAlloc` bookkeeping). |
@@ -181,7 +182,7 @@ compiled out of release builds (see above).
 
 ## Platform caveats
 
-The table entry above (`decommit`/`recommit`) hides five platform divergences worth knowing before you rely on it — see each function's own rustdoc for the full technical explanation:
+The table entry above (`decommit`/`recommit`) hides six platform and failure-mode divergences worth knowing before you rely on it — see each function's own rustdoc for the full technical explanation:
 
 - **Windows: a write before recommit is a hard crash, not a soft re-fault.**
   `MEM_DECOMMIT` genuinely unmaps the pages, so writing into
@@ -279,6 +280,20 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
   REASONED-FROM-SPEC only (no BSD CI runner in this crate to verify against
   empirically); not independently confirmed the way the Darwin gap above was
   by a real CI run.
+- **Degraded state: if the one-time OS page-size query itself fails, every
+  page-granular state operation fails closed for the process lifetime — not
+  observed on any supported platform, but a documented user-visible
+  contract.** `page_size()` stays infallible (it returns the conservative
+  `PAGE` floor, 4 KiB) so it never panics, but from that point on:
+  `decommit`/`decommit_lazy` become no-ops, `recommit`/`commit_range` return
+  `false`, and the `try_*` family (`try_decommit`, `try_recommit`,
+  `try_commit_range`, the lazy reservation constructor, and `try_page_size`
+  itself) reports `Err(VmemError::os_refusal_unknown_code())`. Reserving,
+  using, and releasing memory are unaffected — only page-granular decommit/
+  recommit state operations are refused. Use `try_page_size()` to detect this
+  upfront rather than discovering it through a later `try_decommit` error.
+  See `page_size()`'s own rustdoc ("If the one-time OS query fails") for the
+  full enumeration and rationale.
 
 ## Supported targets
 

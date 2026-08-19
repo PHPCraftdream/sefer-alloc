@@ -283,6 +283,16 @@ impl Reservation {
     /// report whatever `granted_huge` value the caller passed to that constructor,
     /// which the caller is responsible for getting right (see that constructor's
     /// `# Safety` section).
+    ///
+    /// **This method has no `huge-pages` feature gate — [`Self::decommit`]'s
+    /// eligible-forward behavior does (task #1156, finding F10).** `is_huge()`
+    /// reports `true`/`false` identically regardless of which features are
+    /// enabled; whether a `true` result also gets you a real Linux/Android
+    /// kernel >= 5.18 decommit forward instead of a guaranteed skip depends
+    /// on the `huge-pages` feature being enabled too. See [`Self::decommit`]'s
+    /// doc for the full explanation — this asymmetry matters most for
+    /// [`from_raw_parts`](Self::from_raw_parts) callers, since that
+    /// constructor is also unconditionally compiled.
     #[must_use]
     #[inline]
     pub const fn is_huge(&self) -> bool {
@@ -604,6 +614,30 @@ impl Reservation {
     /// a huge reservation — task #1140 narrowed this from "every huge-reservation
     /// call" to "every huge-reservation call that is actually skipped").
     ///
+    /// **The Linux/Android kernel >= 5.18 eligible-forward path itself
+    /// requires the `huge-pages` feature (task #1156, finding F10) —
+    /// [`Self::is_huge`] does NOT.** The eligibility check this method
+    /// consults (`linux_huge_range_is_madvise_eligible`) is compiled only
+    /// under `#[cfg(all(not(miri), not(aligned_vmem_mock),
+    /// any(target_os = "linux", target_os = "android"),
+    /// feature = "huge-pages"))]`; without that
+    /// feature enabled, EVERY range on a huge-flagged reservation takes the
+    /// silent-no-op early-exit above, unconditionally, on every platform —
+    /// there is no huge-aligned-range exception without the feature. This
+    /// matters specifically for [`Self::from_raw_parts`], which has no
+    /// feature gate of its own: a caller who adopts a reservation obtained
+    /// through their OWN `MAP_HUGETLB` call (the documented cross-crate
+    /// handoff use case — see that constructor's doc), passes
+    /// `granted_huge: true`, but does not separately enable `huge-pages` in
+    /// THIS crate's `Cargo.toml`, gets `is_huge() == true` (accurately
+    /// reflecting what they passed) while `decommit`/`try_decommit` on that
+    /// reservation silently skip the backend call unconditionally — even on
+    /// a kernel new enough and a well-formed, huge-page-aligned range, where
+    /// the paragraph above promises a real forward. Enable `huge-pages` if
+    /// you need that forward to work; if you cannot, use [`decommit_lazy`]
+    /// instead, or track the huge-page state as always-no-op-eligible
+    /// yourself.
+    ///
     /// # Panics
     ///
     /// DEBUG builds only, and only for a contract-violating range (`start >
@@ -732,6 +766,14 @@ impl Reservation {
     /// Decommit is best-effort by nature; use
     /// [`Self::decommit_reclaims_and_zeroes`] to learn what the platform
     /// actually does.
+    ///
+    /// **The Linux/Android >= 5.18 eligible-forward path requires the
+    /// `huge-pages` feature (task #1156, finding F10); [`Self::is_huge`] and
+    /// [`Self::from_raw_parts`] do not.** Without `huge-pages` enabled, this
+    /// method always takes the skip-and-return-`Ok(())` path on a
+    /// huge-flagged reservation, on every platform, regardless of range or
+    /// kernel version — see [`Self::decommit`]'s doc for the full explanation
+    /// and the `from_raw_parts` cross-crate-adoption scenario this affects.
     pub fn try_decommit(&mut self, start: usize, end: usize) -> Result<(), VmemError> {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
@@ -1072,6 +1114,18 @@ impl Reservation {
     ///   return the old data, not a crash or undefined behavior). If you cannot
     ///   determine whether the OS granted huge pages, you MUST pass `false` and
     ///   use `reserve_aligned` instead.
+    ///
+    ///   **Even with `granted_huge` set correctly, `decommit`/`try_decommit`
+    ///   only ever forward to the real backend for a Linux/Android >= 5.18
+    ///   huge-aligned range when THIS crate is built with the `huge-pages`
+    ///   feature (task #1156, finding F10)** — this constructor itself, like
+    ///   [`Self::is_huge`], has no feature gate, so `from_raw_parts` compiles
+    ///   and `is_huge()` reports accurately regardless. A caller who adopts a
+    ///   reservation from their own `MAP_HUGETLB` call (the motivating
+    ///   cross-crate use case above) but does not separately enable
+    ///   `huge-pages` gets a silently-always-skipped `decommit` even on an
+    ///   eligible kernel and range. See [`Self::decommit`]'s doc for the full
+    ///   explanation.
     ///
     /// The reservation must be released **exactly once** — by dropping this
     /// handle, or by extracting via `into_parts` and calling [`release`](crate::api::release)

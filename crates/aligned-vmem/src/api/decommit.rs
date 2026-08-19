@@ -3,7 +3,7 @@ use crate::error::VmemError;
 use crate::mock;
 #[cfg(not(aligned_vmem_mock))]
 use crate::os::{decommit_pages_impl, DecommitKind};
-use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
+use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 
 /// Decommit pages `[base + start, base + end)`: hint the OS to return
 /// their physical backing while keeping the address-space reservation alive.
@@ -22,9 +22,9 @@ use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   old data may be observed after a decommit+recommit roundtrip.
 ///   See [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes).
 ///
-/// `start` and `end` must be multiples of [`page_size()`] and within the span.
+/// `start` and `end` must be multiples of [`page_size()`](crate::page_size::page_size) and within the span.
 /// A no-op if the range is empty AND page-aligned — and a VIOLATED range
-/// (`start > end`, or an endpoint not a multiple of [`page_size()`] — which
+/// (`start > end`, or an endpoint not a multiple of [`page_size()`](crate::page_size::page_size) — which
 /// includes an empty MISALIGNED range such as `decommit(ptr, 1, 1)`) is a
 /// silent no-op in a release build; see "Contract violations, by build
 /// profile" below for the debug-build tripwire and the fallible
@@ -39,7 +39,7 @@ use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// **Contract violations, by build profile (task #1051):** this entry point
 /// is intentionally infallible — the `()` return carries no write-permitting
 /// sentinel to misuse — so a violated range (`start > end`, or an endpoint
-/// not a multiple of [`page_size()`]) is a silent no-op in a RELEASE build:
+/// not a multiple of [`page_size()`](crate::page_size::page_size)) is a silent no-op in a RELEASE build:
 /// no OS call is made and nothing is recorded. In a DEBUG build the same
 /// violation trips the `debug_assert!` below before anything happens, so a
 /// consumer's own test fails at the mistake instead of quietly decommitting
@@ -184,16 +184,34 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 }
 
 /// Whether `[start, end)` is a well-formed decommit range: `start <= end` and
-/// both endpoints are multiples of the runtime [`page_size()`].
+/// both endpoints are multiples of the runtime [`page_size()`](crate::page_size::page_size).
 ///
 /// An EMPTY range (`start == end`, page-aligned) is well-formed — it is a
 /// deliberate no-op, not a mistake. That distinction is why this predicate
 /// exists separately from the `start >= end` early-return in [`decommit`]:
 /// the early return conflates "nothing to do" with "you got the arguments
 /// wrong", and only the second deserves a diagnostic.
+///
+/// **Reads the unmasked [`page_size_or_poison`], not the public
+/// [`page_size()`](crate::page_size::page_size) (task #1156, finding F16).** Both current callers already
+/// pre-check the poisoned state and return before reaching this predicate
+/// (`decommit`'s `ps == PAGE_SIZE_QUERY_FAILED` guard above; `try_decommit`'s
+/// identical guard), so which page-size accessor this function reads makes no
+/// observable difference today. But a function named `..._is_well_formed`
+/// validating against the MASKED `page_size()` — which silently substitutes
+/// [`PAGE`](crate::PAGE) (4 KiB) for "unknown" in the degraded state — would
+/// wrongly certify a range as well-formed under a fabricated granularity if a
+/// future caller ever reached it without pre-checking poison first, exactly
+/// the trap task #1139's design note ("the arithmetic is suspenders, so
+/// forgetting a check cannot reopen the hole") means to rule out. Reading
+/// [`page_size_or_poison`] instead makes the predicate itself fail closed by
+/// construction: under poison it is [`PAGE_SIZE_QUERY_FAILED`]
+/// (`usize::MAX`), and `is_multiple_of(usize::MAX)` is true only for `0` or
+/// `usize::MAX` — so any ordinary non-empty range is rejected here too, not
+/// just by the callers' own pre-checks.
 #[must_use]
 fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
-    let ps = page_size();
+    let ps = page_size_or_poison();
     start <= end && start.is_multiple_of(ps) && end.is_multiple_of(ps)
 }
 
@@ -208,7 +226,7 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
 /// # Errors
 ///
 /// [`VmemError::invalid_argument`] if `start > end`, or either endpoint is not
-/// a multiple of the runtime [`page_size()`]. An empty page-aligned range
+/// a multiple of the runtime [`page_size()`](crate::page_size::page_size). An empty page-aligned range
 /// (`start == end`) is a well-formed no-op and returns `Ok(())`.
 ///
 /// Note what is deliberately NOT an error: the OS refusing or ignoring the
