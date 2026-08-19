@@ -376,8 +376,10 @@ fn huge_decommit_attempts_does_not_increment_on_ordinary_reservation() {
 /// `can_decommit_reclaim_and_zero_returns_false_for_huge_reservations`
 /// above). **That has changed:** the `aligned-vmem-hugetlb-real` CI job
 /// (`.github/workflows/ci.yml`) now configures a real `nr_hugepages` pool
-/// and runs this exact test (this function is one of its five
-/// hard-asserted sentinels), so under THAT job `reservation.is_huge()` is
+/// and runs this exact test (this function is one of its six
+/// hard-asserted `test <name> ... ok` sentinels — plus two literal
+/// `[oracle] ARMED: ...` marker sentinels, eight `grep -F` checks in total
+/// as of task #1166's recount), so under THAT job `reservation.is_huge()` is
 /// `true` and this test genuinely exercises the real-backend branch —
 /// proving the crate's dispatch reaches the real
 /// `madvise(2)`/`MADV_DONTNEED` call, not that the kernel honoured it (see
@@ -649,11 +651,19 @@ fn try_decommit_rejects_out_of_bounds_huge_aligned_range_before_any_eligibility_
 /// making ARMED observably different from UNARMED in the OUTPUT itself: a
 /// `println!("[oracle] ARMED: ...")` after the assert above, which only
 /// executes on the real-grant path, checked by its own additional `grep -F`
-/// sentinel in ci.yml (requires the job's `cargo test` step to pass
-/// `-- --nocapture`, confirmed not to change libtest's `test <name> ... ok`
-/// line format for any of the job's other sentinels). This checks
-/// EXECUTION, not workflow text, so it cannot be defeated by moving the env
-/// var to a different syntactic position in the YAML.
+/// sentinel in ci.yml. **Task #1166 correction:** this marker is observed by
+/// running THIS test alone (`--exact <name> -- --nocapture`), not by adding
+/// `--nocapture` to the job's shared multi-test run — `--nocapture` does not
+/// change libtest's `test <name> ... ok` line FORMAT, but under the default
+/// parallel runner it does NOT print that line atomically either: the
+/// aggregating main thread writes `"test {name} ... "`, the outcome word,
+/// and the trailing newline as three separate writes, and an unsynchronized
+/// worker-thread `println!` (this marker, or the sibling oracle's) can land
+/// between them and split another test's sentinel line — confirmed by a
+/// 400-run counterfactual (11/400 corrupted) documented in
+/// `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` step. This
+/// checks EXECUTION, not workflow text, so it cannot be defeated by moving
+/// the env var to a different syntactic position in the YAML.
 #[test]
 #[cfg(all(
     any(target_os = "linux", target_os = "android"),
@@ -696,11 +706,18 @@ fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
     // that the process started with the right variable — and it is a
     // distinct, additional line `grep -F`-checked by
     // `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` job,
-    // verified via `scripts/verify-ci-sentinels.mjs`. Requires the job's
-    // `cargo test` invocation to pass `-- --nocapture` (confirmed this task:
-    // `--nocapture` does not alter libtest's `test <name> ... ok` line
-    // format at all, so the five pre-existing sentinels in that job's step
-    // are unaffected by adding it).
+    // verified via `scripts/verify-ci-sentinels.mjs`. At task #1162 filing
+    // time this required the job's shared `cargo test` invocation to pass
+    // `-- --nocapture`; task #1166 found that flag was corrupting its own
+    // sentinel lines under the default parallel runner (an unsynchronized
+    // worker-thread `println!` landing mid-write of another test's `test
+    // <name> ... ` / outcome-word / newline triple) and moved this marker's
+    // observation to its own isolated `--exact <name> -- --nocapture`
+    // invocation instead — see that job step's own comment in ci.yml for
+    // the counterfactual. `--nocapture` itself does not change libtest's
+    // `test <name> ... ok` line FORMAT, only whether output interleaves
+    // with it; the five pre-existing sentinels in that job's step (at task
+    // #1162 filing time) were unaffected by adding the flag.
     println!("[oracle] ARMED: real MAP_HUGETLB grant confirmed");
 }
 
@@ -860,17 +877,36 @@ fn ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise() {
          range, or the huge-page dispatch in Reservation::decommit changed to skip the real \
          backend for an eligible range."
     );
-    assert!(
-        successes_after > successes_before,
-        "OWNER DECISION (task #1164): inside the `aligned-vmem-hugetlb-real` job specifically \
-         -- a real MAP_HUGETLB grant (hard-asserted above), a huge-page-size-aligned eligible \
-         range, on a modern (>= 5.18) Linux kernel, with the pool hard-asserted configured -- a \
-         madvise(2) MADV_DONTNEED call that does NOT return 0 is treated as a genuine defect, \
-         not a tolerated OS refusal (contrast `decommit`'s own general contract, which does \
-         tolerate refusal under cgroup/memory-pressure conditions this job's environment does \
-         not have). UNIX_MADVISE_SUCCESSES did not increment: {successes_before} -> \
-         {successes_after} (attempts: {attempts_before} -> {attempts_after}). The kernel \
-         rejected an eligible madvise(2) call on a genuinely granted HugeTLB mapping -- \
+    // Task #1166 (F5): strengthened from `successes_after > successes_before`
+    // to an exact equality against `attempts_after`, matching item 59a's own
+    // next-trigger wording (`unix_madvise_successes() == unix_madvise_attempts()
+    // > 0`). The counters are reset to zero immediately above (`reset_bench_
+    // internals_counters()`), so `attempts_before == successes_before == 0`
+    // here and this equality is exactly the item's stated bar, not a weaker
+    // stand-in for it: today's single-call-per-decommit dispatch
+    // (`decommit_pages_impl`, `crates/aligned-vmem/src/os/unix.rs:423-447` --
+    // `DecommitKind::Eager` reaches exactly one `libc_madvise` call, which
+    // increments `UNIX_MADVISE_ATTEMPTS` by exactly 1 and `UNIX_MADVISE_
+    // SUCCESSES` by 0 or 1 depending on the syscall's own return value) means
+    // `attempts_after == 1` on this path, so `successes_after == attempts_after`
+    // is equivalent to "the kernel accepted the call" -- but unlike a bare
+    // `> successes_before` check, it additionally catches a future two-call
+    // dispatch where one call succeeds and one fails (attempts +2, successes
+    // +1 would satisfy the old `>` form while silently masking a partial
+    // failure; it fails this equality).
+    assert_eq!(
+        successes_after, attempts_after,
+        "OWNER DECISION (task #1164, strengthened task #1166): inside the \
+         `aligned-vmem-hugetlb-real` job specifically -- a real MAP_HUGETLB grant \
+         (hard-asserted above), a huge-page-size-aligned eligible range, on a modern \
+         (>= 5.18) Linux kernel, with the pool hard-asserted configured -- every \
+         madvise(2) MADV_DONTNEED call this decommit() reached must have returned 0 \
+         (UNIX_MADVISE_SUCCESSES must equal UNIX_MADVISE_ATTEMPTS), not merely at \
+         least one of them (contrast `decommit`'s own general contract, which does \
+         tolerate refusal under cgroup/memory-pressure conditions this job's \
+         environment does not have). Got attempts {attempts_before} -> {attempts_after}, \
+         successes {successes_before} -> {successes_after}. The kernel rejected at \
+         least one eligible madvise(2) call on a genuinely granted HugeTLB mapping -- \
          investigate a kernel/pool regression on this runner, do not relax this assertion."
     );
 

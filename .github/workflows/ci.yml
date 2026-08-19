@@ -397,6 +397,15 @@ jobs:
       - name: Configure a real hugetlb pool (hard-asserted, never skipped)
         run: |
           set -euo pipefail
+          # Task #1166 (F9): this job hard-depends on kernel >= 5.18 (see
+          # `linux_huge_range_is_madvise_eligible`'s doc comment,
+          # `crates/aligned-vmem/src/os/unix.rs`) and a working 2-MiB hugetlb
+          # pool, but previously logged neither — a runner-image regression
+          # (older kernel, hugepage size change) would show up only as a
+          # downstream test failure with no diagnostic trail. Log both once,
+          # unconditionally, before the pool is configured.
+          uname -r
+          grep -i Hugepagesize /proc/meminfo
           echo 64 | sudo tee /proc/sys/vm/nr_hugepages > /dev/null
           GOT=$(cat /proc/sys/vm/nr_hugepages)
           echo "nr_hugepages = $GOT"
@@ -426,11 +435,9 @@ jobs:
       # ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok`
       # line, so a future edit that drops the prefix (bad `env:` indent, a
       # lossy merge) would make the oracle silently no-op while this job
-      # stayed green. `--nocapture` (confirmed not to alter any of this
-      # step's five `test <name> ... ok` sentinel lines) plus the new
-      # `[oracle] ARMED: ...` `println!` marker + its own `grep -F` line
-      # below make the armed outcome observable in the log itself, not just
-      # inferable from workflow text.
+      # stayed green. The new `[oracle] ARMED: ...` `println!` marker + its
+      # own `grep -F` line make the armed outcome observable in the log
+      # itself, not just inferable from workflow text.
       #
       # Task #1164 (item 59a's own next-trigger): closes the kernel-response
       # half of item 59a. `ci_hugetlb_real_pool_kernel_actually_accepts_
@@ -443,19 +450,51 @@ jobs:
       # task #1162 established immediately above, and needs no additional
       # `--test`/feature flag: it lives in the same `decommit_capability`
       # binary, already built with `bench-internals` by this step.
+      #
+      # Task #1166 (F1): `-- --nocapture` on the FULL multi-threaded run below
+      # was corrupting its own sentinel lines, not merely leaving them
+      # unaffected. libtest's default (parallel, multi-worker-thread) runner
+      # writes each `test <name> ... ok` line as THREE SEPARATE writes from
+      # the aggregating main thread: `"test {name} ... "`, then the outcome
+      # word, then the trailing newline. Under `--nocapture`, a worker
+      # thread's `println!` (this job has two: the `[oracle] ARMED: ...`
+      # markers) is not synchronized against that triple-write, so it can
+      # land BETWEEN them and split the exact line every `grep -F` below
+      # depends on (observed both as `test <name> ... [oracle] ARMED:
+      # ...\nok` and `test <name> ... ok[oracle] ARMED: ...` in a 400-run
+      # local counterfactual against a 9/10-test harness mirroring this
+      # job's shape, 11/400 runs corrupting at least one sentinel line —
+      # `--test-threads=1` does NOT fix this, it makes the corruption of a
+      # printing test's OWN line deterministic instead of rare, since the
+      # print still lands between that same test's three writes; verified
+      # 5/5 runs). The fix: run the six `test <name> ... ok` sentinels
+      # WITHOUT `--nocapture` (libtest captures a passing test's stdout by
+      # default, so the "... ok" lines are written intact and the two
+      # `println!`s are simply swallowed — verified 400/400 runs, zero
+      # corruption), then run each of the two ARMED-marker tests in its own
+      # single-test invocation (`--exact <name> -- --nocapture`, no other
+      # test running concurrently to interleave with) to observe its marker
+      # line (verified 400/400 runs each, zero corruption).
       - run: |
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test huge_pages --test decommit_capability --test reservation_decommit_contract \
-            -- --nocapture \
             2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test reserve_aligned_huge_accepts_huge_page_aligned_request ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test huge_decommit_attempts_increments_on_huge_reservation ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test huge_aligned_range_takes_the_real_backend_path_not_the_skip_path ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test method_try_decommit_huge_skip_returns_ok_and_counts ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
-          grep -F "[oracle] ARMED: real MAP_HUGETLB grant confirmed" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
-          grep -F "[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test decommit_capability \
+            -- --exact ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker1.log"
+          grep -F "[oracle] ARMED: real MAP_HUGETLB grant confirmed" "$RUNNER_TEMP/vmem-hugetlb-real-marker1.log"
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test decommit_capability \
+            -- --exact ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker2.log"
+          grep -F "[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real-marker2.log"
         shell: bash
 
   aligned-vmem-miri:
