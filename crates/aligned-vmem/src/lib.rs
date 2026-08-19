@@ -97,9 +97,15 @@
 //! validation constant. [`page_size`] returns the **actual OS page size**
 //! queried once via `sysconf(_SC_PAGESIZE)` (Unix) / `GetSystemInfo` (Windows).
 //! On Apple Silicon macOS this is 16 KiB; callers computing decommit offsets
-//! must round to `page_size()`, not `PAGE`, because `madvise(2)` rejects
-//! the entire call (all-or-nothing) when `addr` is not a multiple of the
-//! real page size.
+//! must round to `page_size()`, not `PAGE`. The crate's own validation of
+//! both range endpoints against `page_size()` is the load-bearing guard: do
+//! not rely on the OS to reject a misaligned range — Linux `madvise(2)`
+//! rejects only a misaligned ADDRESS and rounds a misaligned LENGTH **up**
+//! past the requested range, and Windows `VirtualFree(MEM_DECOMMIT)` rejects
+//! nothing (it widens the range in both directions to whole pages). In the
+//! never-observed case where the one-time OS query fails, the crate fails
+//! closed rather than guessing — see [`page_size`]'s "If the one-time OS
+//! query fails" paragraph and [`try_page_size`].
 
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
@@ -154,16 +160,20 @@ pub mod fault_injection;
 
 #[cfg(aligned_vmem_page_size_override)]
 pub mod page_size_override;
+#[cfg(aligned_vmem_page_size_override)]
+pub mod page_size_query_override;
 
 mod min_page;
 mod page;
 mod page_size;
+mod try_page_size;
 #[cfg(feature = "bench-internals")]
 mod validate_page_size;
 
 pub use min_page::MIN_PAGE;
 pub use page::PAGE;
 pub use page_size::page_size;
+pub use try_page_size::try_page_size;
 #[cfg(feature = "bench-internals")]
 pub use validate_page_size::validate_page_size;
 

@@ -3,7 +3,7 @@ use crate::error::VmemError;
 use crate::mock;
 #[cfg(not(aligned_vmem_mock))]
 use crate::os::{decommit_pages_impl, DecommitKind};
-use crate::page_size::page_size;
+use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 
 /// Decommit pages `[base + start, base + end)`: hint the OS to return
 /// their physical backing while keeping the address-space reservation alive.
@@ -97,6 +97,22 @@ use crate::page_size::page_size;
 /// lazy `decommit_lazy` path uses `MADV_FREE`-family advice on Darwin/BSDs and
 /// DOES free pages on those platforms.
 pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
+    let ps = page_size_or_poison();
+    // Failed OS page-size query (never observed on a supported platform):
+    // with the real page unknown, ANY granularity guess could make the OS
+    // round the length up across live data — fail closed instead. Silent in
+    // release BY SIGNATURE (same rationale as the range tripwire below);
+    // loud in debug with the accurate cause, not a misleading
+    // "you misaligned your range" message.
+    if ps == PAGE_SIZE_QUERY_FAILED {
+        debug_assert!(
+            false,
+            "aligned-vmem: the OS page-size query failed, so decommit is \
+             disabled for this process (fail-closed); the call does nothing. \
+             Use try_decommit / try_page_size to observe this state."
+        );
+        return;
+    }
     // A contract violation here is silent BY SIGNATURE — this function returns
     // `()` and has nowhere to report one. In a debug build say so loudly, so a
     // consumer's own test fails at the mistake rather than quietly decommitting
@@ -107,7 +123,6 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
          (start > end, or an endpoint is not a multiple of page_size()); the \
          call does nothing. Use try_decommit for the fallible form."
     );
-    let ps = page_size();
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }
@@ -167,6 +182,13 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
 /// reservation owned by the caller, and `[base+start, base+end)` must lie
 /// within its usable span.
 pub unsafe fn try_decommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    // Failed OS page-size query: fail closed, reported as an OS-side no-code
+    // failure — the caller's arguments are NOT at fault, so this must not
+    // read as `invalid_argument` (see `page_size`'s "If the one-time OS
+    // query fails" paragraph).
+    if page_size_or_poison() == PAGE_SIZE_QUERY_FAILED {
+        return Err(VmemError::os_refusal_unknown_code());
+    }
     if !decommit_range_is_well_formed(start, end) {
         return Err(VmemError::invalid_argument());
     }

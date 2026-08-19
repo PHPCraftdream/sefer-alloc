@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **`try_page_size()`** (task #1139) — the fallible companion to `page_size`.
+  Reports `Err` when the one-time OS page-size query failed, which
+  `page_size()` itself cannot say because it is infallible by signature. This
+  is the upfront detector for the fail-closed state described under "Fixed"
+  below. [correctness fix, additive]
 - **`impl Debug for LazyReservation`** (task #1107) — prints `committed_len()`
   FIRST, then the inner reservation through its own `Debug`. The watermark is
   the type's whole reason to exist and was previously invisible in a panic
@@ -148,6 +153,31 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **A failed one-time OS page-size query is no longer folded to 4 KiB and
+  cached as if it were a real answer** (task #1139). `query_os_page_size()`
+  returned `0` on failure, `0` failed the `>= PAGE` test, and the validator
+  mapped it to `PAGE` — so a FAILURE was indistinguishable from a genuine
+  4 KiB page, for the life of the process. On a host whose real page is larger
+  (16 KiB Apple Silicon, 64 KiB aarch64 Linux) that lets a caller's range pass
+  validation which the OS then rounds UP: `madvise(2)` rejects a misaligned
+  ADDRESS but rounds the LENGTH up, and Windows `VirtualFree(MEM_DECOMMIT)`
+  rejects neither — it decommits every page touching the range, rounding the
+  start DOWN and the end UP. Either way, live data outside the requested range
+  is discarded through a safe API. The query now POISONS the cache instead:
+  `page_size()` stays infallible and still returns the conservative `PAGE`
+  floor, but every page-granular state operation fails closed for the process
+  lifetime — `decommit`/`decommit_lazy` become no-ops, `recommit`/
+  `commit_range` return `false`, the `try_*` forms and the lazy constructor
+  report an OS-side no-code error, `set_page_size_override` refuses to arm, and
+  the new `try_page_size()` reports `Err`. Reserving, using and releasing
+  memory are unaffected — they never consult the page size. Never observed on
+  a supported platform via the syscall channel (`_SC_PAGESIZE` comes from auxv
+  on Linux and cannot fail post-startup); the reachable channel is a WRONG
+  `_SC_PAGESIZE` constant on a reasoned-from-spec BSD target, and FreeBSD on
+  Apple Silicon runs 16 KiB pages. Also removed: `page_size()`'s rustdoc cited
+  `madvise`'s "all-or-nothing" rule as protection — that rule covers only the
+  address, and on Windows there is no kernel backstop at all, so crate-side
+  validation was always the load-bearing guard. [correctness fix]
 - **[BREAKING, HIGH, publication blocker] `LazyReservation::as_reservation()` is
   REMOVED: it was a 100%-safe bypass of the watermark the type exists to
   guarantee (task #1104, finding H1 of the 2026-08-18 publication-readiness

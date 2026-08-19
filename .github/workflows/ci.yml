@@ -231,6 +231,21 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+      # Task #1139: the failed-OS-page-size-query oracle — the only test
+      # pinning the fail-CLOSED poison (a failed query must NOT be folded to
+      # 4 KiB and cached as if it were a real answer). Same
+      # `#![cfg(aligned_vmem_page_size_override)]` top-level gate, and
+      # therefore the same green-and-dead hazard, as the floor row above, so
+      # it carries the same self-verifying tee + grep -F shape: the named test
+      # must actually RUN, not merely compile to an empty binary. It needs its
+      # own row rather than folding into the row above because cargo builds
+      # one `--test` target per invocation.
+      - run: |
+          cargo test -p aligned-vmem --all-features --test page_size_query_failure 2>&1 | tee "$RUNNER_TEMP/page-size-query-failure.log"
+          grep -F "test failed_os_page_size_query_fails_closed ... ok" "$RUNNER_TEMP/page-size-query-failure.log"
+        shell: bash
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # Task #851: miri compilation gate. NO miri interpreter required — this
       # is just `cargo check` with the `miri` cfg set, which catches the
       # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.

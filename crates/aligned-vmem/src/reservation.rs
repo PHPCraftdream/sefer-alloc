@@ -10,7 +10,7 @@ use crate::bench_internals::HUGE_DECOMMIT_ATTEMPTS;
 use crate::error::VmemError;
 use crate::os::release_reservation;
 use crate::page::PAGE;
-use crate::page_size::page_size;
+use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 use crate::reservation_full_parts::ReservationFullParts;
 use crate::reservation_parts::ReservationParts;
 
@@ -660,7 +660,15 @@ impl Reservation {
         // never_panics` (tests/reservation_decommit_contract.rs) pin the
         // agreement, on huge-flagged and ordinary reservations
         // respectively.
-        let ps = page_size();
+        let ps = page_size_or_poison();
+        // Failed OS page-size query: fail closed with the OS-side no-code
+        // error, BEFORE the huge skip and the range validation — mirroring
+        // the free `try_decommit` (NOT `invalid_argument`; the caller's
+        // arguments are not at fault). See `page_size`'s "If the one-time
+        // OS query fails" paragraph.
+        if ps == PAGE_SIZE_QUERY_FAILED {
+            return Err(VmemError::os_refusal_unknown_code());
+        }
         if start > end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
             return Err(VmemError::invalid_argument());
         }

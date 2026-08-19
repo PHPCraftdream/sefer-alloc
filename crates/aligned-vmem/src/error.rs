@@ -86,7 +86,16 @@ impl VmemError {
     ///   at all; it shares this sentinel because it is equally not a caller
     ///   contract violation, and the type carries no further discrimination
     ///   (crate still at 0.2.0, unpublished — a distinct kind was judged not
-    ///   worth the public-API surface; see the task #1106/L2 record).
+    ///   worth the public-API surface; see the task #1106/L2 record);
+    /// - a FAILED one-time OS page-size query (never observed on a supported
+    ///   platform): [`crate::try_page_size`] and every page-granular `try_*`
+    ///   state operation (`try_decommit`, `try_recommit`,
+    ///   `try_commit_range`, the lazy reservation constructor) report the
+    ///   crate's fail-closed degraded state through this sentinel — the
+    ///   caller's arguments are not at fault, and no per-call OS code
+    ///   exists (the query failed once, at first use, possibly long before
+    ///   the reporting call). Same no-new-kind reasoning as the third
+    ///   source above.
     ///
     /// Distinct from [`invalid_argument`](Self::invalid_argument):
     /// `is_invalid_argument()` is `false` here — the failure originated on

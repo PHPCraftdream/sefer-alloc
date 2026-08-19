@@ -3,7 +3,7 @@ use crate::error::VmemError;
 use crate::mock;
 #[cfg(not(aligned_vmem_mock))]
 use crate::os::recommit_pages_impl;
-use crate::page_size::page_size;
+use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 
 /// Recommit pages `[base + start, base + end)` previously passed to
 /// [`decommit`](crate::api::decommit). On Windows this re-commits physical pages
@@ -44,7 +44,13 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 ///
 /// Same as [`recommit`].
 pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
-    let ps = page_size();
+    let ps = page_size_or_poison();
+    // Failed OS page-size query: fail closed with the OS-side no-code error
+    // (NOT `invalid_argument` — the caller's arguments are not at fault).
+    // See `page_size`'s "If the one-time OS query fails" paragraph.
+    if ps == PAGE_SIZE_QUERY_FAILED {
+        return Err(VmemError::os_refusal_unknown_code());
+    }
     if start > end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return Err(VmemError::invalid_argument());
     }

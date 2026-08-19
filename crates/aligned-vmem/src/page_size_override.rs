@@ -30,17 +30,20 @@
 //! (reserve/commit) or silently skipped (decommit) — fail-closed
 //! degradation, never UB.
 //!
-//! Residual assumption, inherited rather than override-specific: the floor
-//! is the OS query validated by the same rule [`crate::page_size`] uses, so
-//! if the OS query itself fails and falls back to `PAGE` on a host whose
-//! true hardware page is larger, the floor degrades to `PAGE` — exactly
-//! the degraded assumption the crate's own `page_size()` already makes
-//! with no override armed. Before task #1085 this section claimed the
-//! stricter-only property WITHOUT the real-page floor, which was false
-//! whenever a caller forced a page smaller than the real one (e.g.
-//! `Some(4096)` on a 16 KiB-page host): validators would accept 4 KiB
-//! multiples and the OS rounds a decommit LENGTH up to the real page,
-//! silently discarding live data outside the requested range.
+//! If the fresh OS query itself FAILS, no floor exists to compare against,
+//! and the setter refuses to arm any `Some` override at all (returns
+//! `false`) — matching the crate's own fail-closed handling of a failed
+//! query (`page_size()` poisons the cache and every page-granular state
+//! operation fails closed; see `page_size`'s "If the one-time OS query
+//! fails" paragraph). Before that fail-closed handling existed, this
+//! paragraph documented the floor degrading to `PAGE` on query failure —
+//! the same fail-open assumption `page_size()` itself used to make. And
+//! before task #1085 this section claimed the stricter-only property
+//! WITHOUT the real-page floor, which was false whenever a caller forced a
+//! page smaller than the real one (e.g. `Some(4096)` on a 16 KiB-page
+//! host): validators would accept 4 KiB multiples and the OS rounds a
+//! decommit LENGTH up to the real page, silently discarding live data
+//! outside the requested range.
 //!
 //! # Reachability
 //!
@@ -70,7 +73,9 @@ use core::sync::atomic::Ordering;
 use super::page_size::{query_os_page_size, validate_page_size_impl, PAGE_SIZE_CACHE};
 
 /// The REAL OS page size right now, as a fresh validated query that ignores
-/// [`PAGE_SIZE_CACHE`] entirely (task #1085).
+/// [`PAGE_SIZE_CACHE`] entirely (task #1085) — or `None` when the fresh
+/// query's answer is unusable (so no floor can be established and no `Some`
+/// override may be armed; see the module docs).
 ///
 /// Unlike [`crate::page_size`], this never reads (or writes) the cache, so
 /// while an override is armed it still reports the true OS value. The
@@ -79,9 +84,13 @@ use super::page_size::{query_os_page_size, validate_page_size_impl, PAGE_SIZE_CA
 /// both falsely reject legal downshifts to a still-legal page and fail to
 /// pin the invariant that actually matters — the effective page size is
 /// always >= the real one, so every page-multiple validator stays at least
-/// as strict as the no-override behavior.
-fn real_os_page_size_fresh() -> usize {
-    validate_page_size_impl(query_os_page_size())
+/// as strict as the no-override behavior. It DOES go through the raw-query
+/// seam (`page_size_query_override`), deliberately: a simulated larger-page
+/// host must raise this floor too, and a simulated failed query must
+/// disable arming, exactly as the real conditions would.
+fn real_os_page_size_fresh() -> Option<usize> {
+    let raw = query_os_page_size();
+    (validate_page_size_impl(raw) == raw).then_some(raw)
 }
 
 /// Set (`Some`) or clear (`None`) the process-global page-size override seen
@@ -120,7 +129,7 @@ pub fn set_page_size_override(new: Option<usize>) -> bool {
             // BELOW the machine's real page size (see
             // `real_os_page_size_fresh` for why the query bypasses the
             // cache).
-            if validated == ps && ps >= real_os_page_size_fresh() {
+            if validated == ps && real_os_page_size_fresh().is_some_and(|real| ps >= real) {
                 PAGE_SIZE_CACHE.store(ps, Ordering::Relaxed);
                 true
             } else {

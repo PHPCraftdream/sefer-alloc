@@ -233,7 +233,15 @@
 //      above never set the cfg. Carries expectTest — the file is
 //      cfg-gated at the top level, so a lost cfg means an empty green
 //      binary, the steps-42-44 M6 class.)
-//   47. npm run iai                                                (deterministic judge,
+//   47. cargo test -p aligned-vmem --all-features --test page_size_query_failure
+//      under RUSTFLAGS "--cfg aligned_vmem_page_size_override"   (task
+//      #1139: the failed-OS-page-size-query fail-CLOSED oracle. Same
+//      top-level cfg gate and therefore the same green-and-dead hazard as
+//      the row above, so it carries expectTest for the same reason.
+//      Unlike the floor test it is NOT host-adaptive: it drives the
+//      failure through the raw-query seam, so its discriminating
+//      assertions run on a 4 KiB host too.)
+//   48. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -935,10 +943,31 @@ const steps = [
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
     expectTest: 'override_floor_is_the_real_os_page_size',
   },
+  {
+    // Task #1139: the failed-OS-page-size-query oracle — the only test
+    // pinning the fail-CLOSED poison (a failed query must NOT be folded to
+    // 4 KiB and cached as if real; the fold would let the OS round a
+    // decommit LENGTH up across live data on a 16/64 KiB-page host). Shares
+    // the row above's `#![cfg(aligned_vmem_page_size_override)]` top-level
+    // gate and therefore its green-and-dead hazard, so it carries
+    // expectTest for the same reason: without the cfg the target compiles
+    // ZERO tests and passes on an empty binary. A separate row rather than
+    // an extra `--test` on the row above, mirroring the ci.yml pair added
+    // in the same task. Unlike the floor test this one is NOT
+    // host-adaptive — it drives the failure through the raw-query seam, so
+    // its discriminating assertions run on every host including this 4 KiB
+    // one (counterfactual on record: restoring the pre-fix fold makes it
+    // fail at "try_page_size must report the failed query: 4096").
+    name: 'test (aligned-vmem failed-page-size-query fail-closed oracle, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem', '--all-features', '--test', 'page_size_query_failure'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    expectTest: 'failed_os_page_size_query_fails_closed',
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x19 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 1 page-size-override floor test at the array tail, task #1095], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x20 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

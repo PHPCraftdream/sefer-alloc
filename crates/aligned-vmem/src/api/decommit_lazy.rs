@@ -2,7 +2,7 @@
 use crate::mock;
 #[cfg(not(aligned_vmem_mock))]
 use crate::os::{decommit_pages_impl, DecommitKind};
-use crate::page_size::page_size;
+use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 
 /// Lazy decommit variant: hint the OS it MAY reclaim `[base+start, base+end)`
 /// under memory pressure, cheaper than [`decommit`](crate::api::decommit) (Linux `MADV_FREE`,
@@ -62,7 +62,13 @@ use crate::page_size::page_size;
 ///
 /// Same as [`decommit`](crate::api::decommit).
 pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
-    let ps = page_size();
+    let ps = page_size_or_poison();
+    // Failed OS page-size query: fail closed (see `decommit`). Silent on
+    // every profile, consistent with this entry point's deliberate
+    // no-tripwire design (task #1072).
+    if ps == PAGE_SIZE_QUERY_FAILED {
+        return;
+    }
     if start >= end || !start.is_multiple_of(ps) || !end.is_multiple_of(ps) {
         return;
     }

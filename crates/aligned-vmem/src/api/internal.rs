@@ -2,7 +2,7 @@ use core::ptr::NonNull;
 
 use crate::error::VmemError;
 use crate::page::PAGE;
-use crate::page_size::page_size;
+use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 use crate::Reservation;
 
 /// A contract violation (bad `size`/`align`) returns
@@ -73,7 +73,15 @@ pub(crate) fn validate_size_align(size: usize, align: usize) -> Result<(), VmemE
 /// page size; callers must pass a `page_size()` multiple.
 #[cfg_attr(not(feature = "lazy-commit"), allow(dead_code))]
 pub(crate) fn validate_initial_commit(initial_commit: usize, size: usize) -> Result<(), VmemError> {
-    let ps = page_size();
+    let ps = page_size_or_poison();
+    // Failed OS page-size query: the lazy path's page-granular commit
+    // contract cannot be validated against an unknown page — fail closed
+    // with the OS-side no-code error (NOT `invalid_argument`; the caller's
+    // arguments are not at fault). See `page_size`'s "If the one-time OS
+    // query fails" paragraph.
+    if ps == PAGE_SIZE_QUERY_FAILED {
+        return Err(VmemError::os_refusal_unknown_code());
+    }
     if initial_commit == 0
         || !initial_commit.is_multiple_of(ps)
         || !size.is_multiple_of(ps)
