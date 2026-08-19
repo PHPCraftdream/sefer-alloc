@@ -210,6 +210,26 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
+      # Task #1141 (L2): the row above was the ONLY release-profile coverage
+      # this crate had, and it runs under `--cfg aligned_vmem_mock` against a
+      # single test target — so every `not(debug_assertions)` behaviour of the
+      # REAL Unix/Windows backends went untested in release. That gap matters
+      # more here than it would elsewhere: this crate's contract-violation
+      # tripwires are `debug_assert!`, i.e. precisely the code whose behaviour
+      # DIFFERS between profiles, and several public methods document a
+      # "silent no-op in release" half that no debug row can ever exercise.
+      # Kept as a SEPARATE row rather than folded into the mock one above: the
+      # mock row tests a different property (a violated contract must never
+      # reach the recorder), which the real backend cannot express.
+      # Self-verifying (tee + `grep -F`) for the same reason as its
+      # neighbours — a row that compiled zero tests would pass green and dead.
+      # The sentinel names a test present in EVERY feature configuration, so a
+      # feature change cannot silence it, and `scripts/verify-ci-sentinels.mjs`
+      # (task #1150) checks the string against that test's real attributes.
+      - run: |
+          cargo test -p aligned-vmem --all-features --release --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/vmem-release-real.log"
+          grep -F "test reserve_is_aligned_and_writable ... ok" "$RUNNER_TEMP/vmem-release-real.log"
+        shell: bash
       # Task #1095 (H1): the page-size-override FLOOR test — the only test
       # pinning the task #1085 fix (set_page_size_override must reject a page
       # below the host's real one; a declared publication blocker). The test
@@ -708,9 +728,24 @@ jobs:
     # R30-12 rule commit) calls `git merge-base --is-ancestor`, which needs
     # real history, not the default shallow (depth-1) checkout every other
     # job in this workflow uses.
-    name: commit-prefix-lint (R30-12 taxonomy, PR range only)
+    # Task #1144 (W2): this job used to be `if: github.event_name ==
+    # 'pull_request'`, which made it DEAD IN THIS REPOSITORY — commits land
+    # directly on `main` by push, and no pull request is ever opened. The
+    # local `npm run check` complement is no better on its own: its default
+    # range is `@{u}..HEAD`, which at a freshly-pushed HEAD is EMPTY, so it
+    # passes vacuously. Net effect: the campaign's most-hardened guard (four
+    # commits — tasks #1117, #1123, #1126, #1137) executed essentially
+    # nowhere. That is the same class as item 80 (a guard hardened across
+    # seven tasks with no CI row at all), one layer up: here a row existed,
+    # but its trigger never fired.
+    # Fixed by ALSO running on push, over `github.event.before..github.sha` —
+    # exactly the commits the push introduced. Two edge cases the range must
+    # survive, both handled by the script's own argument parsing: a first
+    # push to a new branch and a force-push both give an all-zero or
+    # unreachable `before` SHA, so the step falls back to the script's
+    # default range instead of failing the job on a range git cannot resolve.
+    name: commit-prefix-lint (R30-12 taxonomy, PR range + pushed range)
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -718,7 +753,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node scripts/verify-commit-prefixes.mjs "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+      - name: Lint the commit range this event introduced
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            # All-zero (branch creation) or unreachable (force-push) `before`:
+            # there is no resolvable range, so fall back to the script's own
+            # default rather than failing on a bad revision.
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "push event has no resolvable 'before' SHA ($BEFORE) — using the script's default range"
+              node scripts/verify-commit-prefixes.mjs
+              exit $?
+            fi
+            RANGE="$BEFORE..${{ github.sha }}"
+          fi
+          echo "linting range: $RANGE"
+          node scripts/verify-commit-prefixes.mjs "$RANGE"
+        shell: bash
 
   # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
   # feature-set matrix jobs into 4 jobs, grouped by theme (the same
@@ -1324,10 +1379,23 @@ jobs:
       # `fault_injection.rs` also runs instead of compiling to zero tests
       # under mock as it did historically). The step below exercises mock
       # coverage separately via the build-time --cfg aligned_vmem_mock flag.
-      # As a side effect this also exercises `rust-version = "1.88"`'s
-      # MSRV-completeness for the crate standalone with every feature on,
-      # which the existing `msrv` job (root-crate-scoped) and
-      # `test-workspace`'s own default-features step never did.
+      # Task #1144 (N5) — CORRECTION, and a coverage gap this comment used to
+      # conceal. This block previously claimed the step "as a side effect also
+      # exercises `rust-version = \"1.88\"`'s MSRV-completeness for the crate
+      # standalone with every feature on". That is FALSE on two counts:
+      #   (a) this step lives in the `test workspace members` job, whose
+      #       toolchain is `dtolnay/rust-toolchain@stable` — it never sees
+      #       1.88 at all. Only the `msrv` job pins `@1.88`;
+      #   (b) the real `msrv` job runs ROOT-scoped `cargo check --all-features`,
+      #       and the root manifest forwards only `bench-internals`,
+      #       `fault-injection` and `lazy-commit` into aligned-vmem
+      #       (`grep -oE '"aligned-vmem\??/[a-z-]+"' Cargo.toml | sort -u`) —
+      #       NEVER `huge-pages`.
+      # So the `huge-pages` code is compiled on MSRV by NO job, and the claim
+      # asserted coverage that does not exist — the same
+      # comment-claims-coverage-it-does-not-have class this campaign has been
+      # closing all round. This step's real value is a full `--all-features`
+      # RUN on stable; MSRV coverage for `huge-pages` remains an open gap.
       - run: cargo test -p aligned-vmem --all-features --no-fail-fast
       # Task #962: mock-backend coverage for aligned-vmem on Linux. `mock`
       # was converted from a Cargo feature to the build-time

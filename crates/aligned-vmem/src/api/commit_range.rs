@@ -116,9 +116,13 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
             // so `VmemError::last_os_error()` would read whatever `errno`/
             // `GetLastError` happens to be lying around from unrelated prior
             // code, not a cause tied to this call at all.
-            // `os_refusal_unknown_code()` states plainly that the OS refused
-            // with no (real) code to report, instead of manufacturing a
-            // misleading one.
+            // `os_refusal_unknown_code()` reports the no-code state without
+            // manufacturing a misleading one. Task #1141: this comment used
+            // to say the constructor "states plainly that the OS refused" —
+            // which contradicts the line four above it. The OS did NOT
+            // refuse; no syscall ran at all. Simulated faults are one of the
+            // four sources that sentinel enumerates (see its own doc), and
+            // it is deliberately NOT named after an OS refusal.
             return Err(VmemError::os_refusal_unknown_code());
         }
         // SAFETY: forwarded from the caller's contract.

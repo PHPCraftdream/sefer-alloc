@@ -72,9 +72,11 @@ impl VmemError {
     }
 
     /// A no-code failure on the OS side — the operation failed without a
-    /// real OS error code to report. Three sources (task #1106/L2 — an
-    /// earlier revision of this doc called ALL of them a "genuine OS
-    /// refusal", which is false for the third):
+    /// real OS error code to report. FOUR sources — **keep this count in
+    /// sync with the list below when adding one**: task #1139 added the
+    /// fourth and left the count reading "Three", corrected by task #1141
+    /// (task #1106/L2 — an earlier revision of this doc called ALL of them
+    /// a "genuine OS refusal", which is false for the third and fourth):
     /// - under miri (no real `errno`/`GetLastError` exists to read) — a
     ///   genuine refusal by the miri stand-in;
     /// - the rare case where the platform's own `raw_os_error()` itself
