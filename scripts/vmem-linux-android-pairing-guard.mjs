@@ -216,8 +216,13 @@
 //     Android mention — the guard could not have caught EITHER the original
 //     drift's persistence or this fix's redundancy from its own output
 //     alone; both were found by re-reading the source file directly.
-// The Cargo.toml `(Linux `MADV_HUGEPAGE`)` and huge.rs `On Linux,
-// `madvise` ...` entries from the #1122-restored trio remain live below.
+// The Cargo.toml `(Linux `MADV_HUGEPAGE`)` entry from the #1122-restored
+// trio remains live below. The huge.rs `On Linux, `madvise` ...` entry
+// (and its file-scope sibling naming the same doc block) were removed by
+// task #1153: huge.rs's whole doc comment was rewritten to the post-#1140
+// counter semantics, genuinely deleting both sentences — confirmed
+// wrap-insensitively absent, not merely window-masked (see KNOWN_DRIFT's
+// own header note above on distinguishing the two).
 //
 // KNOWN LIMITATIONS (same posture as vmem-doc-drift-guard.mjs):
 //   1. Per-block/paragraph heuristics cannot fully decide English semantics.
@@ -489,12 +494,6 @@ const KNOWN_DRIFT = [
       'internal.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/bench_internals/huge.rs',
-    sentenceRegex: /incompatible with huge-page reservations on both Windows and Linux/,
-    reason:
-      'bench_internals/huge.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
-  },
-  {
     file: 'crates/aligned-vmem/src/reservation.rs',
     sentenceRegex: /Linux \(`MAP_HUGETLB`\) or Windows \(`MEM_LARGE_PAGES`/,
     reason:
@@ -523,12 +522,6 @@ const KNOWN_DRIFT = [
     sentenceRegex: /\(Linux `MADV_HUGEPAGE`\)/,
     reason:
       'restored by task #1122 after #1114 deleted it via violation merging — the drift is live and unfixed (same huge-pages comment block as the MAP_HUGETLB entry above)',
-  },
-  {
-    file: 'crates/aligned-vmem/src/bench_internals/huge.rs',
-    sentenceRegex: /On Linux, `madvise` on a `MAP_HUGETLB` mapping only works at huge-page granularity/,
-    reason:
-      'restored by task #1122 after #1114 deleted it via violation merging — the drift is live and unfixed (same doc block as the incompatible entry above)',
   },
   // Suppression (NOT drift): a heuristic false positive that the #1121
   // window re-narrowing surfaced. At HEAD this paragraph was already

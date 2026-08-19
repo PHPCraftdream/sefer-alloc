@@ -160,11 +160,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   range is also `page_size()`-aligned, and outdated since Linux 5.18 added
   `MADV_DONTNEED` support for HugeTLB. On Linux/Android a well-formed range
   that is 2 MiB-aligned at BOTH endpoints now forwards to the real backend
-  like any ordinary reservation; every other case (Windows, an
-  unaligned-to-2-MiB range, a pre-5.18 kernel) keeps the old skip. An
-  ineligible range still returns `Ok(())` rather than an error — the same
-  best-effort contract the rest of this API family already states for
-  Darwin/BSD advisory decommit. `decommit_lazy` is deliberately unchanged:
+  like any ordinary reservation; a range that is NOT 2 MiB-aligned at both
+  endpoints (or Windows, unconditionally) keeps the old skip. **Eligibility
+  is decided by 2 MiB alignment alone — this crate does not detect the
+  running kernel version.** An eligible range is always forwarded, including
+  on a pre-5.18 kernel: the syscall is issued, the kernel rejects it with
+  `EINVAL`, and the call still returns `Ok(())` (the same best-effort
+  contract the rest of this API family already states for Darwin/BSD
+  advisory decommit) — but unlike the Windows/misaligned skip path, this
+  forwarded-and-rejected case does **not** increment the `bench-internals`
+  `huge_decommit_attempts` counter, because it never takes the early-exit
+  branch the counter measures. `decommit_lazy` is deliberately unchanged:
   `MADV_FREE` has no documented HugeTLB support. `can_decommit_reclaim_and_zero()`
   stays `false` for huge reservations and its doc now says so explicitly —
   it is a per-RESERVATION query with no range to judge, so it is conservative
@@ -172,7 +178,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   branch dispatch is execution-verified on real Linux (WSL2, kernel 6.18)
   including a revert-and-fail counterfactual; the kernel-level claim that
   `MADV_DONTNEED` succeeds on a genuine `MAP_HUGETLB` mapping is
-  REASONED-FROM-SPEC — no CI runner has a configured hugetlb pool.
+  REASONED-FROM-SPEC — no CI runner has a configured hugetlb pool, and
+  neither is the pre-5.18-kernel `EINVAL`/counter-not-incremented claim
+  immediately above, which follows from reading the code
+  (`linux_huge_range_is_madvise_eligible`, `os/unix.rs`) rather than from
+  running it against a real pre-5.18 kernel.
   [correctness fix]
 - **A failed one-time OS page-size query is no longer folded to 4 KiB and
   cached as if it were a real answer** (task #1139). `query_os_page_size()`

@@ -157,6 +157,12 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 // - task #843, V4: decommit does not work on huge-page reservations on either
 //   platform (Windows: VirtualFree fails; Linux/Android: MADV_DONTNEED/MADV_FREE
 //   requires huge-page granularity).
+//   SUPERSEDED by task #1140: this was true only for Windows and for
+//   MADV_FREE (decommit_lazy) everywhere. On Linux/Android, MADV_DONTNEED
+//   (eager decommit) now works for a 2-MiB-aligned range on kernel >= 5.18 —
+//   see this function's own rustdoc above ("Decommit incompatibility
+//   (corrected task #1140)") for the current, precise contract; this note
+//   is kept only as a historical record of the pre-#1140 belief.
 #[must_use]
 #[cfg(feature = "huge-pages")]
 #[cfg_attr(docsrs, doc(cfg(feature = "huge-pages")))]
