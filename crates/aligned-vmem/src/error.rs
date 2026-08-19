@@ -103,6 +103,19 @@ impl VmemError {
     /// `is_invalid_argument()` is `false` here — the failure originated on
     /// the OS side (or in the crate's response to an unusable OS grant), not
     /// in the caller's arguments.
+    ///
+    /// **This FOUR-source count is scoped to production causes; it
+    /// deliberately excludes two TEST-ONLY construction sites** (task
+    /// #1173/L2, measured against the actual call sites rather than
+    /// re-asserted from an earlier audit's count): the `aligned_vmem_mock`
+    /// backend's scripted commit/reserve fault injection (`crate::mock`,
+    /// gated on that cfg) and the real-path `fault-injection` feature's
+    /// simulated commit failure (`crate::fault_injection`,
+    /// `api/commit_range.rs`) both also construct this sentinel, to
+    /// simulate a no-code OS failure deterministically without touching the
+    /// OS — see each module's own doc for why NEITHER is a fifth or sixth
+    /// PRODUCTION source: they exist only under test-only cfgs/features and
+    /// are not reachable in an ordinary build.
     #[must_use]
     #[inline]
     pub const fn os_refusal_unknown_code() -> Self {

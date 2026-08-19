@@ -680,7 +680,11 @@ impl Reservation {
     /// `# Panics` section to a doc that previously promised "the same
     /// silent-skip behavior as the free `decommit` function" with no profile
     /// qualifier; task #1084 corrected its empty-range claim; task #1140
-    /// narrowed the huge-page exception).
+    /// narrowed the huge-page exception). **A poisoned page-size query is
+    /// NOT a panic source, on any profile** (task #1173/L1) — see the free
+    /// [`decommit`]'s own "Contract violations, by build profile" section
+    /// for why that state is a silent no-op unconditionally, unlike the
+    /// range-contract tripwire this section describes.
     pub fn decommit(&mut self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {

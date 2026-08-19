@@ -1077,7 +1077,15 @@ function verifyCiSentinels() {
 // Its own `[oracle] ARMED: real MAP_HUGETLB release attempted exactly once
 // and did not fail` marker follows the same armed/unarmed-must-differ-in-
 // OUTPUT reasoning as its three siblings.
-const MIN_SENTINEL_COUNT = 44;
+// Task #1173/L1: 44 -> 45. The poison-must-not-panic oracle
+// (`tests/decommit_poison_no_panic.rs`) joined the two existing
+// `#![cfg(aligned_vmem_page_size_override)]`-gated oracles, adding ONE
+// `test <name> ... ok` sentinel to the `aligned-vmem-gates` job. Its file
+// compiles to an empty green binary without that cfg (measured: "running
+// 0 tests", exit 0), which is why it needs the tee + grep -F shape and a
+// matching floor bump in the SAME commit -- the coupling this comment
+// documents, demonstrated a fifth time.
+const MIN_SENTINEL_COUNT = 45;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

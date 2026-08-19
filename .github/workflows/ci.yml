@@ -266,6 +266,25 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
+      # Task #1173/L1: the poison-must-not-PANIC oracle — the third member of
+      # this same family, and it arrived with the same hazard. Its file is
+      # `#![cfg(aligned_vmem_page_size_override)]`-gated too, so without this
+      # row `cargo test -p aligned-vmem --all-features --test
+      # decommit_poison_no_panic` compiles to an EMPTY binary and prints
+      # "running 0 tests" while reporting ok — measured, not assumed, before
+      # this row was added. It pins the removal of a `debug_assert!(false,
+      # ..)` that made `decommit` panic in debug builds under a poisoned
+      # page-size query, contradicting both `page_size()`'s rustdoc and the
+      # README's "never panics" list (which task #1145's own commit `4cba9c1`
+      # had already recorded panicking as a REJECTED design option). Same
+      # self-verifying tee + grep -F shape and its own row, for the same
+      # one-`--test`-target-per-invocation reason as the two rows above.
+      - run: |
+          cargo test -p aligned-vmem --all-features --test decommit_poison_no_panic 2>&1 | tee "$RUNNER_TEMP/decommit-poison-no-panic.log"
+          grep -F "test method_decommit_is_a_silent_no_op_under_poison ... ok" "$RUNNER_TEMP/decommit-poison-no-panic.log"
+        shell: bash
+        env:
+          RUSTFLAGS: "--cfg aligned_vmem_page_size_override"
       # Task #851: miri compilation gate. NO miri interpreter required — this
       # is just `cargo check` with the `miri` cfg set, which catches the
       # E0308 tuple-arity mismatch that shipped in #844 and blocked 0.2.0.
@@ -1803,6 +1822,25 @@ jobs:
       - run: cargo check -p sefer-region --no-default-features
       - run: cargo test -p sefer-region --no-run --all-features
       - run: cargo check -p sefer-region --no-default-features --target thumbv7em-none-eabi
+      # aligned-vmem-specific MSRV check (task #1173/L3, closing
+      # docs/CORRECTNESS_OPEN_ITEMS.md item 88): the root manifest's feature
+      # forwarding never turns on `aligned-vmem/huge-pages` (confirmed:
+      # `grep -oE '"aligned-vmem\??/[a-z-]+"' Cargo.toml | sort -u` lists
+      # bench-internals/fault-injection/lazy-commit only), so the workspace-
+      # root `--all-features` step above never compiles it, on ANY toolchain
+      # pinned to this job — every other job that DOES compile
+      # `huge-pages` (`test` workspace-members' `--all-features` row,
+      # `aligned-vmem-gates`) runs on `dtolnay/rust-toolchain@stable`, a
+      # newer toolchain, not this pinned 1.88 one. Mirrors the `sefer-region`
+      # rows above rather than adding `aligned-vmem/huge-pages` to the root
+      # manifest's forwarding list (item 88's own card names both options and
+      # recommends this one as the narrower fix: it does not change what any
+      # OTHER job's plain root `--all-features` build compiles). `--all-features`
+      # here also covers `bench-internals`, `lazy-commit`, and `fault-injection`
+      # together with `huge-pages` in one compile, matching how the workspace-
+      # root step above already exercises the other three.
+      - run: cargo check -p aligned-vmem --all-features
+      - run: cargo test -p aligned-vmem --no-run --all-features
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +

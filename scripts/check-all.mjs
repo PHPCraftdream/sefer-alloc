@@ -1011,6 +1011,22 @@ const steps = [
     expectTest: 'failed_os_page_size_query_fails_closed',
   },
   {
+    // Task #1173/L1: the third member of the same family — the poison
+    // branch of `decommit` must be a silent no-op on EVERY build profile,
+    // not a debug-only panic. Its file carries the identical
+    // `#![cfg(aligned_vmem_page_size_override)]` top-level gate and
+    // therefore the identical green-and-dead hazard as the two rows above,
+    // so it carries `expectTest` for the same reason: measured before this
+    // row existed, `cargo test -p aligned-vmem --all-features --test
+    // decommit_poison_no_panic` without the cfg prints "running 0 tests"
+    // and exits 0.
+    name: 'test (aligned-vmem poison-decommit must-not-panic oracle, --cfg aligned_vmem_page_size_override)',
+    cmd: 'cargo',
+    args: ['test', '-p', 'aligned-vmem', '--all-features', '--test', 'decommit_poison_no_panic'],
+    env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
+    expectTest: 'method_decommit_is_a_silent_no_op_under_poison',
+  },
+  {
     // Task #1150: static guard over every `grep -F "test <NAME> ... ok"`
     // postcondition in .github/workflows/ci.yml — the sentinel string must
     // stay byte-identical to what libtest actually prints for the named

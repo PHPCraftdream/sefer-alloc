@@ -48,6 +48,18 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// [`try_decommit`] is the fallible form for callers who need the violation
 /// reported: it returns `Err` on every profile and never trips the tripwire.
 ///
+/// **A poisoned page-size query is a DIFFERENT case and never panics, on
+/// any profile (task #1145/#1139, sharpened task #1173/L1):** if the
+/// one-time OS page-size query itself failed (see
+/// [`page_size()`](crate::page_size::page_size)'s "If the one-time OS query
+/// fails"), this function fails closed silently — no `debug_assert!`, no
+/// tripwire — because the caller's arguments are not at fault and the
+/// crate-wide poison contract promises an unconditional no-op here, matching
+/// [`decommit_lazy`](crate::api::decommit_lazy)'s no-tripwire design and the
+/// README's "never panics" list. This is distinct from the range-contract
+/// tripwire immediately above, which fires only in debug builds and only for
+/// a violated range under a HEALTHY page-size query.
+///
 /// **Platform divergence, not just a data-loss concern:** on Windows,
 /// `MEM_DECOMMIT` genuinely unmaps the pages, so a **write to `[base+start,
 /// base+end)` before [`recommit`](crate::api::recommit) is a hard `STATUS_ACCESS_VIOLATION`
@@ -160,17 +172,23 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     let ps = page_size_or_poison();
     // Failed OS page-size query (never observed on a supported platform):
     // with the real page unknown, ANY granularity guess could make the OS
-    // round the length up across live data — fail closed instead. Silent in
-    // release BY SIGNATURE (same rationale as the range tripwire below);
-    // loud in debug with the accurate cause, not a misleading
-    // "you misaligned your range" message.
+    // round the length up across live data — fail closed instead. Silent on
+    // EVERY profile, deliberately, by design (task #1145/#1139, `4cba9c1`):
+    // that commit's own message records "Rejected: panicking (the README's
+    // 'never panics' list stays at three)", and the crate-wide poison
+    // contract documented in `page_size()`'s rustdoc and the README's
+    // "If the one-time OS query fails" section states unconditionally that
+    // `decommit`/`decommit_lazy` become no-ops, with no build-profile
+    // qualifier — unlike the range-contract tripwire below, which IS
+    // profile-qualified and documented as such. A `debug_assert!(false, ..)`
+    // here used to contradict that design decision (task #1173/L1): it made
+    // every debug-build caller of `decommit`/`Reservation::decommit` panic
+    // under a poisoned page size regardless of how well-formed the caller's
+    // OWN range was, silently promoted from a documented no-op into a crash
+    // no `# Panics` section on this function (there isn't one) ever
+    // disclosed. Use `try_decommit`/`try_page_size` to observe this state
+    // instead — see `page_size()`'s "If the one-time OS query fails".
     if ps == PAGE_SIZE_QUERY_FAILED {
-        debug_assert!(
-            false,
-            "aligned-vmem: the OS page-size query failed, so decommit is \
-             disabled for this process (fail-closed); the call does nothing. \
-             Use try_decommit / try_page_size to observe this state."
-        );
         return;
     }
     // A contract violation here is silent BY SIGNATURE — this function returns

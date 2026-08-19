@@ -182,6 +182,52 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **`decommit`/`Reservation::decommit` panicked in a DEBUG build under a
+  poisoned page-size query, contradicting the crate's own documented no-op
+  contract for that state (task #1173, finding L1).** The poison branch
+  (`page_size_or_poison() == PAGE_SIZE_QUERY_FAILED`) called
+  `debug_assert!(false, ...)` unconditionally before returning — so ANY
+  debug-build call to `decommit`/`Reservation::decommit` panicked whenever
+  the one-time OS page-size query had failed, regardless of how well-formed
+  the caller's own range was. This contradicted the design decision recorded
+  in the commit that introduced the poison mechanism (task #1145/#1139,
+  `4cba9c1`: "Rejected: panicking (the README's 'never panics' list stays at
+  three)") and the crate-wide poison contract documented in `page_size()`'s
+  own rustdoc and the README's "If the one-time OS query fails" section,
+  both of which state — with no build-profile qualifier — that
+  `decommit`/`decommit_lazy` become no-ops. Neither the free function's
+  rustdoc (no `# Panics` section at all) nor `Reservation::decommit`'s
+  `# Panics` section ever claimed a poison-state panic; only the code was
+  wrong. The `debug_assert!` is removed; the poison branch is now a silent
+  no-op on every profile, matching `decommit_lazy`'s existing no-tripwire
+  design for the same state. Pinned by
+  `tests/decommit_poison_no_panic.rs` (new,
+  `#[cfg(aligned_vmem_page_size_override)]`-gated, same seam as
+  `tests/page_size_query_failure.rs`), which drives both the free `decommit`
+  and `Reservation::decommit` through a well-formed range under a simulated
+  poisoned query and asserts neither panics and neither touches the
+  reservation's data.
+- **`VmemError::os_refusal_unknown_code`'s doc did not mention its two
+  TEST-ONLY construction sites, leaving an auditor undercounting or
+  overcounting the sentinel's real call sites (task #1173, finding L2).**
+  Measured directly (`grep -rn "VmemError::os_refusal_unknown_code()"
+  crates/aligned-vmem/src/`): 7 real construction sites, collapsing to
+  the FOUR production causes the doc already correctly enumerated (task
+  #1141/#1106-L2), plus 2 additional test-only sites
+  (`crate::mock`'s scripted commit/reserve fault injection, gated on
+  `aligned_vmem_mock`) and the `fault-injection` feature's simulated commit
+  failure (`crate::fault_injection`) — neither of which is reachable in an
+  ordinary build. The "FOUR sources" claim itself was accurate (re-verified,
+  not re-asserted from an earlier audit's count) — this was a doc-completeness
+  gap, not a wrong count. `VmemError::os_refusal_unknown_code`'s doc now
+  names both test-only sites explicitly and states why they are not a fifth
+  or sixth PRODUCTION source. **No new error kind was introduced** — the
+  task #1106/L2 record's reasoning (zero consumers anywhere match on WHICH
+  source produced the sentinel; every consumer goes through
+  `os_code()`/`is_invalid_argument()` only) was re-verified unchanged
+  (re-grepped `tests/` + `src/`: still zero sites matching by cause), so
+  differentiating error codes remain unwarranted public-API surface with no
+  current consumer to serve it.
 - **Huge-page decommit is no longer an unconditional no-op on Linux/Android**
   (task #1140). `Reservation::decommit`/`try_decommit` skipped the backend
   whenever `is_huge()`, and the docs asserted decommit "does nothing on every
