@@ -157,14 +157,36 @@ const R30_12_RULE_COMMIT = '3f7db1629d389c18ae987120f4094aaccf04f81f';
 // FAILURE (see the check after the scan). An exception that has silently
 // stopped applying is how a suppression list rots into a blanket.
 //
+// TWO mechanical guards on the list itself (task #1123):
+//   (1) every entry's SHA must RESOLVE to a commit (`git cat-file -e`),
+//       checked on EVERY run regardless of the scanned range — a typo'd
+//       entry would otherwise never be reported, because the stale check
+//       only fires for SHAs inside the scanned range and the default range
+//       legitimately excludes landed commits (fb7dac8 sits in origin/main,
+//       outside `@{u}..HEAD`, so on the default range its absence from
+//       every index was silent for exactly this reason). An existence check
+//       is the right tool for the typo class because it is range-
+//       independent and cheap; the in-range stale check remains the tool
+//       for the behavioral class (an entry that stopped suppressing).
+//       These failures are deliberately NOT exemptible — an entry key must
+//       not be able to grandfather away the report of its own nonexistence.
+//   (2) an entry OUTSIDE the scanned range is listed in the output
+//       (informational, not a failure) so nothing about the list is silent.
+//
 // Each entry states WHY, because "grandfathered" without a reason is the
-// shape this campaign keeps finding and correcting.
+// shape this campaign keeps finding and correcting. Every entry also names
+// its durable record — the sole record must never be this suppression list
+// itself (fb7dac8 was in exactly that state until task #1123 added it to
+// item 78).
 const GRANDFATHERED = new Map([
   [
     'fb7dac8',
     'LANDED (in origin/main) before this check existed. docs(vmem) prefix on a ' +
       'commit whose src/ delta includes a changed assert! panic-message string. ' +
-      'Recorded, not amended: rewriting pushed history is what R30-12 forbids.',
+      'Recorded, not amended: rewriting pushed history is what R30-12 forbids. ' +
+      'Durable record: docs/CORRECTNESS_OPEN_ITEMS.md item 78, sub-card 5 ' +
+      '(task #1123 — until then this entry appeared in NO index; its sole ' +
+      'record was this list itself).',
   ],
   [
     '09f4d16',
@@ -183,7 +205,10 @@ const GRANDFATHERED = new Map([
     'c766951',
     'fix(perf) prefix on a commit with NO src/ path at all (docs/ + tests/ ' +
       'only). Caught by this very check within an hour of the check landing — ' +
-      'the correct slot was bench: or docs(...). Recorded in item 78.',
+      'the correct slot was bench: or docs(...). Durable record: item 78, ' +
+      'sub-card 4 (added task #1123 — the record commit c766951 itself landed ' +
+      'BEFORE the lint commit, and the card was never updated when this fourth ' +
+      'entry appeared).',
   ],
 ]);
 
@@ -424,8 +449,35 @@ function main() {
     process.exit(0);
   }
 
+  // Failures carry their commit SHA as a STRUCTURED field (task #1123):
+  // the grandfather matching below used to re-parse `\b[0-9a-f]{7,40}\b`
+  // out of the failure STRING, which binds to the FIRST such word — a
+  // message containing an ordinary word made of hex letters (`defaced`,
+  // `effaced`, `acceded`) before the SHA would silently rebind the
+  // exemption. Objects, not strings, make that class impossible.
   let failures = [];
   const warnings = [];
+  const structuralFailures = []; // not exemptible by construction
+
+  // Guard (1) from the GRANDFATHERED header comment: every entry's SHA must
+  // resolve to a commit, on every run, independent of the scanned range.
+  // Kept OUTSIDE `failures` so an entry key cannot grandfather away the
+  // report of its own nonexistence.
+  for (const sha of GRANDFATHERED.keys()) {
+    try {
+      execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], {
+        cwd: REPO_ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      structuralFailures.push(
+        `grandfather entry \`${sha}\` does not resolve to a commit ` +
+          `(git cat-file -e) — a typo'd suppression key. This check is ` +
+          `range-independent precisely because a typo'd entry outside the ` +
+          `scanned range would otherwise never be reported.`,
+      );
+    }
+  }
 
   for (const sha of clipped) {
     const subject = git(['log', '-1', '--format=%s', sha]).trim();
@@ -433,11 +485,12 @@ function main() {
     const short = sha.slice(0, 7);
 
     if (kind === 'perf-bare' || kind === 'perf-other-scope') {
-      failures.push(
-        `${short} "${subject}" — bare/unscoped "perf(...)"/"perf:" is not a ` +
+      failures.push({
+        sha,
+        text: `${short} "${subject}" — bare/unscoped "perf(...)"/"perf:" is not a ` +
           `sanctioned R30-12 prefix; use perf(runtime): or perf(opt-in): (or ` +
           `bench:/docs(config): if this is measurement-only / docs-only).`,
-      );
+      });
       continue;
     }
 
@@ -450,11 +503,12 @@ function main() {
           : kind === 'perf-opt-in'
             ? 'an opt-in runtime change'
             : 'a shipping/opt-in code fix in perf-sensitive code';
-        failures.push(
-          `${short} "${subject}" — prefix claims ${claim}, but every changed path is under docs/examples/benches/tests/scripts/ ` +
+        failures.push({
+          sha,
+          text: `${short} "${subject}" — prefix claims ${claim}, but every changed path is under docs/examples/benches/tests/scripts/ ` +
             `(${paths.length} path(s): ${paths.slice(0, 6).join(', ')}${paths.length > 6 ? ', …' : ''}); ` +
             `use bench: or docs(config): instead if no shipping/opt-in code actually changed.`,
-        );
+        });
         continue;
       }
 
@@ -465,10 +519,11 @@ function main() {
           : kind === 'perf-opt-in'
             ? 'an opt-in runtime change'
             : 'a shipping/opt-in code fix in perf-sensitive code';
-        failures.push(
-          `${short} "${subject}" — prefix claims ${claim}, but every changed line in src/ is comment-only ` +
+        failures.push({
+          sha,
+          text: `${short} "${subject}" — prefix claims ${claim}, but every changed line in src/ is comment-only ` +
             `(matches \\s*(///|//!|//)); use bench:/docs(config): (or docs(...)) instead.`,
-        );
+        });
         continue;
       }
       continue;
@@ -487,14 +542,15 @@ function main() {
         const isDocs = kind === 'docs-config' || kind === 'docs-other';
 
         if (isDocs && hasNonComment) {
-          failures.push(
-            `DIRECTION-2 NON-COMMENT src/ CHANGE: ${short} "${subject}" — prefix reads as measurement/docs-only, ` +
+          failures.push({
+            sha,
+            text: `DIRECTION-2 NON-COMMENT src/ CHANGE: ${short} "${subject}" — prefix reads as measurement/docs-only, ` +
               `but ${outside.length} changed path(s) fall outside docs/examples/benches/tests/scripts/ ` +
               `with at least one non-comment changed line: ${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''} — ` +
               `this shape previously shipped a real Display change (09f4d16). Verify no shipping/opt-in behavior actually changed ` +
               `(a bench-internals-gated diagnostic-only accessor in src/ is a known legitimate exception; ` +
               `a real algorithm/default change is not).`,
-          );
+          });
         } else {
           warnings.push(
             `${short} "${subject}" — prefix reads as measurement/docs-only, but ${outside.length} ` +
@@ -519,16 +575,13 @@ function main() {
     for (const w of warnings) console.log(`  - ${w}`);
   }
 
-  // Grandfathering (task #1117): drop failures whose SHA is on the
-  // pre-existing list, and FAIL if a listed SHA stopped failing — a
-  // suppression entry that no longer suppresses anything is how an exception
-  // list rots into a blanket, so it must be removed consciously.
-  const failingShas = new Set(
-    failures.flatMap((f) => {
-      const m = f.match(/\b([0-9a-f]{7,40})\b/);
-      return m ? [m[1].slice(0, 7)] : [];
-    }),
-  );
+  // Grandfathering (task #1117; SHA binding made structured in task
+  // #1123): drop failures whose commit SHA is on the pre-existing list, and
+  // FAIL if a listed SHA stopped failing — a suppression entry that no
+  // longer suppresses anything is how an exception list rots into a
+  // blanket, so it must be removed consciously. The SHA comes from the
+  // failure OBJECT's `sha` field, never re-parsed from the message text.
+  const failingShas = new Set(failures.map((f) => f.sha.slice(0, 7)));
   const exempted = [];
   const staleExemptions = [];
   for (const [sha, why] of GRANDFATHERED) {
@@ -543,15 +596,22 @@ function main() {
     );
     for (const e of exempted) console.log(`  - ${e}`);
   }
-  failures = failures.filter((f) => {
-    const m = f.match(/\b([0-9a-f]{7,40})\b/);
-    return !(m && GRANDFATHERED.has(m[1].slice(0, 7)));
-  });
+  failures = failures.filter((f) => !GRANDFATHERED.has(f.sha.slice(0, 7)));
   if (staleExemptions.length > 0) {
-    // Only meaningful when the scanned range actually covered those commits;
-    // a narrow range legitimately excludes them.
+    // Behavioral staleness is only decidable when the scanned range
+    // actually covered those commits; a narrow range legitimately excludes
+    // them. Guard (2) from the GRANDFATHERED header comment: entries the
+    // range did NOT cover are still LISTED, so nothing is silent.
     const scanned = new Set(clipped.map((s) => s.slice(0, 7)));
     const reallyStale = staleExemptions.filter((s) => scanned.has(s));
+    const uncovered = staleExemptions.filter((s) => !scanned.has(s));
+    if (uncovered.length > 0) {
+      console.log(
+        `\n[verify-commit-prefixes] ${uncovered.length} grandfathered entry(ies) outside the scanned range ` +
+          `(${uncovered.join(', ')}): not stale-checked this run — the range did not ` +
+          `cover them (their SHAs were still existence-checked above).`,
+      );
+    }
     if (reallyStale.length > 0) {
       console.log(
         `\n[verify-commit-prefixes] STALE EXEMPTION(S): ${reallyStale.join(', ')} — ` +
@@ -559,13 +619,17 @@ function main() {
           `item-78 line if the record is now moot) rather than leaving a suppression ` +
           `that suppresses nothing.`,
       );
-      failures.push(`stale grandfather entries: ${reallyStale.join(', ')}`);
+      failures.push({
+        sha: reallyStale[0],
+        text: `stale grandfather entries: ${reallyStale.join(', ')}`,
+      });
     }
   }
+  failures.push(...structuralFailures.map((text) => ({ sha: null, text })));
 
   if (failures.length > 0) {
-    console.log(`\n[verify-commit-prefixes] ${failures.length} FAILURE(s) (direction 1 — R30-12 taxonomy violation):`);
-    for (const f of failures) console.log(`  - ${f}`);
+    console.log(`\n[verify-commit-prefixes] ${failures.length} FAILURE(s):`);
+    for (const f of failures) console.log(`  - ${f.text}`);
     console.log(
       `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
         `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,

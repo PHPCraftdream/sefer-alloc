@@ -1424,19 +1424,40 @@ fn every_undecided_feature_has_exactly_one_owner_with_a_next_trigger() {
     );
 }
 
-/// Task #1116: the R34-24 archive split (task #1109) generated each
-/// "Recently resolved" pointer line in `docs/CORRECTNESS_OPEN_ITEMS.md`
-/// from only the FIRST PHYSICAL LINE of the moved entry's header — for
-/// wrapped headers that produced a pointer with an unclosed `**` and no
-/// verdict token (9 odd-`**` / 19 verdict-less pointers measured at filing),
-/// so a round-start reader met e.g. `2. **Clippy dead-code ... was not`
-/// with no status. The pointers were regenerated in full (task #1116,
-/// `tmp/regen-recently-resolved-pointers.mjs`, script not committed); this
-/// test is the mechanical assertion that the defect cannot silently recur
-/// on the next split: every pointer line must carry a BALANCED `**` count
-/// (complete headline) and, before the boilerplate "full closure narrative"
-/// suffix, a verdict token (RESOLVED / CLOSED / REJECTED, case-insensitive —
-/// two entries carry lowercase verdicts inside their headlines).
+/// Task #1116 (strengthened by task #1123): the R34-24 archive split (task
+/// #1109) generated each "Recently resolved" pointer line in
+/// `docs/CORRECTNESS_OPEN_ITEMS.md` from only the FIRST PHYSICAL LINE of the
+/// moved entry's header — for wrapped headers that produced a pointer with an
+/// unclosed `**` and no verdict token, so a round-start reader met e.g.
+/// `2. **Clippy dead-code ... was not` with no status. The pointers were
+/// regenerated in full (task #1116); the first version of this test checked
+/// only pointer-LINE SHAPE (balanced `**`, a verdict token) and a reviewer
+/// then passed it three ways on pointers aimed at NONEXISTENT archive
+/// entries (task #1123): a renumbered pointer to `999.`, a headline that
+/// appears nowhere in the archive, and the original truncation defect itself
+/// landing on an even `**` boundary with the substring "Unresolved"
+/// satisfying a SUBSTRING verdict check. This test now OPENS
+/// `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` and verifies every pointer
+/// against the real entries:
+///
+///  1. every pointer line carries a balanced `**` count (complete headline);
+///  2. the verdict is matched as a whole WORD (RESOLVED / CLOSED / REJECTED,
+///     case-insensitive — split on non-alphanumerics, so "Unresolved",
+///     "unclosed" and "undisclosed" do NOT satisfy it), not a substring;
+///  3. the pointer's item NUMBER (label, e.g. `50-U10`, `41+61`, `42a`) and
+///     its whitespace-normalized HEADLINE (everything before the boilerplate
+///     "— full closure narrative" suffix) match exactly one real archive
+///     entry with the same label and an identical first paragraph.
+///
+/// PAIRING given the archive's DUPLICATE item numbers (two entries numbered
+/// `3`, at the split's line ~203 and ~406): by (label, headline) pair, never
+/// by number alone — the two `3`s have different headlines, so label+headline
+/// is unambiguous. If a (label, headline) pair ever matches MORE than one
+/// archive entry, that is itself an error (ambiguous pairing). Additionally
+/// the matched archive positions must appear in the SAME ORDER as the
+/// pointers — the order-preserving property the (uncommitted, gitignored)
+/// task-#1116 generator relied on when it paired by ORDER, here made an
+/// explicit, checkable invariant instead of an implicit assumption.
 ///
 /// Doc-only guard: reads doc text, never links the crate, so it runs in
 /// every feature configuration.
@@ -1451,13 +1472,8 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         .iter()
         .position(|l| l.starts_with("## Recently resolved"))
         .expect("docs/CORRECTNESS_OPEN_ITEMS.md has a '## Recently resolved' section");
-    let section_end = section_start
-        + lines[section_start + 1..]
-            .iter()
-            .position(|l| l.starts_with("## "))
-            .unwrap_or(lines.len() - section_start - 1);
 
-    let pointers: Vec<(usize, &str)> = lines[section_start + 1..=section_end]
+    let pointers: Vec<(usize, &str)> = lines[section_start + 1..]
         .iter()
         .enumerate()
         .map(|(i, l)| (section_start + 1 + i, *l))
@@ -1475,7 +1491,93 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
          needs re-checking, not a silently-passing empty-set check."
     );
 
+    // ---- Parse the archive's "Recently resolved — full closure trail"
+    // entries: a label line starts with `NN.` at column 0 (labels include
+    // forms like `50-U10`, `41+61`, `42a`); the entry's FIRST PARAGRAPH is
+    // that line plus every following indented line, up to the first blank
+    // line. Headline comparison is on the whitespace-normalized paragraph.
+    let archive_path = manifest
+        .join("docs")
+        .join("CORRECTNESS_OPEN_ITEMS_ARCHIVE.md");
+    let archive_text =
+        fs::read_to_string(&archive_path).expect("read docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md");
+    let archive_lines: Vec<&str> = archive_text.lines().collect();
+    let archive_start = archive_lines
+        .iter()
+        .position(|l| l.starts_with("## Recently resolved"))
+        .expect(
+            "docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md has a 'Recently resolved' \
+             section — the R34-24 split contract is that every main-index \
+             pointer resolves into it",
+        );
+
+    fn label_of(rest: &str) -> Option<(&str, &str)> {
+        // rest starts just after "- " (pointer) or at column 0 (archive
+        // entry). A label is digits followed by any run of alphanumerics,
+        // '+' or '-' (labels in the wild: `50-U10`, `41+61`, `42a`), then
+        // ". ". '.' is deliberately NOT a label char — it is the separator.
+        let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+        if digits == 0 {
+            return None;
+        }
+        let mut end = digits;
+        for c in rest[digits..].chars() {
+            if c.is_alphanumeric() || c == '+' || c == '-' {
+                end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if rest[end..].starts_with(". ") {
+            Some((&rest[..end], &rest[end + 2..]))
+        } else {
+            None
+        }
+    }
+
+    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // (line_no, label, whitespace-normalized first paragraph)
+    let mut entries: Vec<(usize, String, String)> = Vec::new();
+    let mut paragraph_label: Option<String> = None;
+    let mut in_paragraph = false;
+    let mut paragraph: Vec<String> = Vec::new();
+    let mut paragraph_line = 0usize;
+    for (i, line) in archive_lines.iter().enumerate().skip(archive_start + 1) {
+        if let Some((label, first)) = label_of(line) {
+            if in_paragraph {
+                let lab = paragraph_label.take().unwrap();
+                entries.push((paragraph_line, lab, norm(&paragraph.join(" "))));
+            }
+            in_paragraph = true;
+            paragraph_line = i;
+            paragraph_label = Some(label.to_string());
+            paragraph = vec![first.to_string()];
+        } else if line.trim().is_empty() {
+            if in_paragraph {
+                let lab = paragraph_label.take().unwrap();
+                entries.push((paragraph_line, lab, norm(&paragraph.join(" "))));
+                in_paragraph = false;
+            }
+        } else if in_paragraph {
+            paragraph.push(line.trim().to_string());
+        }
+    }
+    if in_paragraph {
+        let lab = paragraph_label.take().unwrap();
+        entries.push((paragraph_line, lab, norm(&paragraph.join(" "))));
+    }
+
+    assert!(
+        !entries.is_empty(),
+        "parsed zero entries from docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's \
+         'Recently resolved' section — the parser's shape assumption (label \
+         lines like `77. **...` at column 0, paragraphs separated by blank \
+         lines) no longer holds; re-check rather than silently passing."
+    );
+
     let mut errors: Vec<String> = Vec::new();
+    let mut last_matched_pos: Option<usize> = None;
     for (line_no, line) in &pointers {
         let bold_count = line.matches("**").count();
         if bold_count % 2 != 0 {
@@ -1489,34 +1591,146 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
                 line.chars().take(120).collect::<String>()
             ));
         }
-        // Strip the boilerplate suffix before the verdict check, else the
-        // suffix's own "Recently resolved — full closure trail" text matches.
-        let suffix_at = line.find("— full closure narrative");
-        let headline = match suffix_at {
-            Some(at) => &line[..at],
-            None => line,
+        // Strip the boilerplate suffix before the verdict and headline
+        // checks, else the suffix's own text matches.
+        let stripped = line.strip_prefix("- ").unwrap_or(line);
+        let suffix_at = match stripped.find("— full closure narrative") {
+            Some(at) => at,
+            None => {
+                errors.push(format!(
+                    "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line has no \
+                     '— full closure narrative' suffix — the R34-24 split's \
+                     pointer boilerplate is missing:\n  {}",
+                    line_no + 1,
+                    line.chars().take(120).collect::<String>()
+                ));
+                continue;
+            }
         };
-        let has_verdict = ["resolved", "closed", "rejected"]
-            .iter()
-            .any(|v| headline.to_ascii_lowercase().contains(v));
+        let (label, _headline_raw) = match line.strip_prefix("- ").and_then(label_of) {
+            Some(x) => x,
+            None => {
+                errors.push(format!(
+                    "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line's item label \
+                     does not parse as `NN.` (digits optionally extended with \
+                     alphanumerics/+/-. then '. '):\n  {}",
+                    line_no + 1,
+                    line.chars().take(120).collect::<String>()
+                ));
+                continue;
+            }
+        };
+        let headline_full = norm(stripped[..suffix_at].trim());
+        let headline = headline_full
+            .strip_prefix(&format!("{label}. "))
+            .map(|s| s.to_string())
+            .unwrap_or(headline_full);
+
+        // Verdict as a WHOLE WORD, not a substring: "Unresolved" /
+        // "unclosed" / "undisclosed" must NOT satisfy it (task #1123).
+        let has_verdict = headline.split(|c: char| !c.is_alphanumeric()).any(|w| {
+            matches!(
+                w.to_ascii_lowercase().as_str(),
+                "resolved" | "closed" | "rejected"
+            )
+        });
         if !has_verdict {
             errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line carries NO verdict \
-                 token (RESOLVED/CLOSED/REJECTED) before its 'full closure narrative' \
-                 suffix — a round-start reader cannot tell the item is closed (the \
-                 R34-24 property the split exists to create). Regenerate it from the \
-                 entry's full first paragraph in \
-                 docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md:\n  {}",
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` carries NO \
+                 verdict WORD (RESOLVED/CLOSED/REJECTED, whole-word match) before its \
+                 'full closure narrative' suffix — a round-start reader cannot tell the \
+                 item is closed (the R34-24 property the split exists to create). Note a \
+                 substring like 'Unresolved' does not count:\n  {}",
                 line_no + 1,
                 line.chars().take(120).collect::<String>()
             ));
         }
+
+        // Cross-check against the REAL archive: same label must exist, and
+        // exactly one entry with that label must have an identical
+        // whitespace-normalized first paragraph.
+        let same_label: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, l, _))| l == label)
+            .map(|(pos, _)| pos)
+            .collect();
+        if same_label.is_empty() {
+            errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` has NO entry \
+                 with that item number in docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's \
+                 'Recently resolved' section — a pointer aimed at a nonexistent \
+                 archive entry (the task-#1123 defect class: the pointer set can be \
+                 non-empty, balanced and verdict-bearing yet point at nothing):\n  {}",
+                line_no + 1,
+                line.chars().take(120).collect::<String>()
+            ));
+            continue;
+        }
+        let matching: Vec<usize> = same_label
+            .into_iter()
+            .filter(|&pos| entries[pos].2 == headline)
+            .collect();
+        match matching.len() {
+            1 => {
+                let pos = matching[0];
+                if let Some(prev) = last_matched_pos {
+                    if pos < prev {
+                        errors.push(format!(
+                            "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` \
+                             matches an archive entry OUT OF ORDER (archive position \
+                             {pos} after an earlier pointer matched {prev}) — pointers \
+                             must preserve the archive's entry order (the pairing \
+                             property the task-#1116 generator relied on).",
+                            line_no + 1,
+                        ));
+                    }
+                }
+                last_matched_pos = Some(pos);
+            }
+            0 => errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` has an entry \
+                 with that number in the archive, but its HEADLINE matches NO \
+                 archive entry's first paragraph (whitespace-normalized comparison) — \
+                 a fabricated or drifted headline (the second task-#1123 defect \
+                 class). Pointer headline:\n  {}\nArchive candidate(s):\n{}",
+                line_no + 1,
+                headline.chars().take(160).collect::<String>(),
+                entries
+                    .iter()
+                    .filter(|(_, l, _)| l == label)
+                    .map(|(_, l, p)| format!("  {l}. {}", p.chars().take(160).collect::<String>()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )),
+            _ => errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` matches MORE \
+                 THAN ONE archive entry with the same label AND headline — pairing is \
+                 ambiguous, the archive needs disambiguation before this test can \
+                 check it.",
+                line_no + 1,
+            )),
+        }
+    }
+
+    if pointers.len() != entries.len() {
+        errors.push(format!(
+            "the main index has {} 'Recently resolved' pointer(s) but the archive \
+             has {} entrie(s) — the R34-24 split contract is one pointer per moved \
+             entry; an entry moved without a pointer (or vice versa) is exactly the \
+             drift this test exists to catch.",
+            pointers.len(),
+            entries.len()
+        ));
     }
 
     assert!(
         errors.is_empty(),
         "every 'Recently resolved' pointer in docs/CORRECTNESS_OPEN_ITEMS.md must \
-         carry a balanced `**` headline and a verdict token (task #1116):\n{}",
+         carry a balanced `**` headline, a whole-word verdict token, and resolve to \
+         exactly one same-numbered, same-headline entry of \
+         docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's 'Recently resolved' section, in \
+         order (tasks #1116 + #1123):\n{}",
         errors.join("\n"),
     );
 }

@@ -46,8 +46,11 @@ from, additionally carries a `## Table of contents` with anchor links and a
 This file does NOT: its entries are plain `NN. **…**` list items, so following
 a pointer means "scroll and find item N". That gap is recorded rather than
 closed, for one concrete reason: **item numbers here collide.** The closure
-trail inherited two entries numbered `3` (the sequence runs `1 2 3 3 4 5 15 30
-…`), a defect that predates the R34-24 split (task #1109) and was carried
+trail inherited two entries numbered `3` — the run after the pre-split block
+(`77 51 54 41+61 69 68 46 66 50-U10`) is `1 3 2 3 4 5 30 31 32 33 34 15 35
+…`, with the second `3` further down the file than the first and `15`
+sitting between `34` and `35`, not before `30` — a defect that predates the
+R34-24 split (task #1109) and was carried
 across verbatim by design, since the split's whole contract was byte-identical
 relocation. Adding anchors on top of colliding numbers would manufacture two
 identical anchor targets and make "follow item N" LESS reliable, not more.
