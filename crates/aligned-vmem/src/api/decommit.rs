@@ -247,9 +247,11 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
 ///
 /// Note what is deliberately NOT an error: the OS refusing or ignoring the
 /// request. `decommit` is best-effort by nature — on Darwin and the BSDs
-/// `MADV_DONTNEED` is advisory, and on a huge-page reservation the operation is
-/// incompatible outright. Reporting those as `Err` would promise a portable
-/// guarantee the platforms do not give. Use
+/// `MADV_DONTNEED` is advisory, and on a huge-page reservation eligibility
+/// depends on the platform, the requested range, and (on Linux/Android) the
+/// running kernel — see [`decommit`]'s "Huge-page granularity" section above
+/// for the exact split. Reporting an ineligible or advisory-only case as
+/// `Err` would promise a portable guarantee the platforms do not give. Use
 /// [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes) to learn what the platform
 /// actually does.
 ///

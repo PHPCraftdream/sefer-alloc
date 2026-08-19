@@ -1259,10 +1259,18 @@ impl Drop for Reservation {
             reservation: self.reservation.as_ptr().addr(),
             reservation_len: self.reservation_len,
         });
-        // SAFETY: `self.reservation` was returned by `reserve_aligned` and is
-        // valid for `self.reservation_len` bytes; this handle owns it
-        // exclusively (no aliasing — `Reservation` is `Send` but not `Sync`).
-        // Dropping returns the entire reservation to the OS exactly once.
+        // SAFETY: every safe constructor of `Self` (`reserve_aligned` and
+        // friends) upholds `from_raw_parts`'s `# Safety` contract by
+        // construction, so that contract covers `self.reservation` /
+        // `self.reservation_len` / `self.align` regardless of which
+        // constructor built this handle: `self.reservation` describes a
+        // live OS reservation valid for `self.reservation_len` bytes,
+        // release-compatible with the platform backend below (an exact
+        // `std::alloc::alloc` provenance/`Layout` match under miri; a live
+        // `mmap`'d region on Unix; a `VirtualAlloc(MEM_RESERVE)` region on
+        // Windows), and this handle owns it exclusively (no aliasing —
+        // `Reservation` is `Send` but not `Sync`). Dropping returns the
+        // entire reservation to the OS exactly once.
         unsafe { release_reservation(self.reservation, self.reservation_len, self.align) };
     }
 }

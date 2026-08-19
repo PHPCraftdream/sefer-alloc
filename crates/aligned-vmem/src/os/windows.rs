@@ -329,9 +329,13 @@ pub(crate) unsafe fn release_reservation(
     _reservation_len: usize,
     _align: usize,
 ) {
-    // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE, ..)`
-    // with an inner aligned sub-range separately committed. `VirtualFree(.., 0,
-    // MEM_RELEASE)` releases the entire MEM_RESERVE region regardless of commit state.
+    // SAFETY: `reservation` is the base of a live `MEM_RESERVE` region — the
+    // crate's own reserve path produces one (with an inner aligned sub-range
+    // separately committed), and an adopted one is required to be one by
+    // `Reservation::from_raw_parts`'s `# Safety` contract. `VirtualFree(.., 0,
+    // MEM_RELEASE)` releases the entire MEM_RESERVE region regardless of
+    // commit state, so the adopted case's unknown commit state is irrelevant
+    // here.
     unsafe { winapi_virtual_release(reservation.as_ptr()) };
 }
 

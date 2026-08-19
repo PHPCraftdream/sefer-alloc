@@ -33,7 +33,10 @@ pub(crate) unsafe fn release_reservation(
 ) {
     use std::alloc::Layout;
     // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly
-    // this layout in `reserve_aligned_raw`; freed once.
+    // this layout — by construction when `reserve_aligned_raw` built it, and
+    // by `Reservation::from_raw_parts`'s `# Safety` contract (which requires
+    // that exact pointer/`Layout` pair under miri) when the caller adopted it;
+    // freed once.
     let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
     // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly this layout.
     unsafe { std::alloc::dealloc(reservation.as_ptr(), layout) };
