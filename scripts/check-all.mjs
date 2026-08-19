@@ -109,7 +109,7 @@
 //      MUST compile with it; see that script's own header)
 //   32. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
-//      structural complement to 25 — 25 only proves ONE method is gated;
+//      structural complement to 31 — 31 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
 //   33. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature

@@ -507,10 +507,14 @@ jobs:
       # scripts/check-all.mjs, which runs it locally). Pure text scan (no
       # cargo invocation), sub-second — folded in next to the two text
       # scans above for the same reason. This row is what gives the guard
-      # CI coverage AT ALL: check-all.mjs is the LOCAL pre-push gate and is
-      # NOT invoked by any job in this workflow (every "check-all"
-      # mention above is a comment), so the local step alone would cover
-      # only pushes whose author ran `npm run check`. The guard ran under
+      # CI coverage: check-all.mjs is the LOCAL pre-push gate and is NOT
+      # invoked by any job in this workflow (every "check-all" mention
+      # above is a comment), so the local step alone would cover only
+      # pushes whose author ran `npm run check`. That coverage is
+      # conditional in the ordinary fail-fast way, shared with its sibling
+      # text scans: the row runs only if the job's earlier cargo step
+      # (`run-check-matrix.mjs`) passed, so a red cargo row fails the job
+      # before the guard ever runs. The guard ran under
       # NO gate from creation through seven hardening tasks (#1105→#1130)
       # because the wiring note in the creating agent's report reached no
       # index (the R22-3 class) — see docs/CORRECTNESS_OPEN_ITEMS.md
@@ -518,6 +522,65 @@ jobs:
       # catch a "Linux-only" contract claim the pair-gated cfg also
       # enforces on Android — only this static scan can (its own header).
       - run: node scripts/vmem-linux-android-pairing-guard.mjs
+      # Task #1135 (MEDIUM): the #1131 row above closed the pairing
+      # guard's own gap but left it the ONLY vmem text guard with a CI
+      # row — seven guard-shaped scripts had a check-all.mjs step and
+      # zero ci.yml rows, so this was never a one-off: under CLAUDE.md's
+      # R33-2 standard, check-all-only coverage covers only pushes whose
+      # author ran `npm run check`, which is exactly how main once
+      # stayed red for 70 commits. Measured per script — runtime, exit
+      # code, and input surface — the four PURE TEXT SCANS below earn
+      # rows (same shape as the three above: no cargo invocation, no
+      # build artifacts, 0.4-1.8 s measured, each demonstrated failing
+      # on a broken scratch copy before being added). The other three
+      # deliberately get NO row: argv-roundtrip-test is a self-test of
+      # lib.mjs's run() — plumbing every cargo row here (via
+      # run-check-matrix.mjs) already exercises transitively, so a
+      # regression breaks those rows loudly anyway; stale-artifact-
+      # diagnosis's bare invocation is a no-op (its CLI acts only under
+      # --self-test) and the shared-CARGO_TARGET_DIR cross-checkout
+      # replay it diagnoses cannot occur on an ephemeral single-
+      # checkout runner; verify-internals-negative-boundary runs two
+      # `cargo build --example` invocations — a build-needing compile-
+      # fail oracle, not a text scan, and its feature set would add a
+      # fresh compile block to this job. Local steps for all seven
+      # remain in check-all.mjs.
+      # H2 (task #572): EXHAUSTIVE structural check that every
+      # `AllocCore::dbg_*` method is gated behind `internals` or
+      # explicitly allowlisted — the many-method complement to the
+      # one-method compile-fail oracle (verify-internals-negative-
+      # boundary, local-only per the exclusion note above). Pure text
+      # scan of src/alloc_core/**/*.rs + tests/*.rs, ~0.8 s measured —
+      # folded in next to the text scans above for the same reason.
+      - run: node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs
+      # R6/task #871: vmem doc-drift guard — the 5x-recurred
+      # unconditional "over-reserve"/"trim" sentence class in
+      # crates/aligned-vmem rustdoc / Cargo.toml / README.md. This is
+      # the exact sibling the #1131 row's comment names ("sibling of the
+      # vmem-doc-drift-guard step in scripts/check-all.mjs"); adding
+      # that row without this one was the asymmetry #1135 exists to
+      # close. Pure text scan, ~0.5 s measured.
+      - run: node scripts/vmem-doc-drift-guard.mjs
+      # Task #1067/F7: exhaustive completeness check that every
+      # `pub fn ...() -> u64` counter accessor in
+      # crates/aligned-vmem/src/bench_internals/ is CALLED by
+      # tests/bench_internals_counters.rs — the hand-maintained list
+      # there had silently drifted before (15 accessors declared, 14
+      # referenced) while its own comment claimed exhaustiveness. Pure
+      # text scan, ~0.4 s measured.
+      - run: node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs
+      # Tasks #1076 + #1080: static guard against the compile-time PAGE
+      # constant flowing into page_size()-validated argument positions —
+      # the class that escaped three times (#1067 mock.rs, #1074
+      # bootstrap+siblings, #1075 smoke.rs x4) and is invisible on every
+      # 4 KiB-page host, INCLUDING this ubuntu-latest runner, so no
+      # runtime test in this workflow can catch it either; only this
+      # static scan can. Scan set = tracked ∪ untracked-not-ignored via
+      # `git ls-files` (a read-only index query, same class of git use
+      # the commit-prefix-lint job below already makes; on a fresh
+      # checkout the untracked set is empty by construction). ~1.8 s
+      # measured.
+      - run: node scripts/verify-vmem-page-constant-call-sites.mjs
 
   commit-prefix-lint:
     # R31-5c (task #482): lints every commit in a PR's range against
