@@ -61,8 +61,10 @@
 //     `armv7-unknown-linux-musleabihf`, ...) are stripped: "linux" between
 //     hyphens is part of a triple, not an OS statement.
 //   - Path-like tokens with >= 2 slashes ENDING IN A FILE EXTENSION
-//     (`include/uapi/linux/mman.h`, `docs/perf/OPEN_ITEMS.md`, GitHub URLs)
-//     are stripped for the same reason. Task #1125 narrowed this from the
+//     (`include/uapi/linux/mman.h`, `docs/perf/OPEN_ITEMS.md`) are
+//     stripped for the same reason. URLs are NOT left to this rule — they
+//     are stripped WHOLE by the host-anchored URL rule below, not by
+//     PATH_LIKE (task #1128 narrowed this from the
 //     original "any token with >= 2 slashes": that form erased the trigger
 //     word itself in prose like `Linux/glibc/musl` — a slash-separated OS
 //     enumeration is not a path — so a true drift written that shape passed
@@ -70,9 +72,34 @@
 //     file-extension suffix (`\S*/\S*/\S*\.<ext>`) keeps every real path in
 //     the scanned corpus stripped (`include/uapi/linux/mman.h` in
 //     os/unix.rs is the one linux-bearing example) while OS enumerations
-//     survive to the `\blinux\b` test. Verified against the corpus: no
-//     previously-stripped token that now survives reintroduces a false
-//     trigger.
+//     survive to the `\blinux\b` test.
+//     CORRECTION (task #1130, F4): #1128's commit body also claimed "an
+//     EXTENSIONLESS path would no longer be stripped. None exists in the
+//     scanned surface today — verified, zero such tokens." That
+//     verification claim was FALSE: dozens of tokens in the scanned
+//     surface changed stripping behaviour between the old and new
+//     PATH_LIKE (~51 per the review that found this, counted over joined
+//     windows; a per-line recount here counts ~70),
+//     including extensionless URLs. The real mechanism is subtler than
+//     "extensionless path": against a URL like
+//     `https://github.com/torvalds/linux` the new regex matches only the
+//     HOST (`https://github.com` — its `.com` supplies the required
+//     extension-like suffix and terminates the match there) and leaves the
+//     linux-bearing PATH TAIL (`/torvalds/linux`) behind, so a doc line
+//     citing a Linux repo URL next to a huge-page mention false-positives
+//     (demonstrated: exit 1 on the new guard, exit 0 on the pre-#1128
+//     guard). Loud, not a silent miss — #1128's reasoning that a false
+//     positive is allowlistable was sound; only its "verified, zero such
+//     tokens" claim and the header's "GitHub URLs are stripped" sentence
+//     were false. Fixed by stripping URLs whole: `URL_TOKEN`
+//     (`(?:https?:)?\/\/\S+`) runs as its own preprocessing step BEFORE
+//     TARGET_TRIPLE/PATH_LIKE, so a URL's host AND path are removed
+//     together. Measured against the corpus at landing: the 23 URL tokens
+//     in the scanned surface contain no `linux` word and no Android
+//     satisfier (the one android-bearing URL,
+//     `android.googlesource.com/...` in os/unix.rs:814, sits in a `//`
+//     code comment outside the `///` scan surface), so the rule changes
+//     no current finding or allowlist entry.
 //   - Constant NAMES (`LINUX_HUGE_PAGE_SIZE`) never trigger the "linux"
 //     word test: underscores are word characters, so \blinux\b does not
 //     match inside the identifier. A block/paragraph whose only "Linux" is the
@@ -172,7 +199,7 @@
 //      following row's window; no such cell exists in the scanned files
 //      today.
 //   7. A Linux-only claim split across TWO ITEMS OF ONE LIST is NOT caught
-//      (task #1125, F4): `- Huge pages are requested with `MAP_HUGETLB`.`
+//      (task #1128, F4): `- Huge pages are requested with `MAP_HUGETLB`.``
 //      followed by `- That request path is taken on Linux.` is two windows
 //      under the LIST_MARKER rule — the marker item has no "linux" word,
 //      the Linux item has no pair marker — so neither window fires. The
@@ -211,11 +238,22 @@
 //      with another entry's drift is NOT reported stale (all matching
 //      entries bind, not just the first).
 //   6. Clean tree: exit 0 with the full allowlist listed.
-//   7. (task #1125, F8) A drift written as a slash-separated OS enumeration
+//   7. (task #1128, F8) A drift written as a slash-separated OS enumeration
 //      — `Cheaper lazy reclaim — Linux/glibc/musl `MADV_FREE`` — FAILS
 //      (PATH_LIKE no longer erases the "Linux" word: it requires a file
 //      extension, so `Linux/glibc/musl` is not treated as a path). The
-//      pre-#1125 guard passed this shape green.
+//      pre-#1128 guard passed this shape green.
+//   8. (task #1129) Appending a realistic
+//      `[target."cfg(target_os = \"android\")".dependencies]` section to
+//      crates/aligned-vmem/Cargo.toml KEEPS the guard green with all 13
+//      allowlist entries active (before #1129 the whole file was ONE
+//      window, so that one `android` mention satisfied every paragraph in
+//      the file and flipped the two live Cargo.toml entries to "stale" —
+//      exit 1 inviting their deletion).
+//   9. (task #1130, F4) A doc line citing `https://github.com/torvalds/linux`
+//      next to a huge-page mention does NOT fire (URL_TOKEN strips the URL
+//      whole; pre-fix the host-only PATH_LIKE match left `/torvalds/linux`
+//      behind and false-positived — exit 1 on the #1128 guard).
 
 import { REPO_ROOT } from './lib.mjs';
 import { readFileSync, readdirSync } from 'fs';
@@ -237,12 +275,29 @@ const LINUX_WORD = /\blinux\b/i;
 const STALE_ARM =
   /covered by the same\s+`?target_os = "linux"`?\s+arm/;
 
+// Task #1129: this rule was previously FALSE for the non-`.rs` path —
+// blank lines were filtered out of `units` before `pushWindows` ran, so
+// `!unit.content` was never true and the whole of Cargo.toml (164 lines,
+// 12 of them blank) was ONE window. One `android` mention anywhere in the
+// file then satisfied the entire file: appending a realistic
+// `[target."cfg(target_os = \"android\")".dependencies]` section flipped
+// the two live #1122-restored Cargo.toml entries to "stale" — whose
+// documented remedy is deletion, i.e. the guard invited a repeat of the
+// mistake #1114 made and #1122 closed. Fixed by pushing a blank sentinel
+// unit for empty lines in the non-`.rs` path so they genuinely end a
+// window, exactly as the header always claimed.
 // Rust target triples (i686-unknown-linux-gnu, x86_64-pc-solaris, ...)
 const TARGET_TRIPLE = /\b[A-Za-z0-9_]+-(?:unknown|pc|apple)-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*\b/g;
 // Path-ish tokens with at least two slashes ending in a file extension
 // (include/uapi/linux/mman.h). NOT bare slash-enumerations (`Linux/glibc/musl`)
-// — see the PREPROCESSING note in the header (task #1125).
+// — see the PREPROCESSING note in the header (task #1128, corrected by
+// task #1130).
 const PATH_LIKE = /\S*\/\S*\/\S*\.[A-Za-z][A-Za-z0-9]*\b/g;
+// URLs, stripped WHOLE (host + path) as their own preprocessing step —
+// runs BEFORE PATH_LIKE so a URL is never partially stripped down to its
+// linux-bearing path tail (task #1130, F4). Scheme-anchored `https?://`,
+// or a protocol-relative `//` form.
+const URL_TOKEN = /(?:https?:)?\/\/\S+/g;
 
 // Known drift outside the M1 fixing task's file scope (task #1105, agent B:
 // reserve_aligned_huge.rs / os/unix.rs / lib.rs / README.md only). Each
@@ -409,13 +464,21 @@ function main() {
       }
       pushWindows(units.splice(0), false, relativePath);
     } else {
-      // Cargo.toml / README.md have no doc-block marker; every non-blank
-      // line is a unit, split into windows per the WINDOW RULE (README.md
-      // additionally breaks at table-row starts).
+      // Cargo.toml / README.md have no doc-block marker; every line is a
+      // unit, split into windows per the WINDOW RULE (README.md
+      // additionally breaks at table-row starts). Blank lines are pushed
+      // as EMPTY-CONTENT sentinel units so they genuinely END a window
+      // (task #1129): filtering them out here made `!unit.content` in
+      // pushWindows unreachable for these files, so the whole of
+      // Cargo.toml was ONE window and a single `android` mention anywhere
+      // in the file satisfied every paragraph in it — flipping the two
+      // live #1122-restored Cargo.toml entries to "stale" on a realistic
+      // appended `[target."cfg(target_os = \"android\")".dependencies]`
+      // section, i.e. inviting a repeat of #1114's deletion mistake.
       const units = [];
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
-        if (trimmed) units.push({ lineNum: i + 1, content: trimmed });
+        units.push({ lineNum: i + 1, content: trimmed });
       }
       pushWindows(units, isMarkdown, relativePath);
     }
@@ -496,6 +559,7 @@ function checkDocComment(docLines, violations, filePath) {
   // Rule 1: Linux word (post-strip) + pair marker, no Android satisfier.
   // Evaluated over the whole window, not per-sentence.
   const stripped = docText
+    .replace(URL_TOKEN, ' ')
     .replace(TARGET_TRIPLE, ' ')
     .replace(PATH_LIKE, ' ');
   if (
