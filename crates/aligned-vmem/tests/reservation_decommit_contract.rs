@@ -211,19 +211,46 @@ fn method_try_decommit_reports_violations_and_never_panics() {
     );
 }
 
-/// `Reservation::try_decommit`'s huge-page early-exit mirrors
-/// `Self::decommit`'s: skip the backend call, count the attempt, return
-/// `Ok(())` (the free `try_decommit` deliberately does not report OS
-/// refusal as an error either). Mirrors
+/// `Reservation::try_decommit`'s huge-page branch always reports `Ok(())`
+/// for a well-formed range (the free `try_decommit` deliberately does not
+/// report OS refusal as an error either) — but which of the TWO huge-page
+/// branches it took (real backend vs. skip-and-count) is platform- and
+/// kernel-dependent since task #1140, so this test asserts on `[0,
+/// page_size())` — a range that is well-formed but never a
+/// `LINUX_HUGE_PAGE_SIZE` (2 MiB) multiple — to stay on the skip branch
+/// unconditionally regardless of host kernel version. Mirrors
 /// `huge_decommit_attempts_increments_on_huge_reservation` in
 /// `decommit_capability.rs`; on CI runners without a hugetlb pool /
 /// `SeLockMemoryPrivilege` the fallback arm runs (see that test's own
-/// NOTE).
+/// NOTE). The full-huge-page-aligned-range real-backend case (task #1140) has
+/// its own dedicated coverage:
+/// `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path` and
+/// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host`, both in
+/// `decommit_capability.rs`.
+///
+/// **Regression note (task #1140, discovered during this task's own
+/// verification):** this test originally asserted on `[0, size)` (the full
+/// `size == 2 MiB` span), which — since task #1140 — is now itself an
+/// ELIGIBLE range on Linux/Android kernel >= 5.18: a REAL hugetlb-pool host
+/// running this test would take the real-backend branch for that call
+/// (correct new behavior), leaving `huge_decommit_attempts()` at 0 instead
+/// of the `1` this test used to assert — a false failure of a CORRECT
+/// implementation, not a real regression. No CI runner in this repo
+/// currently configures a hugetlb pool (`r.is_huge()` is false on every
+/// runner today, so the `if` arm below has never actually executed in CI —
+/// see this task's own final report for the exact CI row that would close
+/// that gap), so this specific failure mode was latent, not yet observed in
+/// CI, but was reproduced for real on a manually-provisioned WSL2/Linux
+/// kernel 6.18 host with the flag genuinely synthesized via
+/// `from_raw_parts` (see `decommit_capability.rs`'s
+/// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host`) during
+/// this task's own verification pass. Narrowed to `[0, page_size())` here to
+/// close the gap before a real hugetlb runner ever exercises it.
 #[test]
 #[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
 fn method_try_decommit_huge_skip_returns_ok_and_counts() {
     use aligned_vmem::{
-        huge_decommit_attempts, reserve_aligned_huge, reset_bench_internals_counters,
+        huge_decommit_attempts, page_size, reserve_aligned_huge, reset_bench_internals_counters,
     };
 
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -231,16 +258,21 @@ fn method_try_decommit_huge_skip_returns_ok_and_counts() {
 
     let size = 2 * 1024 * 1024; // Linux huge-page size
     let mut r = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+    let ps = page_size();
 
     if r.is_huge() {
         assert!(
-            r.try_decommit(0, size).is_ok(),
+            r.try_decommit(0, ps).is_ok(),
             "huge skip must report Ok — OS refusal is deliberately not an error"
         );
         assert_eq!(
             huge_decommit_attempts(),
             1,
-            "the skip must increment the same counter as Self::decommit's skip"
+            "a non-2-MiB-aligned range must still increment the same skip \
+             counter as Self::decommit's skip (task #1140: a genuinely \
+             2-MiB-aligned range would instead take the real backend path \
+             on Linux/Android kernel >= 5.18 — deliberately not exercised \
+             by this call)"
         );
     } else {
         assert!(
@@ -338,6 +370,30 @@ fn method_trips_on_an_empty_misaligned_range_in_debug() {
 /// counter==1 shape additionally pins, on EVERY host, what
 /// `method_try_decommit_huge_skip_returns_ok_and_counts` can only pin
 /// where the OS really grants large pages.
+///
+/// **Well-formed probe range narrowed to `[0, page_size())`, not `[0, size)`
+/// (task #1140):** the well-formed call below used to target the FULL `[0,
+/// size)` span, where `size == 2 MiB == LINUX_HUGE_PAGE_SIZE` — which, since
+/// task #1140, is now itself an ELIGIBLE range on Linux/Android kernel >=
+/// 5.18 (`Reservation::try_decommit` forwards to the real backend instead of
+/// skipping for a huge-page-size-aligned range). This test's own synthetic
+/// `granted_huge: true` reservation is backed by an ORDINARY (non-`MAP_HUGETLB`)
+/// mapping, so the "eligible" forward is not itself unsound here (an ordinary
+/// mapping accepts `MADV_DONTNEED` at any granularity), but it DOES take the
+/// real-backend branch instead of the skip branch this test exists to pin —
+/// observed for real on WSL2/Linux kernel 6.18 during this task's own
+/// verification: the well-formed `[0, size)` call still returned `Ok(())`
+/// (unchanged), but `huge_decommit_attempts()` stayed at 0 instead of
+/// reaching 1, failing this test's counter assertion even though nothing
+/// about the validate-before-skip ORDERING this test targets had regressed.
+/// Narrowing the well-formed probe to `[0, page_size())` — page-aligned,
+/// in-bounds, but never a `LINUX_HUGE_PAGE_SIZE` (2 MiB) multiple on any
+/// supported host — keeps this test on the skip path unconditionally, on
+/// every platform and kernel version, which is what its own M3 validate-
+/// before-skip claim needs. The huge-aligned real-path case has its own
+/// dedicated coverage: `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path`
+/// and `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host` in
+/// `tests/decommit_capability.rs`.
 #[test]
 fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     use aligned_vmem::ReservationFullParts;
@@ -438,8 +494,14 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
         r.try_decommit(2 * ps, ps).is_err(),
         "start > end must be Err even on a huge reservation"
     );
+    // Narrowed to `[0, ps)` (task #1140) — see the doc comment above this
+    // test for why `[0, size)` (== `[0, 2 MiB)`) would now be an ELIGIBLE
+    // range on Linux/Android kernel >= 5.18, taking the real-backend path
+    // rather than the skip path this test targets. `[0, ps)` is page-aligned
+    // and in-bounds (well-formed) but never a 2-MiB multiple, so it stays on
+    // the skip path unconditionally, on every platform and kernel version.
     assert!(
-        r.try_decommit(0, size).is_ok(),
+        r.try_decommit(0, ps).is_ok(),
         "a well-formed range must still be Ok on a huge reservation \
          (skip, not error)"
     );

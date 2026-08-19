@@ -16,7 +16,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// under miri the pages are already accessible, so this is a no-op that always
 /// returns `true`.
 ///
-/// `start` and `end` must be multiples of the runtime page size ([`page_size()`])
+/// `start` and `end` must be multiples of the runtime page size ([`page_size()`](crate::page_size))
 /// with `start <= end`. A well-formed no-op (an empty PAGE-ALIGNED range,
 /// `start == end`) returns `true`; any other contract violation (misaligned,
 /// or `start > end`) returns `false` (task #712: an earlier version of this

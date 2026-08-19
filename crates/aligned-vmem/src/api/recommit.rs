@@ -23,7 +23,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///
 /// `base` must be the [`as_ptr`](crate::Reservation::as_ptr) of a live reservation
 /// whose `[base+start, base+end)` range was previously decommitted.
-/// `start`/`end` must be multiples of the runtime page size ([`page_size()`])
+/// `start`/`end` must be multiples of the runtime page size ([`page_size()`](crate::page_size))
 /// with `start <= end` — a violation returns `false` (task #712: an earlier
 /// version of this function clamped a contract violation to the WRITE-PERMITTING
 /// `true` sentinel, which already caused a real crash — see

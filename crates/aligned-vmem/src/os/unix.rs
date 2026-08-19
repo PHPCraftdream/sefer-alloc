@@ -432,6 +432,70 @@ pub(crate) unsafe fn decommit_pages_impl(
     }
 }
 
+/// Whether `[start, end)` (offsets from a huge-page reservation's `base`) is
+/// aligned to [`LINUX_HUGE_PAGE_SIZE`] at BOTH endpoints, and therefore
+/// eligible for eager `MADV_DONTNEED` on a `MAP_HUGETLB` mapping. Used only by
+/// the EAGER `decommit`/`try_decommit` path — see
+/// [`Reservation::decommit_lazy`](crate::Reservation::decommit_lazy)'s own doc for why the LAZY path
+/// (`MADV_FREE`) is deliberately NOT extended by this same eligibility check.
+///
+/// **Why only the offsets, not `base` itself, need checking:** every
+/// `Reservation` with `is_huge() == true` on this platform was produced by
+/// `unix_reserve(.., huge = true)`, which requires `size` and `align` to
+/// both already be multiples of [`LINUX_HUGE_PAGE_SIZE`] (see that
+/// function's own doc comment) — so `base` (aligned to `align`, itself a
+/// `LINUX_HUGE_PAGE_SIZE` multiple) is unconditionally
+/// `LINUX_HUGE_PAGE_SIZE`-aligned already, by construction, not by a check
+/// performed here. `base + start` and `base + end` are therefore
+/// `LINUX_HUGE_PAGE_SIZE`-aligned iff `start` and `end` are.
+///
+/// task #1140: `man 2 madvise` documents that Linux 5.18+ added
+/// `MADV_DONTNEED` support for HugeTLB mappings, gated on the address and
+/// length both being aligned to the mapping's huge page size (the kernel
+/// ROUNDS UP the length, per the man page; this crate rejects a misaligned
+/// `end` outright instead of relying on that rounding, so a caller never
+/// observes a decommit that silently touched more than it asked for). Any
+/// well-formed (`start <= end`) `[start, end)` that is a multiple of
+/// `LINUX_HUGE_PAGE_SIZE` at both ends is exactly such an eligible range —
+/// including the common case of decommitting the reservation's ENTIRE span,
+/// and any 2-MiB-granular sub-range within it. A `page_size()`-granular (but
+/// not `LINUX_HUGE_PAGE_SIZE`-granular) range is NOT eligible and must still
+/// be treated as a no-op; see [`Reservation::decommit`](crate::Reservation::decommit)'s contract for
+/// where that split is enforced.
+///
+/// **The `start <= end` check matters even though both endpoints are already
+/// huge-page-size multiples:** `start = 4 MiB, end = 2 MiB` satisfies "both
+/// endpoints are `LINUX_HUGE_PAGE_SIZE`-aligned" while being an inverted
+/// (contract-violating) range. Without this check here, a caller of
+/// `Reservation::decommit` could reach that inverted-but-"aligned" range and
+/// forward it to the real `decommit` free function, which fires its own
+/// `debug_assert!` in a DEBUG build — silently breaking `Reservation::decommit`'s
+/// own documented invariant that a huge-page reservation's early-exit never
+/// reaches that tripwire (see `Reservation::decommit`'s own `# Panics`
+/// section). Requiring `start <= end` here keeps that invariant intact: an
+/// inverted range is never "eligible" regardless of alignment, and always
+/// takes the existing silent-no-op early-exit path instead.
+///
+/// REASONED-FROM-SPEC per the man page cited above; NOT empirically verified
+/// by this crate's own CI, which has no hugetlb-configured Linux runner (see
+/// this task's own final report for the exact CI row that would close that
+/// gap).
+// mock (task #646/F8): the real backend (and therefore this eligibility
+// check) is bypassed under `aligned_vmem_mock`; see decommit_pages_impl above
+// for the same reasoning applied to this cfg family.
+#[cfg(all(
+    unix,
+    not(miri),
+    not(aligned_vmem_mock),
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
+pub(crate) fn linux_huge_range_is_madvise_eligible(start: usize, end: usize) -> bool {
+    start <= end
+        && start.is_multiple_of(LINUX_HUGE_PAGE_SIZE)
+        && end.is_multiple_of(LINUX_HUGE_PAGE_SIZE)
+}
+
 #[cfg(all(unix, not(miri)))]
 // mock (task #646/F8): see decommit_pages_impl above.
 #[cfg_attr(aligned_vmem_mock, allow(dead_code))]

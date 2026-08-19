@@ -80,16 +80,37 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// large pages, so the result never has
 /// [`Reservation::is_huge`](crate::Reservation::is_huge) == `true`.
 ///
-/// **Decommit incompatibility:** on Windows, Linux, and Android alike, [`decommit`](crate::api::decommit) and
-/// [`decommit_lazy`](crate::api::decommit_lazy) **do not work** on huge-page reservations. On Windows,
-/// `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions. On Linux
-/// and Android,
-/// `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted only at
-/// huge-page granularity, so any [`page_size()`](crate::page_size::page_size)-granular offset gets `EINVAL`
-/// and does nothing. The behavior is therefore indistinguishable from a silent
-/// no-op: the caller's RSS does not decrease, and subsequent reads return the
-/// old (stale) data rather than zeroed pages. Use [`reserve_aligned`](crate::api::reserve_aligned) instead
-/// if you need decommit functionality.
+/// **Decommit incompatibility (corrected task #1140):** on Windows,
+/// [`decommit`](crate::api::decommit)/[`decommit_lazy`](crate::api::decommit_lazy) **never work** on huge-page
+/// reservations — `VirtualFree` with `MEM_DECOMMIT` unconditionally fails on
+/// large-page regions. [`decommit_lazy`](crate::api::decommit_lazy) never works on a huge-page
+/// reservation on ANY platform — `MADV_FREE` (its Linux/Android backend) has
+/// no documented HugeTLB support, unlike `MADV_DONTNEED` below.
+///
+/// [`decommit`](crate::api::decommit) on Linux/Android is more nuanced: it depends on BOTH the
+/// requested range and the running kernel. `madvise(2)` documents that
+/// `MADV_DONTNEED` gained HugeTLB support in Linux 5.18, requiring
+/// `[base+start, base+end)` to be aligned to the mapping's huge page size (2
+/// MiB) at both endpoints — the same alignment this function already requires
+/// of `size`/`align` themselves on Linux/Android, so decommitting an entire
+/// huge reservation, or any 2-MiB-granular sub-range of it, is exactly such an
+/// eligible range on a >= 5.18 kernel. A `page_size()`-granular (e.g. 4 KiB)
+/// but not 2-MiB-granular offset still gets `EINVAL` and does nothing, as does
+/// EVERY range on a pre-5.18 kernel. [`Reservation::decommit`](crate::Reservation::decommit)/
+/// [`Reservation::try_decommit`](crate::Reservation::try_decommit) (the safe methods) consult both
+/// [`Reservation::is_huge`](crate::Reservation::is_huge) and the requested range to skip the ineligible
+/// case before issuing the syscall; the free [`decommit`](crate::api::decommit) function has no
+/// `is_huge()` to consult and issues the syscall unconditionally — see that
+/// function's own doc for the precise split. Either way — an ineligible
+/// range, or any range on a pre-5.18 kernel — the effect is indistinguishable
+/// from a silent no-op: the caller's RSS does not decrease, and subsequent
+/// reads return the old (stale) data rather than zeroed pages.
+///
+/// REASONED-FROM-SPEC per the `madvise(2)` man page; NOT empirically verified
+/// by this crate's own CI, which has no hugetlb-configured Linux runner.
+///
+/// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
+/// unconditionally, regardless of range shape, kernel version, or platform.
 ///
 /// **Linux/Android hugetlb pool over-reserve (`align > 2 MiB`):** when huge pages
 /// are actually granted through the over-reserve path — which is every

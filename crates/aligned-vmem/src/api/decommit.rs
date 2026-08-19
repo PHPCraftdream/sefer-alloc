@@ -58,23 +58,51 @@ use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
 /// item 6 (filed 2026-07-30) for the incident record and status.
 ///
-/// **Huge-page incompatibility (task #843 V4, finding R4-4):** on both Windows
-/// and Linux, decommit **does not work** on huge-page reservations (those
-/// returned by [`reserve_aligned_huge`](crate::api::reserve_aligned_huge) with [`Reservation::is_huge`](crate::Reservation::is_huge) == `true`).
-/// On Windows, `VirtualFree` with `MEM_DECOMMIT` fails on large-page regions.
-/// On Linux, `MADV_DONTNEED`/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted
-/// only at huge-page granularity, so any [`page_size()`]-granular offset gets
-/// `EINVAL` and does nothing. The behavior is therefore indistinguishable from
-/// a silent no-op: the caller's RSS does not decrease, and subsequent reads
-/// return the old (stale) data rather than zeroed pages.
+/// **Huge-page granularity (task #843 V4/finding R4-4, corrected task #1140):**
+/// on huge-page reservations (those returned by
+/// [`reserve_aligned_huge`](crate::api::reserve_aligned_huge) with [`Reservation::is_huge`](crate::Reservation::is_huge) == `true`),
+/// **on Windows, decommit does not work at all**: `VirtualFree` with
+/// `MEM_DECOMMIT` unconditionally fails on large-page regions.
+///
+/// **On Linux/Android, whether decommit works depends on the requested range and
+/// the running kernel**, not on whether the mapping is huge — `madvise(2)`
+/// documents that `MADV_DONTNEED` gained HugeTLB support in Linux 5.18, with
+/// the same requirement it already has for ordinary mappings: `[base+start,
+/// base+end)` must be aligned to the mapping's huge page size (2 MiB on this
+/// crate's supported targets) at BOTH endpoints. This crate's own Linux/Android
+/// `huge-pages` contract already requires `reserve_aligned_huge`'s `size`/`align`
+/// to be multiples of that same 2 MiB, so a huge-aligned `[start, end)` is not a
+/// hypothetical — decommitting an entire huge reservation, or any 2-MiB-granular
+/// sub-range of it, is exactly such a range. A `page_size()`-granular (e.g. 4
+/// KiB) but NOT 2-MiB-granular offset still gets `EINVAL` from the kernel and
+/// does nothing — **this free function issues the syscall regardless of
+/// eligibility** (unlike [`Reservation::decommit`](crate::Reservation::decommit), which can consult
+/// [`Reservation::is_huge`](crate::Reservation::is_huge) and the requested range to skip the
+/// ineligible case before the syscall — see that method's doc for the exact
+/// split), so an ineligible range here is a wasted syscall that the kernel
+/// itself turns into a no-op, not a Rust-level skip. On a pre-5.18 kernel,
+/// EVERY range is ineligible regardless of alignment (the capability did not
+/// exist yet), so decommit is unconditionally a no-op there, matching the
+/// prior (task #843) documented behavior exactly. Either way — ineligible
+/// range, or eligible range on a pre-5.18 kernel — the effect is
+/// indistinguishable from a silent no-op: the caller's RSS does not decrease,
+/// and subsequent reads return the old (stale) data rather than zeroed pages.
+///
+/// REASONED-FROM-SPEC per the `madvise(2)` man page cited above; NOT
+/// empirically verified by this crate's own CI, which has no
+/// hugetlb-configured Linux runner (see `Reservation::decommit`'s doc for the
+/// exact CI row this would need).
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
-/// `huge_decommit_attempts` counter (only compiled with that feature — not
-/// an intra-doc link here, since `bench-internals` is excluded from the
-/// published docs.rs feature set) is incremented each time decommit is
-/// called on a huge-page reservation, providing at least observability in
-/// measurement builds despite the silent API contract.
-/// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need working decommit.
+/// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented each time
+/// [`Reservation::decommit`](crate::Reservation::decommit)/[`Reservation::try_decommit`](crate::Reservation::try_decommit) skip the
+/// backend call on a huge-page reservation — it is NOT incremented by calls
+/// through this free function (which has no `is_huge()` to consult and always
+/// issues the syscall) or by an eligible Linux/Android >= 5.18 huge-aligned
+/// call through the safe methods (those forward to the real backend instead
+/// of skipping). Use [`reserve_aligned`](crate::api::reserve_aligned) instead of
+/// [`reserve_aligned_huge`](crate::api::reserve_aligned_huge) if you need decommit to work
+/// unconditionally, regardless of range shape or kernel version.
 ///
 /// **Darwin zero-fill gap (confirmed as a real, failing-test-level gap by
 /// this crate's first real-macOS CI run, 2026-08-13 — the underlying hazard

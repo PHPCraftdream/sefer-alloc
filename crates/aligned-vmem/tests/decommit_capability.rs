@@ -203,18 +203,41 @@ fn can_decommit_reclaim_and_zero_matches_platform_for_ordinary_reservations() {
 }
 
 /// Test that `huge_decommit_attempts()` counter increments when decommit is called
-/// on a huge-page reservation (finding R4-4, II-16).
+/// on a huge-page reservation with a range that is NOT eligible for the
+/// Linux/Android >= 5.18 real-backend path (finding R4-4, II-16; range
+/// narrowed task #1140 — see the regression note below).
 ///
 /// What breaks if this test is deleted: the counter increment could be removed
 /// or moved to the wrong place (e.g., outside the `is_huge()` check) without any
 /// regression guard. The counter is the only observability mechanism for the
 /// "decommit silently fails on huge reservations" problem; without this test,
 /// that observability could vanish unnoticed.
+///
+/// **Regression note (task #1140, discovered during this task's own
+/// verification):** this test originally called `reservation.decommit(0,
+/// size)` with `size == 2 MiB == LINUX_HUGE_PAGE_SIZE` inside the
+/// `is_huge()` arm, then asserted the skip counter incremented. Since task
+/// #1140, that exact call is now an ELIGIBLE range on a sufficiently recent
+/// Linux/Android kernel (it takes the real `MADV_DONTNEED` backend path
+/// instead of skipping), so the counter would correctly stay at `baseline`
+/// instead of reaching `baseline + 1` — a false failure of correct behavior
+/// on any real hugetlb-pool host running such a kernel. No CI runner in this
+/// repo configures such a pool today, so this specific failure has never been
+/// observed in CI (the `if` arm has never executed there), but it WAS
+/// reproduced for real on a manually-provisioned WSL2/Linux kernel 6.18 host
+/// with the huge flag genuinely synthesized via `from_raw_parts` (see
+/// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host` below)
+/// during this task's own verification pass. The `decommit(0, ps)` probe
+/// below (page-aligned, in-bounds, but never a 2-MiB multiple) stays on the
+/// skip path unconditionally, closing the gap before a real hugetlb runner
+/// ever exercises it. The eligible-range real-backend case has its own
+/// dedicated coverage:
+/// `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path` below.
 #[test]
 #[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
 fn huge_decommit_attempts_increments_on_huge_reservation() {
     use aligned_vmem::{
-        huge_decommit_attempts, reserve_aligned_huge, reset_bench_internals_counters,
+        huge_decommit_attempts, page_size, reserve_aligned_huge, reset_bench_internals_counters,
     };
 
     let _guard = SERIAL.lock();
@@ -228,18 +251,27 @@ fn huge_decommit_attempts_increments_on_huge_reservation() {
     // but the counter should still increment if `is_huge()` reports true.
     let size = 2 * MIB; // Linux huge-page size
     let mut reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+    let ps = page_size();
 
     if reservation.is_huge() {
-        reservation.decommit(0, size);
+        // `ps` (not `size`): a non-2-MiB-aligned but still well-formed range,
+        // guaranteed to take the skip path on every platform/kernel (task
+        // #1140) — see this test's own doc comment for why `size` would not.
+        reservation.decommit(0, ps);
 
         // Counter should have incremented by exactly 1
         assert_eq!(
             huge_decommit_attempts(),
             baseline + 1,
-            "huge_decommit_attempts should increment by 1 for a decommit on a huge reservation"
+            "huge_decommit_attempts should increment by 1 for a non-2-MiB-aligned \
+             decommit call on a huge reservation"
         );
 
-        // Test decommit_lazy as well — same counter path
+        // Test decommit_lazy as well — same counter path. Unlike eager
+        // `decommit`, `decommit_lazy` was NOT extended by task #1140 (see
+        // that method's own doc comment: `MADV_FREE` has no documented
+        // HugeTLB support), so it always takes the skip path regardless of
+        // range — the full `size` span is fine to use here.
         reset_bench_internals_counters();
         let baseline2 = huge_decommit_attempts();
 
@@ -310,5 +342,243 @@ fn huge_decommit_attempts_does_not_increment_on_ordinary_reservation() {
         huge_decommit_attempts(),
         baseline,
         "huge_decommit_attempts should NOT increment for decommit_lazy on ordinary reservations"
+    );
+}
+
+/// Task #1140: on Linux/Android kernel >= 5.18, a huge-page-aligned range on a
+/// GENUINELY huge reservation must take the REAL backend path (`MADV_DONTNEED`
+/// actually issued), not the silent-skip path — the reverse of what
+/// `huge_decommit_attempts_increments_on_huge_reservation` above pins for the
+/// pre-#1140 behavior. This test asserts exactly the opposite counter
+/// direction from that test, on the same `is_huge()` branch, for a range that
+/// is additionally 2-MiB-aligned at both endpoints.
+///
+/// **Counterfactual:** reverting the `reservation.rs` change from task #1140
+/// (restoring the unconditional `if self.is_huge() { ...; return; }` skip)
+/// makes this test fail: `huge_decommit_attempts()` would increment by 1 for
+/// EVERY call in this test, including the 2-MiB-aligned one, so the first
+/// assertion below (`baseline` unchanged after the aligned call) would read
+/// `baseline + 1` instead and fail.
+///
+/// **Execution honesty (per this task's own brief):** this assertion only
+/// actually exercises the new code path when `reservation.is_huge()` is
+/// `true`, which requires a REAL hugetlb pool
+/// (`/proc/sys/vm/nr_hugepages > 0`) — no runner in this repo's current CI
+/// configures one (see item 59 in `docs/CORRECTNESS_OPEN_ITEMS.md`, and the
+/// same caveat on `can_decommit_reclaim_and_zero_returns_false_for_huge_reservations`
+/// above). On every host this crate's CI actually runs on today, and on the
+/// Windows host this task was authored on, `reserve_aligned_huge` falls back
+/// to ordinary pages, `is_huge()` is `false`, and this test exercises only the
+/// `else` arm (already covered by the ordinary-reservation tests above) — it
+/// is NOT a false pass, it is an honest skip of the new-behavior assertion,
+/// matching this file's own pre-existing pattern for the same structural
+/// reason.
+#[test]
+#[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
+fn huge_aligned_range_takes_the_real_backend_path_not_the_skip_path() {
+    use aligned_vmem::{
+        huge_decommit_attempts, reserve_aligned_huge, reset_bench_internals_counters,
+    };
+
+    let _guard = SERIAL.lock();
+
+    let size = 2 * MIB; // exactly one huge page: 2-MiB-aligned at both endpoints by construction.
+    let mut reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+
+    if !reservation.is_huge() {
+        // Honest skip: see the doc comment above for why this is expected on
+        // every host without a real hugetlb pool, including this task's own
+        // Windows authoring host.
+        return;
+    }
+
+    // The full reservation span [0, size) is exactly one 2-MiB huge page:
+    // both endpoints are multiples of 2 MiB by construction (size == 2 MiB).
+    reset_bench_internals_counters();
+    let baseline = huge_decommit_attempts();
+
+    reservation.decommit(0, size);
+
+    assert_eq!(
+        huge_decommit_attempts(),
+        baseline,
+        "a 2-MiB-aligned range on a genuinely huge reservation must NOT hit the \
+         skip-counter path on Linux/Android kernel >= 5.18 — it must forward to \
+         the real MADV_DONTNEED backend instead (task #1140)"
+    );
+
+    // A `page_size()`-granular but NOT 2-MiB-granular sub-range (e.g. the
+    // first 4 KiB) is NOT huge-aligned and must still take the skip path,
+    // exactly like the pre-#1140 behavior.
+    let ps = aligned_vmem::page_size();
+    if ps < size {
+        reset_bench_internals_counters();
+        let baseline2 = huge_decommit_attempts();
+
+        reservation.decommit(0, ps);
+
+        assert_eq!(
+            huge_decommit_attempts(),
+            baseline2 + 1,
+            "a page_size()-granular but non-2-MiB-granular range on a huge \
+             reservation must still take the silent-skip path (EINVAL territory)"
+        );
+    }
+}
+
+/// Task #1140, HOST-INDEPENDENT branch-dispatch proof: the two tests above
+/// (`huge_aligned_range_takes_the_real_backend_path_not_the_skip_path` and its
+/// sibling in `huge_decommit_attempts_increments_on_huge_reservation`) can only
+/// exercise their real assertions on a host with a configured hugetlb pool —
+/// on every other host, including this task's own Windows authoring host, they
+/// silently no-op. This test proves the SAME `is_huge()`-plus-range-alignment
+/// BRANCH DISPATCH logic in `Reservation::decommit`/`try_decommit` without
+/// needing a real hugetlb pool, by fabricating `is_huge() == true` over an
+/// ORDINARY (non-`MAP_HUGETLB`) mapping via the documented
+/// `into_full_parts`/`from_raw_parts` round-trip.
+///
+/// **Why this is a sound (not unsound) use of `from_raw_parts`:** the
+/// constructor's own `# Safety` section requires `granted_huge` to accurately
+/// reflect the OS grant, and this test deliberately violates that for
+/// `is_huge()`'s OBSERVABLE VALUE — but `granted_huge` has NO effect on any
+/// unsafe operation `from_raw_parts`/`Drop`/`release_reservation` performs
+/// (verified by reading every `granted_huge` use site in
+/// `src/reservation.rs`/`src/os/unix.rs`/`src/os/windows.rs`: it is stored and
+/// read back verbatim, never branched on by any pointer-unsafe code path —
+/// `munmap`/`VirtualFree` care only about `reservation`/`reservation_len`/
+/// `align`, never about `granted_huge`). The ONLY consumers of `is_huge()`
+/// are `Reservation::decommit`/`try_decommit`'s branch dispatch (exactly what
+/// this test exercises) and the two capability-query methods (not exercised
+/// here) — both operate purely on already-validated, in-bounds byte ranges of
+/// a live mapping, so fabricating this one bool cannot cause memory unsafety.
+///
+/// **What this test DOES prove:** the Rust-level decision of "does
+/// `Reservation::decommit`'s huge branch call the real backend, or take the
+/// silent-skip + counter-increment path" is driven by `is_huge()` AND
+/// `linux_huge_range_is_madvise_eligible`'s range check — exactly the new
+/// logic task #1140 added — regardless of whether the underlying mapping is
+/// truly `MAP_HUGETLB`.
+///
+/// **What this test does NOT prove:** that a REAL `MAP_HUGETLB` mapping's
+/// `madvise(MADV_DONTNEED)` call actually succeeds/zeroes on a real
+/// Linux >= 5.18 kernel — an ordinary (non-hugetlb) anonymous mapping accepts
+/// `MADV_DONTNEED` at ANY granularity on EVERY Linux kernel version (this is
+/// not new to 5.18; only `MAP_HUGETLB` mappings had the granularity
+/// restriction this task's fix is about), so this test's underlying syscall
+/// always succeeds regardless of host kernel version — it is not evidence for
+/// the kernel-version-gated HugeTLB claim itself, only for the branch-dispatch
+/// logic around it. That claim remains REASONED-FROM-SPEC per `man 2 madvise`,
+/// as stated throughout this task's doc changes and its own final report.
+#[test]
+#[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
+fn simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host() {
+    use aligned_vmem::{
+        huge_decommit_attempts, reserve_aligned, reset_bench_internals_counters, Reservation,
+        ReservationFullParts,
+    };
+
+    let _guard = SERIAL.lock();
+
+    let size = 2 * MIB;
+    let ordinary = reserve_aligned(size, size).expect("reserve 2 MiB ordinary");
+    assert!(!ordinary.is_huge(), "sanity: ordinary reservation");
+
+    let mut parts: ReservationFullParts = ordinary.into_full_parts();
+    assert!(
+        !parts.granted_huge,
+        "sanity: parts carry the real (false) flag"
+    );
+    // Fabricate the huge flag — see the doc comment above for why this is a
+    // sound test-only use of `from_raw_parts`'s unsafe contract.
+    parts.granted_huge = true;
+    // SAFETY: `parts` came from a real, live `into_full_parts()` call on a
+    // reservation this test still exclusively owns (not yet dropped/released);
+    // only `granted_huge` was mutated, and — per the doc comment above — no
+    // unsafe operation this crate performs branches on that field. `base`,
+    // `len`, `reservation`, `reservation_len`, `align` are all exactly the
+    // values the real reservation produced, so every OTHER `from_raw_parts`
+    // invariant holds unchanged.
+    let mut simulated_huge: Reservation = unsafe { parts.into_reservation() };
+    assert!(
+        simulated_huge.is_huge(),
+        "sanity: the fabricated flag round-tripped"
+    );
+
+    reset_bench_internals_counters();
+    let baseline = huge_decommit_attempts();
+
+    // Whole-span range: size == 2 MiB, so [0, size) is 2-MiB-aligned at both
+    // endpoints — eligible under `linux_huge_range_is_madvise_eligible`.
+    simulated_huge.decommit(0, size);
+
+    #[cfg(all(
+        not(miri),
+        not(aligned_vmem_mock),
+        any(target_os = "linux", target_os = "android")
+    ))]
+    assert_eq!(
+        huge_decommit_attempts(),
+        baseline,
+        "on Linux/Android (native, non-mock), a 2-MiB-aligned range on a \
+         (simulated) huge reservation must take the real-backend path, not \
+         the skip-counter path"
+    );
+    // On every other platform (Windows, Darwin/BSD, miri, aligned_vmem_mock),
+    // task #1140 made no behavior change: the huge branch always takes the
+    // skip path regardless of range.
+    #[cfg(not(all(
+        not(miri),
+        not(aligned_vmem_mock),
+        any(target_os = "linux", target_os = "android")
+    )))]
+    assert_eq!(
+        huge_decommit_attempts(),
+        baseline + 1,
+        "on non-Linux/Android platforms, every range on a huge reservation \
+         still takes the silent-skip path unconditionally (unchanged by task #1140)"
+    );
+
+    // Prevent Drop from trying to munmap/VirtualFree a region this reservation
+    // no longer exclusively owns any special claim over — it does, in fact,
+    // still exclusively own the real mapping (only the `granted_huge` VALUE
+    // was fabricated, not the underlying memory), so a normal drop is correct
+    // and releases the real mapping exactly once. No `into_parts`/`forget`
+    // dance is needed here; `simulated_huge` drops normally at end of scope.
+}
+
+/// Task #1140: `Reservation::try_decommit`'s validate-before-huge-skip
+/// ordering (task #1084/M3) must still hold when the huge-aligned real-call
+/// path is reachable — an INVERTED range that happens to be huge-page-aligned
+/// at both endpoints (`start = 2 * size, end = size` for a `size`-byte
+/// reservation, both multiples of `LINUX_HUGE_PAGE_SIZE`) must be rejected as
+/// `Err` by the bounds check before ever reaching the eligibility check, on
+/// every platform and every `is_huge()` value — this test does not require a
+/// real hugetlb pool because the bounds check (`end > self.len()`) rejects it
+/// unconditionally, before `is_huge()` is even consulted.
+///
+/// **Counterfactual:** if the bounds/validation checks in `try_decommit` were
+/// ever reordered to run AFTER the huge-eligibility check (the exact bug
+/// class task #1084/M3 already fixed once for the huge-skip branch), this
+/// range could reach `linux_huge_range_is_madvise_eligible(2*size, size)` —
+/// which itself now rejects `start > end` (see that function's own doc) — but
+/// a caller relying on the OUTER bounds check firing first would see a
+/// different error path. This test pins the outer bounds check as the first
+/// gate regardless of internal eligibility-check details.
+#[test]
+#[cfg(feature = "huge-pages")]
+fn try_decommit_rejects_out_of_bounds_huge_aligned_range_before_any_eligibility_check() {
+    use aligned_vmem::reserve_aligned_huge;
+
+    let size = 2 * MIB;
+    let mut reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
+
+    // start = 2*size, end = size: both are multiples of size (== LINUX_HUGE_PAGE_SIZE
+    // when huge pages are granted), but end > reservation.len() == size, and
+    // start > end — a doubly-invalid range regardless of is_huge().
+    let out = reservation.try_decommit(2 * size, size);
+    assert!(
+        out.is_err(),
+        "an out-of-bounds, inverted range must be rejected regardless of huge-page \
+         status or endpoint alignment"
     );
 }

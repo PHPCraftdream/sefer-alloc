@@ -209,14 +209,39 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
   instead of using `LazyReservation`'s watermark can call
   `.into_reservation()` and drive `commit_range`/`try_commit_range` directly
   on the raw `Reservation`.
-- **Huge pages: decommit does nothing, on every OS that can grant them.** When a reservation
-  came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
-  `decommit` does not work on it on Windows, Linux, or Android: `VirtualFree`
-  fails on large-page regions on Windows, and `madvise` on a `MAP_HUGETLB`
-  mapping only accepts huge-page-granular offsets on Linux/Android, so a
-  `page_size()`-granular call gets `EINVAL` and does nothing. The effect is
-  indistinguishable from a silent no-op — RSS does not drop and reads return
-  the old data. Use `reserve_aligned` instead if you need working decommit.
+- **Huge pages: decommit's behavior is platform- AND range-dependent, not a
+  blanket no-op.** When a reservation came from `reserve_aligned_huge`
+  (`Reservation::is_huge() == true`):
+  - **Windows: unconditionally does nothing.** `VirtualFree` with
+    `MEM_DECOMMIT` fails on large-page regions regardless of the requested
+    range.
+  - **Linux/Android: works IF the kernel is >= 5.18 AND the requested range is
+    itself huge-page-size-aligned (2 MiB) at both endpoints.** `madvise(2)`
+    documents that `MADV_DONTNEED` gained HugeTLB support in Linux 5.18, with
+    the same 2-MiB-alignment requirement this crate already imposes on
+    `reserve_aligned_huge`'s own `size`/`align` on Linux/Android — so
+    decommitting an entire huge reservation, or any 2-MiB-granular sub-range
+    of it, IS such an eligible range and genuinely returns physical backing +
+    zero-fills on next access, the same as an ordinary reservation. A
+    `page_size()`-granular (e.g. 4 KiB) but not 2-MiB-granular offset still
+    gets `EINVAL` and does nothing, as does EVERY range on a pre-5.18 kernel.
+    `Reservation::decommit`/`Reservation::try_decommit` (the safe methods)
+    check both `is_huge()` and the range before deciding whether to call the
+    backend at all; the free `decommit` function has no `is_huge()` to
+    consult and always issues the syscall, letting the kernel itself turn an
+    ineligible range into a no-op. REASONED-FROM-SPEC per the man page cited
+    above — NOT empirically verified by this crate's own CI, which has no
+    hugetlb-configured Linux runner (see `Reservation::decommit`'s rustdoc for
+    the exact CI row that would close that gap).
+  - Either way — Windows, or an ineligible range/kernel on Linux/Android —
+    the effect is indistinguishable from a silent no-op: RSS does not drop
+    and reads return the old data. `decommit_lazy` is NOT part of this
+    change: `MADV_FREE` has no documented HugeTLB support (unlike
+    `MADV_DONTNEED` above), so it remains an unconditional no-op on huge
+    reservations on every platform.
+  - Use `reserve_aligned` instead of `reserve_aligned_huge` if you need
+    decommit to work unconditionally, regardless of range shape or kernel
+    version.
   **Note:** Huge-page support on Linux and Android (`reserve_aligned_huge` with the
   `huge-pages` feature) requires kernel >= 3.8 for correct `MAP_HUGE_2MB`
   size encoding. On kernels older than 3.8, the size bits are ignored and
