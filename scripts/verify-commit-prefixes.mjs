@@ -476,9 +476,14 @@ function main() {
     if (structuralFailures.length > 0) {
       console.log(`\n[verify-commit-prefixes] ${structuralFailures.length} FAILURE(s):`);
       for (const t of structuralFailures) console.log(`  - ${t}`);
+      // Only structural (grandfather-key) failures are reachable in the
+      // empty-range branch — the taxonomy pointer would send the reader to
+      // the wrong rule (a typo'd SHA has nothing to do with R30-12).
       console.log(
-        `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
-          `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,
+        `\n[verify-commit-prefixes] FAILED — a GRANDFATHERED key does not resolve to a ` +
+          `commit; fix or remove the entry in the GRANDFATHERED list near the top of ` +
+          `scripts/verify-commit-prefixes.mjs. This is a suppression-list integrity ` +
+          `failure, not a commit-prefix issue — CLAUDE.md's R30-12 taxonomy does not apply.`,
       );
       process.exit(1);
     }
@@ -506,6 +511,7 @@ function main() {
         text: `${short} "${subject}" — bare/unscoped "perf(...)"/"perf:" is not a ` +
           `sanctioned R30-12 prefix; use perf(runtime): or perf(opt-in): (or ` +
           `bench:/docs(config): if this is measurement-only / docs-only).`,
+        taxonomy: true,
       });
       continue;
     }
@@ -524,6 +530,7 @@ function main() {
           text: `${short} "${subject}" — prefix claims ${claim}, but every changed path is under docs/examples/benches/tests/scripts/ ` +
             `(${paths.length} path(s): ${paths.slice(0, 6).join(', ')}${paths.length > 6 ? ', …' : ''}); ` +
             `use bench: or docs(config): instead if no shipping/opt-in code actually changed.`,
+          taxonomy: true,
         });
         continue;
       }
@@ -539,6 +546,7 @@ function main() {
           sha,
           text: `${short} "${subject}" — prefix claims ${claim}, but every changed line in src/ is comment-only ` +
             `(matches \\s*(///|//!|//)); use bench:/docs(config): (or docs(...)) instead.`,
+          taxonomy: true,
         });
         continue;
       }
@@ -566,6 +574,7 @@ function main() {
               `this shape previously shipped a real Display change (09f4d16). Verify no shipping/opt-in behavior actually changed ` +
               `(a bench-internals-gated diagnostic-only accessor in src/ is a known legitimate exception; ` +
               `a real algorithm/default change is not).`,
+            taxonomy: true,
           });
         } else {
           warnings.push(
@@ -646,10 +655,23 @@ function main() {
   if (failures.length > 0) {
     console.log(`\n[verify-commit-prefixes] ${failures.length} FAILURE(s):`);
     for (const f of failures) console.log(`  - ${f.text}`);
-    console.log(
-      `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
-        `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,
-    );
+    // The taxonomy pointer applies ONLY to prefix failures (marked
+    // `taxonomy: true` at their push sites). A run whose failures are all
+    // structural (grandfather-key) / stale-exemption ones would otherwise
+    // get a trailing pointer to R30-12's prefix taxonomy — a rule that has
+    // nothing to do with a typo'd suppression key or a rotten entry.
+    if (failures.some((f) => f.taxonomy)) {
+      console.log(
+        `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
+          `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,
+      );
+    } else {
+      console.log(
+        `\n[verify-commit-prefixes] FAILED — GRANDFATHERED list integrity failure(s) above; ` +
+          `fix or remove the offending entry in scripts/verify-commit-prefixes.mjs ` +
+          `(not a commit-prefix-taxonomy issue).`,
+      );
+    }
     process.exit(1);
   }
 
