@@ -85,6 +85,31 @@ huge-pages = []
 # only compiled when `lazy-commit` is enabled). Off by default; NOT part of any
 # bundle; zero cost when disabled (the hook body is compiled out entirely,
 # not just branched around at runtime).
+#
+# WHY THIS STAYS A CARGO FEATURE while `mock` above became a `--cfg` flag
+# (task #1144/N3 — the asymmetry was previously undocumented, which is the
+# actual defect that task found; it is a deliberate choice, not an oversight):
+# Cargo features DO unify across the dependency graph, so any crate anywhere
+# in a build that enables `aligned-vmem/fault-injection` enables it for every
+# other consumer too, and the arming functions in `src/fault_injection.rs` are
+# safe and process-global. That is real cross-crate influence and it is why
+# `mock` was moved off features. The two hazards are NOT the same size:
+#   - `mock` REPLACES the backend. A silently-unified `mock` means a consumer
+#     believes it is exercising real `mmap`/`VirtualAlloc` when it is not —
+#     the failure is invisible and the consumer's own test suite goes green
+#     against a fiction. That is unacceptable at any probability.
+#   - `fault-injection` only ADDS a check in front of the real backend call.
+#     It is DISARMED unless someone explicitly arms it, and the worst it can
+#     do when armed is make `try_commit_range` report an error the caller is
+#     already obliged to handle (it returns `Result`). No allocation becomes
+#     fake, no memory-safety property is weakened, and the real syscall path
+#     is unchanged when disarmed.
+# So the cost of unification here is a liveness/robustness surprise a caller
+# must already be prepared for, not a silently-wrong test result. Converting
+# it to a `--cfg` would remove a documented feature from the public surface
+# immediately before the crate's first publish, for a hazard of a materially
+# smaller class. REVISIT if `fault-injection` ever gains a hook that changes
+# what memory a caller actually gets, rather than only which `Result` it sees.
 fault-injection = ["lazy-commit"]
 
 # Diagnostic-only path-activation counters (task #504, F11 step 1): a Unix

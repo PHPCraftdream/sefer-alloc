@@ -348,6 +348,54 @@ jobs:
       # it is a real gate.
       - run: cargo semver-checks check-release --package aligned-vmem
 
+  aligned-vmem-hugetlb-real:
+    # Task #1151: the ONLY row anywhere that gives `reserve_aligned_huge` a
+    # real HugeTLB pool to draw from. Without it, every huge-page test on
+    # every runner takes the "no pool configured" fallback and the crate's
+    # actual `MAP_HUGETLB` path is never executed — which is why task #1140's
+    # Linux ≥ 5.18 `MADV_DONTNEED`-on-HugeTLB claim is documented in the
+    # rustdoc, the README and the CHANGELOG as REASONED-FROM-SPEC rather than
+    # verified. This row is what turns that into evidence.
+    #
+    # It FAILS LOUDLY if the pool cannot be configured, rather than skipping.
+    # A skip would reproduce this repository's most-repeated defect exactly —
+    # a row that runs, reports success, and proves nothing (see item 80, and
+    # tasks #1086/#1101/#1131). If a future runner image stops permitting
+    # `nr_hugepages`, this job going red IS the intended signal: the coverage
+    # it claims would otherwise have silently evaporated.
+    #
+    # Not folded into `aligned-vmem-gates`: that job is Linux-generic, and
+    # this one mutates a kernel sysctl, which should not be a side effect
+    # other steps inherit.
+    name: aligned-vmem (real hugetlb pool, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Configure a real hugetlb pool (hard-asserted, never skipped)
+        run: |
+          set -euo pipefail
+          echo 64 | sudo tee /proc/sys/vm/nr_hugepages > /dev/null
+          GOT=$(cat /proc/sys/vm/nr_hugepages)
+          echo "nr_hugepages = $GOT"
+          if [ "$GOT" -lt 8 ]; then
+            echo "::error::could not reserve a hugetlb pool (nr_hugepages=$GOT)." \
+                 "This job exists to execute the real MAP_HUGETLB path; skipping" \
+                 "would make it pass while proving nothing. Fix the runner or" \
+                 "delete the job — do not make it conditional."
+            exit 1
+          fi
+        shell: bash
+      # tee + `grep -F` for the same reason as every neighbouring row: the
+      # huge-page tests are host-adaptive and degrade to a no-pool fallback,
+      # so the row must prove the named test actually RAN.
+      # `scripts/verify-ci-sentinels.mjs` (task #1150) checks this string
+      # against the test's real attributes.
+      - run: |
+          cargo test -p aligned-vmem --features "huge-pages bench-internals" --test huge_pages 2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test reserve_aligned_huge_accepts_huge_page_aligned_request ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+        shell: bash
+
   aligned-vmem-miri:
     # Task #1057 — closes docs/CORRECTNESS_OPEN_ITEMS.md items 41 and 61: this
     # crate had NO step anywhere in CI that ran `cargo miri test -p
