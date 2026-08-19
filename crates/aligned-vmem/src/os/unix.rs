@@ -478,10 +478,16 @@ pub(crate) unsafe fn decommit_pages_impl(
 /// inverted range is never "eligible" regardless of alignment, and always
 /// takes the existing silent-no-op early-exit path instead.
 ///
-/// REASONED-FROM-SPEC per the man page cited above; NOT empirically verified
-/// by this crate's own CI, which has no hugetlb-configured Linux/Android
-/// runner (see this task's own final report for the exact CI row that would
-/// close that gap).
+/// Documented per the man page cited above, and — since task #1152 (F1) —
+/// empirically exercised under a real hugetlb pool by this crate's own CI:
+/// the `aligned-vmem-hugetlb-real` job (`.github/workflows/ci.yml`) hard-
+/// asserts a real `MAP_HUGETLB` grant (via a path-activation oracle), then
+/// calls this function directly, through `Reservation::decommit`, on both a
+/// huge-page-aligned eligible range and a `page_size()`-granular ineligible
+/// one (`tests/decommit_capability.rs`'s
+/// `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path`),
+/// confirming the eligible case reaches the real backend and the ineligible
+/// case still takes the silent-skip path.
 // mock (task #646/F8): the real backend (and therefore this eligibility
 // check) is bypassed under `aligned_vmem_mock`; see decommit_pages_impl above
 // for the same reasoning applied to this cfg family.

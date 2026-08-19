@@ -88,10 +88,25 @@ use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// indistinguishable from a silent no-op: the caller's RSS does not decrease,
 /// and subsequent reads return the old (stale) data rather than zeroed pages.
 ///
-/// REASONED-FROM-SPEC per the `madvise(2)` man page cited above; NOT
-/// empirically verified by this crate's own CI, which has no
-/// hugetlb-configured Linux/Android runner (see `Reservation::decommit`'s
-/// doc for the exact CI row this would need).
+/// Documented per the `madvise(2)` man page cited above, and — since task
+/// #1152 (F1) — empirically exercised by this crate's own CI: the
+/// `aligned-vmem-hugetlb-real` job (`.github/workflows/ci.yml`) configures a
+/// real `nr_hugepages` pool and hard-asserts (via a dedicated
+/// path-activation oracle) that `reserve_aligned_huge` actually received a
+/// `MAP_HUGETLB` grant rather than silently falling back to ordinary pages.
+/// Under that real grant, the job runs
+/// `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path` and
+/// `huge_decommit_attempts_increments_on_huge_reservation`
+/// (`tests/decommit_capability.rs`), which drive a huge-page-eligible
+/// `[start, end)` through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge
+/// branch — the same `decommit_pages_impl`/`MADV_DONTNEED` backend call this
+/// free function itself makes. That proves the eligible-range/post-5.18
+/// case genuinely returns physical backing rather than silently no-opping;
+/// it does not call this free function's own entry point directly (no test
+/// invokes `decommit` outside a `Reservation` method), so this function's
+/// own unconditional-syscall behavior on an INELIGIBLE range (still a no-op
+/// by kernel contract, not by Rust-level skip) remains reasoned-from-spec,
+/// not independently exercised under a real pool.
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
 /// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented each time

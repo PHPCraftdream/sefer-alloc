@@ -582,3 +582,68 @@ fn try_decommit_rejects_out_of_bounds_huge_aligned_range_before_any_eligibility_
          status or endpoint alignment"
     );
 }
+
+/// Task #1152 (F1): path-activation oracle for the `aligned-vmem-hugetlb-real`
+/// CI job (`.github/workflows/ci.yml`).
+///
+/// Every huge-decommit test above (`huge_decommit_attempts_increments_on_huge_reservation`,
+/// `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path`) is
+/// deliberately host-adaptive: `if reservation.is_huge() { <real assertions> }
+/// else { return; }`. That is the right shape for a test that must also pass
+/// on a host with no hugetlb pool (every dev machine, `windows-latest`,
+/// `ubuntu-latest` without the pool configured) — but it means NONE of them
+/// can, by themselves, prove that a CI job which claims to grant a real
+/// hugetlb pool actually did. A job that configures `nr_hugepages=64` but
+/// whose `MAP_HUGETLB` mmap still silently fails (cgroup limit, NUMA
+/// placement, a future runner-image change) would still show every one of
+/// those tests as `ok`, because they all take the documented ordinary-page
+/// fallback branch — the exact "green and dead" failure mode CLAUDE.md's
+/// R30-8 rule (path-activation oracle) exists to close.
+///
+/// This test is the oracle: gated behind an env var
+/// (`ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1`) that only the
+/// `aligned-vmem-hugetlb-real` job sets, it refuses the fallback outcome
+/// outright. Unset (every other environment, including a developer's own
+/// machine and every other CI job), it no-ops immediately — it is not a
+/// general-purpose "prove huge pages work" test, only a tripwire for the one
+/// job that is supposed to guarantee a real pool.
+///
+/// **Counterfactual:** if the runner's hugetlb pool silently stops actually
+/// backing `MAP_HUGETLB` allocations (while `/proc/sys/vm/nr_hugepages`
+/// still reads back a nonzero value, so the job's own pool-configuration
+/// step keeps passing), `reserve_aligned_huge` falls back to ordinary pages,
+/// `is_huge()` is `false`, and this test's `assert!` fires — turning the job
+/// red instead of green-and-silent. Validated by forcing the same assertion
+/// against a real fallback outcome on a non-hugetlb host (this task's own
+/// verification; see the task's final report for how, since this repository
+/// has no way to grant a real hugetlb pool on Windows or in this sandbox).
+#[test]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
+fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
+    use aligned_vmem::reserve_aligned_huge;
+
+    if std::env::var("ALIGNED_VMEM_REQUIRE_REAL_HUGETLB").as_deref() != Ok("1") {
+        // Not running inside the `aligned-vmem-hugetlb-real` job: the
+        // ordinary-page fallback is expected and acceptable everywhere else.
+        return;
+    }
+
+    let size = 2 * MIB; // Linux/Android huge-page size.
+    let reservation = reserve_aligned_huge(size, size)
+        .expect("huge reservation request must succeed (real grant or fallback)");
+
+    assert!(
+        reservation.is_huge(),
+        "ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 is set (this must only be true inside the \
+         `aligned-vmem-hugetlb-real` CI job), so a `reserve_aligned_huge` request took the \
+         ordinary-page fallback instead of a real MAP_HUGETLB grant. That job's whole purpose is \
+         to prove the crate's huge-decommit path executes against a REAL hugetlb pool — a \
+         silent fallback here means every other test in this run that checks is_huge() before its \
+         real assertions also silently skipped them, and the job would otherwise report success \
+         while proving nothing. Check `/proc/sys/vm/nr_hugepages` \
+         and whether the runner's cgroup/NUMA configuration still permits MAP_HUGETLB."
+    );
+}

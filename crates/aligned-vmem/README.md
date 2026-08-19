@@ -229,10 +229,14 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
     check both `is_huge()` and the range before deciding whether to call the
     backend at all; the free `decommit` function has no `is_huge()` to
     consult and always issues the syscall, letting the kernel itself turn an
-    ineligible range into a no-op. REASONED-FROM-SPEC per the man page cited
-    above — NOT empirically verified by this crate's own CI, which has no
-    hugetlb-configured Linux runner (see `Reservation::decommit`'s rustdoc for
-    the exact CI row that would close that gap).
+    ineligible range into a no-op. Documented per the man page cited above,
+    and — since task #1152 (F1) — empirically exercised under a real hugetlb
+    pool by this crate's own CI: the `aligned-vmem-hugetlb-real` job
+    (`.github/workflows/ci.yml`) configures a real `nr_hugepages` pool,
+    hard-asserts (via a path-activation oracle) that a huge-page grant was
+    actually obtained, and then drives both an eligible and an ineligible
+    range through the safe methods, confirming the eligible case reaches the
+    real backend and returns physical backing rather than silently no-oping.
   - Either way — Windows, or an ineligible range/kernel on Linux/Android —
     the effect is indistinguishable from a silent no-op: RSS does not drop
     and reads return the old data. `decommit_lazy` is NOT part of this

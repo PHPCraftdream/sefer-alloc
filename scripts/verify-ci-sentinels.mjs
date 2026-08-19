@@ -445,8 +445,8 @@ function verifyCiSentinels() {
 // code, which is what a CI gate actually needs.
 //
 // Two designs were weighed:
-//   (a) pin the EXACT current count (33) and require every task that adds a
-//       sentinel to bump this literal in the same commit;
+//   (a) pin the EXACT current count (37, as of task #1152) and require every
+//       task that adds a sentinel to bump this literal in the same commit;
 //   (b) pin a FLOOR below the current count and only assert the count did
 //       not drop below it.
 // (a) is loud on every legitimate change (a new sentinel bumps the literal,
@@ -467,7 +467,12 @@ function verifyCiSentinels() {
 // (exactly as (a) would require) — the only difference from (a) is that a
 // REMOVED sentinel (count still >= the old floor) does not spuriously fail,
 // which (a)'s exact-equality pin would.
-const MIN_SENTINEL_COUNT = 33;
+// Raised 33 -> 37 by task #1152 (F1): the `aligned-vmem-hugetlb-real` job
+// gained 4 new sentinels (3 for the newly-added `decommit_capability`/
+// `reservation_decommit_contract` targets it now actually runs, 1 for the
+// new `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`
+// path-activation oracle).
+const MIN_SENTINEL_COUNT = 37;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

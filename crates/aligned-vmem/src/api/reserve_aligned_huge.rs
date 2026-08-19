@@ -106,8 +106,17 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// from a silent no-op: the caller's RSS does not decrease, and subsequent
 /// reads return the old (stale) data rather than zeroed pages.
 ///
-/// REASONED-FROM-SPEC per the `madvise(2)` man page; NOT empirically verified
-/// by this crate's own CI, which has no hugetlb-configured Linux/Android runner.
+/// Documented per the `madvise(2)` man page, and — since task #1152 (F1) —
+/// empirically exercised under a real hugetlb pool by this crate's own CI:
+/// the `aligned-vmem-hugetlb-real` job (`.github/workflows/ci.yml`) hard-
+/// asserts (via a path-activation oracle) that this function actually
+/// received a `MAP_HUGETLB` grant, then drives a huge-page-eligible range
+/// through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge branch. That
+/// proves the eligible-range/post-5.18-kernel case genuinely returns
+/// physical backing rather than silently no-opping. The ineligible-range
+/// case (still a documented no-op) and every range on a pre-5.18 kernel
+/// remain reasoned-from-spec, not independently exercised — CI's runner
+/// image kernel version is not pinned by this crate.
 ///
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
 /// unconditionally, regardless of range shape, kernel version, or platform.

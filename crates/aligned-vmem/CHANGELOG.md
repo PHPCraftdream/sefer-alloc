@@ -176,13 +176,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   it is a per-RESERVATION query with no range to judge, so it is conservative
   by construction. **Scope of verification, stated plainly:** the Rust-level
   branch dispatch is execution-verified on real Linux (WSL2, kernel 6.18)
-  including a revert-and-fail counterfactual; the kernel-level claim that
-  `MADV_DONTNEED` succeeds on a genuine `MAP_HUGETLB` mapping is
-  REASONED-FROM-SPEC — no CI runner has a configured hugetlb pool, and
-  neither is the pre-5.18-kernel `EINVAL`/counter-not-incremented claim
-  immediately above, which follows from reading the code
-  (`linux_huge_range_is_madvise_eligible`, `os/unix.rs`) rather than from
-  running it against a real pre-5.18 kernel.
+  including a revert-and-fail counterfactual. The kernel-level claim that
+  `MADV_DONTNEED` succeeds on a genuine `MAP_HUGETLB` mapping is now
+  EXECUTION-VERIFIED for the ELIGIBLE-range, post-5.18-kernel case by the
+  `aligned-vmem-hugetlb-real` CI job (tasks #1151 and #1152), which
+  configures `nr_hugepages=64` and runs the huge-decommit tests under a
+  path-activation oracle that hard-asserts a real `MAP_HUGETLB` grant, so a
+  silent ordinary-page fallback turns the job red instead of reporting a
+  success that proves nothing. Three things remain REASONED-FROM-SPEC and are
+  deliberately named rather than implied: the free `decommit()` entry point
+  is reached only through the safe methods that share its backend, never
+  called directly by a test; pre-5.18-kernel behaviour is unverified because
+  the runner's kernel version is not pinned by this crate; and the
+  pre-5.18-kernel `EINVAL`/counter-not-incremented claim immediately above
+  follows from reading the code (`linux_huge_range_is_madvise_eligible`,
+  `os/unix.rs`) rather than from running it. The tests check counter and
+  branch dispatch, not post-decommit memory content.
   [correctness fix]
 - **A failed one-time OS page-size query is no longer folded to 4 KiB and
   cached as if it were a real answer** (task #1139). `query_os_page_size()`

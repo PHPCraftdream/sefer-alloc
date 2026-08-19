@@ -352,10 +352,7 @@ jobs:
     # Task #1151: the ONLY row anywhere that gives `reserve_aligned_huge` a
     # real HugeTLB pool to draw from. Without it, every huge-page test on
     # every runner takes the "no pool configured" fallback and the crate's
-    # actual `MAP_HUGETLB` path is never executed — which is why task #1140's
-    # Linux ≥ 5.18 `MADV_DONTNEED`-on-HugeTLB claim is documented in the
-    # rustdoc, the README and the CHANGELOG as REASONED-FROM-SPEC rather than
-    # verified. This row is what turns that into evidence.
+    # actual `MAP_HUGETLB` path is never executed.
     #
     # It FAILS LOUDLY if the pool cannot be configured, rather than skipping.
     # A skip would reproduce this repository's most-repeated defect exactly —
@@ -363,6 +360,31 @@ jobs:
     # tasks #1086/#1101/#1131). If a future runner image stops permitting
     # `nr_hugepages`, this job going red IS the intended signal: the coverage
     # it claims would otherwise have silently evaporated.
+    #
+    # Task #1152 (F1): the row originally added by task #1151 ran only
+    # `--test huge_pages`, which contains ZERO decommit tests (verified:
+    # `grep -c decommit crates/aligned-vmem/tests/huge_pages.rs` -> 0) — so
+    # despite this job's own comment and commit `88c5f3c`'s message both
+    # having claimed it turns task #1140's Linux >= 5.18
+    # `MADV_DONTNEED`-on-HugeTLB claim into evidence, it never built or ran
+    # the tests that claim depends on (`decommit_capability.rs`,
+    # `reservation_decommit_contract.rs`). Fixed by adding both targets
+    # below. Second, independent gap closed in the same task: even the
+    # tests this job DID run never hard-asserted a real HugeTLB grant — the
+    # sentinel test only checks that a well-formed request is not rejected
+    # as invalid, so the job was green whether or not `MAP_HUGETLB` actually
+    # succeeded (a silently-broken pool — cgroup limit, NUMA placement, a
+    # future runner-image change — would still show every host-adaptive
+    # `if reservation.is_huge() { ... }` test as `ok`, having silently taken
+    # the fallback branch). Closed by
+    # `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback` in
+    # `decommit_capability.rs`: a path-activation oracle (CLAUDE.md's R30-8
+    # rule) gated on `ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1`, set only by this
+    # job's own test step below, that hard-asserts `is_huge()` and refuses
+    # the ordinary-page fallback outright. This job now genuinely proves:
+    # (a) the huge-decommit test files actually build and run under a real
+    # pool, and (b) that pool actually backed a `MAP_HUGETLB` grant during
+    # this run — not just that the sysctl accepted a value.
     #
     # Not folded into `aligned-vmem-gates`: that job is Linux-generic, and
     # this one mutates a kernel sysctl, which should not be a side effect
@@ -388,12 +410,25 @@ jobs:
         shell: bash
       # tee + `grep -F` for the same reason as every neighbouring row: the
       # huge-page tests are host-adaptive and degrade to a no-pool fallback,
-      # so the row must prove the named test actually RAN.
-      # `scripts/verify-ci-sentinels.mjs` (task #1150) checks this string
-      # against the test's real attributes.
+      # so the row must prove each named test actually RAN.
+      # `scripts/verify-ci-sentinels.mjs` (task #1150) checks these strings
+      # against each test's real attributes.
+      #
+      # `ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1`: only this step, in this job,
+      # sets this variable. It arms
+      # `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback` (task
+      # #1152), which hard-fails if `reserve_aligned_huge` took the
+      # ordinary-page fallback instead of a real grant — turning a silently
+      # broken pool into a red job instead of a green-and-dead one.
       - run: |
-          cargo test -p aligned-vmem --features "huge-pages bench-internals" --test huge_pages 2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test huge_pages --test decommit_capability --test reservation_decommit_contract \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test reserve_aligned_huge_accepts_huge_page_aligned_request ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test huge_decommit_attempts_increments_on_huge_reservation ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test huge_aligned_range_takes_the_real_backend_path_not_the_skip_path ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test method_try_decommit_huge_skip_returns_ok_and_counts ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
         shell: bash
 
   aligned-vmem-miri:
