@@ -17,7 +17,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Safe `Reservation` methods for page-level memory management: `decommit`,
   `try_decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`,
   `try_commit_range` — **all seven take `&mut self`**; see the BREAKING entry
-  under "Fixed" for why, and for the migration. (Until task #1120 this line
+  under "Changed" for why, and for the migration. (Until task #1120 this line
   listed six of the seven, omitted `try_decommit`, and described the
   pre-#1113 `&self` receivers.)
 - **`LazyReservation`** — a `Reservation` that also tracks how much of itself is
@@ -108,27 +108,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   their own commit bookkeeping add `.into_reservation()`. Chosen over adding a
   second parallel constructor so there is ONE obvious way to make a lazy
   reservation; 0.2.0 is unpublished, so the change costs nothing.
-- **`decommit` now `debug_assert!`s on a range-contract violation.** Its
-  signature returns `()` and has nowhere to report one, so a debug build says so
-  loudly and a consumer's own test fails at the mistake instead of quietly
-  decommitting nothing. Zero cost in release; the fallible form is
-  `try_decommit`.
-- `page_size()` granularity is now used for decommit/recommit validation instead of compile-time `PAGE` constant
-- **lazy-commit contract tightened:** `reserve_aligned_lazy` now requires both `size` and `initial_commit` to be multiples of the runtime `page_size()` (not just `PAGE`). This prevents unwritable tails on systems where `page_size() > PAGE` (e.g., 64 KiB Windows configurations or 16 KiB macOS), where `commit_range` only accepts page_size()-aligned offsets. Mainstream Windows (page_size() == 4096) is unaffected. (R6-2)
-- All OS error paths now capture `errno`/`GetLastError` immediately before cleanup FFI
-- Unix 64-bit fast path disabled: syscall economy (one `mmap` call at the cost of extra virtual address space held per reservation). Exception on Linux: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base).
-- `reserve_aligned_huge()` semantics fixed: reports actual huge-page grant only on platforms where it's observable
-- `granted_huge` tracking added for Linux huge pages; non-Linux Unix correctly reports `is_huge() == false`
-- **BREAKING**: `Reservation::from_raw_parts` signature changed to require new `granted_huge: bool` parameter
-- `decommit`/`recommit` contract narrowed on Darwin/BSDs: explicitly best-effort hint with no zero-fill guarantee (Linux/Windows guarantees unchanged)
-- Windows single-call fast path for `align <= WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) on full-span commit; when requesting large pages (`MEM_LARGE_PAGES`), the threshold widens to `GetLargePageMinimum()` (typically 2 MiB).
-
-### Fixed
-
 - **[BREAKING, HIGH] `Reservation`'s seven OS-state mutators now take
   `&mut self`: `decommit`, `try_decommit`, `decommit_lazy`, `recommit`,
   `try_recommit`, `commit_range`, `try_commit_range` (task #1113).** This is
-  what actually closes the H1 watermark-bypass class below. Removing the one
+  what actually closes the H1 watermark-bypass class recorded under "Fixed"
+  below. Removing the one
   accessor that leaked a `&Reservation` (task #1104) left the CLASS open: an
   independent reviewer reopened it four ways — a public field, a trait method
   returning `&crate::Reservation`, `impl AsRef<crate::Reservation>`, and a
@@ -147,13 +131,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   aliasing. Zero call sites outside this crate's own tests needed changing —
   `crates/numa-shim`, `examples/`, `benches/` and the root crate all use the
   free `pub unsafe fn` API, which is unaffected.
+- **`decommit` now `debug_assert!`s on a range-contract violation.** Its
+  signature returns `()` and has nowhere to report one, so a debug build says so
+  loudly and a consumer's own test fails at the mistake instead of quietly
+  decommitting nothing. Zero cost in release; the fallible form is
+  `try_decommit`.
+- `page_size()` granularity is now used for decommit/recommit validation instead of compile-time `PAGE` constant
+- **lazy-commit contract tightened:** `reserve_aligned_lazy` now requires both `size` and `initial_commit` to be multiples of the runtime `page_size()` (not just `PAGE`). This prevents unwritable tails on systems where `page_size() > PAGE` (e.g., 64 KiB Windows configurations or 16 KiB macOS), where `commit_range` only accepts page_size()-aligned offsets. Mainstream Windows (page_size() == 4096) is unaffected. (R6-2)
+- All OS error paths now capture `errno`/`GetLastError` immediately before cleanup FFI
+- Unix 64-bit fast path disabled: syscall economy (one `mmap` call at the cost of extra virtual address space held per reservation). Exception on Linux: when `align == LINUX_HUGE_PAGE_SIZE` with huge pages requested, an exact-size `MAP_HUGETLB` fast path avoids the over-reserve (kernel guarantees huge-page-aligned base).
+- `reserve_aligned_huge()` semantics fixed: reports actual huge-page grant only on platforms where it's observable
+- `granted_huge` tracking added for Linux huge pages; non-Linux Unix correctly reports `is_huge() == false`
+- **BREAKING**: `Reservation::from_raw_parts` signature changed to require new `granted_huge: bool` parameter
+- `decommit`/`recommit` contract narrowed on Darwin/BSDs: explicitly best-effort hint with no zero-fill guarantee (Linux/Windows guarantees unchanged)
+- Windows single-call fast path for `align <= WIN_ALLOCATION_GRANULARITY` (typically 64 KiB) on full-span commit; when requesting large pages (`MEM_LARGE_PAGES`), the threshold widens to `GetLargePageMinimum()` (typically 2 MiB).
+
+### Fixed
 
 - **[BREAKING, HIGH, publication blocker] `LazyReservation::as_reservation()` is
   REMOVED: it was a 100%-safe bypass of the watermark the type exists to
   guarantee (task #1104, finding H1 of the 2026-08-18 publication-readiness
   audit, whose NO-GO verdict rested on it).** At the time, all seven of
   `Reservation`'s OS-state mutators took `&self`, not `&mut self` — see the
-  BREAKING entry below, which changed that and is what actually closes this
+  BREAKING entry above, which changed that and is what actually closes this
   class — so a borrowed `&Reservation`
   handed out by a `&self` accessor let safe code change the mapping under the
   watermark: `r.as_reservation().decommit(0, page_size())` left
