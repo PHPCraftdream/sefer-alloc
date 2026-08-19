@@ -78,6 +78,16 @@
 //      unresolved sentinel (a sentinel this script cannot resolve to a real
 //      `fn` is ALSO a failure — a silently-unverifiable sentinel is exactly
 //      as dangerous as a wrong one).
+//   5. Task #1176/M3: for every `cargo test ...` invocation in a step that
+//      `tee`s its output to a `$RUNNER_TEMP/<log>` file, if that invocation
+//      passes `-- ... --nocapture ...` WITHOUT also passing `--exact <name>`
+//      (single-test isolation), AND the same step greps a `test ... ok`
+//      result-line sentinel out of that SAME log file — FAIL. This is a
+//      static guard against a regression of task #1166's own fix (see
+//      `checkNocaptureRegression`'s doc comment for the full rationale): a
+//      `--nocapture` multi-test run's unsynchronized worker-thread
+//      `println!`s can land mid-write of another test's own result line and
+//      corrupt the exact string `grep -F` depends on.
 //
 // WHAT THIS DOES NOT COVER (see docs/CORRECTNESS_OPEN_ITEMS.md's new card
 // for the durable record — the "does and does NOT cover" split the task
@@ -298,6 +308,170 @@ function extractLiteralMarkers(stepText) {
 }
 
 /**
+ * Task #1176/M3: static guard against a REGRESSION of task #1166's own fix.
+ *
+ * THE GAP: `6ba1f31` (#1166) correctly diagnosed and fixed a real corruption
+ * bug — running the FULL multi-test `aligned-vmem-hugetlb-real` invocation
+ * with `-- --nocapture` let two worker threads' unsynchronized `println!`s
+ * land mid-write of another test's own `"test {name} ... "` / outcome-word /
+ * newline triple, corrupting `grep -F "test <name> ... ok"` sentinel lines
+ * (measured 11/400 runs locally; see that step's own comment in ci.yml). The
+ * fix — split the marker-printing tests out into their own single-test
+ * `--exact <name> -- --nocapture` invocations, run the shared multi-test
+ * invocation WITHOUT `--nocapture` — is correct, but nothing in this script
+ * (or anywhere else) stops a future edit from putting `-- --nocapture` back
+ * onto a multi-test invocation whose output a `grep -F "test ... ok"`
+ * sentinel depends on. The only thing currently preventing that regression
+ * is a comment in ci.yml (see the "Task #1166 (F1)" note above the
+ * `aligned-vmem-hugetlb-real` step) — comments do not fail CI.
+ *
+ * WHAT THIS CHECKS: within one step's text, a `cargo test ...` invocation is
+ * paired with the `$RUNNER_TEMP/<log>.log` file it `tee`s its output to (the
+ * existing, already-established convention every sentinel-bearing invocation
+ * in this repo already follows — see the module header's "sentinel and the
+ * cargo invocation it checks are always co-located" note for the analogous
+ * per-STEP version of this same convention, here narrowed to per-INVOCATION
+ * since one step can hold several `cargo test` calls, e.g. the
+ * `aligned-vmem-hugetlb-real` step's three). For each such
+ * invocation-to-logfile pairing:
+ *   1. Determine whether the invocation passes `--nocapture` after a `--`
+ *      libtest-args separator, ANYWHERE in the invocation's own text
+ *      (spanning its `\`-continued lines, matching how this script already
+ *      treats a step's `\`-joined block-scalar body as one text blob
+ *      elsewhere — see `splitIntoRunSteps`).
+ *   2. Determine whether the SAME invocation also passes `--exact <name>`
+ *      — the established safe form (verified live in this file today: both
+ *      `aligned-vmem-hugetlb-real`'s marker sub-invocations and the CI-wide
+ *      `numa_alloc`/`numa_segment_id`/`numa_seam` steps use `--nocapture`
+ *      freely, but the numa steps carry NO `grep -F "test ... ok"` sentinel
+ *      at all in the same step, so they are unaffected either way; only a
+ *      `--nocapture` invocation that ALSO backs a `test ... ok` sentinel is
+ *      in scope here — see point 3).
+ *   3. If `--nocapture` is present, `--exact` is NOT present, AND the same
+ *      step's text contains at least one `grep -F "test ... ok"       "$RUNNER_TEMP/<same log file>"` line (i.e. a
+ *      libtest-result-line sentinel depends on this exact invocation's
+ *      output) — FAIL. This is deliberately narrower than "no `--nocapture`
+ *      without `--exact` anywhere in ci.yml": a `--nocapture` invocation
+ *      with NO `test ... ok` sentinel riding on its log file (like the numa
+ *      steps) cannot reproduce #1166's corruption class, because nothing
+ *      greps a byte-exact result line out of that log.
+ *
+ * WHY THE `--exact` TEST, NOT "only one `--test` target": the two SAFE
+ * invocations verified live in ci.yml today (`vmem-hugetlb-real-marker1`/
+ * `marker2`) each still declare a SINGLE `--test decommit_capability`
+ * target, but that target file holds many `#[test]` fns — `--exact <name>`
+ * is what actually narrows execution down to the one test whose print can
+ * no longer race any OTHER test's own result-line write, which is the
+ * actual precondition #1166's counterfactual needed ("no other test running
+ * concurrently to interleave with", per that step's own comment). A
+ * `--test`-count check alone would not have verified the real safety
+ * property and would have OK'd a single-target-but-multi-fn invocation that
+ * is exactly as unsafe as the multi-target one #1166 fixed.
+ *
+ * NOT COVERED (documented gap, not oversold as fixed):
+ *   - Does not verify #1166's own quantitative claim (11/400 corruption
+ *     rate) still holds; it is a structural/textual guard against the
+ *     SHAPE of the regression (`--nocapture` reintroduced onto a
+ *     multi-test invocation a result-line sentinel depends on), not a
+ *     re-run of the probabilistic counterfactual itself.
+ *   - Does not catch a step that greps a `test ... ok` sentinel against a
+ *     DIFFERENT step's or job's log file (this repo's convention is
+ *     strictly one step per `tee` target, verified against every current
+ *     site — see the module header), nor a `cargo test` invocation whose
+ *     output is not `tee`'d to a `$RUNNER_TEMP/*.log` file at all (in which
+ *     case no sentinel could depend on it in the first place, so the
+ *     regression class this guard targets cannot arise from it).
+ *   - Does not evaluate `--test-threads=1`: the ci.yml comment this
+ *     function guards against explicitly notes `--test-threads=1` does NOT
+ *     fix the corruption (it makes a PRINTING test's own line corruption
+ *     deterministic instead of rare, not safe) — so this guard correctly
+ *     does not treat `--test-threads=1` as an escape hatch; only `--exact`
+ *     (single-test isolation) is accepted as safe.
+ *   - The `-- ` libtest-args separator is located with `text.search(/\s--\s/)`
+ *     (`\s` matches a newline, so a `\`-continued ` -- \` on its own line is
+ *     found correctly — verified live against this exact shape) — but this
+ *     is still a textual heuristic, not a real argv tokenizer. A `--`
+ *     appearing as part of a QUOTED string argument earlier in the same
+ *     invocation (e.g. inside a `--features "..."` value) could in
+ *     principle confuse `dashDashIdx`; not observed anywhere in this
+ *     repo's ci.yml today (verified: every `--features "..."` value in a
+ *     step containing a `test ... ok` sentinel is a plain space-separated
+ *     feature list, no embedded ` -- `), and no different in kind from the
+ *     text-scan tradeoff already accepted throughout this file (e.g.
+ *     `extractTestTargets`/`extractPackageScope` above).
+ *   - `--exact` is accepted as sufficient proof of single-test isolation
+ *     without checking that the test NAME it names is the same one whose
+ *     `println!` a marker sentinel resolves against, or that only ONE
+ *     `--exact` flag is present — a hypothetical `--exact a --exact b`
+ *     (cargo actually only honors the last one) is not specially detected;
+ *     this mirrors the same "form, not full semantics" scope every other
+ *     check in this file already accepts, and no such multi-`--exact`
+ *     invocation exists in this repo's ci.yml today.
+ */
+function extractCargoTestInvocations(stepText) {
+  const invocations = [];
+  // Split on each `cargo test` occurrence; the text from one `cargo test` up
+  // to (but not including) the next is that invocation's own text. This
+  // mirrors `--test`/`-p` extraction elsewhere in this file, which already
+  // operates on whole-step text without a real shell/YAML parser.
+  const starts = [];
+  const startRe = /\bcargo test\b/g;
+  let sm;
+  while ((sm = startRe.exec(stepText))) starts.push(sm.index);
+  for (let i = 0; i < starts.length; i++) {
+    const from = starts[i];
+    const to = i + 1 < starts.length ? starts[i + 1] : stepText.length;
+    const text = stepText.slice(from, to);
+    const teeMatch = text.match(/tee\s+"\$RUNNER_TEMP\/([^"]+)"/);
+    if (!teeMatch) continue; // no log file -> no sentinel can depend on this invocation
+    // libtest args live after a ` -- ` separator (space-bounded, so this
+    // does not match `--nocapture`/`--exact` themselves, only the
+    // separator token itself).
+    const dashDashIdx = text.search(/\s--\s/);
+    const libtestArgs = dashDashIdx === -1 ? '' : text.slice(dashDashIdx);
+    invocations.push({
+      logFile: teeMatch[1],
+      hasNocapture: /--nocapture\b/.test(libtestArgs),
+      hasExact: /--exact\b/.test(libtestArgs),
+    });
+  }
+  return invocations;
+}
+
+/**
+ * Task #1176/M3: the check itself — see `extractCargoTestInvocations`'s doc
+ * comment immediately above for the full design rationale. Returns an array
+ * of error strings (empty if the step is clean).
+ */
+function checkNocaptureRegression(stepText, startLine) {
+  const errors = [];
+  const invocations = extractCargoTestInvocations(stepText);
+  for (const inv of invocations) {
+    if (!inv.hasNocapture || inv.hasExact) continue;
+    const sentinelRe = new RegExp(
+      `grep -F "test (.+?) \\.\\.\\. ok"\\s+"\\$RUNNER_TEMP/${inv.logFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,
+    );
+    const shouldPanicRe = new RegExp(
+      `grep -F "test (.+?) - should panic \\.\\.\\. ok"\\s+"\\$RUNNER_TEMP/${inv.logFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,
+    );
+    if (sentinelRe.test(stepText) || shouldPanicRe.test(stepText)) {
+      errors.push(
+        `step starting at ci.yml:${startLine}: a \`cargo test\` invocation piping to ` +
+          `"$RUNNER_TEMP/${inv.logFile}" passes \`--nocapture\` without \`--exact\` (single-test ` +
+          `isolation), while this step also greps a \`test ... ok\` result-line sentinel out of ` +
+          `that same log file. This is the exact regression task #1166 fixed and documented: an ` +
+          `unsynchronized worker-thread \`println!\` under \`--nocapture\` can land mid-write of ` +
+          `ANOTHER test's own "test {name} ... " / outcome-word / newline triple, corrupting the ` +
+          `sentinel line \`grep -F\` depends on (measured 11/400 runs — see that step's own comment ` +
+          `in ci.yml). Either drop \`--nocapture\` from this invocation (libtest captures a passing ` +
+          `test's stdout by default) or restrict it to one test with \`--exact <name>\`.`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
  * Resolve a (possibly `mod::`-qualified) test name to a source location by
  * scanning candidate .rs files. Returns { file, line, hasShouldPanic,
  * hasIgnore } or null if not found. `mod::name` requires the found `fn` to
@@ -411,29 +585,57 @@ function escapeRegExp(literal) {
  *      code; see the "NOT COVERED" note below.
  *   2. The occurrence must be textually inside a `fn ... { ... }` body
  *      (found by walking outward via brace-depth tracking from the matched
- *      line to the nearest enclosing top-level `fn`), and at least one
- *      `assert!`/`assert_eq!`/`assert_ne!`/`debug_assert!`/`debug_assert_eq!`/
- *      `debug_assert_ne!` invocation must appear on an EARLIER line inside
- *      that same function body. This pins the print's ordering relative to
- *      the assertion it is meant to gate on, without needing to parse
- *      statement boundaries or control flow.
+ *      line to the nearest enclosing top-level `fn`), and at least one LIVE
+ *      (non-commented) `assert!`/`assert_eq!`/`assert_ne!`/`debug_assert!`/
+ *      `debug_assert_eq!`/`debug_assert_ne!` invocation must appear on an
+ *      EARLIER line inside that same function body. This pins the print's
+ *      ordering relative to the assertion it is meant to gate on, without
+ *      needing to parse statement boundaries or control flow. "Live" here
+ *      uses the identical check as point 1's `println!` liveness test
+ *      (content up to the match must not open a `//` line comment) — task
+ *      #1176/M2 found the ORIGINAL version of this function applied that
+ *      liveness check ONLY to the `println!` side (point 1) and never to
+ *      the `assert!` side: `assertRe.test(l)` alone, with no check that `l`
+ *      itself wasn't `// assert!(...)`. Commenting out the ENTIRE
+ *      `is_huge()` assert this marker exists to gate on (see the target
+ *      test's own doc comment) left `sawAssertBeforeMarker` false against a
+ *      genuinely live `println!` that ALWAYS executes once the assert is
+ *      gone — the resolver still reported `OK` because it no longer scanned
+ *      past the commented line to find any other assert, so removing the
+ *      one-and-only assert of that function coincidentally reproduced "no
+ *      preceding assert" and DID fail... but the counterfactual that
+ *      actually reproduced was different: the resolver's assert-liveness
+ *      gap only matters once a file contains a commented-out assert on one
+ *      line and a REAL (live) assert on another line inside the same
+ *      function — in the single-assert case here, `sawAssertBeforeMarker`
+ *      stayed false regardless of the liveness bug, for the unrelated
+ *      reason that the (now dead) text still matched the assert regex.
+ *      Fixed by requiring the SAME liveness test as `println!`'s.
  *
  * NOT COVERED (documented gap, same spirit as the `#[cfg]` gap noted
  * above — verified by an actual counterfactual during this task, not
  * assumed): this is a textual/line-order heuristic scoped to "some
- * enclosing fn with some preceding assert", NOT "the ONE specific fn this
- * marker's ci.yml comment/doc says it belongs to" — a marker sentinel, by
- * construction (see extractLiteralMarkers above), carries no fn name to
- * check against, so nothing here can tell that a print resolved inside the
- * WRONG function. Two concrete cases, both checked:
+ * enclosing fn with some preceding LIVE assert", NOT "the ONE specific fn
+ * this marker's ci.yml comment/doc says it belongs to" — a marker
+ * sentinel, by construction (see extractLiteralMarkers above), carries no
+ * fn name to check against, so nothing here can tell that a print resolved
+ * inside the WRONG function. Several concrete cases, all checked:
  *   - relocating the print ABOVE the assert it exists to gate on, in its
  *     OWN function: CAUGHT (no preceding assert found at that position).
+ *   - commenting out the print entirely, or deleting it: CAUGHT (point 1's
+ *     liveness check / no occurrence at all).
+ *   - commenting out the ONE assert the print exists to gate on, in a
+ *     function where that assert was the print's only preceding assertion:
+ *     CAUGHT as of task #1176/M2 — the assert-liveness fix above means a
+ *     commented-out `// assert!(...)` no longer counts as "seen"; if that
+ *     was the function's only assert, `sawAssertBeforeMarker` correctly
+ *     stays false and the marker fails to resolve.
  *   - relocating the print into a DIFFERENT, unrelated `#[test] fn` in the
- *     same candidate file that also happens to contain a preceding
+ *     same candidate file that also happens to contain a preceding LIVE
  *     `assert!`: NOT CAUGHT — the resolver finds that occurrence, sees an
- *     earlier assert in ITS enclosing fn, and reports it resolved. This is
- *     a real, confirmed residual gap of the marker-sentinel design itself
- *     (not just this resolver): closing it would require the marker
+ *     earlier live assert in ITS enclosing fn, and reports it resolved.
+ *     This is a real, confirmed residual gap of the marker-sentinel design
+ *     itself (not just this resolver): closing it would require the marker
  *     sentinel to carry the name of the test function it belongs to (a
  *     format change to how markers are declared in ci.yml, out of scope
  *     for a task confined to this one file), or a source-level convention
@@ -446,11 +648,22 @@ function escapeRegExp(literal) {
  *     on — both need real control-flow analysis of Rust source, out of
  *     scope for a text-scanning CI guard (the same trade-off already made
  *     for `#[cfg]` predicates above).
- * What this DOES close is the two defects this task was filed to fix:
- * commenting the print out, and relocating it ahead of the assert it is
- * meant to gate on within its own function — both now fail loudly instead
- * of passing silently. It does NOT close the cross-function relocation
- * case; that residual gap is intentionally not oversold as fixed here.
+ *   - a commented-out assert in a function that ALSO has a second, still-
+ *     live, DIFFERENT assert earlier than the marker: NOT specially
+ *     handled and does not need to be — `sawAssertBeforeMarker` is a
+ *     disjunction over every live assert line seen while walking upward
+ *     (see the loop below), so the marker still correctly resolves as
+ *     "gated on an assert" (a true statement: it IS still gated on the
+ *     surviving live one). This resolver was never designed to pin the
+ *     print to one SPECIFIC assert, only to "at least one live assert
+ *     precedes it" — commenting out a NON-exclusive assert is not a
+ *     disarming edit and is correctly not flagged.
+ * What this DOES close is the three defects now verified fixed: commenting
+ * the print out, relocating it ahead of the assert it is meant to gate on
+ * within its own function, and commenting out the (sole) assert it gates
+ * on — all three now fail loudly instead of passing silently. It does NOT
+ * close the cross-function relocation case; that residual gap is
+ * intentionally not oversold as fixed here.
  */
 function resolveMarkerLocation(candidateFiles, literal) {
   const escaped = escapeRegExp(literal);
@@ -504,7 +717,17 @@ function resolveMarkerLocation(candidateFiles, literal) {
           depth = 0;
           continue;
         }
-        if (assertRe.test(l)) sawAssertBeforeMarker = true;
+        // Task #1176/M2: the assert side needs the SAME liveness check as
+        // the println! side above (point 1 of the doc comment) — a
+        // commented-out `// assert!(...)` must not count as "seen". Find
+        // the LEFTMOST assert-invocation match on this line and require
+        // nothing before it opens a `//` line comment; a `.test()` alone
+        // (the original, pre-fix form) matches a fully commented-out line
+        // just as readily as a live one.
+        const am = assertRe.exec(l);
+        if (am !== null && !l.slice(0, am.index).includes('//')) {
+          sawAssertBeforeMarker = true;
+        }
       }
 
       if (fnLine === -1) continue; // could not locate an enclosing fn; try next occurrence
@@ -535,6 +758,8 @@ function verifyCiSentinels() {
   let checkedCount = 0;
 
   for (const step of steps) {
+    errors.push(...checkNocaptureRegression(step.text, step.startLine));
+
     const markers = extractLiteralMarkers(step.text);
     if (markers.length > 0) {
       const testTargets = extractTestTargets(step.text);
