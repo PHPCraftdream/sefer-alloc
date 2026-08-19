@@ -69,9 +69,11 @@ use crate::page_size::page_size;
 /// return the old (stale) data rather than zeroed pages.
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
-/// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter is incremented each time
-/// decommit is called on a huge-page reservation, providing at least
-/// observability in measurement builds despite the silent API contract.
+/// `huge_decommit_attempts` counter (only compiled with that feature — not
+/// an intra-doc link here, since `bench-internals` is excluded from the
+/// published docs.rs feature set) is incremented each time decommit is
+/// called on a huge-page reservation, providing at least observability in
+/// measurement builds despite the silent API contract.
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need working decommit.
 ///
 /// **Darwin zero-fill gap (confirmed as a real, failing-test-level gap by

@@ -252,6 +252,31 @@ jobs:
       # path dependencies (empty [dependencies]), so full `cargo publish --dry-run`
       # works without modification.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --all-features --no-deps
+      # Task #1142: `--all-features` above is the ONE feature set docs.rs never
+      # actually builds with — `package.metadata.docs.rs.features` in
+      # Cargo.toml deliberately pins a narrower, publication-facing set
+      # (`lazy-commit`/`huge-pages`/`fault-injection`, excluding
+      # `bench-internals`), so a warning-free `--all-features` row does not
+      # prove the docs that actually render on docs.rs are warning-free. Four
+      # `crate::bench_internals::huge_decommit_attempts` intra-doc links were
+      # dead exactly under that narrower set (bench_internals is compiled only
+      # under `bench-internals`) while invisible to both the row above and to
+      # plain `cargo doc` with no features, because default features carries
+      # two ADDITIONAL unrelated dead links (`reserve_aligned_huge`, gated on
+      # `huge-pages`, which IS in the docs.rs set and so is NOT dead there) —
+      # neither existing row is the configuration that ships. This row derives
+      # the exact feature list from Cargo.toml via `cargo metadata` + `jq`
+      # (both already available on `ubuntu-latest`; `jq` already used earlier
+      # in this same workflow) rather than hardcoding a second copy of the
+      # list, so the two cannot drift apart the way `Cargo.toml`'s own comment
+      # on that key already warns readers to keep in sync manually.
+      - name: docs.rs feature-set doc build (mirrors package.metadata.docs.rs, not --all-features)
+        run: |
+          set -euo pipefail
+          FEATURES=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "aligned-vmem") | .metadata.docs.rs.features | join(",")')
+          echo "Derived docs.rs feature set: $FEATURES"
+          test -n "$FEATURES"
+          RUSTDOCFLAGS="-D warnings" cargo doc -p aligned-vmem --no-deps --features "$FEATURES"
       - run: cargo publish --dry-run -p aligned-vmem
       - name: Install cargo-semver-checks
         uses: taiki-e/install-action@v2

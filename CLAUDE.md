@@ -789,6 +789,60 @@ Core instructions, mandatory for all code in this repository. They
   non-retroactive evidence rules: R30-6 and R29-13 are not required to be
   regenerated; R31-1/R31-12 already corrected the live claim append-only.
   This rule governs NEW gate reports going forward.
+- **A doc-build/lint gate must run in the EXACT feature set that actually
+  ships, not merely a superset of it — a fifth instance of the
+  R26-4/R30-8/entry-point/regime meta-pattern above, this time on the
+  FEATURE-SET axis.** `--all-features` (or any other single fixed
+  combination) is not a stand-in for "the configuration users will see" the
+  moment a crate's `package.metadata.docs.rs.features` — the feature set
+  docs.rs actually builds with — is narrower than `--all-features`, or a
+  crate's own README advertises a default feature set narrower still.
+  Passing under a wider set proves nothing about the narrower one, exactly
+  as R25-5 passing under a same-process sweep proved nothing about the
+  cross-arm-reuse regime it never tested. (`crates/aligned-vmem`, task
+  #1142: `Cargo.toml`'s `[package.metadata.docs.rs]` deliberately pins
+  `features = ["lazy-commit", "huge-pages", "fault-injection"]`, excluding
+  `bench-internals` — the docs.rs render is the crates.io landing page's
+  companion, so this narrower set is what a `cargo add aligned-vmem` user
+  actually sees on docs.rs, not `--all-features`. Four intra-doc links
+  (`crate::bench_internals::huge_decommit_attempts`, in `reservation.rs`'s
+  `decommit`/`try_decommit`/`decommit_lazy` and `api/decommit.rs`'s free
+  `decommit` — the crate's most-read pages) pointed inside the excluded
+  `bench_internals` module. `.github/workflows/ci.yml`'s `aligned-vmem-gates`
+  job ran exactly one doc-lint row, `RUSTDOCFLAGS="-D warnings" cargo doc
+  -p aligned-vmem --all-features --no-deps` — the ONE feature set in which
+  all four links resolve, because `--all-features` turns `bench-internals`
+  ON alongside the three docs.rs features. So the gate was green on every
+  commit while the actual published configuration would have rendered four
+  broken links on docs.rs, undetected, because nothing in CI ever built
+  the crate in that configuration. A plain default-feature build was *also*
+  not the right oracle here — it independently carries two UNRELATED dead
+  links (`reserve_aligned_huge`, gated on `huge-pages`, which IS in the
+  docs.rs set and so is legitimately live there but dead under bare
+  defaults), so "build under default features" would have flagged the
+  wrong two links for the wrong reason while still missing that the real
+  four were fine under defaults purely because `bench_internals` doesn't
+  exist there either — a coincidence, not evidence the docs.rs set was
+  ever tested.) **The mechanically checkable requirement:** any crate
+  whose `Cargo.toml` declares `[package.metadata.docs.rs] features = [...]`
+  narrower than `--all-features` MUST have a CI doc-lint row that builds
+  with EXACTLY that list, `RUSTDOCFLAGS="-D warnings"`, in addition to (not
+  instead of) the existing `--all-features` row — the two catch different
+  defect classes (an item unreachable outside the full set vs. one
+  unreachable outside the published set) and neither subsumes the other.
+  Derive the feature list from `Cargo.toml` at CI time (e.g. `cargo
+  metadata --no-deps --format-version 1 | jq -r
+  '.packages[]|select(.name=="<crate>")|.metadata.docs.rs.features|
+  join(",")'`) rather than hand-transcribing a second copy into the
+  workflow file — a hand-copied list is exactly the kind of drift surface
+  the `cargo-hack` feature-powerset rule above already rejected for a
+  different reason, and here it would additionally reintroduce this same
+  gate-blindness the moment someone edited one copy and not the other.
+  **Not retroactive** — same convention as this file's other
+  non-retroactive evidence rules: this governs new/edited CI doc-lint
+  coverage going forward; a crate that gains its first
+  `package.metadata.docs.rs.features` narrower than `--all-features` after
+  this rule lands should get the matching CI row in the same change.
 - **A commit subject line's conventional-commit prefix must state whether
   runtime behavior actually changed — `perf(...)` is reserved for commits
   that change what ships, not for measurement work that only tells you

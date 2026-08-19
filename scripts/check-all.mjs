@@ -36,10 +36,11 @@
 //      does not exist as a step here.)
 //   9-11. cargo test x3 more feature combos (production alloc-stats
 //      bench-internals internals, pinning, --all-features)
-//   12-28. aligned-vmem package gates — 17 steps (2 cache-invalidation
+//   12-29. aligned-vmem package gates — 18 steps (2 cache-invalidation
 //      cleans + 5 clippy rows + 3 cross-target unix rows (1 check + 2
 //      clippy) + 1 mock clippy row + 4 test rows (2 real-backend + 1
-//      mock + 1 mock-release, task #1086/L10) + 1 doc row + 1 optional
+//      mock + 1 mock-release, task #1086/L10) + 2 doc rows (--all-features
+//      plus the docs.rs feature set, task #1142) + 1 optional
 //      semver row). NOTE the position:
 //      this group sits BEFORE the two
 //      remaining PER_PR_ROWS rows in the runtime array, not after them
@@ -95,34 +96,34 @@
 //      --release --test reservation_decommit_contract);
 //      doc (--all-features, warnings-as-errors); semver-checks (optional,
 //      skipped if cargo-semver-checks not installed).
-//   29-30. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
+//   30-31. the 2 remaining (non-clippy) PER_PR_ROWS rows — `cargo check --bench
 //      perf_gate_iai --features "production bench-internals"` (R30-5:
 //      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
 //      step — the exact command R29-16's 4x E0433 broke, now an
 //      independent standalone check of its own), plus the internals-boundary
 //      test (R34 review F1: runs r34_3_internals_boundary_api.rs WITHOUT
 //      `internals` so the guard is non-vacuous)
-//   31. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
+//   32. node scripts/verify-internals-negative-boundary.mjs   (Sol-F1,
 //      task #563, release-readiness review finding F1: the REAL compile-fail
 //      oracle for the negative half of the `internals` boundary —
 //      `AllocCore::dbg_carve_batch` must NOT compile without `internals` and
 //      MUST compile with it; see that script's own header)
-//   32. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
+//   33. node scripts/verify-alloc-core-dbg-internals-exhaustive.mjs   (H2,
 //      task #572, Sol-remediation review finding H2: the EXHAUSTIVE
-//      structural complement to 31 — 31 only proves ONE method is gated;
+//      structural complement to 32 — 32 only proves ONE method is gated;
 //      this enumerates and checks EVERY `AllocCore::dbg_*` method across
 //      `src/alloc_core/*.rs`; see that script's own header)
-//   33. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//   34. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   34. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//   35. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   35. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//   36. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
 //      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
 //      docs(config) taxonomy, local default range — see that script's own
 //      header; the precise PR-scoped complement runs as ci.yml's
 //      `commit-prefix-lint` job)
-//   36. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
+//   37. node scripts/vmem-doc-drift-guard.mjs   (R6, task #871; the guard
 //      W5/task #854 asked for two rounds ago): guard against the doc-comment
 //      drift class that has recurred 5 times (unconditional "over-reserve
 //      / trim" statements without qualifying context). Heuristic: every
@@ -130,7 +131,7 @@
 //      (if/when/fast-path/<=/>=/etc) in that same sentence; "unconditional"
 //      is an outright failure regardless. See scripts/vmem-doc-drift-guard.mjs's
 //      header for the full history and the per-sentence rewrite (task #878/Q8).
-//   37. node scripts/vmem-linux-android-pairing-guard.mjs   (task #1131:
+//   38. node scripts/vmem-linux-android-pairing-guard.mjs   (task #1131:
 //      the Linux/Android pairing guard, created in the M1/task-#1105 wave
 //      as a NEW sibling of vmem-doc-drift-guard (36) and then hardened by
 //      SEVEN tasks (#1105, #1114, #1121, #1122, #1128, #1129, #1130) while
@@ -146,19 +147,19 @@
 //      Pure text scan, no cargo; measured 0.289 s clean-tree. See the
 //      script's own header for the rule, the 13-entry known-drift
 //      allowlist, and the documented limitations.)
-//   38. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
+//   39. node scripts/verify-aligned-vmem-bench-internals-exhaustive.mjs   (task
 //      #1067/F7: exhaustive completeness check that every
 //      `pub fn ...() -> u64` counter accessor in
 //      crates/aligned-vmem/src/bench_internals/ is CALLED by
 //      tests/bench_internals_counters.rs — the hand-maintained list there
 //      claims exhaustiveness and had silently drifted; see that script's
 //      own header)
-//   39. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
+//   40. node scripts/stale-artifact-diagnosis.mjs --self-test   (task #1073:
 //      prove the stale-cross-checkout-artifact output sniffer — imported
 //      above and consulted on every failed step — still detects the literal
 //      task #1073 panic signature and stays narrow on the three negative
 //      fixtures; see that script's own header)
-//   40. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
+//   41. node scripts/verify-vmem-page-constant-call-sites.mjs   (task #1076:
 //      static guard against compile-time PAGE constants in
 //      page_size()-validated argument positions — the class that escaped
 //      three times (#1067 mock.rs, #1074 bootstrap+siblings, #1075 smoke.rs
@@ -174,7 +175,7 @@
 //      runtime regression in tests/lazy_initial_commit_forced_page.rs.
 //      See that script's own header for the scanned-position table,
 //      suppressions, and blind spots.)
-//   41. cargo test --features "production internals bench-internals
+//   42. cargo test --features "production internals bench-internals
 //      small-segment-lazy-commit" --test segment_state_reconciliation_oracle
 //      (task #1087: the segment-state reconciliation oracle, LAZY arm on
 //      the host's real page. Carries expectTest because that file
@@ -182,12 +183,12 @@
 //      combination — see the step's own comment. Sits BEFORE the
 //      forced-page rows so the RUSTFLAGS flip below happens once and
 //      stays.)
-//   42. cargo test --features "production small-segment-lazy-commit internals"
+//   43. cargo test --features "production small-segment-lazy-commit internals"
 //      --test lazy_initial_commit_forced_page   (task #1080: the forced-page
 //      lazy-commit call-site regression under RUSTFLAGS
 //      "--cfg aligned_vmem_page_size_override" — the task #962 cfg-flag
 //      conversion pattern, mirroring the ci.yml `test-windows` row. Placed
-//      at the END of the array steps (with steps 43-44 directly after it)
+//      at the END of the array steps (with steps 44-45 directly after it)
 //      so the RUSTFLAGS change's cache invalidation is paid once at the
 //      end, not between the existing test/clippy rows. This single feature
 //      set covers BOTH lazy legs: `production` implies
@@ -196,41 +197,43 @@
 //      #1086 (M6) the row carries expectTest — the forced test's name must
 //      appear in the output — so a typo'd or lost cfg fails the step
 //      instead of passing green-and-dead.)
-//   43. cargo test --features "production internals bench-internals"
+//   44. cargo test --features "production internals bench-internals"
 //      --test decomp_hooks_forced_page   (task #1081: the forced-page
 //      decomp-hook page-alignment regression, same
-//      "--cfg aligned_vmem_page_size_override" RUSTFLAGS as step 42, so
+//      "--cfg aligned_vmem_page_size_override" RUSTFLAGS as step 43, so
 //      the pair shares one invalidation boundary at the array's end.
 //      Numbering-drift note (task #1082): this row's header entry was
 //      MISSING from task #1081's own commit — the header jumped straight
 //      from the forced-page lazy-commit row immediately above (this row's
-//      predecessor — step 42 at the time this note is being read, but a
+//      predecessor — step 43 at the time this note is being read, but a
 //      bare number here would decay again exactly as it did once already:
 //      at task #1082's own time of writing that predecessor was numbered
-//      39, task #1131's insertion of a new step 37 shifted it to 42, and
+//      39, task #1131's insertion of a new step 37 shifted it to 42,
+//      task #1142's insertion of the docs.rs-feature-set doc row shifted
+//      it again to 43, and
 //      the next insertion will shift it again — see task #1137's
 //      inventory in this file's own header for the general form of this
 //      problem) to "npm run iai", under-counting the step list by one
 //      until renumbered here. Carries expectTest since task #1086/M6,
-//      same as step 42.)
-//   44. cargo test --features "production internals bench-internals"
+//      same as step 43.)
+//   45. cargo test --features "production internals bench-internals"
 //      --test segment_state_reconciliation_oracle   (task #1087: the
 //      reconciliation oracle's FORCED-page arm, same override RUSTFLAGS
-//      and same feature set as step 43 so the pair shares one fingerprint
+//      and same feature set as step 44 so the pair shares one fingerprint
 //      boundary; carries expectTest — without the cfg this feature set
 //      compiles ZERO tests in that file and the row would pass green on
 //      an empty binary.)
-//   45. cargo test -p aligned-vmem --all-features --test page_size_override
+//   46. cargo test -p aligned-vmem --all-features --test page_size_override
 //      under RUSTFLAGS "--cfg aligned_vmem_page_size_override"   (task
 //      #1095/H1: the task #1085 real-page-floor test — the only test
 //      pinning that publication blocker, and before this row it executed
-//      in NO gate row anywhere: steps 42-44 build root-crate test
+//      in NO gate row anywhere: steps 43-45 build root-crate test
 //      targets, which never compile the aligned-vmem package's own
 //      integration tests, and the -p aligned-vmem rows in the group
 //      above never set the cfg. Carries expectTest — the file is
 //      cfg-gated at the top level, so a lost cfg means an empty green
 //      binary, the steps-42-44 M6 class.)
-//   46. npm run iai                                                (deterministic judge,
+//   47. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -241,9 +244,54 @@
 // an instruction-count regression) in a few minutes on the dev host, so most
 // pushes never need a red CI run to discover a problem.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { REPO_ROOT, run } from './lib.mjs';
 import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
 import { staleArtifactDiagnosis } from './stale-artifact-diagnosis.mjs';
+
+// Task #1142: the feature set docs.rs ACTUALLY builds with, read out of
+// `crates/aligned-vmem/Cargo.toml`'s `[package.metadata.docs.rs]` rather than
+// hand-copied here. A second hand-maintained copy of that list is a drift
+// surface, and this gate exists precisely because a doc build under the WRONG
+// feature set proves nothing: `--all-features` (the row below this one, and
+// until #1142 the only doc row anywhere) is the one set in which the crate's
+// four `crate::bench_internals::*` intra-doc links resolve, because it turns
+// `bench-internals` on — while docs.rs deliberately excludes it. Those four
+// links were dead on the published docs and invisible to every gate.
+// Throws (failing the whole run) rather than returning a default if the key
+// cannot be read: a silently-empty feature list would make this row build the
+// DEFAULT feature set and quietly re-open the same blind spot.
+function docsRsFeatures() {
+  const manifest = join(REPO_ROOT, 'crates', 'aligned-vmem', 'Cargo.toml');
+  const text = readFileSync(manifest, 'utf8');
+  const section = text.split('[package.metadata.docs.rs]')[1];
+  if (section === undefined) {
+    throw new Error(
+      `[check-all] ${manifest} has no [package.metadata.docs.rs] section — ` +
+        'the docs.rs doc row cannot know which features docs.rs builds with. ' +
+        'If the section was intentionally removed, remove this row too.',
+    );
+  }
+  const match = /^\s*features\s*=\s*\[([^\]]*)\]/m.exec(section);
+  if (match === null) {
+    throw new Error(
+      `[check-all] [package.metadata.docs.rs] in ${manifest} has no ` +
+        '`features = [...]` key; cannot derive the published doc feature set.',
+    );
+  }
+  const features = match[1]
+    .split(',')
+    .map((f) => f.trim().replace(/^["']|["']$/g, ''))
+    .filter((f) => f.length > 0);
+  if (features.length === 0) {
+    throw new Error(
+      `[check-all] [package.metadata.docs.rs].features in ${manifest} is empty.`,
+    );
+  }
+  return features.join(',');
+}
 
 // R30-5 (task #454): every row in `scripts/check-matrix.mjs`'s `PER_PR_ROWS`
 // (the single source of truth also consumed by `scripts/run-check-matrix.mjs`,
@@ -581,6 +629,26 @@ const steps = [
     expectWork: 'aligned-vmem',
   },
   {
+    // Task #1142: the row above is NOT the configuration that ships. docs.rs
+    // builds with `[package.metadata.docs.rs].features`, which is narrower
+    // than `--all-features` — so a warning-free `--all-features` build says
+    // nothing about the pages users actually read. This row mirrors ci.yml's
+    // 'docs.rs feature-set doc build' step, deriving the list from Cargo.toml
+    // (see `docsRsFeatures()` above) so the two cannot drift.
+    name: `doc (aligned-vmem docs.rs feature set: ${docsRsFeatures()}, warnings-as-errors)`,
+    cmd: 'cargo',
+    args: [
+      'doc',
+      '-p',
+      'aligned-vmem',
+      '--no-deps',
+      '--features',
+      docsRsFeatures(),
+    ],
+    env: { RUSTDOCFLAGS: '-D warnings' },
+    expectWork: 'aligned-vmem',
+  },
+  {
     // Item 65 (task #1039): semver check — matches the aligned-vmem-gates job's
     // third step. Skipped with a clear diagnostic if cargo-semver-checks is not
     // installed; this is NOT a silent error swallow (the check is explicitly
@@ -851,9 +919,9 @@ const steps = [
     // tests", exit 0). expectTest only, not expectWork: libtest prints
     // its per-test line on every run cached or not, and unlike the
     // aligned-vmem group above no `cargo clean -p aligned-vmem`
-    // invalidation precedes this tail-of-array row. Placed after step 44
+    // invalidation precedes this tail-of-array row. Placed after step 45
     // so all four `--cfg aligned_vmem_page_size_override` rows share the
-    // array tail; the fingerprint is separate from 42-44 anyway (the
+    // array tail; the fingerprint is separate from 43-45 anyway (the
     // aligned-vmem package's own --all-features test target, not a
     // root-crate target). Mirrors the ci.yml aligned-vmem-gates row added
     // in the same task. On this 4 KiB host the test is host-adaptive
@@ -870,7 +938,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x18 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 1 doc + 1 optional semver + 1 page-size-override floor test at the array tail, task #1095], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x19 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 1 page-size-override floor test at the array tail, task #1095], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

@@ -544,8 +544,10 @@ impl Reservation {
     /// See [`decommit`] for platform divergence notes (Windows crashes on write
     /// before recommit, Linux does not), huge-page incompatibility, and Darwin
     /// zero-fill caveats. Under the `bench-internals` feature, the
-    /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter is incremented when decommit
-    /// is called on a huge-page reservation.
+    /// `huge_decommit_attempts` counter (only compiled with that feature — not
+    /// an intra-doc link here, since `bench-internals` is excluded from the
+    /// published docs.rs feature set) is incremented when decommit is called
+    /// on a huge-page reservation.
     ///
     /// # Panics
     ///
@@ -628,8 +630,10 @@ impl Reservation {
     /// [`try_decommit`]): the OS refusing or ignoring the request, and —
     /// FOR A WELL-FORMED RANGE — a huge-page reservation: this method skips
     /// the backend call entirely, same as [`Self::decommit`], incrementing
-    /// the same `bench-internals`
-    /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter and returning `Ok(())`.
+    /// the same `bench-internals` `huge_decommit_attempts` counter (only
+    /// compiled with that feature — not an intra-doc link here, since
+    /// `bench-internals` is excluded from the published docs.rs feature set)
+    /// and returning `Ok(())`.
     /// A malformed range is `Err` even on a huge reservation: validation
     /// runs before the skip, so the skip's counter is incremented only by
     /// well-formed calls (task #1084/M3).
@@ -702,8 +706,10 @@ impl Reservation {
     /// See [`decommit_lazy`] for the platform-specific cost inversion on macOS/iOS
     /// (this variant actually drops RSS immediately there, unlike the eager path)
     /// and other caveats. Under the `bench-internals` feature, the
-    /// [`huge_decommit_attempts`](crate::bench_internals::huge_decommit_attempts) counter is incremented when decommit
-    /// is called on a huge-page reservation (same logic as `Self::decommit`).
+    /// `huge_decommit_attempts` counter (only compiled with that feature — not
+    /// an intra-doc link here, since `bench-internals` is excluded from the
+    /// published docs.rs feature set) is incremented when decommit is called
+    /// on a huge-page reservation (same logic as `Self::decommit`).
     pub fn decommit_lazy(&mut self, start: usize, end: usize) {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {

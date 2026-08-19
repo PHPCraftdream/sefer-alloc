@@ -45,21 +45,33 @@ Runnable form: `tests/readme_example.rs`.
 | `Reservation::as_ptr / len / reservation_ptr / reservation_len` | The usable span and the requested reservation length (not necessarily the actual OS reservation size). |
 | `Reservation::into_parts() -> (*mut u8, usize, usize)` | Take the raw reservation, suppress `Drop`, for self-hosted release (legacy tuple form). |
 | `Reservation::into_reservation_parts() -> ReservationParts` | Take the raw reservation, suppress `Drop`, for self-hosted release (typed form). |
+| `Reservation::into_full_parts() -> ReservationFullParts` | Take the raw reservation, suppress `Drop`, lossless six-field form (also preserves `base`, usable `len`, and `granted_huge`, which `into_reservation_parts` discards). |
 | `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once (legacy tuple form). |
 | `release_parts(ReservationParts)` (unsafe) | Release a reservation taken via `into_reservation_parts`, exactly once (typed form). |
 | `Reservation::is_huge() -> bool` | Detect whether a reservation actually got large/huge pages on either platform. |
 | `impl From<VmemError> for std::io::Error` | Convert `VmemError` to `std::io::Error` for error-propagation convenience. |
+| `Reservation::decommit(start, end)` / `Reservation::recommit(start, end)` (`&mut self`) | Safe, bounds-checked methods for callers already holding a `Reservation` — hint the OS to return page-granular physical backing / re-commit it. Forward to the free functions below with the reservation's own base and length. |
+| `Reservation::try_decommit(start, end)` / `Reservation::try_recommit(start, end)` / `Reservation::commit_range(start, end)` / `Reservation::try_commit_range(start, end)` (`&mut self`) | Fallible/boolean safe-method twins of the above, reporting a contract-violating range instead of silently no-oping (`decommit`) or panicking only in debug (see "Alignment contract" below). |
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Hint the OS to return page-granular physical backing (guaranteed on Linux/Android/Windows, best-effort on Darwin/BSDs with no zero-fill guarantee) / re-commit it. |
+| `try_decommit(base, start, end)` (unsafe) `-> Result<(), VmemError>` | Fallible twin of `decommit`: an empty page-aligned range is a well-formed `Ok(())` no-op; a violated range (misaligned, or `start > end`) is reported as `Err` on every build profile — `decommit` itself only reports a violation via a DEBUG-only `debug_assert!` and stays silent in release. |
 | `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux/Android `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
 | `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
 | `PAGE` | Minimum decommit granularity constant (4 KiB) — superseded by `page_size()` on hosts with larger pages (see `MIN_PAGE` for the underlying constant). |
 | `MIN_PAGE` | Underlying minimum page size constant (4 KiB). |
 | `leak_zeroed_pages(size) -> Option<NonNull<u8>>` | Reserve zeroed, process-lifetime-leaked pages (for pre-main / `GlobalAlloc` bookkeeping). |
 | `try_reserve_aligned` / `try_recommit` / `try_commit_range` … `-> Result<_, VmemError>` | Fallible forms carrying the OS `errno`/`GetLastError` cause. |
+| `reserve_aligned_lazy(size, align, initial_commit) -> Option<LazyReservation>` (feature `lazy-commit`) | Reserve `size` bytes, committing only the first `initial_commit` bytes up front (genuinely partial on the Windows native backend; Unix/miri/mock commit the whole span regardless — see `lazy_commit_is_honored()`). Returns `LazyReservation`, **not** `Reservation` — see the migration note below. |
+| `LazyReservation` (feature `lazy-commit`) | A `Reservation` that also tracks how much of itself is committed: a single watermark, `[0, committed_len())`. Replaces the pre-0.2.0 raw-primitive shape where callers tracked the watermark themselves. |
+| `LazyReservation::committed_len() -> usize` | Bytes from the base that are committed and writable right now. |
+| `LazyReservation::ensure_committed(&mut self, len) -> Result<(), VmemError>` | Idempotent, monotone: commit up to at least `len` bytes from the base. A call at or below the current watermark issues no syscall and no error; rounds UP to a page, so `len` need not be page-aligned. |
+| `LazyReservation::shrink_committed(&mut self, len)` | Lower the watermark to `len` (rounded UP to a page, so a page holding bytes you asked to keep is never released), asking the OS to release the dropped range. |
+| `LazyReservation::into_reservation(self) -> Reservation` | Give up tracking and take the plain `Reservation`, for a caller that keeps its own commit bookkeeping. |
+| `lazy_commit_is_honored() -> bool` (feature `lazy-commit`, `const fn`) | Whether the current platform's backend genuinely honors `initial_commit` (`true` only on the real Windows native backend; Unix, miri, and the mock backend all commit the whole span up front, making "lazy" a no-op there). |
 
 Every fallible entry point has an infallible `Option`/`bool` counterpart that
 discards the cause. Optional features: `lazy-commit` (incremental commit:
-`reserve_aligned_lazy` + `commit_range`; the `alloc-lazy-commit` name is kept
+`reserve_aligned_lazy` + `commit_range`, and the `LazyReservation` watermark
+type above; the `alloc-lazy-commit` name is kept
 as a compat alias for one release and will be removed in 0.3.0/1.0.0 — migrate
 to `lazy-commit` now), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
 `MEM_LARGE_PAGES`, best-effort with fallback — **on Linux and Android,
@@ -80,6 +92,23 @@ backend with a stub) is enabled via the `aligned_vmem_mock` cfg flag
 pattern as this repo's `cfg(loom)`/`cfg(kani)` flags. A `--cfg` flag cannot be
 silently unified into a build by another crate downstream — exactly why it
 was converted (task #962).
+
+## Migrating to 0.2.0 (breaking changes)
+
+- **`Reservation`'s seven OS-state mutators now take `&mut self`**: `decommit`,
+  `try_decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`,
+  `try_commit_range`. Bind the reservation as `let mut r = reserve_aligned(...)`
+  at the call site. If a `Reservation` is held behind a shared reference
+  (inside a struct whose method takes `&self`, inside an `Rc`, or captured by a
+  `Fn` closure), that pattern no longer compiles and needs `RefCell`/`Mutex`
+  (single-threaded / cross-thread respectively) or a `&mut self` method
+  instead. This closes a real soundness gap: a leaked `&Reservation` used to
+  let 100%-safe code decommit or recommit memory behind a `LazyReservation`'s
+  watermark without it knowing.
+- **`reserve_aligned_lazy` / `try_reserve_aligned_lazy` now return
+  `LazyReservation`, not `Reservation`.** A caller that keeps its own commit
+  bookkeeping and wants the plain `Reservation` back calls
+  `.into_reservation()` on the result.
 
 Backends: `mmap`/`munmap`/`madvise` on Unix,
 `VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, `std::alloc`
@@ -164,12 +193,22 @@ The table entry above (`decommit`/`recommit`) hides five platform divergences wo
   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
   item 6 for the incident record.
 - **Lazy reservations on Windows: only the committed prefix is writable.**
-  When created via `reserve_aligned_lazy`, only the `initial_commit` bytes
-  are committed at reservation time. The tail `[initial_commit, len())` must be
-  committed via `commit_range` before it becomes writable. Writing to the
+  `reserve_aligned_lazy` returns a `LazyReservation`, which tracks the
+  committed prefix as a watermark (`LazyReservation::committed_len()`); on the
+  real Windows backend only the `initial_commit` bytes are actually committed
+  at reservation time (see `lazy_commit_is_honored()` — Unix, miri, and the
+  mock backend commit the whole span up front regardless of what was
+  requested, so this distinction is Windows-only in practice). The tail
+  `[committed_len(), len())` must be committed via
+  `LazyReservation::ensure_committed(len)` before it becomes writable — this
+  call is idempotent and monotone, so it is safe to call before every write
+  without separately tracking what was already committed. Writing to the
   uncommitted tail raises a `STATUS_ACCESS_VIOLATION`. This is different from
   eager reservations (`reserve_aligned`), where the entire `len()` span is
-  writable from the start.
+  writable from the start. A caller that keeps its own commit bookkeeping
+  instead of using `LazyReservation`'s watermark can call
+  `.into_reservation()` and drive `commit_range`/`try_commit_range` directly
+  on the raw `Reservation`.
 - **Huge pages: decommit does nothing, on every OS that can grant them.** When a reservation
   came from `reserve_aligned_huge` (`Reservation::is_huge() == true`),
   `decommit` does not work on it on Windows, Linux, or Android: `VirtualFree`
