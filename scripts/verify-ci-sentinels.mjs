@@ -78,6 +78,39 @@
 //   - Only understands the `#[should_panic]` / `#[ignore]` attribute pair.
 //     A future libtest output change (e.g. a new `#[test]` variant with its
 //     own suffix) is not modeled and would need a new branch here.
+//   - Does NOT model `#[cfg(...)]` on the resolved `fn` against the step's
+//     `runs-on` (F13, task #1157). The attribute walk (see step 3
+//     above) reads only `#[should_panic]`/`#[ignore]`; it does not evaluate
+//     a `#[cfg(target_os = "...")]`/`#[cfg(windows)]`/`#[cfg(unix)]`/
+//     `#[cfg(any(...))]`/`#[cfg(all(...))]`/`#[cfg(not(...))]` predicate on
+//     the same `fn` against the OS the enclosing ci.yml job's `runs-on:`
+//     actually runs on. A sentinel naming a `#[cfg(windows)]` test inside a
+//     step whose job is `runs-on: ubuntu-latest` would resolve to a real
+//     `fn`, match attributes, and exit 0 here — then never appear in that
+//     job's real log at all, because the `#[cfg]` excludes the whole `fn`
+//     from compilation on that platform. This is the same "green and dead"
+//     class this script exists to prevent, just gated on platform instead
+//     of on attribute form.
+//     Two fixes were weighed: (a) parse `#[cfg(...)]` on the resolved `fn`
+//     and evaluate it against a `runs-on` -> target-os mapping, which is the
+//     real fix but needs a small cfg-expression evaluator (`any`/`all`/
+//     `not`, `target_os = "..."`, `windows`, `unix`) plus that mapping,
+//     each an independent place to be subtly wrong; (b) document the class
+//     here and leave it unhandled. (b) was chosen for now: a census at the
+//     time of this finding found 230+ platform-predicate `#[cfg(...)]`
+//     sites across this repo's `tests/` trees (`grep -rnE
+//     "cfg\((any\(|all\(|not\(|target_os|windows|unix)" crates/*/tests/*.rs
+//     tests/*.rs | grep -v feature | wc -l`), so a correct evaluator is real
+//     surface, not a two-line patch, and every sentinel-tracked test today
+//     is either unconditional or (the one real case: the hugetlb-page test
+//     naming `#[cfg(any(target_os = "linux", target_os = "android"))]` in
+//     `crates/aligned-vmem/tests/huge_pages.rs`, run from an
+//     `ubuntu-latest` job) already platform-consistent — the class is
+//     currently LATENT, not live, so the cost of a possibly-subtly-wrong
+//     evaluator was judged higher than the value of closing a blind spot
+//     with zero current instances. This is a documented gap, not a fixed
+//     one — re-evaluate (a) if a sentinel is ever added for a `#[cfg]`-gated
+//     test whose gate does not obviously match its step's `runs-on`.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -120,8 +153,25 @@ function splitIntoRunSteps(lines) {
     // ...) — e.g. the loom-misc job's `- name: loom_thread_free` /
     // `        run: |` pair. Both shapes are matched identically here; only
     // the leading `- ` is optional.
+    //
+    // Block-scalar header (F12, task #1157): YAML's block scalar
+    // header is a BLOCK indicator (`|` literal or `>` folded), optionally
+    // followed by a chomping indicator (`-` strip / `+` keep) and/or an
+    // explicit indentation indicator (a single digit 1-9), and the two
+    // optional indicators may appear in EITHER order (`|2-` and `|-2` are
+    // both legal per the YAML spec). The prior regex (`\|-?`) matched only
+    // the literal indicator with an optional trailing `-` — it silently
+    // treated any `run: >...` (folded scalar) line as an INLINE command
+    // whose "body" is the literal indicator text itself (e.g. the two
+    // characters `>-`), discarding the real multi-line command entirely.
+    // That was harmless while no `grep -F` sentinel line lived inside a
+    // folded-scalar step (verified for all 9 such steps in ci.yml at the
+    // time this was fixed — see the F12 finding), but a sentinel later
+    // moved into, or added inside, a `run: >-` step would become invisible
+    // to this script with exit 0. This regex now accepts both indicators
+    // and both indicator orders.
     const inlineMatch = line.match(/^(\s*)(?:-\s+)?run:\s+(.+)$/);
-    const blockMatch = line.match(/^(\s*)(?:-\s+)?run:\s*\|-?\s*$/);
+    const blockMatch = line.match(/^(\s*)(?:-\s+)?run:\s*[|>](?:[1-9][+-]?|[+-]?[1-9]?)\s*$/);
     if (blockMatch) {
       const indent = blockMatch[1].length;
       const bodyLines = [];
@@ -384,10 +434,58 @@ function verifyCiSentinels() {
   return { checkedCount, errors };
 }
 
+// F12 (task #1157) minimum-count floor.
+//
+// The script's own header already names the mitigation for "a future parser
+// blind spot silently drops sentinels from the count": the count is
+// printed on every run. That mitigation alone depends on a human noticing a
+// SMALLER number scroll past — exactly the failure mode this campaign has
+// hit repeatedly (a stale count carried across commits unnoticed). A hard
+// assertion is strictly stronger: it turns a silent drop into a RED exit
+// code, which is what a CI gate actually needs.
+//
+// Two designs were weighed:
+//   (a) pin the EXACT current count (33) and require every task that adds a
+//       sentinel to bump this literal in the same commit;
+//   (b) pin a FLOOR below the current count and only assert the count did
+//       not drop below it.
+// (a) is loud on every legitimate change (a new sentinel bumps the literal,
+// so a forgotten bump fails CI even though nothing regressed) but a floor
+// set too low never fires and degenerates back into "just a printed
+// number" for any drop that still clears the floor. (b) is the direction
+// chosen here, but note it is NOT a get-out-of-loud-updates-free choice:
+// the floor is set to the CURRENT exact count, not an arbitrary lower
+// number. This keeps the assertion's failure mode identical to (a)'s for
+// the case that actually matters here (a silent parser regression that
+// drops sentinels below the current count) while ALSO catching the case
+// (a) does not — the parser regression this finding describes does not
+// reduce the SOURCE sentinel count in ci.yml at all, only the count this
+// script manages to SEE, so a bare "did the source count change" diff
+// would not have caught it; only re-deriving the checked count against a
+// known floor does. A legitimate new sentinel added in a future task is
+// still expected to bump `MIN_SENTINEL_COUNT` upward in the same commit
+// (exactly as (a) would require) — the only difference from (a) is that a
+// REMOVED sentinel (count still >= the old floor) does not spuriously fail,
+// which (a)'s exact-equality pin would.
+const MIN_SENTINEL_COUNT = 33;
+
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
   console.log(`[verify-ci-sentinels] FAIL — ${errors.length} of ${checkedCount} sentinel(s) mismatched:\n`);
   for (const e of errors) console.log(`  - ${e}\n`);
+  process.exit(1);
+}
+if (checkedCount < MIN_SENTINEL_COUNT) {
+  console.log(
+    `[verify-ci-sentinels] FAIL — only ${checkedCount} sentinel(s) checked, below the floor of ` +
+      `${MIN_SENTINEL_COUNT}. Every individually-checked sentinel matched its \`fn\`'s real ` +
+      `attributes, but the TOTAL COUNT dropped below the known-good floor — this is exactly the ` +
+      `signature of a parser blind spot silently skipping a step shape (e.g. a \`run: >-\`/other ` +
+      `block-scalar variant the step-splitter does not recognize) rather than of sentinels having ` +
+      `been legitimately removed from ci.yml. If sentinels were genuinely and intentionally removed ` +
+      `this run, lower MIN_SENTINEL_COUNT to the new checked count in the same commit; otherwise, ` +
+      `re-examine splitIntoRunSteps() for a step shape it is silently failing to split.`,
+  );
   process.exit(1);
 }
 console.log(`[verify-ci-sentinels] OK — ${checkedCount} sentinel(s) checked against their real \`fn\` attributes, all match.`);
