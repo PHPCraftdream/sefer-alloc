@@ -14,7 +14,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   message or an `{:?}`. Written so as not to reintroduce the H1 bypass removed
   in the same wave: the inner handle is rendered, never borrowed out, and the
   guard that pins that property passes unmodified.
-- Safe `Reservation` methods for page-level memory management: `decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`, `try_commit_range`
+- Safe `Reservation` methods for page-level memory management: `decommit`,
+  `try_decommit`, `decommit_lazy`, `recommit`, `try_recommit`, `commit_range`,
+  `try_commit_range` — **all seven take `&mut self`**; see the BREAKING entry
+  under "Fixed" for why, and for the migration. (Until task #1120 this line
+  listed six of the seven, omitted `try_decommit`, and described the
+  pre-#1113 `&self` receivers.)
 - **`LazyReservation`** — a `Reservation` that also tracks how much of itself is
   committed, so callers of the lazy path no longer have to invent that
   bookkeeping. Exactly one number is tracked, a watermark: `[0, committed_len())`
@@ -120,11 +125,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **[BREAKING, HIGH] `Reservation`'s seven OS-state mutators now take
+  `&mut self`: `decommit`, `try_decommit`, `decommit_lazy`, `recommit`,
+  `try_recommit`, `commit_range`, `try_commit_range` (task #1113).** This is
+  what actually closes the H1 watermark-bypass class below. Removing the one
+  accessor that leaked a `&Reservation` (task #1104) left the CLASS open: an
+  independent reviewer reopened it four ways — a public field, a trait method
+  returning `&crate::Reservation`, `impl AsRef<crate::Reservation>`, and a
+  `&'a Reservation` newtype — each with a working exploit performing a real
+  `VirtualFree(MEM_DECOMMIT)` from 100%-safe code while the text guard stayed
+  green. With `&mut self`, a leaked shared borrow is READ-ONLY and the class is
+  closed by the type system rather than policed by a string scan
+  (`error[E0596]: cannot borrow *shared as mutable`).
+  **Migration:** bind the reservation as `let mut r = ...` at the call site.
+  If a `Reservation` is held behind a shared reference — inside a struct whose
+  method takes `&self`, inside an `Rc`, or captured by a `Fn` closure — those
+  three patterns no longer compile and need `RefCell`/`Mutex` (single-threaded
+  and cross-thread respectively) or a `&mut self` method. Note that
+  `Reservation` being `Send + !Sync` does NOT cover this: `Sync` governs
+  cross-thread sharing, while all three broken patterns are single-threaded
+  aliasing. Zero call sites outside this crate's own tests needed changing —
+  `crates/numa-shim`, `examples/`, `benches/` and the root crate all use the
+  free `pub unsafe fn` API, which is unaffected.
+
 - **[BREAKING, HIGH, publication blocker] `LazyReservation::as_reservation()` is
   REMOVED: it was a 100%-safe bypass of the watermark the type exists to
   guarantee (task #1104, finding H1 of the 2026-08-18 publication-readiness
-  audit, whose NO-GO verdict rested on it).** All seven of `Reservation`'s
-  OS-state mutators take `&self`, not `&mut self`, so a borrowed `&Reservation`
+  audit, whose NO-GO verdict rested on it).** At the time, all seven of
+  `Reservation`'s OS-state mutators took `&self`, not `&mut self` — see the
+  BREAKING entry below, which changed that and is what actually closes this
+  class — so a borrowed `&Reservation`
   handed out by a `&self` accessor let safe code change the mapping under the
   watermark: `r.as_reservation().decommit(0, page_size())` left
   `committed_len()` promising a prefix that Windows had already decommitted —
