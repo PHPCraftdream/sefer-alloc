@@ -113,22 +113,29 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// received a `MAP_HUGETLB` grant, then drives a huge-page-eligible range
 /// through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge branch. **What that
 /// job proves, stated precisely (task #1160/F1 correction of an earlier
-/// overclaim):** the eligible-range/post-5.18-kernel case genuinely REACHES
-/// the real `madvise(2)`/`MADV_DONTNEED` backend call — not that the kernel
-/// actually honoured it. `libc_madvise` (`src/os/unix.rs`) discards the
-/// syscall's return value by design (task #719) on this path, so the
-/// kernel's actual accept/reject response is never observed here; the
-/// eligible-range/post-5.18 *physical-backing* outcome remains reasoned from
-/// the man page, not independently verified. Four things remain
+/// overclaim; strengthened task #1164):** the eligible-range/post-5.18-kernel
+/// case genuinely REACHES the real `madvise(2)`/`MADV_DONTNEED` backend call
+/// — AND, since task #1164's
+/// `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise`
+/// (`tests/decommit_capability.rs`), that the kernel itself returned `0`
+/// (accepted) for that call, not `-1` (rejected): under `bench-internals`,
+/// `libc_madvise` (`src/os/unix.rs`) records the syscall's own return value
+/// into a counter pair, and that job hard-asserts it increased for this
+/// eligible-range case. What this does NOT prove: that the kernel's
+/// acceptance actually corresponds to reclaiming the physical backing, or
+/// that a subsequent access re-faults zeroed memory — no test reads memory
+/// content back, so the *effect* (as opposed to the syscall's own return
+/// code) remains reasoned from the man page, not independently verified. On
+/// builds WITHOUT `bench-internals`, `libc_madvise` still discards the
+/// return value entirely (task #719) — the kernel-response proof above is
+/// scoped to the one CI job that enables the counters. Three things remain
 /// reasoned-from-spec rather than empirically verified, named explicitly:
 /// (1) the free [`decommit`](crate::api::decommit) entry point, reached only through the safe
 /// methods in CI, never called directly by a test; (2) the ineligible-range
 /// case (still a documented no-op) and every range on a pre-5.18 kernel —
-/// CI's runner image kernel version is not pinned by this crate; (3)
-/// zero-fill on next access after a successful decommit, which no test reads
-/// back; and (4) the kernel's own `madvise` return value on the
-/// eligible-range/post-5.18 path itself, discarded by `libc_madvise` as
-/// described above.
+/// CI's runner image kernel version is not pinned by this crate; and (3)
+/// post-decommit memory CONTENT (physical backing / zero-fill on next
+/// access), which no test on any platform reads back.
 ///
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
 /// unconditionally, regardless of range shape, kernel version, or platform.

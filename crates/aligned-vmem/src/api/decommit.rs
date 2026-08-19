@@ -101,20 +101,28 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// `[start, end)` through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge
 /// branch — the same `decommit_pages_impl`/`MADV_DONTNEED` backend call this
 /// free function itself makes. **What that job proves, stated precisely
-/// (task #1160/F1 correction of an earlier overclaim):** the eligible-range
-/// case genuinely REACHES the real `madvise(2)`/`MADV_DONTNEED` backend call
-/// under a real `MAP_HUGETLB` grant, rather than silently taking the
-/// Rust-level skip path. It does NOT prove the kernel actually returned the
-/// physical backing — `libc_madvise` (`src/os/unix.rs`) discards the
-/// syscall's return value by design (task #719), and no test on this path
-/// reads it back, so whether `MADV_DONTNEED` was honoured by the kernel for
-/// this eligible-range/post-5.18 case remains reasoned from the man page,
-/// not independently observed. It also does not call this free function's
-/// own entry point directly (no test invokes `decommit` outside a
-/// `Reservation` method), so this function's own unconditional-syscall
-/// behavior on an INELIGIBLE range (still a no-op by kernel contract, not by
-/// Rust-level skip) remains reasoned-from-spec, not independently exercised
-/// under a real pool.
+/// (task #1160/F1 correction of an earlier overclaim; strengthened task
+/// #1164):** the eligible-range case genuinely REACHES the real
+/// `madvise(2)`/`MADV_DONTNEED` backend call under a real `MAP_HUGETLB`
+/// grant, rather than silently taking the Rust-level skip path — AND, since
+/// task #1164's `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise`
+/// (`tests/decommit_capability.rs`), the kernel's own syscall-level response
+/// is also asserted: under `bench-internals`, `libc_madvise`
+/// (`src/os/unix.rs`) records whether the syscall returned `0` or `-1`, and
+/// that job hard-asserts it returned `0` for this eligible-range call. It
+/// does NOT prove the kernel actually returned the physical backing, or that
+/// a subsequent access re-faults zeroed memory — no test on this path reads
+/// memory content back, so whether `MADV_DONTNEED`'s *effect* (as opposed to
+/// its *return code*) was honoured by the kernel for this eligible-range/
+/// post-5.18 case remains reasoned from the man page, not independently
+/// observed. On builds WITHOUT `bench-internals`, `libc_madvise` still
+/// discards the return value entirely (task #719) — the kernel-response
+/// proof above is scoped to the one CI job that enables the counters. It
+/// also does not call this free function's own entry point directly (no
+/// test invokes `decommit` outside a `Reservation` method), so this
+/// function's own unconditional-syscall behavior on an INELIGIBLE range
+/// (still a no-op by kernel contract, not by Rust-level skip) remains
+/// reasoned-from-spec, not independently exercised under a real pool.
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
 /// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented each time

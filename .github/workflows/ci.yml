@@ -431,6 +431,18 @@ jobs:
       # `[oracle] ARMED: ...` `println!` marker + its own `grep -F` line
       # below make the armed outcome observable in the log itself, not just
       # inferable from workflow text.
+      #
+      # Task #1164 (item 59a's own next-trigger): closes the kernel-response
+      # half of item 59a. `ci_hugetlb_real_pool_kernel_actually_accepts_
+      # eligible_madvise` (`decommit_capability.rs`) re-proves the real grant
+      # (its own `is_huge()` assert), then hard-asserts
+      # `unix_madvise_successes()` actually increased on an eligible range —
+      # i.e. the kernel returned 0, not just that the crate dispatched to the
+      # real backend. Its own `[oracle] ARMED: kernel accepted ...` marker
+      # follows the identical armed/unarmed-must-differ-in-OUTPUT reasoning
+      # task #1162 established immediately above, and needs no additional
+      # `--test`/feature flag: it lives in the same `decommit_capability`
+      # binary, already built with `bench-internals` by this step.
       - run: |
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test huge_pages --test decommit_capability --test reservation_decommit_contract \
@@ -442,6 +454,8 @@ jobs:
           grep -F "test method_try_decommit_huge_skip_returns_ok_and_counts ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "[oracle] ARMED: real MAP_HUGETLB grant confirmed" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real.log"
         shell: bash
 
   aligned-vmem-miri:

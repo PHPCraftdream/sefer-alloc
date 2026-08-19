@@ -176,32 +176,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   it is a per-RESERVATION query with no range to judge, so it is conservative
   by construction. **Scope of verification, stated plainly (corrected task
   #1160/F1 — this entry previously overclaimed the paragraph's own last
-  sentence contradicted):** the Rust-level branch dispatch is
-  execution-verified on real Linux (WSL2, kernel 6.18) including a
-  revert-and-fail counterfactual, AND — since the `aligned-vmem-hugetlb-real`
-  CI job (tasks #1151 and #1152) — the eligible-range/post-5.18-kernel case
-  is execution-verified to REACH the real `madvise(2)`/`MADV_DONTNEED`
-  backend call under a real `MAP_HUGETLB` grant (`nr_hugepages=64`,
-  hard-asserted via a path-activation oracle, so a silent ordinary-page
-  fallback turns the job red instead of reporting a success that proves
-  nothing). What is NOT execution-verified: whether the kernel actually
-  HONOURED that `madvise` call. `libc_madvise` (`src/os/unix.rs`) discards
-  the syscall's return value by design (task #719), and no test on the
-  huge-page path reads it back, so the kernel-level claim that
-  `MADV_DONTNEED` succeeds on a genuine `MAP_HUGETLB` mapping remains
-  REASONED-FROM-SPEC (the `madvise(2)` man page), not independently
-  observed — the CI job proves the crate's *dispatch* to the real backend,
-  not the kernel's *response*. Four things remain REASONED-FROM-SPEC and are
-  deliberately named rather than implied: the free `decommit()` entry point
-  is reached only through the safe methods that share its backend, never
-  called directly by a test; pre-5.18-kernel behaviour is unverified because
-  the runner's kernel version is not pinned by this crate; the pre-5.18-kernel
+  sentence contradicted; updated again task #1164, see below):** the
+  Rust-level branch dispatch is execution-verified on real Linux (WSL2,
+  kernel 6.18) including a revert-and-fail counterfactual, AND — since the
+  `aligned-vmem-hugetlb-real` CI job (tasks #1151 and #1152) — the
+  eligible-range/post-5.18-kernel case is execution-verified to REACH the
+  real `madvise(2)`/`MADV_DONTNEED` backend call under a real `MAP_HUGETLB`
+  grant (`nr_hugepages=64`, hard-asserted via a path-activation oracle, so a
+  silent ordinary-page fallback turns the job red instead of reporting a
+  success that proves nothing). **Since task #1164, the kernel's OWN
+  syscall-level response is also execution-verified for this same case:**
+  under `bench-internals`, `libc_madvise` (`src/os/unix.rs`) records whether
+  each `madvise` call returned `0` (accepted) or `-1` (rejected) into a
+  counter pair (`UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES`), and the
+  `aligned-vmem-hugetlb-real` job now hard-asserts that counter increased for
+  the eligible-range call — i.e. the kernel genuinely returned `0`, not just
+  that the crate dispatched to it. **What remains NOT execution-verified:**
+  whether the kernel's acceptance actually corresponds to reclaiming the
+  physical pages, or to a subsequent access re-faulting zeroed memory — no
+  test on this path reads memory content back before/after decommit, so the
+  physical-backing and zero-fill-on-next-access outcomes (as opposed to the
+  syscall's own `0`/`-1` return) remain REASONED-FROM-SPEC (the `madvise(2)`
+  man page), not independently observed. On every build WITHOUT
+  `bench-internals`, `libc_madvise` still discards the return value entirely
+  by design (task #719) — the kernel-response proof above is scoped to the
+  one CI job that enables the counters, not a claim about ordinary builds.
+  Four things remain REASONED-FROM-SPEC and are deliberately named rather
+  than implied: the free `decommit()` entry point is reached only through
+  the safe methods that share its backend, never called directly by a test;
+  pre-5.18-kernel behaviour is unverified because the runner's kernel
+  version is not pinned by this crate; the pre-5.18-kernel
   `EINVAL`/counter-not-incremented claim immediately above follows from
   reading the code (`linux_huge_range_is_madvise_eligible`, `os/unix.rs`)
-  rather than from running it; and the kernel's own accept/reject response to
-  `madvise` on the eligible-range/post-5.18 path itself, discarded as
-  described above. The tests check counter and branch dispatch, not
-  post-decommit memory content.
+  rather than from running it; and post-decommit memory CONTENT (physical
+  backing / zero-fill), which no test on any platform reads back. The tests
+  check counter and branch dispatch, plus — since task #1164, on the
+  eligible-range/post-5.18 Linux/Android case specifically — the kernel's own
+  syscall-level accept/reject; they do not check post-decommit memory
+  content.
   [correctness fix]
 - **A failed one-time OS page-size query is no longer folded to 4 KiB and
   cached as if it were a real answer** (task #1139). `query_os_page_size()`

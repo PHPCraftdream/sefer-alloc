@@ -703,3 +703,187 @@ fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
     // are unaffected by adding it).
     println!("[oracle] ARMED: real MAP_HUGETLB grant confirmed");
 }
+
+/// Task #1164 (item 59a's own next-trigger, task #1160/F5): the KERNEL-RESPONSE
+/// half of item 59a — closes the one gap `ci_hugetlb_real_pool_oracle_refuses_
+/// ordinary_page_fallback` above deliberately leaves open. That oracle proves
+/// (a) a real `MAP_HUGETLB` grant was obtained and (b) the eligible-range
+/// decommit dispatch reaches the real backend call — but `libc_madvise`
+/// (`src/os/unix.rs`) discards the syscall's own return value by design (task
+/// #719), so nothing observes whether the KERNEL actually accepted the call
+/// (`madvise(2)` returning `0`) versus rejecting it (`-1`). This test is that
+/// observation, for the one case where a rejection is a genuine defect rather
+/// than a tolerated OS refusal: an eligible (huge-page-size-aligned) range,
+/// decommitted eagerly, against a freshly-confirmed-real `MAP_HUGETLB` grant,
+/// inside the `aligned-vmem-hugetlb-real` job specifically.
+///
+/// **Why a `madvise` failure HERE is treated as a red build, unlike the
+/// crate's general contract (`decommit`'s own rustdoc) that OS refusal is
+/// non-erroneous:** the crate's tolerance for refusal exists for conditions
+/// this test's environment does not have — cgroup memory limits, memory
+/// pressure, an unsupported kernel. `man 2 madvise` documents
+/// `MADV_DONTNEED`-on-HugeTLB support from Linux 5.18 (see
+/// `linux_huge_range_is_madvise_eligible`'s own doc comment in
+/// `src/os/unix.rs`); `ubuntu-latest` (this job's `runs-on`) ships a kernel
+/// far newer than that baseline. The job's own pool-configuration step
+/// hard-fails (not skips) if `nr_hugepages` cannot be raised to at least 8
+/// (`.github/workflows/ci.yml`), and the oracle immediately above this test
+/// already hard-asserts the grant was real, not a fallback. Under those three
+/// preconditions — modern kernel, a genuinely configured pool, a real grant —
+/// there is no realistic legitimate-refusal path left for `MADV_DONTNEED` on
+/// a huge-page-size-aligned range: a `-1` return here would mean the kernel
+/// or the pool configuration silently regressed, which is exactly the class
+/// of defect this job exists to surface as red rather than green-and-dead.
+///
+/// **Vacuous-pass analysis — every path this test could report `ok` without
+/// having proven anything, and how each is closed:**
+/// 1. **Env var unset (every host except this one CI job):** the same early
+///    `return` as the oracle immediately above — a genuine, honest no-op, not
+///    a claim of anything proven. Gated identically, for the identical
+///    reason.
+/// 2. **`#[cfg]` excluding this function entirely:** requires
+///    `feature = "bench-internals"` (the counters this test reads do not
+///    exist without it — see below), `feature = "huge-pages"` (the real
+///    dispatch path does not exist without it), and
+///    `target_os = "linux"`/`"android"` (the only platforms
+///    `linux_huge_range_is_madvise_eligible` compiles for) — the same three
+///    gates the oracle above already requires, so this test can never run
+///    somewhere the oracle itself would not also run.
+/// 3. **`bench-internals` off:** `unix_madvise_attempts`/`unix_madvise_successes`
+///    are themselves `#[cfg(feature = "bench-internals")]`-gated re-exports
+///    (`src/lib.rs`) — calling them without the feature is a compile error
+///    (E0432 unresolved import), not a silent no-op. This function's own
+///    `#[cfg]` includes the same feature, so the whole test (not just the
+///    calls) is absent from the binary when the feature is off — it cannot
+///    exist to vacuously pass. (Confirmed by this task's own
+///    `--features huge-pages` clippy run below: this file compiles clean
+///    with the test simply not present.)
+/// 4. **The reservation falling back to ordinary pages:** hard-asserted via
+///    `is_huge()` BEFORE the decommit call, with a panic message identical in
+///    spirit to the oracle's own — this test does not assume the grant from
+///    the oracle's run persists across test-binary process boundaries (it
+///    does not; each `#[test]` fn in the same binary runs in the same
+///    process but makes its OWN `reserve_aligned_huge` call), so it re-proves
+///    the grant itself rather than relying on the earlier oracle having run
+///    first (libtest does not guarantee ordering, and does not guarantee
+///    both tests run in the same invocation at all).
+/// 5. **The range being ineligible so the crate early-exits before any
+///    syscall:** `size = 2 * MIB` and the full span `[0, size)` is exactly
+///    one huge page — both endpoints are `LINUX_HUGE_PAGE_SIZE` multiples by
+///    construction (mirrors `huge_aligned_range_takes_the_real_backend_path_
+///    not_the_skip_path` above), so `linux_huge_range_is_madvise_eligible`
+///    is `true` and the eager `decommit` call is guaranteed to reach
+///    `libc_madvise`, not the skip-and-count path.
+/// 6. **Another test perturbing the counters concurrently:** `SERIAL` (this
+///    file's shared `Mutex<()>`, held for the same reason `tests/smoke.rs`'s
+///    `macos_decommit_madvise_syscall_actually_succeeds` holds its own) is
+///    locked for this test's entire body, and `reset_bench_internals_counters()`
+///    is called AFTER acquiring the lock but BEFORE the decommit call, so the
+///    baseline this test reads cannot be contaminated by a concurrently
+///    running test in the same process (this file's other `#[test]` fns that
+///    touch these counters all join the same `SERIAL` contract).
+///
+/// **Counterfactual (built OUTSIDE this repo, since a real hugetlb pool is
+/// not available in this sandbox on Windows):** substituted `libc_madvise`'s
+/// `UNIX_MADVISE_SUCCESSES.fetch_add` call with a no-op (simulating the
+/// kernel returning `-1` on every call) in a scratch copy of `src/os/unix.rs`
+/// outside this worktree, then ran an equivalent ordinary (non-huge)
+/// `reserve_aligned`/`decommit`/counter-assert sequence on this Windows
+/// fallback host. The assertion below (`successes > baseline_successes`)
+/// failed exactly as expected, with the message below, confirming the
+/// assertion is not tautological. **What this substitution does NOT
+/// establish:** it does not exercise the real `MAP_HUGETLB`-plus-eligible-
+/// range dispatch this test targets (Windows has no such path at all), so it
+/// only proves the ASSERTION LOGIC is sound, not that this specific test body
+/// would fail the same way on a real Linux hugetlb host with a genuinely
+/// broken kernel/pool — that confirmation can only come from a real
+/// `aligned-vmem-hugetlb-real` CI run with the counter regressed, which this
+/// task did not have the means to force.
+#[test]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages",
+    feature = "bench-internals"
+))]
+fn ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise() {
+    use aligned_vmem::{
+        reserve_aligned_huge, reset_bench_internals_counters, unix_madvise_attempts,
+        unix_madvise_successes,
+    };
+
+    if std::env::var("ALIGNED_VMEM_REQUIRE_REAL_HUGETLB").as_deref() != Ok("1") {
+        // Not running inside the `aligned-vmem-hugetlb-real` job: honest
+        // no-op, matching `ci_hugetlb_real_pool_oracle_refuses_ordinary_
+        // page_fallback` immediately above — see that test's doc comment
+        // and this test's own vacuous-pass analysis point 1.
+        return;
+    }
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let size = 2 * MIB; // Linux/Android huge-page size; the full span is exactly one eligible huge page.
+    let mut reservation = reserve_aligned_huge(size, size)
+        .expect("huge reservation request must succeed (real grant or fallback)");
+
+    assert!(
+        reservation.is_huge(),
+        "ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 is set (this must only be true inside the \
+         `aligned-vmem-hugetlb-real` CI job), so a `reserve_aligned_huge` request took the \
+         ordinary-page fallback instead of a real MAP_HUGETLB grant -- this test cannot \
+         measure the kernel's madvise(2) response on a mapping that was never granted as \
+         HugeTLB in the first place. See `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_\
+         fallback`'s identical assertion above for the same failure's root cause."
+    );
+
+    // Clean slate: this test's own decommit call must be the only
+    // contributor to the counters it reads below (see vacuous-pass analysis
+    // point 6 above).
+    reset_bench_internals_counters();
+    let attempts_before = unix_madvise_attempts();
+    let successes_before = unix_madvise_successes();
+
+    // The full reservation span is exactly one 2-MiB huge page: both
+    // endpoints are LINUX_HUGE_PAGE_SIZE multiples by construction, so this
+    // is an ELIGIBLE range (see vacuous-pass analysis point 5 above) and
+    // must reach the real `libc_madvise` call, not the skip-and-count path.
+    reservation.decommit(0, size);
+
+    let attempts_after = unix_madvise_attempts();
+    let successes_after = unix_madvise_successes();
+
+    assert!(
+        attempts_after > attempts_before,
+        "the eligible-range eager decommit() call above must have reached the real \
+         libc_madvise(2) syscall (UNIX_MADVISE_ATTEMPTS must have incremented) -- got \
+         {attempts_before} -> {attempts_after}. If this fires, either the eligibility check \
+         (linux_huge_range_is_madvise_eligible) regressed to reject a genuinely 2-MiB-aligned \
+         range, or the huge-page dispatch in Reservation::decommit changed to skip the real \
+         backend for an eligible range."
+    );
+    assert!(
+        successes_after > successes_before,
+        "OWNER DECISION (task #1164): inside the `aligned-vmem-hugetlb-real` job specifically \
+         -- a real MAP_HUGETLB grant (hard-asserted above), a huge-page-size-aligned eligible \
+         range, on a modern (>= 5.18) Linux kernel, with the pool hard-asserted configured -- a \
+         madvise(2) MADV_DONTNEED call that does NOT return 0 is treated as a genuine defect, \
+         not a tolerated OS refusal (contrast `decommit`'s own general contract, which does \
+         tolerate refusal under cgroup/memory-pressure conditions this job's environment does \
+         not have). UNIX_MADVISE_SUCCESSES did not increment: {successes_before} -> \
+         {successes_after} (attempts: {attempts_before} -> {attempts_after}). The kernel \
+         rejected an eligible madvise(2) call on a genuinely granted HugeTLB mapping -- \
+         investigate a kernel/pool regression on this runner, do not relax this assertion."
+    );
+
+    // Task #1164: this marker only executes past BOTH the is_huge() grant
+    // assertion and the kernel-acceptance assertion above -- printing it is
+    // itself proof the real MAP_HUGETLB grant existed AND the kernel
+    // genuinely accepted the eligible madvise(2) call (returned 0), not
+    // merely that the process started with the right env var. Mirrors task
+    // #1162's `[oracle] ARMED` marker pattern immediately above (same
+    // reasoning: armed/unarmed must be distinguishable in the OUTPUT, not
+    // just inferable from workflow text), checked by its own `grep -F`
+    // sentinel in `.github/workflows/ci.yml`, resolved by
+    // `scripts/verify-ci-sentinels.mjs`'s marker-sentinel category (added
+    // task #1162).
+    println!("[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant");
+}

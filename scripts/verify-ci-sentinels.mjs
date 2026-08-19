@@ -564,7 +564,16 @@ function verifyCiSentinels() {
 // item-87 card update landed in the SAME commit as this comment, as a live
 // demonstration of the coupling task #1161 documents, not just a rule
 // stated in the abstract.)
-const MIN_SENTINEL_COUNT = 38;
+//
+// Task #1164: 38 -> 40. Closed item 59a's kernel-response gap
+// (`ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise` in
+// `crates/aligned-vmem/tests/decommit_capability.rs`), adding TWO sentinel
+// lines to the `aligned-vmem-hugetlb-real` job in the SAME commit: one
+// `test <name> ... ok` line (the standard shape) plus one new
+// `[oracle] ARMED: kernel accepted ...` literal marker (the
+// `extractLiteralMarkers` shape task #1162 introduced) — the same coupling
+// this comment already documents, demonstrated a third time.
+const MIN_SENTINEL_COUNT = 40;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
