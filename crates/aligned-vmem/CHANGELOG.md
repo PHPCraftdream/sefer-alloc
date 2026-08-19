@@ -110,16 +110,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   reservation; 0.2.0 is unpublished, so the change costs nothing.
 - **[BREAKING, HIGH] `Reservation`'s seven OS-state mutators now take
   `&mut self`: `decommit`, `try_decommit`, `decommit_lazy`, `recommit`,
-  `try_recommit`, `commit_range`, `try_commit_range` (task #1113).** This
-  is what actually closes the H1 watermark-bypass class recorded under
-  "Fixed" below. Removing the one accessor that leaked a `&Reservation`
-  (task #1104) left the CLASS open: an
-  independent reviewer reopened it four ways — a public field, a trait method
-  returning `&crate::Reservation`, `impl AsRef<crate::Reservation>`, and a
-  `&'a Reservation` newtype — each with a working exploit performing a real
-  `VirtualFree(MEM_DECOMMIT)` from 100%-safe code while the text guard stayed
-  green. With `&mut self`, a leaked shared borrow is READ-ONLY and the class is
-  closed by the type system rather than policed by a string scan
+  `try_recommit`, `commit_range`, `try_commit_range` (task #1113).** This is
+  what actually closes the H1 watermark-bypass class recorded under "Fixed"
+  below. Removing the one accessor that leaked a `&Reservation` (task #1104)
+  left the CLASS open: an independent reviewer reopened it four ways — a
+  public field, a trait method returning `&crate::Reservation`,
+  `impl AsRef<crate::Reservation>`, and a `&'a Reservation` newtype — each
+  with a working exploit performing a real `VirtualFree(MEM_DECOMMIT)` from
+  100%-safe code while the text guard stayed green. With `&mut self`, a leaked
+  shared borrow is READ-ONLY and the class is closed by the type system rather
+  than policed by a string scan
   (`error[E0596]: cannot borrow *shared as mutable`).
   **Migration:** bind the reservation as `let mut r = ...` at the call site.
   If a `Reservation` is held behind a shared reference — inside a struct whose
