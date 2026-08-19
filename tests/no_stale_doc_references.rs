@@ -1791,3 +1791,131 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         errors.join("\n"),
     );
 }
+
+/// Item 87's card (`docs/CORRECTNESS_OPEN_ITEMS.md`) restates the same
+/// sentinel-count fact in THREE independently-edited places, and two of them
+/// have already drifted apart from each other in this card's own recorded
+/// history (`971ca05`, `cecdeec` — see the F2 bullets in the card itself),
+/// plus a third drift the card's own narrative was found to have
+/// mis-described (task #1177: `971ca05`'s two doc-side numbers actually
+/// agreed with EACH OTHER but were both stale against the script's floor).
+/// This test pins all three numbers to agree, mechanically, so a future
+/// recurrence of either drift shape fails `cargo test` instead of waiting
+/// for a manual re-derivation:
+///
+///   1. the card's headline figure ("the guard itself reports **N sentinel");
+///   2. the card's "Next trigger" bullet figure ("re-derivation established
+///      (**N** as of this re-derivation");
+///   3. `scripts/verify-ci-sentinels.mjs`'s live `MIN_SENTINEL_COUNT`.
+///
+/// Deliberately does NOT re-run the guard script itself (Node.js is not a
+/// dependency of `cargo test`) — the pin is doc-vs-doc and doc-vs-script-
+/// constant only, matching this file's existing style (e.g.
+/// `readme_unsafe_inventory_counts_match_reality` compares README prose
+/// against a fresh grep of `.rs` files, not against a script's own stdout).
+#[test]
+fn correctness_item_87_sentinel_counts_agree() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let index_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
+    let index_text = fs::read_to_string(&index_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+
+    fn extract_first_number_after<'a>(haystack: &'a str, marker: &str) -> Option<(u64, usize)> {
+        let start = haystack.find(marker)?;
+        let after = &haystack[start + marker.len()..];
+        let digits_start = after.find(|c: char| c.is_ascii_digit())?;
+        let rest = &after[digits_start..];
+        let digits_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let n: u64 = rest[..digits_end].parse().ok()?;
+        Some((n, start))
+    }
+
+    let headline_marker = "the guard itself reports **";
+    let (headline_n, headline_pos) = extract_first_number_after(&index_text, headline_marker)
+        .unwrap_or_else(|| {
+            panic!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md: item 87's headline marker \
+                 `{headline_marker}` not found — the card was restructured; \
+                 re-point this test's parser at the new headline wording."
+            )
+        });
+
+    let next_trigger_marker = "re-derivation established (";
+    // The card contains this marker phrase MULTIPLE times (task #1177's own
+    // correction narrative quotes historical `971ca05`/`cecdeec` re-grep
+    // results verbatim, e.g. "re-derivation established ([0-9]* as of" as a
+    // literal grep pattern in prose). The live, authoritative figure is the
+    // occurrence inside the actual "Next trigger:" bullet, identified by
+    // requiring the number to be immediately preceded by `**` (bold) and
+    // followed by `** as of this re-derivation` — the historical quotes in
+    // the F2 correction narrative are grep-pattern strings (`[0-9]*`) or
+    // plain-number citations (`37`, `40`) without that exact bold wrapping,
+    // so this shape is unambiguous. Find ALL matches and require exactly one
+    // to have the live shape.
+    let mut live_next_trigger: Option<(u64, usize)> = None;
+    let mut search_from = 0usize;
+    while let Some(rel) = index_text[search_from..].find(next_trigger_marker) {
+        let abs = search_from + rel;
+        let after = &index_text[abs + next_trigger_marker.len()..];
+        if let Some(rest) = after.strip_prefix("**") {
+            let digits_end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            if digits_end > 0 && rest[digits_end..].starts_with("** as of this re-derivation") {
+                let n: u64 = rest[..digits_end].parse().expect("digits");
+                assert!(
+                    live_next_trigger.is_none(),
+                    "docs/CORRECTNESS_OPEN_ITEMS.md: found MORE THAN ONE live-shaped \
+                     'Next trigger' sentinel figure (bold, followed by '** as of this \
+                     re-derivation') — item 87's card should have exactly one live \
+                     restatement of this number; a second one means either a genuine \
+                     duplicate or this test's disambiguation heuristic needs updating."
+                );
+                live_next_trigger = Some((n, abs));
+            }
+        }
+        search_from = abs + next_trigger_marker.len();
+    }
+    let (next_trigger_n, next_trigger_pos) = live_next_trigger.unwrap_or_else(|| {
+        panic!(
+            "docs/CORRECTNESS_OPEN_ITEMS.md: item 87's live 'Next trigger' sentinel \
+             figure (marker `{next_trigger_marker}`, bold number, followed by '** as \
+             of this re-derivation') not found — the bullet was reworded; re-point \
+             this test's parser at the new wording."
+        )
+    });
+
+    let script_path = manifest.join("scripts").join("verify-ci-sentinels.mjs");
+    let script_text =
+        fs::read_to_string(&script_path).expect("read scripts/verify-ci-sentinels.mjs");
+    let script_marker = "const MIN_SENTINEL_COUNT = ";
+    let (script_n, _) = extract_first_number_after(&script_text, script_marker).unwrap_or_else(|| {
+        panic!(
+            "scripts/verify-ci-sentinels.mjs: `{script_marker}` not found — the \
+             constant was renamed or restructured; re-point this test's parser."
+        )
+    });
+
+    assert_eq!(
+        headline_n, next_trigger_n,
+        "docs/CORRECTNESS_OPEN_ITEMS.md item 87 has DRIFTED WITHIN ITSELF: the \
+         headline (byte offset {headline_pos}, marker `{headline_marker}`) reads \
+         {headline_n}, but the live 'Next trigger' bullet (byte offset \
+         {next_trigger_pos}) reads {next_trigger_n} — this is the exact `971ca05`/\
+         `cecdeec` two-places-disagree defect class this card's own F2 narrative \
+         describes. Edit both figures TOGETHER, in the same commit, to the current \
+         re-derived count."
+    );
+    assert_eq!(
+        headline_n, script_n,
+        "docs/CORRECTNESS_OPEN_ITEMS.md item 87's headline ({headline_n}) does not \
+         match scripts/verify-ci-sentinels.mjs's MIN_SENTINEL_COUNT ({script_n}) — \
+         this is the `971ca05` defect class (task #1177's correction to this card): \
+         the doc's own current-state number(s) can agree with EACH OTHER while both \
+         are stale against the script's live floor. Re-run `node \
+         scripts/verify-ci-sentinels.mjs` and update item 87's headline, its \
+         'Next trigger' bullet, and (if it changed) MIN_SENTINEL_COUNT together."
+    );
+}
