@@ -1049,7 +1049,22 @@ function verifyCiSentinels() {
 // `[oracle] ARMED: kernel accepted ...` literal marker (the
 // `extractLiteralMarkers` shape task #1162 introduced) — the same coupling
 // this comment already documents, demonstrated a third time.
-const MIN_SENTINEL_COUNT = 40;
+//
+// Task #1174: 40 -> 42. Closed item 87's own named gap ("the real-hugetlb
+// job proves dispatch and kernel acceptance, never that memory was actually
+// reclaimed/zeroed"). `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_
+// on_reaccess` (`crates/aligned-vmem/tests/decommit_capability.rs`) adds a
+// write -> decommit -> read-zero postcondition check, adding TWO sentinel
+// lines to the `aligned-vmem-hugetlb-real` job in the SAME commit: one
+// `test <name> ... ok` line plus one new `[oracle] ARMED: decommitted
+// range read back as all-zero ...` literal marker — the same coupling this
+// comment already documents, demonstrated a fourth time. The OTHER half of
+// "was memory returned" (huge-page pool free-count) is deliberately NOT a
+// sentinel here — it is a printed-not-asserted observation in the CI step
+// itself (see that step's own comment in ci.yml), because it is a noisy,
+// externally-shared kernel counter, not a deterministic in-process result a
+// `grep -F "test ... ok"`/marker sentinel shape can safely gate on.
+const MIN_SENTINEL_COUNT = 42;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

@@ -457,7 +457,7 @@ jobs:
       # writes each `test <name> ... ok` line as THREE SEPARATE writes from
       # the aggregating main thread: `"test {name} ... "`, then the outcome
       # word, then the trailing newline. Under `--nocapture`, a worker
-      # thread's `println!` (this job has two: the `[oracle] ARMED: ...`
+      # thread's `println!` (this job has three: the `[oracle] ARMED: ...`
       # markers) is not synchronized against that triple-write, so it can
       # land BETWEEN them and split the exact line every `grep -F` below
       # depends on (observed both as `test <name> ... [oracle] ARMED:
@@ -467,14 +467,34 @@ jobs:
       # `--test-threads=1` does NOT fix this, it makes the corruption of a
       # printing test's OWN line deterministic instead of rare, since the
       # print still lands between that same test's three writes; verified
-      # 5/5 runs). The fix: run the six `test <name> ... ok` sentinels
+      # 5/5 runs). The fix: run the seven `test <name> ... ok` sentinels
       # WITHOUT `--nocapture` (libtest captures a passing test's stdout by
-      # default, so the "... ok" lines are written intact and the two
+      # default, so the "... ok" lines are written intact and the three
       # `println!`s are simply swallowed — verified 400/400 runs, zero
-      # corruption), then run each of the two ARMED-marker tests in its own
+      # corruption), then run each of the three ARMED-marker tests in its own
       # single-test invocation (`--exact <name> -- --nocapture`, no other
       # test running concurrently to interleave with) to observe its marker
       # line (verified 400/400 runs each, zero corruption).
+      #
+      # Task #1174: item 87's own gap — this job proved the kernel DISPATCHED
+      # and ACCEPTED the madvise(2) call, never that the underlying memory
+      # was actually returned/zeroed. `ci_hugetlb_real_pool_decommit_
+      # actually_zeroes_memory_on_reaccess` (`decommit_capability.rs`) closes
+      # the deterministic half of that gap: write a non-zero pattern, decommit
+      # an eligible huge-aligned range, hard-assert every byte reads back as
+      # zero. Its own `[oracle] ARMED: ...` marker follows the identical
+      # armed/unarmed-must-differ-in-OUTPUT reasoning as the two siblings
+      # above and needs no additional `--test`/feature flag beyond `huge-pages`
+      # (it does not read the `bench-internals`-only counters).
+      #
+      # The OTHER half of "was memory returned" -- how many huge pages came
+      # back to the pool -- is deliberately NOT folded into that same hard
+      # assert (see the test's own doc comment for why: `HugePages_Free` is a
+      # kernel-global counter shared with every other huge-page reservation
+      # this job's other targets make, so it cannot be attributed to one
+      # test's own decommit() call without racing them). It is instead an
+      # OBSERVATION only, logged around the isolated marker invocation below:
+      # informative for a human reading the log, never a pass/fail gate.
       - run: |
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test huge_pages --test decommit_capability --test reservation_decommit_contract \
@@ -485,6 +505,7 @@ jobs:
           grep -F "test method_try_decommit_huge_skip_returns_ok_and_counts ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test decommit_capability \
             -- --exact ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback --nocapture \
@@ -495,6 +516,21 @@ jobs:
             -- --exact ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise --nocapture \
             2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker2.log"
           grep -F "[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real-marker2.log"
+          # Task #1174: best-effort, PRINTED-NOT-ASSERTED observation of the
+          # pool's own free-page count around the isolated marker invocation
+          # below. Not a gate (see the step's own leading comment and the
+          # test's doc comment for why a shared, external kernel counter
+          # cannot safely be a hard assert here) -- purely informative log
+          # output for a human reviewing this job's run.
+          echo "HugePages_Free before decommit-content test:"
+          grep -i HugePages_Free /proc/meminfo
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test decommit_capability \
+            -- --exact ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker3.log"
+          grep -F "[oracle] ARMED: decommitted range read back as all-zero on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real-marker3.log"
+          echo "HugePages_Free after decommit-content test (observation only, not a gate -- see step comment above):"
+          grep -i HugePages_Free /proc/meminfo
         shell: bash
 
   aligned-vmem-miri:

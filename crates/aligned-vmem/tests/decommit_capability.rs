@@ -923,3 +923,181 @@ fn ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise() {
     // task #1162).
     println!("[oracle] ARMED: kernel accepted eligible madvise(2) on real MAP_HUGETLB grant");
 }
+
+/// Task #1174 (item 87's next-trigger via the linked jobs, R30-8-class gap):
+/// closes the one thing neither `ci_hugetlb_real_pool_oracle_refuses_
+/// ordinary_page_fallback` nor `ci_hugetlb_real_pool_kernel_actually_accepts_
+/// eligible_madvise` above ever checks — **memory content**. Both siblings
+/// prove the kernel *dispatched* the `madvise(2)` call and *accepted* it
+/// (returned 0); neither reads a single byte back. A kernel that accepts
+/// `MADV_DONTNEED` on a real `MAP_HUGETLB` mapping but does not actually
+/// reclaim/zero the underlying pages on next access — a real, documented
+/// possibility this crate's own rustdoc distinguishes from acceptance (see
+/// `Reservation`'s own doc block, "Huge reservations, eager `decommit`" —
+/// zero-fill is the SEPARATE guarantee stated for that one eligible case, not
+/// implied by acceptance alone) — would leave both siblings green while the
+/// crate's documented postcondition for this exact case silently did not
+/// hold.
+///
+/// This test is the write -> decommit -> read postcondition check: write a
+/// non-zero pattern across a huge-page-size-aligned, madvise-eligible range,
+/// `decommit()` it, then read every byte back and assert zero. This mirrors
+/// `reservation_decommit_in_bounds_matches_free_function` in `tests/smoke.rs`
+/// (the identical write/decommit/read-zero shape for the ORDINARY-page eager
+/// case), narrowed to the one huge-page case where the crate's own doc
+/// promises the same guarantee.
+///
+/// **What this test does NOT check (deliberately, see CLAUDE.md's
+/// two-properties rule): whether huge pages were actually returned to the
+/// pool / whether `HugePages_Free` increased.** That is a physical-resource
+/// accounting question, not a content question, and unlike this test's
+/// read-zero assertion it is not deterministic from inside one `#[test]` fn
+/// in this process: `/proc/sys/vm/nr_hugepages` and `/proc/meminfo`'s
+/// `HugePages_Free` are process-EXTERNAL, kernel-global counters that this
+/// job's OWN earlier steps and every other test binary/target this job runs
+/// (`huge_pages.rs`, `reservation_decommit_contract.rs`, the other tests in
+/// THIS binary) also allocate from and release into — a `#[test]` fn cannot
+/// snapshot "before" without racing every other huge-page reservation
+/// already made or still live in this job, and cargo test's default
+/// multi-threaded runner does not serialize across `#[test]` FILES the way
+/// this file's own `SERIAL` mutex only serializes within itself. Folding a
+/// noisy, shared, external counter into the SAME hard assert as this test's
+/// deterministic in-process read-zero check would make an otherwise-reliable
+/// oracle flaky on scheduling alone — exactly the class of defect CLAUDE.md's
+/// "Tests must not be flaky" rule and the two-properties split both warn
+/// against. The pool-free-count observation is instead taken as a
+/// **best-effort, printed-not-asserted** measurement by the CI job itself
+/// (`.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` step, immediately
+/// after this test's own `cargo test` invocation), reading
+/// `/proc/meminfo`'s `HugePages_Free` before and after that invocation and
+/// logging the delta — informative, not a gate, and NOT proof that pages
+/// were returned (a nonzero job-level delta could come from any of this
+/// job's other huge-page tests releasing their own reservations in the same
+/// window, not specifically from this test's `decommit()` call).
+///
+/// **Vacuous-pass analysis:**
+/// 1. **Env var unset:** the same honest early `return` as both siblings
+///    above — gated identically, for the identical reason.
+/// 2. **`#[cfg]` excluding this fn:** requires `huge-pages` (the real
+///    dispatch path) and `target_os = "linux"`/`"android"` (the only
+///    platforms the huge-aligned real-call path compiles for). Stated
+///    precisely, because the two siblings do NOT have the same gate:
+///    this is BYTE-IDENTICAL to
+///    `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`'s gate,
+///    and a strict subset of
+///    `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise`'s,
+///    which additionally requires `feature = "bench-internals"` for the
+///    counters it reads and this test does not. So this test compiles in
+///    every configuration either sibling does, and in strictly more than
+///    the second one — never fewer than either.
+/// 3. **The reservation falling back to ordinary pages:** hard-asserted via
+///    `is_huge()` BEFORE the write/decommit/read sequence — the same
+///    tripwire both siblings use, and required by construction: without it
+///    this test would silently validate the ordinary-page zero-fill
+///    guarantee (already covered by `reservation_decommit_in_bounds_
+///    matches_free_function` in `tests/smoke.rs`) and prove nothing about
+///    the huge-page path.
+/// 4. **The range being ineligible so the crate early-exits before any
+///    syscall:** `size = 2 * MIB` and the full span `[0, size)` is exactly
+///    one huge page, huge-page-size-aligned at both endpoints by
+///    construction — identical reasoning to both siblings above.
+/// 5. **The write pattern happening to already be zero:** written as `0xAB`
+///    (never zero), so a decommit that is a complete no-op (old contents
+///    left in place) would leave every byte `0xAB`, not `0`, and the read
+///    loop below would fail on the very first byte.
+/// 6. **Reading before the kernel has actually reclaimed the pages:** unlike
+///    Darwin's advisory-only `MADV_DONTNEED`, Linux's `MADV_DONTNEED` on an
+///    eligible range zero-fills synchronously with respect to the NEXT
+///    access from the calling process (task #1140's own doc citation, `man 2
+///    madvise`) — there is no reclaim-is-still-pending race to account for
+///    here, unlike the RSS/pool-accounting axis this test deliberately does
+///    not touch (point above).
+/// 7. **Another test perturbing this range concurrently:** `SERIAL` (this
+///    file's shared `Mutex<()>`) is held for this test's entire body, same
+///    contract as both siblings and every other bench-internals-adjacent
+///    test in this file.
+#[test]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages"
+))]
+fn ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess() {
+    use aligned_vmem::reserve_aligned_huge;
+
+    if std::env::var("ALIGNED_VMEM_REQUIRE_REAL_HUGETLB").as_deref() != Ok("1") {
+        // Not running inside the `aligned-vmem-hugetlb-real` job: honest
+        // no-op, matching both oracle siblings above.
+        return;
+    }
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let size = 2 * MIB; // Linux/Android huge-page size; the full span is exactly one eligible huge page.
+    let mut reservation = reserve_aligned_huge(size, size)
+        .expect("huge reservation request must succeed (real grant or fallback)");
+
+    assert!(
+        reservation.is_huge(),
+        "ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 is set (this must only be true inside the \
+         `aligned-vmem-hugetlb-real` CI job), so a `reserve_aligned_huge` request took the \
+         ordinary-page fallback instead of a real MAP_HUGETLB grant -- this test cannot measure \
+         the memory-content postcondition of a decommit that was never granted as HugeTLB in the \
+         first place. See `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`'s identical \
+         assertion above for the same failure's root cause."
+    );
+
+    let base = reservation.as_ptr();
+    // Write a non-zero pattern across the whole eligible range so a no-op
+    // decommit (old contents left in place, vacuous-pass analysis point 5
+    // above) cannot be mistaken for a zero-fill.
+    // SAFETY: `base` is non-null, page-aligned, and valid for `size` bytes
+    // for the lifetime of `reservation` (the documented contract of
+    // `Reservation::as_ptr`); the reservation was just granted above and has
+    // not yet been decommitted, so the full range is committed and writable.
+    unsafe {
+        base.write_bytes(0xAB, size);
+    }
+
+    // The full reservation span is exactly one 2-MiB huge page: both
+    // endpoints are LINUX_HUGE_PAGE_SIZE multiples by construction (eligible
+    // range, vacuous-pass analysis point 4 above), so this reaches the real
+    // `libc_madvise` call, not the skip-and-count path.
+    reservation.decommit(0, size);
+
+    // Read every byte back. On Linux, `MADV_DONTNEED` on an eligible huge
+    // range zero-fills on next access (vacuous-pass analysis point 6 above) --
+    // this is the crate's own documented postcondition for exactly this case
+    // (`Reservation`'s doc block). A single non-zero byte anywhere in the
+    // range means the kernel accepted the call (already proven by
+    // `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise` above)
+    // but did not actually reclaim the backing memory -- the gap this test
+    // exists to close.
+    // SAFETY: same justification as the write above; decommitted-then-
+    // reaccessed memory in this exact case (huge, eager `decommit`, eligible
+    // range, Linux/Android >= 5.18) is documented to read as zeroed, not to
+    // fault or trap -- unlike the Windows case, which crashes on write before
+    // `recommit` (a read is well-defined here by the same doc block).
+    let bytes = unsafe { std::slice::from_raw_parts(base, size) };
+    if let Some(offset) = bytes.iter().position(|&b| b != 0) {
+        panic!(
+            "byte at offset {offset} of {size} is {:#04x}, not zero, after decommit() on an \
+             eligible huge-page range against a real MAP_HUGETLB grant (\
+             ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1). The kernel accepted the madvise(2) call (see \
+             `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise`), but this byte was \
+             never actually reclaimed/zeroed -- investigate a kernel/pool regression on this \
+             runner, do not relax this assertion.",
+            bytes[offset]
+        );
+    }
+
+    // Task #1174: this marker only executes past BOTH the is_huge() grant
+    // assertion and the full-range read-zero loop above -- printing it is
+    // itself proof the real MAP_HUGETLB grant existed AND every byte of the
+    // decommitted range actually read back as zero, not merely that the
+    // kernel accepted the syscall. Mirrors both siblings' `[oracle] ARMED`
+    // marker pattern (armed/unarmed must be distinguishable in the OUTPUT,
+    // not just inferable from workflow text), checked by its own `grep -F`
+    // sentinel in `.github/workflows/ci.yml`, resolved by
+    // `scripts/verify-ci-sentinels.mjs`'s marker-sentinel category.
+    println!("[oracle] ARMED: decommitted range read back as all-zero on real MAP_HUGETLB grant");
+}
