@@ -524,27 +524,69 @@ jobs:
       - run: node scripts/vmem-linux-android-pairing-guard.mjs
       # Task #1135 (MEDIUM): the #1131 row above closed the pairing
       # guard's own gap but left it the ONLY vmem text guard with a CI
-      # row — seven guard-shaped scripts had a check-all.mjs step and
-      # zero ci.yml rows, so this was never a one-off: under CLAUDE.md's
-      # R33-2 standard, check-all-only coverage covers only pushes whose
-      # author ran `npm run check`, which is exactly how main once
-      # stayed red for 70 commits. Measured per script — runtime, exit
-      # code, and input surface — the four PURE TEXT SCANS below earn
-      # rows (same shape as the three above: no cargo invocation, no
-      # build artifacts, 0.4-1.8 s measured, each demonstrated failing
-      # on a broken scratch copy before being added). The other three
-      # deliberately get NO row: argv-roundtrip-test is a self-test of
-      # lib.mjs's run() — plumbing every cargo row here (via
-      # run-check-matrix.mjs) already exercises transitively, so a
-      # regression breaks those rows loudly anyway; stale-artifact-
+      # row. The census this task ran was scoped to guard-shaped
+      # check-all.mjs steps that have NO substantive-check row anywhere
+      # in this workflow; under that scope it found seven such scripts,
+      # so this was never a one-off: under CLAUDE.md's R33-2 standard,
+      # check-all-only coverage covers only pushes whose author ran
+      # `npm run check`, which is exactly how main once stayed red for
+      # 70 commits. Measured per script — runtime, exit code, and input
+      # surface — the four PURE TEXT SCANS below earn rows (same shape
+      # as the three above: no cargo invocation, no build artifacts,
+      # 0.4-1.8 s measured, each demonstrated failing on a broken
+      # scratch copy before being added). The other three deliberately
+      # get NO row: argv-roundtrip-test is a self-test of lib.mjs's
+      # run() — the ONE run-check-matrix.mjs step in THIS job (above)
+      # already exercises run() transitively, so a regression there
+      # breaks that row loudly anyway. That transitive coverage is
+      # narrower than "every cargo row in this workflow": 62 of this
+      # workflow's ~93 `- run:` steps invoke `cargo` directly and never
+      # go through lib.mjs's run() at all — only this one job's step
+      # does. It is also narrower than "every argv shape
+      # argv-roundtrip-test.mjs checks": run-check-matrix.mjs's rows
+      # pass their `--features` value as a single argv element built by
+      # `rowToCargoArgs()` (scripts/check-matrix.mjs) — e.g. the
+      # `hardened medium-classes internals` row — which is the same
+      # whitespace-containing-value shape as
+      # argv-roundtrip-test.mjs:35's `'production alloc-stats
+      # bench-internals'` case (the DEP0190 shell:true
+      # whitespace-splitting regression the test exists to catch), so
+      # THAT class is genuinely exercised transitively. The test's other
+      # tricky shapes (apostrophe+quotes, tabs, `&`/`|`, `%`, parens,
+      # non-ASCII) never occur in any run-check-matrix.mjs argv and are
+      # NOT transitively covered by anything in this workflow — only the
+      # local check-all.mjs step actually runs them; stale-artifact-
       # diagnosis's bare invocation is a no-op (its CLI acts only under
-      # --self-test) and the shared-CARGO_TARGET_DIR cross-checkout
-      # replay it diagnoses cannot occur on an ephemeral single-
-      # checkout runner; verify-internals-negative-boundary runs two
-      # `cargo build --example` invocations — a build-needing compile-
-      # fail oracle, not a text scan, and its feature set would add a
-      # fresh compile block to this job. Local steps for all seven
-      # remain in check-all.mjs.
+      # --self-test) and the
+      # shared-CARGO_TARGET_DIR cross-checkout replay it diagnoses
+      # cannot occur on an ephemeral single-checkout runner;
+      # verify-internals-negative-boundary runs two `cargo build
+      # --example` invocations — a build-needing compile-fail oracle,
+      # not a text scan, and its feature set would add a fresh compile
+      # block to this job. Local steps for all seven remain in
+      # check-all.mjs.
+      #
+      # An EIGHTH check-all.mjs step of the same guard shape,
+      # `semver-checks (aligned-vmem, optional)` (which runs
+      # scripts/aligned-vmem-semver-check-optional.mjs), was outside
+      # this census's scope from the start and is not a gap it missed:
+      # unlike the seven above, this row already has a substantive CI
+      # counterpart — `cargo semver-checks check-release --package
+      # aligned-vmem` runs unconditionally at line 289 of this same
+      # file (the `aligned-vmem-gates` job). The check-all.mjs step is
+      # a SKIP-IF-TOOL-ABSENT wrapper around that exact command (see
+      # scripts/aligned-vmem-semver-check-optional.mjs: it execs
+      # `cargo semver-checks --version` first and exits 0 with an
+      # explanatory message if the tool is missing, never invoking the
+      # real check in that case) — so a CI-shaped invocation of the
+      # wrapper here would be provably vacuous on this runner (the
+      # substantive command already ran, unconditionally, earlier in
+      # the same workflow), the same "provably vacuous" category this
+      # commit already used to exclude stale-artifact-diagnosis above.
+      # docs/CORRECTNESS_OPEN_ITEMS.md item 82 discusses this script in
+      # the context of the census that found it outside scope; this
+      # comment's exclusion rationale stands on the evidence above
+      # independent of that index entry's own wording.
       # H2 (task #572): EXHAUSTIVE structural check that every
       # `AllocCore::dbg_*` method is gated behind `internals` or
       # explicitly allowlisted — the many-method complement to the

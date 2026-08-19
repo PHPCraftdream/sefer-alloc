@@ -203,9 +203,16 @@
 //      the pair shares one invalidation boundary at the array's end.
 //      Numbering-drift note (task #1082): this row's header entry was
 //      MISSING from task #1081's own commit — the header jumped straight
-//      from 39 (this row's predecessor) to "npm run iai", under-counting
-//      the step list by one until renumbered here. Carries expectTest
-//      since task #1086/M6, same as step 42.)
+//      from the forced-page lazy-commit row immediately above (this row's
+//      predecessor — step 42 at the time this note is being read, but a
+//      bare number here would decay again exactly as it did once already:
+//      at task #1082's own time of writing that predecessor was numbered
+//      39, task #1131's insertion of a new step 37 shifted it to 42, and
+//      the next insertion will shift it again — see task #1137's
+//      inventory in this file's own header for the general form of this
+//      problem) to "npm run iai", under-counting the step list by one
+//      until renumbered here. Carries expectTest since task #1086/M6,
+//      same as step 42.)
 //   44. cargo test --features "production internals bench-internals"
 //      --test segment_state_reconciliation_oracle   (task #1087: the
 //      reconciliation oracle's FORCED-page arm, same override RUSTFLAGS
