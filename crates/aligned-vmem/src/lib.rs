@@ -59,8 +59,14 @@
 //!   OS `errno` / `GetLastError` cause ([`try_reserve_aligned`],
 //!   [`try_recommit`], …).
 //!
-//! The infallible forms forward to the `try_*` forms and discard the cause, so
-//! both stay in perfect lockstep.
+//! For most of these pairs the infallible form forwards to the `try_*` form
+//! and discards the cause, so both stay in perfect lockstep. **The decommit
+//! family is the exception:** [`try_decommit`] forwards to the infallible
+//! [`decommit`] (not the other way around), and the underlying OS
+//! error/refusal is not observable through either form — `decommit`'s
+//! contract is deliberately silent on OS-level outcome (best-effort by
+//! nature; see [`decommit`]'s own rustdoc), and `try_decommit`'s `Result`
+//! reports range-contract validity only, not what the OS actually did.
 //!
 //! # Example
 //!

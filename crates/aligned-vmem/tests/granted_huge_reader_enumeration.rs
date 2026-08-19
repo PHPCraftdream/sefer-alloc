@@ -7,14 +7,18 @@
 //!
 //! `tests/reservation_decommit_contract.rs`'s SAFETY comment on
 //! `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`
-//! synthesizes `granted_huge: true` over an ordinary-page reservation and
-//! justifies the synthesis with an enumeration: within
+//! synthesizes `granted_huge: true` over an ordinary-page, exactly-2-MiB
+//! reservation and justifies the synthesis with an enumeration: within
 //! `crates/aligned-vmem/src/`, the flag's only behavioral readers are
 //! `is_huge()` itself, the pure query `can_decommit_reclaim_and_zero()`,
-//! and the three decommit-family huge-skips — so a wrong flag can change
-//! query results and suppress OS calls, but never touch memory safety,
-//! release behavior, or an unsafe precondition. Prose enumerations rot
-//! silently; this test turns that one into a STATED invariant.
+//! the three decommit-family huge-skips, and — as of task #1172's
+//! M1-hybrid — `from_raw_parts`'s own two Correctness-contract asserts
+//! (the `huge-pages`-feature-required check and the Linux/Android 2-MiB-
+//! multiple check) — so a wrong flag can change query results, suppress OS
+//! calls, or (new in task #1172) fail one of those two asserts, but never
+//! touch memory safety, release behavior, or an unsafe precondition. Prose
+//! enumerations rot silently; this test turns that one into a STATED
+//! invariant.
 //!
 //! Same pattern as the root crate's `tests/ci_clippy_matrix_consistency.rs`
 //! (itself following `tests/no_stale_doc_references.rs`): a deliberately
@@ -58,10 +62,20 @@
 //! - The `impl Drop for Reservation` block must contain NEITHER token —
 //!   the release path stays flag-blind.
 //! - Between `pub unsafe fn from_raw_parts` and `impl Drop for
-//!   Reservation`: exactly 2 bare `granted_huge` tokens (the parameter
-//!   and the field init). More would mean the constructor started
-//!   VALIDATING on the flag, contradicting the SAFETY comment's "assert
-//!   block does not read it".
+//!   Reservation`: exactly 7 bare `granted_huge` tokens as of task #1172
+//!   (M1-hybrid). Before task #1172 this was pinned at exactly 2 (the
+//!   parameter and the field init only), specifically to prove the
+//!   constructor's `assert!` block did NOT read the flag. That invariant
+//!   was DELIBERATELY overturned by the owner-decided M1-hybrid (see
+//!   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90): `from_raw_parts` now
+//!   asserts `granted_huge: true` requires the `huge-pages` feature
+//!   (closing finding M2), and, on Linux/Android, that it implies five
+//!   2-MiB-multiple quantities (closing finding M1). Both are Correctness-
+//!   contract checks (functional, non-UB), not memory-safety checks — see
+//!   that function's own `# Safety` vs. `# Correctness contract` split. A
+//!   count that drifts AWAY from 7 without a conscious re-derivation is
+//!   still the failure this bullet exists to catch; 7 is not itself
+//!   sacred, only "changed without re-deriving" is.
 //!
 //! Known limitations, accepted: `/* */` block comments are not stripped
 //! (none in `src/` mention the flag today — if one appears it trips this
@@ -192,7 +206,7 @@ fn expected_for(rel: &str) -> (usize, usize, usize, usize) {
     // counts to its new file(s); the reader SET is what the SAFETY argument
     // depends on, not which file holds it.
     match rel {
-        "src/reservation.rs" => (4, 3, 5, 8),
+        "src/reservation.rs" => (5, 3, 6, 13),
         "src/reservation_full_parts.rs" => (0, 1, 0, 4),
         "src/api/internal.rs" => (0, 1, 0, 5),
         "src/api/reserve.rs" => (0, 0, 0, 1),
@@ -256,10 +270,10 @@ fn granted_huge_reader_enumeration_is_pinned() {
         total.bare_is_huge += c.bare_is_huge;
         total.bare_granted_huge += c.bare_granted_huge;
     }
-    assert_eq!(total.is_huge_calls, 4, "{REDERIVE_MSG}");
+    assert_eq!(total.is_huge_calls, 5, "{REDERIVE_MSG}");
     assert_eq!(total.granted_huge_member_reads, 5, "{REDERIVE_MSG}");
-    assert_eq!(total.bare_is_huge, 5, "{REDERIVE_MSG}");
-    assert_eq!(total.bare_granted_huge, 28, "{REDERIVE_MSG}");
+    assert_eq!(total.bare_is_huge, 6, "{REDERIVE_MSG}");
+    assert_eq!(total.bare_granted_huge, 33, "{REDERIVE_MSG}");
 
     let reservation_rs =
         fs::read_to_string(src_dir.join("reservation.rs")).expect("read src/reservation.rs");
@@ -285,6 +299,26 @@ fn granted_huge_reader_enumeration_is_pinned() {
         "impl Drop for Reservation reads the huge flag: {REDERIVE_MSG}"
     );
 
+    // Task #1172 (M1-hybrid, item 90 of docs/CORRECTNESS_OPEN_ITEMS.md):
+    // `from_raw_parts` now DELIBERATELY validates on `granted_huge` — this is
+    // the owner-decided change this guard's own header comment anticipated
+    // ("if you are reading this because a split just turned the test red...
+    // re-derive"). Before task #1172 the count was pinned at exactly 2 (the
+    // parameter and the field init) specifically to prove the constructor's
+    // assert! block did NOT read the flag. That invariant is now
+    // INTENTIONALLY false: the constructor asserts (a) `granted_huge: true`
+    // requires the `huge-pages` feature (closing finding M2), and (b) on
+    // Linux/Android, `granted_huge: true` requires five 2-MiB-multiple
+    // quantities (closing finding M1). Both are Correctness-contract checks,
+    // not memory-safety ones (see `from_raw_parts`'s own rustdoc split) —
+    // this guard's job is only to keep the count from drifting silently
+    // again, not to keep it at its pre-#1172 value.
+    //
+    // 7 = 1 (parameter) + 1 (field init) + 5 from the two new assert!
+    // blocks: `!granted_huge` (the huge-pages-gate condition), `if
+    // granted_huge` (the 2-MiB-assert guard), plus three occurrences of the
+    // literal word `granted_huge` inside the two assert! panic messages
+    // (both message strings name the flag by name for a clear diagnostic).
     let frp_marker = "pub unsafe fn from_raw_parts";
     let frp_start = reservation_rs
         .find(frp_marker)
@@ -292,9 +326,9 @@ fn granted_huge_reader_enumeration_is_pinned() {
     let frp_body = &reservation_rs[frp_start..drop_start];
     assert_eq!(
         count_bare_granted_huge(frp_body),
-        2,
-        "from_raw_parts gained a third `granted_huge` token (beyond the \
-         parameter and the field init) — it started VALIDATING on the flag: \
-         {REDERIVE_MSG}"
+        7,
+        "from_raw_parts's granted_huge token count inside its own body \
+         changed from the task #1172 baseline of 7 (parameter + field init + \
+         5 from the two Correctness-contract asserts): {REDERIVE_MSG}"
     );
 }

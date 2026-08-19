@@ -402,7 +402,17 @@ fn method_trips_on_an_empty_misaligned_range_in_debug() {
 /// dedicated coverage: `huge_aligned_range_takes_the_real_backend_path_not_the_skip_path`
 /// and `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host` in
 /// `tests/decommit_capability.rs`.
+///
+/// **Gated on `huge-pages` (task #1172/M1-hybrid).** This test synthesizes
+/// `granted_huge: true` via `ReservationFullParts`/`from_raw_parts`, and
+/// `from_raw_parts` now `assert!`s that accepting `granted_huge: true`
+/// requires this crate's own `huge-pages` feature to be enabled (closing
+/// finding M2) — without the feature, the reconstruction below panics before
+/// the test's own assertions run. Its sibling
+/// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host`
+/// (`tests/decommit_capability.rs`) is already gated the same way.
 #[test]
+#[cfg(feature = "huge-pages")]
 fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     use aligned_vmem::ReservationFullParts;
 
@@ -423,14 +433,23 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
         /* granted_huge = */ true,
     );
     // SAFETY: every pointer/size field is genuine — taken verbatim from a
-    // live `reserve_aligned` reservation via `into_full_parts`, so
-    // `base`/`reservation` are live and exclusively owned, all layout
-    // invariants `from_raw_parts` asserts hold, and the reconstructed
-    // handle's `Drop` releases the mapping exactly once (no double release:
-    // `into_full_parts` consumed the original). The deviations from
-    // `from_raw_parts`' documented Safety contract are exactly TWO bullets,
-    // both violated by `granted_huge: true` over an ordinary-page
-    // reservation:
+    // live `reserve_aligned(2 MiB, 2 MiB)` reservation via `into_full_parts`,
+    // so `base`/`reservation` are live and exclusively owned, all layout
+    // invariants `from_raw_parts` asserts hold (including, since task #1172,
+    // the Linux/Android 2-MiB-multiple Correctness-contract check — trivially
+    // satisfied here because `size == 2 MiB` and `reserve_aligned`'s
+    // exact-size fast path leaves `base == reservation`,
+    // `len == reservation_len == size`), and the reconstructed handle's
+    // `Drop` releases the mapping exactly once (no double release:
+    // `into_full_parts` consumed the original). This test is gated on the
+    // `huge-pages` feature (see this test's own `#[cfg]`) specifically
+    // because task #1172's OTHER new Correctness-contract check — accepting
+    // `granted_huge: true` at all requires `huge-pages` to be enabled —
+    // would otherwise panic before any assertion below runs; that check is
+    // satisfied here by construction of the gate, not by the values passed.
+    // The deviations from `from_raw_parts`' documented `# Safety`/
+    // "Correctness contract" are exactly TWO bullets, both violated by
+    // `granted_huge: true` over an ordinary-page reservation:
     //
     // 1. The accuracy bullet: `granted_huge` MUST reflect whether the OS
     //    actually granted huge pages. Its stated consequence for a wrong
@@ -445,6 +464,12 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     //    bullet most directly violated; its stated consequence is likewise
     //    only an `is_huge()` "value inconsistent with the reservation's
     //    actual state" — non-UB.
+    //
+    // Both violated bullets live in `from_raw_parts`'s "Correctness
+    // contract" section (task #1172/M3 split), not its `# Safety` section —
+    // that split exists precisely so this test can state, truthfully, that
+    // it violates documented requirements without violating anything
+    // memory-safety-relevant.
     //
     // PRIMARY justification — why neither violation can become a
     // memory-safety hazard in this crate TODAY — is the complete
@@ -465,20 +490,37 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     //   `Self::try_decommit`, `Self::decommit_lazy` (src/reservation.rs),
     //   each `if self.is_huge() { count; return; }` — the flag can only
     //   SUPPRESS a backend OS call.
+    // - `Reservation::from_raw_parts` itself (src/reservation.rs), as of
+    //   task #1172's M1-hybrid: two `assert!`s, both Correctness-contract
+    //   checks reading the PARAMETER (before it becomes the field) — (a)
+    //   `granted_huge: true` requires the `huge-pages` feature, (b) on
+    //   Linux/Android, `granted_huge: true` additionally requires `len`,
+    //   `reservation_len`, `reservation`, `base`, and the offset
+    //   `base - reservation` to all be 2-MiB multiples. Both PANIC
+    //   immediately on violation — a louder failure mode than the other
+    //   readers above (which only change a query result or suppress a
+    //   syscall), but still not memory-unsafe: the panic happens before
+    //   `Self { .. }` is constructed, so no `Reservation` with inconsistent
+    //   state is ever observable. This is exactly why this test is gated on
+    //   `huge-pages` and uses a `size == 2 MiB` base reservation — both
+    //   asserts are satisfied by construction, so this synthesis reaches
+    //   the SAME two Correctness-contract violations (1) and (2) above that
+    //   it always has, without also tripping either of `from_raw_parts`'s
+    //   own two new panics.
     //
     // Confirmed non-readers: `Drop` releases via `reservation`/
-    // `reservation_len`/`align` only; `from_raw_parts`' assert block
-    // validates layout only (the flag passes through to the field
-    // untouched). The remaining field touches are copies/observations
-    // that cannot branch on it (the `Debug` impl, `into_full_parts`,
-    // `ReservationFullParts::into_reservation`, `finish_reservation`).
-    // A wrong flag therefore changes two pure query RESULTS and whether
-    // up to three decommit backend calls are issued — never memory
-    // safety, never release behavior, never an unsafe block's
-    // preconditions. SECONDARY, and deliberately weaker: the rustdoc
-    // consequence quotes above say "not a crash or undefined behavior" —
-    // but that is intent stated for one bullet, and a future refactor
-    // that makes `is_huge()` gate something real would invalidate the
+    // `reservation_len`/`align` only. The remaining field touches are
+    // copies/observations that cannot branch on it (the `Debug` impl,
+    // `into_full_parts`, `ReservationFullParts::into_reservation`,
+    // `finish_reservation`).
+    // A wrong flag therefore changes two pure query RESULTS, whether up to
+    // three decommit backend calls are issued, and (new in task #1172)
+    // whether `from_raw_parts` itself panics — never memory safety, never
+    // release behavior, never an unsafe block's preconditions. SECONDARY,
+    // and deliberately weaker: the rustdoc consequence quotes above say
+    // "not a crash or undefined behavior" — but that is intent stated for
+    // one bullet, and a future refactor that makes `is_huge()` gate
+    // something real would invalidate the
     // prose without touching this test; the enumeration is what carries
     // the weight. Production callers must NOT copy this synthesis — pass
     // a truthful `granted_huge`.

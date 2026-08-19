@@ -186,3 +186,12 @@ harness = false
 [[example]]
 name = "v20_849_unix_exact_reserve_hit_rate"
 required-features = ["bench-internals"]
+
+# task #1189's Windows large-page profiling probe. It imports both the
+# `bench-internals` counters and `reserve_aligned_huge`, so it needs BOTH
+# features declared here: without them `cargo test -p aligned-vmem` (which
+# builds examples) fails to compile with E0432 in every row that does not
+# happen to enable both. Its sibling above needs only `bench-internals`.
+[[example]]
+name = "v1189_windows_large_page_native_profile"
+required-features = ["bench-internals", "huge-pages"]

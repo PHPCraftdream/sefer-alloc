@@ -623,20 +623,28 @@ impl Reservation {
     /// feature = "huge-pages"))]`; without that
     /// feature enabled, EVERY range on a huge-flagged reservation takes the
     /// silent-no-op early-exit above, unconditionally, on every platform —
-    /// there is no huge-aligned-range exception without the feature. This
-    /// matters specifically for [`Self::from_raw_parts`], which has no
-    /// feature gate of its own: a caller who adopts a reservation obtained
-    /// through their OWN `MAP_HUGETLB` call (the documented cross-crate
-    /// handoff use case — see that constructor's doc), passes
-    /// `granted_huge: true`, but does not separately enable `huge-pages` in
-    /// THIS crate's `Cargo.toml`, gets `is_huge() == true` (accurately
-    /// reflecting what they passed) while `decommit`/`try_decommit` on that
-    /// reservation silently skip the backend call unconditionally — even on
-    /// a kernel new enough and a well-formed, huge-page-aligned range, where
-    /// the paragraph above promises a real forward. Enable `huge-pages` if
-    /// you need that forward to work; if you cannot, use [`decommit_lazy`]
-    /// instead, or track the huge-page state as always-no-op-eligible
-    /// yourself.
+    /// there is no huge-aligned-range exception without the feature.
+    /// **[`Self::from_raw_parts`] no longer creates a mismatch here (task
+    /// #1172/M1-hybrid, closing finding M2):** that constructor now
+    /// `assert!`s that `granted_huge: true` requires the `huge-pages` feature
+    /// to be enabled in THIS crate, so a reservation with `is_huge() == true`
+    /// cannot exist without `huge-pages` — the scenario this paragraph used
+    /// to describe (an adopted `MAP_HUGETLB` reservation reporting
+    /// `is_huge() == true` while `decommit`/`try_decommit` silently and
+    /// permanently skip the backend regardless of range or kernel version,
+    /// because the CONSUMER's Cargo feature set diverged from what the flag
+    /// promised) can no longer arise: without `huge-pages`, adopting such a
+    /// reservation panics at construction instead of silently under-serving
+    /// it later. **[`decommit_lazy`] is NOT a
+    /// workaround** (task #1172, correcting the advice this paragraph used
+    /// to give): [`Self::decommit_lazy`] skips its backend call
+    /// UNCONDITIONALLY for every huge-flagged reservation, on every
+    /// platform, regardless of feature flags or kernel version — it has no
+    /// Linux >= 5.18 huge-aligned carve-out at all (see its own doc). Routing
+    /// around a `huge-pages`-gated no-op into a permanent no-op is not a
+    /// substitute. If you cannot enable `huge-pages`, either accept the
+    /// no-op (RSS will not drop for this reservation) or track the huge-page
+    /// state yourself and avoid relying on either decommit path for it.
     ///
     /// # Panics
     ///
@@ -768,12 +776,16 @@ impl Reservation {
     /// actually does.
     ///
     /// **The Linux/Android >= 5.18 eligible-forward path requires the
-    /// `huge-pages` feature (task #1156, finding F10); [`Self::is_huge`] and
-    /// [`Self::from_raw_parts`] do not.** Without `huge-pages` enabled, this
-    /// method always takes the skip-and-return-`Ok(())` path on a
-    /// huge-flagged reservation, on every platform, regardless of range or
-    /// kernel version — see [`Self::decommit`]'s doc for the full explanation
-    /// and the `from_raw_parts` cross-crate-adoption scenario this affects.
+    /// `huge-pages` feature (task #1156, finding F10); [`Self::is_huge`]
+    /// does not — it is a pure query, always compiled.** Without
+    /// `huge-pages` enabled, this method always takes the
+    /// skip-and-return-`Ok(())` path on a huge-flagged reservation, on every
+    /// platform, regardless of range or kernel version. **A huge-flagged
+    /// reservation cannot even be constructed without `huge-pages`, as of
+    /// task #1172/M1-hybrid** — [`Self::from_raw_parts`] now requires the
+    /// feature to accept `granted_huge: true` — see [`Self::decommit`]'s doc
+    /// and [`Self::from_raw_parts`]'s "Correctness contract" section for the
+    /// full explanation.
     pub fn try_decommit(&mut self, start: usize, end: usize) -> Result<(), VmemError> {
         // Bounds check: the range must be within the reservation's usable span.
         if end > self.len() {
@@ -1020,6 +1032,18 @@ impl Reservation {
     ///
     /// # Safety
     ///
+    /// This section covers ONLY memory-safety preconditions: liveness,
+    /// exclusive ownership, pointer provenance, and exact-once release. A
+    /// violation here is undefined behaviour. Functional/behavioral
+    /// requirements — whether `granted_huge` accurately describes the
+    /// mapping, and Windows commit-state compatibility — are NOT memory-
+    /// safety preconditions and live in the "Correctness contract" section
+    /// below instead (task #1172/M3: this section used to mix both kinds
+    /// together, which made it impossible to state honestly that this
+    /// crate's own integration tests deliberately violate some of the
+    /// mixed-in conditions while remaining sound — see that section's
+    /// opening paragraph for why that is not a contradiction).
+    ///
     /// All six values must describe a **live, exclusively-owned OS
     /// reservation** compatible with `aligned-vmem`'s release path:
     ///
@@ -1068,14 +1092,33 @@ impl Reservation {
     ///   (task #1035, finding F9: this bullet said an undersized value "leaks
     ///   memory (Unix)", while the "Important" note below said under-reporting
     ///   on a large-page host is "harmless for correctness" — both about Unix):
-    ///   - **Native Unix:** `release` passes this value straight to `munmap`,
-    ///     which ROUNDS THE LENGTH UP to a whole page. A value short of the
-    ///     true mapping by less than one runtime page therefore still unmaps
-    ///     the whole mapping and is harmless — that is exactly the case the
-    ///     "Important" note below describes, and it is the case this crate
-    ///     itself produces on a host whose page size exceeds [`PAGE`]. What
-    ///     DOES leak is a value short by a whole page or more: those trailing
-    ///     pages stay mapped for the life of the process.
+    ///   - **Native Unix, ORDINARY (non-huge) mapping:** `release` passes this
+    ///     value straight to `munmap`, which ROUNDS THE LENGTH UP to a whole
+    ///     page. A value short of the true mapping by less than one runtime
+    ///     page therefore still unmaps the whole mapping and is harmless —
+    ///     that is exactly the case the "Important" note below describes, and
+    ///     it is the case this crate itself produces on a host whose page
+    ///     size exceeds [`PAGE`]. What DOES leak is a value short by a whole
+    ///     page or more: those trailing pages stay mapped for the life of the
+    ///     process.
+    ///   - **Native Unix, `granted_huge == true` (task #1172/M1, HugeTLB
+    ///     exception to the paragraph above):** the "rounds up, so a
+    ///     less-than-one-page shortfall is harmless" reasoning does NOT
+    ///     transfer to a HugeTLB mapping. Linux's — and Android's, which
+    ///     shares that kernel interface and is covered by the same `#[cfg]`
+    ///     gate on the assert below — `mmap(2)` "Huge TLB
+    ///     mappings" section requires BOTH `munmap(2)`'s `addr` and `length`
+    ///     to be multiples of the huge page size — an undersized
+    ///     `reservation_len` that is not huge-page-size-aligned gets `EINVAL`
+    ///     from `munmap`, not a rounded-up unmap, and the ENTIRE mapping
+    ///     (plus its pinned physical huge pages) leaks for the life of the
+    ///     process. This crate's own `reserve_aligned_huge` path already
+    ///     documents and upholds this requirement (see
+    ///     `crates/aligned-vmem/src/os/unix.rs`'s huge-page-alignment
+    ///     comments); `from_raw_parts` did not previously carry the same
+    ///     requirement for an ADOPTED huge mapping. See the "2 MiB-multiple
+    ///     requirement" bullet in "Correctness contract" below for the
+    ///     checked form of this requirement.
     ///   - **miri:** `release` reconstructs a `Layout` from
     ///     `reservation_len`/`align` and hands it to `std::alloc::dealloc`,
     ///     which requires the EXACT size the allocation was made with — no
@@ -1095,69 +1138,132 @@ impl Reservation {
     ///   mapping size — `mmap` rounds its length argument up to the page size,
     ///   so `reserve_aligned(PAGE, PAGE)` actually maps a full 16 KiB page
     ///   while `reservation_len()` returns `4096`. This is harmless for
-    ///   correctness (`munmap` rounds its length argument up the same way;
-    ///   `VirtualFree(MEM_RELEASE)` ignores the length on Windows), but it
-    ///   means `reservation_len` is a **logical** length, not a measure of the
-    ///   true OS reservation size. It must be a non-zero multiple of [`PAGE`]
-    ///   with `reservation_len >= len + (base - reservation)`.
+    ///   correctness on an ORDINARY mapping (`munmap` rounds its length
+    ///   argument up the same way; `VirtualFree(MEM_RELEASE)` ignores the
+    ///   length on Windows) — it does NOT apply to a `granted_huge == true`
+    ///   mapping on Linux or Android, per the HugeTLB bullet above — but it
+    ///   means
+    ///   `reservation_len` is a **logical** length, not a measure of the true
+    ///   OS reservation size. It must be a non-zero multiple of [`PAGE`] with
+    ///   `reservation_len >= len + (base - reservation)`.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
     ///   reservation was created with.
-    /// - `granted_huge` MUST accurately reflect whether the OS actually
-    ///   granted huge pages for this reservation. Pass `true` only if the
-    ///   reservation was obtained via a huge-page allocation (e.g.
-    ///   `reserve_aligned_huge`) and the OS confirmed the grant (via
-    ///   `Reservation::is_huge()` or equivalent platform-specific detection).
-    ///   If you pass an incorrect value, `Reservation::is_huge()` will report
-    ///   an incorrect value, and any decommit-availability decision you make
-    ///   based on that wrong `is_huge()` result will be incorrect (on huge
-    ///   pages, `decommit` is a silent no-op — RSS does not drop and reads
-    ///   return the old data, not a crash or undefined behavior). If you cannot
-    ///   determine whether the OS granted huge pages, you MUST pass `false` and
-    ///   use `reserve_aligned` instead.
-    ///
-    ///   **Even with `granted_huge` set correctly, `decommit`/`try_decommit`
-    ///   only ever forward to the real backend for a Linux/Android >= 5.18
-    ///   huge-aligned range when THIS crate is built with the `huge-pages`
-    ///   feature (task #1156, finding F10)** — this constructor itself, like
-    ///   [`Self::is_huge`], has no feature gate, so `from_raw_parts` compiles
-    ///   and `is_huge()` reports accurately regardless. A caller who adopts a
-    ///   reservation from their own `MAP_HUGETLB` call (the motivating
-    ///   cross-crate use case above) but does not separately enable
-    ///   `huge-pages` gets a silently-always-skipped `decommit` even on an
-    ///   eligible kernel and range. See [`Self::decommit`]'s doc for the full
-    ///   explanation.
+    /// - `granted_huge` itself carries NO memory-safety precondition: it is
+    ///   stored and read back verbatim by every unsafe operation this
+    ///   constructor, `Drop`, and `release_reservation` perform, and branched
+    ///   on by neither. Its accuracy requirement, its interaction with
+    ///   `reservation_len`'s HugeTLB exception above, and Windows commit-state
+    ///   compatibility are all functional requirements — see "Correctness
+    ///   contract" below.
     ///
     /// The reservation must be released **exactly once** — by dropping this
     /// handle, or by extracting via `into_parts` and calling [`release`](crate::api::release)
     /// manually. Constructing two `Reservation` handles over the same OS
     /// reservation is undefined behaviour (double release).
     ///
-    /// **Windows commit state:** On Windows, the reservation's commit state
-    /// (which pages are committed vs. reserved-only) must be compatible with the
-    /// `granted_huge` value:
+    /// # Correctness contract
     ///
-    /// - If `granted_huge == false`, the reservation may be in any valid
-    ///   commit state: fully committed (created via `reserve_aligned` or the
-    ///   single-call Windows fast path), partially committed (created via the
-    ///   two-call `reserve_aligned_lazy` path), or reserved-only (not a common
-    ///   pattern but valid).
+    /// These requirements are NOT memory-safety preconditions — violating one
+    /// changes observable *behavior* (a query result, a dispatch decision, or
+    /// an OS-level no-op/leak) but never causes undefined behavior by itself.
+    /// This crate's own integration tests deliberately violate the
+    /// `granted_huge`-accuracy requirement below (see
+    /// `tests/reservation_decommit_contract.rs`'s
+    /// `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`
+    /// and `tests/decommit_capability.rs`'s
+    /// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host`) to
+    /// exercise huge-page branch dispatch without a real hugetlb-configured
+    /// host — both tests' own SAFETY comments enumerate every reader of the
+    /// flag and confirm none is memory-safety-relevant. That is a deliberate,
+    /// reviewed use of this contract's slack, not a bug in either the tests
+    /// or this documentation; production callers must still pass a truthful
+    /// `granted_huge`, because the CONSEQUENCE of getting it wrong (below) is
+    /// real even though it is not UB.
     ///
-    /// - If `granted_huge == true`, the reservation MUST have been created with
-    ///   `MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES` in a single call (the only
-    ///   way Windows grants large pages). The crate itself only produces such
-    ///   reservations via its `reserve_aligned_huge` single-call fast path.
+    /// - **`granted_huge` accuracy.** MUST accurately reflect whether the OS
+    ///   actually granted huge pages for this reservation. Pass `true` only
+    ///   if the reservation was obtained via a huge-page allocation (e.g.
+    ///   `reserve_aligned_huge`) and the OS confirmed the grant (via
+    ///   `Reservation::is_huge()` or equivalent platform-specific detection).
+    ///   **Consequence of a wrong value:** `Reservation::is_huge()` reports
+    ///   the wrong value, and any decommit-availability decision made from
+    ///   that wrong result is wrong (on huge pages, `decommit` is a silent
+    ///   no-op — RSS does not drop and reads return the old data). This
+    ///   changes DISPATCH and query results, never memory safety. If you
+    ///   cannot determine whether the OS granted huge pages, you MUST pass
+    ///   `false` and use `reserve_aligned` instead.
     ///
-    ///   The crate's own two-call `reserve_aligned_lazy` path (which issues
-    ///   `VirtualAlloc(MEM_RESERVE)` followed by `VirtualAlloc(MEM_COMMIT)`) is
-    ///   incompatible with `granted_huge == true`, because `MEM_COMMIT` cannot
-    ///   be combined with `MEM_LARGE_PAGES` on a pre-reserved region — MSDN
-    ///   requires all three flags in a single call. Passing `granted_huge == true`
-    ///   for a lazy reservation would make `Reservation::is_huge()` report a
-    ///   value inconsistent with the reservation's actual state.
+    /// - **2 MiB-multiple requirement, Linux/Android, `granted_huge == true`
+    ///   (task #1172/M1-hybrid).** On `target_os = "linux"` or `"android"`,
+    ///   when `granted_huge` is `true`, this constructor additionally
+    ///   `assert!`s that ALL FIVE of `len`, `reservation_len`, `reservation`,
+    ///   `base`, and the offset `base - reservation` are multiples of 2 MiB
+    ///   (this crate's one supported HugeTLB granularity, `MAP_HUGE_2MB`; see
+    ///   `crates/aligned-vmem/src/os/unix.rs`'s `LINUX_HUGE_PAGE_SIZE`).
+    ///   **Consequence of a violation:** an immediate, loud, attributable
+    ///   panic at the call site — not deferred to `Drop`, and not a silent
+    ///   leak — because a non-2-MiB-aligned `reservation`/`reservation_len`
+    ///   on a real HugeTLB mapping would otherwise make the eventual
+    ///   `munmap` fail `EINVAL` and leak the entire mapping (see the
+    ///   `reservation_len` bullet in `# Safety` above). This assert narrows
+    ///   what `granted_huge == true` is allowed to MEAN through this
+    ///   constructor to "the mapping is in this crate's own 2 MiB HugeTLB
+    ///   format" — it does not by itself prove the memory is really
+    ///   `MAP_HUGETLB`-backed (that remains a `# Safety` precondition the
+    ///   assert cannot check), only that its shape is consistent with being
+    ///   so. **Open question, not yet answered by the crate owner:** whether
+    ///   `aligned-vmem` should ever support adopting a HugeTLB mapping at a
+    ///   granularity other than 2 MiB (e.g. 1 GiB) — see
+    ///   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90's OPEN QUESTION block. Under
+    ///   today's default answer (no), this assert is exactly the crate's
+    ///   contract, not a temporary narrowing.
     ///
-    ///   If you adopted a reservation from another source and cannot determine
-    ///   whether it was created with the one-call large-page path, you MUST pass
-    ///   `granted_huge == false`.
+    /// - **`huge-pages` feature required to pass `granted_huge: true` (task
+    ///   #1172/M1-hybrid, closing finding M2 as a consequence).** Passing
+    ///   `granted_huge: true` when this crate is built WITHOUT the
+    ///   `huge-pages` feature is itself a contract violation and `assert!`s
+    ///   immediately, for the same "loud at the call site, not silently
+    ///   divergent later" reason as the 2 MiB bullet above. Before this
+    ///   requirement, a caller who adopted a `MAP_HUGETLB` mapping through
+    ///   their own crate but did not separately enable `huge-pages` in THIS
+    ///   crate's `Cargo.toml` got `is_huge() == true` (accurately reflecting
+    ///   what they passed) while `decommit`/`try_decommit` silently,
+    ///   unconditionally skipped the backend call regardless of range or
+    ///   kernel version (finding M2: the SAME live mapping served or skipped
+    ///   decommit depending on the CONSUMER's Cargo feature set, invisible at
+    ///   the call site). Requiring the feature to accept the flag at all
+    ///   means there is no longer a huge-flagged ADOPTED reservation without
+    ///   `huge-pages` enabled, so the divergent-behavior scenario cannot
+    ///   arise — see [`Self::decommit`]'s doc for the full eligible-forward
+    ///   explanation this closes the gap in.
+    ///
+    /// - **Windows commit state.** On Windows, the reservation's commit state
+    ///   (which pages are committed vs. reserved-only) must be compatible
+    ///   with the `granted_huge` value:
+    ///
+    ///   - If `granted_huge == false`, the reservation may be in any valid
+    ///     commit state: fully committed (created via `reserve_aligned` or
+    ///     the single-call Windows fast path), partially committed (created
+    ///     via the two-call `reserve_aligned_lazy` path), or reserved-only
+    ///     (not a common pattern but valid).
+    ///
+    ///   - If `granted_huge == true`, the reservation MUST have been created
+    ///     with `MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES` in a single call
+    ///     (the only way Windows grants large pages). The crate itself only
+    ///     produces such reservations via its `reserve_aligned_huge`
+    ///     single-call fast path. The crate's own two-call
+    ///     `reserve_aligned_lazy` path (which issues
+    ///     `VirtualAlloc(MEM_RESERVE)` followed by `VirtualAlloc(MEM_COMMIT)`)
+    ///     is incompatible with `granted_huge == true`, because `MEM_COMMIT`
+    ///     cannot be combined with `MEM_LARGE_PAGES` on a pre-reserved region
+    ///     — MSDN requires all three flags in a single call.
+    ///
+    ///   **Consequence of a violation:** `Reservation::is_huge()` reports a
+    ///   value inconsistent with the reservation's actual commit state —
+    ///   the same DISPATCH/query-result consequence as the accuracy bullet
+    ///   above, not a new failure mode. If you adopted a reservation from
+    ///   another source and cannot determine whether it was created with the
+    ///   one-call large-page path, you MUST pass `granted_huge == false`.
     #[must_use]
     pub unsafe fn from_raw_parts(
         base: *mut u8,
@@ -1240,6 +1346,68 @@ impl Reservation {
              got align={align}, reservation_len={reservation_len}, len={len}, \
              base={base:?}, reservation={reservation:?}"
         );
+        // Task #1172 (M1-hybrid, item 90 of docs/CORRECTNESS_OPEN_ITEMS.md):
+        // narrow what `granted_huge == true` is allowed to MEAN through this
+        // constructor. Two independent checks, both loud-at-the-call-site
+        // for the same task #719 reason as the block above (a Drop-reachable
+        // panic is far more dangerous than one here):
+        //
+        // 1. `huge-pages` feature required to accept `granted_huge: true` at
+        //    all (closes finding M2 as a consequence: with no feature there
+        //    are no huge-flagged ADOPTED reservations, so the "same live
+        //    mapping served or skipped depending on the CONSUMER's feature
+        //    set" divergence cannot arise).
+        #[cfg(not(feature = "huge-pages"))]
+        assert!(
+            !granted_huge,
+            "Reservation::from_raw_parts: granted_huge=true requires this crate's \
+             `huge-pages` feature to be enabled. Without it, this constructor would \
+             accept an adopted huge-flagged reservation whose eligible-forward \
+             decommit path is compiled out, making `is_huge()` report true while \
+             decommit/try_decommit silently skip on every call regardless of range \
+             or kernel version -- see Reservation::decommit's rustdoc. Enable \
+             `huge-pages`, or pass granted_huge: false."
+        );
+        // 2. On Linux/Android, when `granted_huge` is true, all FIVE of
+        //    `len`, `reservation_len`, `reservation`, `base`, and the offset
+        //    `base - reservation` must be 2 MiB multiples (this crate's one
+        //    supported HugeTLB granularity). Linux's `mmap(2)`/`munmap(2)`
+        //    require both the address and the length of a `MAP_HUGETLB`
+        //    mapping's release call to be huge-page-size-aligned; violating
+        //    this on a REAL HugeTLB mapping would make the eventual `munmap`
+        //    fail EINVAL and leak the entire mapping (see the
+        //    `reservation_len` HugeTLB bullet in `# Safety` above). This
+        //    assert cannot by itself prove the memory really is
+        //    `MAP_HUGETLB`-backed (a `# Safety` precondition it has no way
+        //    to check) -- only that its shape is consistent with being so.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if granted_huge {
+            // 2 MiB: this crate's one supported HugeTLB granularity
+            // (`MAP_HUGE_2MB`), matching `os::unix::LINUX_HUGE_PAGE_SIZE`.
+            // Not imported directly: that constant is private to a module
+            // compiled only under `#[cfg(all(unix, not(miri)))]` plus
+            // `huge-pages`, narrower than this assert's own gate (Linux/
+            // Android, any feature set, so the `huge-pages`-off panic above
+            // fires first and with a clearer message on that combination).
+            const HUGE_PAGE_SIZE_2MIB: usize = 2 * 1024 * 1024;
+            assert!(
+                len.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
+                    && reservation_len.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
+                    && res_addr.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
+                    && base_addr.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
+                    && (base_addr - res_addr).is_multiple_of(HUGE_PAGE_SIZE_2MIB),
+                "Reservation::from_raw_parts: granted_huge=true on Linux/Android \
+                 requires len, reservation_len, reservation, base, and the offset \
+                 (base - reservation) to ALL be multiples of 2 MiB (this crate's \
+                 supported HugeTLB granularity) -- a non-2-MiB-aligned reservation \
+                 or reservation_len would make munmap(2) fail EINVAL and leak the \
+                 entire mapping on release; \
+                 got len={len}, reservation_len={reservation_len}, \
+                 base={base:?}, reservation={reservation:?}, \
+                 offset={}",
+                base_addr - res_addr
+            );
+        }
         Self {
             base: base_nn,
             len,

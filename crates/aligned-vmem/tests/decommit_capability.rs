@@ -456,18 +456,28 @@ fn huge_aligned_range_takes_the_real_backend_path_not_the_skip_path() {
 /// `into_full_parts`/`from_raw_parts` round-trip.
 ///
 /// **Why this is a sound (not unsound) use of `from_raw_parts`:** the
-/// constructor's own `# Safety` section requires `granted_huge` to accurately
-/// reflect the OS grant, and this test deliberately violates that for
-/// `is_huge()`'s OBSERVABLE VALUE — but `granted_huge` has NO effect on any
-/// unsafe operation `from_raw_parts`/`Drop`/`release_reservation` performs
-/// (verified by reading every `granted_huge` use site in
+/// constructor's own "Correctness contract" section (task #1172/M3 split;
+/// previously part of `# Safety` before that split) requires `granted_huge`
+/// to accurately reflect the OS grant, and this test deliberately violates
+/// that for `is_huge()`'s OBSERVABLE VALUE — but `granted_huge` has NO effect
+/// on any unsafe operation `from_raw_parts`/`Drop`/`release_reservation`
+/// performs (verified by reading every `granted_huge` use site in
 /// `src/reservation.rs`/`src/os/unix.rs`/`src/os/windows.rs`: it is stored and
 /// read back verbatim, never branched on by any pointer-unsafe code path —
 /// `munmap`/`VirtualFree` care only about `reservation`/`reservation_len`/
-/// `align`, never about `granted_huge`). The ONLY consumers of `is_huge()`
-/// are `Reservation::decommit`/`try_decommit`'s branch dispatch (exactly what
-/// this test exercises) and the two capability-query methods (not exercised
-/// here) — both operate purely on already-validated, in-bounds byte ranges of
+/// `align`, never about `granted_huge`). Since task #1172, `from_raw_parts`
+/// ALSO reads the raw `granted_huge` PARAMETER (before it becomes a field) in
+/// two Correctness-contract `assert!`s (`huge-pages`-feature-required, and —
+/// on Linux/Android — the 2-MiB-multiple requirement); this test's `size ==
+/// 2 * MIB` base reservation and its `huge-pages` feature gate (see this
+/// test's own `#[cfg]`) satisfy both, same reasoning as
+/// `reservation_decommit_contract.rs`'s sibling test. Both `assert!`s are
+/// safe Rust — not pointer-unsafe operations — so this does not weaken the
+/// claim above. The ONLY consumers of `is_huge()` itself (the accessor, as
+/// opposed to the raw parameter) are `Reservation::decommit`/`try_decommit`'s
+/// branch dispatch (exactly what this test exercises) and the two
+/// capability-query methods (not exercised here) — both operate purely on
+/// already-validated, in-bounds byte ranges of
 /// a live mapping, so fabricating this one bool cannot cause memory unsafety.
 ///
 /// **What this test DOES prove:** the Rust-level decision of "does
