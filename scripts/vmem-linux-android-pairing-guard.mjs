@@ -175,17 +175,49 @@
 // NOTE (task #1140 supersession, recorded so the #1122 narrative above does
 // not read as still-current): THREE of the entries this list carried were
 // removed after task #1140 rewrote the HugeTLB contract for Linux 5.18+.
-// They were removed because the guard reported them STALE and each one's
-// pattern was then confirmed absent from the tree by direct grep — NOT on
-// the strength of the guard's own report alone, which is exactly the check
-// task #1122 found missing when #1114 deleted three LIVE entries under a
-// "fixed" message. The three: decommit.rs's `on both Windows and Linux,
-// decommit **does not work**` and `On Linux, `MADV_DONTNEED`/`MADV_FREE` ...
-// is accepted` (both paragraphs rewritten by #1140 — the second is one of
-// the three entries the paragraph above describes as "restored"), and
-// reservation.rs's `Windows crashes on write before recommit, Linux does
-// not`. The Cargo.toml `(Linux `MADV_HUGEPAGE`)` and huge.rs `On Linux,
-// `madvise` ...` entries from that same restored trio remain live below.
+// They were removed because the guard reported them STALE.
+//
+// CORRECTION (task #1140-F8): the original version of this NOTE claimed
+// "each one's pattern was then confirmed absent from the tree by direct
+// grep (all three returned 0 matches)" for all three. That was TRUE for
+// only TWO of the three, and FALSE for the third in a way that reproduces
+// the exact defect class task #1122 exists to catch (deleting a LIVE entry
+// on the strength of the guard's own stale-report alone). Per entry:
+//   - decommit.rs's `on both Windows and Linux, decommit **does not work**`:
+//     genuinely absent, confirmed wrap-insensitively (the current text reads
+//     "**on Windows, decommit does not work at all**" at decommit.rs:64 —
+//     no trace of the old joint claim, checked with the `///`-lines joined
+//     first, not a bare line-oriented grep).
+//   - decommit.rs's `On Linux, `MADV_DONTNEED`/`MADV_FREE` ... is accepted`:
+//     genuinely absent, same wrap-insensitive check — `MAP_HUGETLB` does not
+//     appear anywhere in api/decommit.rs at all (this specific entry's
+//     regex named `MAP_HUGETLB`, not `MADV_DONTNEED`/`MADV_FREE`; both are
+//     confirmed gone).
+//   - reservation.rs's `Windows crashes on write before recommit, Linux does
+//     not`: NOT absent. The sentence was still present verbatim at
+//     reservation.rs:597-598, split across a `///` line wrap — invisible to
+//     a line-oriented `grep` (the same blind spot #1114 and #1133 each hit).
+//     What actually happened: task #1140's OWN commit (`a839d63`) inserted
+//     "the Linux/Android >= 5.18 huge-aligned real-call path" into the SAME
+//     window (reservation.rs, a few lines below the sentence above), which
+//     satisfies this guard's Android-satisfier test for the whole window —
+//     so the window stopped being a reported VIOLATION, and the entry went
+//     stale by that route, not because the drift was fixed or reworded.
+//     The false "confirmed absent by grep" claim was corrected in the same
+//     task that fixed the underlying sentence: reservation.rs:597-598 now
+//     reads "Linux and Android do not" instead of "Linux does not",
+//     removing the ambiguity outright rather than leaving it merely masked
+//     by an incidental Android mention elsewhere in the window (see KNOWN
+//     LIMITATIONS 4 below — this is exactly the "DEMOTED, not DROPPED"
+//     shape that limitation already documents the guard as blind to). This
+//     fix did not surface a new stale allowlist entry (verified: the guard
+//     stayed OK with the same 10-entry allowlist before and after), because
+//     the window was already non-violating on account of the `a839d63`
+//     Android mention — the guard could not have caught EITHER the original
+//     drift's persistence or this fix's redundancy from its own output
+//     alone; both were found by re-reading the source file directly.
+// The Cargo.toml `(Linux `MADV_HUGEPAGE`)` and huge.rs `On Linux,
+// `madvise` ...` entries from the #1122-restored trio remain live below.
 //
 // KNOWN LIMITATIONS (same posture as vmem-doc-drift-guard.mjs):
 //   1. Per-block/paragraph heuristics cannot fully decide English semantics.
@@ -216,6 +248,19 @@
 //      the same English-semantics wall as limitation 1 — so it is recorded
 //      rather than fixed. Practical consequence: this guard catches a
 //      DROPPED Android mention, not a DEMOTED one.
+//      RELATED BUT NOT CLOSED BY task #1140-F8's masked-KNOWN_DRIFT check
+//      (see the `allWindows`/`maskedEntries` code below and its own header
+//      comment): that check only fires for a pattern already named in
+//      KNOWN_DRIFT — it re-tests EXISTING allowlist entries' literal text
+//      against every window, so a stale-entry deletion can no longer be
+//      justified by "the guard says stale" alone. It does nothing for a
+//      BRAND-NEW Linux-only paragraph that happens to sit in the same
+//      window as an incidental Android mention and was never flagged in
+//      the first place — that shape is still this limitation, unclosed,
+//      exactly as before. The two checks answer different questions: this
+//      limitation is about Rule 1 (is a window a violation at all); the
+//      masked-entries check is about the ALLOWLIST's own honesty once an
+//      entry exists.
 //   5. The rule window is the PARAGRAPH / LIST ITEM / TABLE ROW: all
 //      sentences inside one window are joined, so a Linux-only claim whose
 //      satisfier sits in a DIFFERENT sentence of the same window is caught
@@ -357,6 +402,21 @@
 //      window (under #1130's optional-scheme `URL_TOKEN` the token was
 //      deleted as a pseudo-URL BEFORE the `\blinux\b` test — a silent
 //      miss, exit 0; the scheme is now mandatory).
+//  11. (task #1140-F8) Reconstructing the exact historical defect — a
+//      reservation.rs window whose Linux-only sentence
+//      ("Windows crashes on write before recommit, Linux does not") is
+//      still present, wrap-split across a `///` line, but whose window
+//      ALSO carries an unrelated Android mention ("the Linux/Android >= 5.18
+//      ... path") a few lines below — plus a KNOWN_DRIFT entry naming that
+//      sentence, in a scratch copy of the tree (built under `$TEMP`, never
+//      inside the repo) FAILS with "MASKED KNOWN_DRIFT allowlist entries",
+//      not a silent pass and not a plain "stale" message (exit 1, correctly
+//      distinguishing "pattern gone" from "window stopped violating"). A
+//      paired negative control in the same run — a KNOWN_DRIFT entry for a
+//      pattern that IS genuinely gone from the tree (decommit.rs's old
+//      `on both Windows and Linux, decommit **does not work**` wording) —
+//      reports as plain "stale KNOWN_DRIFT allowlist entries" in the same
+//      run, proving the split does not misclassify a real fix as masked.
 
 import { REPO_ROOT } from './lib.mjs';
 import { readFileSync, readdirSync } from 'fs';
@@ -504,6 +564,23 @@ function main() {
 
   const violations = [];
 
+  // Every window's wrap-joined text, regardless of violation status (task
+  // #1140-F8). `violations` above only records windows the RULE currently
+  // flags; `allWindows` records EVERY window this scan ever builds, so the
+  // staleness check below can ask a different, narrower question: "does a
+  // KNOWN_DRIFT pattern's literal text still exist anywhere in the file,
+  // wrap-joined, independent of whether its window currently violates the
+  // rule?" This is what closes the #1140-F8 class: reservation.rs's
+  // "Windows crashes on write before recommit, Linux does not" sentence
+  // stayed in the file, split across a `///` wrap, after task #1140 (a839d63)
+  // added an unrelated Android mention to the SAME window — the window
+  // stopped being a `violations` entry (correctly, per the rule), but the
+  // sentence itself never moved. A staleness check built only on `violations`
+  // cannot distinguish "the pattern text is gone" from "the pattern's window
+  // stopped violating" — `allWindows` is what makes that distinction checkable.
+  /** @type {{path: string, lineNum: number, docText: string}[]} */
+  const allWindows = [];
+
   // Windows are built per the WINDOW RULE in the header: a maximal run of
   // WRAPPED CONTINUATION lines. A blank line ends a window; a line starting
   // a new structural item (Markdown table row / list item) starts a new
@@ -517,6 +594,11 @@ function main() {
     const flush = () => {
       if (current.length > 0) {
         checkDocComment(current, violations, path);
+        allWindows.push({
+          path,
+          lineNum: current[0].lineNum,
+          docText: current.map(l => l.content).join(' '),
+        });
         current = [];
       }
     };
@@ -592,6 +674,29 @@ function main() {
   }
   const staleEntries = KNOWN_DRIFT.filter(e => !activeKnown.has(e));
 
+  // Task #1140-F8: split staleEntries into MASKED (the pattern's literal
+  // text still exists somewhere in the file, wrap-joined, but its window no
+  // longer violates the rule — usually because an Android mention landed
+  // elsewhere in the SAME window) vs GENUINELY-stale (the pattern text is
+  // actually gone). This does not change which entries fail the guard —
+  // both classes still FAIL below, exactly as `staleEntries` always has —
+  // it only changes what the guard tells the reader about WHY an entry is
+  // stale, because "stale" was conflating two different facts (see the NOTE
+  // above this function's KNOWN_DRIFT list for the incident this closes).
+  // `allWindows` entries are already wrap-joined by pushWindows/checkDocComment
+  // (the same `.map(l => l.content).join(' ')` the violation path uses), so
+  // this is a re-use of existing wrap-insensitivity, not a new normalization
+  // layer — see the KNOWN LIMITATIONS entry on this near the end of the
+  // header for why a broader raw-text normalization pass was NOT built.
+  const maskedEntries = [];
+  const goneEntries = [];
+  for (const e of staleEntries) {
+    const stillPresent = allWindows.some(
+      w => w.path === e.file && e.sentenceRegex.test(w.docText)
+    );
+    (stillPresent ? maskedEntries : goneEntries).push(e);
+  }
+
   let failed = false;
   if (fresh.length > 0) {
     console.log(
@@ -603,11 +708,21 @@ function main() {
     }
     failed = true;
   }
-  if (staleEntries.length > 0) {
+  if (maskedEntries.length > 0) {
+    console.log(
+      `\n[vmem-linux-android-pairing-guard] FAIL: MASKED KNOWN_DRIFT allowlist entries (the pattern's literal text is STILL PRESENT in the file — its window merely stopped violating the rule, most likely because an Android mention landed elsewhere in the same window; this is NOT confirmation the drift was fixed or reworded — read the cited window before deleting the entry):`
+    );
+    for (const e of maskedEntries) {
+      console.log(`\n  ${e.file}  /${e.sentenceRegex.source}/`);
+      console.log(`  reason: ${e.reason}`);
+    }
+    failed = true;
+  }
+  if (goneEntries.length > 0) {
     console.log(
       `\n[vmem-linux-android-pairing-guard] FAIL: stale KNOWN_DRIFT allowlist entries (their drift was fixed or reworded, or the guard's window no longer detects it — remove the entry so the debt list stays honest):`
     );
-    for (const e of staleEntries) {
+    for (const e of goneEntries) {
       console.log(`\n  ${e.file}  /${e.sentenceRegex.source}/`);
       console.log(`  reason: ${e.reason}`);
     }

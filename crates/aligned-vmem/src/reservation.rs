@@ -595,8 +595,8 @@ impl Reservation {
     /// #1084/M3) — and never trips the tripwire.
     ///
     /// See [`decommit`] for platform divergence notes (Windows crashes on write
-    /// before recommit, Linux does not), huge-page incompatibility, and Darwin
-    /// zero-fill caveats. Under the `bench-internals` feature, the
+    /// before recommit, Linux and Android do not), huge-page incompatibility,
+    /// and Darwin zero-fill caveats. Under the `bench-internals` feature, the
     /// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented when decommit
     /// is called on a huge-page reservation with a range that is NOT eligible
     /// for the Linux/Android >= 5.18 huge-aligned real-call path (i.e. the
