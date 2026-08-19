@@ -203,6 +203,22 @@ fn expected_for(rel: &str) -> (usize, usize, usize, usize) {
     }
 }
 
+// Task #1147: this is a text guard over `src/` (a `std::fs::read_dir` +
+// `std::fs::read_to_string` walk of source files), not a check of anything
+// miri interprets. Under miri's default filesystem isolation, `read_dir`
+// aborts the whole interpreter run with "unsupported operation: `opendir`
+// not available when isolation is enabled" (Linux CI) / "can't call foreign
+// function `FindFirstFileExW`" (observed locally on Windows) — not a bug in
+// this test or in `aligned-vmem`, just an operation miri's default sandbox
+// refuses by design. Because miri aborts on the FIRST failure, this ALSO
+// masked every later-ordered test binary in the same `cargo miri test`
+// invocation, including `tests/lazy_reservation_no_borrowed_reservation.rs`'s
+// own identically-shaped `fs::read_dir` walk (also `#[cfg_attr(miri,
+// ignore)]`, same reason). See `docs/CORRECTNESS_OPEN_ITEMS.md` item 84 for
+// the recorded coverage-reduction card and the considered alternatives
+// (disabling miri's filesystem isolation for the whole job; moving both
+// guards to `scripts/`).
+#[cfg_attr(miri, ignore)]
 #[test]
 fn granted_huge_reader_enumeration_is_pinned() {
     let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
