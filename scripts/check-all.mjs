@@ -241,7 +241,18 @@
 //      Unlike the floor test it is NOT host-adaptive: it drives the
 //      failure through the raw-query seam, so its discriminating
 //      assertions run on a 4 KiB host too.)
-//   48. npm run iai                                                (deterministic judge,
+//   48. node scripts/verify-ci-sentinels.mjs   (task #1150: static guard that every
+//      `grep -F "test <NAME> ... ok"` postcondition in .github/workflows/ci.yml
+//      stays byte-identical to what libtest actually prints for the named `fn`
+//      — a `#[should_panic]`/`#[ignore]` attribute added to a sentinel-tracked
+//      test with no matching ci.yml edit is exactly the task #1146 defect class
+//      (commit 77efd3a: six sentinels stayed in the plain form after their
+//      targets gained #[should_panic], failing two loom jobs on every push
+//      despite every test in them passing). Pure text scan, no cargo
+//      invocation — appended at the array's END so every step number above it
+//      is unchanged; see the script's own header for the full design and its
+//      documented does/does-NOT-cover split.)
+//   49. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -964,10 +975,32 @@ const steps = [
     env: { RUSTFLAGS: '--cfg aligned_vmem_page_size_override' },
     expectTest: 'failed_os_page_size_query_fails_closed',
   },
+  {
+    // Task #1150: static guard over every `grep -F "test <NAME> ... ok"`
+    // postcondition in .github/workflows/ci.yml — the sentinel string must
+    // stay byte-identical to what libtest actually prints for the named
+    // `fn`, which depends on that fn's real `#[should_panic]`/`#[ignore]`
+    // attributes. Task #1146 (commit 77efd3a) found and fixed six sentinels
+    // that named `#[should_panic]` tests in the plain "... ok" form — two
+    // loom jobs went red on every push while every test in them passed —
+    // and nothing before that task would have caught the drift
+    // automatically; this step is that automatic signal, going forward.
+    // Appended at the END of the array (not inserted mid-list) specifically
+    // to minimise the step-numbering shift this file's own header documents
+    // as unavoidable on every insertion (see the header's task #1137 note):
+    // every step ABOVE this one keeps its existing number. Pure text scan
+    // of ci.yml + tests/*.rs / crates/*/tests/*.rs, no cargo invocation —
+    // see scripts/verify-ci-sentinels.mjs's own header for the full design
+    // and its documented does/does-NOT-cover split (also recorded in
+    // docs/CORRECTNESS_OPEN_ITEMS.md item 87).
+    name: 'verify-ci-sentinels (ci.yml grep -F sentinel / #[should_panic] / #[ignore] consistency)',
+    cmd: 'node',
+    args: ['scripts/verify-ci-sentinels.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x20 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x${clippyRows.length} [generated], test x8, aligned-vmem x20 [2 clean + 5 clippy + 3 cross-target unix (1 check + 2 clippy) + 1 mock clippy + 4 test + 2 doc (--all-features + the docs.rs feature set, task #1142) + 1 optional semver + 2 override-cfg tests at the array tail (page-size-override floor, task #1095; failed-query fail-closed oracle, task #1139)], perf-gate check + internals-boundary test [generated], verify-internals-negative-boundary, verify-alloc-core-dbg-internals-exhaustive, verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, vmem-doc-drift-guard, vmem-linux-android-pairing-guard, verify-aligned-vmem-bench-internals-exhaustive, stale-artifact-diagnosis [self-test], verify-vmem-page-constant-call-sites, verify-ci-sentinels [task #1150], iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

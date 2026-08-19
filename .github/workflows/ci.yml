@@ -663,6 +663,25 @@ jobs:
       # checkout the untracked set is empty by construction). ~1.8 s
       # measured.
       - run: node scripts/verify-vmem-page-constant-call-sites.mjs
+      # Task #1150: static guard over every `grep -F "test <NAME> ... ok"`
+      # postcondition in THIS file — the sentinel string must stay
+      # byte-identical to what libtest actually prints for the named `fn`,
+      # which depends on that fn's real `#[should_panic]`/`#[ignore]`
+      # attributes. Task #1146 (commit 77efd3a) found and fixed six
+      # sentinels that named `#[should_panic]` tests in the plain "... ok"
+      # form — two loom jobs went red on every push despite every test in
+      # them passing — with nothing catching the drift automatically
+      # before that task. A guard with no gate row is this repo's
+      # most-repeated defect (see item 80/task #1131 in
+      # docs/CORRECTNESS_OPEN_ITEMS.md — a guard hardened across seven
+      # tasks with no CI row at all); this row is what keeps this guard
+      # from joining that class. Pure text scan (no cargo invocation) of
+      # this workflow file plus tests/*.rs / crates/*/tests/*.rs — folded
+      # in next to the other text scans above for the same reason. See
+      # scripts/verify-ci-sentinels.mjs's own header for the full design
+      # and its documented does/does-NOT-cover split (also recorded in
+      # docs/CORRECTNESS_OPEN_ITEMS.md item 85).
+      - run: node scripts/verify-ci-sentinels.mjs
 
   commit-prefix-lint:
     # R31-5c (task #482): lints every commit in a PR's range against
