@@ -727,22 +727,26 @@ fn windows_virtualfree_release_failures_accessor_exists() {
     // `npm run check` load.
     let _guard = serial_guard();
     // This test verifies that the `windows_virtualfree_release_failures()`
-    // accessor exists, compiles, and returns 0 when no failures have occurred.
-    // A path-activation test for real VirtualFree(MEM_RELEASE) failures is
-    // difficult without mocking (the failure mode is a silent leak on Drop),
-    // so this minimal sanity check is the practical baseline.
+    // accessor exists, compiles, and returns 0 immediately after a reset --
+    // a minimal existence/reset sanity check, kept here because
+    // `reset_bench_internals_counters()`'s own reset-to-zero contract for
+    // this specific counter is otherwise untested in this file's build
+    // (`lazy-commit`-gated; `tests/smoke.rs` does not require that feature).
     //
-    // Deliberately WEAKER than the decommit counter's coverage, and named as
-    // such: `windows_virtualfree_decommit_failures()` has a real delta-asserting
-    // test above (`safe_decommit_over_never_committed_tail_succeeds`, which pins
-    // `failures_after == failures_before` across a known-good decommit), because
-    // that syscall is reachable on demand. `MEM_RELEASE` is not: it only runs
-    // from `Drop`, and making it FAIL on demand would require a bogus base
-    // address -- i.e. deliberately violating `winapi_virtual_release`'s own
-    // safety contract. `unix_munmap_failures()` has no test at all today. So
-    // this checks existence, accessibility and reset-to-zero only; it would NOT
-    // catch the increment being deleted. Full fail-path coverage stays deferred
-    // to a fault-injection harness.
+    // Task #1189 (coverage gap C2 from
+    // `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`):
+    // this test alone is DELIBERATELY NOT the release-oracle -- it was, until
+    // this task, the ONLY coverage `windows_virtualfree_release_failures()`
+    // had, and its own comment (preserved in git history) said so plainly:
+    // "this checks existence, accessibility and reset-to-zero only; it would
+    // NOT catch the increment being deleted." That gap is now closed by
+    // `tests/smoke.rs`'s
+    // `windows_virtualfree_release_is_attempted_exactly_once_and_does_not_fail`
+    // (Windows) and `unix_munmap_release_is_attempted_exactly_once_and_does_not_fail`
+    // (Unix, the `unix_munmap_failures()` counterpart this comment used to
+    // name as having "no test at all") -- both hold a `SERIAL`-style mutex,
+    // snapshot the new `*_ATTEMPTS` counter around a single `Drop`, and
+    // assert the delta is exactly 1, which a call-site deletion WOULD fail.
     aligned_vmem::reset_bench_internals_counters();
     let failures = aligned_vmem::windows_virtualfree_release_failures();
     assert_eq!(

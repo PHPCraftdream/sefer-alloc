@@ -67,12 +67,12 @@ fn bench_internals_counters_existence_and_reset() {
     // requires each one to be CALLED somewhere in this file.
     use aligned_vmem::{
         huge_decommit_attempts, unix_exact_reserve_attempts, unix_exact_reserve_hits,
-        unix_madvise_attempts, unix_madvise_successes, unix_munmap_failures,
+        unix_madvise_attempts, unix_madvise_successes, unix_munmap_attempts, unix_munmap_failures,
         windows_large_page_alignment_failures, windows_large_page_plain_fallback_successes,
         windows_large_page_retry_failures, windows_reserve_commit_calls,
         windows_reserve_commit_single_calls, windows_reserve_commit_two_call_pairs,
         windows_virtualfree_decommit_attempts, windows_virtualfree_decommit_failures,
-        windows_virtualfree_release_failures,
+        windows_virtualfree_release_attempts, windows_virtualfree_release_failures,
     };
 
     // Reserve 4 * page_size() to ensure we can decommit at least one page
@@ -129,9 +129,11 @@ fn bench_internals_counters_existence_and_reset() {
     assert_eq!(windows_large_page_plain_fallback_successes(), 0);
     assert_eq!(unix_madvise_attempts(), 0);
     assert_eq!(unix_madvise_successes(), 0);
+    assert_eq!(unix_munmap_attempts(), 0);
     assert_eq!(unix_munmap_failures(), 0);
     assert_eq!(windows_virtualfree_decommit_attempts(), 0);
     assert_eq!(windows_virtualfree_decommit_failures(), 0);
+    assert_eq!(windows_virtualfree_release_attempts(), 0);
     assert_eq!(windows_virtualfree_release_failures(), 0);
     assert_eq!(huge_decommit_attempts(), 0);
 }

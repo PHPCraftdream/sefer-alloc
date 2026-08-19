@@ -1858,3 +1858,113 @@ fn into_full_parts_preserves_granted_huge() {
         // Drop releases the reservation exactly once.
     }
 }
+
+/// Task #1189 (coverage gap C2 from
+/// `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`):
+/// `UNIX_MUNMAP_FAILURES` existed with no paired attempts counter and no
+/// test ever exercised it around `Drop` -- the crate's own comment at
+/// `tests/lazy_commit.rs` (`windows_virtualfree_release_failures_accessor_exists`)
+/// says so explicitly for the Windows counterpart, and the Unix side had not
+/// even that much: no test at all. A test asserting only
+/// `unix_munmap_failures() == 0` cannot tell "release ran and succeeded"
+/// apart from "the release call site was deleted and never ran" -- both read
+/// zero. This test closes that gap with a real attempt/success oracle: hold
+/// [`SERIAL`] for the whole body (mirroring every other counter-reading test
+/// in this file, e.g. `macos_decommit_madvise_syscall_actually_succeeds`),
+/// snapshot `unix_munmap_attempts()`/`unix_munmap_failures()`, drop a live
+/// reservation (the ONLY `munmap` call in this window -- no concurrent
+/// reserve/release activity in this process, since `SERIAL` excludes every
+/// other test in this binary and this is a single-reservation test), then
+/// assert attempts increased by exactly 1 and failures did not increase.
+///
+/// **Vacuous-pass check:** perturbing `libc_munmap` to skip its
+/// `UNIX_MUNMAP_ATTEMPTS.fetch_add` call (simulating the release call site
+/// silently disappearing) makes this test fail on the attempts-delta assert
+/// below; the pre-existing `unix_munmap_failures() == 0`-only style would
+/// NOT have caught that regression, which is exactly the gap this test
+/// exists to close.
+///
+/// `bench-internals`-gated (the counters themselves do not exist otherwise)
+/// and excluded under `aligned_vmem_mock` (the recording backend never calls
+/// the real `munmap(2)`, so the counters would stay at 0 by construction,
+/// not by answering the question) and `miri` (no real FFI).
+#[cfg(all(unix, feature = "bench-internals", not(aligned_vmem_mock), not(miri)))]
+#[test]
+fn unix_munmap_release_is_attempted_exactly_once_and_does_not_fail() {
+    use aligned_vmem::{unix_munmap_attempts, unix_munmap_failures};
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+
+    let attempts_before = unix_munmap_attempts();
+    let failures_before = unix_munmap_failures();
+
+    drop(r);
+
+    let attempts_after = unix_munmap_attempts();
+    let failures_after = unix_munmap_failures();
+    assert_eq!(
+        attempts_after,
+        attempts_before + 1,
+        "Drop must attempt exactly one munmap() call for a single live reservation"
+    );
+    assert_eq!(
+        failures_after, failures_before,
+        "munmap() on a reservation this process owns must not fail"
+    );
+}
+
+/// Task #1189 (coverage gap C2), Windows counterpart of
+/// `unix_munmap_release_is_attempted_exactly_once_and_does_not_fail` above.
+/// Replaces `tests/lazy_commit.rs`'s prior
+/// `windows_virtualfree_release_failures_accessor_exists`, which that test's
+/// own doc comment named as deliberately weaker than the decommit
+/// counter's coverage ("this checks existence, accessibility and
+/// reset-to-zero only; it would NOT catch the increment being deleted").
+/// `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS` (added alongside this test) turns
+/// that named gap into a real attempt/success oracle: hold [`SERIAL`] for
+/// the whole body, snapshot both counters, drop a live reservation (the
+/// ONLY `VirtualFree(MEM_RELEASE)` call in this window), then assert
+/// attempts increased by exactly 1 and failures did not increase --
+/// mirroring `tests/lazy_commit.rs`'s existing
+/// `safe_decommit_over_never_committed_tail_succeeds` delta-assert pattern
+/// for `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES`.
+///
+/// **Vacuous-pass check:** perturbing `winapi_virtual_release` to skip its
+/// `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS.fetch_add` call makes this test
+/// fail on the attempts-delta assert below; the replaced
+/// existence-and-reset-only test would NOT have caught that regression.
+#[cfg(all(
+    windows,
+    feature = "bench-internals",
+    not(aligned_vmem_mock),
+    not(miri)
+))]
+#[test]
+fn windows_virtualfree_release_is_attempted_exactly_once_and_does_not_fail() {
+    use aligned_vmem::{
+        windows_virtualfree_release_attempts, windows_virtualfree_release_failures,
+    };
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
+
+    let attempts_before = windows_virtualfree_release_attempts();
+    let failures_before = windows_virtualfree_release_failures();
+
+    drop(r);
+
+    let attempts_after = windows_virtualfree_release_attempts();
+    let failures_after = windows_virtualfree_release_failures();
+    assert_eq!(
+        attempts_after,
+        attempts_before + 1,
+        "Drop must attempt exactly one VirtualFree(MEM_RELEASE) call for a single live reservation"
+    );
+    assert_eq!(
+        failures_after, failures_before,
+        "VirtualFree(MEM_RELEASE) on a reservation this process owns must not fail"
+    );
+}

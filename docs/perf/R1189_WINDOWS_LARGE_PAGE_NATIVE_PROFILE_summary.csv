@@ -1,0 +1,4 @@
+label,size_bytes,iters,successes,single_call,two_call_pairs,large_page_alignment_failures,large_page_retry_failures,large_page_plain_fallback_successes
+2 MiB (== GetLargePageMinimum on typical x86_64),2097152,8,8,0,8,8,0,8
+4 MiB (> GetLargePageMinimum on typical x86_64),4194304,8,8,0,8,0,0,0
+2 MiB larger batch,2097152,32,32,0,32,32,0,32

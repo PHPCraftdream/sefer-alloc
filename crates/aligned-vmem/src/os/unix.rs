@@ -14,7 +14,9 @@ use core::sync::atomic::Ordering;
 ))]
 use crate::bench_internals::{UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS};
 #[cfg(feature = "bench-internals")]
-use crate::bench_internals::{UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES};
+use crate::bench_internals::{
+    UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_ATTEMPTS, UNIX_MUNMAP_FAILURES,
+};
 use crate::error::VmemError;
 use crate::os::{align_up_addr, DecommitKind};
 
@@ -1100,6 +1102,15 @@ unsafe fn libc_munmap(addr: *mut u8, len: usize) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
+    //
+    // task #1189 (coverage gap C2): also increment the attempts counter
+    // BEFORE the syscall, mirroring `libc_madvise`'s attempts/successes
+    // pairing below. Without this, `UNIX_MUNMAP_FAILURES` alone cannot
+    // distinguish "release ran and succeeded" from "the call site was
+    // removed and never ran" -- both read as zero failures. See
+    // `UNIX_MUNMAP_ATTEMPTS`'s own doc for the full reasoning.
+    #[cfg(feature = "bench-internals")]
+    UNIX_MUNMAP_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let ret = unsafe { munmap(addr as *mut core::ffi::c_void, len) };
     #[cfg(feature = "bench-internals")]
     if ret != 0 {

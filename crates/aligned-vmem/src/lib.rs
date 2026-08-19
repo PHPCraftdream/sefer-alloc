@@ -182,11 +182,12 @@ mod bench_internals;
 #[cfg(feature = "bench-internals")]
 pub use bench_internals::{
     huge_decommit_attempts, reset_bench_internals_counters, unix_exact_reserve_attempts,
-    unix_exact_reserve_hits, unix_madvise_attempts, unix_madvise_successes, unix_munmap_failures,
-    windows_large_page_alignment_failures, windows_large_page_plain_fallback_successes,
-    windows_large_page_retry_failures, windows_reserve_commit_calls,
-    windows_reserve_commit_single_calls, windows_reserve_commit_two_call_pairs,
-    windows_virtualfree_decommit_attempts, windows_virtualfree_decommit_failures,
+    unix_exact_reserve_hits, unix_madvise_attempts, unix_madvise_successes, unix_munmap_attempts,
+    unix_munmap_failures, windows_large_page_alignment_failures,
+    windows_large_page_plain_fallback_successes, windows_large_page_retry_failures,
+    windows_reserve_commit_calls, windows_reserve_commit_single_calls,
+    windows_reserve_commit_two_call_pairs, windows_virtualfree_decommit_attempts,
+    windows_virtualfree_decommit_failures, windows_virtualfree_release_attempts,
     windows_virtualfree_release_failures,
 };
 

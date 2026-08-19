@@ -495,6 +495,27 @@ jobs:
       # test's own decommit() call without racing them). It is instead an
       # OBSERVATION only, logged around the isolated marker invocation below:
       # informative for a human reading the log, never a pass/fail gate.
+      #
+      # Task #1189 (coverage gap C2 from
+      # docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md):
+      # this job proved dispatch (madvise accepted) and content
+      # (decommitted range reads zero), but never checked that RELEASE
+      # (`munmap` on `Drop`) was even attempted for a real HugeTLB mapping --
+      # `UNIX_MUNMAP_FAILURES` existed but nothing in this job read it around
+      # a `Drop`, and a failures-only check cannot tell "release ran and
+      # succeeded" apart from "the release call site was deleted and never
+      # ran" (both read zero failures). `ci_hugetlb_real_pool_release_is_
+      # attempted_exactly_once_and_does_not_fail` (`decommit_capability.rs`)
+      # closes this with the NEW `UNIX_MUNMAP_ATTEMPTS` counter (added this
+      # same task, mirroring the existing `UNIX_MADVISE_ATTEMPTS` pairing):
+      # snapshot attempts/failures, `drop()` a real HugeTLB reservation, hard
+      # assert the attempts delta is exactly 1 and the failures delta is 0.
+      # Unlike `HugePages_Free`, `UNIX_MUNMAP_ATTEMPTS` is THIS PROCESS's own
+      # counter (this test's binary is a separate OS process from this job's
+      # other two test binaries), so a hard assert here is sound, not a
+      # repeat of the pool-count flakiness this job's comments elsewhere
+      # warn against -- see the test's own doc comment for the full
+      # reasoning. Needs `bench-internals` (already on for this whole step).
       - run: |
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test huge_pages --test decommit_capability --test reservation_decommit_contract \
@@ -506,6 +527,7 @@ jobs:
           grep -F "test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test decommit_capability \
             -- --exact ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback --nocapture \
@@ -531,6 +553,14 @@ jobs:
           grep -F "[oracle] ARMED: decommitted range read back as all-zero on real MAP_HUGETLB grant" "$RUNNER_TEMP/vmem-hugetlb-real-marker3.log"
           echo "HugePages_Free after decommit-content test (observation only, not a gate -- see step comment above):"
           grep -i HugePages_Free /proc/meminfo
+          # Task #1189: isolated marker invocation for the release-attempt
+          # oracle, same shape as marker1-3 above (no other test running
+          # concurrently in this process to interleave with its `println!`).
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test decommit_capability \
+            -- --exact ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker4.log"
+          grep -F "[oracle] ARMED: real MAP_HUGETLB release attempted exactly once and did not fail" "$RUNNER_TEMP/vmem-hugetlb-real-marker4.log"
         shell: bash
 
   aligned-vmem-miri:

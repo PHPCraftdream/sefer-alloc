@@ -1,0 +1,4 @@
+note: this run measures the UNPRIVILEGED regime (no SeLockMemoryPrivilege acquisition attempted) -- see this file's own module doc for why that is the regime item 57's P3-b decision needs real numbers for.
+2 MiB (== GetLargePageMinimum on typical x86_64): size=2097152 iters=8 successes=8 single_call=0 two_call_pairs=8 large_page_alignment_failures=8 large_page_retry_failures=0 large_page_plain_fallback_successes=8
+4 MiB (> GetLargePageMinimum on typical x86_64): size=4194304 iters=8 successes=8 single_call=0 two_call_pairs=8 large_page_alignment_failures=0 large_page_retry_failures=0 large_page_plain_fallback_successes=0
+2 MiB, larger batch: size=2097152 iters=32 successes=32 single_call=0 two_call_pairs=32 large_page_alignment_failures=32 large_page_retry_failures=0 large_page_plain_fallback_successes=32

@@ -71,9 +71,45 @@ pub(crate) static WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES: AtomicU64 = AtomicU64::
 /// diagnostic visibility into the failure rate. Added to address the finding
 /// documented in `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`
 /// item R4-7.
+///
+/// Denominator: [`WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`] (added task #1189)
+/// -- see that static's own doc for why a failures-only counter cannot by
+/// itself distinguish "the release call ran and succeeded" from "the call
+/// site was never reached at all".
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub(crate) static WINDOWS_VIRTUALFREE_RELEASE_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: total number of `VirtualFree(..., MEM_RELEASE)` calls
+/// attempted (Windows only — always 0 on Unix/miri), regardless of outcome.
+/// Denominator for [`WINDOWS_VIRTUALFREE_RELEASE_FAILURES`], mirroring the
+/// existing `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES` and Unix
+/// `UNIX_MUNMAP_ATTEMPTS`/`UNIX_MUNMAP_FAILURES` attempt/outcome pairs.
+///
+/// Added (task #1189, coverage gap C2 from
+/// `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`):
+/// `windows_virtualfree_release_failures()` alone reads `0` both when
+/// release genuinely succeeded and when the call site was deleted or never
+/// reached — a test asserting only `failures == 0` around a `Drop` is
+/// therefore vacuous against a regression that removes the call entirely.
+/// Pairing this attempts counter with the existing failures counter closes
+/// that gap: a test can assert `windows_virtualfree_release_attempts()`
+/// increased by exactly the expected call count (attempt/success oracle),
+/// not just that the failure count stayed at zero.
+///
+/// `winapi_virtual_release` (this counter's sole increment site) is called
+/// from several places in `crate::os::windows` -- the real release path
+/// (`release_reservation`, reached from `Reservation::Drop` and the free
+/// `release`/`try_release` functions) AND internal cleanup paths inside
+/// `win_reserve_commit` (releasing a speculative reservation after a failed
+/// commit attempt). A caller isolating this counter around one
+/// `Drop`/`release` call must ensure no concurrent reservation/release
+/// activity runs in the same window (e.g. via a serializing test mutex) for
+/// the delta to attribute cleanly to that one call, exactly as the existing
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS` pairing already relies on.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: number of `VirtualFree(MEM_DECOMMIT)` attempts made.
 /// Denominator for [`WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES`]. Mirrors the Unix
@@ -219,4 +255,15 @@ pub fn windows_virtualfree_decommit_failures() -> u64 {
 #[must_use]
 pub fn windows_virtualfree_release_failures() -> u64 {
     WINDOWS_VIRTUALFREE_RELEASE_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`.
+/// Denominator for [`windows_virtualfree_release_failures`]; see that
+/// static's own doc for the attempt/success oracle this pairing enables.
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn windows_virtualfree_release_attempts() -> u64 {
+    WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS.load(Ordering::Relaxed)
 }

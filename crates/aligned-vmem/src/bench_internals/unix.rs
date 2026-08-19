@@ -80,9 +80,52 @@ pub(crate) static UNIX_MADVISE_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 /// least diagnostic visibility into the failure rate. Added to address
 /// the finding documented in `docs/reviews/2026-08-16-aligned-vmem-fxx-prerelease-audit.md`
 /// item P2-6.
+///
+/// Denominator for [`UNIX_MUNMAP_FAILURES`] itself, in the sense that a
+/// `munmap` call is either counted here as an attempt and THEN, iff it
+/// failed, ALSO counted in that static -- see this static's own doc
+/// (`UNIX_MUNMAP_ATTEMPTS`, immediately below) for why a failures-only
+/// counter cannot by itself distinguish "the call was attempted and
+/// succeeded" from "the call site was removed and never ran at all".
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub(crate) static UNIX_MUNMAP_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: total number of `munmap` calls attempted (Unix only —
+/// always 0 on Windows/miri), regardless of outcome. Denominator for
+/// [`UNIX_MUNMAP_FAILURES`], mirroring the existing
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` and
+/// `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES` attempt/outcome pairs
+/// in this module.
+///
+/// Added (task #1189, coverage gap C2 from
+/// `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`):
+/// before this counter existed, `UNIX_MUNMAP_FAILURES` alone could not
+/// distinguish "the real `Reservation::release`/`Drop` path called `munmap`
+/// and it succeeded" from "the call site was deleted (or never reached) and
+/// `munmap` was never invoked at all" -- both leave the failures counter at
+/// zero. A test asserting only `unix_munmap_failures() == 0` around a
+/// `Drop` is therefore VACUOUS against that regression: it cannot fail if
+/// the release call disappears. Pairing this attempts counter with the
+/// existing failures counter closes that gap -- a test can now assert
+/// `unix_munmap_attempts()` increased by exactly the expected call count
+/// (attempt/success oracle), not just that the failure count stayed at
+/// zero.
+///
+/// `libc_munmap` (this counter's sole increment site) is called from
+/// several places in `crate::os::unix` -- the real release path
+/// (`release_reservation`, reached from `Reservation::Drop` and the free
+/// `release`/`try_release` functions) AND internal cleanup paths inside
+/// `unix_reserve`/`try_reserve_aligned_exact`/`libc_mmap` (e.g. releasing a
+/// speculative huge-page mapping that missed its alignment guarantee, or an
+/// address-zero grant). A caller isolating this counter around one
+/// `Drop`/`release` call must ensure no concurrent reservation/release
+/// activity runs in the same window (e.g. via a serializing test mutex) for
+/// the delta to attribute cleanly to that one call, exactly as the existing
+/// `UNIX_MADVISE_ATTEMPTS` doc already notes for `madvise`.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub(crate) static UNIX_MUNMAP_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 
 /// `bench-internals`: relaxed snapshot of the internal
 /// `UNIX_EXACT_RESERVE_ATTEMPTS` counter (private storage; this accessor is
@@ -131,4 +174,14 @@ pub fn unix_madvise_successes() -> u64 {
 #[must_use]
 pub fn unix_munmap_failures() -> u64 {
     UNIX_MUNMAP_FAILURES.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of `UNIX_MUNMAP_ATTEMPTS`. Denominator
+/// for [`unix_munmap_failures`]; see that static's own doc for the
+/// attempt/success oracle this pairing enables. Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bench-internals")))]
+#[must_use]
+pub fn unix_munmap_attempts() -> u64 {
+    UNIX_MUNMAP_ATTEMPTS.load(Ordering::Relaxed)
 }

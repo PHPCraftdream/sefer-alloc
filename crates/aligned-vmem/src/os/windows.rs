@@ -7,7 +7,8 @@ use crate::bench_internals::{
     WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES, WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES,
     WINDOWS_LARGE_PAGE_RETRY_FAILURES, WINDOWS_RESERVE_COMMIT_SINGLE_CALLS,
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS, WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS,
-    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES, WINDOWS_VIRTUALFREE_RELEASE_FAILURES,
+    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES, WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS,
+    WINDOWS_VIRTUALFREE_RELEASE_FAILURES,
 };
 use crate::error::VmemError;
 use crate::os::{align_up_addr, DecommitKind};
@@ -567,6 +568,17 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
     // under `bench-internals` so at least diagnostic visibility exists. The
     // counter is gated on the feature and the increment is a single relaxed
     // fetch_add — zero overhead when the feature is off.
+    //
+    // task #1189 (coverage gap C2): also increment the attempts counter
+    // BEFORE the syscall, mirroring `winapi_virtual_decommit`'s
+    // attempts/failures pairing above and Unix `libc_munmap`'s identical
+    // fix. Without this, `WINDOWS_VIRTUALFREE_RELEASE_FAILURES` alone
+    // cannot distinguish "release ran and succeeded" from "the call site
+    // was removed and never ran" -- both read as zero failures. See
+    // `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`'s own doc for the full
+    // reasoning.
+    #[cfg(feature = "bench-internals")]
+    WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     // SAFETY: `VirtualFree` with `MEM_RELEASE` and size 0 is safe for the base of a `MEM_RESERVE` region.
     let ret = unsafe { VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE) };
     #[cfg(feature = "bench-internals")]

@@ -1064,7 +1064,20 @@ function verifyCiSentinels() {
 // itself (see that step's own comment in ci.yml), because it is a noisy,
 // externally-shared kernel counter, not a deterministic in-process result a
 // `grep -F "test ... ok"`/marker sentinel shape can safely gate on.
-const MIN_SENTINEL_COUNT = 42;
+//
+// [task #1189] Count moved a fifth time, in the SAME commit as this floor
+// bump — 42 -> 44, ONE `test <name> ... ok` sentinel PLUS ONE MARKER
+// sentinel, closing coverage gap C2 (release attempt/success oracle for a
+// real HugeTLB `Drop`). `ci_hugetlb_real_pool_release_is_attempted_
+// exactly_once_and_does_not_fail` (`decommit_capability.rs`) hard-asserts
+// the NEW `UNIX_MUNMAP_ATTEMPTS` counter increased by exactly 1 (and
+// `UNIX_MUNMAP_FAILURES` did not increase) around a single real-HugeTLB
+// `Drop` — unlike the pool-free-count observation above, this counter is
+// THIS PROCESS's own (not kernel-global), so a hard assert is sound here.
+// Its own `[oracle] ARMED: real MAP_HUGETLB release attempted exactly once
+// and did not fail` marker follows the same armed/unarmed-must-differ-in-
+// OUTPUT reasoning as its three siblings.
+const MIN_SENTINEL_COUNT = 44;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

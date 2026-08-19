@@ -1101,3 +1101,151 @@ fn ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess() {
     // `scripts/verify-ci-sentinels.mjs`'s marker-sentinel category.
     println!("[oracle] ARMED: decommitted range read back as all-zero on real MAP_HUGETLB grant");
 }
+
+/// Task #1189 (coverage gap C2 from
+/// `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`):
+/// closes the report's own named gap for the real-HugeTLB job specifically
+/// -- `UNIX_MUNMAP_FAILURES` existed but no test in this job ever checked it
+/// (or any release counter) around a HugeTLB reservation's `Drop`. The
+/// report's own words: "the crate's comment in `unix.rs` assumes leak would
+/// show up as test failure/resource exhaustion... but pool contains many
+/// pages (64) and concurrent mappings are few, so absence of release is not
+/// guaranteed to redden the job" -- i.e. a deleted release call site would
+/// stay invisible in this job forever without a direct oracle.
+///
+/// This is the deterministic, in-process half of that oracle (mirroring the
+/// two-properties split `ci_hugetlb_real_pool_decommit_actually_zeroes_
+/// memory_on_reaccess` above already uses for the write/decommit/read
+/// property vs. the shared `HugePages_Free` pool-count property): reserve
+/// one real HugeTLB mapping, snapshot `unix_munmap_attempts()`/
+/// `unix_munmap_failures()`, `drop()` the reservation (the ONLY `munmap`
+/// call in this window -- `SERIAL` excludes every other test in this
+/// binary, and this test makes exactly one reservation), then hard-assert
+/// the attempts delta is exactly 1 and the failures delta is 0. Unlike
+/// `HugePages_Free` (a kernel-global counter shared across this job's other
+/// huge-page targets, see the sibling test's own doc for why that one stays
+/// printed-not-asserted), `UNIX_MUNMAP_ATTEMPTS`/`_FAILURES` are THIS
+/// PROCESS's own counters -- this test's binary (`decommit_capability`) is
+/// a separate OS process from the job's other two test binaries
+/// (`huge_pages`, `reservation_decommit_contract`), so nothing outside this
+/// one `#[test]` fn's own `SERIAL`-guarded window can touch them. A hard
+/// assert here is the CORRECT strength, not a compromise -- see
+/// `UNIX_MUNMAP_ATTEMPTS`'s own doc comment
+/// (`src/bench_internals/unix.rs`) for the general reasoning this specific
+/// test applies.
+///
+/// **What this test does NOT check (same boundary the sibling test already
+/// draws):** whether the huge page was actually returned to the kernel pool
+/// (`HugePages_Free`) -- that is the job-level printed observation in
+/// `.github/workflows/ci.yml`, unchanged by this test. This test proves the
+/// RELEASE CALL ITSELF ran and succeeded, not that the physical page came
+/// back to the pool -- those are the same "acceptance vs. physical
+/// resource" distinction the sibling test's own doc draws for decommit.
+///
+/// **Vacuous-pass analysis:**
+/// 1. **Env var unset:** the same honest early `return` as every sibling
+///    oracle in this file.
+/// 2. **`#[cfg]` excluding this fn:** requires `huge-pages` (for
+///    `reserve_aligned_huge`) AND `bench-internals` (for the counters) AND
+///    `target_os = "linux"`/`"android"` (the only platforms
+///    `UNIX_MUNMAP_ATTEMPTS` is compiled for -- see that static's own
+///    `#[cfg]`, which additionally requires `unix` and excludes `miri`,
+///    both satisfied whenever `target_os = "linux"`/`"android"` holds).
+///    Narrower than `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_
+///    on_reaccess`'s gate (that one does not need `bench-internals`), same
+///    shape as `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_
+///    madvise`'s gate.
+/// 3. **The reservation falling back to ordinary pages:** hard-asserted via
+///    `is_huge()`, identical tripwire to every sibling oracle in this file
+///    -- without it this test would validate the ordinary-page release
+///    path (already implicitly exercised by every other test in this
+///    crate's suite that drops a `Reservation`) and prove nothing new
+///    about the HugeTLB-specific `munmap` alignment contract task #714
+///    documents (`src/os/unix.rs`'s `unix_reserve` doc comment: `munmap`'s
+///    `addr`/`length` must both be huge-page-size multiples for a
+///    `MAP_HUGETLB` mapping, or the kernel returns `EINVAL` and leaks the
+///    whole mapping).
+/// 4. **A concurrent reservation/release in the same process touching the
+///    same counters:** `SERIAL` is held for this test's entire body
+///    (acquired before the reservation, released only when the function
+///    returns), so no other test in THIS binary can run concurrently; no
+///    other binary shares this process's counters (see the module-level
+///    reasoning above).
+/// 5. **The counter increment being deleted from `libc_munmap` (the actual
+///    regression this test exists to catch):** would make `attempts_after
+///    == attempts_before` (delta 0, not 1), failing the first assert below
+///    -- confirmed by a local counterfactual on the WINDOWS sibling of this
+///    same fix (`tests/smoke.rs`'s
+///    `windows_virtualfree_release_is_attempted_exactly_once_and_does_not_fail`,
+///    which this test mirrors): commenting out
+///    `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS.fetch_add` there reproducibly
+///    turns that test red (`left: 0, right: 1`), then reverted. The Unix
+///    counterfactual for THIS test could not be run locally (no HugeTLB
+///    pool on this project's Windows dev host, and this fn's own env-var
+///    guard makes it a no-op outside `ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1`)
+///    -- the Windows counterfactual is the same code shape
+///    (`#[cfg(feature = "bench-internals")] X.fetch_add(1, ...)` guarding a
+///    release-path attempts counter) and is the closest available
+///    verification; this test is first actually EXECUTED on the real-hugetlb
+///    CI runner, not before.
+#[test]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages",
+    feature = "bench-internals"
+))]
+fn ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail() {
+    use aligned_vmem::{reserve_aligned_huge, unix_munmap_attempts, unix_munmap_failures};
+
+    if std::env::var("ALIGNED_VMEM_REQUIRE_REAL_HUGETLB").as_deref() != Ok("1") {
+        // Not running inside the `aligned-vmem-hugetlb-real` job: honest
+        // no-op, matching every sibling oracle above.
+        return;
+    }
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    let size = 2 * MIB;
+    let reservation = reserve_aligned_huge(size, size)
+        .expect("huge reservation request must succeed (real grant or fallback)");
+
+    assert!(
+        reservation.is_huge(),
+        "ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 is set (this must only be true inside the \
+         `aligned-vmem-hugetlb-real` CI job), so a `reserve_aligned_huge` request took the \
+         ordinary-page fallback instead of a real MAP_HUGETLB grant -- this test cannot measure \
+         the release-attempt postcondition of a HugeTLB mapping that was never actually granted. \
+         See `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`'s identical assertion \
+         above for the same failure's root cause."
+    );
+
+    let attempts_before = unix_munmap_attempts();
+    let failures_before = unix_munmap_failures();
+
+    drop(reservation);
+
+    let attempts_after = unix_munmap_attempts();
+    let failures_after = unix_munmap_failures();
+    assert_eq!(
+        attempts_after,
+        attempts_before + 1,
+        "Drop must attempt exactly one munmap() call for a single live real-HugeTLB reservation \
+         -- if this reads a delta of 0, the release call site was never reached at all (the exact \
+         regression this test exists to catch; a failures-only check cannot distinguish this from \
+         a genuine success)"
+    );
+    assert_eq!(
+        failures_after, failures_before,
+        "munmap() on a real MAP_HUGETLB reservation this process owns must not fail -- a nonzero \
+         delta here means the whole mapping, including its pinned physical huge pages, just leaked \
+         (see `unix_reserve`'s own doc comment in `src/os/unix.rs` for the EINVAL/alignment \
+         contract this would indicate a violation of)"
+    );
+
+    // Marker follows the established armed/unarmed-must-differ-in-OUTPUT
+    // pattern (tasks #1162/#1164/#1174): only reached past the is_huge()
+    // grant tripwire AND both delta asserts above, so printing it is proof
+    // the release was attempted exactly once and did not fail, not merely
+    // that the test function ran.
+    println!("[oracle] ARMED: real MAP_HUGETLB release attempted exactly once and did not fail");
+}

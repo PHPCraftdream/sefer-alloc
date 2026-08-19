@@ -38,7 +38,16 @@
 //! - Windows decommit failure path (round-3): `VirtualFree(MEM_DECOMMIT)`
 //!   failure/failure tracking distinguishes "the syscall was attempted but
 //!   failed" from "it was never attempted at all". `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES`
-//!   settle this, and `UNIX_MUNMAP_FAILURES` provides the Unix counterpart.
+//!   settle this, and `UNIX_MUNMAP_ATTEMPTS`/`UNIX_MUNMAP_FAILURES` provides
+//!   the Unix counterpart.
+//! - Release attempt/success oracle (task #1189, coverage gap C2): a
+//!   failures-only counter cannot distinguish "release ran and succeeded"
+//!   from "the release call site was removed and never ran" -- both read as
+//!   zero failures. `UNIX_MUNMAP_ATTEMPTS` and
+//!   `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS` (added alongside the pre-existing
+//!   `UNIX_MUNMAP_FAILURES`/`WINDOWS_VIRTUALFREE_RELEASE_FAILURES`) close
+//!   that gap for the `Reservation::Drop`/`release`/`try_release` path,
+//!   mirroring the decommit-side attempts/failures pairs already above.
 //! - Windows large-page failure taxonomy (R4-5/R5-4): two distinct failure modes
 //!   that both incur syscall cost but are semantically separate.
 //!   `WINDOWS_LARGE_PAGE_RETRY_FAILURES` counts ONLY the case where the initial
@@ -86,7 +95,7 @@ pub use reset::reset_bench_internals_counters;
 #[cfg(feature = "bench-internals")]
 pub use unix::{
     unix_exact_reserve_attempts, unix_exact_reserve_hits, unix_madvise_attempts,
-    unix_madvise_successes, unix_munmap_failures,
+    unix_madvise_successes, unix_munmap_attempts, unix_munmap_failures,
 };
 #[cfg(all(
     feature = "bench-internals",
@@ -102,19 +111,22 @@ pub use unix::{
 ))]
 pub(crate) use unix::{UNIX_EXACT_RESERVE_ATTEMPTS, UNIX_EXACT_RESERVE_HITS};
 #[cfg(all(feature = "bench-internals", unix, not(miri)))]
-pub(crate) use unix::{UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_FAILURES};
+pub(crate) use unix::{
+    UNIX_MADVISE_ATTEMPTS, UNIX_MADVISE_SUCCESSES, UNIX_MUNMAP_ATTEMPTS, UNIX_MUNMAP_FAILURES,
+};
 #[cfg(feature = "bench-internals")]
 pub use windows::{
     windows_large_page_alignment_failures, windows_large_page_plain_fallback_successes,
     windows_large_page_retry_failures, windows_reserve_commit_calls,
     windows_reserve_commit_single_calls, windows_reserve_commit_two_call_pairs,
     windows_virtualfree_decommit_attempts, windows_virtualfree_decommit_failures,
-    windows_virtualfree_release_failures,
+    windows_virtualfree_release_attempts, windows_virtualfree_release_failures,
 };
 #[cfg(all(feature = "bench-internals", windows, not(miri)))]
 pub(crate) use windows::{
     WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES, WINDOWS_LARGE_PAGE_PLAIN_FALLBACK_SUCCESSES,
     WINDOWS_LARGE_PAGE_RETRY_FAILURES, WINDOWS_RESERVE_COMMIT_SINGLE_CALLS,
     WINDOWS_RESERVE_COMMIT_TWO_CALL_PAIRS, WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS,
-    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES, WINDOWS_VIRTUALFREE_RELEASE_FAILURES,
+    WINDOWS_VIRTUALFREE_DECOMMIT_FAILURES, WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS,
+    WINDOWS_VIRTUALFREE_RELEASE_FAILURES,
 };

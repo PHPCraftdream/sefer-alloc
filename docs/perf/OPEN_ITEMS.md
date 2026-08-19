@@ -2323,10 +2323,102 @@ for completeness.
     `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`
     §"Производительность", revision `000c076`.)
 
-    - **Status:** OPEN, unmeasured — each candidate is a code-reading-only
-      finding from a static (no build/test/CI) audit; none has a benchmark
-      run against it yet. Owner tasks are filed (#1188, #1189) but had not
-      landed as of this entry.
+    - **Status:** OPEN — P3(b) measured this task (#1189), real numbers on
+      this project's Windows dev host; P3(a)/(c) confirmed already
+      instrumented (counters exist, no code change needed) but still need a
+      Linux host to actually read the numbers off — no such host is
+      available to this task; P1 (#1188) unchanged, still unmeasured.
+    - **[task #1189] P3(b) update — a real Windows-native profile was run,
+      not just a design read.** `examples/v1189_windows_large_page_native_profile.rs`
+      (new, `bench-internals`+`huge-pages`-gated, measurement-only — no
+      `win_reserve_commit` dispatch logic changed) sweeps
+      `reserve_aligned_huge(2 MiB, 2 MiB)` and `(4 MiB, 4 MiB)` and reads the
+      existing `WINDOWS_LARGE_PAGE_ALIGNMENT_FAILURES`/`_RETRY_FAILURES`/
+      `_PLAIN_FALLBACK_SUCCESSES`/`WINDOWS_RESERVE_COMMIT_SINGLE_CALLS`/
+      `_TWO_CALL_PAIRS` counters this project already had (no new counters
+      needed for P3(b) — confirmed by grep before writing the example, see
+      Evidence). Executed on this task's own dev host (unprivileged — `cmd
+      /c "whoami /priv"` lists no `SeLockMemory` line, confirming the
+      account genuinely lacks the privilege, not merely untested for it):
+      at `size=align=2 MiB` (8 iters), 8/8 reservations succeeded, ALL 8
+      via the two-call path (`two_call_pairs=8`, `single_call=0`), with
+      BOTH `large_page_alignment_failures=8` AND
+      `large_page_plain_fallback_successes=8` — i.e. every call's initial
+      `MEM_LARGE_PAGES` `VirtualAlloc` failed (expected,
+      `ERROR_PRIVILEGE_NOT_HELD`), the unconditional ordinary-page retry
+      succeeded, and THAT retry's own base then failed the 2 MiB alignment
+      check `win_reserve_commit`'s single-call fast path requires — both
+      counters legitimately fire for the same call (`src/os/windows.rs`'s
+      `win_reserve_commit`, the alignment check applies to `base`
+      regardless of which of the two `VirtualAlloc` calls produced it; see
+      the example's own module doc for the full trace). `large_page_retry_failures=0`
+      throughout (the ordinary-page retry never itself failed — no OOM
+      induced). At `size=align=4 MiB` (> `GetLargePageMinimum()`), the
+      fast-path condition `align <= GetLargePageMinimum()` is false, so
+      none of the large-page counters fire at all (`0` across the board) —
+      confirms the fast path is condition-gated, not size-gated, matching
+      `tests/huge_pages.rs`'s existing
+      `reserve_aligned_huge_4mib_still_two_call_path`. A larger 2 MiB batch
+      (32 iters) reproduced the same 32/32 pattern proportionally. **What
+      this measurement settles:** on an UNPRIVILEGED host (the default
+      regime for every downstream consumer, not an edge case), every 2 MiB
+      `reserve_aligned_huge` call pays exactly the two doomed-syscall-
+      adjacent events item 47 already named (one failed `MEM_LARGE_PAGES`
+      call, one alignment-driven release-and-fallthrough) before landing on
+      the two-call path — real, reproducible, 100% of calls in this run,
+      not a rare edge case. **What it does NOT settle:** whether this cost
+      is material against a REAL downstream workload's call frequency (the
+      report's own P3(b) framing — "needs a Windows-native profile", which
+      this is, not "needs a production verdict", which this is not), and
+      the PRIVILEGED regime (`SeLockMemoryPrivilege` granted) is entirely
+      unmeasured — this example deliberately does not attempt to acquire
+      that privilege (needs administrator rights not assumed available).
+      Raw output: `docs/perf/_raw_r1189_windows_large_page_native_profile.log`;
+      summary: `docs/perf/R1189_WINDOWS_LARGE_PAGE_NATIVE_PROFILE_summary.csv`.
+      Measured against `main` @ `2828e046706593d805bc08d2ba6e1e5a7a0bb82d` +
+      this task's own then-uncommitted working tree. **Immutable source
+      identity, supplied by the operator at merge time (R29-6 option 2, git
+      object SHAs): the measured crate source is tree
+      `726e2bb84588e40fb4aaf1cd163626e3521f7adc` (`crates/aligned-vmem/src`)
+      and the probe is blob `9c98d8bbb8b5dbffa505e0b119e0b5a46b502518`
+      (`crates/aligned-vmem/examples/v1189_windows_large_page_native_profile.rs`);
+      `git cat-file -p <sha>` reproduces exactly what ran.** Both were
+      computed from the staged index of the commit landing this card and
+      are unaffected by the doc-only edits its review added. The agent
+      itself could take neither — the shared-workspace rule forbids it any
+      git write — and honestly recorded the weaker "base SHA + description"
+      form the R29-6 rule calls the last resort; that gap is closed here
+      rather than left standing. `rustc
+      1.97.0 (2d8144b78 2026-07-07)`, `cargo 1.97.0`, `--release` build.
+    - **[task #1189] P3(a)/(c) update — already instrumented, no counter
+      gap; still no Linux host to read the numbers off.** Re-confirmed by
+      grep before this task changed anything
+      (`grep -n "fetch_add" crates/aligned-vmem/src/os/unix.rs`): P3(a)
+      (Linux huge exact-size miss retrying a larger huge `mmap`) is exactly
+      the path `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` already instruments
+      (item 52's own card, `unix_reserve`'s `huge && align ==
+      LINUX_HUGE_PAGE_SIZE` fast-path block) — no new counter was needed or
+      added. P3(c) (the generic 64-bit Unix over-reserve trading one
+      syscall for a larger VA span) has NO dedicated counter and none was
+      added here either — deliberately: the report's own P3(c) wording
+      ("no generic retry without workload evidence") does not ask for a
+      retry to be built, only that one not be added speculatively: the
+      absence of a counter is not a coverage gap for a code path that (per
+      item 53's own card) is a settled, recorded trade-off, not a
+      candidate for change. Both (a) and (c) still need a Linux host to
+      produce real numbers — this task ran entirely on the Windows dev
+      host this project's CI/dev environment provides (confirmed:
+      `crates/aligned-vmem/tests/huge_pages.rs`/`decommit_capability.rs`'s
+      real-HugeTLB tests are `#[cfg(any(target_os = "linux", target_os =
+      "android"))]` and did not execute here) — this is the same
+      structural gap items 48/52/53 already record ("structurally
+      unreachable from this project's Windows dev host"), unchanged by
+      this task. Next trigger for (a)/(c): a Linux CI run (the
+      `aligned-vmem-hugetlb-real` job already exists) that loops
+      `reserve_aligned_huge`/`reserve_aligned` calls and reads
+      `unix_exact_reserve_attempts()`/`_hits()` off — no such loop exists
+      in that job's test files today (confirmed by item 48/52's own grep,
+      not re-run by this task).
     - **Current-number-or-verdict:**
       - **P1 (report lines 163-167) → task #1188.** On 64-bit Unix, the exact
         huge fast path only fires at `align == 2 MiB`; a request with
@@ -2352,21 +2444,43 @@ for completeness.
         unifying this dispatch for `docs/CORRECTNESS_OPEN_ITEMS.md` item
         90/91's M4); not filed as a standalone perf task.
       - **P3 (report lines 173-177) → task #1189.** Three speculative
-        platform paths, none with activation counters today: (a) Linux huge
+        platform paths. **CORRECTED by task #1189's own update above: "none
+        with activation counters today" was true of the ORIGINAL filing
+        text (task #1182 had not yet re-checked the source), false as a
+        current state — (a) and the huge-exact half already had counters
+        before #1189 touched anything (`UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS`);
+        only C2 (the release oracle) and the actual Windows-native
+        measurement for (b) were real gaps #1189 closed.** (a) Linux huge
         exact-size miss retries a larger huge `mmap` before the ordinary
         fallback — may help under transient fragmentation, so item 52 above
         already rejects removing it without counters; (b) Windows large-page
         request can pay a failed large allocation, an ordinary retry, a
         release from misalignment, and a two-call fallback — needs a
         Windows-native profile of the existing counters (cross-reference item
-        47 above, the two doomed-syscall classes on the same path); (c) the
+        47 above, the two doomed-syscall classes on the same path) —
+        **MEASURED by task #1189, see the update above**; (c) the
         generic 64-bit Unix over-reserve deliberately trades one syscall for
         a larger VA span — no generic retry without workload evidence (item
         48 above). #1189 also owns the report's companion coverage gap C2
         (no direct oracle on HugeTLB release: `UNIX_MUNMAP_FAILURES` is never
-        checked around `Drop` in the real-HugeTLB CI job).
-    - **Next trigger:** #1188 and #1189 landing (or being re-scoped/rejected
-      with a measured verdict); #1180 landing closes P2's absorption.
+        checked around `Drop` in the real-HugeTLB CI job) — **CLOSED by task
+        #1189**: added `UNIX_MUNMAP_ATTEMPTS`/`WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`
+        (mirroring the existing `UNIX_MADVISE_ATTEMPTS`/`WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`
+        pattern) plus real attempt/success-delta tests around a single
+        `Drop` in `tests/smoke.rs` — see
+        `docs/CORRECTNESS_OPEN_ITEMS.md` item 87's own sibling record (this
+        task did not create a new correctness-index card for C2, since it
+        is closed, not open-and-tracked; see this task's own final report
+        for the full reasoning) for the counter/test detail, not duplicated
+        here.
+    - **Next trigger:** C2 closed (this task); P3(b) measured on Windows
+      (this task) — a future round may still want a PRIVILEGED-host
+      re-measurement of P3(b) if `SeLockMemoryPrivilege` ever becomes
+      available in this project's CI/dev environment, but that is a
+      "nice to have new data point", not a blocking gap. P3(a)/(c) still
+      need a Linux host to read the already-existing counters off — no
+      such host was available to this task. #1188 still unmeasured (P1).
+      #1180 landing closes P2's absorption.
     - **Why this index, not only `docs/CORRECTNESS_OPEN_ITEMS.md`:** this
       material is a perf finding from a `docs/reviews/*` audit that a
       correctness-index card (item 90's "3 perf candidates" header count,
@@ -2384,7 +2498,26 @@ for completeness.
       items 90 and 91 (owner assignments, independence caveat); item 48 above
       (the pre-existing `align > 2 MiB` pool-cost card P1 restates); item 52
       above (the Linux speculative-retry NULL verdict P3(a) restates); item 47
-      above (the Windows doomed-syscall classes P3(b) relates to).
+      above (the Windows doomed-syscall classes P3(b) relates to). **Task
+      #1189's own additions:** `crates/aligned-vmem/examples/v1189_windows_large_page_native_profile.rs`
+      (the measurement, real execution, re-run twice on this task's own dev
+      host with identical counts both times); `docs/perf/_raw_r1189_windows_large_page_native_profile.log`
+      (raw stdout, under the 200 KiB tier-1 ceiling, committed verbatim per
+      the raw-log policy); `docs/perf/R1189_WINDOWS_LARGE_PAGE_NATIVE_PROFILE_summary.csv`
+      (machine-readable companion); `cmd /c "whoami /priv"` (re-run this
+      task, confirms no `SeLockMemory` privilege line — the unprivileged
+      regime is genuine, not merely untested); `grep -n "fetch_add"
+      crates/aligned-vmem/src/os/unix.rs` (re-run this task, confirms
+      `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS` were the ONLY unix.rs counters
+      before this task's C2 edit added `UNIX_MUNMAP_ATTEMPTS` alongside the
+      pre-existing `UNIX_MUNMAP_FAILURES`); `crates/aligned-vmem/src/bench_internals/{unix,windows,mod,reset}.rs`
+      and `crates/aligned-vmem/tests/smoke.rs`'s
+      `unix_munmap_release_is_attempted_exactly_once_and_does_not_fail` /
+      `windows_virtualfree_release_is_attempted_exactly_once_and_does_not_fail`
+      (the C2 attempt/success oracle; the Windows one executed and green on
+      this task's own dev host, 45/45 passed in `tests/smoke.rs`; a
+      counterfactual removing the `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`
+      increment was run and confirmed the test goes red, then reverted).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
