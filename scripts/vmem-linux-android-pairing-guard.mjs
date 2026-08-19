@@ -353,7 +353,28 @@
 //      >=2-space-indented non-structural continuation does NOT end
 //      the window) yields 11 violations each — the SAME 11, empty
 //      delta both ways, identical even on the joined sentence text —
-//      and all 13 allowlist entries stay active under both.
+//      and all 13 allowlist entries stay active under both. BOTH
+//      figures ("11 violations each" and "all 13 allowlist entries")
+//      are AS-OF-TASK-#1134 measurements, not a claim about the
+//      guard's current state — they describe what was true when this
+//      decision was made, which is the basis the decision itself
+//      rests on, so they are recorded historically here rather than
+//      kept silently current. Re-derived at task #1163 (F7) against
+//      the tree at that task's HEAD (`7d3647b`): the SAME
+//      shipped-vs-naive re-derivation now yields **7 violations
+//      each** (still an empty delta, still verdict-set-identical —
+//      the decision's own ground is unaffected), against **8** active
+//      allowlist entries (this file's live `KNOWN_DRIFT.length`,
+//      confirmed by running this guard: `node
+//      scripts/vmem-linux-android-pairing-guard.mjs`). The drop from
+//      11/13 to 7/8 is fully explained by nine intervening commits
+//      that touched the scan surface or this guard between task #1134
+//      (`89d28c5`) and task #1163's base (`7d3647b`) — notably task
+//      #1140's HugeTLB rewrite (`a839d63`), which closed several
+//      allowlist entries as genuinely fixed, and task #1153's huge.rs
+//      rewrite, which removed two more (see this file's own NOTE
+//      comments above KNOWN_DRIFT for the closure narratives); it is
+//      not evidence the shipped-vs-naive re-derivation was ever wrong.
 //      Loose-list awareness is rejected on that ground plus the
 //      unrefuted complexity case: the naive form's 5 re-merges are
 //      benign as measured but unguarded by any rule, and the correct
@@ -394,10 +415,15 @@
 //   8. (task #1129) Appending a realistic
 //      `[target."cfg(target_os = \"android\")".dependencies]` section to
 //      crates/aligned-vmem/Cargo.toml KEEPS the guard green with all 13
-//      allowlist entries active (before #1129 the whole file was ONE
-//      window, so that one `android` mention satisfied every paragraph in
-//      the file and flipped the two live Cargo.toml entries to "stale" —
-//      exit 1 inviting their deletion).
+//      allowlist entries active (AS OF TASK #1129's allowlist size at the
+//      time this counterfactual was run — the allowlist has since shrunk
+//      to 8 entries, task #1163/F7; the counterfactual's STRUCTURAL claim
+//      — appending an unrelated Android-gated section elsewhere in the
+//      file does not flip other Cargo.toml entries to stale — is
+//      unaffected by that count and was not re-run for this task) (before
+//      #1129 the whole file was ONE window, so that one `android` mention
+//      satisfied every paragraph in the file and flipped the two live
+//      Cargo.toml entries to "stale" — exit 1 inviting their deletion).
 //   9. (task #1130, F4) A doc line citing `https://github.com/torvalds/linux`
 //      next to a huge-page mention does NOT fire (URL_TOKEN strips the URL
 //      whole; pre-fix the host-only PATH_LIKE match left `/torvalds/linux`
@@ -422,6 +448,31 @@
 //      `on both Windows and Linux, decommit **does not work**` wording) —
 //      reports as plain "stale KNOWN_DRIFT allowlist entries" in the same
 //      run, proving the split does not misclassify a real fix as masked.
+//  12. (task #1163, F6) The #1140-F8 masked-check above tested ONLY the
+//      per-WINDOW wrap-joined text (`allWindows`); a KNOWN_DRIFT pattern
+//      whose literal text straddles a WINDOW boundary itself (e.g. a blank
+//      `///` line separating a `MAP_HUGETLB` mention from its Linux-only
+//      clause) matched no single window and was reported plain "stale"
+//      even though this function's own FAIL message and this header's
+//      NOTE/CORRECTION prose both describe the check as scoped to "the
+//      file", not "one window of the file". A scratch counterfactual
+//      (built under `$TEMP`, never inside the repo — a `.rs` doc comment
+//      whose `MAP_HUGETLB` mention and Linux-only clause are split across a
+//      blank `///` line) reproduces this: FAILS with plain "stale
+//      KNOWN_DRIFT allowlist entries" (the WRONG classification — the text
+//      is still present) against the pre-#1163 guard, and FAILS with
+//      "MASKED KNOWN_DRIFT allowlist entries" (the CORRECT classification)
+//      against the #1163 guard. Fixed by adding a second, coarser presence
+//      check (`fileWholeText`, built above from the same per-line
+//      `unit.content` the window builder already produces, joined across
+//      the WHOLE file instead of cut at window boundaries): an entry is now
+//      MASKED if its pattern matches EITHER the per-window text OR the
+//      whole-file text. A paired negative control in the same run — a
+//      KNOWN_DRIFT entry for a pattern genuinely absent from its file —
+//      still reports plain "stale" under the patched guard, proving the
+//      wider fallback does not misclassify a real fix as masked (same
+//      split-integrity property counterfactual 11 already established for
+//      the narrower #1140-F8 check).
 
 import { REPO_ROOT } from './lib.mjs';
 import { readFileSync, readdirSync } from 'fs';
@@ -574,6 +625,34 @@ function main() {
   /** @type {{path: string, lineNum: number, docText: string}[]} */
   const allWindows = [];
 
+  // Whole-file wrap-insensitive text, independent of window boundaries
+  // (task #1163, F6). `allWindows` above is still WINDOW-scoped: each entry
+  // is one window's wrap-joined text, so a KNOWN_DRIFT pattern whose literal
+  // text straddles a WINDOW boundary — a blank `///` line, or a `- `/`|`
+  // line that starts a new window — matches no single `allWindows` entry
+  // even though the text is still present in the file when read as a whole
+  // (join every doc-comment/content unit in the file, blank lines and
+  // window boundaries collapsed to a single space). This is a real gap: the
+  // header's own NOTE/CORRECTION comments and this guard's FAIL message for
+  // "stale" entries both say the pattern's absence is checked "in the file"
+  // / "anywhere in the file" — not "in one window of the file" — so a
+  // straddling pattern was scope-mismatched against its own documented
+  // promise. `fileWholeText` fixes the structural gap: it is the SAME units
+  // (`unit.content`, one per doc-comment line or non-blank source line) the
+  // window builder already produces, just joined across the WHOLE file
+  // instead of being cut at window boundaries — no new normalization layer,
+  // reusing the exact per-line content the window/violation path already
+  // computes.
+  /** @type {Map<string, string>} */
+  const fileWholeText = new Map();
+  const appendWholeText = (path, text) => {
+    if (!text) return;
+    fileWholeText.set(
+      path,
+      fileWholeText.has(path) ? `${fileWholeText.get(path)} ${text}` : text
+    );
+  };
+
   // Windows are built per the WINDOW RULE in the header: a maximal run of
   // WRAPPED CONTINUATION lines. A blank line ends a window; a line starting
   // a new structural item (Markdown table row / list item) starts a new
@@ -619,7 +698,9 @@ function main() {
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
         if (trimmed.startsWith('///') || trimmed.startsWith('//!')) {
-          units.push({ lineNum: i + 1, content: trimmed.slice(3).trim() });
+          const docContent = trimmed.slice(3).trim();
+          units.push({ lineNum: i + 1, content: docContent });
+          appendWholeText(relativePath, docContent);
         } else if (units.length > 0) {
           pushWindows(units.splice(0), false, relativePath);
         }
@@ -641,6 +722,7 @@ function main() {
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
         units.push({ lineNum: i + 1, content: trimmed });
+        appendWholeText(relativePath, trimmed);
       }
       pushWindows(units, isMarkdown, relativePath);
     }
@@ -667,27 +749,54 @@ function main() {
   }
   const staleEntries = KNOWN_DRIFT.filter(e => !activeKnown.has(e));
 
-  // Task #1140-F8: split staleEntries into MASKED (the pattern's literal
-  // text still exists somewhere in the file, wrap-joined, but its window no
-  // longer violates the rule — usually because an Android mention landed
-  // elsewhere in the SAME window) vs GENUINELY-stale (the pattern text is
-  // actually gone). This does not change which entries fail the guard —
-  // both classes still FAIL below, exactly as `staleEntries` always has —
-  // it only changes what the guard tells the reader about WHY an entry is
-  // stale, because "stale" was conflating two different facts (see the NOTE
-  // above this function's KNOWN_DRIFT list for the incident this closes).
-  // `allWindows` entries are already wrap-joined by pushWindows/checkDocComment
-  // (the same `.map(l => l.content).join(' ')` the violation path uses), so
-  // this is a re-use of existing wrap-insensitivity, not a new normalization
-  // layer — see the KNOWN LIMITATIONS entry on this near the end of the
-  // header for why a broader raw-text normalization pass was NOT built.
+  // Task #1140-F8 (widened task #1163, F6): split staleEntries into MASKED
+  // (the pattern's literal text still exists somewhere in the file,
+  // wrap-joined, but its window no longer violates the rule — usually
+  // because an Android mention landed elsewhere in the SAME window) vs
+  // GENUINELY-stale (the pattern text is actually gone). This does not
+  // change which entries fail the guard — both classes still FAIL below,
+  // exactly as `staleEntries` always has — it only changes what the guard
+  // tells the reader about WHY an entry is stale, because "stale" was
+  // conflating two different facts (see the NOTE above this function's
+  // KNOWN_DRIFT list for the incident this closes).
+  //
+  // Two presence checks, not one (task #1163, F6): the #1140-F8 version of
+  // this check tested ONLY `allWindows` (per-WINDOW wrap-joined text), but
+  // this function's own FAIL message and the header's NOTE/CORRECTION prose
+  // both describe the check as "the pattern's literal text is STILL PRESENT
+  // in the file" / "still findable, wrap-joined, anywhere in the file" —
+  // file-scoped language, not window-scoped. A KNOWN_DRIFT pattern whose
+  // text straddles a WINDOW boundary (a blank `///` line, or a `- `/`|`
+  // line that starts a new window — see the WINDOW RULE in the header)
+  // matches no single `allWindows` entry even though the text is still
+  // findable when the file's doc units are read as one wrap-joined whole,
+  // which is exactly what the existing wording promises. `fileWholeText`
+  // (built above, same per-line `unit.content` the window builder uses,
+  // just joined across the WHOLE file instead of cut at window boundaries)
+  // closes that gap: an entry is MASKED if its pattern matches EITHER the
+  // per-window text (the #1140-F8 case: window stopped violating) OR the
+  // whole-file text (the #1163/F6 case: pattern straddles a window
+  // boundary). Demonstrated reachable (not just theoretical) in a scratch
+  // counterfactual outside the repo: a `.rs` doc comment whose Linux-only
+  // clause sits after a blank `///` line from its `MAP_HUGETLB` mention was
+  // reported plain "stale" (inviting deletion) by the pre-#1163 check and
+  // "MASKED" by this one — see the task #1163 final report for the exact
+  // transcript. `allWindows` is kept as its own alternative (not replaced
+  // by `fileWholeText` alone) because a whole-file join is coarser: it
+  // could in principle mask a genuinely different, unrelated occurrence of
+  // similar text elsewhere in the file, so the more precise per-window
+  // match is tried first / kept as an independent path, not discarded.
   const maskedEntries = [];
   const goneEntries = [];
   for (const e of staleEntries) {
-    const stillPresent = allWindows.some(
+    const stillPresentInWindow = allWindows.some(
       w => w.path === e.file && e.sentenceRegex.test(w.docText)
     );
-    (stillPresent ? maskedEntries : goneEntries).push(e);
+    const stillPresentInFile =
+      !stillPresentInWindow &&
+      fileWholeText.has(e.file) &&
+      e.sentenceRegex.test(fileWholeText.get(e.file));
+    (stillPresentInWindow || stillPresentInFile ? maskedEntries : goneEntries).push(e);
   }
 
   let failed = false;
@@ -703,7 +812,7 @@ function main() {
   }
   if (maskedEntries.length > 0) {
     console.log(
-      `\n[vmem-linux-android-pairing-guard] FAIL: MASKED KNOWN_DRIFT allowlist entries (the pattern's literal text is STILL PRESENT in the file — its window merely stopped violating the rule, most likely because an Android mention landed elsewhere in the same window; this is NOT confirmation the drift was fixed or reworded — read the cited window before deleting the entry):`
+      `\n[vmem-linux-android-pairing-guard] FAIL: MASKED KNOWN_DRIFT allowlist entries (the pattern's literal text is STILL PRESENT in the file, wrap-joined — either its window merely stopped violating the rule, most likely because an Android mention landed elsewhere in the same window, or the pattern's text itself straddles a window boundary; this is NOT confirmation the drift was fixed or reworded — read the cited window(s) before deleting the entry):`
     );
     for (const e of maskedEntries) {
       console.log(`\n  ${e.file}  /${e.sentenceRegex.source}/`);
