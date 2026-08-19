@@ -502,6 +502,22 @@ jobs:
       # header). Also a pure text/regex scan (no cargo invocation) — folded
       # in next to verify-perf-gate-stubs for the same reason.
       - run: node scripts/verify-gate-report.mjs
+      # Task #1131: the Linux/Android doc-drift pairing guard (created in
+      # the M1/task-#1105 wave; sibling of the vmem-doc-drift-guard step in
+      # scripts/check-all.mjs, which runs it locally). Pure text scan (no
+      # cargo invocation), sub-second — folded in next to the two text
+      # scans above for the same reason. This row is what gives the guard
+      # CI coverage AT ALL: check-all.mjs is the LOCAL pre-push gate and is
+      # NOT invoked by any job in this workflow (every "check-all"
+      # mention above is a comment), so the local step alone would cover
+      # only pushes whose author ran `npm run check`. The guard ran under
+      # NO gate from creation through seven hardening tasks (#1105→#1130)
+      # because the wiring note in the creating agent's report reached no
+      # index (the R22-3 class) — see docs/CORRECTNESS_OPEN_ITEMS.md
+      # item 80. Android is not exercised in CI, so no runtime test can
+      # catch a "Linux-only" contract claim the pair-gated cfg also
+      # enforces on Android — only this static scan can (its own header).
+      - run: node scripts/vmem-linux-android-pairing-guard.mjs
 
   commit-prefix-lint:
     # R31-5c (task #482): lints every commit in a PR's range against
