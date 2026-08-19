@@ -111,12 +111,24 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// the `aligned-vmem-hugetlb-real` job (`.github/workflows/ci.yml`) hard-
 /// asserts (via a path-activation oracle) that this function actually
 /// received a `MAP_HUGETLB` grant, then drives a huge-page-eligible range
-/// through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge branch. That
-/// proves the eligible-range/post-5.18-kernel case genuinely returns
-/// physical backing rather than silently no-opping. The ineligible-range
-/// case (still a documented no-op) and every range on a pre-5.18 kernel
-/// remain reasoned-from-spec, not independently exercised — CI's runner
-/// image kernel version is not pinned by this crate.
+/// through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge branch. **What that
+/// job proves, stated precisely (task #1160/F1 correction of an earlier
+/// overclaim):** the eligible-range/post-5.18-kernel case genuinely REACHES
+/// the real `madvise(2)`/`MADV_DONTNEED` backend call — not that the kernel
+/// actually honoured it. `libc_madvise` (`src/os/unix.rs`) discards the
+/// syscall's return value by design (task #719) on this path, so the
+/// kernel's actual accept/reject response is never observed here; the
+/// eligible-range/post-5.18 *physical-backing* outcome remains reasoned from
+/// the man page, not independently verified. Four things remain
+/// reasoned-from-spec rather than empirically verified, named explicitly:
+/// (1) the free [`decommit`](crate::api::decommit) entry point, reached only through the safe
+/// methods in CI, never called directly by a test; (2) the ineligible-range
+/// case (still a documented no-op) and every range on a pre-5.18 kernel —
+/// CI's runner image kernel version is not pinned by this crate; (3)
+/// zero-fill on next access after a successful decommit, which no test reads
+/// back; and (4) the kernel's own `madvise` return value on the
+/// eligible-range/post-5.18 path itself, discarded by `libc_madvise` as
+/// described above.
 ///
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
 /// unconditionally, regardless of range shape, kernel version, or platform.
@@ -140,8 +152,12 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// zero over-reserve whenever it hits (and whose miss cost is at most
 /// `align == 2 MiB` of slack, not `align > 2 MiB`). This cost is
 /// REASONED-FROM-SPEC (documented kernel
-/// reservation semantics; no hugetlb-configured host exists in this
-/// crate's CI to measure it on) and, when huge pages are granted via
+/// reservation semantics; updated task #1160/F4: a hugetlb-configured host
+/// now exists in this crate's CI (`aligned-vmem-hugetlb-real`,
+/// `.github/workflows/ci.yml`), but that job does not measure pool-page
+/// consumption before/after a reservation, so this specific over-reserve
+/// cost remains unmeasured on any host available to this project) and, when
+/// huge pages are granted via
 /// this over-reserve path, is deliberately not trimmed away: the
 /// over-reserved mapping is then kept whole as one soundness-driven
 /// unit (a single `munmap` at the mapping base), and the pool

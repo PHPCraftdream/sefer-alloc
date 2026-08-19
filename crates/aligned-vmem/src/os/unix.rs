@@ -60,8 +60,19 @@ pub(crate) fn reserve_aligned_raw(
 /// (plus its pinned physical huge pages) on every affected reservation AND
 /// on every subsequent [`release`].
 ///
-/// REASONED-FROM-SPEC, NOT empirically verified (per this task's own
-/// instruction: no hugetlb-configured host is in this project's CI). Fixed
+/// REASONED-FROM-SPEC as of authoring (per this task's own instruction: no
+/// hugetlb-configured host was in this project's CI at the time). **Updated
+/// task #1160/F4:** the `aligned-vmem-hugetlb-real` CI job
+/// (`.github/workflows/ci.yml`) now configures a real `nr_hugepages` pool and
+/// runs `tests/decommit_capability.rs`/`tests/reservation_decommit_contract.rs`,
+/// whose `Reservation`s are dropped at scope end and therefore go through
+/// this exact whole-mapping `munmap` on a real huge-page grant — so the
+/// no-leak/no-`EINVAL`-panic outcome this reasoning predicts IS now exercised
+/// end to end (a leak or an `EINVAL` failure on release would surface as a
+/// test failure or resource exhaustion across the job's many reservations).
+/// What remains reasoned-from-spec rather than directly asserted: no test
+/// explicitly checks `munmap`'s own return code — only that the process does
+/// not fail as a result of it. Fixed
 /// by requiring `size` AND `align` to both be multiples of
 /// [`LINUX_HUGE_PAGE_SIZE`] before attempting a Linux/Android huge-page
 /// reservation
@@ -282,8 +293,12 @@ fn unix_reserve(
     // arithmetic (the F9 audit's "roughly 33% pool overhead" headline does
     // not match: the slack is 50% of the charge in that shape).
     // REASONED-FROM-SPEC (documented kernel hugetlb reservation semantics;
-    // no hugetlb-configured host in this project's CI to verify or measure
-    // on — docs/CORRECTNESS_OPEN_ITEMS.md item 59). A head/tail trim WOULD
+    // updated task #1160/F4: a hugetlb-configured host now exists in this
+    // project's CI (`aligned-vmem-hugetlb-real`,
+    // .github/workflows/ci.yml), but that job does not measure pool-page
+    // consumption before/after a reservation, so this specific charge/2x
+    // arithmetic remains unmeasured on any host available to this project —
+    // docs/CORRECTNESS_OPEN_ITEMS.md item 59). A head/tail trim WOULD
     // be munmap-conformant in this specific case (the guard at the top of
     // this function forces `size`/`align` to 2 MiB multiples and the
     // kernel guarantees a 2 MiB-aligned base, so every trim boundary is
@@ -810,8 +825,13 @@ const HUGE_SUPPORTED: bool = false;
 /// reservation at all, so every `munmap` it can still reach is provably
 /// huge-page-aligned (see `unix_reserve`'s own doc for the full reasoning) —
 /// REASONED-FROM-SPEC, not empirically verified on a real hugetlb-configured host
-/// with a non-2-MiB default `default_hugepagesz` (none is in this project's CI).
-/// Android's bionic libc runs on the Linux kernel, so the Linux value applies
+/// with a non-2-MiB default `default_hugepagesz` (updated task #1160/F4: a
+/// hugetlb-configured host now exists in this project's CI
+/// (`aligned-vmem-hugetlb-real`, `.github/workflows/ci.yml`), but its pool is
+/// a standard 2-MiB `nr_hugepages` pool — no host with a non-2-MiB
+/// `default_hugepagesz` boot parameter is in this project's CI, so this
+/// specific `MAP_HUGE_2MB`-overrides-a-non-2-MiB-default claim remains
+/// unexercised). Android's bionic libc runs on the Linux kernel, so the Linux value applies
 /// directly; Android is covered by the same cfg arm
 /// (`any(target_os = "linux", target_os = "android")`).
 #[cfg(all(

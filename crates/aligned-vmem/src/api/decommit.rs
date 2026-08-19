@@ -100,13 +100,21 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// (`tests/decommit_capability.rs`), which drive a huge-page-eligible
 /// `[start, end)` through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge
 /// branch — the same `decommit_pages_impl`/`MADV_DONTNEED` backend call this
-/// free function itself makes. That proves the eligible-range/post-5.18
-/// case genuinely returns physical backing rather than silently no-opping;
-/// it does not call this free function's own entry point directly (no test
-/// invokes `decommit` outside a `Reservation` method), so this function's
-/// own unconditional-syscall behavior on an INELIGIBLE range (still a no-op
-/// by kernel contract, not by Rust-level skip) remains reasoned-from-spec,
-/// not independently exercised under a real pool.
+/// free function itself makes. **What that job proves, stated precisely
+/// (task #1160/F1 correction of an earlier overclaim):** the eligible-range
+/// case genuinely REACHES the real `madvise(2)`/`MADV_DONTNEED` backend call
+/// under a real `MAP_HUGETLB` grant, rather than silently taking the
+/// Rust-level skip path. It does NOT prove the kernel actually returned the
+/// physical backing — `libc_madvise` (`src/os/unix.rs`) discards the
+/// syscall's return value by design (task #719), and no test on this path
+/// reads it back, so whether `MADV_DONTNEED` was honoured by the kernel for
+/// this eligible-range/post-5.18 case remains reasoned from the man page,
+/// not independently observed. It also does not call this free function's
+/// own entry point directly (no test invokes `decommit` outside a
+/// `Reservation` method), so this function's own unconditional-syscall
+/// behavior on an INELIGIBLE range (still a no-op by kernel contract, not by
+/// Rust-level skip) remains reasoned-from-spec, not independently exercised
+/// under a real pool.
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
 /// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented each time

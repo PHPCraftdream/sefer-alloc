@@ -216,28 +216,36 @@ The table entry above (`decommit`/`recommit`) hides six platform and failure-mod
   - **Windows: unconditionally does nothing.** `VirtualFree` with
     `MEM_DECOMMIT` fails on large-page regions regardless of the requested
     range.
-  - **Linux/Android: works IF the kernel is >= 5.18 AND the requested range is
-    itself huge-page-size-aligned (2 MiB) at both endpoints.** `madvise(2)`
-    documents that `MADV_DONTNEED` gained HugeTLB support in Linux 5.18, with
-    the same 2-MiB-alignment requirement this crate already imposes on
-    `reserve_aligned_huge`'s own `size`/`align` on Linux/Android — so
-    decommitting an entire huge reservation, or any 2-MiB-granular sub-range
-    of it, IS such an eligible range and genuinely returns physical backing +
-    zero-fills on next access, the same as an ordinary reservation. A
-    `page_size()`-granular (e.g. 4 KiB) but not 2-MiB-granular offset still
-    gets `EINVAL` and does nothing, as does EVERY range on a pre-5.18 kernel.
-    `Reservation::decommit`/`Reservation::try_decommit` (the safe methods)
-    check both `is_huge()` and the range before deciding whether to call the
-    backend at all; the free `decommit` function has no `is_huge()` to
-    consult and always issues the syscall, letting the kernel itself turn an
-    ineligible range into a no-op. Documented per the man page cited above,
-    and — since task #1152 (F1) — empirically exercised under a real hugetlb
-    pool by this crate's own CI: the `aligned-vmem-hugetlb-real` job
-    (`.github/workflows/ci.yml`) configures a real `nr_hugepages` pool,
+  - **Linux/Android: the eligible-range/post-5.18-kernel case is FORWARDED to
+    the kernel and *is documented* to actually return physical backing, but
+    that kernel-side outcome is not itself observed by this crate.**
+    `madvise(2)` documents that `MADV_DONTNEED` gained HugeTLB support in
+    Linux 5.18, with the same 2-MiB-alignment requirement this crate already
+    imposes on `reserve_aligned_huge`'s own `size`/`align` on Linux/Android —
+    so decommitting an entire huge reservation, or any 2-MiB-granular
+    sub-range of it, IS such an eligible range, and the man page says it
+    genuinely returns physical backing + zero-fills on next access, the same
+    as an ordinary reservation. A `page_size()`-granular (e.g. 4 KiB) but not
+    2-MiB-granular offset still gets `EINVAL` and does nothing, as does EVERY
+    range on a pre-5.18 kernel. `Reservation::decommit`/`Reservation::try_decommit`
+    (the safe methods) check both `is_huge()` and the range before deciding
+    whether to call the backend at all; the free `decommit` function has no
+    `is_huge()` to consult and always issues the syscall, letting the kernel
+    itself turn an ineligible range into a no-op. Documented per the man page
+    cited above, and — since task #1152 (F1) — empirically exercised under a
+    real hugetlb pool by this crate's own CI: the `aligned-vmem-hugetlb-real`
+    job (`.github/workflows/ci.yml`) configures a real `nr_hugepages` pool,
     hard-asserts (via a path-activation oracle) that a huge-page grant was
     actually obtained, and then drives both an eligible and an ineligible
-    range through the safe methods, confirming the eligible case reaches the
-    real backend and returns physical backing rather than silently no-oping.
+    range through the safe methods, confirming the eligible case **reaches
+    the real `MADV_DONTNEED` backend call** rather than silently taking the
+    Rust-level skip path. **What this does NOT prove (task #1160/F1):** the
+    kernel's actual response to that `madvise` call — `libc_madvise`
+    (`src/os/unix.rs`) discards the syscall's return value by design (task
+    #719); no test anywhere reads it back on this path, so whether the
+    kernel actually reclaimed the pages for the eligible-range/post-5.18
+    case is reasoned from the `madvise(2)` man page, not independently
+    observed by this crate.
   - Either way — Windows, or an ineligible range/kernel on Linux/Android —
     the effect is indistinguishable from a silent no-op: RSS does not drop
     and reads return the old data. `decommit_lazy` is NOT part of this

@@ -235,17 +235,25 @@ fn method_try_decommit_reports_violations_and_never_panics() {
 /// running this test would take the real-backend branch for that call
 /// (correct new behavior), leaving `huge_decommit_attempts()` at 0 instead
 /// of the `1` this test used to assert — a false failure of a CORRECT
-/// implementation, not a real regression. No CI runner in this repo
-/// currently configures a hugetlb pool (`r.is_huge()` is false on every
-/// runner today, so the `if` arm below has never actually executed in CI —
-/// see this task's own final report for the exact CI row that would close
-/// that gap), so this specific failure mode was latent, not yet observed in
-/// CI, but was reproduced for real on a manually-provisioned WSL2/Linux
-/// kernel 6.18 host with the flag genuinely synthesized via
-/// `from_raw_parts` (see `decommit_capability.rs`'s
+/// implementation, not a real regression. At the time this note was
+/// written, no CI runner in this repo configured a hugetlb pool
+/// (`r.is_huge()` was false on every runner then, so the `if` arm below had
+/// never actually executed in CI), so this specific failure mode was
+/// latent, not yet observed in CI, but was reproduced for real on a
+/// manually-provisioned WSL2/Linux kernel 6.18 host with the flag genuinely
+/// synthesized via `from_raw_parts` (see `decommit_capability.rs`'s
 /// `simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host`) during
 /// this task's own verification pass. Narrowed to `[0, page_size())` here to
-/// close the gap before a real hugetlb runner ever exercises it.
+/// close the gap before a real hugetlb runner ever exercises it. **Updated
+/// task #1160/F4:** that hugetlb runner now exists —
+/// `aligned-vmem-hugetlb-real` (`.github/workflows/ci.yml`) configures a
+/// real `nr_hugepages` pool and runs this test file, so `r.is_huge()` is
+/// now `true` under that job and the `if` arm below DOES execute in CI. The
+/// narrowing to `[0, page_size())` performed here stays correct and
+/// necessary regardless (it is what keeps this specific test pinned to the
+/// skip branch on purpose); it is no longer closing a gap that has zero CI
+/// coverage, only choosing which of the two branches this particular test
+/// exercises.
 #[test]
 #[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
 fn method_try_decommit_huge_skip_returns_ok_and_counts() {

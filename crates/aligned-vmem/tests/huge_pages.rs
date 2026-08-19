@@ -2,8 +2,9 @@
 //! task #716 tracks building out the rest of this feature's test suite,
 //! which had zero coverage before this file).
 //!
-//! **Verification honesty (per task #714's own instruction):** no
-//! hugetlb-configured host is in this project's CI, and this crate's
+//! **Verification honesty (per task #714's own instruction; updated task
+//! #1160/F4):** at the time this file was authored, no hugetlb-configured
+//! host was in this project's CI. This crate's
 //! `MAP_HUGETLB` request path is Linux/Android-only (`libc_mmap`'s `huge` flag has
 //! no effect on any other target — huge pages are a documented no-op
 //! elsewhere). The `#[cfg(any(target_os = "linux", target_os = "android"))]` tests below (the
@@ -25,11 +26,19 @@
 //! (gated only on `feature = "huge-pages"`, not `target_os`) and executes
 //! all four Linux/Android-gated tests below on every push. This file's
 //! Linux/Android-only regression coverage is therefore genuinely LIVE in CI
-//! on the Linux runner; Android itself is not executed in CI, only cfg-gated. The real residual gap, stated precisely: no
-//! **hugetlb-configured** host runs these tests, so the
-//! `MAP_HUGETLB`-actually-succeeds branch (as opposed to the
-//! best-effort-fallback branch, which IS exercised) stays untested end to
-//! end.
+//! on the Linux runner; Android itself is not executed in CI, only cfg-gated.
+//!
+//! **Updated task #1160/F4 — the residual gap named immediately below no
+//! longer applies to ALL of CI:** a **hugetlb-configured** host now exists —
+//! the `aligned-vmem-hugetlb-real` job (`.github/workflows/ci.yml`, tasks
+//! #1151/#1152) configures a real `nr_hugepages` pool and runs this exact
+//! file (`--test huge_pages`), so under THAT job the
+//! `MAP_HUGETLB`-actually-succeeds branch IS exercised end to end, not just
+//! the best-effort-fallback branch. On every OTHER CI job (the general
+//! `test-workspace` job among them, still `ubuntu-latest` with no pool
+//! configured), the gap as originally stated remains accurate: no
+//! **hugetlb-configured** host runs these tests there, so only the
+//! best-effort-fallback branch is exercised in that job.
 
 #![cfg(feature = "huge-pages")]
 // `serial_guard()` returns a real `MutexGuard` on `bench-internals` builds and

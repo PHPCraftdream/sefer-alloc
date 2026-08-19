@@ -98,12 +98,19 @@ fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
 /// Counterfactual for huge case: if the implementation returns `Self::decommit_reclaims_and_zeroes()`
 /// (removing `&& !self.is_huge()`), this test fails on any host where `is_huge() == true`.
 ///
-/// NOTE: The huge-page success path (the `if reservation.is_huge()` branch) is NOT currently
-/// exercised on standard CI runners. GitHub Actions `ubuntu-latest` runners have no configured
+/// NOTE (updated task #1160/F4): The huge-page success path (the `if reservation.is_huge()`
+/// branch) is NOT exercised on STANDARD CI runners — `ubuntu-latest` runners have no configured
 /// hugetlb pool (`/proc/sys/vm/nr_hugepages` defaults to 0), and `windows-latest` runners lack
-/// `SeLockMemoryPrivilege` — see item 59 in `docs/CORRECTNESS_OPEN_ITEMS.md`. On those runners,
+/// `SeLockMemoryPrivilege` — see item 59b in `docs/CORRECTNESS_OPEN_ITEMS.md` (the Windows half,
+/// still fully open). The Linux half is narrower than it used to be: the dedicated
+/// `aligned-vmem-hugetlb-real` CI job (`.github/workflows/ci.yml`) DOES configure a real
+/// `nr_hugepages` pool and DOES run this test file (`--test decommit_capability`), so under
+/// THAT job `reservation.is_huge()` is `true` here and the huge-page branch below executes for
+/// real — see item 59a in `docs/CORRECTNESS_OPEN_ITEMS.md` for what that job proves and what it
+/// still does not (the kernel-response question). On every OTHER runner (including the general
+/// `test-workspace`/`aligned-vmem-gates` jobs, and Windows everywhere),
 /// `reserve_aligned_huge` falls back to ordinary pages, so only the ordinary (fallback) case
-/// below executes. The test remains valuable as documentation of the contract and for the
+/// below executes there. The test remains valuable as documentation of the contract and for the
 /// rare host where huge pages are actually available.
 ///
 /// Counterfactual for ordinary case: if the implementation returns `true` unconditionally
@@ -360,19 +367,28 @@ fn huge_decommit_attempts_does_not_increment_on_ordinary_reservation() {
 /// assertion below (`baseline` unchanged after the aligned call) would read
 /// `baseline + 1` instead and fail.
 ///
-/// **Execution honesty (per this task's own brief):** this assertion only
-/// actually exercises the new code path when `reservation.is_huge()` is
-/// `true`, which requires a REAL hugetlb pool
-/// (`/proc/sys/vm/nr_hugepages > 0`) — no runner in this repo's current CI
-/// configures one (see item 59 in `docs/CORRECTNESS_OPEN_ITEMS.md`, and the
-/// same caveat on `can_decommit_reclaim_and_zero_returns_false_for_huge_reservations`
-/// above). On every host this crate's CI actually runs on today, and on the
-/// Windows host this task was authored on, `reserve_aligned_huge` falls back
-/// to ordinary pages, `is_huge()` is `false`, and this test exercises only the
-/// `else` arm (already covered by the ordinary-reservation tests above) — it
-/// is NOT a false pass, it is an honest skip of the new-behavior assertion,
-/// matching this file's own pre-existing pattern for the same structural
-/// reason.
+/// **Execution honesty (per this task's own brief; updated task #1160/F4):**
+/// this assertion only actually exercises the new code path when
+/// `reservation.is_huge()` is `true`, which requires a REAL hugetlb pool
+/// (`/proc/sys/vm/nr_hugepages > 0`). At the time this test was authored, no
+/// runner in this repo's CI configured one (see item 59 in
+/// `docs/CORRECTNESS_OPEN_ITEMS.md`, and the same caveat on
+/// `can_decommit_reclaim_and_zero_returns_false_for_huge_reservations`
+/// above). **That has changed:** the `aligned-vmem-hugetlb-real` CI job
+/// (`.github/workflows/ci.yml`) now configures a real `nr_hugepages` pool
+/// and runs this exact test (this function is one of its five
+/// hard-asserted sentinels), so under THAT job `reservation.is_huge()` is
+/// `true` and this test genuinely exercises the real-backend branch —
+/// proving the crate's dispatch reaches the real
+/// `madvise(2)`/`MADV_DONTNEED` call, not that the kernel honoured it (see
+/// `decommit`'s own rustdoc for that distinction). On every OTHER host this
+/// crate's CI runs on (including the general `test-workspace` job, and the
+/// Windows host this test was originally authored on), `reserve_aligned_huge`
+/// still falls back to ordinary pages, `is_huge()` is `false`, and this test
+/// exercises only the `else` arm (already covered by the ordinary-reservation
+/// tests above) — it is NOT a false pass there either, it is an honest skip
+/// of the new-behavior assertion, matching this file's own pre-existing
+/// pattern for the same structural reason.
 #[test]
 #[cfg(all(feature = "bench-internals", feature = "huge-pages"))]
 fn huge_aligned_range_takes_the_real_backend_path_not_the_skip_path() {
