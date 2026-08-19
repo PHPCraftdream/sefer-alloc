@@ -135,20 +135,56 @@
 // taxonomy). A wide-range scan of every `build:`/`build(...)` commit since
 // the R30-12 rule commit (60 commits, `git log
 // 3f7db1629d389c18ae987120f4094aaccf04f81f..cecdeec` filtered to `^build`)
-// found 10 that legitimately touch src/ or Cargo.toml with REAL
-// (non-comment) content — `a4b8e50`'s module-per-file split, `c75aa59`'s
-// crate-directory rename, `d72b6d7`'s version bump, dependency
-// hoists/removals (`56d0764`, `57c4510`), and more — none of them a
+// splits into 44 / 6 / 10. The 44 touch NOTHING outside docs/examples/
+// benches/tests/scripts/.github/ (`outside.length === 0` under this
+// script's own isMeasurementOnlyPath). The 10 DO touch something outside
+// those prefixes with REAL (non-comment) content: `a4b8e50`'s
+// module-per-file split, `c75aa59`'s crate-directory rename, `d72b6d7`'s
+// version bump, dependency hoists/removals (`56d0764`, `57c4510`), and —
+// worth naming because they are the least obvious members of this bucket —
+// `503f703`/`f3020fd`, whose only outside-prefix path is `.gitignore`, and
+// `eb6935b`/`fabe6b4`, whose only outside-prefix path is `package.json`.
+// Those four touch NO `src/` or `Cargo.toml` path at all (verified per
+// commit, task #1178), yet each adds one non-comment line to a repo-root
+// file that no measurement-only prefix covers, which is exactly why they
+// land here and not among the 44. None of the 10 is a
 // claim-strengthening defect; promoting this branch to ERROR the way docs
 // is would have made all 10 false positives, in direct tension with the
 // "must not start noise on legacy commits" requirement direction 2 has
 // always had to clear before being tightened. Only 6 of the 60 have a
-// comment-only src/ delta (the actual defect shape) and all 6 are the same
-// family as `cecdeec` — a doc-comment claim revised on
-// `crates/aligned-vmem/src/**`. WARNING, not ERROR, keeps this branch
-// visible to a reviewer without blocking the much larger set of legitimate
-// build: commits that touch src/ for real reasons unrelated to claim
-// strength.
+// comment-only delta in that outside-prefix set (the actual defect shape);
+// 5 of those 6 are the same family as `cecdeec` — a doc-comment claim
+// revised on `crates/aligned-vmem/src/**` — and the sixth, `88c5f3c`, is a
+// same-shape comment-only revision but on `crates/aligned-vmem/Cargo.toml`
+// (25 added lines, all `#`-prefixed TOML comments) rather than `src/**`.
+// WARNING, not ERROR, keeps this branch visible to a reviewer without
+// blocking the much larger set of legitimate build: commits that touch
+// src/ (or Cargo.toml, or any other outside-prefix path) for real reasons
+// unrelated to claim strength.
+//
+// Why adding this branch cannot have changed the historical FAILURE set in
+// EITHER direction (task #1178/OX4): the `kind === 'build'` branch pushes
+// only to `warnings`, so it cannot have ADDED a failure — but that alone
+// does not rule out having REMOVED one, since a branch that intercepts
+// commits before they reach a stricter check could silence a failure they
+// would otherwise have hit. The branch cannot have done that either, for a
+// structural reason: `classifySubject` tries the `build` branch (via
+// `BUILD_RE`) only AFTER every perf/fix-perf/bench/docs branch above it has
+// already failed to match, and immediately before the final catch-all
+// `return 'other'` — see the `if (BUILD_RE.test(subject)) return 'build';`
+// line right before that `return 'other';` below. Every `build:`/
+// `build(...)` commit therefore classified as `'other'` before this branch
+// existed (`BUILD_RE` cannot also match `perf`/`fix(perf)`/`bench`/`docs`
+// prefixes, so no build: commit was ever being caught by one of THOSE
+// branches instead), and `'other'` is the one classification the main loop
+// below has never run a single check against — see its own trailing
+// comment ("not a perf/bench/docs(config) prefix at all; out of this
+// lint's scope entirely"). A classification with zero checks cannot
+// produce a failure, so the set of build: commits this branch now examines
+// contributed zero failures before it existed. Adding a WARNING-only
+// branch between "no check ran" and "no check ran" leaves the FAILURE set
+// exactly as it was — not because of what the new branch pushes to, but
+// because of what it intercepts commits FROM.
 //
 // Direction (1) is FAIL (exit 1): unlike a brand-new rule with zero
 // real-world track record, R30-12 already has three independently-verified
@@ -688,8 +724,13 @@ function main() {
       continue;
     }
 
-    // 'other' — not a perf/bench/docs(config) prefix at all; out of this
-    // lint's scope entirely (e.g. fix:/feat:/refactor:/test:/build:).
+    // 'other' — not a perf/bench/docs(config)/build prefix at all; out of
+    // this lint's scope entirely (e.g. fix:/feat:/refactor:/test:).
+    // `build:`/`build(...)` is classified as 'build' above (task #1168,
+    // OX3/F7) and handled by its own branch, not this one — this comment
+    // itself named `build:` as an 'other' example until task #1178
+    // (OX4/L2) caught that it went stale the moment `bf7b6b2` added the
+    // `build` branch immediately above it, in the same commit.
   }
 
   console.log(`[verify-commit-prefixes] linted ${clipped.length} commit(s)`);

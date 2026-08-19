@@ -184,14 +184,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   real `madvise(2)`/`MADV_DONTNEED` backend call under a real `MAP_HUGETLB`
   grant (`nr_hugepages=64`, hard-asserted via a path-activation oracle, so a
   silent ordinary-page fallback turns the job red instead of reporting a
-  success that proves nothing). **Since task #1164, the kernel's OWN
-  syscall-level response is also execution-verified for this same case:**
-  under `bench-internals`, `libc_madvise` (`src/os/unix.rs`) records whether
-  each `madvise` call returned `0` (accepted) or `-1` (rejected) into a
-  counter pair (`UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES`), and the
-  `aligned-vmem-hugetlb-real` job now hard-asserts that counter increased for
-  the eligible-range call — i.e. the kernel genuinely returned `0`, not just
-  that the crate dispatched to it. **What remains NOT execution-verified:**
+  success that proves nothing). **Since task #1164 (strengthened task
+  #1166, F5), the kernel's OWN syscall-level response is also
+  execution-verified for this same case:** under `bench-internals`,
+  `libc_madvise` (`src/os/unix.rs`) records whether each `madvise` call
+  returned `0` (accepted) or `-1` (rejected) into a counter pair
+  (`UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES`), and the
+  `aligned-vmem-hugetlb-real` job now hard-asserts that the successes
+  counter equals the attempts counter (`assert_eq!`, not merely `>`) for
+  the eligible-range call — i.e. the kernel genuinely returned `0` for
+  every `madvise` call this path reached, not just that the crate
+  dispatched to it. **What remains NOT execution-verified:**
   whether the kernel's acceptance actually corresponds to reclaiming the
   physical pages, or to a subsequent access re-faulting zeroed memory — no
   test on this path reads memory content back before/after decommit, so the

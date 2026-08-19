@@ -240,13 +240,16 @@ The table entry above (`decommit`/`recommit`) hides six platform and failure-mod
     actually obtained, and then drives both an eligible and an ineligible
     range through the safe methods, confirming the eligible case **reaches
     the real `MADV_DONTNEED` backend call** rather than silently taking the
-    Rust-level skip path. **Since task #1164, that job additionally
-    hard-asserts the kernel's own response:** under `bench-internals`,
-    `libc_madvise` (`src/os/unix.rs`) records whether the syscall itself
-    returned `0` (accepted) or `-1` (rejected) into a counter pair, and the
-    job now asserts that counter increased for the eligible-range call —
-    i.e. the kernel genuinely accepted `MADV_DONTNEED` on this real
-    `MAP_HUGETLB` mapping, not merely that the crate dispatched to it.
+    Rust-level skip path. **Since task #1164 (strengthened task #1166,
+    F5), that job additionally hard-asserts the kernel's own response:**
+    under `bench-internals`, `libc_madvise` (`src/os/unix.rs`) records
+    whether the syscall itself returned `0` (accepted) or `-1` (rejected)
+    into a counter pair, and the job now asserts that the successes counter
+    equals the attempts counter for the eligible-range call (`assert_eq!`,
+    not merely `>`) — i.e. the kernel genuinely accepted `MADV_DONTNEED` on
+    this real `MAP_HUGETLB` mapping, not merely that the crate dispatched to
+    it, and not merely that at least one of possibly several calls
+    succeeded.
     **What this still does NOT prove:** that the kernel actually reclaimed
     the physical pages, or that a subsequent access re-faults zeroed memory
     — no test on this path reads memory content back before/after the
