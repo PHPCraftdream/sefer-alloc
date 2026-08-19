@@ -1828,6 +1828,26 @@ jobs:
       # several cfg-gated files in one compile: the seven targets share the
       # job-level `--cfg loom` (any sentinel catches a typo'd flag), but each
       # file's drift is independent. `shell: bash` for `-eo pipefail`.
+      #
+      # Task #1146: four of these seven sentinels name `#[should_panic]`
+      # counterfactual tests (loom_deferred_large's
+      # counterfactual_no_guard_double_extracts_or_corrupts,
+      # loom_remote_ring_drain_guard's
+      # counterfactual_stale_cache_not_reset_across_segment_reuse,
+      # loom_dirty_publish's counterfactual_non_atomic_push_loses_entry,
+      # loom_dirty_multi_segment's counterfactual_relaxed_dirty_loses_entry).
+      # libtest prints a passing should_panic test as
+      # "test NAME - should panic ... ok", not "test NAME ... ok" — the
+      # plain-`ok` form only ever matches a NON-should_panic test. A
+      # sentinel copy-pasted from the plain-test pattern therefore never
+      # matches a passing should_panic test's actual output, so the step
+      # failed even though every loom test in the binary passed (verified:
+      # `cargo test`'s own `test result: ok` for the binary, alongside a
+      # `grep -F` exit 1 on the mismatched sentinel under `shell: bash`'s
+      # `-o pipefail`). Fixed by including the `- should panic` infix in
+      # the four affected sentinels below — NOT by dropping the ` ... ok`
+      # tail, which would make the sentinel match a FAILING test's own
+      # name-only echo too and defeat the postcondition's whole purpose.
       - run: |
           cargo test --release --features "alloc-core alloc-xthread" \
             --test loom_xthread_protocol \
@@ -1839,10 +1859,10 @@ jobs:
             --test loom_class_aware_dirty 2>&1 | tee "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test protocol_single_owner_never_resurrects ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test correct_ring_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_no_guard_double_extracts_or_corrupts ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_non_atomic_push_loses_entry ... ok" "$RUNNER_TEMP/loom-xthread.log"
-          grep -F "test counterfactual_relaxed_dirty_loses_entry ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_no_guard_double_extracts_or_corrupts - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_stale_cache_not_reset_across_segment_reuse - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_non_atomic_push_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
+          grep -F "test counterfactual_relaxed_dirty_loses_entry - should panic ... ok" "$RUNNER_TEMP/loom-xthread.log"
           grep -F "test class_a_triggered_visit_recovers_class_b_entry ... ok" "$RUNNER_TEMP/loom-xthread.log"
         shell: bash
 
@@ -1856,12 +1876,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # Task #1110: tee + grep postconditions (task #1086 shape) — one
       # sentinel per `--test` target; `shell: bash` for `-eo pipefail`.
+      #
+      # Task #1146: both sentinels below name `#[should_panic]`
+      # counterfactual tests — libtest prints those as
+      # "test NAME - should panic ... ok", not "test NAME ... ok" (see the
+      # loom-xthread job's step above for the full explanation of this
+      # defect class). Both sentinels here were the plain-`ok` form and
+      # therefore never matched, failing this step even though every test
+      # in both binaries passed.
       - run: |
           cargo test --release --features "experimental" \
             --test loom_sharded \
             --test loom_epoch 2>&1 | tee "$RUNNER_TEMP/loom-experimental.log"
-          grep -F "test counterfactual_naive_load_then_swap_loses_live_value ... ok" "$RUNNER_TEMP/loom-experimental.log"
-          grep -F "test counterfactual_no_recheck_yields_torn_read ... ok" "$RUNNER_TEMP/loom-experimental.log"
+          grep -F "test counterfactual_naive_load_then_swap_loses_live_value - should panic ... ok" "$RUNNER_TEMP/loom-experimental.log"
+          grep -F "test counterfactual_no_recheck_yields_torn_read - should panic ... ok" "$RUNNER_TEMP/loom-experimental.log"
         shell: bash
 
   loom-misc:
