@@ -88,6 +88,19 @@
 //      `--nocapture` multi-test run's unsynchronized worker-thread
 //      `println!`s can land mid-write of another test's own result line and
 //      corrupt the exact string `grep -F` depends on.
+//   6. Task #1183: YAML-side liveness. A `grep -F ... "$RUNNER_TEMP/..."`
+//      line counts as a sentinel/marker ONLY if it sits on a LIVE line —
+//      no `#` comment open at word start before the match
+//      (`grepMatchIsCommented`). A full-form grep on a commented line is
+//      its own error class and does NOT count toward checkedCount: before
+//      #1183 the extractors matched blind to comment status, so
+//      commenting out a postcondition kept the count (and the guard)
+//      green — fail-OPEN, the third side of the same "text present but
+//      not live code" triangle #1176/M2 closed on the .rs side. Latent
+//      at fix time: every prose comment in ci.yml mentioning `grep -F`
+//      lacked the full `"$RUNNER_TEMP/<log>"` form and never matched
+//      (re-derive via `grep -n 'grep -F' .github/workflows/ci.yml`);
+//      one edit in that form would have activated the hole.
 //
 // WHAT THIS DOES NOT COVER (see docs/CORRECTNESS_OPEN_ITEMS.md's new card
 // for the durable record — the "does and does NOT cover" split the task
@@ -143,6 +156,20 @@
 //     with zero current instances. This is a documented gap, not a fixed
 //     one — re-evaluate (a) if a sentinel is ever added for a `#[cfg]`-gated
 //     test whose gate does not obviously match its step's `runs-on`.
+//   - The `#` liveness test (point 6) models a comment opening at line
+//     start or after whitespace — the shell "word beginning with #"
+//     form. A `#` directly after a shell control operator with no
+//     intervening space (`;#`, `&&#`) also opens a real comment but is
+//     not modeled (no such token exists in ci.yml today, verified by
+//     grep), and a `#` inside a quoted string earlier on the same line
+//     as a live grep is a FALSE REJECT — a loud FAIL, not a silent pass
+//     (fail-closed; the same trade the .rs-side `//` checks make for
+//     string literals). Also note `checkNocaptureRegression` (point 5)
+//     still matches its sentinel regexes without liveness, so a
+//     commented-out `test ... ok` line can trip IT too — a fail-closed
+//     false positive that is subsumed: any step holding such a line
+//     already fails via point 6's own dead-sentinel error plus the
+//     floor drop (the dead line no longer counts toward checkedCount).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -251,6 +278,39 @@ function extractPackageScope(stepText) {
 }
 
 /**
+ * Task #1183: the YAML/shell-side liveness test — the THIRD side of the
+ * "text present but not live code" triangle. The two .rs-side checks in
+ * `resolveMarkerLocation` (`println!` liveness, assert liveness) reject
+ * dead text via `//`; this one rejects dead text via `#` — inside a
+ * `run: |` block scalar the step text is SHELL, where a `#` at word
+ * start (line start or after whitespace) opens a comment, and a fully
+ * commented `# grep -F ...` line is dead either way. Before this check,
+ * `extractSentinels`/`extractLiteralMarkers` matched their regexes blind
+ * to comment status, so commenting out a postcondition left
+ * `checkedCount` unchanged and the guard green (fail-OPEN) while CI no
+ * longer checked anything — disabling the very postcondition this guard
+ * exists to verify passed silently. Returns true when a `#` comment is
+ * open at word start at or before `matchIndex` on `matchIndex`'s own
+ * line (the line the grep match starts on governs the whole command,
+ * including any `\`-continued tail).
+ *
+ * Approximation, deliberately: a `#` directly after a shell control
+ * operator with no intervening space (`;#`, `&&#`) also opens a real
+ * shell comment but is NOT modeled — no such token exists in ci.yml
+ * today (verified: `grep -nE ';#|&#' .github/workflows/ci.yml` is
+ * empty). A `#` inside a quoted string earlier on the same line as a
+ * live grep is a FALSE REJECT: a loud FAIL, not a silent pass —
+ * fail-closed, the same trade the .rs-side `//` checks already make for
+ * string literals (see the note inside `resolveMarkerLocation`); no
+ * such line exists today either.
+ */
+function grepMatchIsCommented(stepText, matchIndex) {
+  const lineStart = stepText.lastIndexOf('\n', matchIndex - 1) + 1;
+  const prefix = stepText.slice(lineStart, matchIndex);
+  return /(^|\s)#/.test(prefix);
+}
+
+/**
  * Extract every `grep -F "test <sentinel-body>" "$RUNNER_TEMP/<log>"` line
  * from a step's text, in the order they appear (this order matches the
  * `--test` target declaration order for multi-target steps — verified
@@ -262,6 +322,12 @@ function extractSentinels(stepText) {
   let m;
   while ((m = re.exec(stepText))) {
     const body = m[1];
+    if (grepMatchIsCommented(stepText, m.index)) {
+      // Task #1183: a full-form grep on a commented line is dead text —
+      // surface it as its own failure, never as a counted sentinel.
+      sentinels.push({ raw: body, dead: true });
+      continue;
+    }
     const shouldPanic = body.endsWith(' - should panic ... ok');
     const plain = body.endsWith(' ... ok');
     if (!shouldPanic && !plain) {
@@ -302,6 +368,10 @@ function extractLiteralMarkers(stepText) {
   while ((m = re.exec(stepText))) {
     const body = m[1];
     if (body.startsWith('test ')) continue; // handled by extractSentinels
+    if (grepMatchIsCommented(stepText, m.index)) {
+      markers.push({ raw: body, dead: true });
+      continue;
+    }
     markers.push({ raw: body });
   }
   return markers;
@@ -596,21 +666,28 @@ function escapeRegExp(literal) {
  *      #1176/M2 found the ORIGINAL version of this function applied that
  *      liveness check ONLY to the `println!` side (point 1) and never to
  *      the `assert!` side: `assertRe.test(l)` alone, with no check that `l`
- *      itself wasn't `// assert!(...)`. Commenting out the ENTIRE
- *      `is_huge()` assert this marker exists to gate on (see the target
- *      test's own doc comment) left `sawAssertBeforeMarker` false against a
- *      genuinely live `println!` that ALWAYS executes once the assert is
- *      gone — the resolver still reported `OK` because it no longer scanned
- *      past the commented line to find any other assert, so removing the
- *      one-and-only assert of that function coincidentally reproduced "no
- *      preceding assert" and DID fail... but the counterfactual that
- *      actually reproduced was different: the resolver's assert-liveness
- *      gap only matters once a file contains a commented-out assert on one
- *      line and a REAL (live) assert on another line inside the same
- *      function — in the single-assert case here, `sawAssertBeforeMarker`
- *      stayed false regardless of the liveness bug, for the unrelated
- *      reason that the (now dead) text still matched the assert regex.
- *      Fixed by requiring the SAME liveness test as `println!`'s.
+ *      itself wasn't `// assert!(...)`. Measured against this file's own
+ *      `assertRe` (task #1184): `.test()` on a fully commented
+ *      `// assert!(reservation.is_huge(), "...")` line returns `true` —
+ *      dead text matched exactly like live code. So commenting out the
+ *      ENTIRE `is_huge()` assert this marker exists to gate on (see the
+ *      target test's own doc comment) set `sawAssertBeforeMarker` TRUE
+ *      from the dead line, the marker still resolved, and the resolver
+ *      reported OK / exit 0 with the oracle's gating assert disarmed —
+ *      the exact "green and dead" class above, and the counterfactual
+ *      commit `6c5dbbe` records ("comment out the assert! it is ordered
+ *      after -> OK/0 <- the gap I left"). The gap only changes an outcome
+ *      when the commented line is the one satisfying the
+ *      "preceding assert" requirement: with a second, still-LIVE assert
+ *      earlier in the same function, the marker resolves via that live
+ *      line both before and after the fix, which is correct behavior, not
+ *      a miss (see the non-exclusive-assert bullet below). Fixed by
+ *      requiring the SAME liveness test as `println!`'s — take the
+ *      LEFTMOST assert match on the line and require nothing before it
+ *      opens a `//` comment, so dead text no longer counts as "seen": in
+ *      the single-assert case `sawAssertBeforeMarker` correctly stays
+ *      FALSE, the marker fails to resolve, and the guard goes RED, per
+ *      the "CAUGHT as of task #1176/M2" bullet below.
  *
  * NOT COVERED (documented gap, same spirit as the `#[cfg]` gap noted
  * above — verified by an actual counterfactual during this task, not
@@ -773,6 +850,17 @@ function verifyCiSentinels() {
             : listTestFiles('tests');
 
       for (const marker of markers) {
+        if (marker.dead) {
+          errors.push(
+            `step starting at ci.yml:${step.startLine}: marker sentinel "${marker.raw}" is COMMENTED OUT in ` +
+              `the step text — its line opens a \`#\` comment, so CI never executes this grep, yet the line ` +
+              `still carries the full \`grep -F "<literal>" "$RUNNER_TEMP/..."\` shape. Before task #1183 such ` +
+              `a line was counted as checked and the guard stayed green (fail-OPEN) while the oracle it names ` +
+              `was disabled. Either restore the line (delete the leading \`#\`) or remove it entirely and ` +
+              `lower MIN_SENTINEL_COUNT in the same commit, exactly as for a deleted marker.`,
+          );
+          continue;
+        }
         checkedCount++;
         const resolved = resolveMarkerLocation(candidateFiles, marker.raw);
         if (!resolved) {
@@ -796,6 +884,19 @@ function verifyCiSentinels() {
     const pkgScope = extractPackageScope(step.text);
 
     for (const sentinel of sentinels) {
+      if (sentinel.dead) {
+        errors.push(
+          `step starting at ci.yml:${step.startLine}: sentinel "test ${sentinel.raw}" is COMMENTED OUT in ` +
+            `the step text — its line opens a \`#\` comment, so CI never executes this grep, yet the line ` +
+            `still carries the full \`grep -F "test ... ok" "$RUNNER_TEMP/..."\` shape. Before task #1183 ` +
+            `such a line was counted as checked and the guard stayed green (fail-OPEN) while the ` +
+            `postcondition it names was disabled — the third side of the liveness triangle the two .rs-side ` +
+            `checks in resolveMarkerLocation already close. Either restore the line (delete the leading ` +
+            `\`#\`) or remove it entirely and lower MIN_SENTINEL_COUNT in the same commit, exactly as for a ` +
+            `deleted sentinel.`,
+        );
+        continue;
+      }
       checkedCount++;
       if (sentinel.malformed) {
         errors.push(
