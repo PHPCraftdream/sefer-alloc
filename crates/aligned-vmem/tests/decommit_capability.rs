@@ -633,6 +633,27 @@ fn try_decommit_rejects_out_of_bounds_huge_aligned_range_before_any_eligibility_
 /// against a real fallback outcome on a non-hugetlb host (this task's own
 /// verification; see the task's final report for how, since this repository
 /// has no way to grant a real hugetlb pool on Windows or in this sandbox).
+///
+/// **Task #1162 — arming itself was pinned by nothing.** Before this task,
+/// the ARMED (`ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1` set, real grant
+/// confirmed) and UNARMED (var unset or wrong, early `return`) outcomes both
+/// printed the identical libtest line `test
+/// ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok` — so a
+/// future edit that dropped the env var (e.g. a bad `env:` block indent, or
+/// a merge that lost the prefix) would make this oracle silently no-op on
+/// every run, and nothing in ci.yml, `scripts/verify-ci-sentinels.mjs`, or
+/// this test itself would go red: every huge test would quietly take its
+/// `if reservation.is_huge()` fallback branch, all five sentinels the
+/// `aligned-vmem-hugetlb-real` job checks would still match, and the job
+/// would report success while proving zero hugetlb coverage. Closed by
+/// making ARMED observably different from UNARMED in the OUTPUT itself: a
+/// `println!("[oracle] ARMED: ...")` after the assert above, which only
+/// executes on the real-grant path, checked by its own additional `grep -F`
+/// sentinel in ci.yml (requires the job's `cargo test` step to pass
+/// `-- --nocapture`, confirmed not to change libtest's `test <name> ... ok`
+/// line format for any of the job's other sentinels). This checks
+/// EXECUTION, not workflow text, so it cannot be defeated by moving the env
+/// var to a different syntactic position in the YAML.
 #[test]
 #[cfg(all(
     any(target_os = "linux", target_os = "android"),
@@ -662,4 +683,23 @@ fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
          while proving nothing. Check `/proc/sys/vm/nr_hugepages` \
          and whether the runner's cgroup/NUMA configuration still permits MAP_HUGETLB."
     );
+
+    // Task #1162: the ARMED/unarmed outcomes above are otherwise
+    // indistinguishable in CI's libtest output — both print exactly
+    // `test ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback ... ok`,
+    // so nothing pinned that `ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1` was ever
+    // actually set before this test ran (a future edit that drops the env
+    // var prefix, e.g. by moving it into a malformed `env:` block, would
+    // make this test silently no-op at the `return` above and still print
+    // that same "... ok" line). This print only executes past the assert
+    // above, so it is proof the real-grant branch was taken, not merely
+    // that the process started with the right variable — and it is a
+    // distinct, additional line `grep -F`-checked by
+    // `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` job,
+    // verified via `scripts/verify-ci-sentinels.mjs`. Requires the job's
+    // `cargo test` invocation to pass `-- --nocapture` (confirmed this task:
+    // `--nocapture` does not alter libtest's `test <name> ... ok` line
+    // format at all, so the five pre-existing sentinels in that job's step
+    // are unaffected by adding it).
+    println!("[oracle] ARMED: real MAP_HUGETLB grant confirmed");
 }

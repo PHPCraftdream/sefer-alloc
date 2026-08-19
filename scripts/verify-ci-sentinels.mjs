@@ -19,6 +19,16 @@
 // sentinel-tracked tests tomorrow and ci.yml gets no automatic signal; this
 // script is that signal.
 //
+// Task #1162 added a SECOND sentinel shape this script recognizes: a
+// "marker sentinel" is a `grep -F "<literal>" "$RUNNER_TEMP/<log>"` line
+// whose literal does NOT start with `test ` — a deliberate stdout marker a
+// test prints itself (e.g. `println!("[oracle] ARMED: ...")`) to make an
+// otherwise output-indistinguishable branch (armed vs. unarmed) observable
+// in the CI log. See `extractLiteralMarkers` below; it is resolved against
+// a literal `println!("...")` occurrence in a candidate source file, not
+// against a `#[should_panic]`/`#[ignore]` attribute pair (a marker doesn't
+// name a `fn`, so that check does not apply to it).
+//
 // WHAT THIS SCRIPT DOES — a pure text scan, no cargo invocation:
 //   1. Parse ci.yml. For every `- run: |` / `- run: <cmd>` step, find any
 //      `cargo test ... --test <target>` invocations (zero, one, or several
@@ -245,6 +255,36 @@ function extractSentinels(stepText) {
 }
 
 /**
+ * Task #1162: extract every `grep -F "<literal>" "$RUNNER_TEMP/<log>"` line
+ * whose literal does NOT start with `test ` (that shape is a libtest
+ * result-line sentinel, handled by extractSentinels above — a "marker
+ * sentinel" is a distinct, deliberate stdout marker a test prints itself,
+ * e.g. `println!("[oracle] ARMED: ...")`, used to make an otherwise
+ * indistinguishable armed/unarmed outcome observable in CI's log). Unlike a
+ * `test <name> ... ok` sentinel, a marker sentinel is not resolved against a
+ * `#[should_panic]`/`#[ignore]` attribute pair (it does not name a `fn` at
+ * all) — it is instead resolved against a literal `println!("<same
+ * text>"` occurrence in one of the step's candidate test-source files, the
+ * closest equivalent of "this string still corresponds to something real in
+ * the source" available for a non-fn-named string. This exists specifically
+ * so a marker sentinel counts toward `checkedCount`/`MIN_SENTINEL_COUNT`
+ * (deleting the `println!` that emits it, or the CI line that greps for it,
+ * both surface as a floor/count change) without widening the `fn`-attribute
+ * matching logic above to cover a case it was never designed for.
+ */
+function extractLiteralMarkers(stepText) {
+  const markers = [];
+  const re = /grep -F "([^"]+)"\s+"\$RUNNER_TEMP\/[^"]+"/g;
+  let m;
+  while ((m = re.exec(stepText))) {
+    const body = m[1];
+    if (body.startsWith('test ')) continue; // handled by extractSentinels
+    markers.push({ raw: body });
+  }
+  return markers;
+}
+
+/**
  * Resolve a (possibly `mod::`-qualified) test name to a source location by
  * scanning candidate .rs files. Returns { file, line, hasShouldPanic,
  * hasIgnore } or null if not found. `mod::name` requires the found `fn` to
@@ -344,6 +384,36 @@ function verifyCiSentinels() {
   let checkedCount = 0;
 
   for (const step of steps) {
+    const markers = extractLiteralMarkers(step.text);
+    if (markers.length > 0) {
+      const testTargets = extractTestTargets(step.text);
+      const pkgScope = extractPackageScope(step.text);
+      const dirs = pkgScope && CRATE_TEST_DIRS[pkgScope] ? [CRATE_TEST_DIRS[pkgScope]] : ['tests'];
+      const candidateFiles =
+        testTargets.length > 0
+          ? testTargets.map((t) => dirs.map((d) => path.join(REPO_ROOT, d, `${t}.rs`))).flat()
+          : pkgScope && CRATE_TEST_DIRS[pkgScope]
+            ? listTestFiles(CRATE_TEST_DIRS[pkgScope])
+            : listTestFiles('tests');
+
+      for (const marker of markers) {
+        checkedCount++;
+        const found = candidateFiles.some((f) => {
+          if (!fs.existsSync(f)) return false;
+          const src = fs.readFileSync(f, 'utf8');
+          return src.includes(`println!("${marker.raw}")`) || src.includes(`println!("${marker.raw}");`);
+        });
+        if (!found) {
+          errors.push(
+            `step starting at ci.yml:${step.startLine}: marker sentinel "${marker.raw}" was not found ` +
+              `as a literal \`println!("${marker.raw}")\` in any candidate file ` +
+              `(${candidateFiles.length > 0 ? candidateFiles.map((f) => path.relative(REPO_ROOT, f)).join(', ') : '<no candidates>'}). ` +
+              `An unresolvable marker sentinel is a failure: it cannot be verified to still name a real print site.`,
+          );
+        }
+      }
+    }
+
     const sentinels = extractSentinels(step.text);
     if (sentinels.length === 0) continue;
 
@@ -472,7 +542,29 @@ function verifyCiSentinels() {
 // `reservation_decommit_contract` targets it now actually runs, 1 for the
 // new `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`
 // path-activation oracle).
-const MIN_SENTINEL_COUNT = 37;
+// Raised 37 -> 38 by task #1162 (F/arming): the same job gained one MARKER
+// sentinel (`extractLiteralMarkers`, not a `test <name> ... ok` sentinel) —
+// `[oracle] ARMED: real MAP_HUGETLB grant confirmed`, a `println!` that only
+// executes past `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback`'s
+// hard assert, making the armed outcome observable in the log itself instead
+// of merely inferable from the presence of an env var in workflow text.
+//
+// COUPLING (task #1161): this literal and docs/CORRECTNESS_OPEN_ITEMS.md's
+// item 87 "Current-number-or-verdict" card are THE SAME NUMBER living in two
+// places, and they have already drifted apart once — `dad4d7a` (task #1152)
+// raised this literal 33 -> 37 in the same commit that added the 4 sentinels
+// (correctly, per the header comment above), but did not touch item 87's
+// card, which kept reporting 33 for two more commits until task #1161 found
+// and fixed it. A commit that changes this literal MUST also update item
+// 87's Current-number-or-verdict card in the SAME commit — the WARNING below
+// is the automated half of enforcing that; the manual half is: whoever
+// raises MIN_SENTINEL_COUNT is the one person guaranteed to be looking at
+// this exact file at this exact moment, so this comment is the cheapest
+// place to say it. (Task #1162's own 37 -> 38 bump above and the matching
+// item-87 card update landed in the SAME commit as this comment, as a live
+// demonstration of the coupling task #1161 documents, not just a rule
+// stated in the abstract.)
+const MIN_SENTINEL_COUNT = 38;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
@@ -493,5 +585,58 @@ if (checkedCount < MIN_SENTINEL_COUNT) {
   );
   process.exit(1);
 }
+
+// F-drift (task #1161): make a FORGOTTEN floor bump LOUD instead of silent.
+//
+// `checkedCount > MIN_SENTINEL_COUNT` (e.g. today's 37 checked >= a floor
+// left at, say, 33 after a new sentinel was added but the floor wasn't
+// bumped) is a SILENT pass under the check above — the floor only re-arms
+// when a human remembers to raise it by hand. That is exactly the failure
+// mode that produced this task: `dad4d7a` DID remember to bump the literal,
+// but nothing forced a matching update to item 87's card in
+// docs/CORRECTNESS_OPEN_ITEMS.md, so the card silently drifted for two
+// commits with a fully green guard the entire time.
+//
+// This is a WARNING, not a FAIL, by deliberate choice — weighed against a
+// hard failure and decided against it, for a reason that does not
+// contradict the exact-pin-vs-floor reasoning above (this is a NEW axis, not
+// a re-litigation of that choice): a hard failure here would turn EVERY
+// legitimate sentinel addition into a two-step edit enforced by CI (bump the
+// literal in the same commit, or the build goes red) — which is annoying but
+// literally impossible to forget, since the red exit code cannot be missed.
+// A warning can be ignored, which is a real weakness. It was chosen anyway
+// because: (1) the header's own (b)-floor rationale already commits to "a
+// legitimate new sentinel added in a future task is still expected to bump
+// MIN_SENTINEL_COUNT upward in the same commit" — a hard failure here would
+// just be that same existing expectation finally enforced, but this script
+// has no way to also verify the SECOND, doc-side half of the coupling (that
+// item 87's card was updated) — hard-failing on the count alone would only
+// guarantee half the coupling stays honest, and could give a false sense
+// that the whole coupling is enforced when it is not; (2) `checkedCount >
+// MIN_SENTINEL_COUNT` is not on its own evidence of a forgotten bump — a
+// human might legitimately choose to leave a small headroom in the floor
+// (though today's convention, per the header comment, is to pin it exactly)
+// — so a hard failure here risks being wrong about intent in a way the
+// below-floor case (job of the FAIL branch above) is not: a COUNT DROP is
+// unambiguously either a real removal (then lower the floor) or a parser
+// regression (then fix the parser) — there is no third legitimate reading.
+// A count RISE has a legitimate benign reading (deliberate headroom) that a
+// drop does not, which is why this is a WARNING and the drop case above is
+// a FAIL. If this warning is ever seen to go unactioned across multiple
+// rounds in practice, escalate it to a FAIL — the option is deliberately
+// left open, not foreclosed by this choice.
+if (checkedCount > MIN_SENTINEL_COUNT) {
+  console.log(
+    `[verify-ci-sentinels] WARNING — ${checkedCount} sentinel(s) checked, above the pinned floor of ` +
+      `${MIN_SENTINEL_COUNT} (delta +${checkedCount - MIN_SENTINEL_COUNT}). This is not a failure, but ` +
+      `it usually means a sentinel was added without bumping MIN_SENTINEL_COUNT to match in the same ` +
+      `commit. Raise MIN_SENTINEL_COUNT in this file to ${checkedCount} AND update item 87's ` +
+      `"Current-number-or-verdict" card in docs/CORRECTNESS_OPEN_ITEMS.md in the SAME commit — those ` +
+      `two numbers plus this floor are one fact recorded in two places, and they have already drifted ` +
+      `apart once (task #1152's dad4d7a bumped this floor 33 -> 37 but left item 87's card at 33 for ` +
+      `two more commits, found only by task #1161).`,
+  );
+}
+
 console.log(`[verify-ci-sentinels] OK — ${checkedCount} sentinel(s) checked against their real \`fn\` attributes, all match.`);
 process.exit(0);
