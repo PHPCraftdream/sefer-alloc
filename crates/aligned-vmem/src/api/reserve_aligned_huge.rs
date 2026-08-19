@@ -107,7 +107,7 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// reads return the old (stale) data rather than zeroed pages.
 ///
 /// REASONED-FROM-SPEC per the `madvise(2)` man page; NOT empirically verified
-/// by this crate's own CI, which has no hugetlb-configured Linux runner.
+/// by this crate's own CI, which has no hugetlb-configured Linux/Android runner.
 ///
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
 /// unconditionally, regardless of range shape, kernel version, or platform.

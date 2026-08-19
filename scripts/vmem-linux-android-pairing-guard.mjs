@@ -172,6 +172,21 @@
 // suppression entry (the decommit.rs Darwin-caveat paragraph) that the
 // re-narrowed window surfaced and the `find`-binding bug had hidden.
 //
+// NOTE (task #1140 supersession, recorded so the #1122 narrative above does
+// not read as still-current): THREE of the entries this list carried were
+// removed after task #1140 rewrote the HugeTLB contract for Linux 5.18+.
+// They were removed because the guard reported them STALE and each one's
+// pattern was then confirmed absent from the tree by direct grep — NOT on
+// the strength of the guard's own report alone, which is exactly the check
+// task #1122 found missing when #1114 deleted three LIVE entries under a
+// "fixed" message. The three: decommit.rs's `on both Windows and Linux,
+// decommit **does not work**` and `On Linux, `MADV_DONTNEED`/`MADV_FREE` ...
+// is accepted` (both paragraphs rewritten by #1140 — the second is one of
+// the three entries the paragraph above describes as "restored"), and
+// reservation.rs's `Windows crashes on write before recommit, Linux does
+// not`. The Cargo.toml `(Linux `MADV_HUGEPAGE`)` and huge.rs `On Linux,
+// `madvise` ...` entries from that same restored trio remain live below.
+//
 // KNOWN LIMITATIONS (same posture as vmem-doc-drift-guard.mjs):
 //   1. Per-block/paragraph heuristics cannot fully decide English semantics.
 //      The marker list covers the mechanisms whose cfg IS the pair today; a
@@ -402,12 +417,6 @@ const KNOWN_DRIFT = [
       'huge-pages feature comment block repeats the reserve_aligned_huge.rs summary; Cargo.toml was outside task #1105/agent-B file scope — reported to the orchestrator',
   },
   {
-    file: 'crates/aligned-vmem/src/api/decommit.rs',
-    sentenceRegex: /on both Windows and Linux, decommit \*\*does not work\*\* on huge-page reservations/,
-    reason:
-      'decommit.rs was outside task #1105/agent-B file scope — reported to the orchestrator (the README and reserve_aligned_huge.rs siblings WERE fixed)',
-  },
-  {
     file: 'crates/aligned-vmem/src/api/decommit_lazy.rs',
     sentenceRegex: /Linux `MADV_FREE`, macOS\/iOS `MADV_FREE_REUSABLE`/,
     reason:
@@ -439,12 +448,6 @@ const KNOWN_DRIFT = [
   },
   {
     file: 'crates/aligned-vmem/src/reservation.rs',
-    sentenceRegex: /Windows crashes on write before recommit, Linux does not/,
-    reason:
-      'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
-  },
-  {
-    file: 'crates/aligned-vmem/src/reservation.rs',
     sentenceRegex: /cheaper than \[`Self::decommit`\] \(Linux `MADV_FREE`/,
     reason:
       'reservation.rs was outside task #1105/agent-B file scope — reported to the orchestrator',
@@ -460,12 +463,6 @@ const KNOWN_DRIFT = [
     sentenceRegex: /\(Linux `MADV_HUGEPAGE`\)/,
     reason:
       'restored by task #1122 after #1114 deleted it via violation merging — the drift is live and unfixed (same huge-pages comment block as the MAP_HUGETLB entry above)',
-  },
-  {
-    file: 'crates/aligned-vmem/src/api/decommit.rs',
-    sentenceRegex: /On Linux, `MADV_DONTNEED`\/`MADV_FREE` on a `MAP_HUGETLB` mapping is accepted/,
-    reason:
-      'restored by task #1122 after #1114 deleted it via violation merging — the drift is live and unfixed (same paragraph as the does-not-work entry above)',
   },
   {
     file: 'crates/aligned-vmem/src/bench_internals/huge.rs',

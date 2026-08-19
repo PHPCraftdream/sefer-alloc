@@ -90,8 +90,8 @@ use crate::page_size::{page_size, page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///
 /// REASONED-FROM-SPEC per the `madvise(2)` man page cited above; NOT
 /// empirically verified by this crate's own CI, which has no
-/// hugetlb-configured Linux runner (see `Reservation::decommit`'s doc for the
-/// exact CI row this would need).
+/// hugetlb-configured Linux/Android runner (see `Reservation::decommit`'s
+/// doc for the exact CI row this would need).
 ///
 /// **Diagnostic visibility:** under the `bench-internals` feature, the
 /// `huge_decommit_attempts` counter (not an intra-doc link: `bench-internals` is excluded from the published docs.rs feature set) is incremented each time
