@@ -1473,6 +1473,14 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         .position(|l| l.starts_with("## Recently resolved"))
         .expect("docs/CORRECTNESS_OPEN_ITEMS.md has a '## Recently resolved' section");
 
+    // ASSUMPTION (task #1123-era slice widening): `## Recently resolved` is
+    // the LAST `## ` heading in this file, so slicing to the end of the file
+    // is the same as slicing to the section's end. This is fail-CLOSED, not
+    // silent, if it ever stops holding: a pointer-shaped line (`- ` +
+    // "full closure narrative" + archive reference) in any LATER section
+    // would be collected as an extra pointer and caught loudly by the
+    // count/multiset checks below ("entry moved without a pointer (or vice
+    // versa)" / a duplicate-position or gap error), never silently ignored.
     let pointers: Vec<(usize, &str)> = lines[section_start + 1..]
         .iter()
         .enumerate()
@@ -1578,6 +1586,21 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
 
     let mut errors: Vec<String> = Vec::new();
     let mut last_matched_pos: Option<usize> = None;
+    // Matched archive positions, one record per successfully-paired pointer,
+    // for the multiset check after the loop. The old in-loop check alone
+    // (`pos < prev`) demanded only NON-DECREASING order, so a byte-identical
+    // duplicate of one pointer pasted OVER another passed green (pointer
+    // count stayed equal, order stayed non-decreasing) while a real archive
+    // entry was left with no pointer — exactly the drift this test exists
+    // to catch. Rather than patching that check to `pos <= prev`, the loop
+    // RECORDS every matched position and the post-loop check asserts the
+    // multiset is exactly {0..entries.len()}: one invariant closes
+    // duplicates AND gaps together, instead of two separate checks (count +
+    // non-decreasing order) that each leave a blind spot the duplicate
+    // satisfies simultaneously. The in-loop order check is kept unchanged so
+    // a genuinely out-of-order pointer still gets its own immediate,
+    // distinct message.
+    let mut matched: Vec<(usize, String, usize)> = Vec::new(); // (line_no, label, pos)
     for (line_no, line) in &pointers {
         let bold_count = line.matches("**").count();
         if bold_count % 2 != 0 {
@@ -1687,6 +1710,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
                     }
                 }
                 last_matched_pos = Some(pos);
+                matched.push((*line_no, label.to_string(), pos));
             }
             0 => errors.push(format!(
                 "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` has an entry \
@@ -1722,6 +1746,39 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
             pointers.len(),
             entries.len()
         ));
+    }
+
+    // Multiset check: every archive entry must be matched by EXACTLY ONE
+    // pointer. A DUPLICATE pointer (two pointers pairing to the same archive
+    // entry) is a different failure from a GAP (an entry with no pointer) and
+    // from OUT OF ORDER above — each gets its own message here.
+    let mut counts = vec![0usize; entries.len()];
+    for (line_no, label, pos) in &matched {
+        counts[*pos] += 1;
+        if counts[*pos] > 1 {
+            errors.push(format!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` DUPLICATES \
+                 an earlier pointer's pairing — archive position {pos} is now matched \
+                 by more than one pointer, which means some OTHER archive entry was \
+                 left with no pointer at all (counts stay equal, order stays \
+                 non-decreasing, so no other check catches this):\n  {}",
+                line_no + 1,
+                entries[*pos].2.chars().take(120).collect::<String>(),
+            ));
+        }
+    }
+    for (pos, count) in counts.iter().enumerate() {
+        if *count == 0 {
+            errors.push(format!(
+                "archive entry `{}` (position {pos}, line {}) is matched by NO \
+                 pointer in docs/CORRECTNESS_OPEN_ITEMS.md's 'Recently resolved' \
+                 section — an entry moved to the archive without its pointer left \
+                 behind (or a pointer duplicated over another entry's):\n  {}",
+                entries[pos].1,
+                entries[pos].0 + 1,
+                entries[pos].2.chars().take(120).collect::<String>(),
+            ));
+        }
     }
 
     assert!(

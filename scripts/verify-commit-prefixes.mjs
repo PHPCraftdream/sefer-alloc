@@ -444,25 +444,18 @@ function main() {
       `)`,
   );
 
-  if (clipped.length === 0) {
-    console.log('\n[verify-commit-prefixes] PASS — no commit in range to lint');
-    process.exit(0);
-  }
-
-  // Failures carry their commit SHA as a STRUCTURED field (task #1123):
-  // the grandfather matching below used to re-parse `\b[0-9a-f]{7,40}\b`
-  // out of the failure STRING, which binds to the FIRST such word — a
-  // message containing an ordinary word made of hex letters (`defaced`,
-  // `effaced`, `acceded`) before the SHA would silently rebind the
-  // exemption. Objects, not strings, make that class impossible.
-  let failures = [];
-  const warnings = [];
-  const structuralFailures = []; // not exemptible by construction
-
   // Guard (1) from the GRANDFATHERED header comment: every entry's SHA must
   // resolve to a commit, on every run, independent of the scanned range.
   // Kept OUTSIDE `failures` so an entry key cannot grandfather away the
-  // report of its own nonexistence.
+  // report of its own nonexistence. This loop runs BEFORE the empty-range
+  // early exit below: the default range `@{u}..HEAD` is empty on a clean
+  // pushed tree — the state `npm run check` sits in most of the time — so
+  // placing this check after that exit meant the "on EVERY run regardless
+  // of the scanned range" property the header claims silently stopped
+  // holding the moment every commit landed (a typo'd key outside the
+  // scanned range would then never be reported, the exact case this guard
+  // exists for).
+  const structuralFailures = []; // not exemptible by construction
   for (const sha of GRANDFATHERED.keys()) {
     try {
       execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], {
@@ -478,6 +471,29 @@ function main() {
       );
     }
   }
+
+  if (clipped.length === 0) {
+    if (structuralFailures.length > 0) {
+      console.log(`\n[verify-commit-prefixes] ${structuralFailures.length} FAILURE(s):`);
+      for (const t of structuralFailures) console.log(`  - ${t}`);
+      console.log(
+        `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
+          `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,
+      );
+      process.exit(1);
+    }
+    console.log('\n[verify-commit-prefixes] PASS — no commit in range to lint');
+    process.exit(0);
+  }
+
+  // Failures carry their commit SHA as a STRUCTURED field (task #1123):
+  // the grandfather matching below used to re-parse `\b[0-9a-f]{7,40}\b`
+  // out of the failure STRING, which binds to the FIRST such word — a
+  // message containing an ordinary word made of hex letters (`defaced`,
+  // `effaced`, `acceded`) before the SHA would silently rebind the
+  // exemption. Objects, not strings, make that class impossible.
+  let failures = [];
+  const warnings = [];
 
   for (const sha of clipped) {
     const subject = git(['log', '-1', '--format=%s', sha]).trim();
