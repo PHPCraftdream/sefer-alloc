@@ -1820,7 +1820,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     let index_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
     let index_text = fs::read_to_string(&index_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
 
-    fn extract_first_number_after<'a>(haystack: &'a str, marker: &str) -> Option<(u64, usize)> {
+    fn extract_first_number_after(haystack: &str, marker: &str) -> Option<(u64, usize)> {
         let start = haystack.find(marker)?;
         let after = &haystack[start + marker.len()..];
         let digits_start = after.find(|c: char| c.is_ascii_digit())?;
@@ -1891,12 +1891,13 @@ fn correctness_item_87_sentinel_counts_agree() {
     let script_text =
         fs::read_to_string(&script_path).expect("read scripts/verify-ci-sentinels.mjs");
     let script_marker = "const MIN_SENTINEL_COUNT = ";
-    let (script_n, _) = extract_first_number_after(&script_text, script_marker).unwrap_or_else(|| {
-        panic!(
-            "scripts/verify-ci-sentinels.mjs: `{script_marker}` not found — the \
+    let (script_n, _) =
+        extract_first_number_after(&script_text, script_marker).unwrap_or_else(|| {
+            panic!(
+                "scripts/verify-ci-sentinels.mjs: `{script_marker}` not found — the \
              constant was renamed or restructured; re-point this test's parser."
-        )
-    });
+            )
+        });
 
     assert_eq!(
         headline_n, next_trigger_n,
