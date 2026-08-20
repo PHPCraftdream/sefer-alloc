@@ -1201,6 +1201,7 @@ for completeness.
    > - **CORRECTION (2026-08-19, task #1182) — "structurally unreachable... no hugetlb runner" is STALE since task #1152; not re-derived, see item 48's fuller correction above for the verified detail.** A WITH-pool host now exists in CI (`aligned-vmem-hugetlb-real` job, `.github/workflows/ci.yml:351`; correctness item 59a CLOSED for dispatch/kernel-acceptance). What is still missing is the MEASUREMENT itself, not the host: no test in that job's three test files counts syscalls or times the two-attempt sequence this card describes (`huge && align == 2 MiB` exact-mmap-NULL-then-larger-mmap) — every reservation in those files is a single non-looped call, confirmed by the same grep item 48's correction cites. WITHOUT-pool is trivially available on any default runner (the standing case before task #1151). **Verdict: NOT FIRED** — same reasoning as item 48: the host half of the blocker is gone, the measurement itself was never built. This is part of perf-index item 57's P3 (task #1189), which explicitly owns "Linux huge exact miss retries a larger huge `mmap`" as one of its three speculative-path candidates needing counters/measurement.
    > - **Evidence:** commit `84bc9ac`'s body (the counterexample, written out in full); `unix_reserve` in `crates/aligned-vmem/src/os/unix.rs` (the exact-size attempt and the over-reserve attempt, with their differing size arguments); `docs/reviews/2026-08-16-aligned-vmem-prerelease-audit-r6.md` § R6-8 and `...-r7.md` § R7-4 (the two raisings).
    > - **Duplicate record (2026-08-18, task #1069):** half 2 of finding F9 (`docs/reviews/2026-08-17-aligned-vmem-fxx-audit.md`, "the pool-exhausted path also pays a guaranteed-doomed extra syscall") re-raised this exact observation, repeating the "guaranteed to fail for the same reason" premise the counterexample above refutes — the third raising, as this entry's title anticipated. Recorded as a duplicate; no change, verdict stays NULL.
+   > - **Duplicate record (2026-08-20, task #1214), the FOURTH raising — same question as R7-4/task #1048, confirmed by re-reading the rejection before writing this bullet.** `docs/reviews/2026-08-20-073908-aligned-vmem-publication-audit-Сол-кодекс.md` §P1 ("Повторный заведомо более дорогой `MAP_HUGETLB` после miss exact-fast-path") describes, in `crates/aligned-vmem/src/os/unix.rs` (cited there as roughly lines 134-168/202-235; re-checked this task against the current tree — `unix_reserve`'s exact-fast-path block now sits at approximately lines 139-179 and the general-path second `mmap(size + align)` attempt at approximately lines 210-237, drifted from the audit's cited numbers but the SAME function and the SAME two-call structure), exactly the mechanism this card already tracks: on a pool-less host, one logical `reserve_aligned_huge` request pays for two doomed `MAP_HUGETLB` syscalls before falling back to ordinary pages. The audit's own recommendation — remember the first refusal's cause and, for DURABLE errors (`ENOMEM`, unsupported/permission/configuration), skip straight to the ordinary fallback, keeping retry only for transient-error classes — is a refinement of the same "skip the second attempt" direction R6-8/R7-4/F9 already proposed and this card already rejected as NULL for not addressing the differing-size counterexample (`size` vs `size + align`, where a fragmented/bounded pool can satisfy one and refuse the other). The refinement does not change the verdict: distinguishing durable-vs-transient errno still requires the same syscall-count/latency measurement on a pool-less Linux host this card has asked for three times already (`Next trigger`, unchanged) — no such measurement was produced by this task either. **Verdict: NULL, unchanged, fourth time.** Recorded here rather than reopening the question, per this card's own title ("so a third [now fourth] review does not re-raise it").
    Full history: this entry (filed 2026-08-17, task #1048).
 
 53. **R7-5 — 64-bit Unix `reserve` retains `size + align` of VA per reservation (aligned-vmem). INFO, deliberate trade-off, not a bug.**
@@ -2623,6 +2624,53 @@ for completeness.
       this task's own dev host, 45/45 passed in `tests/smoke.rs`; a
       counterfactual removing the `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`
       increment was run and confirmed the test goes red, then reverted).
+    - **[Filed 2026-08-20, task #1214, from
+      `docs/reviews/2026-08-20-073908-aligned-vmem-publication-audit-Сол-кодекс.md`
+      §"Возможности ускорения" P1-P3] Fourth independent audit restates all
+      three perf candidates — cross-referenced to their existing owners
+      rather than filed as new cards.**
+      - **P1 (durable-vs-transient errno refinement) is the SAME question as
+        item 52's NULL verdict (R6-8/R7-4/F9), now raised a fourth time —
+        recorded as a fourth duplicate on item 52's own card above, not
+        duplicated here. Verdict unchanged: NULL.**
+      - **P2 (`align > 2 MiB` pool amplification) is the SAME measurement
+        task #1188 already built and left unmeasured (this card's own P1
+        sub-entry above, and item 48's pool-cost addition) — no new card,
+        cross-referenced only. The audit's own text acknowledges this
+        directly ("Новый harness (`decommit_capability.rs:1390+`) хорошо
+        фиксирует существующую форму и syscall count") — confirming, not
+        contradicting, task #1188's "harness built, zero numbers yet"
+        status recorded above.**
+      - **P3 (Windows unprivileged large-page cascade) is the SAME gap as
+        `docs/correctness-open-items/TRACKED.md` item 59b (Windows half of
+        item 59) and this card's own P3(b)/C3 sub-entries above — ONE hole
+        with two facets (a performance-cost facet, tracked here; a
+        CI-coverage facet, tracked on 59b), not two separate holes. A
+        profiling example already exists for the UNPRIVILEGED regime
+        (`examples/v1189_windows_large_page_native_profile.rs`, task #1189,
+        described in full above); no privileged-mode CI run exists for
+        either facet. A future privileged-runner task closes both this
+        card's P3(b) "next trigger" and item 59b's "next trigger" together —
+        they are the same runner requirement, not two.**
+      - **THE GATE DECISION, recorded explicitly per this task's own
+        instruction not to leave it implied:** the audit recommends NOT
+        admitting P1-P3 into the MANDATORY correctness gate, provided their
+        current cost is explicitly documented (which it now is: P1 on item
+        52's card, P2 on this card's own P1/P2 sub-entries and item 48, P3
+        on this card's P3(b) sub-entry and item 59b). **Agreed, for the same
+        reason item 52 has stood at NULL three times already: none of the
+        three candidates has a measurement that shows the proposed change
+        is a net win — P1's premise is affirmatively false in the general
+        case (item 52's counterexample), P2 and P3(a) have a harness but
+        zero executed numbers (task #1188), and P3(b)'s one real measurement
+        characterizes the UNPRIVILEGED cascade's shape but does not by
+        itself justify a code change (the report's own P3 text asks for
+        measurement first, not a specific fix). Gating a mandatory release
+        check on an unmeasured or already-refuted premise would block
+        publication for a change nobody has shown is correct to make. This
+        is not a "will never fix" verdict — each candidate's own card above
+        states its own next trigger (a real measurement on the relevant
+        host) that would reopen the question with evidence.**
 
 ## Recently resolved (closure trail — do not re-list as open)
 
