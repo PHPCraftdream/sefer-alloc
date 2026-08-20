@@ -126,7 +126,7 @@ repair once, for zero reader benefit.
 **Task #1222 (2026-08-20): the `[T]` tier's four number-range files
 (task #1221, same day) are REPLACED by nine THEMATIC files.** The owner
 rejected balancing-by-line-count and asked for a category split instead --
-grouping the 70 `[T]`-tier cards by what they are actually ABOUT, derived
+grouping the then-70 `[T]`-tier cards by what they are actually ABOUT, derived
 by reading every card rather than assumed from category names supplied in
 the task brief (three of the five candidate axes suggested at task time --
 platform/OS contracts, CI coverage, test hygiene — turned out real and are
@@ -139,7 +139,7 @@ one became).
 filename is NOT a one-hop lookup by item number the way `TRACKED_044_093.md`
 was — a reader who knows only "item 61" cannot derive its filename from the
 number alone. The table below is the fix: it is the complete, mechanically
-verified item-N -> file map for all 70 `[T]`-tier numbers (including the
+verified item-N -> file map for EVERY `[T]`-tier number (including the
 `59a`/`59b` sub-items), built by grouping this file's own category
 assignments, not hand-typed. **A reader or script citing an item by number
 looks it up in this table** (or greps `docs/correctness-open-items/*.md`
@@ -280,8 +280,15 @@ already requires reading end-to-end; `RESOLVED.md` and `ARCHIVE.md` are
 consulted on demand, exactly as before.
 
 **Item-number -> file lookup table (task #1222, mechanically generated from
-this file's own category assignments — not hand-typed).** Covers all 70
-`[T]`-tier numbers, including `59a`/`59b`:
+this file's own category assignments — not hand-typed).** Covers EVERY `[T]`-tier number, including `59a`/`59b`. The count is
+deliberately not typed here — it moved 70 -> 71 the day it was first
+written. Compare against these two commands, which must agree:
+
+```text
+grep -hE '^[0-9]+[a-z]?. **' docs/correctness-open-items/TRACKED_*.md | wc -l
+grep -cE '^| *[0-9]+[a-z]? *|' docs/CORRECTNESS_OPEN_ITEMS.md
+```
+
 
 | Item | File |
 | --- | --- |
@@ -355,6 +362,7 @@ this file's own category assignments — not hand-typed).** Covers all 70
 | 91 | `TRACKED_publish_readiness.md` |
 | 92 | `TRACKED_ci_gate_coverage.md` |
 | 93 | `TRACKED_publish_readiness.md` |
+| 94 | `TRACKED_publish_readiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
@@ -376,9 +384,9 @@ grep -cE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md
 grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
 ```
 
-**6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ 70 `[T]`-tier cards**
+**6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-93, plus 85 which sits out of numeric order between 47 and 48)
+76, 78-94, plus 85 which sits out of numeric order between 47 and 48)
 **= 76 total open cards**, plus 40 "Recently resolved" pointer lines
 resolving into 38 archive entries (two archive item-number collisions,
 `3` appearing twice, predate this split and are inherited unchanged — see
