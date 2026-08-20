@@ -1,6 +1,48 @@
 //! Tests for the `mock` build-time cfg (`aligned_vmem_mock`, task #962):
-//! injection. These run on any target (they never depend on the real OS
-//! reservation succeeding beyond `std::alloc`).
+//! recording + fault injection. These run on any target (they never depend
+//! on the real OS reservation succeeding beyond `std::alloc`).
+//!
+//! # No SERIAL in this binary, and why (task #1241, closing #1224's note)
+//!
+//! Task #1224's report flagged this file and `mock_reentrancy.rs` as
+//! "plausibly" the #1223 SERIAL class "one layer down, at the mock-log
+//! rather than the counter". That is wrong, structurally:
+//!
+//! - The mock call log and BOTH fault counters are THREAD-LOCAL. `src/mock.rs`
+//!   declares `CALLS`, `RESERVE_FAILS`, and `COMMIT_FAILS` (plus the
+//!   `RECORDING` reentrancy guard) inside a single `std::thread_local!`, and
+//!   a `Call` lands in the log of the thread the call runs ON (task #959 —
+//!   see that module's "Cross-thread drops" section). `drain()` and
+//!   `reset()` touch the calling thread's log/counters only.
+//! - libtest runs every test in a binary on its OWN thread — verified
+//!   empirically on rustc 1.97.0 (task #1241, scratch probe outside this
+//!   repo): distinct `ThreadId` per test under BOTH the default parallel
+//!   mode and `--test-threads=1`. Sibling tests therefore have separate
+//!   logs even while running concurrently: no sibling's reserve/drop can
+//!   land entries in a log this test drains. The exact-count asserts below
+//!   (`drain_returns_all_recorded_calls_and_clears_log`'s `== 10` / `== 2`,
+//!   `drop_records_release`'s `== 2`, `fail_next_reserve_injects_oom`'s
+//!   `== 4`, ...) would be racy in CI's parallel mock rows if the log were
+//!   process-global; 15 consecutive parallel runs at task #1241 all passed.
+//! - The class IS real one layer up, for the `bench-internals` counters
+//!   (`pub(crate) static AtomicU64` in `src/bench_internals/` — genuinely
+//!   process-global), but no test in THIS binary reads them, so there is no
+//!   reader to protect and a SERIAL here would serialize tests that share
+//!   no state. Do not add one.
+//!
+//! Even under a hypothetical harness that shared one thread between tests,
+//! the sharing would be sequential, never concurrent — at worst residue,
+//! and every test below that reads mock state starts with `mock::reset()`,
+//! which exists for exactly that.
+//!
+//! Corollary, recorded so the next reader does not re-derive it:
+//! `reservation_decommit_contract.rs`'s SERIAL doc has called "the mock
+//! log ... process-global" since task #1079, and task #1224's two locks
+//! justified as producing "mock call-log entries ... in the same mock+
+//! release binary that drains the log" rest on that false premise — a
+//! sibling test's entries are invisible to the reader's `drain()`. That
+//! file's `huge_decommit_attempts` readers are a different, genuinely
+//! process-global matter.
 
 #![cfg(aligned_vmem_mock)]
 

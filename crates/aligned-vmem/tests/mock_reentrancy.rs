@@ -57,6 +57,18 @@
 //! inside the nested `push`), proving the test WOULD fail without the fix.
 //! The fix was then restored and the test passes again. See the final task
 //! report for the exact commands run.
+//!
+//! # No SERIAL here either (task #1241)
+//!
+//! Task #1224's note flagged this file alongside `tests/mock.rs` as
+//! "plausibly" the SERIAL class at the mock-log layer. It is not: the mock
+//! call log is THREAD-LOCAL (`src/mock.rs`'s `CALLS` lives in a
+//! `std::thread_local!`; see `tests/mock.rs`'s module doc for the full
+//! argument and the libtest threading check), and each test here performs
+//! its whole arm/reserve/drop/drain cycle on a thread it spawns itself,
+//! draining on that same thread. libtest gives every test its own thread,
+//! so no sibling can land entries in a log this binary drains. A SERIAL
+//! would serialize tests that share no state.
 
 #![cfg(aligned_vmem_mock)]
 

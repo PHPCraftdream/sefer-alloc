@@ -26,32 +26,43 @@ use aligned_vmem::{page_size, reserve_aligned};
 
 const SPAN: usize = 2 * 1024 * 1024;
 
-/// Serializes the tests in THIS file that produce or assert mock call-log
-/// entries (the mock log is process-global; sibling test binaries are
-/// separate processes, but sibling tests in this binary share it). Mirrors
-/// the file-local SERIAL pattern of `decommit_capability.rs`.
+/// Serializes the tests in THIS file that move state a same-binary reader
+/// reads. Mirrors the file-local SERIAL pattern of `decommit_capability.rs`.
+///
+/// **The mock call log is NOT what this lock protects (task #1241).** An
+/// earlier version of this comment said "the mock log is process-global";
+/// that was false, and it had been false since it was written in task #1079
+/// (commit `d8bd63b`). `src/mock.rs` declares `CALLS` — and the fault script
+/// `RESERVE_FAILS`/`COMMIT_FAILS` with it — inside `std::thread_local!`, and
+/// `drain`/`reset` act on the calling thread's copy only. libtest runs each
+/// `#[test]` on its own thread, so a sibling's recorded calls land in the
+/// SIBLING's log and are invisible to any reader here — under
+/// `--test-threads=1` as well, which still uses a fresh thread per test.
+///
+/// task #1241 verified this against the declarations and by observing
+/// distinct `ThreadId`s per test.
 ///
 /// task #1224 census for this file, by the criterion "takes the lock iff it
-/// moves state some reader in THIS binary reads":
+/// moves state some reader in THIS binary reads", as corrected by #1241:
 ///
-/// - The readers are `method_records_nothing_for_a_violated_range_in_release_mock`
-///   (mock log, mock+release rows only) and the two `huge_decommit_attempts`
-///   counter readers (`method_try_decommit_huge_skip_returns_ok_and_counts`,
-///   `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`).
-///   All three already held this lock.
+/// - The reader that matters is the process-global `huge_decommit_attempts`
+///   counter, read by `method_try_decommit_huge_skip_returns_ok_and_counts`
+///   and `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`
+///   (both after `reset_bench_internals_counters()`, which is itself a move
+///   of every counter). Both hold this lock.
+///   `method_records_nothing_for_a_violated_range_in_release_mock` reads only
+///   the thread-local log; its lock is harmless and left in place, but it is
+///   not what makes that test sound.
 /// - `lazy_method_silently_skips_a_violated_range_on_every_profile` and
-///   `method_silently_skips_a_violated_range_in_release` do not read the log,
-///   but they DO produce mock call-log entries (a `Call::Reserve` on their
-///   `reserve_aligned`, a `Call::Release` on the reservation's drop) in the
-///   same mock+release binary that drains the log (ci.yml's
-///   `--release --cfg aligned_vmem_mock --test reservation_decommit_contract`
-///   row compiles exactly these two plus the locked tests), so per the #1223
-///   rule -- a test that MOVES shared state takes the lock even if it never
-///   reads it -- both now hold it. Today their entries cannot fail the
-///   reader's two asserts (they emit no `Call::Decommit`/`Call::DecommitLazy`,
-///   and extra records cannot break an `any` match); the lock is held so
-///   that stays true if the reader's asserts are ever strengthened to count
-///   or exhaustively match drained records.
+///   `method_silently_skips_a_violated_range_in_release` held this lock from
+///   task #1224 until #1241, on the strength of the false process-global
+///   premise above. They move nothing any reader here reads: their mock-log
+///   entries are thread-local, and they move no `huge_decommit_attempts` (an
+///   ordinary reservation, and every decommit call they make is violated, so
+///   it returns before the huge skip). The locks are REMOVED rather than
+///   kept as insurance — a lock whose only stated reason is false is exactly
+///   the defect class this file's own history is made of, and keeping it
+///   would serialize the 6-test mock+release row for nothing.
 /// - The debug-only trio (`method_trips_the_tripwire_on_a_violated_range_in_debug`,
 ///   `method_bounds_check_precedes_the_tripwire_in_debug`,
 ///   `method_trips_on_an_empty_misaligned_range_in_debug`) also produce log
@@ -118,11 +129,10 @@ fn method_bounds_check_precedes_the_tripwire_in_debug() {
 /// `decommit_lazy`) fails this test in every debug run.
 #[test]
 fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
-    // task #1224: this test produces mock call-log entries (Reserve on the
-    // reserve_aligned below, Release on `r`'s drop) in the same mock+release
-    // binary that drains the log -- see SERIAL's own doc for why that
-    // obliges this lock although this test reads nothing.
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // task #1224 took SERIAL here; task #1241 removed it. The stated reason
+    // was that this test's mock call-log entries reach the same binary's
+    // log reader — but the mock log is thread-local (`src/mock.rs`'s
+    // `std::thread_local!` block), so they never do. See SERIAL's own doc.
     let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit_lazy(4 * ps, 2 * ps); // start > end
@@ -150,9 +160,9 @@ fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn method_silently_skips_a_violated_range_in_release() {
-    // task #1224: same obligation as `lazy_method_silently_skips...` above
-    // (produces mock log entries in the mock+release row that drains them).
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // task #1224 took SERIAL here for the same false reason as
+    // `lazy_method_silently_skips...` above; task #1241 removed it. The mock
+    // log is thread-local, so this test's entries never reach the reader.
     let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit(4 * ps, 2 * ps); // start > end
