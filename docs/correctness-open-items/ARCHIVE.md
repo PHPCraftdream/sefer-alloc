@@ -9,8 +9,11 @@ contract as the move this file's own header describes below: no narrative
 text was edited, only this header's self-references were updated to the new
 paths (`docs/CORRECTNESS_OPEN_ITEMS.md` stays the correct citation for the
 top-level index — it now itself only summarizes and points into
-`docs/correctness-open-items/ACTIVE.md` / `TRACKED.md` / `RESOLVED.md`; this
-archive's own former path is dead and must not be cited going forward).
+`docs/correctness-open-items/ACTIVE.md` / `TRACKED_005_008.md` /
+`TRACKED_009_018.md` / `TRACKED_019_043.md` / `TRACKED_044_093.md` (the
+`[T]` tier, further split by item-number range at task #1221, 2026-08-20)
+/ `RESOLVED.md`; this archive's own former path is dead and must not be
+cited going forward).
 
 **Purpose.** This file holds the full dated historical closure narratives
 for items tracked in `docs/CORRECTNESS_OPEN_ITEMS.md` — the round-by-round

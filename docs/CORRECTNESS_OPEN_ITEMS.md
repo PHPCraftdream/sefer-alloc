@@ -35,11 +35,11 @@ clean, or a correctness contract, it belongs here.
 
 1. **Round start:** before forming a new round's task queue, read this
    index's tier files end-to-end (`docs/correctness-open-items/ACTIVE.md`
-   then `docs/correctness-open-items/TRACKED.md` — alongside
-   `docs/perf/OPEN_ITEMS.md`) and decide, for each open item, whether this
-   round closes it, defers it (with a one-line reason appended), or leaves
-   it. An item must not be silently ignored — every round either moves it
-   or explicitly re-defers it.
+   then the four `docs/correctness-open-items/TRACKED_*.md` files, in
+   number order — alongside `docs/perf/OPEN_ITEMS.md`) and decide, for
+   each open item, whether this round closes it, defers it (with a
+   one-line reason appended), or leaves it. An item must not be silently
+   ignored — every round either moves it or explicitly re-defers it.
 2. **When you close an item:** move its entry to
    `docs/correctness-open-items/RESOLVED.md`'s "Recently resolved" section
    with the closing round + task number + one-line evidence (commit / doc
@@ -47,10 +47,11 @@ clean, or a correctness contract, it belongs here.
    trail is itself the artifact that lets a future reviewer confirm an item
    was actually addressed, not just forgotten again.
 3. **When a new commit, comment, or review flags a correctness/CI-debt
-   follow-up:** add it to `docs/correctness-open-items/ACTIVE.md` or
-   `TRACKED.md` (matching its tier) in the same commit (or an immediate
-   follow-up commit), with a citation back to its origin (commit SHA /
-   file:line). A flag that lives only inside a single commit message body
+   follow-up:** add it to `docs/correctness-open-items/ACTIVE.md` or the
+   matching-number-range `TRACKED_*.md` file (matching its tier) in the
+   same commit (or an immediate follow-up commit), with a citation back to
+   its origin (commit SHA / file:line). A flag that lives only inside a
+   single commit message body
    or code comment is exactly the failure mode this index exists to
    prevent.
 
@@ -67,7 +68,7 @@ scoping decision is the pending step, not implementation).
 `docs/correctness-open-items/`, because its own single-file size had grown
 past CLAUDE.md's R34-24 ~1,000-line threshold a second time (2,423 lines at
 the task #1143 deferral that first declined this split — see item 86 in
-`docs/correctness-open-items/TRACKED.md` for that decision and its
+`docs/correctness-open-items/TRACKED_044_093.md` for that decision and its
 reversal). This split reverses that deferral, at the owner's explicit
 request, following the R29-6/R34-24 mechanism this repo already uses for
 `docs/perf/OPEN_ITEMS.md` — except one level deeper: instead of a single
@@ -91,14 +92,25 @@ repair once, for zero reader benefit — the reader is exactly as well
 served by "read the index, follow the tier pointer" as by "grep the
 monolith."
 
-**The four files:**
+**The seven files (the `[T]` tier further split into four number-range
+files, task #1221, 2026-08-20 — see the note at the end of this section):**
 
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
   cards, a real next step a round should consider taking. Small (6 cards
   at split time).
-- **`docs/correctness-open-items/TRACKED.md`** — the **[T]** tier: tracked,
-  not yet actioned. The bulk of the open cards (76 at split time, including
-  the `59a`/`59b` sub-items).
+- **`docs/correctness-open-items/TRACKED_005_008.md`,
+  `TRACKED_009_018.md`, `TRACKED_019_043.md`, `TRACKED_044_093.md`** — the
+  **[T]** tier: tracked, not yet actioned. The bulk of the open cards (70
+  at task #1221's re-split, including the `59a`/`59b` sub-items),
+  partitioned by ITEM-NUMBER RANGE (each filename's suffix is its
+  inclusive item-number range) rather than by topic, because every
+  citation of this index across the repo is of the form `` `docs/
+  CORRECTNESS_OPEN_ITEMS.md` item N `` — by number, never by topic — so a
+  number-range filename is a one-hop lookup with no translation table.
+  Ranges are balanced by LINE COUNT, not card count (card sizes vary from
+  2 lines to 293): `005_008` (4 cards/~638 lines), `009_018` (10
+  cards/~518 lines), `019_043` (13 cards/~573 lines), `044_093` (50
+  cards/~577 lines).
 - **`docs/correctness-open-items/RESOLVED.md`** — the "Recently resolved
   (closure trail — do not re-list as open)" section: one-line pointers per
   closed item, each resolving further into `ARCHIVE.md`'s full narrative.
@@ -108,12 +120,23 @@ monolith."
   split task #1109 created on 2026-08-18). Consulted on demand, not part
   of the mandatory round-start read.
 
-**What to read at round start:** `ACTIVE.md` then `TRACKED.md` — those two
-together are the full OPEN-item content this file's own "Round start"
-convention rule (above) already requires reading end-to-end; `RESOLVED.md`
-and `ARCHIVE.md` are consulted on demand, exactly as the single-file
-version's own "Recently resolved" section and the old
-`CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` were.
+**What to read at round start:** `ACTIVE.md` then all four
+`TRACKED_*.md` files, in number order — together they are the full
+OPEN-item content this file's own "Round start" convention rule (above)
+already requires reading end-to-end; `RESOLVED.md` and `ARCHIVE.md` are
+consulted on demand, exactly as the single-file version's own "Recently
+resolved" section and the old `CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` were.
+
+**Task #1221 (2026-08-20): the `[T]` tier's own `TRACKED.md` (2,322
+lines) had itself grown past the R34-24 ~1,000-line threshold — the same
+rule whose enforcement created it at task #1217 earlier the same day —
+and was split again, this time by item-number range (tier was already
+exhausted as an axis: every card in that file was `[T]`). `TRACKED.md`
+no longer exists; it is fully replaced by the four `TRACKED_NNN_NNN.md`
+files listed above. No card body was reworded, only relocated; the two
+`tests/no_stale_doc_references.rs` tests that parse specific cards
+(items 87 and 59a, both now in `TRACKED_044_093.md`) were re-pointed at
+their new path in the same commit.
 
 **Citing an item going forward:** the established convention —
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
@@ -123,14 +146,15 @@ card body follows the tier pointer above (or, if the item number is
 unknown ahead of time, greps `docs/correctness-open-items/*.md`, which is
 the only meaningful behavior change versus grepping the old monolith).
 
-**Card census at split time (task #1217, 2026-08-20).** Re-derived during
-review from the committed files themselves, not from the split's own
-working copy — see the paragraph below for why that distinction mattered
-here. Reproduce with:
+**Card census at split time (task #1217, 2026-08-20; re-derived unchanged
+after task #1221's further `[T]`-tier re-split, same day).** Re-derived
+during review from the committed files themselves, not from the split's
+own working copy — see the paragraph below for why that distinction
+mattered here. Reproduce with:
 
 ```text
 grep -cE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md
-grep -cE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED.md
+grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
 ```
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ 70 `[T]`-tier cards**

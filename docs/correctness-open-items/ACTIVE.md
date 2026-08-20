@@ -3,8 +3,10 @@
 **Part of the split index.** This file holds the full text of every
 **[A]** (active) card. Start at `docs/CORRECTNESS_OPEN_ITEMS.md` for
 the purpose/scope/convention header and the round-start reading order;
-come here for the card bodies. See `docs/correctness-open-items/TRACKED.md`
-for the **[T]** tier and `docs/correctness-open-items/RESOLVED.md` for
+come here for the card bodies. See `docs/correctness-open-items/TRACKED_005_008.md`,
+`TRACKED_009_018.md`, `TRACKED_019_043.md`, `TRACKED_044_093.md`
+for the **[T]** tier (further split by item-number range, task #1221,
+2026-08-20) and `docs/correctness-open-items/RESOLVED.md` for
 the closure trail. (Split 2026-08-20, task #1217, reversing item 86's
 2026-08-19 deferral — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 86 for
 the reversal record.)

@@ -107,19 +107,30 @@ Core instructions, mandatory for all code in this repository. They
   keeps round-start reading fast (`docs/CORRECTNESS_OPEN_ITEMS.md` split
   2026-08-20, task #1217, reversing item 86's 2026-08-19 deferral of
   exactly this split — see that item's card in
-  `docs/correctness-open-items/TRACKED.md`), splitting the OPEN portion
-  itself by an axis the index already uses (here, its own `[A]`/`[T]` tier
-  key) into a small folder — `docs/correctness-open-items/{ACTIVE,TRACKED,
-  RESOLVED,ARCHIVE}.md` — is an equally sanctioned instance of this rule,
-  provided the top-level filename (`docs/CORRECTNESS_OPEN_ITEMS.md`) is
-  KEPT as a thin index/table-of-contents rather than deleted, so every
-  existing `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` citation across the
-  codebase keeps resolving unchanged. This is not a rewrite of the rule
-  above — the main-index-survives-as-pointer / archive-holds-full-narrative
-  structure is identical; only the OPEN portion additionally splits by tier
-  when doing so is the difference between the mandatory round-start read
+  `docs/correctness-open-items/TRACKED_044_093.md`), splitting the OPEN
+  portion itself by an axis the index already uses (here, its own
+  `[A]`/`[T]` tier key) into a small folder —
+  `docs/correctness-open-items/{ACTIVE,TRACKED,RESOLVED,ARCHIVE}.md` — is
+  an equally sanctioned instance of this rule, provided the top-level
+  filename (`docs/CORRECTNESS_OPEN_ITEMS.md`) is KEPT as a thin index/
+  table-of-contents rather than deleted, so every existing ``
+  `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` citation across the codebase
+  keeps resolving unchanged. This is not a rewrite of the rule above — the
+  main-index-survives-as-pointer / archive-holds-full-narrative structure
+  is identical; only the OPEN portion additionally splits by tier when
+  doing so is the difference between the mandatory round-start read
   covering the FULL open-item content in one or two short files versus one
-  long one.
+  long one. **A tier file that itself later grows past the threshold
+  splits again, by an axis it already exposes, one level deeper** —
+  `docs/correctness-open-items/TRACKED.md` (the `[T]` tier from the split
+  immediately above) hit exactly this the same day (task #1221,
+  2026-08-20): every card in it was already `[T]`, so tier was exhausted
+  as a further axis, and it split instead by ITEM-NUMBER RANGE into
+  `TRACKED_005_008.md` / `TRACKED_009_018.md` / `TRACKED_019_043.md` /
+  `TRACKED_044_093.md` (`TRACKED.md` itself no longer exists) — chosen
+  because every citation of this index is by item number, never by topic
+  or line, so a number-range filename needs no new taxonomy and stays a
+  one-hop lookup.
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
 - **Between phases: run tests and commit.** Before moving to the next phase,

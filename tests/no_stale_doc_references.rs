@@ -1804,7 +1804,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
     );
 }
 
-/// Item 87's card (`docs/correctness-open-items/TRACKED.md`, cited via the
+/// Item 87's card (`docs/correctness-open-items/TRACKED_044_093.md`, cited via the
 /// stable `docs/CORRECTNESS_OPEN_ITEMS.md` item-number convention — see
 /// task #1217) restates the same sentinel-count fact in THREE
 /// independently-edited places, and two of them
@@ -1832,14 +1832,17 @@ fn correctness_item_87_sentinel_counts_agree() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     // Relocated by task #1217 (2026-08-20): item 87's card now lives in
-    // docs/correctness-open-items/TRACKED.md (the [T]-tier file), not
-    // inline in docs/CORRECTNESS_OPEN_ITEMS.md, which is now a thin index.
+    // docs/correctness-open-items/TRACKED_044_093.md (the [T]-tier,
+    // item-number-range-44-93 file — task #1221, 2026-08-20, further split
+    // from the single TRACKED.md task #1217 created, which no longer
+    // exists), not inline in docs/CORRECTNESS_OPEN_ITEMS.md, which is now a
+    // thin index.
     let index_path = manifest
         .join("docs")
         .join("correctness-open-items")
-        .join("TRACKED.md");
-    let index_text =
-        fs::read_to_string(&index_path).expect("read docs/correctness-open-items/TRACKED.md");
+        .join("TRACKED_044_093.md");
+    let index_text = fs::read_to_string(&index_path)
+        .expect("read docs/correctness-open-items/TRACKED_044_093.md");
 
     fn extract_first_number_after(haystack: &str, marker: &str) -> Option<(u64, usize)> {
         let start = haystack.find(marker)?;
@@ -1857,7 +1860,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     let (headline_n, headline_pos) = extract_first_number_after(&index_text, headline_marker)
         .unwrap_or_else(|| {
             panic!(
-                "docs/correctness-open-items/TRACKED.md: item 87's headline marker \
+                "docs/correctness-open-items/TRACKED_044_093.md: item 87's headline marker \
                  `{headline_marker}` not found — the card was restructured; \
                  re-point this test's parser at the new headline wording."
             )
@@ -1888,7 +1891,7 @@ fn correctness_item_87_sentinel_counts_agree() {
                 let n: u64 = rest[..digits_end].parse().expect("digits");
                 assert!(
                     live_next_trigger.is_none(),
-                    "docs/correctness-open-items/TRACKED.md: found MORE THAN ONE live-shaped \
+                    "docs/correctness-open-items/TRACKED_044_093.md: found MORE THAN ONE live-shaped \
                      'Next trigger' sentinel figure (bold, followed by '** as of this \
                      re-derivation') — item 87's card should have exactly one live \
                      restatement of this number; a second one means either a genuine \
@@ -1901,7 +1904,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     }
     let (next_trigger_n, next_trigger_pos) = live_next_trigger.unwrap_or_else(|| {
         panic!(
-            "docs/correctness-open-items/TRACKED.md: item 87's live 'Next trigger' sentinel \
+            "docs/correctness-open-items/TRACKED_044_093.md: item 87's live 'Next trigger' sentinel \
              figure (marker `{next_trigger_marker}`, bold number, followed by '** as \
              of this re-derivation') not found — the bullet was reworded; re-point \
              this test's parser at the new wording."
@@ -1922,7 +1925,7 @@ fn correctness_item_87_sentinel_counts_agree() {
 
     assert_eq!(
         headline_n, next_trigger_n,
-        "docs/correctness-open-items/TRACKED.md item 87 has DRIFTED WITHIN ITSELF: the \
+        "docs/correctness-open-items/TRACKED_044_093.md item 87 has DRIFTED WITHIN ITSELF: the \
          headline (byte offset {headline_pos}, marker `{headline_marker}`) reads \
          {headline_n}, but the live 'Next trigger' bullet (byte offset \
          {next_trigger_pos}) reads {next_trigger_n} — this is the exact `971ca05`/\
@@ -1932,7 +1935,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     );
     assert_eq!(
         headline_n, script_n,
-        "docs/correctness-open-items/TRACKED.md item 87's headline ({headline_n}) does not \
+        "docs/correctness-open-items/TRACKED_044_093.md item 87's headline ({headline_n}) does not \
          match scripts/verify-ci-sentinels.mjs's MIN_SENTINEL_COUNT ({script_n}) — \
          this is the `971ca05` defect class (task #1177's correction to this card): \
          the doc's own current-state number(s) can agree with EACH OTHER while both \
@@ -1942,7 +1945,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     );
 }
 
-/// Item 59a's card (`docs/correctness-open-items/TRACKED.md`, cited via the
+/// Item 59a's card (`docs/correctness-open-items/TRACKED_044_093.md`, cited via the
 /// stable `docs/CORRECTNESS_OPEN_ITEMS.md` item-number convention — see
 /// task #1217) restates the
 /// `aligned-vmem-hugetlb-real` job's OWN sentinel count — a number scoped
@@ -2023,14 +2026,14 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     );
 
     // Relocated by task #1217 (2026-08-20): item 59a's card now lives in
-    // docs/correctness-open-items/TRACKED.md, not inline in
+    // docs/correctness-open-items/TRACKED_044_093.md, not inline in
     // docs/CORRECTNESS_OPEN_ITEMS.md (now a thin index).
     let card_path = manifest
         .join("docs")
         .join("correctness-open-items")
-        .join("TRACKED.md");
-    let card_text =
-        fs::read_to_string(&card_path).expect("read docs/correctness-open-items/TRACKED.md");
+        .join("TRACKED_044_093.md");
+    let card_text = fs::read_to_string(&card_path)
+        .expect("read docs/correctness-open-items/TRACKED_044_093.md");
 
     // Local copy of the same digit-extraction helper
     // `correctness_item_87_sentinel_counts_agree` defines (that copy is
@@ -2055,7 +2058,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     let (card_test_n, _) =
         extract_first_number_after(&card_text, card_test_marker).unwrap_or_else(|| {
             panic!(
-                "docs/correctness-open-items/TRACKED.md: item 59a's marker \
+                "docs/correctness-open-items/TRACKED_044_093.md: item 59a's marker \
                  `{card_test_marker}` not found — the card was reworded; re-point \
                  this test's parser."
             )
@@ -2070,7 +2073,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
         extract_first_number_after(&card_text[search_from..], card_marker_marker).unwrap_or_else(
             || {
                 panic!(
-                    "docs/correctness-open-items/TRACKED.md: item 59a's marker \
+                    "docs/correctness-open-items/TRACKED_044_093.md: item 59a's marker \
                      `{card_marker_marker}` (for the marker-shaped count) not found \
                      after the test-shaped count — the card was reworded; re-point \
                      this test's parser."
@@ -2080,7 +2083,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
 
     assert_eq!(
         test_shaped as u64, card_test_n,
-        "docs/correctness-open-items/TRACKED.md item 59a claims **{card_test_n}** unique \
+        "docs/correctness-open-items/TRACKED_044_093.md item 59a claims **{card_test_n}** unique \
          `test <name> ... ok` sentinels in the aligned-vmem-hugetlb-real job, but a \
          fresh re-derivation from .github/workflows/ci.yml finds {test_shaped} — the \
          card has drifted (this is the exact recurring class task #1193 fixed a \
@@ -2092,7 +2095,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     );
     assert_eq!(
         marker_shaped as u64, card_marker_n,
-        "docs/correctness-open-items/TRACKED.md item 59a claims **{card_marker_n}** unique \
+        "docs/correctness-open-items/TRACKED_044_093.md item 59a claims **{card_marker_n}** unique \
          `[oracle] ARMED: ...` markers in the aligned-vmem-hugetlb-real job, but a \
          fresh re-derivation from .github/workflows/ci.yml finds {marker_shaped} — \
          see the test-shaped assertion above for the same drift class and the \
@@ -2108,7 +2111,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     let card_total_marker = "sentinel checks in total";
     let total_pos = card_text.find(card_total_marker).unwrap_or_else(|| {
         panic!(
-            "docs/correctness-open-items/TRACKED.md: item 59a's marker \
+            "docs/correctness-open-items/TRACKED_044_093.md: item 59a's marker \
              `{card_total_marker}` not found — the card was reworded; re-point \
              this test's parser."
         )
@@ -2120,7 +2123,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
         .find_map(|tok| tok.trim().parse::<u64>().ok())
         .unwrap_or_else(|| {
             panic!(
-                "docs/correctness-open-items/TRACKED.md: item 59a states \
+                "docs/correctness-open-items/TRACKED_044_093.md: item 59a states \
                  `{card_total_marker}` but no `**N**` precedes it — re-point \
                  this test's parser."
             )
@@ -2128,7 +2131,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     assert_eq!(
         card_total_n,
         card_test_n + card_marker_n,
-        "docs/correctness-open-items/TRACKED.md item 59a's own sentence does not add up: \
+        "docs/correctness-open-items/TRACKED_044_093.md item 59a's own sentence does not add up: \
          it states **{card_test_n}** test-shaped + **{card_marker_n}** \
          marker-shaped but **{card_total_n}** in total. The two addends are each \
          re-derived from ci.yml by the assertions above; this one checks the card \
