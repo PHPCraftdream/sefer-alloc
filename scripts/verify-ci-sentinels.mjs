@@ -1085,7 +1085,14 @@ function verifyCiSentinels() {
 // 0 tests", exit 0), which is why it needs the tee + grep -F shape and a
 // matching floor bump in the SAME commit -- the coupling this comment
 // documents, demonstrated a fifth time.
-const MIN_SENTINEL_COUNT = 45;
+//
+// Task #1188: bumped 45 -> 47 (ONE `test <name> ... ok` sentinel PLUS ONE
+// marker sentinel) for `ci_hugetlb_real_pool_align_greater_than_2mib_
+// amplifies_pool_charge_and_skips_exact_path` (`decommit_capability.rs`) and
+// its own isolated marker invocation, both in the `aligned-vmem-hugetlb-real`
+// job -- see docs/CORRECTNESS_OPEN_ITEMS.md item 87's card for the full
+// re-derivation this bump pairs with, in the same commit.
+const MIN_SENTINEL_COUNT = 47;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

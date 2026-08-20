@@ -1259,3 +1259,243 @@ fn ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail() {
     // that the test function ran.
     println!("[oracle] ARMED: real MAP_HUGETLB release attempted exactly once and did not fail");
 }
+
+/// Task #1188 (perf-index item 57's P1, `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`
+/// §P1): the report's own worked example is `size == align == 4 MiB`, which
+/// over-reserves `size + align = 8 MiB` against the hugetlb pool for 4 MiB of
+/// USABLE span -- a 2x pool charge, because `align > LINUX_HUGE_PAGE_SIZE`
+/// (2 MiB) never reaches the exact-size fast path in `unix_reserve`
+/// (`src/os/unix.rs`; that block's own `if huge && align ==
+/// LINUX_HUGE_PAGE_SIZE` guard is a strict equality, not `<=`), so every such
+/// request falls straight through to the general over-reserve path. Task
+/// #1182's correction to item 48/52 found that despite a real-hugetlb host
+/// existing in CI since task #1152 (`aligned-vmem-hugetlb-real`), no test in
+/// that job's three files ever exercised `align > size` in a loop -- every
+/// call was a single non-looped `(size, size)` reservation. This test is that
+/// missing reservation-heavy `align > 2 MiB` workload.
+///
+/// **What this test measures, and how, matching the report's three requested
+/// axes:**
+/// 1. **Fallback rate** -- ASSERTED. `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS`
+///    are THIS PROCESS's own counters (not kernel-global), incremented only
+///    by the exact-size huge path that requires `align == LINUX_HUGE_PAGE_SIZE`
+///    exactly. For every reservation in this test's loop, `align = 2 *
+///    LINUX_HUGE_PAGE_SIZE` (4 MiB) -- strictly greater than 2 MiB -- so
+///    that block's guard condition is false by construction and the counter
+///    must stay at 0 for the whole loop. A hard `assert_eq!(0)` here is not
+///    a weaker stand-in for a hit-rate measurement: 0-of-N IS the fallback
+///    rate this shape produces (100% of requests bypass the exact-size fast
+///    path and take the over-reserve path), and it is deterministic given
+///    the fixed `align`, not host-dependent -- unlike whether the OS grants
+///    the underlying `MAP_HUGETLB` mapping at all (that part -- `is_huge()`
+///    -- is the separate oracle below, and IS host-dependent on pool
+///    capacity).
+/// 2. **Syscall cost** -- ASSERTED, via `UNIX_MUNMAP_ATTEMPTS`. The
+///    over-reserve path's known-good case (documented in `unix_reserve`'s
+///    own comment, "Keep the entire over-reserve mapping... exactly as the
+///    Windows backend does") makes exactly ONE `mmap` and, on success, ZERO
+///    `munmap` calls per reservation (no head/tail trim) -- so across N
+///    reservations released together, `UNIX_MUNMAP_ATTEMPTS` must increase
+///    by exactly N (one `munmap` per `Drop`, matching
+///    `ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail`'s
+///    established single-release-call oracle immediately above, now
+///    generalized to N releases). This is the "price of the amplified
+///    over-reserve path" the report calls for at the syscall-count level:
+///    the crate's own comment already states the closed-form cost (1 mmap,
+///    0 extra munmap trims per reservation for this shape); this assertion
+///    is the executable proof that closed form still matches the real
+///    dispatch, not a new syscall-latency benchmark.
+/// 3. **Pool occupancy** -- OBSERVATION ONLY, PRINTED NOT ASSERTED. Same
+///    "assert or observe" decision as
+///    `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess`'s
+///    own doc comment above, and for the identical reason stated there:
+///    `/proc/meminfo`'s `HugePages_Free` is a kernel-global counter shared
+///    with every other huge-page reservation this job's OTHER test
+///    files/targets also make in the same run, so no single `#[test]` fn
+///    can snapshot a "before" that isn't racing sibling activity outside
+///    this file's own `SERIAL` mutex (which serializes only within this
+///    binary, not across `huge_pages`/`reservation_decommit_contract`, run
+///    as separate processes in the same job). Per that precedent, this
+///    axis is instead a best-effort delta logged by the CI JOB itself
+///    (`.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real` step),
+///    bracketing this test's own isolated `--exact` invocation exactly like
+///    the existing `marker3` bracket already does for the decommit-content
+///    test -- informative for a human reading the log, never a pass/fail
+///    gate. **Not duplicating the pre-existing marker3 bracket**: this
+///    test's own isolated invocation gets its own before/after
+///    `HugePages_Free` log lines in the CI step, because this test reserves
+///    `RESERVATION_COUNT` LIVE, SIMULTANEOUSLY-HELD 4-MiB-aligned mappings
+///    (8 MiB pool charge each = up to `RESERVATION_COUNT * 8 MiB` held at
+///    peak, TWICE `RESERVATION_COUNT * size` because of this exact
+///    over-reserve behavior) before releasing any of them -- a materially
+///    different pool-pressure shape from marker3's single 2-MiB exact-fit
+///    reservation, worth its own log bracket even though neither is a gate.
+///
+/// **Honesty boundary (explicitly NOT overclaimed):** this test does NOT
+/// measure, and this doc does not claim to measure, whether trimming
+/// head/tail after the over-reserve would reduce STEADY-STATE occupancy --
+/// the report's own §P1 text says a trim does not remove the ADMISSION cost
+/// of the initial `mmap(size + align)`, which is exactly what this test's
+/// syscall-count and fallback-rate assertions bound (the admission-time
+/// mmap always requests the full `over` span, unconditionally, regardless of
+/// what happens after). Nor does it measure whether a request at this
+/// amplified size ever tips over into an OS-level refusal (a real "fallback
+/// to ordinary pages" outcome, as opposed to the "never attempts the
+/// exact-size fast path" fallback this test's `UNIX_EXACT_RESERVE_ATTEMPTS`
+/// assertion covers) -- that would depend on the pool's remaining headroom
+/// after `RESERVATION_COUNT` reservations, which is exactly the pool
+/// occupancy axis this test deliberately leaves as a printed observation,
+/// not a hard assert, for the reasons stated above.
+///
+/// **Vacuous-pass analysis:**
+/// 1. **Env var unset:** the same honest early `return` as every sibling
+///    oracle in this file.
+/// 2. **`#[cfg]` excluding this fn:** requires `huge-pages` (for
+///    `reserve_aligned_huge`) AND `bench-internals` (for the counters) AND
+///    `target_os = "linux"`/`"android"` (the only platforms
+///    `UNIX_EXACT_RESERVE_ATTEMPTS`/`UNIX_MUNMAP_ATTEMPTS` compile for) --
+///    identical shape to
+///    `ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail`'s
+///    gate immediately above.
+/// 3. **Every reservation falling back to ordinary pages:** hard-asserted
+///    per-reservation via `is_huge()` inside the loop -- the same tripwire
+///    every sibling oracle in this file uses, applied N times instead of
+///    once, so a partial-fallback run (some huge, some not) still fails
+///    loudly on the first ordinary-page reservation rather than silently
+///    passing on an average.
+/// 4. **The exact-size fast path secretly firing for `align > 2 MiB` (the
+///    actual regression this test's first assertion would catch):** would
+///    move `UNIX_EXACT_RESERVE_ATTEMPTS` off 0, failing that assert
+///    immediately -- this is the direct counterfactual for a future change
+///    that widens the fast path's guard from `align == LINUX_HUGE_PAGE_SIZE`
+///    to something like `align >= LINUX_HUGE_PAGE_SIZE` without updating
+///    this test's fixed premise.
+/// 5. **A `munmap` trim being added to the over-reserve path for this shape
+///    (the actual regression this test's second assertion would catch):**
+///    would move `UNIX_MUNMAP_ATTEMPTS`'s post-loop delta above exactly
+///    `RESERVATION_COUNT`, failing that assert -- `unix_reserve`'s own doc
+///    comment (`src/os/unix.rs`) explicitly reasons about NOT re-adding
+///    trims for exactly this reason ("would partially reverse task #842's
+///    deliberate one-munmap soundness design"), so this assertion pins that
+///    design decision as an executable invariant, not just a comment.
+/// 6. **A concurrent reservation/release in the same process touching the
+///    same counters:** `SERIAL` is held for this test's entire body,
+///    identical contract to every other counter-touching test in this file.
+#[test]
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages",
+    feature = "bench-internals"
+))]
+fn ci_hugetlb_real_pool_align_greater_than_2mib_amplifies_pool_charge_and_skips_exact_path() {
+    use aligned_vmem::{
+        reserve_aligned_huge, unix_exact_reserve_attempts, unix_exact_reserve_hits,
+        unix_munmap_attempts,
+    };
+
+    if std::env::var("ALIGNED_VMEM_REQUIRE_REAL_HUGETLB").as_deref() != Ok("1") {
+        // Not running inside the `aligned-vmem-hugetlb-real` job: honest
+        // no-op, matching every sibling oracle above.
+        return;
+    }
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
+    // item 48's own worked example: size == align == 4 MiB (2x
+    // LINUX_HUGE_PAGE_SIZE) reserves size + align = 8 MiB per request for 4
+    // MiB of usable span -- exactly the "four 2-MiB huge pages rather than
+    // two" shape the report names. A small reservation-heavy loop (not a
+    // single call, per the #1182 correction's own named gap) so the
+    // fallback-rate/syscall-count assertions below are measured over a real
+    // multi-request workload, not one sample.
+    const SIZE: usize = 2 * LINUX_HUGE_PAGE_SIZE_FOR_TEST; // 4 MiB
+    const ALIGN: usize = 2 * LINUX_HUGE_PAGE_SIZE_FOR_TEST; // 4 MiB, > 2 MiB
+    const RESERVATION_COUNT: usize = 4;
+
+    let exact_attempts_before = unix_exact_reserve_attempts();
+    let exact_hits_before = unix_exact_reserve_hits();
+    let munmap_attempts_before = unix_munmap_attempts();
+
+    let mut reservations = Vec::with_capacity(RESERVATION_COUNT);
+    for _ in 0..RESERVATION_COUNT {
+        let r = reserve_aligned_huge(SIZE, ALIGN).expect(
+            "4 MiB huge reservation with 4 MiB align must succeed (real grant or fallback)",
+        );
+        assert!(
+            r.is_huge(),
+            "ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 is set (this must only be true inside the \
+             `aligned-vmem-hugetlb-real` CI job), so a `reserve_aligned_huge` request took the \
+             ordinary-page fallback instead of a real MAP_HUGETLB grant -- this test cannot \
+             measure the align > 2 MiB pool-amplification shape against a mapping that was never \
+             actually granted as HugeTLB. See `ci_hugetlb_real_pool_oracle_refuses_ordinary_page_\
+             fallback`'s identical assertion for the same failure's root cause."
+        );
+        reservations.push(r);
+    }
+
+    // FALLBACK RATE (asserted): align == 2 * LINUX_HUGE_PAGE_SIZE never
+    // satisfies the exact-size fast path's `align == LINUX_HUGE_PAGE_SIZE`
+    // guard, so every one of the RESERVATION_COUNT requests above must have
+    // skipped that path entirely -- 0 attempts, not just 0 hits.
+    let exact_attempts_after = unix_exact_reserve_attempts();
+    let exact_hits_after = unix_exact_reserve_hits();
+    assert_eq!(
+        exact_attempts_after, exact_attempts_before,
+        "align = 2 * LINUX_HUGE_PAGE_SIZE (4 MiB) must never attempt the exact-size huge fast \
+         path (that path's own guard is `align == LINUX_HUGE_PAGE_SIZE`, a strict equality) -- a \
+         nonzero delta here means the fast path's guard condition changed and no longer excludes \
+         `align > 2 MiB`, which would invalidate this test's whole premise"
+    );
+    assert_eq!(
+        exact_hits_after, exact_hits_before,
+        "corollary of the attempts assertion immediately above: zero attempts implies zero hits"
+    );
+
+    // SYSCALL COST (asserted): the over-reserve path keeps the WHOLE
+    // over-reserved mapping (no head/tail trim, `unix_reserve`'s own
+    // documented design) -- exactly one munmap per reservation, issued only
+    // on Drop. All RESERVATION_COUNT reservations are still held at this
+    // point (not yet dropped), so the delta so far must be exactly 0.
+    let munmap_attempts_mid = unix_munmap_attempts();
+    assert_eq!(
+        munmap_attempts_mid, munmap_attempts_before,
+        "no munmap call is expected while all reservations are still held -- a nonzero delta here \
+         means a head/tail trim (or some other unmap) fired during RESERVE, not release, which \
+         contradicts unix_reserve's documented one-mapping-kept-whole design for the over-reserve \
+         path"
+    );
+
+    drop(reservations);
+
+    let munmap_attempts_after = unix_munmap_attempts();
+    assert_eq!(
+        munmap_attempts_after,
+        munmap_attempts_before + RESERVATION_COUNT as u64,
+        "dropping RESERVATION_COUNT over-reserved HugeTLB reservations must attempt exactly one \
+         munmap() each (no extra trim calls) -- a delta other than RESERVATION_COUNT means either \
+         a leaked release (delta too low) or an unexpected extra unmap call per reservation (delta \
+         too high), either of which would change the syscall-cost arithmetic this test exists to \
+         pin"
+    );
+
+    // Marker follows the established armed/unarmed-must-differ-in-OUTPUT
+    // pattern (tasks #1162/#1164/#1174/#1189): only reached past the
+    // is_huge() grant tripwire (checked RESERVATION_COUNT times) AND all
+    // four counter assertions above, so printing it is proof this test
+    // actually measured a real, granted, amplified-pool-charge workload --
+    // not merely that the function ran to completion.
+    println!("[oracle] ARMED: align > 2 MiB reservation loop skipped exact-size path, charged 1 mmap + 1 munmap per reservation");
+}
+
+/// Local alias so the test above can name the 2-MiB huge page size without
+/// duplicating the private `LINUX_HUGE_PAGE_SIZE` constant `src/os/unix.rs`
+/// keeps `pub(crate)`-scoped (not visible from `tests/`) -- matches this
+/// file's own pre-existing `MIB`-based constants (`huge_pages.rs` does the
+/// same with its own file-local `LINUX_HUGE_PAGE_SIZE` const for the same
+/// reason).
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    feature = "huge-pages",
+    feature = "bench-internals"
+))]
+const LINUX_HUGE_PAGE_SIZE_FOR_TEST: usize = 2 * MIB;

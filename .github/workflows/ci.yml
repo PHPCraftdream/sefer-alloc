@@ -408,6 +408,21 @@ jobs:
     # Not folded into `aligned-vmem-gates`: that job is Linux-generic, and
     # this one mutates a kernel sysctl, which should not be a side effect
     # other steps inherit.
+    #
+    # Task #1188 (perf-index item 57's P1 / correctness item 87's own
+    # named next-trigger via task #1182's correction): every prior test in
+    # this job reserved with `align == size` in a single, non-looped call
+    # — never `align > size`, and never in a loop. `ci_hugetlb_real_pool_
+    # align_greater_than_2mib_amplifies_pool_charge_and_skips_exact_path`
+    # (`decommit_capability.rs`) closes that specific gap: a 4-reservation
+    # loop with `size == align == 4 MiB` (2x LINUX_HUGE_PAGE_SIZE, item
+    # 48's own worked example), hard-asserting the exact-size fast path is
+    # never attempted (fallback-rate axis) and that release costs exactly
+    # one `munmap` per reservation, no head/tail trim (syscall-cost axis).
+    # See that test's own doc comment for the full three-axis measurement
+    # design and the assert-vs-observation split, following the identical
+    # precedent `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_
+    # reaccess` (task #1174) already established for this job.
     name: aligned-vmem (real hugetlb pool, Linux)
     runs-on: ubuntu-latest
     steps:
@@ -547,6 +562,7 @@ jobs:
           grep -F "test ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           grep -F "test ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
+          grep -F "test ci_hugetlb_real_pool_align_greater_than_2mib_amplifies_pool_charge_and_skips_exact_path ... ok" "$RUNNER_TEMP/vmem-hugetlb-real.log"
           ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
             --test decommit_capability \
             -- --exact ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback --nocapture \
@@ -580,6 +596,24 @@ jobs:
             -- --exact ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail --nocapture \
             2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker4.log"
           grep -F "[oracle] ARMED: real MAP_HUGETLB release attempted exactly once and did not fail" "$RUNNER_TEMP/vmem-hugetlb-real-marker4.log"
+          # Task #1188: isolated marker invocation for the align > 2 MiB
+          # pool-amplification oracle, same shape as marker1-4 above. Its
+          # own HugePages_Free before/after bracket (best-effort, PRINTED
+          # NOT ASSERTED — identical reasoning to the marker3 bracket
+          # above): this test holds 4 simultaneous 8-MiB-charged mappings
+          # (RESERVATION_COUNT * over-reserve size) at peak before releasing
+          # any of them, a materially different pool-pressure shape from
+          # marker3's single 2-MiB exact-fit reservation, so it gets its own
+          # log bracket even though neither is a pass/fail gate.
+          echo "HugePages_Free before align>2MiB pool-amplification test:"
+          grep -i HugePages_Free /proc/meminfo
+          ALIGNED_VMEM_REQUIRE_REAL_HUGETLB=1 cargo test -p aligned-vmem --features "huge-pages bench-internals" \
+            --test decommit_capability \
+            -- --exact ci_hugetlb_real_pool_align_greater_than_2mib_amplifies_pool_charge_and_skips_exact_path --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/vmem-hugetlb-real-marker5.log"
+          grep -F "[oracle] ARMED: align > 2 MiB reservation loop skipped exact-size path, charged 1 mmap + 1 munmap per reservation" "$RUNNER_TEMP/vmem-hugetlb-real-marker5.log"
+          echo "HugePages_Free after align>2MiB pool-amplification test (observation only, not a gate -- see step comment above):"
+          grep -i HugePages_Free /proc/meminfo
         shell: bash
 
   aligned-vmem-miri:

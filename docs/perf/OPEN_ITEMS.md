@@ -2323,11 +2323,18 @@ for completeness.
     `docs/reviews/2026-08-19-2148-aligned-vmem-publication-audit-Сол-кодекс.md`
     §"Производительность", revision `000c076`.)
 
-    - **Status:** OPEN — P3(b) measured this task (#1189), real numbers on
-      this project's Windows dev host; P3(a)/(c) confirmed already
-      instrumented (counters exist, no code change needed) but still need a
-      Linux host to actually read the numbers off — no such host is
-      available to this task; P1 (#1188) unchanged, still unmeasured.
+    - **Status:** OPEN — P3(b) measured task #1189, real numbers on this
+      project's Windows dev host; P3(a)/(c) confirmed already instrumented
+      (counters exist, no code change needed) but still need a Linux host to
+      actually read the numbers off; **P1 (#1188): HARNESS BUILT, NOT YET
+      MEASURED** — this task built the missing `align > 2 MiB`
+      reservation-heavy workload and wired it into
+      `aligned-vmem-hugetlb-real`'s test set and sentinel set, but this
+      project's dev host is Windows (no HugeTLB pool), so the harness has
+      never actually executed against a real pool — see the task #1188
+      update below for exactly what is proven by construction/cross-compile
+      today vs. what is still unmeasured pending the harness's first green
+      CI run on Linux.
     - **[task #1189] P3(b) update — a real Windows-native profile was run,
       not just a design read.** `examples/v1189_windows_large_page_native_profile.rs`
       (new, `bench-internals`+`huge-pages`-gated, measurement-only — no
@@ -2434,6 +2441,94 @@ for completeness.
         This is the same `align > 2 MiB` pool-cost dimension item 48 above
         already tracks (`docs/perf/OPEN_ITEMS.md` item 48's 2026-08-18 "Pool-
         cost addition"); #1188 is that dimension's implementation owner.
+      - **[task #1188] Harness built for all three requested axes; ZERO
+        numbers produced — this project's dev host cannot run a real
+        HugeTLB pool.** Per this card's own PR-review-flagged correction
+        (task #1182, above, this same card): before this task, no test in
+        `aligned-vmem-hugetlb-real`'s three test files ever exercised
+        `align > size`, and never in a loop — every call was a single
+        non-looped `(size, size)` reservation. This task added
+        `ci_hugetlb_real_pool_align_greater_than_2mib_amplifies_pool_charge_and_skips_exact_path`
+        (`crates/aligned-vmem/tests/decommit_capability.rs`), a 4-iteration
+        loop at `size == align == 4 MiB` (item 48's own worked example),
+        wired into `.github/workflows/ci.yml`'s `aligned-vmem-hugetlb-real`
+        job (both the shared multi-test invocation and its own isolated
+        `--exact ... -- --nocapture` marker invocation, following the
+        established task #1174/#1189 CI-mechanics pattern) and into
+        `scripts/verify-ci-sentinels.mjs`'s tracked sentinel set
+        (`MIN_SENTINEL_COUNT` 45 → 47; full re-derivation in
+        `docs/CORRECTNESS_OPEN_ITEMS.md` item 87's card). **Per-axis
+        design, following the assert-vs-observation precedent task #1174
+        already established for this same job (see that test's own doc
+        comment for the "shared kernel-global counter → printed
+        observation, this-process-own counter → hard assert" split this
+        task reused verbatim):**
+        - **Fallback rate** — hard-asserted. `align = 2 * LINUX_HUGE_PAGE_SIZE`
+          never satisfies the exact-size fast path's `align ==
+          LINUX_HUGE_PAGE_SIZE` guard, so `UNIX_EXACT_RESERVE_ATTEMPTS`/
+          `_HITS` (this process's own counters, per item 52's existing
+          instrumentation) must stay at 0 across the whole loop — 0-of-N IS
+          the fallback rate this fixed shape produces, deterministic given
+          `align`, so a hard assert is sound (not host-dependent the way
+          `is_huge()` itself is).
+        - **Syscall cost** — hard-asserted, via the pre-existing
+          `UNIX_MUNMAP_ATTEMPTS` counter (task #1189's addition): the
+          over-reserve path keeps the whole mapping (no head/tail trim,
+          `unix_reserve`'s own documented design), so N reservations
+          released together must show a `UNIX_MUNMAP_ATTEMPTS` delta of
+          exactly N — pins the crate's documented "1 mmap, 0 extra munmap
+          per reservation" closed-form cost as an executable invariant, not
+          just a doc comment.
+        - **Pool occupancy** — deliberately NOT asserted, `HugePages_Free`
+          before/after logged by the CI step itself (best-effort
+          observation only), because it is a kernel-global counter shared
+          with the job's other huge-page tests — the identical reason task
+          #1174 (`docs/CORRECTNESS_OPEN_ITEMS.md` item 87's card, and that
+          test's own doc comment in `decommit_capability.rs`) already gives
+          for not hard-asserting it. No new occupancy counter was added; the
+          existing `/proc/meminfo` read (already used by task #1174's
+          bracket) was reused with its own before/after log lines around
+          this test's isolated invocation.
+        - **Honesty boundary, stated explicitly in the test's own doc
+          comment:** this does not measure whether head/tail trimming would
+          reduce STEADY-STATE occupancy (the report's own §P1 text already
+          says a trim would not remove the ADMISSION cost this test's
+          syscall-count/fallback-rate assertions bound), and does not
+          measure whether this amplified request size ever tips into a REAL
+          OS-level refusal (pool exhaustion) — that depends on the pool's
+          remaining headroom, which is exactly the occupancy axis left as
+          an observation, not an assert.
+        - **What is proven today vs. what is still unmeasured:** the test
+          compiles and passes `cargo clippy -p aligned-vmem --target
+          x86_64-unknown-linux-gnu --all-targets --all-features -- -D
+          warnings` and `cargo check --target
+          {x86_64-unknown-linux-gnu,aarch64-linux-android}` under `huge-pages
+          bench-internals` (cross-compiled from this task's Windows host —
+          verified this task, not assumed), and the `is_huge()` tripwire
+          guarantees the test cannot pass without a REAL `MAP_HUGETLB`
+          grant. **But it has never actually EXECUTED against a real
+          HugeTLB pool** — no host available to this task has one. The
+          fallback-rate/syscall-cost numbers this test would produce (0
+          exact-path attempts, exactly 4 munmap attempts) are the
+          DETERMINISTIC, code-structural prediction from reading
+          `unix_reserve`'s dispatch logic, not an executed measurement — the
+          `HugePages_Free` occupancy delta specifically CANNOT be predicted
+          from source reading (it depends on the runner's actual pool state
+          and concurrent job activity) and is genuinely unknown until the
+          `aligned-vmem-hugetlb-real` job runs this change in CI for the
+          first time. This card should NOT be read as "P1 measured" until
+          that first green run's log is cited here with real
+          `HugePages_Free` before/after numbers.
+        - Raw log / summary CSV: not applicable this task — no execution
+          happened, so there is no raw log to cite (per this repository's own
+          artifact-storage-policy rule: a report whose verdict rests on no
+          executed measurement owes no raw log). The CI job's own
+          `$RUNNER_TEMP/vmem-hugetlb-real*.log` files ARE the eventual raw
+          evidence once the job runs; they are ephemeral CI artifacts, not
+          committed to this repo (consistent with every prior
+          `aligned-vmem-hugetlb-real` sentinel test — none of tasks
+          #1152/#1162/#1164/#1174/#1189 committed a raw log for this job
+          either, since the job's own CI run log is the durable record).
       - **P2 (report lines 169-171) — no separate owner.** Safe
         `Reservation::try_decommit` reads page size and validates the range;
         free `try_decommit` and infallible `decommit` each repeat part of
@@ -2473,14 +2568,21 @@ for completeness.
         is closed, not open-and-tracked; see this task's own final report
         for the full reasoning) for the counter/test detail, not duplicated
         here.
-    - **Next trigger:** C2 closed (this task); P3(b) measured on Windows
-      (this task) — a future round may still want a PRIVILEGED-host
+    - **Next trigger:** C2 closed (task #1189); P3(b) measured on Windows
+      (task #1189) — a future round may still want a PRIVILEGED-host
       re-measurement of P3(b) if `SeLockMemoryPrivilege` ever becomes
       available in this project's CI/dev environment, but that is a
       "nice to have new data point", not a blocking gap. P3(a)/(c) still
       need a Linux host to read the already-existing counters off — no
-      such host was available to this task. #1188 still unmeasured (P1).
-      #1180 landing closes P2's absorption.
+      such host was available to task #1189. **P1 (task #1188): harness
+      built and wired into CI, but genuinely unmeasured — next trigger is
+      the FIRST GREEN RUN of `aligned-vmem-hugetlb-real` after this
+      change lands, which will print real `HugePages_Free` before/after
+      numbers around `ci_hugetlb_real_pool_align_greater_than_2mib_
+      amplifies_pool_charge_and_skips_exact_path`'s isolated invocation —
+      a future task should read that CI run's log and record the actual
+      pool-occupancy delta here, turning this from "harness ready" into
+      "P1 measured".** #1180 landing closes P2's absorption.
     - **Why this index, not only `docs/CORRECTNESS_OPEN_ITEMS.md`:** this
       material is a perf finding from a `docs/reviews/*` audit that a
       correctness-index card (item 90's "3 perf candidates" header count,
