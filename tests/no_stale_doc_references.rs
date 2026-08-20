@@ -1464,14 +1464,23 @@ fn every_undecided_feature_has_exactly_one_owner_with_a_next_trigger() {
 #[test]
 fn correctness_index_recently_resolved_pointers_carry_verdicts() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let index_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
-    let text = fs::read_to_string(&index_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+    // Relocated by task #1217 (2026-08-20): the "Recently resolved" section
+    // used to live inline in docs/CORRECTNESS_OPEN_ITEMS.md itself; that
+    // file is now a thin index, and the pointer trail lives in
+    // docs/correctness-open-items/RESOLVED.md (byte-identical relocation of
+    // the section, per that split's own contract).
+    let index_path = manifest
+        .join("docs")
+        .join("correctness-open-items")
+        .join("RESOLVED.md");
+    let text =
+        fs::read_to_string(&index_path).expect("read docs/correctness-open-items/RESOLVED.md");
     let lines: Vec<&str> = text.lines().collect();
 
     let section_start = lines
         .iter()
         .position(|l| l.starts_with("## Recently resolved"))
-        .expect("docs/CORRECTNESS_OPEN_ITEMS.md has a '## Recently resolved' section");
+        .expect("docs/correctness-open-items/RESOLVED.md has a '## Recently resolved' section");
 
     // ASSUMPTION (task #1123-era slice widening): `## Recently resolved` is
     // the LAST `## ` heading in this file, so slicing to the end of the file
@@ -1493,10 +1502,10 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         .collect();
     assert!(
         !pointers.is_empty(),
-        "found zero pointer lines in docs/CORRECTNESS_OPEN_ITEMS.md's 'Recently \
-         resolved' section — either the section was restructured or the R34-24 \
-         split's pointers were removed; this test's non-vacuity assumption \
-         needs re-checking, not a silently-passing empty-set check."
+        "found zero pointer lines in docs/correctness-open-items/RESOLVED.md's \
+         'Recently resolved' section — either the section was restructured or \
+         the R34-24 split's pointers were removed; this test's non-vacuity \
+         assumption needs re-checking, not a silently-passing empty-set check."
     );
 
     // ---- Parse the archive's "Recently resolved — full closure trail"
@@ -1504,17 +1513,20 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
     // forms like `50-U10`, `41+61`, `42a`); the entry's FIRST PARAGRAPH is
     // that line plus every following indented line, up to the first blank
     // line. Headline comparison is on the whitespace-normalized paragraph.
+    // Relocated by task #1217: docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md moved
+    // (byte-identical) to docs/correctness-open-items/ARCHIVE.md.
     let archive_path = manifest
         .join("docs")
-        .join("CORRECTNESS_OPEN_ITEMS_ARCHIVE.md");
+        .join("correctness-open-items")
+        .join("ARCHIVE.md");
     let archive_text =
-        fs::read_to_string(&archive_path).expect("read docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md");
+        fs::read_to_string(&archive_path).expect("read docs/correctness-open-items/ARCHIVE.md");
     let archive_lines: Vec<&str> = archive_text.lines().collect();
     let archive_start = archive_lines
         .iter()
         .position(|l| l.starts_with("## Recently resolved"))
         .expect(
-            "docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md has a 'Recently resolved' \
+            "docs/correctness-open-items/ARCHIVE.md has a 'Recently resolved' \
              section — the R34-24 split contract is that every main-index \
              pointer resolves into it",
         );
@@ -1578,7 +1590,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
 
     assert!(
         !entries.is_empty(),
-        "parsed zero entries from docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's \
+        "parsed zero entries from docs/correctness-open-items/ARCHIVE.md's \
          'Recently resolved' section — the parser's shape assumption (label \
          lines like `77. **...` at column 0, paragraphs separated by blank \
          lines) no longer holds; re-check rather than silently passing."
@@ -1605,11 +1617,11 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         let bold_count = line.matches("**").count();
         if bold_count % 2 != 0 {
             errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line has an ODD `**` \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer line has an ODD `**` \
                  count ({bold_count}) — an unbalanced headline, the exact task-#1116 \
                  defect (a pointer generated from only the first physical line of a \
                  wrapped archive header). Regenerate it from the entry's full first \
-                 paragraph in docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md:\n  {}",
+                 paragraph in docs/correctness-open-items/ARCHIVE.md:\n  {}",
                 line_no + 1,
                 line.chars().take(120).collect::<String>()
             ));
@@ -1621,7 +1633,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
             Some(at) => at,
             None => {
                 errors.push(format!(
-                    "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line has no \
+                    "docs/correctness-open-items/RESOLVED.md:{}: pointer line has no \
                      '— full closure narrative' suffix — the R34-24 split's \
                      pointer boilerplate is missing:\n  {}",
                     line_no + 1,
@@ -1634,7 +1646,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
             Some(x) => x,
             None => {
                 errors.push(format!(
-                    "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer line's item label \
+                    "docs/correctness-open-items/RESOLVED.md:{}: pointer line's item label \
                      does not parse as `NN.` (digits optionally extended with \
                      alphanumerics/+/-. then '. '):\n  {}",
                     line_no + 1,
@@ -1659,7 +1671,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         });
         if !has_verdict {
             errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` carries NO \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` carries NO \
                  verdict WORD (RESOLVED/CLOSED/REJECTED, whole-word match) before its \
                  'full closure narrative' suffix — a round-start reader cannot tell the \
                  item is closed (the R34-24 property the split exists to create). Note a \
@@ -1680,8 +1692,8 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
             .collect();
         if same_label.is_empty() {
             errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` has NO entry \
-                 with that item number in docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` has NO entry \
+                 with that item number in docs/correctness-open-items/ARCHIVE.md's \
                  'Recently resolved' section — a pointer aimed at a nonexistent \
                  archive entry (the task-#1123 defect class: the pointer set can be \
                  non-empty, balanced and verdict-bearing yet point at nothing):\n  {}",
@@ -1700,7 +1712,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
                 if let Some(prev) = last_matched_pos {
                     if pos < prev {
                         errors.push(format!(
-                            "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` \
+                            "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` \
                              matches an archive entry OUT OF ORDER (archive position \
                              {pos} after an earlier pointer matched {prev}) — pointers \
                              must preserve the archive's entry order (the pairing \
@@ -1713,7 +1725,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
                 matched.push((*line_no, label.to_string(), pos));
             }
             0 => errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` has an entry \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` has an entry \
                  with that number in the archive, but its HEADLINE matches NO \
                  archive entry's first paragraph (whitespace-normalized comparison) — \
                  a fabricated or drifted headline (the second task-#1123 defect \
@@ -1728,7 +1740,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
                     .join("\n"),
             )),
             _ => errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` matches MORE \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` matches MORE \
                  THAN ONE archive entry with the same label AND headline — pairing is \
                  ambiguous, the archive needs disambiguation before this test can \
                  check it.",
@@ -1757,7 +1769,7 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         counts[*pos] += 1;
         if counts[*pos] > 1 {
             errors.push(format!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md:{}: pointer `{label}.` DUPLICATES \
+                "docs/correctness-open-items/RESOLVED.md:{}: pointer `{label}.` DUPLICATES \
                  an earlier pointer's pairing — archive position {pos} is now matched \
                  by more than one pointer, which means some OTHER archive entry was \
                  left with no pointer at all (counts stay equal, order stays \
@@ -1771,8 +1783,8 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
         if *count == 0 {
             errors.push(format!(
                 "archive entry `{}` (position {pos}, line {}) is matched by NO \
-                 pointer in docs/CORRECTNESS_OPEN_ITEMS.md's 'Recently resolved' \
-                 section — an entry moved to the archive without its pointer left \
+                 pointer in docs/correctness-open-items/RESOLVED.md's 'Recently \
+                 resolved' section — an entry moved to the archive without its pointer left \
                  behind (or a pointer duplicated over another entry's):\n  {}",
                 entries[pos].1,
                 entries[pos].0 + 1,
@@ -1783,17 +1795,19 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
 
     assert!(
         errors.is_empty(),
-        "every 'Recently resolved' pointer in docs/CORRECTNESS_OPEN_ITEMS.md must \
-         carry a balanced `**` headline, a whole-word verdict token, and resolve to \
-         exactly one same-numbered, same-headline entry of \
-         docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md's 'Recently resolved' section, in \
+        "every 'Recently resolved' pointer in docs/correctness-open-items/RESOLVED.md \
+         must carry a balanced `**` headline, a whole-word verdict token, and \
+         resolve to exactly one same-numbered, same-headline entry of \
+         docs/correctness-open-items/ARCHIVE.md's 'Recently resolved' section, in \
          order (tasks #1116 + #1123):\n{}",
         errors.join("\n"),
     );
 }
 
-/// Item 87's card (`docs/CORRECTNESS_OPEN_ITEMS.md`) restates the same
-/// sentinel-count fact in THREE independently-edited places, and two of them
+/// Item 87's card (`docs/correctness-open-items/TRACKED.md`, cited via the
+/// stable `docs/CORRECTNESS_OPEN_ITEMS.md` item-number convention — see
+/// task #1217) restates the same sentinel-count fact in THREE
+/// independently-edited places, and two of them
 /// have already drifted apart from each other in this card's own recorded
 /// history (`971ca05`, `cecdeec` — see the F2 bullets in the card itself),
 /// plus a third drift the card's own narrative was found to have
@@ -1817,8 +1831,15 @@ fn correctness_index_recently_resolved_pointers_carry_verdicts() {
 fn correctness_item_87_sentinel_counts_agree() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    let index_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
-    let index_text = fs::read_to_string(&index_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+    // Relocated by task #1217 (2026-08-20): item 87's card now lives in
+    // docs/correctness-open-items/TRACKED.md (the [T]-tier file), not
+    // inline in docs/CORRECTNESS_OPEN_ITEMS.md, which is now a thin index.
+    let index_path = manifest
+        .join("docs")
+        .join("correctness-open-items")
+        .join("TRACKED.md");
+    let index_text =
+        fs::read_to_string(&index_path).expect("read docs/correctness-open-items/TRACKED.md");
 
     fn extract_first_number_after(haystack: &str, marker: &str) -> Option<(u64, usize)> {
         let start = haystack.find(marker)?;
@@ -1836,7 +1857,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     let (headline_n, headline_pos) = extract_first_number_after(&index_text, headline_marker)
         .unwrap_or_else(|| {
             panic!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md: item 87's headline marker \
+                "docs/correctness-open-items/TRACKED.md: item 87's headline marker \
                  `{headline_marker}` not found — the card was restructured; \
                  re-point this test's parser at the new headline wording."
             )
@@ -1867,7 +1888,7 @@ fn correctness_item_87_sentinel_counts_agree() {
                 let n: u64 = rest[..digits_end].parse().expect("digits");
                 assert!(
                     live_next_trigger.is_none(),
-                    "docs/CORRECTNESS_OPEN_ITEMS.md: found MORE THAN ONE live-shaped \
+                    "docs/correctness-open-items/TRACKED.md: found MORE THAN ONE live-shaped \
                      'Next trigger' sentinel figure (bold, followed by '** as of this \
                      re-derivation') — item 87's card should have exactly one live \
                      restatement of this number; a second one means either a genuine \
@@ -1880,7 +1901,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     }
     let (next_trigger_n, next_trigger_pos) = live_next_trigger.unwrap_or_else(|| {
         panic!(
-            "docs/CORRECTNESS_OPEN_ITEMS.md: item 87's live 'Next trigger' sentinel \
+            "docs/correctness-open-items/TRACKED.md: item 87's live 'Next trigger' sentinel \
              figure (marker `{next_trigger_marker}`, bold number, followed by '** as \
              of this re-derivation') not found — the bullet was reworded; re-point \
              this test's parser at the new wording."
@@ -1901,7 +1922,7 @@ fn correctness_item_87_sentinel_counts_agree() {
 
     assert_eq!(
         headline_n, next_trigger_n,
-        "docs/CORRECTNESS_OPEN_ITEMS.md item 87 has DRIFTED WITHIN ITSELF: the \
+        "docs/correctness-open-items/TRACKED.md item 87 has DRIFTED WITHIN ITSELF: the \
          headline (byte offset {headline_pos}, marker `{headline_marker}`) reads \
          {headline_n}, but the live 'Next trigger' bullet (byte offset \
          {next_trigger_pos}) reads {next_trigger_n} — this is the exact `971ca05`/\
@@ -1911,7 +1932,7 @@ fn correctness_item_87_sentinel_counts_agree() {
     );
     assert_eq!(
         headline_n, script_n,
-        "docs/CORRECTNESS_OPEN_ITEMS.md item 87's headline ({headline_n}) does not \
+        "docs/correctness-open-items/TRACKED.md item 87's headline ({headline_n}) does not \
          match scripts/verify-ci-sentinels.mjs's MIN_SENTINEL_COUNT ({script_n}) — \
          this is the `971ca05` defect class (task #1177's correction to this card): \
          the doc's own current-state number(s) can agree with EACH OTHER while both \
@@ -1921,7 +1942,9 @@ fn correctness_item_87_sentinel_counts_agree() {
     );
 }
 
-/// Item 59a's card (`docs/CORRECTNESS_OPEN_ITEMS.md`) restates the
+/// Item 59a's card (`docs/correctness-open-items/TRACKED.md`, cited via the
+/// stable `docs/CORRECTNESS_OPEN_ITEMS.md` item-number convention — see
+/// task #1217) restates the
 /// `aligned-vmem-hugetlb-real` job's OWN sentinel count — a number scoped
 /// to one job, independent of item 87's whole-file `MIN_SENTINEL_COUNT`
 /// floor — and this is the sixth time this exact number has been found
@@ -1999,8 +2022,15 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
          both."
     );
 
-    let card_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
-    let card_text = fs::read_to_string(&card_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+    // Relocated by task #1217 (2026-08-20): item 59a's card now lives in
+    // docs/correctness-open-items/TRACKED.md, not inline in
+    // docs/CORRECTNESS_OPEN_ITEMS.md (now a thin index).
+    let card_path = manifest
+        .join("docs")
+        .join("correctness-open-items")
+        .join("TRACKED.md");
+    let card_text =
+        fs::read_to_string(&card_path).expect("read docs/correctness-open-items/TRACKED.md");
 
     // Local copy of the same digit-extraction helper
     // `correctness_item_87_sentinel_counts_agree` defines (that copy is
@@ -2025,8 +2055,9 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     let (card_test_n, _) =
         extract_first_number_after(&card_text, card_test_marker).unwrap_or_else(|| {
             panic!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker `{card_test_marker}` \
-                 not found — the card was reworded; re-point this test's parser."
+                "docs/correctness-open-items/TRACKED.md: item 59a's marker \
+                 `{card_test_marker}` not found — the card was reworded; re-point \
+                 this test's parser."
             )
         });
 
@@ -2039,7 +2070,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
         extract_first_number_after(&card_text[search_from..], card_marker_marker).unwrap_or_else(
             || {
                 panic!(
-                    "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker \
+                    "docs/correctness-open-items/TRACKED.md: item 59a's marker \
                      `{card_marker_marker}` (for the marker-shaped count) not found \
                      after the test-shaped count — the card was reworded; re-point \
                      this test's parser."
@@ -2049,7 +2080,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
 
     assert_eq!(
         test_shaped as u64, card_test_n,
-        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a claims **{card_test_n}** unique \
+        "docs/correctness-open-items/TRACKED.md item 59a claims **{card_test_n}** unique \
          `test <name> ... ok` sentinels in the aligned-vmem-hugetlb-real job, but a \
          fresh re-derivation from .github/workflows/ci.yml finds {test_shaped} — the \
          card has drifted (this is the exact recurring class task #1193 fixed a \
@@ -2061,7 +2092,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     );
     assert_eq!(
         marker_shaped as u64, card_marker_n,
-        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a claims **{card_marker_n}** unique \
+        "docs/correctness-open-items/TRACKED.md item 59a claims **{card_marker_n}** unique \
          `[oracle] ARMED: ...` markers in the aligned-vmem-hugetlb-real job, but a \
          fresh re-derivation from .github/workflows/ci.yml finds {marker_shaped} — \
          see the test-shaped assertion above for the same drift class and the \
@@ -2077,7 +2108,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     let card_total_marker = "sentinel checks in total";
     let total_pos = card_text.find(card_total_marker).unwrap_or_else(|| {
         panic!(
-            "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker \
+            "docs/correctness-open-items/TRACKED.md: item 59a's marker \
              `{card_total_marker}` not found — the card was reworded; re-point \
              this test's parser."
         )
@@ -2089,7 +2120,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
         .find_map(|tok| tok.trim().parse::<u64>().ok())
         .unwrap_or_else(|| {
             panic!(
-                "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a states \
+                "docs/correctness-open-items/TRACKED.md: item 59a states \
                  `{card_total_marker}` but no `**N**` precedes it — re-point \
                  this test's parser."
             )
@@ -2097,7 +2128,7 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
     assert_eq!(
         card_total_n,
         card_test_n + card_marker_n,
-        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a's own sentence does not add up: \
+        "docs/correctness-open-items/TRACKED.md item 59a's own sentence does not add up: \
          it states **{card_test_n}** test-shaped + **{card_marker_n}** \
          marker-shaped but **{card_total_n}** in total. The two addends are each \
          re-derived from ci.yml by the assertions above; this one checks the card \

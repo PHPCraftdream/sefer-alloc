@@ -1,5 +1,17 @@
 # Correctness open items — archived closure narratives
 
+**Relocated 2026-08-20 (task #1217) from `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md`
+to `docs/correctness-open-items/ARCHIVE.md`, as part of splitting the whole
+correctness index into a folder** (reversing item 86's 2026-08-19 deferral
+of that split — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 86 for the
+reversal record). This move is itself a byte-identical relocation, same
+contract as the move this file's own header describes below: no narrative
+text was edited, only this header's self-references were updated to the new
+paths (`docs/CORRECTNESS_OPEN_ITEMS.md` stays the correct citation for the
+top-level index — it now itself only summarizes and points into
+`docs/correctness-open-items/ACTIVE.md` / `TRACKED.md` / `RESOLVED.md`; this
+archive's own former path is dead and must not be cited going forward).
+
 **Purpose.** This file holds the full dated historical closure narratives
 for items tracked in `docs/CORRECTNESS_OPEN_ITEMS.md` — the round-by-round
 "here's the failure, here's the root cause, here's the fix and its
@@ -21,10 +33,11 @@ rest of the repository; nothing was renumbered.
 
 **How to use this file.** Each entry below keeps its original item number
 and opens with its original header line. Going the other direction, the
-main index's "Recently resolved" section keeps a one-line pointer per moved
-entry (the original header line plus a relocation note), so a citation of
-the form "see Recently resolved §N" or "item N" still lands: follow the
-pointer from the main index to the full narrative here.
+top-level index's "Recently resolved" pointer trail — now
+`docs/correctness-open-items/RESOLVED.md` — keeps a one-line pointer per
+moved entry (the original header line plus a relocation note), so a
+citation of the form "see Recently resolved §N" or "item N" still lands:
+follow the pointer from `RESOLVED.md` to the full narrative here.
 
 **Convention.** This file is purely an archival extension of
 `docs/CORRECTNESS_OPEN_ITEMS.md` — it does NOT have its own independent
@@ -34,7 +47,7 @@ specific item's full closure history is needed). New closures follow the
 same convention going forward: the closing round writes the full narrative
 here and leaves only the one-line pointer (plus the closing round + task
 number + one-line evidence, per the main index's own convention rule 2) in
-the main index's "Recently resolved" section.
+`docs/correctness-open-items/RESOLVED.md`.
 
 ---
 
