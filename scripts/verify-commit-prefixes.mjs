@@ -275,6 +275,23 @@ const R30_12_RULE_COMMIT = '3f7db1629d389c18ae987120f4094aaccf04f81f';
 // cannot be fixed, which is worse than useless: a gate nobody can make green
 // is a gate everybody learns to ignore.
 //
+// ONE ENTRY IS NOT A GENUINE MIS-SLOT ON LANDED HISTORY (task #1238):
+// `2f9d7b9` is a heuristic FALSE-POSITIVE exemption. It did not pre-exist
+// the check (it failed it on the day it was committed) — but unlike
+// `c766951`, the other entry that post-dates the check, it is NOT a true
+// positive with an honest alternative prefix the commit should have
+// carried: its entire non-comment src/ delta is prose inside a string
+// literal (the entry's reason line has the diff facts). It is exempted
+// rather than fixing hasNonCommentChange to see string state, because that
+// fix's failure mode is a SILENT miss — a real code line classified as
+// prose, i.e. the exact `09f4d16` defect passing green — while a false
+// FAILURE is loud and forces a human look; a guard made cleverer that
+// claims a property it does not have is this repository's most-reproduced
+// guard defect (task #1126's own subject: "both guards hardened last wave
+// claimed properties they did not have"). It is also UNPUSHED, so unlike
+// the landed entries its owner may still reword the commit by rebase; the
+// exemption records that decision point, it does not foreclose it.
+//
 // SELF-CLEANING, deliberately: an entry that no longer fails is itself a
 // FAILURE (see the check after the scan). An exception that has silently
 // stopped applying is how a suppression list rots into a blanket.
@@ -331,6 +348,30 @@ const GRANDFATHERED = new Map([
       'sub-card 4 (added task #1123 — the record commit c766951 itself landed ' +
       'BEFORE the lint commit, and the card was never updated when this fourth ' +
       'entry appeared).',
+  ],
+  [
+    '2f9d7b9',
+    'NOT a genuine mis-slot on landed history — the first FALSE-POSITIVE ' +
+      'exemption (task #1238): unlike c766951, the other entry that ' +
+      'post-dates this check, there is NO honest alternative prefix the ' +
+      'commit should have carried. docs: prefix on a task-#1227 citation ' +
+      'repair whose ENTIRE non-comment src/ delta is two string-literal ' +
+      'continuation lines inside the deliberately compile-failing MIPS-only ' +
+      'compile_error! in src/os/unix.rs (the docs/CORRECTNESS_OPEN_ITEMS.md ' +
+      'citation gaining "item 62", plus the re-wrap); the other three src/ ' +
+      'files are ///-comment-only (re-verified per file). hasNonCommentChange ' +
+      'cannot see string state — a --unified=0 diff carries no opening quote ' +
+      '— and is kept deliberately dumb: reconstructing quote state without ' +
+      'parsing Rust (raw strings, escapes, char-vs-lifetime, comments that ' +
+      'themselves contain quotes) would trade this loud false positive for a ' +
+      'silent miss — the 09f4d16 defect class passing green; guards made ' +
+      'cleverer claiming properties they did not have is this repository\'s ' +
+      'most-reproduced guard defect. fix(perf), the one prefix whose checks ' +
+      'this commit would pass, would assert a shipping-code fix that did not ' +
+      'happen. UNPUSHED, unlike the four landed entries: the owner may still ' +
+      'reword it by rebase — this exemption records that decision point, it ' +
+      'does not foreclose it. Durable record: item 78, sub-card 6 ' +
+      '(task #1238).',
   ],
 ]);
 
@@ -950,8 +991,9 @@ function main() {
   if (exempted.length > 0) {
     console.log(
       `\n[verify-commit-prefixes] ${exempted.length} grandfathered commit(s) — ` +
-        `pre-existing when this check was strengthened (task #1117); recorded in ` +
-        `docs/CORRECTNESS_OPEN_ITEMS.md item 78, NOT amended (R30-12 is non-retroactive):`,
+        `recorded in docs/CORRECTNESS_OPEN_ITEMS.md item 78, NOT amended (R30-12 is ` +
+        `non-retroactive); each entry's reason line states why it is exempt — genuine ` +
+        `mis-slot on landed history, or a heuristic false-positive exemption (task #1238):`,
     );
     for (const e of exempted) console.log(`  - ${e}`);
   }
