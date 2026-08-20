@@ -239,9 +239,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   EXCLUDED — a raw `grep -rn "VmemError::os_refusal_unknown_code()"
   crates/aligned-vmem/src/` also matches prose that merely names the
   constructor, so its total moves whenever such prose is edited (task
-  #1194's own first attempt recorded a raw total its own edit falsified).
-  The stable command is that grep piped through
-  `grep -vE ":\s*(///|//!|//)"`, giving 10 real construction sites. Of
+  #1194's own first attempt recorded a raw total its own edit falsified —
+  and then, one generation on, task #1194's own COMMIT BODY recorded
+  "14 with 4 doc lines" where the tree it describes holds **15 with 5**:
+  the fix's paragraph names the grep string twice, once for the raw form
+  it warns against and once for the stable filtered form, so it added two
+  doc mentions to `error.rs`, not one. Corrected here by task #1204;
+  history is not rewritten, so the commit body keeps its wrong arithmetic
+  and this is the record. The figure that MATTERS — the filtered count —
+  was right in both, which is the whole reason the filtered form is the
+  one cited). The stable command is that grep piped through
+  `grep -vE ":\s*(///|//!|//)"`, giving 10 real construction sites.
+  Known limitation of that filter, recorded rather than fixed blind: the
+  pattern matches a comment marker ANYWHERE in the line, so a code line
+  containing an inline `// …` after a colon would be excluded wrongly. No
+  such line exists in `crates/aligned-vmem/src/` today. Of
   those 10 real sites, 7 are PRODUCTION
   sites — collapsing to the FOUR production causes the doc already
   correctly enumerated (task #1141/#1106-L2) — and 3 are TEST-ONLY sites
