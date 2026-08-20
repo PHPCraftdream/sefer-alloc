@@ -262,6 +262,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (re-grepped `tests/` + `src/`: still zero sites matching by cause), so
   differentiating error codes remain unwarranted public-API surface with no
   current consumer to serve it.
+- **`from_raw_parts`'s Linux/Android 2-MiB-multiple contract was described as
+  five independent checks; four of them are (task #1196).** The assert added
+  by the M1-hybrid names five quantities — `len`, `reservation_len`,
+  `reservation`, `base`, and the offset `base - reservation` — but the last
+  is implied by the two before it: if `reservation` and `base` are both
+  2-MiB multiples, so is their difference, and the offset conjunct can
+  therefore never be the one that fails. The rustdoc said "ALL FIVE", which
+  reads as five separate requirements a caller must independently satisfy.
+  Corrected to five NAMED quantities / four INDEPENDENT checks, in the
+  rustdoc and in the two internal comments that repeated the count.
+  **The assert itself is unchanged and still checks all five** — the fifth
+  conjunct is kept deliberately, for the panic message's diagnostics and
+  because it becomes load-bearing again the moment either address conjunct
+  is weakened; the code now says so at the conjunct. Doc-only, no behavior
+  change, and the contract a caller must satisfy is exactly what it was.
 - **Huge-page decommit is no longer an unconditional no-op on Linux/Android**
   (task #1140). `Reservation::decommit`/`try_decommit` skipped the backend
   whenever `is_huge()`, and the docs asserted decommit "does nothing on every

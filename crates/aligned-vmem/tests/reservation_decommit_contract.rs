@@ -505,10 +505,13 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     //   `granted_huge: true` requires the `huge-pages` feature, (b) on
     //   Linux/Android, `granted_huge: true` additionally requires `len`,
     //   `reservation_len`, `reservation`, `base`, and the offset
-    //   `base - reservation` to all be 2-MiB multiples. Both PANIC
-    //   immediately on violation — a louder failure mode than the other
-    //   readers above (which only change a query result or suppress a
-    //   syscall), but still not memory-unsafe: the panic happens before
+    //   `base - reservation` to all be 2-MiB multiples (five names listed,
+    //   but only four independent checks — `reservation` and `base` both
+    //   being 2-MiB multiples already implies their difference is too;
+    //   task #1196/OX6-L1). Both PANIC immediately on violation — a louder
+    //   failure mode than the other readers above (which only change a
+    //   query result or suppress a syscall), but still not memory-unsafe:
+    //   the panic happens before
     //   `Self { .. }` is constructed, so no `Reservation` with inconsistent
     //   state is ever observable. This is exactly why this test is gated on
     //   `huge-pages` and uses a `size == 2 MiB` base reservation — both

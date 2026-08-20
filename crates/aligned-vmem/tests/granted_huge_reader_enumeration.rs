@@ -70,12 +70,15 @@
 //!   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90): `from_raw_parts` now
 //!   asserts `granted_huge: true` requires the `huge-pages` feature
 //!   (closing finding M2), and, on Linux/Android, that it implies five
-//!   2-MiB-multiple quantities (closing finding M1). Both are Correctness-
-//!   contract checks (functional, non-UB), not memory-safety checks — see
-//!   that function's own `# Safety` vs. `# Correctness contract` split. A
-//!   count that drifts AWAY from 7 without a conscious re-derivation is
-//!   still the failure this bullet exists to catch; 7 is not itself
-//!   sacred, only "changed without re-deriving" is.
+//!   named 2-MiB-multiple quantities, only four of which are independent
+//!   checks — `reservation` and `base` both being 2-MiB multiples already
+//!   implies their difference is too (closing finding M1; task #1196/
+//!   OX6-L1 corrects the "five independent checks" framing). Both are
+//!   Correctness-contract checks (functional, non-UB), not memory-safety
+//!   checks — see that function's own `# Safety` vs. `# Correctness
+//!   contract` split. A count that drifts AWAY from 7 without a conscious
+//!   re-derivation is still the failure this bullet exists to catch; 7 is
+//!   not itself sacred, only "changed without re-deriving" is.
 //!
 //! Known limitations, accepted: `/* */` block comments are not stripped
 //! (none in `src/` mention the flag today — if one appears it trips this
@@ -308,11 +311,14 @@ fn granted_huge_reader_enumeration_is_pinned() {
     // assert! block did NOT read the flag. That invariant is now
     // INTENTIONALLY false: the constructor asserts (a) `granted_huge: true`
     // requires the `huge-pages` feature (closing finding M2), and (b) on
-    // Linux/Android, `granted_huge: true` requires five 2-MiB-multiple
-    // quantities (closing finding M1). Both are Correctness-contract checks,
-    // not memory-safety ones (see `from_raw_parts`'s own rustdoc split) —
-    // this guard's job is only to keep the count from drifting silently
-    // again, not to keep it at its pre-#1172 value.
+    // Linux/Android, `granted_huge: true` requires five NAMED 2-MiB-multiple
+    // quantities, only four of which are independent checks — `reservation`
+    // and `base` both being 2-MiB multiples already implies their
+    // difference is too (closing finding M1; task #1196/OX6-L1). Both are
+    // Correctness-contract checks, not memory-safety ones (see
+    // `from_raw_parts`'s own rustdoc split) — this guard's job is only to
+    // keep the count from drifting silently again, not to keep it at its
+    // pre-#1172 value.
     //
     // 7 = 1 (parameter) + 1 (field init) + 5 from the two new assert!
     // blocks: `!granted_huge` (the huge-pages-gate condition), `if

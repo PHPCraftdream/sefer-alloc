@@ -1233,10 +1233,17 @@ impl Reservation {
     /// - **2 MiB-multiple requirement, Linux/Android, `granted_huge == true`
     ///   (task #1172/M1-hybrid).** On `target_os = "linux"` or `"android"`,
     ///   when `granted_huge` is `true`, this constructor additionally
-    ///   `assert!`s that ALL FIVE of `len`, `reservation_len`, `reservation`,
-    ///   `base`, and the offset `base - reservation` are multiples of 2 MiB
+    ///   `assert!`s that `len`, `reservation_len`, `reservation`, `base`,
+    ///   and the offset `base - reservation` are all multiples of 2 MiB
     ///   (this crate's one supported HugeTLB granularity, `MAP_HUGE_2MB`; see
-    ///   `crates/aligned-vmem/src/os/unix.rs`'s `LINUX_HUGE_PAGE_SIZE`).
+    ///   `crates/aligned-vmem/src/os/unix.rs`'s `LINUX_HUGE_PAGE_SIZE`). Five
+    ///   names are listed, but only FOUR are independent: `reservation` and
+    ///   `base` both being 2-MiB multiples already implies their difference
+    ///   `base - reservation` is too, so the offset conjunct can never be
+    ///   the one that fails (task #1196/OX6-L1). It stays in the assert
+    ///   anyway — for the panic message's diagnostics, and because it would
+    ///   become load-bearing again if either address conjunct were ever
+    ///   dropped.
     ///   **Consequence of a violation:** an immediate, loud, attributable
     ///   panic at the call site — not deferred to `Drop`, and not a silent
     ///   leak — because a non-2-MiB-aligned `reservation`/`reservation_len`
@@ -1405,10 +1412,10 @@ impl Reservation {
              or kernel version -- see Reservation::decommit's rustdoc. Enable \
              `huge-pages`, or pass granted_huge: false."
         );
-        // 2. On Linux/Android, when `granted_huge` is true, all FIVE of
-        //    `len`, `reservation_len`, `reservation`, `base`, and the offset
-        //    `base - reservation` must be 2 MiB multiples (this crate's one
-        //    supported HugeTLB granularity). Linux's `mmap(2)`/`munmap(2)`
+        // 2. On Linux/Android, when `granted_huge` is true, `len`,
+        //    `reservation_len`, `reservation`, `base`, and the offset
+        //    `base - reservation` must all be 2 MiB multiples (this crate's
+        //    one supported HugeTLB granularity). Linux's `mmap(2)`/`munmap(2)`
         //    require both the address and the length of a `MAP_HUGETLB`
         //    mapping's release call to be huge-page-size-aligned; violating
         //    this on a REAL HugeTLB mapping would make the eventual `munmap`
@@ -1417,6 +1424,12 @@ impl Reservation {
         //    assert cannot by itself prove the memory really is
         //    `MAP_HUGETLB`-backed (a `# Safety` precondition it has no way
         //    to check) -- only that its shape is consistent with being so.
+        //    Five names are listed below, but only FOUR are independent
+        //    checks (task #1196/OX6-L1): if `res_addr` and `base_addr` are
+        //    both 2-MiB multiples, their difference is necessarily a 2-MiB
+        //    multiple too, so the offset conjunct can never be the one that
+        //    fails -- it is implied by the two address conjuncts, not a
+        //    fifth independent requirement.
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if granted_huge {
             // 2 MiB: this crate's one supported HugeTLB granularity
@@ -1432,6 +1445,13 @@ impl Reservation {
                     && reservation_len.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
                     && res_addr.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
                     && base_addr.is_multiple_of(HUGE_PAGE_SIZE_2MIB)
+                    // Implied by the two conjuncts directly above (res_addr
+                    // and base_addr both 2-MiB-aligned => their difference
+                    // is too), so this can never be the failing conjunct
+                    // today. Kept for the panic message's diagnostics and
+                    // as an explicit statement of intent: if either address
+                    // conjunct above is ever weakened or removed, this one
+                    // becomes load-bearing again.
                     && (base_addr - res_addr).is_multiple_of(HUGE_PAGE_SIZE_2MIB),
                 "Reservation::from_raw_parts: granted_huge=true on Linux/Android \
                  requires len, reservation_len, reservation, base, and the offset \
