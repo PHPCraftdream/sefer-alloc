@@ -17,24 +17,25 @@
 //!   accepted by both Linux `madvise(MADV_DONTNEED)` and Windows
 //!   `VirtualFree(MEM_DECOMMIT)`, so this is real on every platform this
 //!   crate's CI runs, including this task's own Windows verification host.
-//! - [`refused_variant_is_produced_by_a_genuine_os_refusal`] uses the free
-//!   `try_decommit`'s documented lack of a bounds check (unlike
-//!   `Reservation::try_decommit`, which pre-checks `end > self.len()`) to
-//!   reach a range far outside the live `MEM_RESERVE`/`mmap` region with a
-//!   well-formed (page-aligned, in-order) offset pair — `VirtualFree` on
-//!   Windows genuinely refuses this (`ERROR_INVALID_ADDRESS`, verified on
-//!   this task's own Windows host: `Refused(VmemError { os_code: Some(487) })`),
-//!   and Linux `madvise` on an unmapped address is equally documented to
-//!   return `EINVAL`/`ENOMEM`. **Runs on Windows ONLY** —
-//!   `#[cfg(all(windows, not(miri), not(aligned_vmem_mock)))]`, task #1199.
-//!   The Unix half of the claim above was reasoned from `man 2 madvise` and
-//!   never executed until commit `dff7b1d` reached CI, where the same Linux
-//!   runner passed it twice and failed it once across three feature rows:
-//!   `madvise` refuses an unmapped range as documented, but the test's
-//!   "far outside" address is an arithmetic guess (`base + 64 MiB`) whose
-//!   unmappedness is a property of process layout, not of the OS. So
-//!   `Refused` has NO coverage on Unix, and this file does not pretend
-//!   otherwise — see the test's own doc for all three exclusion reasons.
+//! - `refused_variant_is_produced_by_a_genuine_os_refusal` **no longer
+//!   exists as a runnable test (task #1210)** — named in plain backticks,
+//!   NOT as an intra-doc link, precisely because the item it would link to
+//!   is the one this bullet says was deleted. It used to reach a range far
+//!   outside the live `MEM_RESERVE`/`mmap` region via `far_start = 64 *
+//!   1024 * 1024` on a 2 MiB reservation. That is not merely a bad bet on
+//!   process layout (the framing task #1202/#1206 left it at) — computing
+//!   `base.add(far_start)` on a 2 MiB allocation is Undefined Behaviour by
+//!   `pointer::add`'s own contract regardless of whether the resulting
+//!   pointer is ever dereferenced: `add` requires the result to remain
+//!   in bounds of the SAME allocated object (or one byte past its end),
+//!   and `base + 64 MiB` is ~32x past the end of a 2 MiB object. This was
+//!   true on every cfg the old test compiled under, including the
+//!   Windows-only row it was narrowed to by task #1199 — narrowing the
+//!   `#[cfg]` changed which platforms executed the UB, not whether
+//!   computing the pointer was UB. See
+//!   [`refused_variant_has_no_deterministic_coverage_in_this_file`] for
+//!   what replaces it and why real `Refused` coverage needs a seam this
+//!   file's scope does not include.
 //!
 //! One limitation of THIS FILE under `--cfg aligned_vmem_mock`, stated so it
 //! is not mistaken for coverage it does not give: with the mock backend,
@@ -184,149 +185,95 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
     );
 }
 
-/// `DecommitOutcome::Refused`: a genuinely-issued backend call that the OS
-/// refuses.
+/// `DecommitOutcome::Refused` has **no deterministic test coverage in this
+/// file** (task #1210). This is a marker/doc function, not a test — it
+/// exists so the gap has one grep-able name instead of living only in a
+/// commit message.
 ///
-/// Reached through the free `try_decommit`, which — unlike
-/// `Reservation::try_decommit` — has no `end > self.len()` bounds check (its
-/// `# Safety` contract places that obligation on the caller instead), so a
-/// well-formed (page-aligned, `start <= end`) range far outside the live
-/// reservation's actual span reaches the real backend and is refused by the
-/// OS: `VirtualFree(MEM_DECOMMIT)` on an address outside any
-/// `MEM_RESERVE`/`MEM_COMMIT` region returns 0 with `GetLastError() ==
-/// ERROR_INVALID_ADDRESS` (487) on Windows (verified empirically on this
-/// task's Windows development host, see the module doc above); Linux
-/// `madvise(2)` documents `ENOMEM`/`EINVAL` for an address range not mapped
-/// by the calling process.
+/// # Why the old test was removed outright, not merely re-gated
 ///
-/// **What would make this fail if `dispatch_try_decommit` regressed:** if
-/// `libc_madvise`/`winapi_virtual_decommit` reverted to discarding the
-/// syscall's return value (the pre-#1180 behavior this task removes), this
-/// test would observe `Advised` instead of `Refused` and fail — it is a
-/// direct counterfactual on the exact defect (return-value discard) this
-/// task's brief describes.
+/// The previous `refused_variant_is_produced_by_a_genuine_os_refusal`
+/// (removed by task #1210) called
+/// `try_decommit(r.as_ptr(), far_start, far_end)` with `far_start = 64 *
+/// 1024 * 1024` against a `SPAN = 2 * 1024 * 1024` reservation. Internally
+/// that free function's Windows backend
+/// (`decommit_pages_impl`, `src/os/windows.rs`) computes
+/// `base.add(start)` before ever calling `VirtualFree`. `pointer::add`'s own
+/// contract requires the resulting pointer to stay within the bounds of the
+/// SAME allocated object (or one byte past its end) — `base + 64 MiB` is
+/// ~32x past the end of a 2 MiB object, so **computing that pointer is
+/// Undefined Behaviour**, independent of whether `VirtualFree` ever
+/// dereferences it. `VirtualFree` genuinely never dereferences the address
+/// (it only manipulates kernel page-table state) — that part of the old
+/// `# Safety` comment was factually correct about the memory-ACCESS — but
+/// it does not make the pointer ARITHMETIC defined; `add`'s contract is
+/// violated the moment it executes, before any OS call happens. Task #1199
+/// had already narrowed this test's `#[cfg]` to Windows-only after a
+/// same-shape address landed inside a live mapping on Linux in CI
+/// (`dff7b1d`) and got genuinely decommitted instead of refused; that
+/// narrowing changed which platform's ABI happened to make the bet usually
+/// pay off, but never addressed that the address computation itself was
+/// already unsound on every platform, including the one the test kept
+/// running on. So the fix here is not a tighter `#[cfg]` (a third
+/// narrowing after #1197 and #1199 would repeat the same mistake) — it is
+/// deleting the out-of-bounds arithmetic instead of trying to gate it to a
+/// cfg where it happens not to get caught.
 ///
-/// # Why this runs on Windows ONLY (task #1199)
+/// # Why a real replacement needs a seam this file's scope does not have
 ///
-/// Three separate reasons, recorded together because the first fix attempt
-/// (task #1197) named only the first and `main` went red the moment it
-/// reached CI. They are NOT three independently load-bearing conjuncts —
-/// task #1205 corrected that overstatement; see each entry for what it
-/// actually carries:
+/// Every avenue available from `tests/decommit_outcome.rs` alone (no edits
+/// to `src/`, which is out of scope for this file) was checked and rejected:
 ///
-/// 1. **`--cfg aligned_vmem_mock`** — the mock arm of `dispatch_try_decommit`
-///    (`src/api/decommit.rs`) records the call and returns `Advised`
-///    unconditionally, by deliberate design. No syscall, so no refusal to
-///    observe; `Refused` is unreachable by construction. LOAD-BEARING: the
-///    local gate's mock row runs on this Windows host, so `windows` alone
-///    does not exclude it.
-/// 2. **miri** — `src/os/miri.rs` is a third backend with no real OS, exactly
-///    like the mock. Task #1197 gated on `aligned_vmem_mock` alone, i.e. it
-///    enumerated ONE cfg instead of expressing the real condition, and miri
-///    failed on the very next CI run. NOT what fixed that job, though: the
-///    `aligned-vmem-miri` job is `runs-on: ubuntu-latest`, so the `windows`
-///    conjunct already excludes the test there. `not(miri)` is kept because
-///    `src/os/mod.rs` declares `#[cfg(miri)] mod miri;` BEFORE
-///    `#[cfg(all(windows, not(miri)))] mod windows;` — on a Windows host
-///    under miri the OS-less backend wins — but nothing in this repository
-///    runs that configuration today, so it guards a real ordering, not a
-///    real job.
-/// 3. **Unix, the substantive one** — the address this test declares "far
-///    outside the reservation" is an ARITHMETIC GUESS (`base + 64 MiB`), and
-///    whether anything is mapped there is a property of the process's address
-///    space layout, not of the OS contract. On `dff7b1d`'s `test workspace
-///    members` job the SAME Linux runner passed it twice and failed it once:
-///    ok under the default row (3 tests, log line 406), ok under
-///    `--all-features` (4 tests, line 1027), FAILED under
-///    `--features "fault-injection lazy-commit"` (3 tests, line 1611).
-///    **The mechanism is NOT "one fewer test in the binary"** (task #1203
-///    corrected that): the default row compiled the SAME three test
-///    functions as the failing row and passed, so a test-count difference is
-///    held constant across a pass and a fail and cannot be the cause. What
-///    differs is the sequence of allocations each row performs before
-///    reaching this test, hence where `base` lands and whether anything is
-///    mapped 64 MiB past it. Linux `madvise` does refuse an unmapped range
-///    as documented; the premise that fails is "base + 64 MiB is unmapped".
-///    So on Unix this test is non-deterministic BY CONSTRUCTION, and a flaky
-///    test is worse than an absent one (tasks #1030 and #1063 both cost a
-///    round to flakiness).
+/// - **A far-but-in-bounds address is not available.** The whole point of
+///   `Refused` is "the backend was genuinely called and the OS declined it";
+///   any address inside the live reservation's own `MEM_RESERVE` region is
+///   accepted by `VirtualFree(MEM_DECOMMIT)` (decommitting an
+///   already-uncommitted sub-range is a documented safe no-op — see
+///   `decommit_pages_impl`'s own doc comment in `src/os/windows.rs`), so it
+///   cannot produce `Refused`.
+/// - **The `granted_huge`-fabrication pattern** already used by
+///   [`skipped_variant_is_produced_by_a_huge_page_skip`] above only steers
+///   which RUST-LEVEL branch runs (`Reservation::try_decommit`'s huge-skip
+///   check reads `self.granted_huge`, which carries no OS-visible effect —
+///   see that test's own doc for why fabricating it is sound). It cannot
+///   make the OS itself refuse a call, because a huge-flagged reservation on
+///   Windows takes the unconditional Rust-level skip (never reaches the
+///   backend at all — `Reservation::decommit`'s doc, "on Windows, decommit
+///   NEVER works" — `src/reservation.rs`), so that path produces `Skipped`,
+///   not a genuine `Refused`.
+/// - **The withdrawn "reserve, release, then decommit the freed address"
+///   idea** (recorded as a candidate in the superseded version of this
+///   comment, and independently flagged by the orchestrator's own task #1210
+///   brief as WITHDRAWN) carries a re-mapping race: between `release` and
+///   the following `try_decommit`, another thread/allocation in this same
+///   process could re-`VirtualAlloc` over the freed address range, so the
+///   call could just as easily observe a genuine `Advised` against someone
+///   else's fresh mapping. Less reliable than a controlled backend result,
+///   not a fix.
+/// - **`fault_injection.rs`'s `arm_fail_next`/`arm_fail_at`** only intercept
+///   the real COMMIT path (`crate::try_commit_range`, gated on
+///   `lazy-commit`) — see that module's own doc, "the next `n` real commit
+///   calls fail" — there is no decommit-side equivalent to arm.
+/// - **The `aligned_vmem_mock` backend's `Call::Decommit` recording**
+///   (`src/mock.rs`) always resolves to `DecommitOutcome::Advised`
+///   unconditionally by design (`dispatch_try_decommit`'s mock arm,
+///   `src/api/decommit.rs`) — no scripted-failure hook exists for it, unlike
+///   `fail_next_commit`/`fail_next_reserve`.
 ///
-/// **Consequence, stated so it is not mistaken for coverage:** the `Refused`
-/// variant has NO test coverage on Unix. Filed as an open item rather than
-/// papered over — a deterministic Unix refusal (e.g. reserve, release, then
-/// `madvise` the just-released address under the serial lock) is plausible but
-/// unverifiable from this project's Windows development host, so it is future
-/// work with an owner, not a change made blind.
+/// Every option that would produce a genuine `Refused` deterministically —
+/// a decommit-side fault-injection hook mirroring `fault_injection.rs`'s
+/// commit-side one, or a scripted `Call::Decommit` failure in `mock.rs`
+/// mirroring `fail_next_commit` — requires adding a hook to `src/`. That is
+/// out of scope for this file (owned by a sibling agent in this round) and
+/// is reported to the orchestrator as a request rather than implemented
+/// here.
 ///
-/// The gate is a `#[cfg]`, not a runtime early-return, so the test cannot
-/// silently pass-by-doing-nothing on the platforms it does not cover.
-///
-/// **Where this gate's predicate comes from (task #1206).** It is not invented
-/// here: `all(windows, not(miri), not(aligned_vmem_mock))` is the crate's own
-/// expression, used at `src/os/mod.rs:46` to select
-/// `windows::{decommit_pages_impl, recommit_pages_impl}` — i.e. it means "the
-/// real Windows decommit backend is compiled in", and `decommit_pages_impl` is
-/// the very function whose refusal this test observes. If that line's
-/// predicate ever changes, this gate must move with it. (The same expression
-/// is also the body of the public `const fn lazy_commit_is_honored()`,
-/// `src/lazy_commit_is_honored.rs`.)
-#[test]
-#[cfg(all(windows, not(miri), not(aligned_vmem_mock)))]
-fn refused_variant_is_produced_by_a_genuine_os_refusal() {
-    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
-    let ps = page_size();
-
-    // Far outside the live reservation's real span (SPAN == 2 MiB); still a
-    // well-formed range by the free function's own contract (start <= end,
-    // both page-aligned) -- the free `try_decommit` has no bounds check to
-    // reject it before it reaches the real backend.
-    let far_start = 64 * 1024 * 1024;
-    let far_end = far_start + ps;
-
-    // SAFETY: this deliberately VIOLATES `try_decommit`'s `# Safety` contract
-    // ("[base+start, base+end) must lie within its usable span") to observe
-    // the OS's own refusal of an out-of-region decommit -- exactly the
-    // "well-formed range, backend called, OS declines" case `Refused` exists
-    // to report. No out-of-bounds MEMORY ACCESS occurs: `VirtualFree` only
-    // manipulates kernel page-table state for the given address range and
-    // never dereferences the address. `r` is kept alive for the duration
-    // (not dropped early), so the reservation's own valid region is never
-    // disturbed by this call.
-    //
-    // WHAT THIS COMMENT USED TO CLAIM, AND WHY IT WAS FALSE (task #1202).
-    // It said the backend "return[s] a failure code for a range outside any
-    // mapping this process owns". That is not a property of either OS -- it
-    // is a bet that nothing happens to be mapped at `base + 64 MiB`. The bet
-    // LOST on Linux in CI (`dff7b1d`, job `test workspace members`): a
-    // successful `madvise(MADV_DONTNEED)` returns 0, which this crate maps to
-    // `Advised` -- meaning the kernel FOUND a mapping there and DISCARDED its
-    // contents. The test did not merely observe a non-refusal; it threw away
-    // a page of some other allocation's memory. Task #1199 removed the Unix
-    // rows, which removes that live hazard, but NOT the bet: on Windows
-    // `VirtualFree(addr, len, MEM_DECOMMIT)` likewise SUCCEEDS for any
-    // address inside any region this process reserved via `VirtualAlloc`, so
-    // if `base + 64 MiB` ever lands inside the CRT heap or another
-    // reservation, this call decommits live pages of that region and the
-    // assertion below fails with `got Ok(Advised)`. Windows is not
-    // deterministic here -- it is the platform where this bet has not yet
-    // lost. The deterministic replacement (reserve, release, then decommit
-    // the just-released address under this file's `SERIAL` lock) is recorded
-    // as the candidate fix in item 92 of `docs/CORRECTNESS_OPEN_ITEMS.md`;
-    // it applies to Windows exactly as much as to Unix.
-    let out = unsafe { try_decommit(r.as_ptr(), far_start, far_end) };
-    match out {
-        Ok(DecommitOutcome::Refused(e)) => {
-            assert!(
-                !e.is_invalid_argument(),
-                "a backend refusal must carry an OS-side cause, not \
-                 invalid_argument (which would mean the call never reached \
-                 the backend at all)"
-            );
-        }
-        other => panic!(
-            "expected Ok(DecommitOutcome::Refused(_)) for a well-formed \
-             range far outside the reservation's real span, got {other:?}"
-        ),
-    }
-}
+/// **Consequence, stated so it is not mistaken for coverage:** the
+/// `Refused` variant has NO deterministic test coverage anywhere in this
+/// crate as of task #1210. This is strictly worse than the pre-#1210 state
+/// in coverage terms (which had non-deterministic, UB-tainted Windows-only
+/// coverage) but is the correct trade: a test that exhibits Undefined
+/// Behaviour to pass is not coverage, it is a hazard that happened to not
+/// yet have visibly misbehaved on this host.
+#[allow(dead_code)]
+fn refused_variant_has_no_deterministic_coverage_in_this_file() {}
