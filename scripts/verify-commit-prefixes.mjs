@@ -211,6 +211,48 @@
 // Deliberately ZERO cargo invocations — pure `git log`/`git show --stat`
 // text scanning, same design register as verify-gate-report.mjs and
 // verify-perf-gate-stubs.mjs (see both files' own header comments).
+//
+// PATH QUOTING (task #1218): `git` C-quotes any path containing non-ASCII
+// bytes (core.quotepath defaults to true: the path is wrapped in double
+// quotes with every non-ASCII byte octal-escaped), and this repo hit that
+// for real on two Cyrillic-named review files (commits 2074646, 105cf53).
+// Before task #1218 both consumers of git path output were blind to that
+// form, in compounding ways. `changedPaths` passed the quoted line through
+// raw, so `"docs/reviews/…"` failed isMeasurementOnlyPath's ^-or-/
+// segment boundary (a `"` sits in front of `docs/`) and a file plainly
+// under docs/ was classified OUTSIDE the measurement-only prefixes — a
+// false direction-2 finding. And hasNonCommentChange's header regex
+// /^diff --git a\/\S+ b\/(\S+)/ does not match git's quoted header form
+// (`diff --git "a/…" "b/…"`, the a/ and b/ prefixes INSIDE the quotes), so
+// every changed line of such a file was silently attributed to the
+// PREVIOUSLY-SEEN file — which made hasNonCommentChange return false and
+// DOWNGRADED that false positive from ERROR to WARNING: the visible
+// symptom was a non-blocking false warning, the invisible one was that
+// the guard never inspected the file's contents at all.
+//
+// The fix is three deliberate parts, not one config flag:
+//   (a) git() below passes -c core.quotepath=false (plus
+//       -c diff.noprefix=false and -c diff.mnemonicPrefix=false, pinning
+//       the `a/… b/…` header shape against the user's gitconfig) so
+//       non-ASCII paths arrive raw — the live condition in this repo;
+//   (b) unquoteGitPath()/unescapeCStyle() decode git's C-style quoting,
+//       because quotepath=false does NOT disable quoting for a path
+//       containing a literal `"`, a backslash, or a control byte — git
+//       quotes those unconditionally (see unquoteGitPath's doc comment);
+//   (c) diffGitBPath() accepts the quoted header form and RESETS file
+//       attribution to null on any unparseable header, so an unrecognized
+//       shape is skipped outright rather than silently counted against
+//       the previous file — the exact misattribution shape bug 2 was.
+//
+// STILL NOT HANDLED, deliberately: (1) a path whose bytes are not valid
+// UTF-8 — execFileSync(encoding: 'utf8') has already replaced those bytes
+// with U+FFFD before this script sees them; both parse sites decode
+// identically so classification still agrees, but the printed path is
+// lossy; (2) git's `diff --git a/x b/x` header is inherently ambiguous
+// for an UNQUOTED path containing the byte sequence ` b/` — the split
+// takes the LAST ` b/` (git itself cannot round-trip that shape); no
+// space-containing path exists in this repo's history (verified over the
+// full post-rule range 3f7db16..HEAD at fix time).
 
 import { execFileSync } from 'node:child_process';
 import { REPO_ROOT } from './lib.mjs';
@@ -326,7 +368,22 @@ const MEASUREMENT_ONLY_PREFIXES = [
 const MEASUREMENT_ONLY_ROOT_FILES = new Set(['CHANGELOG.md', 'README.md', 'CLAUDE.md']);
 
 function git(args) {
-  return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+  // Task #1218: three -c overrides, all pinning the OUTPUT SHAPE this
+  // script's parsers assume, against the invoking user's gitconfig:
+  //   - core.quotepath=false  — stop non-ASCII bytes from C-quoting a path
+  //     (part (a) of the fix; see the PATH QUOTING header note).
+  //   - diff.noprefix=false / diff.mnemonicPrefix=false — guarantee the
+  //     `diff --git a/<src> b/<dst>` header shape (a user-global
+  //     diff.noprefix=true would emit `diff --git src dst` and break
+  //     diffGitBPath's unquoted branch; the OLD code failed on that shape
+  //     too, by misattribution).
+  // These do NOT make unquoteGitPath()/diffGitBPath() redundant — git
+  // still quotes a path containing `"`, a backslash, or a control byte
+  // even with quotepath=false (parts (b)/(c) of the fix).
+  return execFileSync('git', ['-c', 'core.quotepath=false', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false', ...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
 }
 
 function resolveRange(explicitRange) {
@@ -367,6 +424,116 @@ function isAtOrBeforeRuleCommit(sha) {
 
 function toPosix(p) {
   return p.replace(/\\/g, '/');
+}
+
+/** Undo git's C-style path quoting (git's quote_c_style). A path is
+ * wrapped in double quotes and backslash-escaped whenever it contains a
+ * `"`, a backslash, or a control byte — and, under the default
+ * core.quotepath=true, every non-ASCII byte as well. core.quotepath=false
+ * (set on this script's git() helper, task #1218) removes ONLY the
+ * non-ASCII trigger; the other three quote unconditionally, which is why
+ * this function exists alongside the flag. Escapes handled: \a \b \f \n
+ * \r \t \v \\ \" and \NNN octal byte escapes. Octal escapes are decoded
+ * at the BYTE level and re-decoded as UTF-8, because quotepath=true
+ * escapes each byte of a multi-byte character separately (\320\262 is two
+ * escapes of ONE Cyrillic character). An unquoted input (the common case)
+ * passes through unchanged. */
+function unquoteGitPath(path) {
+  // A path containing a `"` is ALWAYS quoted by git, so real unquoted
+  // output can never START with one — a leading `"` is a reliable quote
+  // marker, and the closing quote is the final character (any earlier
+  // `"` is escaped as `\"`).
+  if (path.length < 2 || !path.startsWith('"') || !path.endsWith('"')) {
+    return path;
+  }
+  return unescapeCStyle(path.slice(1, -1));
+}
+
+/** Decode the escape sequences inside a git-quoted path's body (between
+ * the surrounding double quotes). Collects decoded BYTES, then decodes
+ * the byte string as UTF-8 in one shot; invalid sequences become U+FFFD,
+ * the same replacement execFileSync's utf8 decoding already applies to
+ * raw output, so quoted and unquoted spellings of the same path land on
+ * identical strings. */
+function unescapeCStyle(body) {
+  if (!body.includes('\\')) return body;
+  const SIMPLE_ESCAPES = {
+    a: 0x07, b: 0x08, f: 0x0c, n: 0x0a, r: 0x0d, t: 0x09, v: 0x0b,
+    '\\': 0x5c, '"': 0x22,
+  };
+  const bytes = [];
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== '\\') {
+      for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+      continue;
+    }
+    const esc = body[++i];
+    if (esc === undefined) {
+      bytes.push(0x5c); // lone trailing backslash (malformed): keep literal
+      break;
+    }
+    if (esc in SIMPLE_ESCAPES) {
+      bytes.push(SIMPLE_ESCAPES[esc]);
+      continue;
+    }
+    if (/[0-7]/.test(esc)) {
+      // Git always emits exactly three octal digits; accept 1-3.
+      let oct = esc;
+      while (oct.length < 3 && /[0-7]/.test(body[i + 1] ?? '')) oct += body[++i];
+      bytes.push(parseInt(oct, 8) & 0xff);
+      continue;
+    }
+    // Unknown escape (git never emits one): keep the character as-is.
+    for (const b of Buffer.from(esc, 'utf8')) bytes.push(b);
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+/** Parse the b-side path out of a `diff --git <src> <dst>` header line,
+ * tolerating the C-quoted form on either side — git quotes a path there
+ * under the same conditions as unquoteGitPath, with the a/ or b/ prefix
+ * INSIDE the quotes (`diff --git "a/…" "b/…"`). Returns the b-side path
+ * (unquoted, prefix stripped) or null when the line is not a parseable
+ * header; callers must treat null as "unknown file" (skip its body), NEVER
+ * as "keep attributing to the previous file" — that misattribution is the
+ * exact shape of task #1218's bug 2. */
+function diffGitBPath(line) {
+  const PREFIX = 'diff --git ';
+  if (!line.startsWith(PREFIX)) return null;
+  const rest = line.slice(PREFIX.length);
+
+  if (rest.startsWith('"')) {
+    // C-quoted src: find its UNESCAPED closing quote, then require
+    // ` "<quoted dst>` after it.
+    let close = -1;
+    for (let i = 1; i < rest.length; i++) {
+      if (rest[i] === '\\') {
+        i++; // skip the escaped character
+        continue;
+      }
+      if (rest[i] === '"') {
+        close = i;
+        break;
+      }
+    }
+    if (close === -1) return null;
+    const tail = rest.slice(close + 1);
+    if (tail.length < 3 || !tail.startsWith(' "') || !tail.endsWith('"')) {
+      return null;
+    }
+    const dst = unescapeCStyle(tail.slice(2, -1));
+    return dst.startsWith('b/') ? dst.slice(2) : dst;
+  }
+
+  // Unquoted form. Greedy first group: the split lands on the LAST ` b/`,
+  // which is correct for space-containing paths unless the path itself
+  // contains ` b/` (see the header note — git's format is ambiguous
+  // there, and no such path exists in this repo's history). The old
+  // `\S+` regex could not span a space AT ALL and captured a truncated
+  // path for such files.
+  const m = rest.match(/^a\/(.*) b\/(.*)$/);
+  return m ? m[2] : null;
 }
 
 function isMeasurementOnlyPath(path) {
@@ -420,16 +587,25 @@ function hasNonCommentChange(sha, paths) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Check for file header: "diff --git a/path b/path"
-    const fileMatch = line.match(/^diff --git a\/\S+ b\/(\S+)/);
-    if (fileMatch) {
-      currentFile = toPosix(fileMatch[1]);
+    // File header: `diff --git a/<src> b/<dst>`, where git C-quotes each
+    // side (with the a/ or b/ prefix INSIDE the quotes) when the path
+    // contains `"`, a backslash, or a control byte — even with
+    // core.quotepath=false. Task #1218: the old
+    // /^diff --git a\/\S+ b\/(\S+)/ did not match that quoted form, so
+    // every changed line of a quoted-path file was silently attributed to
+    // the PREVIOUSLY-SEEN file (`\S+` could not span a space in an
+    // unquoted path either). An unparseable header now RESETS currentFile
+    // to null — its body is skipped outright, never counted against the
+    // previous file.
+    if (line.startsWith('diff --git')) {
+      const bPath = diffGitBPath(line);
+      currentFile = bPath === null ? null : toPosix(bPath);
       continue;
     }
 
     // Skip if we're not in a file we care about, or if it's a hunk header
     if (!currentFile || !nonMeasurementPaths.includes(currentFile)) continue;
-    if (line.startsWith('@@') || line.startsWith('diff --git')) continue;
+    if (line.startsWith('@@')) continue;
     if (line.startsWith('---') || line.startsWith('+++')) continue;
 
     // Check for actual changed lines (added or removed, not context)
@@ -458,7 +634,17 @@ function hasNonCommentChange(sha, paths) {
 
 function changedPaths(sha) {
   const out = git(['show', '--name-only', '--format=', sha]).trim();
-  return out ? out.split(/\r?\n/).filter(Boolean).map(toPosix) : [];
+  // Task #1218: a line may still be C-quoted even with
+  // core.quotepath=false (a path containing `"`, a backslash, or a
+  // control byte is quoted unconditionally). Before the fix, the quoted
+  // form passed through raw, so a file plainly under docs/ (e.g. the
+  // Cyrillic review file of 105cf53, spelled
+  // "docs/reviews/…-\320\241….md") failed isMeasurementOnlyPath's
+  // ^-or-/ segment boundary — the leading `"` sits in front of `docs/` —
+  // and was classified as OUTSIDE the measurement-only prefixes.
+  return out
+    ? out.split(/\r?\n/).filter(Boolean).map((l) => toPosix(unquoteGitPath(l)))
+    : [];
 }
 
 const PERF_BARE_RE = /^perf:/;
@@ -826,5 +1012,125 @@ function main() {
   console.log(`\n[verify-commit-prefixes] PASS${warnings.length > 0 ? ' (with warnings above)' : ''}`);
   process.exit(0);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Built-in self-test — runs FIRST, always (task #1218; same posture as
+// scripts/verify-vmem-page-constant-call-sites.mjs's phase-1 fixture
+// self-test: a parser that has never been proven against the exact byte
+// shapes it exists to handle is unproven — and the regression this one
+// pins made the guard claim a property it did not have, reporting a file
+// under docs/ as outside docs/ while simultaneously never inspecting that
+// file's diff at all). The 105cf53-derived fixtures are byte-exact copies
+// of what git printed for that commit's Cyrillic-named review file under
+// default core.quotepath=true; the residual-form fixtures (quote mark,
+// control byte, backslash, space) are constructed per git's quote_c_style
+// rules — the forms that stay quoted EVEN WITH core.quotepath=false. No
+// such path exists in this repo's history yet; the parser must not be
+// blind to the class merely because the repo has been lucky so far (it
+// was not lucky twice: 2074646, 105cf53). Deliberately quiet on pass
+// (one summary line — this runs before every lint, including check-all
+// step 37 and CI) and loud on failure (expected/got per fixture, exit 1
+// before any commit is scanned).
+// ─────────────────────────────────────────────────────────────────────────────
+function runQuotingSelfTest() {
+  const ESCAPED =
+    'docs/reviews/2026-08-20-073908-aligned-vmem-publication-audit-' +
+    '\\320\\241\\320\\276\\320\\273-\\320\\272\\320\\276\\320\\264\\320\\265\\320\\272\\321\\201.md';
+  const QUOTED = `"${ESCAPED}"`;
+  const CYRILLIC =
+    'docs/reviews/2026-08-20-073908-aligned-vmem-publication-audit-Сол-кодекс.md';
+  const QUOTED_HEADER = `diff --git "a/${ESCAPED}" "b/${ESCAPED}"`;
+
+  const cases = [
+    {
+      name: 'unquote decodes the quotepath=true octal form (105cf53, byte-exact)',
+      actual: unquoteGitPath(QUOTED),
+      expected: CYRILLIC,
+    },
+    {
+      name: 'unquote decodes a residual quote-mark path (still quoted with quotepath=false)',
+      actual: unquoteGitPath('"we\\"ird.md"'),
+      expected: 'we"ird.md',
+    },
+    {
+      name: 'unquote decodes residual control-byte/backslash escapes',
+      actual: unquoteGitPath('"ta\\tb\\\\sec.md"'),
+      expected: 'ta\tb\\sec.md',
+    },
+    {
+      name: 'unquote passes an unquoted path through unchanged',
+      actual: unquoteGitPath('docs/CORRECTNESS_OPEN_ITEMS.md'),
+      expected: 'docs/CORRECTNESS_OPEN_ITEMS.md',
+    },
+    {
+      name: 'BUG 1: the unquoted 105cf53 path classifies as measurement-only',
+      actual: isMeasurementOnlyPath(unquoteGitPath(QUOTED)),
+      expected: true,
+    },
+    {
+      name: 'BUG 1 mechanism: the STILL-quoted form does NOT classify — unquoting is load-bearing',
+      actual: isMeasurementOnlyPath(QUOTED),
+      expected: false,
+    },
+    {
+      name: 'BUG 2: the quoted diff --git header yields the b-side path (105cf53, byte-exact)',
+      actual: diffGitBPath(QUOTED_HEADER),
+      expected: CYRILLIC,
+    },
+    {
+      name: 'header: unquoted form still parses (regression guard)',
+      actual: diffGitBPath('diff --git a/src/lib.rs b/src/lib.rs'),
+      expected: 'src/lib.rs',
+    },
+    {
+      name: 'header: space-containing unquoted path parses (the old \\S+ truncated it)',
+      actual: diffGitBPath('diff --git a/docs/my review.md b/docs/my review.md'),
+      expected: 'docs/my review.md',
+    },
+    {
+      name: 'header: quoted path with an escaped quote mark parses',
+      actual: diffGitBPath('diff --git "a/docs/we\\"ird.md" "b/docs/we\\"ird.md"'),
+      expected: 'docs/we"ird.md',
+    },
+    {
+      name: 'header: quoted rename strips the b/ prefix',
+      actual: diffGitBPath('diff --git "a/old.md" "b/new.md"'),
+      expected: 'new.md',
+    },
+    {
+      name: 'header: unparseable header returns null (skip the body, never misattribute)',
+      actual: diffGitBPath('diff --git "a/unclosed b/x'),
+      expected: null,
+    },
+    {
+      name: 'header: non-header line returns null',
+      actual: diffGitBPath('+++ b/src/lib.rs'),
+      expected: null,
+    },
+  ];
+
+  const failed = cases.filter((c) => c.actual !== c.expected);
+  if (failed.length > 0) {
+    console.error(
+      `\n[verify-commit-prefixes] self-test FAILED (${cases.length - failed.length}/${cases.length} git-path-quoting fixtures):`,
+    );
+    for (const c of failed) {
+      console.error(`  FAIL: ${c.name}`);
+      console.error(`    expected: ${JSON.stringify(c.expected)}`);
+      console.error(`    actual:   ${JSON.stringify(c.actual)}`);
+    }
+    console.error(
+      '\n[verify-commit-prefixes] the git-path-quoting parser (task #1218) disagrees ' +
+        'with reality; fix the parser, not the fixtures — the 105cf53 ones are ' +
+        'byte-exact shapes git printed. No commit was scanned.',
+    );
+    process.exit(1);
+  }
+  console.log(
+    `[verify-commit-prefixes] self-test OK (${cases.length}/${cases.length} git-path-quoting fixtures, task #1218)`,
+  );
+}
+
+runQuotingSelfTest();
 
 main();
