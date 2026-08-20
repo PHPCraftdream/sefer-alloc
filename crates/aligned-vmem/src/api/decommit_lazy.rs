@@ -60,7 +60,34 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///
 /// # Safety
 ///
-/// Same as [`decommit`](crate::api::decommit).
+/// Same contract as [`decommit`](crate::api::decommit), with the bound
+/// restated here in full rather than only referenced (task #1235,
+/// applying task #1213/L2's rule — the one task #1229/F6 already applied
+/// to `try_recommit`): this function does not forward through
+/// [`decommit`](crate::api::decommit); its non-mock arm calls the same
+/// backend, `decommit_pages_impl(base, start, end, DecommitKind::Lazy)`,
+/// directly, and on Windows there is no lazy/eager split — the identical
+/// `base.add(start)` arithmetic before `VirtualFree(MEM_DECOMMIT)` runs
+/// from THIS entry point — so a caller auditing only this section must
+/// see the bound, not chase a reference to another function's
+/// `# Safety`:
+///
+/// - `base` must be the [`as_ptr`](crate::Reservation::as_ptr) of a live
+///   reservation the caller owns.
+/// - **`end <= reservation.len()`** (the reservation's usable span, in
+///   bytes) — MANDATORY, for the reasons [`decommit`](crate::api::decommit)'s
+///   own `# Safety` bullet states in full (both real backends compute
+///   `base.add(start)` and nothing from `end`; with `start <= end` the
+///   bound is what keeps that offset in-bounds and the OS call's span
+///   `[base+start, base+end)` inside the reservation). Violating it is
+///   undefined behavior, distinct from — and a strictly worse violation
+///   than — the `page_size()`-multiple / `start <= end` range contract,
+///   which here (the deliberate task #1072 difference above) is a silent
+///   no-op on EVERY build profile, never UB.
+/// - `[base+start, base+end)` must contain no data the caller still
+///   needs — its contents are discarded (on the lazy `MADV_FREE`-family
+///   paths the discard is deferred and a write before reclamation cancels
+///   it; see the summary above for the per-platform split).
 pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
     let ps = page_size_or_poison();
     // Failed OS page-size query: fail closed (see `decommit`). Silent on

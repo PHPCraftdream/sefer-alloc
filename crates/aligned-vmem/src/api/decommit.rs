@@ -37,17 +37,35 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   reservation the caller owns.
 /// - **`end <= reservation.len()`** (the reservation's usable span, in
 ///   bytes) — this is a MANDATORY precondition of the pointer arithmetic
-///   this function performs internally (`base.add(start)` /
-///   `base.add(end)`), not merely a functional/behavioral preference. This
-///   requirement is stated here explicitly (task #1213/L2) rather than left
-///   to the summary line above ("within the span") — for an `unsafe fn`,
-///   a bounds requirement that determines whether pointer arithmetic is
-///   even defined belongs inside `# Safety` itself, restated in full, not
-///   referenced from an adjacent paragraph a caller auditing only this
-///   section could miss. Passing `end > reservation.len()` is undefined
-///   behavior (out-of-bounds pointer arithmetic), distinct from — and a
-///   strictly worse violation than — the `page_size()`-multiple contract
-///   below, which is merely a silent no-op on violation, never UB.
+///   the backends perform (`base.add(start)` in BOTH real backends'
+///   `decommit_pages_impl` — Windows (`src/os/windows.rs`) before its
+///   `VirtualFree(MEM_DECOMMIT)` call, Unix (`src/os/unix.rs`) before its
+///   `madvise` call; the miri backend is a no-op that ignores `base`, and
+///   under `aligned_vmem_mock` no backend call happens at all, but the
+///   contract is stated platform-independently), not merely a
+///   functional/behavioral preference. Task #1235 correction: since task
+///   #1213/L2 (`1522d25`) this bullet enumerated the arithmetic as
+///   "`base.add(start)` / `base.add(end)`" — the second half never
+///   existed. No backend or FFI wrapper forms a pointer from `end` (both
+///   `decommit_pages_impl` bodies and the `winapi_virtual_decommit` /
+///   `libc_madvise` wrappers they call were read in full, task #1235):
+///   `end`'s only arithmetic role is the subtraction `end - start` —
+///   which cannot wrap on this function's paths, since this function
+///   returns on `start >= end` before the backend is reached — whose
+///   result is handed to the OS as a byte LENGTH. With `start <= end`,
+///   this single bound is what keeps the one offset that IS computed,
+///   `base.add(start)`, inside the allocation, and what keeps the OS
+///   call's span `[base+start, base+end)` inside the reservation. This
+///   requirement is stated here explicitly (task #1213/L2) rather than
+///   left to the summary line above ("within the span") — for an `unsafe
+///   fn`, a bounds requirement that determines whether pointer arithmetic
+///   is even defined belongs inside `# Safety` itself, restated in full,
+///   not referenced from an adjacent paragraph a caller auditing only
+///   this section could miss. Passing `end > reservation.len()` is
+///   undefined behavior (out-of-bounds pointer arithmetic), distinct from
+///   — and a strictly worse violation than — the `page_size()`-multiple
+///   contract below, which is merely a silent no-op on violation, never
+///   UB.
 /// - `[base+start, base+end)` must contain no data the caller still needs —
 ///   its contents are discarded.
 ///

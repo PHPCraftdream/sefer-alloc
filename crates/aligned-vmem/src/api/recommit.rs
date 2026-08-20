@@ -33,7 +33,8 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   was the only range-taking free function whose `# Safety` lacked the
 ///   bound: [`decommit`](crate::api::decommit)'s states it in full (task
 ///   #1213/L2, whose wording this matches), `try_decommit` and
-///   `decommit_lazy` carry it (restated in prose / by explicit
+///   `decommit_lazy` carry it (restated in prose / in full — the latter
+///   since task #1235, which replaced `decommit_lazy`'s earlier bare
 ///   same-contract reference), and the
 ///   [`commit_range`](crate::api::commit_range) pair spells it out as
 ///   `end <= len`. For an `unsafe fn`, a
