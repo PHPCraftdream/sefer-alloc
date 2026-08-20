@@ -40,8 +40,10 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   `end <= len`. For an `unsafe fn`, a
 ///   bounds requirement that determines whether pointer arithmetic is even
 ///   defined belongs inside `# Safety` itself, restated in full. Passing
-///   `end > reservation.len()` is undefined behavior (out-of-bounds pointer
-///   arithmetic), distinct from — and a strictly worse violation than —
+///   `end > reservation.len()` is undefined behavior (with `start <= end`
+///   the bound is what keeps the backend's `base.add(start)` offset
+///   in-bounds and the OS call's span `[base+start, base+end)` inside the
+///   reservation), distinct from — and a strictly worse violation than —
 ///   the `page_size()`-multiple contract below, which merely returns
 ///   `false` on violation, never UB. Callers through the safe
 ///   [`Reservation::recommit`](crate::Reservation::recommit) /
@@ -77,8 +79,10 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 /// [`as_ptr`](crate::Reservation::as_ptr) of a live reservation whose
 /// `[base+start, base+end)` range was previously decommitted, and
 /// **`end <= reservation.len()`** — passing a larger `end` is undefined
-/// behavior (out-of-bounds pointer arithmetic in the backend's
-/// `base.add(start)`), a strictly worse violation than the
+/// behavior (the backend computes `base.add(start)` and nothing from
+/// `end`; with `start <= end` the bound is what keeps that offset
+/// in-bounds and the OS call's span `[base+start, base+end)` inside the
+/// reservation), a strictly worse violation than the
 /// `page_size()`-multiple / `start <= end` contract, which merely returns
 /// `Err(VmemError::invalid_argument())`, never UB.
 pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {

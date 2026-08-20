@@ -62,10 +62,9 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///   is even defined belongs inside `# Safety` itself, restated in full,
 ///   not referenced from an adjacent paragraph a caller auditing only
 ///   this section could miss. Passing `end > reservation.len()` is
-///   undefined behavior (out-of-bounds pointer arithmetic), distinct from
-///   — and a strictly worse violation than — the `page_size()`-multiple
-///   contract below, which is merely a silent no-op on violation, never
-///   UB.
+///   undefined behavior, distinct from — and a strictly worse violation
+///   than — the `page_size()`-multiple contract below, which is merely a
+///   silent no-op on violation, never UB.
 /// - `[base+start, base+end)` must contain no data the caller still needs —
 ///   its contents are discarded.
 ///
