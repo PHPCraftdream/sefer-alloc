@@ -208,18 +208,29 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
 ///
 /// # Why this runs on Windows ONLY (task #1199)
 ///
-/// Three separate reasons, each independently sufficient — recorded together
-/// because the first fix attempt (task #1197) named only the first and `main`
-/// went red on the other two the moment it reached CI:
+/// Three separate reasons, recorded together because the first fix attempt
+/// (task #1197) named only the first and `main` went red the moment it
+/// reached CI. They are NOT three independently load-bearing conjuncts —
+/// task #1205 corrected that overstatement; see each entry for what it
+/// actually carries:
 ///
 /// 1. **`--cfg aligned_vmem_mock`** — the mock arm of `dispatch_try_decommit`
 ///    (`src/api/decommit.rs`) records the call and returns `Advised`
 ///    unconditionally, by deliberate design. No syscall, so no refusal to
-///    observe; `Refused` is unreachable by construction.
+///    observe; `Refused` is unreachable by construction. LOAD-BEARING: the
+///    local gate's mock row runs on this Windows host, so `windows` alone
+///    does not exclude it.
 /// 2. **miri** — `src/os/miri.rs` is a third backend with no real OS, exactly
 ///    like the mock. Task #1197 gated on `aligned_vmem_mock` alone, i.e. it
 ///    enumerated ONE cfg instead of expressing the real condition, and miri
-///    failed on the very next CI run.
+///    failed on the very next CI run. NOT what fixed that job, though: the
+///    `aligned-vmem-miri` job is `runs-on: ubuntu-latest`, so the `windows`
+///    conjunct already excludes the test there. `not(miri)` is kept because
+///    `src/os/mod.rs` declares `#[cfg(miri)] mod miri;` BEFORE
+///    `#[cfg(all(windows, not(miri)))] mod windows;` — on a Windows host
+///    under miri the OS-less backend wins — but nothing in this repository
+///    runs that configuration today, so it guards a real ordering, not a
+///    real job.
 /// 3. **Unix, the substantive one** — the address this test declares "far
 ///    outside the reservation" is an ARITHMETIC GUESS (`base + 64 MiB`), and
 ///    whether anything is mapped there is a property of the process's address

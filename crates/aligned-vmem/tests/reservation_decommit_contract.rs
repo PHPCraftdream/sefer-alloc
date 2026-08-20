@@ -509,13 +509,12 @@ fn method_try_decommit_reports_malformed_range_on_huge_flagged_reservation() {
     //   but only four independent checks — `reservation` and `base` both
     //   being 2-MiB multiples already implies their difference is too;
     //   task #1196/OX6-L1). Both PANIC immediately on violation — a louder
-    //   failure mode than the other readers above (which only change a
-    //   query result or suppress a syscall), but still not memory-unsafe:
-    //   the panic happens before
-    //   `Self { .. }` is constructed, so no `Reservation` with inconsistent
-    //   state is ever observable. This is exactly why this test is gated on
-    //   `huge-pages` and uses a `size == 2 MiB` base reservation — both
-    //   asserts are satisfied by construction, so this synthesis reaches
+    //   failure mode than the other readers above (which only change a query
+    //   result or suppress a syscall), but still not memory-unsafe: the panic
+    //   happens before `Self { .. }` is constructed, so no `Reservation` with
+    //   inconsistent state is ever observable. This is exactly why this test
+    //   is gated on `huge-pages` and uses a `size == 2 MiB` base reservation —
+    //   both asserts are satisfied by construction, so this synthesis reaches
     //   the SAME two Correctness-contract violations (1) and (2) above that
     //   it always has, without also tripping either of `from_raw_parts`'s
     //   own two new panics.
