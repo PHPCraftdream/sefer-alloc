@@ -12,10 +12,14 @@ use crate::error::VmemError;
 /// for a malformed range, `Err(VmemError::os_refusal_unknown_code())` if the
 /// one-time OS page-size query failed) — see
 /// [`try_decommit`](crate::try_decommit)'s own `# Errors` section. What is
-/// new is the `Ok` payload: three variants that distinguish "nothing was
-/// asked of the OS" from "the OS was asked and refused" from "the OS was
-/// asked and accepted", where the pre-#1180 signature collapsed all three
-/// into the same `Ok(())`.
+/// new is the `Ok` payload: three variants that distinguish "no backend
+/// call was made" from "the backend call was made and refused" from "the
+/// SELECTED BACKEND accepted the request", where the pre-#1180 signature
+/// collapsed all three into the same `Ok(())`. That acceptance does NOT
+/// by itself imply that a real OS syscall ran — under the
+/// `aligned_vmem_mock` cfg or miri no syscall runs at all, and `Advised`
+/// is the simulated backend's own unconditional answer (see
+/// [`DecommitOutcome::Advised`]'s own doc for the per-backend meaning).
 ///
 /// **None of the three variants is a claim about physical memory having
 /// actually been reclaimed.** Decommit is best-effort by nature (see

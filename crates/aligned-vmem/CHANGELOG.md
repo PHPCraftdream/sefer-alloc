@@ -127,8 +127,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `DecommitOutcome` enum (`#[non_exhaustive]`) names three cases the old bare
   `Ok(())` collapsed into one indistinguishable signal: `Skipped` (no backend
   call was made — an empty range, or a huge-page reservation's Rust-level
-  skip), `Advised` (the backend call was made and the OS/kernel accepted it —
-  does **not** mean physical pages were actually reclaimed; task #1174
+  skip), `Advised` (the backend call was made and the selected backend
+  accepted it — under the native backend the kernel/OS accepted a real
+  syscall, but under the `aligned_vmem_mock` cfg or miri no syscall runs at
+  all and `Advised` is the simulated backend's unconditional answer; does
+  **not** mean physical pages were actually reclaimed; task #1174
   (below, "Fixed") closed the neighboring zero-fill-on-next-access question
   for the eligible-range huge-page case, but physical reclaim to the OS/pool
   remains unproven and is not this variant's claim), and `Refused(VmemError)`
