@@ -2940,8 +2940,27 @@ jobs:
       # bench-internals) — mock is no longer a Cargo feature (task #962,
       # converted to the build-time --cfg aligned_vmem_mock flag, outside
       # cargo-hack's feature space entirely). Invocation count shrank
-      # accordingly; re-derive via --dry-run if a specific number is needed
-      # (this repo's convention avoids hardcoded counts per task #776/F10). Added to the same
-      # weekly cadence as the root crate's powerset job for consistency.
+      # accordingly; re-derive via --print-command-list if a specific number
+      # is needed (this repo's convention avoids hardcoded counts per task
+      # #776/F10; --dry-run, named in this comment before task #1242, no
+      # longer exists in current cargo-hack — it is forwarded to cargo, which
+      # rejects it). Added to the same weekly cadence as the root crate's
+      # powerset job for consistency.
+      #
+      # Task #1242 (acting on task #1240's measurement,
+      # docs/reviews/2026-08-20-feature-powerset-test-target-gap.md):
+      # --no-dev-deps was REPLACED by --all-targets — cargo-hack
+      # hard-rejects the pair ("--no-dev-deps may not be used together with
+      # --all-targets"), and the dropped flag protected nothing here
+      # (aligned-vmem has an empty [dependencies] section). The step now
+      # also typechecks tests/benches/examples per combination — the #1231
+      # class (gate mismatches visible only under feature combinations no
+      # hand-written row builds) — at measured-trivial cost (same invocation
+      # count; ~1.45x wall in #1240's local measurement). The ROOT step
+      # above deliberately KEEPS --no-dev-deps: the root crate is born-red
+      # under --all-targets (two wrongly-gated test files plus a deliberate
+      # compile-fail example tripwire) — that is a decision, not an
+      # oversight; see docs/CORRECTNESS_OPEN_ITEMS.md item 95 before
+      # "finishing" this.
       - name: cargo hack check --feature-powerset --depth 2 (aligned-vmem)
-        run: cargo hack check --feature-powerset --depth 2 -p aligned-vmem --no-dev-deps
+        run: cargo hack check --feature-powerset --depth 2 -p aligned-vmem --all-targets

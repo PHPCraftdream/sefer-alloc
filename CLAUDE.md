@@ -402,21 +402,39 @@ Core instructions, mandatory for all code in this repository. They
   the same underlying problem in miniature (hand-written rows drift out of
   sync with feature-list changes with no automatic signal). **Evaluation:**
   `cargo hack check --feature-powerset --depth 2 --no-dev-deps` against this
-  crate's ~26 top-level features resolves to **308** `cargo check`
-  invocations (measured locally via `cargo hack ... --dry-run` before
-  installing cargo-hack via `cargo install cargo-hack --locked`; the CI job
-  itself uses `taiki-e/install-action@v2`, the prebuilt-binary installer
-  already used for `cargo-deny` in this same workflow, not a from-source
-  build). `check`-only (not `build`/`test`) keeps each invocation cheap
-  (typecheck only), but 308 of them is real added CI-minutes cost — too much
-  to add to the per-PR path without materially slowing every PR. **Decision:**
+  crate's top-level features resolves to a few hundred `cargo check`
+  invocations (308 at adoption, 365 as of 2026-08-20 — the count drifts
+  upward as features accrete, so re-derive it via `cargo hack ...
+  --print-command-list | grep -c '^cargo check'` rather than quoting either
+  figure, per this repo's no-hardcoded-counts convention, task #776/F10;
+  the adoption figure was measured locally, before installing cargo-hack
+  via `cargo install cargo-hack --locked`, using `cargo hack ... --dry-run`
+  — a flag current cargo-hack no longer ships: it is forwarded to cargo,
+  which rejects it. `--print-command-list` is today's equivalent. The CI
+  job itself uses `taiki-e/install-action@v2`, the prebuilt-binary
+  installer already used for `cargo-deny` in this same workflow, not a
+  from-source build). `check`-only (not `build`/`test`) keeps each invocation cheap
+  (typecheck only), but hundreds of them is real added CI-minutes cost — too
+  much to add to the per-PR path without materially slowing every PR. **Decision:**
   scheduled weekly (`schedule: cron '0 6 * * 1'`, the same trigger already
   wired into `ci.yml` for the `numa-real-kernel` job) plus `workflow_dispatch`
   for on-demand runs — see the `feature-powerset` job in `.github/workflows/ci.yml`.
   This closes the actual gap (a bug that survived a full round undetected)
-  on a bounded weekly cadence without taxing every push/PR with ~300 extra
-  check invocations; `workflow_dispatch` lets a human force a run before a
-  promotion decision if desired.
+  on a bounded weekly cadence without taxing every push/PR with several
+  hundred extra check invocations; `workflow_dispatch` lets a human force a
+  run before a promotion decision if desired. **Scope of that coverage
+  (clarified 2026-08-20, tasks #1240/#1242): as adopted — and for the root
+  crate, still today — the job builds LIB+BINS ONLY**: plain `cargo check`
+  plus `--no-dev-deps` never compiles `tests/`/`benches/`/`examples/`, so
+  test-target feature combinations (the #1231 class: an integration-test
+  `#[cfg]` mismatch visible only under a combination no hand-written row
+  builds) are covered only by hand-written rows, not by this job. The
+  `aligned-vmem` step moved to `--all-targets` (task #1242) to close
+  exactly that gap for that crate; the root-crate step deliberately stays
+  `--no-dev-deps` because the root test/example surface is born-red under
+  `--all-targets` — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 95 before
+  "finishing" that change. The R13-12 motivation above was a library-level
+  E0599, which the job as adopted does and did cover.
 - **Per-round manifest artifact (R34-24/task #543).** Every round that
   lands ≥ 1 commit produces a manifest at
   `docs/perf/round-manifests/R{N}_MANIFEST.md` recording, in one

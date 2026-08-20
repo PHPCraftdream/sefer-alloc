@@ -185,7 +185,7 @@ directly, which still works and needs no table at all).
   are single confirmed platform-divergence bugs (Windows decommit crash;
   numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
   shape.
-- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (18
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (19
   cards) — local/CI gate wiring & sentinel/guard-script coverage.
   Criterion: whether an existing test, oracle, or guard script actually
   RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
@@ -363,6 +363,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 92 | `TRACKED_ci_gate_coverage.md` |
 | 93 | `TRACKED_publish_readiness.md` |
 | 94 | `TRACKED_publish_readiness.md` |
+| 95 | `TRACKED_ci_gate_coverage.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
@@ -387,7 +388,7 @@ grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/corre
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-94, plus 85 which sits out of numeric order between 46 and 90 in
+76, 78-95, plus 85 which sits out of numeric order between 46 and 90 in
 `TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the
 pre-#1222 files and rotted at the thematic re-split — corrected at #1239)
 **= the total open-card count, deliberately not typed here** — for the
