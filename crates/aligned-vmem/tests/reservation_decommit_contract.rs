@@ -63,6 +63,20 @@ const SPAN: usize = 2 * 1024 * 1024;
 ///   kept as insurance — a lock whose only stated reason is false is exactly
 ///   the defect class this file's own history is made of, and keeping it
 ///   would serialize the 6-test mock+release row for nothing.
+/// - `method_try_decommit_reports_violations_and_never_panics` held this
+///   lock from the file's creation (task #1079) until task #1246 — the one
+///   instance #1241's sweep missed (post-OH12 review, task #1245/F4). By
+///   this census's own criterion it needs none: its reservation is ordinary
+///   (`reserve_aligned`, so `is_huge()` is false and the
+///   `HUGE_DECOMMIT_ATTEMPTS` increment inside `Reservation::try_decommit`
+///   is unreachable), its mock-log entries are thread-local, and the
+///   `bench-internals` counters its `reserve_aligned` and two well-formed
+///   calls do move (exact-reserve and madvise/VirtualFree-decommit
+///   attempts) have no reader in this binary — their readers live in other
+///   test files, each its own binary and process. Lock REMOVED, same class
+///   as the two above. (The fault-injection one-shot `FAIL_NEXT_DECOMMIT`
+///   is likewise irrelevant here: no test in this binary arms it, and an
+///   un-armed flag is never written by the consuming `fetch_update`.)
 /// - The debug-only trio (`method_trips_the_tripwire_on_a_violated_range_in_debug`,
 ///   `method_bounds_check_precedes_the_tripwire_in_debug`,
 ///   `method_trips_on_an_empty_misaligned_range_in_debug`) also produce log
@@ -76,6 +90,19 @@ const SPAN: usize = 2 * 1024 * 1024;
 ///   so this file's releases need no lock for them (unlike `tests/smoke.rs`,
 ///   where two release-delta readers live in the same binary -- see that
 ///   file's own SERIAL doc).
+///
+/// The static's `#[cfg]` (task #1246) is exactly the disjunction of its
+/// users' gates — `all(aligned_vmem_mock, not(debug_assertions))` for the
+/// mock release reader above, `feature = "huge-pages"` for the two
+/// huge-counter readers — so it exists whenever any lock-taking test does
+/// and never otherwise. Until task #1246 it was ungated because
+/// `method_try_decommit_reports_violations_and_never_panics` (which needs
+/// no lock; see its census bullet) was an unconditional user in every row;
+/// removing that lock would otherwise leave the static dead under
+/// `-D warnings` in the default-features clippy row (ci.yml's aligned-vmem
+/// clippy job) — the mirror image of the historical E0425 that job's own
+/// header records.
+#[cfg(any(all(aligned_vmem_mock, not(debug_assertions)), feature = "huge-pages"))]
 static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The debug tripwire must fire THROUGH the safe method: `Reservation::decommit`
@@ -235,7 +262,10 @@ fn method_records_nothing_for_a_violated_range_in_release_mock() {
 /// above).
 #[test]
 fn method_try_decommit_reports_violations_and_never_panics() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // task #1079 took SERIAL here at the file's creation; task #1246 removed
+    // it — the one instance #1241's sweep missed (post-OH12 review F4). See
+    // SERIAL's own census for why no reader in any binary this test inhabits
+    // reads anything it moves.
     let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     assert!(

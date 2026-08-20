@@ -2484,7 +2484,9 @@ jobs:
     # PER-PR (not weekly), mirroring the `tsan` job just above: both are
     # nightly + `-Zbuild-std --target x86_64-unknown-linux-gnu` + a
     # `-Zsanitizer` flag of IDENTICAL compile cost. The weekly cadence that
-    # governs `feature-powerset` (308 `cargo check` invocations) and
+    # governs `feature-powerset` (hundreds of `cargo check` invocations — that
+    # job's header below carries the dated count and the re-derivation recipe,
+    # per the no-hardcoded-counts convention, task #776/F10) and
     # `numa-real-kernel` (hardware-specific, heavy) does NOT apply here: the ASan
     # harness is 2 test invocations with ~0.01s test runtime each (the ENTIRE
     # cost is the `-Zbuild-std` std rebuild that `tsan` already pays per-PR).
@@ -2904,14 +2906,24 @@ jobs:
     #
     # Evaluation (documented per the task brief, since this is new CI
     # surface): `cargo hack check --feature-powerset --depth 2 --no-dev-deps`
-    # against this crate's ~26 top-level Cargo.toml features resolves to
-    # **308** distinct `cargo check` invocations (confirmed via `cargo hack
-    # ... --dry-run` locally — depth-2 keeps it polynomial, C(26,2)+26+1,
-    # not the full 2^26 exponential powerset `--depth` unbounded would be).
+    # against this crate's top-level Cargo.toml features resolves to a few
+    # hundred distinct `cargo check` invocations (308 at adoption, 365 as of
+    # 2026-08-20 — the count drifts upward as features accrete, so re-derive
+    # it via `cargo hack ... --print-command-list | grep -c '^cargo check'`
+    # rather than quoting either figure, per this repo's no-hardcoded-counts
+    # convention, task #776/F10; the adoption figure was measured with
+    # `cargo hack ... --dry-run`, a flag current cargo-hack no longer ships
+    # — it is forwarded to cargo, which rejects it — and
+    # `--print-command-list` is today's equivalent). Depth-2 keeps the sweep
+    # polynomial — on the order of C(n,2)+n+1 invocations, where n is the
+    # count of `[features]` entries in the root Cargo.toml (29 as of
+    # 2026-08-20; re-derive via `awk '/^\[features\]/{f=1;next} /^\[/{f=0}
+    # f && /^[a-z0-9-]+ *=/{c++} END{print c}' Cargo.toml`) — not the full
+    # 2^n exponential powerset `--depth` unbounded would be.
     # `cargo check` (not `build`/`test`) per combination keeps each individual
     # invocation cheap (typechecking only, no codegen/link/test-binary build),
-    # but 308 of them is still substantial per-PR cost on top of the existing
-    # ~13-job matrix. Decision: run this WEEKLY (mirroring the
+    # but a few hundred of them is still substantial per-PR cost on top of
+    # the existing ~13-job matrix. Decision: run this WEEKLY (mirroring the
     # `numa-real-kernel` job's established schedule-gated pattern above, same
     # `schedule`/`workflow_dispatch` trigger already wired into this
     # workflow's top-level `on:`) plus on-demand via `workflow_dispatch`, NOT
@@ -2958,7 +2970,8 @@ jobs:
       # hand-written row builds) — at measured-trivial cost (same invocation
       # count; ~1.45x wall in #1240's local measurement). The ROOT step
       # above deliberately KEEPS --no-dev-deps: the root crate is born-red
-      # under --all-targets (two wrongly-gated test files plus a deliberate
+      # under --all-targets (one ungated test file — `concurrent_stress.rs`,
+      # no `#![cfg]` at all — one WRONGLY-gated test file, and a deliberate
       # compile-fail example tripwire) — that is a decision, not an
       # oversight; see docs/CORRECTNESS_OPEN_ITEMS.md item 95 before
       # "finishing" this.
