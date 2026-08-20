@@ -156,6 +156,27 @@ jobs:
       # Task #846 proved this combination catches the inverted #[cfg_attr]
       # dead_code bug that shipped undetected when only --all-features ran.
       - run: cargo clippy -p aligned-vmem --all-targets -- -D warnings
+      # Task #1231: `huge-pages` WITHOUT `bench-internals`, on a Unix target.
+      # This runner IS the unix target, which is the whole point — the local
+      # gate's `--features huge-pages` row runs on the host (Windows), where
+      # the linux/android-gated tests are compiled out, so it is vacuous for
+      # this class.
+      #
+      # Every other row in this job that names `huge-pages` also names
+      # `bench-internals`, and so did every row in every other job (verified
+      # by enumeration, task #1231). That blind spot was not theoretical: a
+      # `SERIAL.lock()` use with no `#[cfg]` of its own, inside a test gated
+      # only on `any(linux, android) + huge-pages`, referenced a `static
+      # SERIAL` gated on `bench-internals` — E0425 in exactly this row,
+      # continuously from `2828e04` (task #1174, which introduced the test)
+      # until `5979275` (task #1223) closed it. Nothing built this row for
+      # that entire window.
+      #
+      # `--all-targets` is load-bearing: the weekly `feature-powerset` job
+      # DOES compile this feature combination for this crate, but with
+      # `--no-dev-deps`, so it builds lib+bins only and never `tests/` —
+      # blind to this defect class by construction.
+      - run: cargo check -p aligned-vmem --all-targets --features huge-pages
       # R1/Q3: Mock is no longer a Cargo feature (converted to the build-time
       # --cfg aligned_vmem_mock flag in task #962), so --all-features no longer lints
       # the MOCK arm instead. Both this named-feature row and the --all-features
