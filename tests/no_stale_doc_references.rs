@@ -1920,3 +1920,151 @@ fn correctness_item_87_sentinel_counts_agree() {
          'Next trigger' bullet, and (if it changed) MIN_SENTINEL_COUNT together."
     );
 }
+
+/// Item 59a's card (`docs/CORRECTNESS_OPEN_ITEMS.md`) restates the
+/// `aligned-vmem-hugetlb-real` job's OWN sentinel count — a number scoped
+/// to one job, independent of item 87's whole-file `MIN_SENTINEL_COUNT`
+/// floor — and this is the sixth time this exact number has been found
+/// stale after an unrelated task added a sentinel to that job without
+/// updating this card (task #1193's own filing cites five prior manual
+/// misses of this class; task #1174/commit `2828e04` was the most recent:
+/// it landed a new test-shaped AND a new marker-shaped sentinel in the job
+/// but only updated item 87's whole-file total, leaving item 59a's own
+/// job-scoped 12 stale against the live 14). Unlike item 87, there is no
+/// `scripts/verify-ci-sentinels.mjs` constant scoped to this ONE job to
+/// pin against — so this test re-derives the job-scoped count directly
+/// from `.github/workflows/ci.yml`'s own text, mirroring the card's own
+/// cited `awk '/^  aligned-vmem-hugetlb-real:/,/^  aligned-vmem-miri:/'`
+/// command in pure Rust (no `awk`/`grep` subprocess — matching this file's
+/// existing no-subprocess style), and checks it against the card's own
+/// stated 9 test-shaped + 5 marker-shaped = 14 total.
+#[test]
+fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let ci_path = manifest.join(".github").join("workflows").join("ci.yml");
+    let ci_text = fs::read_to_string(&ci_path).expect("read .github/workflows/ci.yml");
+
+    let start_marker = "  aligned-vmem-hugetlb-real:";
+    let end_marker = "  aligned-vmem-miri:";
+    let start = ci_text.find(start_marker).unwrap_or_else(|| {
+        panic!(
+            ".github/workflows/ci.yml: job start marker `{start_marker}` not found — \
+             the job was renamed or removed; re-point this test (and item 59a's card, \
+             which cites the same marker in its own `awk` command) at the new name."
+        )
+    });
+    let end_rel = ci_text[start..].find(end_marker).unwrap_or_else(|| {
+        panic!(
+            ".github/workflows/ci.yml: job end marker `{end_marker}` not found after \
+             `{start_marker}` — the neighbouring job was renamed, removed, or \
+             reordered; re-point this test (and item 59a's card's own `awk` \
+             command) at the new boundary."
+        )
+    });
+    let job_text = &ci_text[start..start + end_rel];
+
+    // Extract every `grep -F "..."` literal inside the job's text, matching
+    // the card's own `grep -oE 'grep -F "[^"]*"'` pattern, then dedup exactly
+    // as the card's `sort -u` does.
+    let mut sentinels: BTreeSet<&str> = BTreeSet::new();
+    let needle = "grep -F \"";
+    let mut cursor = 0usize;
+    while let Some(rel) = job_text[cursor..].find(needle) {
+        let lit_start = cursor + rel + needle.len();
+        let lit_end = job_text[lit_start..].find('"').unwrap_or_else(|| {
+            panic!(
+                ".github/workflows/ci.yml: unterminated `grep -F \"` literal starting \
+                 at byte {lit_start} inside the aligned-vmem-hugetlb-real job — \
+                 malformed sentinel line."
+            )
+        });
+        sentinels.insert(&job_text[lit_start..lit_start + lit_end]);
+        cursor = lit_start + lit_end;
+    }
+
+    let test_shaped = sentinels.iter().filter(|s| s.starts_with("test ")).count();
+    let marker_shaped = sentinels
+        .iter()
+        .filter(|s| s.starts_with("[oracle] ARMED"))
+        .count();
+    let total = sentinels.len();
+    assert_eq!(
+        test_shaped + marker_shaped,
+        total,
+        "aligned-vmem-hugetlb-real job: found {total} unique `grep -F` sentinels but \
+         only {test_shaped} `test ...` + {marker_shaped} `[oracle] ARMED...` shaped \
+         ones account for them — a new sentinel SHAPE was introduced that neither \
+         this test nor item 59a's card's prose classification recognizes; update \
+         both."
+    );
+
+    let card_path = manifest.join("docs").join("CORRECTNESS_OPEN_ITEMS.md");
+    let card_text = fs::read_to_string(&card_path).expect("read docs/CORRECTNESS_OPEN_ITEMS.md");
+
+    // Local copy of the same digit-extraction helper
+    // `correctness_item_87_sentinel_counts_agree` defines (that copy is
+    // private to its own fn body, not reusable from here).
+    fn extract_first_number_after(haystack: &str, marker: &str) -> Option<(u64, usize)> {
+        let start = haystack.find(marker)?;
+        let after = &haystack[start + marker.len()..];
+        let digits_start = after.find(|c: char| c.is_ascii_digit())?;
+        let rest = &after[digits_start..];
+        let digits_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let n: u64 = rest[..digits_end].parse().ok()?;
+        Some((n, start))
+    }
+
+    // item 59a's "Current-number-or-verdict" bullet states the job's own
+    // test-shaped and marker-shaped counts as "runs **N** unique `test
+    // <name> ... ok` sentinels ... plus **M** unique literal `[oracle]
+    // ARMED: ...` output markers".
+    let card_test_marker = "job runs **";
+    let (card_test_n, _) =
+        extract_first_number_after(&card_text, card_test_marker).unwrap_or_else(|| {
+            panic!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker `{card_test_marker}` \
+                 not found — the card was reworded; re-point this test's parser."
+            )
+        });
+
+    let card_marker_marker = "plus **";
+    let card_marker_pos = card_text
+        .find("job runs **")
+        .map(|p| p + card_test_marker.len());
+    let search_from = card_marker_pos.unwrap_or(0);
+    let (card_marker_n, _) =
+        extract_first_number_after(&card_text[search_from..], card_marker_marker).unwrap_or_else(
+            || {
+                panic!(
+                    "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker \
+                     `{card_marker_marker}` (for the marker-shaped count) not found \
+                     after the test-shaped count — the card was reworded; re-point \
+                     this test's parser."
+                )
+            },
+        );
+
+    assert_eq!(
+        test_shaped as u64, card_test_n,
+        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a claims **{card_test_n}** unique \
+         `test <name> ... ok` sentinels in the aligned-vmem-hugetlb-real job, but a \
+         fresh re-derivation from .github/workflows/ci.yml finds {test_shaped} — the \
+         card has drifted (this is the exact recurring class task #1193 fixed a \
+         sixth time: a round adds a sentinel to this ONE job and updates item 87's \
+         whole-file total without updating this card's own job-scoped count). \
+         Re-derive with `awk '/^  aligned-vmem-hugetlb-real:/,/^  \
+         aligned-vmem-miri:/' .github/workflows/ci.yml | grep -oE 'grep -F \"[^\"]*\"' \
+         | sort -u | wc -l` and update this card."
+    );
+    assert_eq!(
+        marker_shaped as u64, card_marker_n,
+        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a claims **{card_marker_n}** unique \
+         `[oracle] ARMED: ...` markers in the aligned-vmem-hugetlb-real job, but a \
+         fresh re-derivation from .github/workflows/ci.yml finds {marker_shaped} — \
+         see the test-shaped assertion above for the same drift class and the \
+         re-derivation command."
+    );
+}
