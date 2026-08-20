@@ -113,7 +113,7 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// received a `MAP_HUGETLB` grant, then drives a huge-page-eligible range
 /// through [`Reservation::decommit`](crate::Reservation::decommit)'s eligible-huge branch. **What that
 /// job proves, stated precisely (task #1160/F1 correction of an earlier
-/// overclaim; strengthened task #1164):** the eligible-range/post-5.18-kernel
+/// overclaim; strengthened tasks #1164 and #1174):** the eligible-range/post-5.18-kernel
 /// case genuinely REACHES the real `madvise(2)`/`MADV_DONTNEED` backend call
 /// — AND, since task #1164's
 /// `ci_hugetlb_real_pool_kernel_actually_accepts_eligible_madvise`
@@ -121,11 +121,20 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// (accepted) for that call, not `-1` (rejected): under `bench-internals`,
 /// `libc_madvise` (`src/os/unix.rs`) records the syscall's own return value
 /// into a counter pair, and that job hard-asserts it increased for this
-/// eligible-range case. What this does NOT prove: that the kernel's
-/// acceptance actually corresponds to reclaiming the physical backing, or
-/// that a subsequent access re-faults zeroed memory — no test reads memory
-/// content back, so the *effect* (as opposed to the syscall's own return
-/// code) remains reasoned from the man page, not independently verified. On
+/// eligible-range case — AND, since task #1174's
+/// `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess`
+/// (`tests/decommit_capability.rs`), that the decommitted range reads back
+/// zero on re-access: that test writes a non-zero byte pattern across the
+/// whole eligible range, calls [`Reservation::decommit`](crate::Reservation::decommit),
+/// then reads every byte back and hard-asserts each one is zero —
+/// zero-fill-on-readback is proven for this eligible-range case on a Linux
+/// runner (the code path is gated Linux **and Android** as a pair; the
+/// Android half is inherited from that shared cfg, not separately executed
+/// by any CI job). What this still does NOT prove: that the kernel's
+/// acceptance actually corresponds to reclaiming the physical backing — the
+/// job logs `HugePages_Free` around that test as an observation only, never
+/// a pass/fail gate, because it is a kernel-global counter shared with the
+/// job's other huge-page reservations. On
 /// builds WITHOUT `bench-internals`, `libc_madvise` still discards the
 /// return value entirely (task #719) — the kernel-response proof above is
 /// scoped to the one CI job that enables the counters. Three things remain
@@ -134,8 +143,10 @@ use super::internal::{finish_reservation_huge, validate_size_align};
 /// methods in CI, never called directly by a test; (2) the ineligible-range
 /// case (still a documented no-op) and every range on a pre-5.18 kernel —
 /// CI's runner image kernel version is not pinned by this crate; and (3)
-/// post-decommit memory CONTENT (physical backing / zero-fill on next
-/// access), which no test on any platform reads back.
+/// physical reclaim of the decommitted backing to the OS/hugetlb pool —
+/// the job's `HugePages_Free` log is an observation only, not a gate.
+/// Zero-fill on next access is no longer part of this list: task #1174's
+/// content test above reads every byte back and hard-asserts zero.
 ///
 /// Use [`reserve_aligned`](crate::api::reserve_aligned) instead if you need decommit to work
 /// unconditionally, regardless of range shape, kernel version, or platform.
