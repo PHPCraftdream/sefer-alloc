@@ -276,7 +276,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { REPO_ROOT, run } from './lib.mjs';
+import { REPO_ROOT, run, dllInitFailedDiagnosis } from './lib.mjs';
 import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
 import { staleArtifactDiagnosis } from './stale-artifact-diagnosis.mjs';
 
@@ -1082,6 +1082,18 @@ for (const step of steps) {
     const staleArtifact = staleArtifactDiagnosis(out);
     if (staleArtifact) {
       console.log(`\n[check-all] DIAGNOSIS (task #1073): ${staleArtifact}`);
+    }
+    // Task #1232 (half two): STATUS_DLL_INIT_FAILED recognition — link.exe
+    // died with 0xC0000142 twice in one session; environmental, so print a
+    // clearly-labelled diagnostic so the operator does not bisect their own
+    // diff — but detection-only, NO retry, and advisory only exactly like
+    // the task #1073 diagnosis above. The exit-code surfacing this relies
+    // on (close reports 3221225794 unsigned) was verified on this host; see
+    // dllInitFailedDiagnosis's doc comment in scripts/lib.mjs for the full
+    // design, the verification, and the does-NOT-cover list.
+    const dllInitFailed = dllInitFailedDiagnosis(code);
+    if (dllInitFailed) {
+      console.log(`\n[check-all] DIAGNOSIS (task #1232): ${dllInitFailed}`);
     }
     console.log(`\n[check-all] FAIL at step: ${step.name} (exit ${code})`);
     allOk = false;
