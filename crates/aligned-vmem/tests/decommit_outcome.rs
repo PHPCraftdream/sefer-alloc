@@ -260,6 +260,16 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
 ///
 /// The gate is a `#[cfg]`, not a runtime early-return, so the test cannot
 /// silently pass-by-doing-nothing on the platforms it does not cover.
+///
+/// **Where this gate's predicate comes from (task #1206).** It is not invented
+/// here: `all(windows, not(miri), not(aligned_vmem_mock))` is the crate's own
+/// expression, used at `src/os/mod.rs:46` to select
+/// `windows::{decommit_pages_impl, recommit_pages_impl}` — i.e. it means "the
+/// real Windows decommit backend is compiled in", and `decommit_pages_impl` is
+/// the very function whose refusal this test observes. If that line's
+/// predicate ever changes, this gate must move with it. (The same expression
+/// is also the body of the public `const fn lazy_commit_is_honored()`,
+/// `src/lazy_commit_is_honored.rs`.)
 #[test]
 #[cfg(all(windows, not(miri), not(aligned_vmem_mock)))]
 fn refused_variant_is_produced_by_a_genuine_os_refusal() {

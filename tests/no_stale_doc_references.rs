@@ -2067,4 +2067,40 @@ fn correctness_item_59a_hugetlb_real_sentinel_count_agrees() {
          see the test-shaped assertion above for the same drift class and the \
          re-derivation command."
     );
+
+    // The SAME sentence also states a TOTAL. Task #1206: the two assertions
+    // above pinned the 9 and the 5 but left the 14 in the same sentence
+    // unpinned, so an edit that updated one addend and forgot the sum passed
+    // green — one number in two places, inside the very sentence this test
+    // exists to protect. That is the #1161 class, reproduced by the machine
+    // built to prevent it.
+    let card_total_marker = "sentinel checks in total";
+    let total_pos = card_text.find(card_total_marker).unwrap_or_else(|| {
+        panic!(
+            "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a's marker \
+             `{card_total_marker}` not found — the card was reworded; re-point \
+             this test's parser."
+        )
+    });
+    // The total is the last `**N**` BEFORE that phrase, so search the window
+    // between the marker-shaped count and the phrase itself.
+    let card_total_n: u64 = card_text[..total_pos]
+        .rsplit("**")
+        .find_map(|tok| tok.trim().parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            panic!(
+                "docs/CORRECTNESS_OPEN_ITEMS.md: item 59a states \
+                 `{card_total_marker}` but no `**N**` precedes it — re-point \
+                 this test's parser."
+            )
+        });
+    assert_eq!(
+        card_total_n,
+        card_test_n + card_marker_n,
+        "docs/CORRECTNESS_OPEN_ITEMS.md item 59a's own sentence does not add up: \
+         it states **{card_test_n}** test-shaped + **{card_marker_n}** \
+         marker-shaped but **{card_total_n}** in total. The two addends are each \
+         re-derived from ci.yml by the assertions above; this one checks the card \
+         against ITSELF, which is where task #1206 found the gap."
+    );
 }
