@@ -24,7 +24,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// contract violation to the WRITE-PERMITTING `true` sentinel, which already
 /// caused a real crash — see
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
-/// for the incident this class of bug produces on Windows).
+/// item 6 for the incident this class of bug produces on Windows).
 ///
 /// Returns `true` if the range is now committed, `false` if the OS refused
 /// (commit-charge exhaustion / true OOM) OR the offsets violated the contract

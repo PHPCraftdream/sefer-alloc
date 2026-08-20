@@ -187,7 +187,7 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 /// from a silent no-op" shape as the huge-page case above, but for ORDINARY
 /// (non-huge) reservations on Darwin and the BSDs specifically. See
 /// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
-/// for the open item; no fix is implemented
+/// item 48 for the open item; no fix is implemented
 /// yet (the real fix needs re-`mmap`(`MAP_FIXED`) over the range, a larger
 /// change deserving its own review round). Note: this caveat applies only to
 /// the EAGER `decommit` path (which uses `MADV_DONTNEED` on all Unix); the

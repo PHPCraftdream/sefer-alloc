@@ -79,17 +79,47 @@ organizing structure (see the "Tier key" above) and needed no new taxonomy
 invented to cut along.
 
 **Why the main file survives as an index, rather than being deleted
-outright:** 42 code/CI/script files (`src/`, `tests/`, `crates/`,
-`scripts/`, `.github/workflows/ci.yml`, and `CLAUDE.md` itself) cite this
-exact path, `docs/CORRECTNESS_OPEN_ITEMS.md`, and every one of those
-citations is of the form `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` --
-never a line number, never a filename. As long as this filename resolves and
-this section stays a complete, accurate item-N -> file lookup, all 42
-citations (several of them in *published* `aligned-vmem` rustdoc that ships
-to docs.rs) keep resolving without editing a single one of them. Deleting
-this file outright would have forced touching all 42 sites, including the
-four publish-facing citations task #889 already had to repair once, for
-zero reader benefit.
+outright:** a large and drifting set of code/CI/script files (`src/`,
+`tests/`, `crates/`, `scripts/`, `.github/workflows/ci.yml`, and
+`CLAUDE.md` itself) cite this exact path, `docs/CORRECTNESS_OPEN_ITEMS.md`
+-- never a line number, never a filename. The count is deliberately NOT
+typed here: the task-#1217 split commit typed "42", and that figure was
+already stale on arrival (running the census against the split commit
+itself yields 44). Compare against this command's output, never a
+hardcoded count:
+
+```text
+git grep -l "docs/CORRECTNESS_OPEN_ITEMS\.md" -- ':!docs/' | wc -l
+```
+
+Every citation that points at ONE SPECIFIC ITEM carries that item's
+number, in the form `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N ``. That
+was FALSE as first written here: at the task-#1217 split nine
+item-pointing citations carried no number (seven in `aligned-vmem`, plus
+the two elsewhere named below), and the split had silently
+upgraded that from a cosmetic gap into a navigation dead end — before
+the split, following the path landed on a file that CONTAINED the card
+(findable by Ctrl-F on any surrounding phrase); after it, the same
+citation landed on this index, whose only per-item navigation aid is the
+very number the citation lacked. Task #1227 repaired all seven: item 6
+x2 (`commit_range.rs`/`recommit.rs` rustdoc), item 48 x2 (`README.md` +
+`decommit.rs` rustdoc), item 62 x3 (`README.md`, the `os/unix.rs` MIPS
+comment, and the MIPS `compile_error!` diagnostic), five of the seven on
+publish-facing surfaces. Citations that point at the FILE as a whole, at
+a named SECTION, or at a CLASS of items rather than one item (CLAUDE.md's
+round-start rule, the "Recently resolved" pointers, the ci.yml
+guard-class comment) carry no item number and never needed one. Two
+card-pointing citations outside `aligned-vmem` still carried no number
+as of task #1227 — outside that task's file scope, recorded here for the
+next round: `crates/sefer-region/benches/region_bench.rs` ("for the
+tracking entry") and `scripts/verify-ci-sentinels.mjs` ("'s new card for
+the durable record"). As long as this filename resolves and this section
+stays a complete, accurate item-N -> file lookup, every numbered
+citation (several of them in *published* `aligned-vmem` rustdoc that
+ships to docs.rs) keeps resolving without editing a single one of them.
+Deleting this file outright would have forced touching every citing
+site, including the publish-facing citations task #889 already had to
+repair once, for zero reader benefit.
 
 **Task #1222 (2026-08-20): the `[T]` tier's four number-range files
 (task #1221, same day) are REPLACED by nine THEMATIC files.** The owner
