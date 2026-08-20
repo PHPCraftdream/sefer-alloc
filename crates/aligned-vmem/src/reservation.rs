@@ -1258,7 +1258,25 @@ impl Reservation {
     ///   no-op — RSS does not drop and reads return the old data). This
     ///   changes DISPATCH and query results, never memory safety. If you
     ///   cannot determine whether the OS granted huge pages, you MUST pass
-    ///   `false` and use `reserve_aligned` instead.
+    ///   `false` and use `reserve_aligned` instead. If you KNOW the
+    ///   mapping is a HugeTLB mapping whose granularity is not 2 MiB
+    ///   (e.g. 1 GiB on Linux or Android), NEITHER flag value is legal:
+    ///   `true` violates the 2 MiB-multiple contract below, and `false`
+    ///   does not make the kernel's `munmap` alignment requirement go
+    ///   away — it only misreports `is_huge()` (violating this accuracy
+    ///   bullet) and routes release through ordinary-munmap assumptions,
+    ///   where `munmap(2)` on a `MAP_HUGETLB` mapping still requires
+    ///   `addr` and `length` to be multiples of THAT mapping's huge-page
+    ///   size, so a release whose shape satisfies 2 MiB but not the
+    ///   mapping's real granularity can fail `EINVAL` and leak the entire
+    ///   mapping, including its pinned pages from the (bounded) hugetlb
+    ///   pool. Do not construct a `Reservation` over such a mapping at
+    ///   all. "Can leak", not "will leak": this consequence is reasoned
+    ///   from `man 2 munmap` and this crate's own `os/unix.rs` contract
+    ///   docs (`unix_reserve`'s task-#714 note), not executed in CI — no
+    ///   CI host configures a hugetlb pool larger than 2 MiB, and this
+    ///   crate never creates such a mapping itself, always requesting
+    ///   `MAP_HUGE_2MB` (`crates/aligned-vmem/src/os/unix.rs`).
     ///
     /// - **2 MiB-multiple requirement, Linux/Android, `granted_huge == true`
     ///   (task #1172/M1-hybrid).** On `target_os = "linux"` or `"android"`,
@@ -1285,12 +1303,23 @@ impl Reservation {
     ///   format" — it does not by itself prove the memory is really
     ///   `MAP_HUGETLB`-backed (that remains a `# Safety` precondition the
     ///   assert cannot check), only that its shape is consistent with being
-    ///   so. **Open question, not yet answered by the crate owner:** whether
-    ///   `aligned-vmem` should ever support adopting a HugeTLB mapping at a
-    ///   granularity other than 2 MiB (e.g. 1 GiB) — see
-    ///   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90's OPEN QUESTION block. Under
-    ///   today's default answer (no), this assert is exactly the crate's
-    ///   contract, not a temporary narrowing.
+    ///   so. **Owner decision (2026-08-20, task #1190): NO.** A HugeTLB
+    ///   mapping whose page granularity is not 2 MiB (e.g. 1 GiB) is NOT
+    ///   supported for adoption through this constructor — this assert is
+    ///   the crate's CURRENT contract, not a temporary narrowing pending a
+    ///   wider one (the decision is recorded in
+    ///   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90's OPEN QUESTION block). A
+    ///   future "yes", if it ever comes, would arrive as an ADDITIVE new
+    ///   constructor carrying typed huge-granularity metadata — not as a
+    ///   relaxation of this assert presented as a bugfix. That widening
+    ///   would be additive rather than semver-breaking precisely because
+    ///   task #1172 already narrowed what `granted_huge == true` MEANS
+    ///   here to "the mapping is in this crate's own 2 MiB HugeTLB
+    ///   format", so this `bool` stays truthful forever for the one case
+    ///   it admits, and because the adoption surface is structurally
+    ///   extensible where it is public: `Reservation`'s fields are
+    ///   private, and `ReservationParts`, `ReservationFullParts`, and
+    ///   every `mock::Call` variant are `#[non_exhaustive]`.
     ///
     /// - **`huge-pages` feature required to pass `granted_huge: true` (task
     ///   #1172/M1-hybrid, closing finding M2 as a consequence).** Passing

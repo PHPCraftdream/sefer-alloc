@@ -308,6 +308,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   because it becomes load-bearing again the moment either address conjunct
   is weakened; the code now says so at the conjunct. Doc-only, no behavior
   change, and the contract a caller must satisfy is exactly what it was.
+- **2 MiB is `from_raw_parts`'s sole supported HugeTLB adoption granularity —
+  owner decision (task #1190, decided 2026-08-20, pre-publication).** Asked
+  whether adopting a HugeTLB mapping whose page size is not 2 MiB (e.g. 1 GiB)
+  should ever be supported, the crate owner answered NO: the Linux/Android
+  2-MiB-multiple assert above is the contract, not a temporary narrowing.
+  Decided before 0.2.0 ships, so the `granted_huge: bool` contract is final as
+  published; a future "yes", if it ever comes, would arrive as an ADDITIVE new
+  constructor with typed huge-granularity metadata, not a relaxation of the
+  assert — `true` already means "this crate's own 2 MiB HugeTLB format" (the
+  M1-hybrid narrowing) and stays truthful for that case.
 - **Huge-page decommit is no longer an unconditional no-op on Linux/Android**
   (task #1140). `Reservation::decommit`/`try_decommit` skipped the backend
   whenever `is_huge()`, and the docs asserted decommit "does nothing on every
