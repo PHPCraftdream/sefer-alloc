@@ -24,7 +24,9 @@ repo cites an item by NUMBER, never by topic or file, so
 `docs/CORRECTNESS_OPEN_ITEMS.md` (the thin index) now carries a complete
 item-N to file lookup table covering all 70 numbers (including the
 `59a`/`59b` sub-items) -- that table, not this file's name, is what keeps
-the by-number citation convention a one-hop lookup under a thematic split.
+the by-number citation convention working under a thematic split: the
+lookup is two-hop (index table, then this file), but mechanical and
+always correct.
 (Split 2026-08-20, task #1222, superseding task #1221's number-range
 split the same day.)
 

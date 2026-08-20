@@ -35,8 +35,8 @@ clean, or a correctness contract, it belongs here.
 
 1. **Round start:** before forming a new round's task queue, read this
    index's tier files end-to-end (`docs/correctness-open-items/ACTIVE.md`
-   then the four `docs/correctness-open-items/TRACKED_*.md` files, in
-   number order — alongside `docs/perf/OPEN_ITEMS.md`) and decide, for
+   then all nine thematic `docs/correctness-open-items/TRACKED_*.md`
+   files, in any order — alongside `docs/perf/OPEN_ITEMS.md`) and decide, for
    each open item, whether this round closes it, defers it (with a
    one-line reason appended), or leaves it. An item must not be silently
    ignored — every round either moves it or explicitly re-defers it.
@@ -47,9 +47,11 @@ clean, or a correctness contract, it belongs here.
    trail is itself the artifact that lets a future reviewer confirm an item
    was actually addressed, not just forgotten again.
 3. **When a new commit, comment, or review flags a correctness/CI-debt
-   follow-up:** add it to `docs/correctness-open-items/ACTIVE.md` or the
-   matching-number-range `TRACKED_*.md` file (matching its tier) in the
-   same commit (or an immediate follow-up commit), with a citation back to
+   follow-up:** add it to `docs/correctness-open-items/ACTIVE.md` ([A]
+   tier) or, for the `[T]` tier, the thematic `TRACKED_*.md` file whose
+   subject the card matches (the nine filenames state their subjects;
+   their criteria are in the "Structure" section below), in the same
+   commit (or an immediate follow-up commit), with a citation back to
    its origin (commit SHA / file:line). A flag that lives only inside a
    single commit message body
    or code comment is exactly the failure mode this index exists to
