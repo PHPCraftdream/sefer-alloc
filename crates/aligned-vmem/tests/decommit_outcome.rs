@@ -267,12 +267,32 @@ fn refused_variant_is_produced_by_a_genuine_os_refusal() {
     // ("[base+start, base+end) must lie within its usable span") to observe
     // the OS's own refusal of an out-of-region decommit -- exactly the
     // "well-formed range, backend called, OS declines" case `Refused` exists
-    // to report. No out-of-bounds MEMORY ACCESS occurs: `VirtualFree`/
-    // `madvise` only touch kernel page-table state for the given address
-    // range and return a failure code for a range outside any mapping this
-    // process owns; they do not dereference the address. `r` is kept alive
-    // for the duration (not dropped early), so the reservation's own valid
-    // region is never disturbed by this call.
+    // to report. No out-of-bounds MEMORY ACCESS occurs: `VirtualFree` only
+    // manipulates kernel page-table state for the given address range and
+    // never dereferences the address. `r` is kept alive for the duration
+    // (not dropped early), so the reservation's own valid region is never
+    // disturbed by this call.
+    //
+    // WHAT THIS COMMENT USED TO CLAIM, AND WHY IT WAS FALSE (task #1202).
+    // It said the backend "return[s] a failure code for a range outside any
+    // mapping this process owns". That is not a property of either OS -- it
+    // is a bet that nothing happens to be mapped at `base + 64 MiB`. The bet
+    // LOST on Linux in CI (`dff7b1d`, job `test workspace members`): a
+    // successful `madvise(MADV_DONTNEED)` returns 0, which this crate maps to
+    // `Advised` -- meaning the kernel FOUND a mapping there and DISCARDED its
+    // contents. The test did not merely observe a non-refusal; it threw away
+    // a page of some other allocation's memory. Task #1199 removed the Unix
+    // rows, which removes that live hazard, but NOT the bet: on Windows
+    // `VirtualFree(addr, len, MEM_DECOMMIT)` likewise SUCCEEDS for any
+    // address inside any region this process reserved via `VirtualAlloc`, so
+    // if `base + 64 MiB` ever lands inside the CRT heap or another
+    // reservation, this call decommits live pages of that region and the
+    // assertion below fails with `got Ok(Advised)`. Windows is not
+    // deterministic here -- it is the platform where this bet has not yet
+    // lost. The deterministic replacement (reserve, release, then decommit
+    // the just-released address under this file's `SERIAL` lock) is recorded
+    // as the candidate fix in item 92 of `docs/CORRECTNESS_OPEN_ITEMS.md`;
+    // it applies to Windows exactly as much as to Unix.
     let out = unsafe { try_decommit(r.as_ptr(), far_start, far_end) };
     match out {
         Ok(DecommitOutcome::Refused(e)) => {
