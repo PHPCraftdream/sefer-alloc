@@ -1466,6 +1466,47 @@ resolved" in RESOLVED.md.)_
       `docs/plans/2026-08-05-release-execution-map.md` §"Ход B" table and
       §"Не мои решения" item 4;
       `docs/reviews/2026-08-06-sprint-closing-readonly-review.md` finding S4.
+    - **[Added 2026-08-20, task #1207] A SECOND, HARDER blocker for the
+      same three crates (plus `numa-shim`), found while investigating the
+      release guard: none of the four has a `CHANGELOG.md` AT ALL.**
+      Measured directly — `test -f crates/<c>/CHANGELOG.md` returns MISSING
+      for `racy-ptr-cell`, `size-classes`, `tagged-index-stack` and
+      `numa-shim`; only `aligned-vmem` has one. This is not cosmetic:
+      `.github/workflows/release.yml:268-272` resolves the CHANGELOG path
+      from `cargo metadata` by package name and then fails CLOSED
+      (`::error::CHANGELOG not found at $CHANGELOG` / `exit 1`) — a
+      fail-closed branch task #1115 added deliberately. So a publish
+      attempt for any of the four stops at that step, before `cargo
+      publish` runs. The guard is behaving correctly; the files simply do
+      not exist. Owner: **task #1220** (write real per-crate changelogs
+      reconstructed from `git log -- crates/<c>/`, not stubs).
+    - **[Added 2026-08-20, task #1207] Release-guard status, recorded
+      because the task that raised it was based on MY OWN too-narrow
+      verification and resolved NULL.** The claim under investigation was
+      that `## 0.2.0 - Unreleased` would ship in the tarball with no gate
+      catching it. The supporting evidence was `grep -rn "Unreleased"
+      scripts/*.mjs .github/workflows/ci.yml` → zero hits, which is TRUE
+      but was generalised into "no guard anywhere looks at that word".
+      The guard exists: `.github/workflows/release.yml:301-309`, and its
+      own comment names `## 0.2.0 - Unreleased` (aligned-vmem) as one of
+      the two heading shapes it is written to catch, case-insensitively,
+      after an anchored per-version section match that requires exactly one
+      section. Counterfactual run against the guard body extracted
+      verbatim: with today's header it exits 1 ("Stamp the real release
+      date"); with a dated header it exits 0; a CHANGELOG carrying a
+      legitimate `## Unreleased` section for FUTURE work alongside a dated
+      released section still passes, so it is not a false-positive
+      generator. **Recorded decision:** the version header is dated
+      immediately before `cargo publish`, not now — dating it today would
+      fabricate a release date, which is the exact defect task #1099/I2
+      (`5dc4385`) already had to remove once. That decision is held by the
+      guard, not by intention. **Honest limitation:** the guard lives only
+      in `release.yml` under `dry_run != 'true'`, so neither `npm run
+      check` nor `ci.yml` ever exercises it — a contributor sees it fire
+      for the first time during a real release. That is not the task-#1131
+      "guard nothing runs" class (it does run, at exactly the moment the
+      decision above refers to), but it is stated here rather than left to
+      read as full CI coverage.
 
 25. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 1] `TaggedIndex<INDEX_BITS>` rejecting `INDEX_BITS > 32` at compile time (F1, task #638) has no automated compile-fail test — CI coverage gap, honestly recorded but unfiled until now.**
 
