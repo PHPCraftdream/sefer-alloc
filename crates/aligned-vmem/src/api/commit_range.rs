@@ -120,9 +120,12 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
             // manufacturing a misleading one. Task #1141: this comment used
             // to say the constructor "states plainly that the OS refused" —
             // which contradicts the line four above it. The OS did NOT
-            // refuse; no syscall ran at all. Simulated faults are one of the
-            // four sources that sentinel enumerates (see its own doc), and
-            // it is deliberately NOT named after an OS refusal.
+            // refuse; no syscall ran at all. This simulated fault is one of
+            // the sentinel's two TEST-ONLY sources (task #1173/L2,
+            // re-verified task #1194) — deliberately NOT one of the four
+            // PRODUCTION causes its own doc enumerates (see
+            // `VmemError::os_refusal_unknown_code`'s doc) — and it is
+            // deliberately NOT named after an OS refusal either way.
             return Err(VmemError::os_refusal_unknown_code());
         }
         // SAFETY: forwarded from the caller's contract.

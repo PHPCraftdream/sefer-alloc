@@ -105,17 +105,30 @@ impl VmemError {
     /// in the caller's arguments.
     ///
     /// **This FOUR-source count is scoped to production causes; it
-    /// deliberately excludes two TEST-ONLY construction sites** (task
-    /// #1173/L2, measured against the actual call sites rather than
-    /// re-asserted from an earlier audit's count): the `aligned_vmem_mock`
-    /// backend's scripted commit/reserve fault injection (`crate::mock`,
-    /// gated on that cfg) and the real-path `fault-injection` feature's
-    /// simulated commit failure (`crate::fault_injection`,
-    /// `api/commit_range.rs`) both also construct this sentinel, to
-    /// simulate a no-code OS failure deterministically without touching the
-    /// OS — see each module's own doc for why NEITHER is a fifth or sixth
-    /// PRODUCTION source: they exist only under test-only cfgs/features and
-    /// are not reachable in an ordinary build.
+    /// deliberately excludes two TEST-ONLY construction SOURCES, spread
+    /// across three TEST-ONLY construction SITES** (task #1173/L2,
+    /// re-measured for this doc's own correction — task #1194 — against the
+    /// actual call sites rather than re-asserted from an earlier audit's
+    /// count. Counted with doc mentions EXCLUDED, because a raw
+    /// `grep -rn "VmemError::os_refusal_unknown_code()"
+    /// crates/aligned-vmem/src/` also matches prose like this very
+    /// sentence — its total therefore changes whenever this paragraph is
+    /// edited, which is exactly how task #1194's first attempt recorded a
+    /// figure its own edit falsified one line later. The stable count is
+    /// `grep -rn "VmemError::os_refusal_unknown_code()"
+    /// crates/aligned-vmem/src/ | grep -vE ":\s*(///|//!|//)"` → 10 real
+    /// construction sites; of those 10, 7 are production sites — matching
+    /// the four causes below — and 3 are
+    /// test-only sites): the `aligned_vmem_mock` backend's scripted
+    /// commit/reserve fault injection (`crate::mock`, gated on that cfg —
+    /// TWO sites, `take_reserve_fault`/`take_commit_fault`) and the
+    /// real-path `fault-injection` feature's simulated commit failure
+    /// (`crate::fault_injection`, ONE site in `api/commit_range.rs`) both
+    /// also construct this sentinel, to simulate a no-code OS failure
+    /// deterministically without touching the OS — see each module's own
+    /// doc for why NEITHER SOURCE is a fifth or sixth PRODUCTION source:
+    /// all three sites exist only under test-only cfgs/features and are not
+    /// reachable in an ordinary build.
     #[must_use]
     #[inline]
     pub const fn os_refusal_unknown_code() -> Self {

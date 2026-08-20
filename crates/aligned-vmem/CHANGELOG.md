@@ -231,21 +231,31 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   and `Reservation::decommit` through a well-formed range under a simulated
   poisoned query and asserts neither panics and neither touches the
   reservation's data.
-- **`VmemError::os_refusal_unknown_code`'s doc did not mention its two
+- **`VmemError::os_refusal_unknown_code`'s doc did not mention its
   TEST-ONLY construction sites, leaving an auditor undercounting or
-  overcounting the sentinel's real call sites (task #1173, finding L2).**
-  Measured directly (`grep -rn "VmemError::os_refusal_unknown_code()"
-  crates/aligned-vmem/src/`): 7 real construction sites, collapsing to
-  the FOUR production causes the doc already correctly enumerated (task
-  #1141/#1106-L2), plus 2 additional test-only sites
-  (`crate::mock`'s scripted commit/reserve fault injection, gated on
-  `aligned_vmem_mock`) and the `fault-injection` feature's simulated commit
-  failure (`crate::fault_injection`) — neither of which is reachable in an
-  ordinary build. The "FOUR sources" claim itself was accurate (re-verified,
+  overcounting the sentinel's real call sites (task #1173, finding L2;
+  re-measured and its own doc/CHANGELOG/comment wording corrected for
+  internal consistency in task #1194).** Measured with doc mentions
+  EXCLUDED — a raw `grep -rn "VmemError::os_refusal_unknown_code()"
+  crates/aligned-vmem/src/` also matches prose that merely names the
+  constructor, so its total moves whenever such prose is edited (task
+  #1194's own first attempt recorded a raw total its own edit falsified).
+  The stable command is that grep piped through
+  `grep -vE ":\s*(///|//!|//)"`, giving 10 real construction sites. Of
+  those 10 real sites, 7 are PRODUCTION
+  sites — collapsing to the FOUR production causes the doc already
+  correctly enumerated (task #1141/#1106-L2) — and 3 are TEST-ONLY sites
+  across two TEST-ONLY sources: `crate::mock`'s scripted commit/reserve
+  fault injection (gated on `aligned_vmem_mock`, TWO sites — one per
+  `take_reserve_fault`/`take_commit_fault`) and the `fault-injection`
+  feature's simulated commit failure (`crate::fault_injection`, ONE site in
+  `api/commit_range.rs`) — neither SOURCE reachable in an ordinary build.
+  The "FOUR (production) sources" claim itself was accurate (re-verified,
   not re-asserted from an earlier audit's count) — this was a doc-completeness
   gap, not a wrong count. `VmemError::os_refusal_unknown_code`'s doc now
-  names both test-only sites explicitly and states why they are not a fifth
-  or sixth PRODUCTION source. **No new error kind was introduced** — the
+  names both test-only sources (and all three test-only sites) explicitly
+  and states why they are not a fifth or sixth PRODUCTION source.
+  **No new error kind was introduced** — the
   task #1106/L2 record's reasoning (zero consumers anywhere match on WHICH
   source produced the sentinel; every consumer goes through
   `os_code()`/`is_invalid_argument()` only) was re-verified unchanged
