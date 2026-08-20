@@ -225,13 +225,20 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
 ///    whether anything is mapped there is a property of the process's address
 ///    space layout, not of the OS contract. On `dff7b1d`'s `test workspace
 ///    members` job the SAME Linux runner passed it twice and failed it once:
-///    ok under the default row and under `--all-features`, FAILED under
-///    `--features "fault-injection lazy-commit"` — a row differing only by
-///    having two fewer features and therefore one fewer test in the binary.
-///    Linux `madvise` does refuse an unmapped range as documented; the
-///    premise that fails is "base + 64 MiB is unmapped". So on Unix this test
-///    is non-deterministic BY CONSTRUCTION, and a flaky test is worse than an
-///    absent one (tasks #1030 and #1063 both cost a round to flakiness).
+///    ok under the default row (3 tests, log line 406), ok under
+///    `--all-features` (4 tests, line 1027), FAILED under
+///    `--features "fault-injection lazy-commit"` (3 tests, line 1611).
+///    **The mechanism is NOT "one fewer test in the binary"** (task #1203
+///    corrected that): the default row compiled the SAME three test
+///    functions as the failing row and passed, so a test-count difference is
+///    held constant across a pass and a fail and cannot be the cause. What
+///    differs is the sequence of allocations each row performs before
+///    reaching this test, hence where `base` lands and whether anything is
+///    mapped 64 MiB past it. Linux `madvise` does refuse an unmapped range
+///    as documented; the premise that fails is "base + 64 MiB is unmapped".
+///    So on Unix this test is non-deterministic BY CONSTRUCTION, and a flaky
+///    test is worse than an absent one (tasks #1030 and #1063 both cost a
+///    round to flakiness).
 ///
 /// **Consequence, stated so it is not mistaken for coverage:** the `Refused`
 /// variant has NO test coverage on Unix. Filed as an open item rather than
