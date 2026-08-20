@@ -25,16 +25,16 @@
 //!   Windows genuinely refuses this (`ERROR_INVALID_ADDRESS`, verified on
 //!   this task's own Windows host: `Refused(VmemError { os_code: Some(487) })`),
 //!   and Linux `madvise` on an unmapped address is equally documented to
-//!   return `EINVAL`/`ENOMEM`. This is a REAL backend refusal on every
-//!   platform whose backend is a real OS, not a Windows-only trick — but it
-//!   has only been executed on Windows during this task's own development;
-//!   the Unix half is reasoned from `man 2 madvise`'s own documented
-//!   `ENOMEM`/`EINVAL` cases for an address range that is not a valid part of
-//!   the process's address space, not independently observed on a Unix CI run
-//!   as part of THIS task. **It is `#[cfg(not(aligned_vmem_mock))]` (task
-//!   #1197):** the mock backend issues no syscall, so `Refused` is
-//!   unreachable there by construction — see the test's own doc for the
-//!   mechanism and for how that gap reached the gate.
+//!   return `EINVAL`/`ENOMEM`. **Runs on Windows ONLY** —
+//!   `#[cfg(all(windows, not(miri), not(aligned_vmem_mock)))]`, task #1199.
+//!   The Unix half of the claim above was reasoned from `man 2 madvise` and
+//!   never executed until commit `dff7b1d` reached CI, where the same Linux
+//!   runner passed it twice and failed it once across three feature rows:
+//!   `madvise` refuses an unmapped range as documented, but the test's
+//!   "far outside" address is an arithmetic guess (`base + 64 MiB`) whose
+//!   unmappedness is a property of process layout, not of the OS. So
+//!   `Refused` has NO coverage on Unix, and this file does not pretend
+//!   otherwise — see the test's own doc for all three exclusion reasons.
 //!
 //! One limitation of THIS FILE under `--cfg aligned_vmem_mock`, stated so it
 //! is not mistaken for coverage it does not give: with the mock backend,
@@ -206,19 +206,44 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
 /// direct counterfactual on the exact defect (return-value discard) this
 /// task's brief describes.
 ///
-/// **Not run under `--cfg aligned_vmem_mock` (task #1197).** The mock backend
-/// never reaches the OS: `dispatch_try_decommit`'s mock arm
-/// (`src/api/decommit.rs`) records the call and returns `Advised`
-/// unconditionally, by deliberate design — there is no syscall, so there is no
-/// refusal to observe and `Refused` is unreachable by construction, not merely
-/// unlikely. Without this gate the test fails in the local gate's
-/// `--cfg aligned_vmem_mock` row with "expected Refused, got Advised", which
-/// is exactly what it did: task #1180 created this file and never ran it under
-/// that row, and the failure surfaced only when the full `npm run check` gate
-/// ran before the wave's push. The gate is `not(aligned_vmem_mock)` rather
-/// than a runtime skip so the test cannot silently pass-by-doing-nothing there.
+/// # Why this runs on Windows ONLY (task #1199)
+///
+/// Three separate reasons, each independently sufficient — recorded together
+/// because the first fix attempt (task #1197) named only the first and `main`
+/// went red on the other two the moment it reached CI:
+///
+/// 1. **`--cfg aligned_vmem_mock`** — the mock arm of `dispatch_try_decommit`
+///    (`src/api/decommit.rs`) records the call and returns `Advised`
+///    unconditionally, by deliberate design. No syscall, so no refusal to
+///    observe; `Refused` is unreachable by construction.
+/// 2. **miri** — `src/os/miri.rs` is a third backend with no real OS, exactly
+///    like the mock. Task #1197 gated on `aligned_vmem_mock` alone, i.e. it
+///    enumerated ONE cfg instead of expressing the real condition, and miri
+///    failed on the very next CI run.
+/// 3. **Unix, the substantive one** — the address this test declares "far
+///    outside the reservation" is an ARITHMETIC GUESS (`base + 64 MiB`), and
+///    whether anything is mapped there is a property of the process's address
+///    space layout, not of the OS contract. On `dff7b1d`'s `test workspace
+///    members` job the SAME Linux runner passed it twice and failed it once:
+///    ok under the default row and under `--all-features`, FAILED under
+///    `--features "fault-injection lazy-commit"` — a row differing only by
+///    having two fewer features and therefore one fewer test in the binary.
+///    Linux `madvise` does refuse an unmapped range as documented; the
+///    premise that fails is "base + 64 MiB is unmapped". So on Unix this test
+///    is non-deterministic BY CONSTRUCTION, and a flaky test is worse than an
+///    absent one (tasks #1030 and #1063 both cost a round to flakiness).
+///
+/// **Consequence, stated so it is not mistaken for coverage:** the `Refused`
+/// variant has NO test coverage on Unix. Filed as an open item rather than
+/// papered over — a deterministic Unix refusal (e.g. reserve, release, then
+/// `madvise` the just-released address under the serial lock) is plausible but
+/// unverifiable from this project's Windows development host, so it is future
+/// work with an owner, not a change made blind.
+///
+/// The gate is a `#[cfg]`, not a runtime early-return, so the test cannot
+/// silently pass-by-doing-nothing on the platforms it does not cover.
 #[test]
-#[cfg(not(aligned_vmem_mock))]
+#[cfg(all(windows, not(miri), not(aligned_vmem_mock)))]
 fn refused_variant_is_produced_by_a_genuine_os_refusal() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
