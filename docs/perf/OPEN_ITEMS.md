@@ -2381,7 +2381,10 @@ for completeness.
       unmeasured — this example deliberately does not attempt to acquire
       that privilege (needs administrator rights not assumed available).
       Raw output: `docs/perf/_raw_r1189_windows_large_page_native_profile.log`;
-      summary: `docs/perf/R1189_WINDOWS_LARGE_PAGE_NATIVE_PROFILE_summary.csv`.
+      summary: `docs/perf/R1189_WINDOWS_LARGE_PAGE_NATIVE_PROFILE_summary.csv`
+      (task #1195/OX6-M6: the CSV now carries its own `#`-comment metadata
+      header — commit SHA, feature set, CPU/OS — as the machine-readable
+      mirror of this paragraph, so the two cannot silently drift apart).
       Measured against `main` @ `2828e046706593d805bc08d2ba6e1e5a7a0bb82d` +
       this task's own then-uncommitted working tree. **Immutable source
       identity, supplied by the operator at merge time (R29-6 option 2, git

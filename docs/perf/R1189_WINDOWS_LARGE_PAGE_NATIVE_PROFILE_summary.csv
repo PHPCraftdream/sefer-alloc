@@ -1,3 +1,14 @@
+# task #1189 (SOL/P3+C2) — Windows large-page native profile summary
+# commit_sha=65bd1a2eca4b77d6e16a8acefb59f42111efd8aa (landing commit)
+# base=main @ 2828e046706593d805bc08d2ba6e1e5a7a0bb82d + this task's then-uncommitted working tree (base SHA alone does NOT reproduce this run)
+# immutable_source_identity(R29-6 option 2, git object SHAs): crate_source_tree=726e2bb84588e40fb4aaf1cd163626e3521f7adc (crates/aligned-vmem/src); probe_blob=9c98d8bbb8b5dbffa505e0b119e0b5a46b502518 (crates/aligned-vmem/examples/v1189_windows_large_page_native_profile.rs); both reproducible via `git cat-file -p <sha>`
+# feature_set=bench-internals huge-pages (cargo run -p aligned-vmem --example v1189_windows_large_page_native_profile --release --features "bench-internals huge-pages")
+# cpu=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8 cores / 16 logical)
+# os=native Windows 10 Pro x86-64, Microsoft Windows [Version 10.0.19045.7548]
+# rustc=1.97.0 (2d8144b78 2026-07-07), cargo 1.97.0, --release build
+# sample_count: see iters column per row (8, 8, 32) -- not duplicated here to avoid disagreement
+# regime=UNPRIVILEGED ONLY -- no SeLockMemoryPrivilege acquisition attempted (see docs/perf/_raw_r1189_windows_large_page_native_profile.log line 1); the PRIVILEGED regime is entirely unmeasured by this file
+# raw_log=docs/perf/_raw_r1189_windows_large_page_native_profile.log ; prose verdict=docs/perf/OPEN_ITEMS.md, the card located by `grep -n '\[task #1189\] P3(b) update' docs/perf/OPEN_ITEMS.md` -- a searchable anchor, NOT a line number: line citations into that file have gone stale three times in this campaign already (tasks #1005, #1011, #1169), and task #1195's own edit shifted every line below 2384 in the same commit that would have written the number
 label,size_bytes,iters,successes,single_call,two_call_pairs,large_page_alignment_failures,large_page_retry_failures,large_page_plain_fallback_successes
 2 MiB (== GetLargePageMinimum on typical x86_64),2097152,8,8,0,8,8,0,8
 4 MiB (> GetLargePageMinimum on typical x86_64),4194304,8,8,0,8,0,0,0
