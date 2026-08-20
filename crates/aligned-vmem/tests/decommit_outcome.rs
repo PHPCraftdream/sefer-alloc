@@ -26,11 +26,25 @@
 //!   this task's own Windows host: `Refused(VmemError { os_code: Some(487) })`),
 //!   and Linux `madvise` on an unmapped address is equally documented to
 //!   return `EINVAL`/`ENOMEM`. This is a REAL backend refusal on every
-//!   platform, not a Windows-only trick — but it has only been executed on
-//!   Windows during this task's own development; the Unix half is reasoned
-//!   from `man 2 madvise`'s own documented `ENOMEM`/`EINVAL` cases for an
-//!   address range that is not a valid part of the process's address space,
-//!   not independently observed on a Unix CI run as part of THIS task.
+//!   platform whose backend is a real OS, not a Windows-only trick — but it
+//!   has only been executed on Windows during this task's own development;
+//!   the Unix half is reasoned from `man 2 madvise`'s own documented
+//!   `ENOMEM`/`EINVAL` cases for an address range that is not a valid part of
+//!   the process's address space, not independently observed on a Unix CI run
+//!   as part of THIS task. **It is `#[cfg(not(aligned_vmem_mock))]` (task
+//!   #1197):** the mock backend issues no syscall, so `Refused` is
+//!   unreachable there by construction — see the test's own doc for the
+//!   mechanism and for how that gap reached the gate.
+//!
+//! One limitation of THIS FILE under `--cfg aligned_vmem_mock`, stated so it
+//! is not mistaken for coverage it does not give: with the mock backend,
+//! [`advised_variant_is_produced_by_a_genuinely_accepted_decommit`] observes
+//! the mock arm's unconditional `Advised` rather than a real accepted
+//! syscall, so under that row it no longer distinguishes "the OS accepted"
+//! from "nothing was asked". Its stated counterfactual (a dispatch collapsed
+//! to always-`Skipped` fails this test) does still hold there, which is why
+//! it is kept rather than gated off alongside the refusal test — but the
+//! variant-to-real-OS-outcome binding is proven only on the non-mock rows.
 //! - [`skipped_variant_is_produced_by_an_empty_range_on_the_free_function`]
 //!   (task #1192) closes the gap the other three left: before this test, the
 //!   free `try_decommit`'s `start == end` short-circuit
@@ -191,7 +205,20 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
 /// test would observe `Advised` instead of `Refused` and fail — it is a
 /// direct counterfactual on the exact defect (return-value discard) this
 /// task's brief describes.
+///
+/// **Not run under `--cfg aligned_vmem_mock` (task #1197).** The mock backend
+/// never reaches the OS: `dispatch_try_decommit`'s mock arm
+/// (`src/api/decommit.rs`) records the call and returns `Advised`
+/// unconditionally, by deliberate design — there is no syscall, so there is no
+/// refusal to observe and `Refused` is unreachable by construction, not merely
+/// unlikely. Without this gate the test fails in the local gate's
+/// `--cfg aligned_vmem_mock` row with "expected Refused, got Advised", which
+/// is exactly what it did: task #1180 created this file and never ran it under
+/// that row, and the failure surfaced only when the full `npm run check` gate
+/// ran before the wave's push. The gate is `not(aligned_vmem_mock)` rather
+/// than a runtime skip so the test cannot silently pass-by-doing-nothing there.
 #[test]
+#[cfg(not(aligned_vmem_mock))]
 fn refused_variant_is_produced_by_a_genuine_os_refusal() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
