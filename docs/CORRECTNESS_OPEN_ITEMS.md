@@ -285,8 +285,8 @@ deliberately not typed here — it moved 70 -> 71 the day it was first
 written. Compare against these two commands, which must agree:
 
 ```text
-grep -hE '^[0-9]+[a-z]?. **' docs/correctness-open-items/TRACKED_*.md | wc -l
-grep -cE '^| *[0-9]+[a-z]? *|' docs/CORRECTNESS_OPEN_ITEMS.md
+grep -hE '^[0-9]+[a-z]?\. \*\*' docs/correctness-open-items/TRACKED_*.md | wc -l
+grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 ```
 
 
@@ -382,15 +382,26 @@ mattered. Reproduce with:
 ```text
 grep -cE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md
 grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
+grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/correctness-open-items/TRACKED_*.md | wc -l
 ```
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-94, plus 85 which sits out of numeric order between 47 and 48)
-**= 76 total open cards**, plus 40 "Recently resolved" pointer lines
-resolving into 38 archive entries (two archive item-number collisions,
-`3` appearing twice, predate this split and are inherited unchanged — see
-`docs/correctness-open-items/ARCHIVE.md`'s own "Structure" section).
+76, 78-94, plus 85 which sits out of numeric order between 46 and 90 in
+`TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the
+pre-#1222 files and rotted at the thematic re-split — corrected at #1239)
+**= the total open-card count, deliberately not typed here** — for the
+same reason the lookup-table block above refuses to type its count (a
+number typed in prose is a second copy of a fact), and with this very sum
+as the proof: task #1233 added card 94 and extended this sentence's range
+label `78-93 -> 78-94` without re-adding the total, so the typed number
+went stale in the same commit that un-typed the lookup-table count. The
+third command above prints the total directly; it must equal the first
+command's output plus the sum of the second's. Beyond the cards: 40
+"Recently resolved" pointer lines resolving into 38 archive entries (two
+archive item-number collisions, `3` appearing twice, predate this split
+and are inherited unchanged — see `docs/correctness-open-items/ARCHIVE.md`'s
+own "Structure" section).
 Items 1-4's original flaky-test cards are separately already-resolved
 stub pointers inside the `[T]` tier's own intro text (now duplicated
 verbatim at the top of `TRACKED_test_flakiness.md`, the file whose theme
