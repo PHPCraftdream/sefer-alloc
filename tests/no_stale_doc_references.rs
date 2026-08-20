@@ -1832,11 +1832,17 @@ fn correctness_item_87_sentinel_counts_agree() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     // Relocated by task #1217 (2026-08-20): item 87's card now lives in
-    // docs/correctness-open-items/TRACKED_ci_gate_coverage.md (the [T]-tier,
-    // item-number-range-44-93 file — task #1221, 2026-08-20, further split
-    // from the single TRACKED.md task #1217 created, which no longer
-    // exists), not inline in docs/CORRECTNESS_OPEN_ITEMS.md, which is now a
-    // thin index.
+    // docs/correctness-open-items/TRACKED_ci_gate_coverage.md — the [T]-tier
+    // file for CI/gate-coverage cards — not inline in
+    // docs/CORRECTNESS_OPEN_ITEMS.md, which is now a thin index.
+    //
+    // Two splits produced that path on the same day and only the second
+    // survives: task #1221 first split the single TRACKED.md that #1217 had
+    // created into four item-number-RANGE files, and task #1222 replaced
+    // those with nine THEMATIC files hours later, at the owner's request.
+    // This comment named the retired range identity ("the
+    // item-number-range-44-93 file") until task #1236 corrected it; neither
+    // TRACKED.md nor any TRACKED_NNN_NNN.md exists any longer.
     let index_path = manifest
         .join("docs")
         .join("correctness-open-items")

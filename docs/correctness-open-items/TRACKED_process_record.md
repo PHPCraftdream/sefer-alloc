@@ -19,16 +19,27 @@ task #1221 (same day) split the former single `TRACKED.md` into four
 number-range files, balanced by line count. The owner rejected that split
 and asked for a thematic split instead -- grouping cards by what they are
 actually ABOUT, derived from reading all 70 cards rather than assumed.
-Every one of the code/CI/script citations of this index across the repo
-cites an item by NUMBER, never by topic or file, so
-`docs/CORRECTNESS_OPEN_ITEMS.md` (the thin index) now carries a complete
-item-N to file lookup table covering all 70 numbers (including the
-`59a`/`59b` sub-items) -- that table, not this file's name, is what keeps
-the by-number citation convention working under a thematic split: the
-lookup is two-hop (index table, then this file), but mechanical and
-always correct. The number of citing files is deliberately never typed
-in this header (task #1230 removed the hardcoded "42+" it carried);
-compare against this command's output, never a hardcoded count:
+Every citation of this index that points at ONE SPECIFIC ITEM carries
+that item's number, in the form `` `docs/CORRECTNESS_OPEN_ITEMS.md`
+item N `` -- task #1227 repaired the seven in `aligned-vmem` that did
+not, and two outside it were still open as of that task (both are
+recorded in the thin index's Structure section). Citations that point
+at the FILE as a whole, at a named SECTION, or at a CLASS of items
+rather than one item carry no item number and never needed one (task
+#1227's finding; until #1236 these headers overclaimed it as a
+universal, asserting that no citation ever pointed at anything but
+an item number). Only the numbered citations depend on where item
+numbers live, and `docs/CORRECTNESS_OPEN_ITEMS.md` (the thin index)
+carries the complete, mechanically generated item-N -> file lookup
+table covering EVERY `[T]`-tier number (including the `59a`/`59b`
+sub-items) that keeps them resolving -- that table, not this file's
+name, is what makes the thematic split safe: the lookup is two-hop
+(index table, then this file), but mechanical and always correct. No citing-file
+count is typed in this header on purpose: the "42+" typed here at
+the split was already 43 (census against the split commit) -- #1230
+removed it from one of these nine headers, #1236 from the other
+eight; compare against this command's output, never a hardcoded
+count:
 
 ```text
 git grep -l "docs/CORRECTNESS_OPEN_ITEMS\.md" -- ':!docs/' | wc -l
