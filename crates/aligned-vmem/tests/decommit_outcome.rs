@@ -1,9 +1,34 @@
-//! Task #1180 (PUB-R2 phase 2): three counterfactual tests, one per
-//! [`DecommitOutcome`] variant, each asserting the SPECIFIC variant returned
-//! (not merely `is_ok()`) and each stating what a dispatch bug would have to
-//! do to make that assertion pass anyway (so the test is not vacuous — see
-//! item #1073's "touch the test file and rebuild before trusting a
-//! counterfactual" rule, honoured for all three below).
+//! Task #1180 (PUB-R2 phase 2; headline corrected task #1229/F7): three
+//! counterfactual tests covering TWO of the THREE [`DecommitOutcome`]
+//! variants — one `Advised` and two `Skipped` (the huge-page-skip one is
+//! gated on `huge-pages`, so a default-feature row runs only two of the
+//! three) — each asserting the SPECIFIC variant returned (not merely
+//! `is_ok()`) and each stating what a dispatch bug would have to do to
+//! make that assertion pass anyway (so the test is not vacuous — see item
+//! #1073's "touch the test file and rebuild before trusting a
+//! counterfactual" rule, honoured by all three tests below).
+//!
+//! The third variant, `Refused`, has ZERO test coverage in this file and
+//! none deterministic anywhere in this crate (task #1210): its only test
+//! needed out-of-bounds `pointer::add` arithmetic — UB in computing the
+//! pointer, not merely in dereferencing it — to reach a genuine OS
+//! refusal, so it was deleted outright rather than cfg-gated a third
+//! time. Restoring that coverage requires a `src/` seam and is tracked as
+//! task #1219; see
+//! [`refused_variant_has_no_deterministic_coverage_in_this_file`] below
+//! for the full record of every avenue checked and rejected.
+//!
+//! Correction note, kept so the history is not re-litigated: this
+//! paragraph's original headline claimed "three counterfactual tests, one
+//! per `DecommitOutcome` variant" — true when `b920b29` (task #1180)
+//! created this file with exactly those three tests, false ever since
+//! `dcc2a2f` (task #1192) added a fourth, second-`Skipped` test, and false
+//! in the opposite direction (three tests, two variants) once `1f930e2`
+//! (task #1210) deleted the `Refused` one. The stale headline survived
+//! every one of those edits — including `1f930e2`, the commit whose
+//! stated purpose was to record the `Refused` coverage loss honestly,
+//! which rewrote the `Refused` bullet below and left the headline above
+//! implying the loss did not exist.
 //!
 //! What each test can/cannot prove on THIS host, stated up front:
 //! - [`skipped_variant_is_produced_by_a_huge_page_skip`] uses the
@@ -47,9 +72,14 @@
 //! it is kept rather than gated off alongside the refusal test — but the
 //! variant-to-real-OS-outcome binding is proven only on the non-mock rows.
 //! - [`skipped_variant_is_produced_by_an_empty_range_on_the_free_function`]
-//!   (task #1192) closes the gap the other three left: before this test, the
-//!   free `try_decommit`'s `start == end` short-circuit
-//!   (`api/decommit.rs:387-389`) had NO test coverage at all — `Skipped` was
+//!   (task #1192) closes the gap the three then-existing tests left (one
+//!   of which — the `Refused` one — task #1210 has since deleted): before
+//!   this test, the free `try_decommit`'s `start == end` short-circuit
+//!   (the `if start == end { return Ok(DecommitOutcome::Skipped); }`
+//!   early-return arm of `try_decommit`, `src/api/decommit.rs` — cited by
+//!   symbol and branch, not by line number, task #1229/F8: the previous
+//!   line-range citation here drifted within the very wave that wrote it)
+//!   had NO test coverage at all — `Skipped` was
 //!   only exercised via the `huge-pages`-gated fabricated-huge-flag test
 //!   above. This test needs no feature gate and no fabrication: an empty,
 //!   page-aligned range is a well-formed no-op on ANY reservation, ordinary
@@ -98,9 +128,13 @@ fn advised_variant_is_produced_by_a_genuinely_accepted_decommit() {
 }
 
 /// `DecommitOutcome::Skipped`: an empty, well-formed range (`start == end`)
-/// on the FREE `try_decommit` function — the short-circuit at
-/// `api/decommit.rs:387-389`, checked and returned before
-/// `dispatch_try_decommit` is ever called. Deliberately does NOT require the
+/// on the FREE `try_decommit` function — its `start == end` early-return
+/// arm (the `if start == end { return Ok(DecommitOutcome::Skipped); }`
+/// branch of `try_decommit` in `src/api/decommit.rs`, cited by symbol and
+/// branch rather than line number after the previous line-range citation
+/// drifted within the same wave — task #1229/F8), checked and returned
+/// before `dispatch_try_decommit` is ever called. Deliberately does NOT
+/// require the
 /// `huge-pages` feature: this is the one `Skipped` source the free function
 /// itself can produce (see the corrected doc on `DecommitOutcome::Skipped`),
 /// independent of any huge-page eligibility question.
