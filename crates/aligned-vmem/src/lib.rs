@@ -144,11 +144,16 @@
 // `MEM_DECOMMIT` and the Unix-only `libc_madvise` + `madv_free_advice` +
 // `MADV_DONTNEED` + `MADV_FREE` (all only reachable from the real decommit
 // path, which `mock` bypasses).
-// `fault_injection`'s hook is only consulted from `try_commit_range`, which is
-// itself gated on `lazy-commit`. A caller who enables `fault-injection`
-// without `lazy-commit` gets a compiled-but-unreachable hook (harmless — the
-// feature is additive and test-only); suppress dead-code only in that
-// specific combination, on the single item it affects.
+// `fault_injection` carries two hooks with one call site each (task #1219
+// added the second). The COMMIT-side hook (`should_fail_commit`) is consulted
+// only from `try_commit_range`, which is itself gated on `lazy-commit`: a
+// caller who enables `fault-injection` without `lazy-commit` gets a
+// compiled-but-unreachable hook (harmless — the feature is additive and
+// test-only); suppress dead-code only in that specific combination, on the
+// single item it affects. The DECOMMIT-side hook (`should_fail_decommit`) is
+// consulted only from `dispatch_try_decommit`, which is NOT feature-gated
+// (decommit is core API), so its only orphaning combination is the mock cfg —
+// see its own `#[cfg_attr(aligned_vmem_mock, allow(dead_code))]`.
 //
 // Structural alternative considered and deferred for a future major release:
 // reorganize the three backends as separate `#[cfg]`-selected private modules

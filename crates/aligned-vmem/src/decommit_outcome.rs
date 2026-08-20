@@ -113,6 +113,15 @@ pub enum DecommitOutcome {
     /// [`VmemError::last_os_error`] captured immediately after the failing
     /// call, same capture-timing contract as every other OS-refusal error in
     /// this crate.
+    ///
+    /// **One test-only second source of this payload** (task #1219): with the
+    /// `fault-injection` feature enabled AND
+    /// [`fault_injection::arm_fail_next_decommit`](crate::fault_injection::arm_fail_next_decommit)
+    /// armed, the syscall is replaced by a simulated failure and the payload
+    /// is [`VmemError::os_refusal_unknown_code`] instead — no syscall ran, so
+    /// there is no `last_os_error` to capture (the same task-#713 rule the
+    /// commit-side seam follows). A production build without that opt-in
+    /// feature can only reach the real-backend path described above.
     Refused(VmemError),
 }
 

@@ -28,6 +28,18 @@
 //! simulating commit-charge exhaustion at an exact point in a real allocation
 //! sequence.
 //!
+//! task #1219 adds a decommit-side sibling hook with exactly ONE call site of
+//! its own: [`arm_fail_next_decommit`], consulted from
+//! `dispatch_try_decommit` (`api/decommit.rs`) — the single private dispatch
+//! point both fallible decommit entry points (the free `try_decommit` and
+//! `Reservation::try_decommit`) funnel through — in front of the real
+//! `decommit_pages_impl` call. It exists for the same reason and carries the
+//! same mock-caveat as the commit-side hooks (inert under
+//! `aligned_vmem_mock`, where the call site is compiled out). Only the
+//! fail-next tier exists on the decommit side; no `arm_fail_at`-style k-th
+//! hook, because no test has needed one — add it by mirroring
+//! [`arm_fail_at`]/`FAULT_STATE` if one ever does.
+//!
 //! Two independent, additive hooks (mirrors the two-tier hook that
 //! `sefer-alloc` carried before this crate absorbed it):
 //! - [`arm_fail_next`]: the next `n` real commit calls fail.
@@ -171,4 +183,66 @@ pub(crate) fn should_fail_commit() -> bool {
         }
     }
     false
+}
+
+/// When `> 0`, the next real decommit call fails without touching the OS and
+/// decrements this counter. `0` disarms. See [`arm_fail_next_decommit`].
+///
+/// Separate from [`FAIL_NEXT`]: arming the COMMIT hook must not also fire
+/// decommits (and vice versa), so the two tiers keep independent state.
+static FAIL_NEXT_DECOMMIT: AtomicU32 = AtomicU32::new(0);
+
+/// Arm the "fail the next N real decommits" hook (task #1219). The next `n`
+/// calls through the real decommit dispatch point — `dispatch_try_decommit`
+/// (`api/decommit.rs`), reached by BOTH fallible decommit entry points, the
+/// free [`crate::try_decommit`] and [`crate::Reservation::try_decommit`] —
+/// return `Ok(DecommitOutcome::Refused(VmemError::os_refusal_unknown_code()))`
+/// without touching the OS. `n == 0` disarms.
+///
+/// What an armed hook PROVES when it fires, stated precisely because the
+/// decommit-side history is full of overclaims: the `Err(e) =>
+/// DecommitOutcome::Refused(e)` mapping arm is reachable from both fallible
+/// entry points and constructs the outcome carrying exactly the error the
+/// backend layer produced. It does NOT prove an OS refusal — no syscall ran;
+/// the no-code sentinel is used for the same task-#713 reason as the
+/// commit-side hook. What a caller can NOT learn from this hook: whether any
+/// real kernel would refuse any real range — that remains untestable
+/// deterministically from `tests/` alone (see
+/// `decommit_outcome.rs`'s module doc for the avenues rejected).
+///
+/// Inert under the `aligned_vmem_mock` cfg — see the module doc. Deliberately
+/// NOT consulted by the infallible `decommit`/`decommit_lazy`: both discard
+/// the backend outcome by signature, so an injected fault there would have
+/// nothing observable to affect.
+///
+/// Uses `Relaxed` for the same reason as [`arm_fail_next`]: the counter
+/// carries no payload to publish across threads.
+#[cfg_attr(docsrs, doc(cfg(feature = "fault-injection")))]
+pub fn arm_fail_next_decommit(n: u32) {
+    FAIL_NEXT_DECOMMIT.store(n, Ordering::Relaxed);
+}
+
+/// Internal: consult the decommit-side hook for the current real decommit
+/// call. Returns `true` if this call should be forced to fail. Called once
+/// per real decommit attempt, immediately before the OS syscall — the single
+/// call site is `dispatch_try_decommit`'s `#[cfg(not(aligned_vmem_mock))]`
+/// branch (`api/decommit.rs`).
+// mock (task #646/F8 shape): under `aligned_vmem_mock` that call site is
+// compiled out, so this goes unused whenever the cfg is set alongside
+// `fault-injection`. Unlike `should_fail_commit` there is NO
+// `fault-injection`-without-`lazy-commit` dead combination to suppress:
+// `dispatch_try_decommit` is not feature-gated (decommit is core API), so the
+// mock cfg is the only combination that orphans this function.
+#[cfg_attr(aligned_vmem_mock, allow(dead_code))]
+pub(crate) fn should_fail_decommit() -> bool {
+    // Same `fetch_update` shape and task #718 rationale as `should_fail_commit`:
+    // one atomic read-modify-write, so concurrent callers can neither both
+    // fire on one armed failure nor silently lose a decrement.
+    FAIL_NEXT_DECOMMIT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            // `then` (lazy), not `then_some` (eager) — see the matching
+            // comment in `should_fail_commit` for the underflow trap.
+            (next > 0).then(|| next - 1)
+        })
+        .is_ok()
 }

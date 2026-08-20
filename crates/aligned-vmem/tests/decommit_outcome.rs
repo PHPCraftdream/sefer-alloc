@@ -1,22 +1,35 @@
-//! Task #1180 (PUB-R2 phase 2; headline corrected task #1229/F7): three
-//! counterfactual tests covering TWO of the THREE [`DecommitOutcome`]
-//! variants — one `Advised` and two `Skipped` (the huge-page-skip one is
-//! gated on `huge-pages`, so a default-feature row runs only two of the
-//! three) — each asserting the SPECIFIC variant returned (not merely
+//! Task #1180 (PUB-R2 phase 2; headline corrected task #1229/F7, and again
+//! task #1219): counterfactual tests covering ALL THREE [`DecommitOutcome`]
+//! variants — one `Advised`, two `Skipped`, and (since task #1219) one
+//! `Refused` — each asserting the SPECIFIC variant returned (not merely
 //! `is_ok()`) and each stating what a dispatch bug would have to do to
 //! make that assertion pass anyway (so the test is not vacuous — see item
 //! #1073's "touch the test file and rebuild before trusting a
-//! counterfactual" rule, honoured by all three tests below).
+//! counterfactual" rule, honoured by all four tests below).
 //!
-//! The third variant, `Refused`, has ZERO test coverage in this file and
-//! none deterministic anywhere in this crate (task #1210): its only test
-//! needed out-of-bounds `pointer::add` arithmetic — UB in computing the
-//! pointer, not merely in dereferencing it — to reach a genuine OS
-//! refusal, so it was deleted outright rather than cfg-gated a third
-//! time. Restoring that coverage requires a `src/` seam and is tracked as
-//! task #1219; see
-//! [`refused_variant_has_no_deterministic_coverage_in_this_file`] below
-//! for the full record of every avenue checked and rejected.
+//! Which rows run how many of them, stated up front because the gates
+//! differ: the huge-page-skip `Skipped` test is gated on `huge-pages`, and
+//! the `Refused` test is gated on `all(feature = "fault-injection",
+//! not(aligned_vmem_mock))` — so a default-feature row runs TWO of the four
+//! (Advised + empty-range Skipped), a row with exactly one of the two gates
+//! on runs THREE (`huge-pages` alone adds the huge-skip `Skipped`;
+//! `fault-injection` alone, mock off — e.g. the
+//! `--features "fault-injection lazy-commit"` CI row — adds the `Refused`
+//! one), and only a row with BOTH (`--all-features`, or the Windows/macOS
+//! explicit `lazy-commit huge-pages fault-injection bench-internals` lists —
+//! in every case with the mock cfg OFF) runs all FOUR. Verified per row by
+//! local runs of each combination, not derived: 2 / 3 / 3 / 4.
+//!
+//! The third variant, `Refused`, had ZERO test coverage anywhere in this
+//! crate between task #1210 and task #1219: its only test needed
+//! out-of-bounds `pointer::add` arithmetic — UB in computing the pointer,
+//! not merely in dereferencing it — to reach a genuine OS refusal, so it
+//! was deleted outright rather than cfg-gated a third time. Task #1219
+//! restored coverage through a real-path fault-injection seam in `src/`
+//! (`fault_injection::arm_fail_next_decommit`, consulted from
+//! `dispatch_try_decommit` in `src/api/decommit.rs`) — NOT by reviving the
+//! UB test; see [`refused_variant_is_produced_by_the_fault_injection_seam_on_both_fallible_entry_points`]
+//! below for exactly what that test does and does not prove.
 //!
 //! Correction note, kept so the history is not re-litigated: this
 //! paragraph's original headline claimed "three counterfactual tests, one
@@ -43,7 +56,8 @@
 //!   `VirtualFree(MEM_DECOMMIT)`, so this is real on every platform this
 //!   crate's CI runs, including this task's own Windows verification host.
 //! - `refused_variant_is_produced_by_a_genuine_os_refusal` **no longer
-//!   exists as a runnable test (task #1210)** — named in plain backticks,
+//!   exists as a runnable test (task #1210), and its NAME is deliberately
+//!   not reused by its task-#1219 replacement** — named in plain backticks,
 //!   NOT as an intra-doc link, precisely because the item it would link to
 //!   is the one this bullet says was deleted. It used to reach a range far
 //!   outside the live `MEM_RESERVE`/`mmap` region via `far_start = 64 *
@@ -57,10 +71,10 @@
 //!   true on every cfg the old test compiled under, including the
 //!   Windows-only row it was narrowed to by task #1199 — narrowing the
 //!   `#[cfg]` changed which platforms executed the UB, not whether
-//!   computing the pointer was UB. See
-//!   [`refused_variant_has_no_deterministic_coverage_in_this_file`] for
-//!   what replaces it and why real `Refused` coverage needs a seam this
-//!   file's scope does not include.
+//!   computing the pointer was UB. Its replacement (task #1219) does NOT
+//!   exhibit UB and does NOT claim a genuine OS refusal; see
+//!   [`refused_variant_is_produced_by_the_fault_injection_seam_on_both_fallible_entry_points`]
+//!   for the exact split between what is proven and what is not.
 //!
 //! One limitation of THIS FILE under `--cfg aligned_vmem_mock`, stated so it
 //! is not mistaken for coverage it does not give: with the mock backend,
@@ -87,6 +101,15 @@
 //!   on every host and every feature configuration.
 
 use aligned_vmem::{page_size, reserve_aligned, try_decommit, DecommitOutcome};
+// Gated with the SAME cfg as the `Refused` test below (the file's own rule
+// from task #1192, see the `Reservation` import note): an ungated import of
+// `arm_fail_next_decommit`/`VmemError` fails `cargo clippy -p aligned-vmem
+// --all-targets -- -D warnings` (the DEFAULT-features CI row) with
+// `unused_imports` on exactly the rows where the test is compiled out.
+#[cfg(all(feature = "fault-injection", not(aligned_vmem_mock)))]
+use aligned_vmem::fault_injection::arm_fail_next_decommit;
+#[cfg(all(feature = "fault-injection", not(aligned_vmem_mock)))]
+use aligned_vmem::VmemError;
 // `Reservation` is named ONLY by the huge-skip test below, which is gated on
 // `huge-pages` — so importing it unconditionally makes the DEFAULT feature row
 // fail `cargo clippy -p aligned-vmem --all-targets -- -D warnings`
@@ -219,95 +242,119 @@ fn skipped_variant_is_produced_by_a_huge_page_skip() {
     );
 }
 
-/// `DecommitOutcome::Refused` has **no deterministic test coverage in this
-/// file** (task #1210). This is a marker/doc function, not a test — it
-/// exists so the gap has one grep-able name instead of living only in a
-/// commit message.
+/// `DecommitOutcome::Refused`, restored deterministically (task #1219) via the
+/// real-path fault-injection seam — `fault_injection::arm_fail_next_decommit`,
+/// consulted from `dispatch_try_decommit`'s `#[cfg(not(aligned_vmem_mock))]`
+/// branch in `src/api/decommit.rs`, which replaces the syscall with an
+/// injected `Err` routed through the SAME `Err(e) => Refused(e)` mapping arm a
+/// real backend refusal takes.
 ///
-/// # Why the old test was removed outright, not merely re-gated
+/// **What this test proves, stated exactly:** the `Err(e) =>
+/// DecommitOutcome::Refused(e)` mapping arm in `dispatch_try_decommit` is
+/// REACHABLE from BOTH fallible entry points (the free `try_decommit` and
+/// `Reservation::try_decommit`) and constructs the outcome carrying exactly
+/// the error value the backend layer produced (asserted by full `PartialEq`
+/// on `Ok(DecommitOutcome::Refused(VmemError::os_refusal_unknown_code()))`,
+/// so an arm that drops or substitutes the payload fails); the hook is
+/// one-shot and its firing does not affect the next call, which reaches the
+/// REAL backend and is accepted (`Advised`, the same oracle
+/// [`advised_variant_is_produced_by_a_genuinely_accepted_decommit`] relies
+/// on).
 ///
-/// The previous `refused_variant_is_produced_by_a_genuine_os_refusal`
-/// (removed by task #1210) called
-/// `try_decommit(r.as_ptr(), far_start, far_end)` with `far_start = 64 *
-/// 1024 * 1024` against a `SPAN = 2 * 1024 * 1024` reservation. Internally
-/// that free function's Windows backend
-/// (`decommit_pages_impl`, `src/os/windows.rs`) computes
-/// `base.add(start)` before ever calling `VirtualFree`. `pointer::add`'s own
-/// contract requires the resulting pointer to stay within the bounds of the
-/// SAME allocated object (or one byte past its end) — `base + 64 MiB` is
-/// ~32x past the end of a 2 MiB object, so **computing that pointer is
-/// Undefined Behaviour**, independent of whether `VirtualFree` ever
-/// dereferences it. `VirtualFree` genuinely never dereferences the address
-/// (it only manipulates kernel page-table state) — that part of the old
-/// `# Safety` comment was factually correct about the memory-ACCESS — but
-/// it does not make the pointer ARITHMETIC defined; `add`'s contract is
-/// violated the moment it executes, before any OS call happens. Task #1199
-/// had already narrowed this test's `#[cfg]` to Windows-only after a
-/// same-shape address landed inside a live mapping on Linux in CI
-/// (`dff7b1d`) and got genuinely decommitted instead of refused; that
-/// narrowing changed which platform's ABI happened to make the bet usually
-/// pay off, but never addressed that the address computation itself was
-/// already unsound on every platform, including the one the test kept
-/// running on. So the fix here is not a tighter `#[cfg]` (a third
-/// narrowing after #1197 and #1199 would repeat the same mistake) — it is
-/// deleting the out-of-bounds arithmetic instead of trying to gate it to a
-/// cfg where it happens not to get caught.
+/// **What it does NOT prove:** that any OS refused anything. No syscall ran
+/// on the refused call — the fault was injected before the backend was
+/// reached, which is why the payload is the no-code sentinel
+/// `VmemError::os_refusal_unknown_code()` and not a captured
+/// `last_os_error()`. `Refused` arising from a REAL kernel refusal
+/// (`madvise` returning `-1`, `VirtualFree` returning zero) remains without
+/// deterministic coverage, and every avenue for producing one from `tests/`
+/// alone was checked and rejected before task #1210 deleted the old test
+/// (out-of-bounds address: UB in the pointer arithmetic itself, the reason
+/// the old test is gone and must not return; any in-reservation address:
+/// accepted by construction, decommitting an uncommitted sub-range is a
+/// documented no-op; the `granted_huge` fabrication: steers only a Rust-level
+/// branch, yields `Skipped`; reserve-then-release-then-decommit: a re-mapping
+/// race that can observe `Advised` against another mapping). That gap is
+/// permanent unless someone finds a mechanism this list missed — the honest
+/// claim of this test is reachability-and-construction of the variant, not
+/// OS behaviour.
 ///
-/// # Why a real replacement needs a seam this file's scope does not have
+/// **What would make this fail if the seam regressed:** three independent
+/// ways. (1) If the `#[cfg(feature = "fault-injection")]` consult were
+/// removed from `dispatch_try_decommit` (or stopped firing), the first
+/// assertion observes `Advised` and fails. (2) If the mapping arm were
+/// changed to discard or substitute its payload, the exact-equality
+/// assertions fail. (3) If `Reservation::try_decommit` stopped routing
+/// through `dispatch_try_decommit`, the second assertion fails.
 ///
-/// Every avenue available from `tests/decommit_outcome.rs` alone (no edits
-/// to `src/`, which is out of scope for this file) was checked and rejected:
-///
-/// - **A far-but-in-bounds address is not available.** The whole point of
-///   `Refused` is "the backend was genuinely called and the OS declined it";
-///   any address inside the live reservation's own `MEM_RESERVE` region is
-///   accepted by `VirtualFree(MEM_DECOMMIT)` (decommitting an
-///   already-uncommitted sub-range is a documented safe no-op — see
-///   `decommit_pages_impl`'s own doc comment in `src/os/windows.rs`), so it
-///   cannot produce `Refused`.
-/// - **The `granted_huge`-fabrication pattern** already used by
-///   [`skipped_variant_is_produced_by_a_huge_page_skip`] above only steers
-///   which RUST-LEVEL branch runs (`Reservation::try_decommit`'s huge-skip
-///   check reads `self.granted_huge`, which carries no OS-visible effect —
-///   see that test's own doc for why fabricating it is sound). It cannot
-///   make the OS itself refuse a call, because a huge-flagged reservation on
-///   Windows takes the unconditional Rust-level skip (never reaches the
-///   backend at all — `Reservation::decommit`'s doc, "on Windows, decommit
-///   NEVER works" — `src/reservation.rs`), so that path produces `Skipped`,
-///   not a genuine `Refused`.
-/// - **The withdrawn "reserve, release, then decommit the freed address"
-///   idea** (recorded as a candidate in the superseded version of this
-///   comment, and independently flagged by the orchestrator's own task #1210
-///   brief as WITHDRAWN) carries a re-mapping race: between `release` and
-///   the following `try_decommit`, another thread/allocation in this same
-///   process could re-`VirtualAlloc` over the freed address range, so the
-///   call could just as easily observe a genuine `Advised` against someone
-///   else's fresh mapping. Less reliable than a controlled backend result,
-///   not a fix.
-/// - **`fault_injection.rs`'s `arm_fail_next`/`arm_fail_at`** only intercept
-///   the real COMMIT path (`crate::try_commit_range`, gated on
-///   `lazy-commit`) — see that module's own doc, "the next `n` real commit
-///   calls fail" — there is no decommit-side equivalent to arm.
-/// - **The `aligned_vmem_mock` backend's `Call::Decommit` recording**
-///   (`src/mock.rs`) always resolves to `DecommitOutcome::Advised`
-///   unconditionally by design (`dispatch_try_decommit`'s mock arm,
-///   `src/api/decommit.rs`) — no scripted-failure hook exists for it, unlike
-///   `fail_next_commit`/`fail_next_reserve`.
-///
-/// Every option that would produce a genuine `Refused` deterministically —
-/// a decommit-side fault-injection hook mirroring `fault_injection.rs`'s
-/// commit-side one, or a scripted `Call::Decommit` failure in `mock.rs`
-/// mirroring `fail_next_commit` — requires adding a hook to `src/`. That is
-/// out of scope for this file (owned by a sibling agent in this round) and
-/// is reported to the orchestrator as a request rather than implemented
-/// here.
-///
-/// **Consequence, stated so it is not mistaken for coverage:** the
-/// `Refused` variant has NO deterministic test coverage anywhere in this
-/// crate as of task #1210. This is strictly worse than the pre-#1210 state
-/// in coverage terms (which had non-deterministic, UB-tainted Windows-only
-/// coverage) but is the correct trade: a test that exhibits Undefined
-/// Behaviour to pass is not coverage, it is a hazard that happened to not
-/// yet have visibly misbehaved on this host.
-#[allow(dead_code)]
-fn refused_variant_has_no_deterministic_coverage_in_this_file() {}
+/// **Gate and rows, so this never becomes a green-and-dead test (the #1095
+/// class):** gated `all(feature = "fault-injection", not(aligned_vmem_mock))`
+/// — under the mock cfg `dispatch_try_decommit`'s real-path branch (the
+/// hook's only call site) is compiled out and the mock arm returns `Advised`
+/// unconditionally, so the test would be vacuous there. It RUNS in: the
+/// `test workspace members` job's `cargo test -p aligned-vmem --all-features`
+/// and `cargo test -p aligned-vmem --features "fault-injection lazy-commit"`
+/// rows (`.github/workflows/ci.yml` — the latter row exists precisely
+/// because a fault-injection-gated file compiled to zero tests under
+/// `--all-features`-plus-mock before task #699), the `test-windows` and
+/// `test-macos` jobs' explicit
+/// `--features "lazy-commit huge-pages fault-injection bench-internals"`
+/// rows, and `npm run check`'s `test (aligned-vmem --all-features)` step
+/// (`scripts/check-all.mjs`). It does NOT run in the mock-cfg rows or any
+/// default-features row.
+#[test]
+#[cfg(all(feature = "fault-injection", not(aligned_vmem_mock)))]
+fn refused_variant_is_produced_by_the_fault_injection_seam_on_both_fallible_entry_points() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // Disarm any residue from a prior test in this binary (the hook is a
+    // process-global atomic; SERIAL serializes this file's tests, but a
+    // failed prior test could have left it armed).
+    arm_fail_next_decommit(0);
+
+    let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let ps = page_size();
+
+    // Entry point 1: the FREE try_decommit, with one fault armed.
+    arm_fail_next_decommit(1);
+    // SAFETY: `r` is live and `[ps, 2*ps)` is inside its usable span.
+    let free_path = unsafe { try_decommit(r.as_ptr(), ps, 2 * ps) };
+    assert_eq!(
+        free_path,
+        Ok(DecommitOutcome::Refused(
+            VmemError::os_refusal_unknown_code()
+        )),
+        "an armed decommit fault through the free try_decommit must reach \
+         the Err(e) => Refused(e) mapping arm and carry the injected \
+         no-code error unchanged"
+    );
+
+    // Entry point 2: Reservation::try_decommit (safe method, ordinary —
+    // non-huge — reservation), with a fresh fault armed.
+    arm_fail_next_decommit(1);
+    let method_path = r.try_decommit(ps, 2 * ps);
+    assert_eq!(
+        method_path,
+        Ok(DecommitOutcome::Refused(
+            VmemError::os_refusal_unknown_code()
+        )),
+        "an armed decommit fault through Reservation::try_decommit must \
+         reach the SAME mapping arm — the method routes through \
+         dispatch_try_decommit, not a private copy"
+    );
+
+    // One-shot + real-backend coexistence: the hook is consumed, so the same
+    // well-formed range through the free function must now reach the REAL
+    // backend and be accepted — deterministically, because an in-span,
+    // page-aligned, non-empty range on an ordinary reservation is accepted
+    // by every real backend this crate's CI runs (the oracle the `Advised`
+    // test above already relies on).
+    // SAFETY: same live reservation, same in-span range.
+    let after = unsafe { try_decommit(r.as_ptr(), ps, 2 * ps) };
+    assert_eq!(
+        after,
+        Ok(DecommitOutcome::Advised),
+        "after the one-shot fault is consumed, the next call must reach the \
+         real backend and be accepted, proving the seam coexists with \
+         rather than replaces the real path"
+    );
+}

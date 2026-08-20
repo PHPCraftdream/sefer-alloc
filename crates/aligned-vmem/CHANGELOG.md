@@ -116,6 +116,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `validate_page_size()` for testing page size validation logic
 - Mock backend converted from Cargo feature to build-time `--cfg aligned_vmem_mock` flag (no Cargo feature unification risk)
 - `fault-injection` feature for deterministic OOM testing on the real commit path
+- **`fault_injection::arm_fail_next_decommit(n)`** (task #1219) — the
+  decommit-side sibling of the commit-side `arm_fail_next`/`arm_fail_at`
+  hooks. The next `n` calls through the real decommit dispatch point
+  (`dispatch_try_decommit`, reached by BOTH fallible entry points: the free
+  `try_decommit` and `Reservation::try_decommit`) return
+  `Ok(DecommitOutcome::Refused(VmemError::os_refusal_unknown_code()))`
+  without touching the OS; the injected `Err` is routed through the same
+  `Err(e) => Refused(e)` mapping arm a real backend refusal takes. Exists to
+  restore deterministic coverage of the `Refused` variant's construction and
+  reachability after task #1210 deleted its only test (which manufactured a
+  refusal via out-of-bounds pointer arithmetic — UB in the arithmetic
+  itself). The infallible `decommit`/`decommit_lazy` deliberately do NOT
+  consult the hook: both discard the backend outcome by signature. As with
+  the commit-side hooks: inert under `--cfg aligned_vmem_mock` (the single
+  call site is compiled out there), and the injected error is the no-code
+  sentinel, not a fabricated `last_os_error()` — no syscall ran. The test
+  this enables (`tests/decommit_outcome.rs`) proves the mapping arm is
+  reachable from both entry points and preserves its payload; it does NOT
+  prove any OS refused anything. [test-infrastructure, additive]
 - `try_reserve_aligned()` / `try_reserve_aligned_huge()` / `try_reserve_aligned_lazy()` fallible forms returning `Result<_, VmemError>`
 - `reserve_aligned_huge()` for requesting OS large pages (Linux `MAP_HUGETLB`, Windows `MEM_LARGE_PAGES`)
 

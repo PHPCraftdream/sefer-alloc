@@ -1,5 +1,7 @@
 use crate::decommit_outcome::DecommitOutcome;
 use crate::error::VmemError;
+#[cfg(all(feature = "fault-injection", not(aligned_vmem_mock)))]
+use crate::fault_injection;
 #[cfg(aligned_vmem_mock)]
 use crate::mock;
 #[cfg(not(aligned_vmem_mock))]
@@ -332,7 +334,16 @@ fn decommit_range_is_well_formed(start: usize, end: usize, ps: usize) -> bool {
 /// Returns `DecommitOutcome::Advised` / `DecommitOutcome::Refused(_)` for a
 /// call to the SELECTED backend — on the native backend (no
 /// `aligned_vmem_mock` cfg) that is a genuinely-issued syscall, mapped
-/// straight from `decommit_pages_impl`'s own `Result`; under the
+/// straight from `decommit_pages_impl`'s own `Result`, EXCEPT when the
+/// `fault-injection` feature's decommit hook (task #1219,
+/// [`crate::fault_injection::arm_fail_next_decommit`]) is armed: then the
+/// syscall is replaced by a simulated no-code `Err` that flows through the
+/// SAME mapping arm below, so what an armed-hook test observes is the
+/// mapping itself, not a parallel construction site. No real OS refusal is
+/// involved on that injected path — no syscall ran — which is exactly why
+/// the injected error is the no-code sentinel rather than
+/// `VmemError::last_os_error()` (the commit-side seam's task #713 rule).
+/// Under the
 /// `aligned_vmem_mock` cfg no syscall runs at all — the mock backend records
 /// the call into its call log and this function unconditionally returns
 /// `Advised` without ever calling `decommit_pages_impl` (see
@@ -371,8 +382,39 @@ pub(crate) unsafe fn dispatch_try_decommit(
     }
     #[cfg(not(aligned_vmem_mock))]
     {
+        // Real-path decommit fault injection (feature `fault-injection`, task
+        // #1219 — the decommit-side sibling of `try_commit_range`'s commit-side
+        // seam in `api/commit_range.rs`). The hook is consulted INSTEAD of
+        // issuing the syscall, and the injected `Err` is deliberately routed
+        // through the same `Err(e) => DecommitOutcome::Refused(e)` mapping a
+        // real backend refusal takes (not an early `return` constructing
+        // `Refused` directly), so the fault-injection test exercises the
+        // mapping arm itself — the arm `docs/correctness-open-items/`
+        // `TRACKED_ci_gate_coverage.md` item 92 records as previously
+        // contradictable by NO test on ANY platform. This is the hook's only
+        // call site; the two infallible entry points (`decommit`,
+        // `decommit_lazy`) do NOT consult it — both discard the backend
+        // outcome by signature, so a fault there would have nothing
+        // observable to affect.
+        #[cfg(feature = "fault-injection")]
+        let backend_result: Result<(), VmemError> = if fault_injection::should_fail_decommit() {
+            // task #713 (same rule as the commit-side seam): this is a
+            // SIMULATED failure — no syscall ran, so `VmemError::last_os_error()`
+            // would report whatever stale `errno`/`GetLastError` a prior
+            // unrelated call left behind. The no-code sentinel reports the
+            // state without manufacturing a misleading cause. Note this also
+            // means the `Refused` payload on this path is the sentinel, NOT
+            // the `last_os_error()`-captured value `DecommitOutcome::Refused`'s
+            // own variant doc describes for the real backend path.
+            Err(VmemError::os_refusal_unknown_code())
+        } else {
+            // SAFETY: forwarded from this function's own `# Safety` contract.
+            unsafe { decommit_pages_impl(base, start, end, DecommitKind::Eager) }
+        };
+        #[cfg(not(feature = "fault-injection"))]
         // SAFETY: forwarded from this function's own `# Safety` contract.
-        match unsafe { decommit_pages_impl(base, start, end, DecommitKind::Eager) } {
+        let backend_result = unsafe { decommit_pages_impl(base, start, end, DecommitKind::Eager) };
+        match backend_result {
             Ok(()) => DecommitOutcome::Advised,
             Err(e) => DecommitOutcome::Refused(e),
         }
