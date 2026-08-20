@@ -54,24 +54,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   state-changing primitives, `decommit`/`decommit_lazy` were the only pair with
   no `try_*` form, and also the only ones that silently do nothing on a contract
   violation: silent AND unreportable in one place. An EMPTY page-aligned range
-  is a well-formed no-op returning `Ok(())`, distinguished from a violation —
+  is a well-formed no-op, distinguished from a violation —
   `decommit`'s single `start >= end` early return conflates the two. The OS
   refusing or ignoring the request is deliberately NOT an error: decommit is
   best-effort by nature, and reporting that as `Err` would promise a portable
   guarantee the platforms do not give.
+  **Superseded within this same 0.2.0 series (task #1180, see the BREAKING
+  entry under "Changed" below): the `Ok` payload described here as a bare
+  `Ok(())` is, as shipped, `Ok(DecommitOutcome)` — the well-formed-no-op /
+  best-effort-refusal distinction this entry describes is preserved, just
+  carried by the `DecommitOutcome` enum's `Skipped`/`Advised`/`Refused`
+  variants instead of being collapsed into one `Ok(())`.** Recorded here
+  as it was originally written (task #1079) rather than rewritten in place,
+  because the entry immediately below it, and the "Changed" entry it points
+  to, are what actually describe the shipping signature — see those for the
+  current contract.
 - **`Reservation::try_decommit()`** — the safe-method twin of the free
   `try_decommit()` above, completing the family at both layers the way
   `recommit`/`try_recommit` and `commit_range`/`try_commit_range` already
-  were: `Ok(())` on success or a well-formed no-op,
+  were: success or a well-formed no-op via `Ok`,
   `Err(VmemError::invalid_argument())` on a violated range (misaligned,
   `start > end`, or `end > self.len()`), never panics on any profile.
   Huge-page reservations take the same early-exit as `Reservation::decommit`
-  (skip the backend call, count the attempt, `Ok(())` — OS refusal is
+  (skip the backend call, count the attempt, report success — OS refusal is
   deliberately not an error). Closes the doc-trail dead end where
   `Reservation::decommit`'s forwarded tripwire message says "Use
   try_decommit for the fallible form", pointing safe-API callers at an
   `unsafe fn` with a raw-pointer signature (task #1079). Purely additive:
   no existing signature changed.
+  **Same supersession note as the entry immediately above: the "success" case
+  was originally a bare `Ok(())` (task #1079) and is now `Ok(DecommitOutcome)`
+  (task #1180) — see the "Changed" entry below for the shipping signature.**
 - `MIN_PAGE` constant as an alias for `PAGE` with clearer semantics
 - `page_size()` function to query the actual OS page size at runtime
 - `ReservationParts` typed wrapper and `into_reservation_parts()` method
@@ -115,8 +128,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `Ok(())` collapsed into one indistinguishable signal: `Skipped` (no backend
   call was made — an empty range, or a huge-page reservation's Rust-level
   skip), `Advised` (the backend call was made and the OS/kernel accepted it —
-  does **not** mean physical pages were actually reclaimed; that gap is task
-  #1174, not this one), and `Refused(VmemError)` (the backend call was made
+  does **not** mean physical pages were actually reclaimed; task #1174
+  (below, "Fixed") closed the neighboring zero-fill-on-next-access question
+  for the eligible-range huge-page case, but physical reclaim to the OS/pool
+  remains unproven and is not this variant's claim), and `Refused(VmemError)`
+  (the backend call was made
   and the OS/kernel refused it, carrying the captured OS error). The outer
   `Result` keeps its pre-existing meaning unchanged — `Err` still reports only
   caller-contract validity (a malformed range, or a failed page-size query);
@@ -301,9 +317,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   is decided by 2 MiB alignment alone — this crate does not detect the
   running kernel version.** An eligible range is always forwarded, including
   on a pre-5.18 kernel: the syscall is issued, the kernel rejects it with
-  `EINVAL`, and the call still returns `Ok(())` (the same best-effort
-  contract the rest of this API family already states for Darwin/BSD
-  advisory decommit) — but unlike the Windows/misaligned skip path, this
+  `EINVAL`, and the caller is not told this is an error — `decommit`'s `()`
+  return has nothing to report either way, and `try_decommit` reports it as
+  a non-error success too (at the time of this task, before task #1180's
+  `DecommitOutcome` shipped: a bare `Ok(())`; as shipped: `Ok(DecommitOutcome::Refused(_))`,
+  since the kernel did refuse this specific call — `Refused` is still `Ok`
+  at the outer `Result` level, per the "OS refusal is never `Err`" contract
+  this API family already states for Darwin/BSD advisory decommit) — but
+  unlike the Windows/misaligned skip path, this
   forwarded-and-rejected case does **not** increment the `bench-internals`
   `huge_decommit_attempts` counter, because it never takes the early-exit
   branch the counter measures. `decommit_lazy` is deliberately unchanged:
@@ -330,7 +351,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   counter equals the attempts counter (`assert_eq!`, not merely `>`) for
   the eligible-range call — i.e. the kernel genuinely returned `0` for
   every `madvise` call this path reached, not just that the crate
-  dispatched to it. **What remains NOT execution-verified:**
+  dispatched to it. **What remains NOT execution-verified (as of task
+  #1164 — task #1174 below closes half of this, see the note that
+  follows):**
   whether the kernel's acceptance actually corresponds to reclaiming the
   physical pages, or to a subsequent access re-faulting zeroed memory — no
   test on this path reads memory content back before/after decommit, so the
@@ -354,6 +377,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   syscall-level accept/reject; they do not check post-decommit memory
   content.
   [correctness fix]
+  **Later correction (task #1174, same 0.2.0 series): the "no test on this
+  path reads memory content back" / "post-decommit memory CONTENT ...
+  which no test on any platform reads back" claims above are no longer
+  current.** `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess`
+  (`tests/decommit_capability.rs`, gated into the `aligned-vmem-hugetlb-real`
+  CI job) writes a non-zero pattern, decommits an eligible huge-aligned
+  range, and hard-asserts every byte reads back as zero — this closes the
+  zero-fill-on-next-access half of what this entry named as
+  REASONED-FROM-SPEC. The OTHER half — whether the pages were physically
+  returned to the hugetlb pool (as opposed to merely reading zero on next
+  access) — is still NOT gated: the job logs `HugePages_Free` from
+  `/proc/meminfo` around the call as an observation only, deliberately not a
+  hard assert, because that counter is shared kernel-global state racing
+  every other huge-page reservation the same CI job makes elsewhere and
+  cannot be attributed to one test's own `decommit()` call. So: zero-fill
+  readback is proven; physical pool reclaim is not, and is not claimed to
+  be.
 - **A failed one-time OS page-size query is no longer folded to 4 KiB and
   cached as if it were a real answer** (task #1139). `query_os_page_size()`
   returned `0` on failure, `0` failed the `>= PAGE` test, and the validator

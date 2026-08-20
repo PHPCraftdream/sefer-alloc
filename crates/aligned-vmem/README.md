@@ -53,7 +53,7 @@ Runnable form: `tests/readme_example.rs`.
 | `Reservation::decommit(start, end)` / `Reservation::recommit(start, end)` (`&mut self`) | Safe, bounds-checked methods for callers already holding a `Reservation` — hint the OS to return page-granular physical backing / re-commit it. Forward to the free functions below with the reservation's own base and length. |
 | `Reservation::try_decommit(start, end)` / `Reservation::try_recommit(start, end)` / `Reservation::commit_range(start, end)` / `Reservation::try_commit_range(start, end)` (`&mut self`) | Fallible/boolean safe-method twins of the above, reporting a contract-violating range instead of silently no-oping (`decommit`) or panicking only in debug (see "Alignment contract" below). |
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Hint the OS to return page-granular physical backing (guaranteed on Linux/Android/Windows, best-effort on Darwin/BSDs with no zero-fill guarantee) / re-commit it. |
-| `try_decommit(base, start, end)` (unsafe) `-> Result<(), VmemError>` | Fallible twin of `decommit`: an empty page-aligned range is a well-formed `Ok(())` no-op; a violated range (misaligned, or `start > end`) is reported as `Err` on every build profile — `decommit` itself only reports a violation via a DEBUG-only `debug_assert!` and stays silent in release. |
+| `try_decommit(base, start, end)` (unsafe) `-> Result<DecommitOutcome, VmemError>` | Fallible twin of `decommit`. The outer `Result` reports only caller-contract validity: `Err` for a violated range (misaligned, or `start > end`), on every build profile — `decommit` itself only reports a violation via a DEBUG-only `debug_assert!` and stays silent in release. An OS refusal is never `Err`. The `Ok` payload is a `DecommitOutcome` (`#[non_exhaustive]`) distinguishing what actually happened: `Skipped` (no backend call — an empty range, or a huge-page reservation's Rust-level skip), `Advised` (the backend call was made and the OS/kernel accepted it — does **not** by itself mean the physical pages were reclaimed), or `Refused(VmemError)` (the backend call was made and the OS/kernel refused it). |
 | `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux/Android `MADV_FREE`, macOS/iOS `MADV_FREE_REUSABLE`, BSD (FreeBSD/DragonFly/NetBSD/OpenBSD) `MADV_FREE`, Windows falls back to `decommit` (eager `MEM_DECOMMIT`: a write before `recommit` is a hard crash there, not a re-fault). |
 | `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. Infallible: if the one-time OS query itself fails (not observed on any supported platform), this still returns the conservative `PAGE` floor rather than panicking — see `try_page_size` and the platform-caveats section below for what that degraded state means for other entry points. |
 | `try_page_size() -> Result<usize, VmemError>` | Fallible twin of `page_size()`: `Err(VmemError::os_refusal_unknown_code())` if the one-time OS page-size query failed, `Ok` with the identical value `page_size()` would return otherwise. Lets a caller detect the degraded state upfront instead of discovering it through `try_decommit`/`try_recommit` errors later. |
@@ -217,15 +217,13 @@ The table entry above (`decommit`/`recommit`) hides six platform and failure-mod
     `MEM_DECOMMIT` fails on large-page regions regardless of the requested
     range.
   - **Linux/Android: the eligible-range/post-5.18-kernel case is FORWARDED to
-    the kernel, and — inside this crate's own CI — the kernel is now observed
-    to actually ACCEPT that call, though the crate still does not read back
-    memory content afterward.** `madvise(2)` documents that `MADV_DONTNEED`
-    gained HugeTLB support in Linux 5.18, with the same 2-MiB-alignment
-    requirement this crate already imposes on `reserve_aligned_huge`'s own
-    `size`/`align` on Linux/Android — so decommitting an entire huge
-    reservation, or any 2-MiB-granular sub-range of it, IS such an eligible
-    range, and the man page says it genuinely returns physical backing +
-    zero-fills on next access, the same as an ordinary reservation. A
+    the kernel, the kernel is observed to ACCEPT that call, AND — since task
+    #1174 — the crate's own CI now reads memory content back and confirms the
+    zero-fill.** `madvise(2)` documents that `MADV_DONTNEED` gained HugeTLB
+    support in Linux 5.18, with the same 2-MiB-alignment requirement this
+    crate already imposes on `reserve_aligned_huge`'s own `size`/`align` on
+    Linux/Android — so decommitting an entire huge reservation, or any
+    2-MiB-granular sub-range of it, IS such an eligible range. A
     `page_size()`-granular (e.g. 4 KiB) but not 2-MiB-granular offset still
     gets `EINVAL` and does nothing, as does EVERY range on a pre-5.18 kernel.
     `Reservation::decommit`/`Reservation::try_decommit` (the safe methods)
@@ -249,13 +247,23 @@ The table entry above (`decommit`/`recommit`) hides six platform and failure-mod
     not merely `>`) — i.e. the kernel genuinely accepted `MADV_DONTNEED` on
     this real `MAP_HUGETLB` mapping, not merely that the crate dispatched to
     it, and not merely that at least one of possibly several calls
-    succeeded.
-    **What this still does NOT prove:** that the kernel actually reclaimed
-    the physical pages, or that a subsequent access re-faults zeroed memory
-    — no test on this path reads memory content back before/after the
-    decommit call, so the physical-backing and zero-fill-on-next-access
-    outcomes remain reasoned from the `madvise(2)` man page, not
-    independently observed by this crate.
+    succeeded. **Since task #1174, the CI job goes one step further and
+    proves the outcome, not just the dispatch:**
+    `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess`
+    (`tests/decommit_capability.rs`) writes a non-zero byte pattern across the
+    whole eligible range, calls `decommit`, then reads every byte back and
+    hard-asserts it is zero — closing the "accepted the call" vs. "actually
+    zero-fills on next access" gap this section used to leave open.
+    **What still remains NOT proven, and is deliberately kept separate from
+    the zero-fill result above:** that the kernel physically returned the
+    huge pages to the pool. The CI job logs `HugePages_Free` (from
+    `/proc/meminfo`) around the decommit call for a human to read, but does
+    NOT gate on it — `HugePages_Free` is a kernel-global counter shared with
+    every other huge-page reservation the job's other targets make, so it
+    cannot be attributed to one test's own `decommit()` call without racing
+    them, and is observation-only by design, not a pass/fail assertion. So:
+    zero-fill-on-next-access is empirically proven for the eligible-range
+    case; physical reclaim of the pages back to the hugetlb pool is not.
   - Either way — Windows, or an ineligible range/kernel on Linux/Android —
     the effect is indistinguishable from a silent no-op: RSS does not drop
     and reads return the old data. `decommit_lazy` is NOT part of this
