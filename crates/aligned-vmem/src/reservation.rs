@@ -489,7 +489,13 @@ impl Reservation {
     ///
     /// For backwards compatibility with code that already uses the tuple form,
     /// you can call [`ReservationParts::as_tuple`] to get a raw tuple.
-    #[must_use]
+    ///
+    /// No message-less `#[must_use]` on this function itself (task
+    /// #1213/L3): the return type [`ReservationParts`] now carries its own
+    /// `#[must_use]` with a leak-specific message (dropping it leaks the
+    /// reservation), which already fires for every caller of every function
+    /// returning it, this one included — clippy's `double_must_use` lint
+    /// flags a redundant message-less attribute stacked on top of that.
     pub fn into_reservation_parts(self) -> ReservationParts {
         let parts = ReservationParts {
             ptr: self.reservation.as_ptr(),
@@ -528,7 +534,11 @@ impl Reservation {
     /// release and don't require preserving `base`, `len`, and `granted_huge`,
     /// prefer [`into_reservation_parts`](Self::into_reservation_parts) instead,
     /// which provides the `release_parts` function.
-    #[must_use]
+    ///
+    /// No message-less `#[must_use]` on this function itself (task
+    /// #1213/L3): the return type [`ReservationFullParts`] now carries its
+    /// own `#[must_use]` with a leak-specific message, for the same reason
+    /// as [`into_reservation_parts`](Self::into_reservation_parts) above.
     pub fn into_full_parts(self) -> ReservationFullParts {
         let parts = ReservationFullParts {
             base: self.base.as_ptr(),
@@ -761,10 +771,30 @@ impl Reservation {
     ///   reservation that does not reach the real backend (see the
     ///   "huge-page reservations" paragraph below for exactly which ranges
     ///   those are). No syscall was issued either way.
-    /// - [`DecommitOutcome::Advised`] — the backend call was made and the
-    ///   OS/kernel accepted it. **Does not mean physical pages were actually
-    ///   reclaimed** — see that variant's own doc; closing that gap is task
-    ///   #1174, not this one.
+    /// - [`DecommitOutcome::Advised`] — the SELECTED BACKEND accepted the
+    ///   call — see that variant's own doc for the native-vs-mock-vs-miri
+    ///   split. **Never a claim that physical pages were actually
+    ///   reclaimed**, even on the native backend. Task #1174 (closed) added
+    ///   `ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess`
+    ///   (`tests/decommit_capability.rs`), hard-enabled in the
+    ///   `aligned-vmem-hugetlb-real` CI job: it writes a non-zero pattern,
+    ///   decommits an eligible huge-aligned range under a real `MAP_HUGETLB`
+    ///   grant, and hard-asserts EVERY byte reads back zero — proving
+    ///   zero-fill-on-readback for that one case. **What #1174 did NOT
+    ///   prove and does not claim to: physical reclaim to the OS/hugetlb
+    ///   pool.** That same CI job's own comments are explicit that
+    ///   `HugePages_Free` (the kernel's pool-page-count) is logged only as
+    ///   an OBSERVATION around the test, never a pass/fail gate, because it
+    ///   is a kernel-global counter shared with the job's other concurrent
+    ///   reservations and cannot be safely attributed to one test's own
+    ///   `decommit()` call. So: zero-fill on readback is proven for the
+    ///   real-HugeTLB/eligible-range case, on a Linux runner — the code
+    ///   path itself is gated on Linux **and Android** as a pair (as every
+    ///   huge-page mechanism in this crate is), so the Android half is
+    ///   inherited from that shared `cfg`, not separately executed by any
+    ///   CI job; physical page return to
+    ///   the pool remains unmeasured. Do not conflate the two when reading
+    ///   `Advised`.
     /// - [`DecommitOutcome::Refused`] — the backend call was made and the
     ///   OS/kernel refused it (carries the captured [`VmemError`]).
     ///

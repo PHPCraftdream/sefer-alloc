@@ -48,21 +48,58 @@ pub enum DecommitOutcome {
     ///   eligibility check and, for a non-empty range, always forwards to the
     ///   backend.
     Skipped,
-    /// The backend call was made and the kernel/OS **accepted** it — Linux
-    /// `madvise(2)` returned `0`, or Windows `VirtualFree(MEM_DECOMMIT)`
-    /// returned nonzero (success).
+    /// **The SELECTED BACKEND accepted the request.** What that means
+    /// depends on which backend is actually compiled in — this variant does
+    /// NOT by itself imply that a real OS syscall ran:
     ///
-    /// **Does NOT mean the physical pages were actually returned to the
-    /// OS**, let alone that a subsequent access re-faults zeroed memory —
-    /// that gap between "the kernel accepted the advice" and "the kernel
-    /// acted on the advice as this crate's docs describe" is exactly what
+    /// - **Native backend** (no `aligned_vmem_mock` cfg, not miri): a real
+    ///   syscall was made and the kernel/OS accepted it — Linux
+    ///   `madvise(2)` returned `0`, or Windows `VirtualFree(MEM_DECOMMIT)`
+    ///   returned nonzero (success).
+    /// - **`aligned_vmem_mock` cfg** (`RUSTFLAGS="--cfg aligned_vmem_mock"`):
+    ///   no syscall runs at all — the mock backend records the call into its
+    ///   call log and unconditionally reports `Advised`, without touching
+    ///   the OS (see the `crate::mock` module doc). This is a deliberate
+    ///   simulation, not an OS acceptance.
+    /// - **miri**: the backend is a no-op that always "succeeds" — miri
+    ///   models no RSS, so there is no real syscall to refuse.
+    ///
+    /// **Never a claim that physical pages were actually returned to the
+    /// OS**, even on the native backend — let alone that a subsequent access
+    /// re-faults zeroed memory. That gap between "the kernel accepted the
+    /// advice" and "the kernel acted on the advice as this crate's docs
+    /// describe" is exactly what
     /// [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes)
-    /// and this type's own module-level doc already qualify, and remains
-    /// open per task #1174 — this variant does not close it, and must not
-    /// be read as though it does. On Darwin/the four BSDs, `MADV_DONTNEED`
-    /// is well known to return `0` while the pages stay resident (advisory
-    /// semantics) — `Advised` there is expected and unremarkable, not a
-    /// stronger signal than the platform actually gives.
+    /// answers — it already reports `false` under `aligned_vmem_mock` and
+    /// under miri (in addition to Darwin/BSD), precisely because "the
+    /// selected backend accepted the request" and "the OS actually
+    /// reclaimed physical memory" are two different questions, and that
+    /// query is the one that distinguishes them; `Advised` is not a second,
+    /// competing channel for the same distinction and must not be read as
+    /// one. On Darwin/the four BSDs specifically (the native backend, not
+    /// mock/miri), `MADV_DONTNEED` is well known to return `0` while the
+    /// pages stay resident (advisory semantics) — `Advised` there is
+    /// expected and unremarkable, not a stronger signal than the platform
+    /// actually gives.
+    ///
+    /// **No separate `Simulated` variant, by design (task #1212).** This
+    /// type is already `#[non_exhaustive]`, so adding a variant later would
+    /// NOT be a semver break — every external `match` on `DecommitOutcome`
+    /// already requires a wildcard arm. A `Simulated` variant was
+    /// considered and deferred (not rejected outright) because the
+    /// mock/miri-vs-real distinction it would carry is already expressed by
+    /// the capability-query family:
+    /// [`Reservation::decommit_reclaims_and_zeroes`](crate::Reservation::decommit_reclaims_and_zeroes)
+    /// and, for the commit side,
+    /// [`lazy_commit_is_honored`](crate::lazy_commit_is_honored) both
+    /// already answer `false` under `aligned_vmem_mock`/miri specifically
+    /// BECAUSE those cfgs substitute simulation for the real OS call — see
+    /// each query's own doc for its exclusion list. A third `Simulated`
+    /// enum variant would duplicate a distinction the crate already exposes
+    /// as a queryable bool; revisit if a caller need emerges that the
+    /// existing query family cannot serve (e.g. wanting to branch on
+    /// simulated-vs-real from a single `DecommitOutcome` value with no
+    /// second call).
     Advised,
     /// The backend call was made and the kernel/OS **refused** it — Linux/Android
     /// `madvise(2)` returned `-1` (e.g. `EINVAL` on a pre-5.18 kernel

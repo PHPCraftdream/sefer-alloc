@@ -33,9 +33,23 @@ use crate::page_size::{page_size_or_poison, PAGE_SIZE_QUERY_FAILED};
 ///
 /// # Safety
 ///
-/// `base` must be the [`as_ptr`](crate::Reservation::as_ptr) of a live reservation,
-/// and `[base+start, base+end)` must contain no data the caller still needs —
-/// its contents are discarded.
+/// - `base` must be the [`as_ptr`](crate::Reservation::as_ptr) of a live
+///   reservation the caller owns.
+/// - **`end <= reservation.len()`** (the reservation's usable span, in
+///   bytes) — this is a MANDATORY precondition of the pointer arithmetic
+///   this function performs internally (`base.add(start)` /
+///   `base.add(end)`), not merely a functional/behavioral preference. This
+///   requirement is stated here explicitly (task #1213/L2) rather than left
+///   to the summary line above ("within the span") — for an `unsafe fn`,
+///   a bounds requirement that determines whether pointer arithmetic is
+///   even defined belongs inside `# Safety` itself, restated in full, not
+///   referenced from an adjacent paragraph a caller auditing only this
+///   section could miss. Passing `end > reservation.len()` is undefined
+///   behavior (out-of-bounds pointer arithmetic), distinct from — and a
+///   strictly worse violation than — the `page_size()`-multiple contract
+///   below, which is merely a silent no-op on violation, never UB.
+/// - `[base+start, base+end)` must contain no data the caller still needs —
+///   its contents are discarded.
 ///
 /// **Contract violations, by build profile (task #1051):** this entry point
 /// is intentionally infallible — the `()` return carries no write-permitting
@@ -196,7 +210,7 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     // consumer's own test fails at the mistake rather than quietly decommitting
     // nothing and leaving the memory resident. Zero cost in release.
     debug_assert!(
-        decommit_range_is_well_formed(start, end),
+        decommit_range_is_well_formed(start, end, ps),
         "aligned-vmem: decommit({start}, {end}) violates the range contract \
          (start > end, or an endpoint is not a multiple of page_size()); the \
          call does nothing. Use try_decommit for the fallible form."
@@ -225,7 +239,7 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 }
 
 /// Whether `[start, end)` is a well-formed decommit range: `start <= end` and
-/// both endpoints are multiples of the runtime [`page_size()`](crate::page_size::page_size).
+/// both endpoints are multiples of `ps`.
 ///
 /// An EMPTY range (`start == end`, page-aligned) is well-formed — it is a
 /// deliberate no-op, not a mistake. That distinction is why this predicate
@@ -233,26 +247,33 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// the early return conflates "nothing to do" with "you got the arguments
 /// wrong", and only the second deserves a diagnostic.
 ///
-/// **Reads the unmasked [`page_size_or_poison`], not the public
-/// [`page_size()`](crate::page_size::page_size) (task #1156, finding F16).** Both current callers already
-/// pre-check the poisoned state and return before reaching this predicate
-/// (`decommit`'s `ps == PAGE_SIZE_QUERY_FAILED` guard above; `try_decommit`'s
-/// identical guard), so which page-size accessor this function reads makes no
-/// observable difference today. But a function named `..._is_well_formed`
-/// validating against the MASKED `page_size()` — which silently substitutes
-/// [`PAGE`](crate::PAGE) (4 KiB) for "unknown" in the degraded state — would
-/// wrongly certify a range as well-formed under a fabricated granularity if a
-/// future caller ever reached it without pre-checking poison first, exactly
-/// the trap task #1139's design note ("the arithmetic is suspenders, so
-/// forgetting a check cannot reopen the hole") means to rule out. Reading
-/// [`page_size_or_poison`] instead makes the predicate itself fail closed by
-/// construction: under poison it is [`PAGE_SIZE_QUERY_FAILED`]
-/// (`usize::MAX`), and `is_multiple_of(usize::MAX)` is true only for `0` or
-/// `usize::MAX` — so any ordinary non-empty range is rejected here too, not
-/// just by the callers' own pre-checks.
+/// **Takes `ps` as a parameter instead of reading [`page_size_or_poison`]
+/// itself (task #1213/L1 — corrected doc-vs-code drift: this comment
+/// previously claimed both callers already read `page_size_or_poison()`
+/// once and the predicate reading it again "makes no observable
+/// difference," which was true only of the debug-only `decommit`/
+/// `debug_assert!` call site, never of `try_decommit`, which read
+/// `page_size_or_poison()` once at its own top, then AGAIN inside this
+/// predicate, in every build profile including release — two atomic loads
+/// per call on the exact population `dispatch_try_decommit`'s own doc
+/// above already optimized down to one, for the opposite reason).** Every
+/// caller now takes its own `page_size_or_poison()` snapshot ONCE and
+/// passes it in here — this predicate performs no atomic load of its own.
+/// The fail-closed property (task #1156, finding F16) is unchanged: a
+/// caller MUST pass [`page_size_or_poison`]'s raw value, never the masked
+/// public [`page_size()`](crate::page_size::page_size) (which silently
+/// substitutes [`PAGE`](crate::PAGE), 4 KiB, for "unknown" in the degraded
+/// state) — every current caller pre-checks
+/// `ps == PAGE_SIZE_QUERY_FAILED` and returns before reaching this
+/// predicate, but if a future caller ever reached it without that
+/// pre-check, passing the unmasked value still fails closed by
+/// construction: `is_multiple_of(usize::MAX)` is true only for `0` or
+/// `usize::MAX`, so any ordinary non-empty range is rejected here too, not
+/// just by the callers' own pre-checks — the trap task #1139's design note
+/// ("the arithmetic is suspenders, so forgetting a check cannot reopen the
+/// hole") means to rule out.
 #[must_use]
-fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
-    let ps = page_size_or_poison();
+fn decommit_range_is_well_formed(start: usize, end: usize, ps: usize) -> bool {
     start <= end && start.is_multiple_of(ps) && end.is_multiple_of(ps)
 }
 
@@ -280,10 +301,18 @@ fn decommit_range_is_well_formed(start: usize, end: usize) -> bool {
 /// must never touch the backend at all) — so the total atomic-load count for
 /// ANY call through either entry point is now exactly one, not two or three.
 ///
-/// Returns `Ok(DecommitOutcome::Advised)` / `Ok(DecommitOutcome::Refused(_))`
-/// for a genuinely-issued backend call, mapped straight from
-/// `decommit_pages_impl`'s own `Result`. Never returns `Skipped` — that
-/// variant is produced by the CALLERS (the free function's own empty-range
+/// Returns `DecommitOutcome::Advised` / `DecommitOutcome::Refused(_)` for a
+/// call to the SELECTED backend — on the native backend (no
+/// `aligned_vmem_mock` cfg) that is a genuinely-issued syscall, mapped
+/// straight from `decommit_pages_impl`'s own `Result`; under the
+/// `aligned_vmem_mock` cfg no syscall runs at all — the mock backend records
+/// the call into its call log and this function unconditionally returns
+/// `Advised` without ever calling `decommit_pages_impl` (see
+/// [`DecommitOutcome::Advised`]'s own doc for why that simulated-vs-real
+/// distinction does not need a separate `Skipped`/third variant here: the
+/// call itself DID happen, from this crate's point of view — only the
+/// backend it reached differs). Never returns `Skipped` — that variant is
+/// produced by the CALLERS (the free function's own empty-range
 /// short-circuit, and `Reservation::try_decommit`'s huge-skip branch), never
 /// by this function, which is reached only when a call has already been
 /// decided.
@@ -378,10 +407,18 @@ pub unsafe fn try_decommit(
     // failure — the caller's arguments are NOT at fault, so this must not
     // read as `invalid_argument` (see `page_size`'s "If the one-time OS
     // query fails" paragraph).
-    if page_size_or_poison() == PAGE_SIZE_QUERY_FAILED {
+    //
+    // Single snapshot (task #1213/L1): taken once here and passed into
+    // `decommit_range_is_well_formed` below, instead of that predicate
+    // re-reading `page_size_or_poison()` a second time — this used to be
+    // two atomic loads per call, in every build profile, for a value that
+    // cannot have changed between them (the query result is fixed for the
+    // process lifetime).
+    let ps = page_size_or_poison();
+    if ps == PAGE_SIZE_QUERY_FAILED {
         return Err(VmemError::os_refusal_unknown_code());
     }
-    if !decommit_range_is_well_formed(start, end) {
+    if !decommit_range_is_well_formed(start, end, ps) {
         return Err(VmemError::invalid_argument());
     }
     if start == end {

@@ -70,10 +70,16 @@
 //! [`try_decommit`]'s outer `Result` still reports range-contract validity
 //! only (unchanged) — but since task #1180 its `Ok` payload is a
 //! [`DecommitOutcome`] (`Skipped` / `Advised` / `Refused`), which DOES
-//! observe what the OS actually did with a well-formed, non-empty range:
-//! whether a backend call was issued at all, and if so, whether the kernel
-//! accepted or refused it. Before task #1180 this was a bare `Ok(())`,
-//! indistinguishable from every other well-formed outcome.
+//! observe what the SELECTED BACKEND did with a well-formed, non-empty
+//! range: whether a call was issued at all, and if so, whether it was
+//! accepted or refused. **`Advised` names what the call did, not
+//! necessarily a real OS syscall** — under the native backend it means the
+//! kernel accepted a real `madvise(2)`/`VirtualFree` call; under the
+//! `aligned_vmem_mock` cfg or miri, no syscall runs at all and `Advised` is
+//! the simulated backend's own unconditional answer (see
+//! [`DecommitOutcome::Advised`]'s own doc for the full three-way split).
+//! Before task #1180 this was a bare `Ok(())`, indistinguishable from every
+//! other well-formed outcome.
 //!
 //! # Example
 //!
