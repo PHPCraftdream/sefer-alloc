@@ -9,11 +9,16 @@ contract as the move this file's own header describes below: no narrative
 text was edited, only this header's self-references were updated to the new
 paths (`docs/CORRECTNESS_OPEN_ITEMS.md` stays the correct citation for the
 top-level index — it now itself only summarizes and points into
-`docs/correctness-open-items/ACTIVE.md` / `TRACKED_005_008.md` /
-`TRACKED_009_018.md` / `TRACKED_019_043.md` / `TRACKED_044_093.md` (the
-`[T]` tier, further split by item-number range at task #1221, 2026-08-20)
-/ `RESOLVED.md`; this archive's own former path is dead and must not be
-cited going forward).
+`docs/correctness-open-items/ACTIVE.md` / the nine `TRACKED_*.md` files
+(the `[T]` tier, split by SUBJECT at task #1222, 2026-08-20 —
+`hook_safety`, `verification_coverage`, `platform_contracts`,
+`ci_gate_coverage`, `test_flakiness`, `correctness_residuals`,
+`publish_readiness`, `process_record`, `misc`; the item-number-range
+names task #1221 briefly used are gone) / `RESOLVED.md`; this archive's
+own former path is dead and must not be cited going forward. To find a
+given item N, use the `item N → file` lookup table in
+`docs/CORRECTNESS_OPEN_ITEMS.md` — with a subject-based split the
+filename no longer encodes the number).
 
 **Purpose.** This file holds the full dated historical closure narratives
 for items tracked in `docs/CORRECTNESS_OPEN_ITEMS.md` — the round-by-round

@@ -6,10 +6,15 @@ resolved" pointer trail — the closure trail described by
 close an item: move its entry to §'Recently resolved'"). Each pointer
 resolves further into `docs/correctness-open-items/ARCHIVE.md`'s full
 closure narratives. Start at `docs/CORRECTNESS_OPEN_ITEMS.md` for the
-purpose/scope/convention header; see `docs/correctness-open-items/ACTIVE.md`
-and `docs/correctness-open-items/TRACKED_005_008.md` /
-`TRACKED_009_018.md` / `TRACKED_019_043.md` / `TRACKED_044_093.md`
-(split by item-number range, task #1221, 2026-08-20) for the open tiers.
+purpose/scope/convention header and the complete item-number → file
+lookup table; see `docs/correctness-open-items/ACTIVE.md`
+and `docs/correctness-open-items/TRACKED_hook_safety.md` /
+`TRACKED_verification_coverage.md` / `TRACKED_platform_contracts.md` /
+`TRACKED_ci_gate_coverage.md` / `TRACKED_test_flakiness.md` /
+`TRACKED_correctness_residuals.md` / `TRACKED_publish_readiness.md` /
+`TRACKED_process_record.md` / `TRACKED_misc.md`
+(split by THEME, task #1222, 2026-08-20 — superseding task #1221's
+same-day item-number-range split) for the open tiers.
 (Split 2026-08-20, task #1217, reversing item 86's 2026-08-19 deferral
 — see `docs/CORRECTNESS_OPEN_ITEMS.md` item 86 for the reversal
 record.)

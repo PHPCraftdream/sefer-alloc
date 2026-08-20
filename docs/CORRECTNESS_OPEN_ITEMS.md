@@ -62,95 +62,282 @@ scoping decision is the pending step, not implementation).
 
 ---
 
-## Structure — this file is a thin index (split 2026-08-20, task #1217)
+## Structure — this file is a thin index (split 2026-08-20, task #1217;
+[T] tier RE-split by THEME, not item-number range, task #1222, same day)
 
 **This file no longer holds card bodies.** It was split into a folder,
 `docs/correctness-open-items/`, because its own single-file size had grown
 past CLAUDE.md's R34-24 ~1,000-line threshold a second time (2,423 lines at
 the task #1143 deferral that first declined this split — see item 86 in
-`docs/correctness-open-items/TRACKED_044_093.md` for that decision and its
-reversal). This split reverses that deferral, at the owner's explicit
-request, following the R29-6/R34-24 mechanism this repo already uses for
-`docs/perf/OPEN_ITEMS.md` — except one level deeper: instead of a single
-main-file + single-archive pair, the OPEN portion itself is split by tier,
-because tier is the axis this file already uses as its primary organizing
-structure (see the "Tier key" above) and needed no new taxonomy invented to
-cut along.
+`docs/correctness-open-items/TRACKED_process_record.md` for that decision
+and its reversal). This split reverses that deferral, at the owner's
+explicit request, following the R29-6/R34-24 mechanism this repo already
+uses for `docs/perf/OPEN_ITEMS.md` — except one level deeper: instead of a
+single main-file + single-archive pair, the OPEN portion itself is split by
+tier, because tier is the axis this file already uses as its primary
+organizing structure (see the "Tier key" above) and needed no new taxonomy
+invented to cut along.
 
 **Why the main file survives as an index, rather than being deleted
 outright:** 42 code/CI/script files (`src/`, `tests/`, `crates/`,
 `scripts/`, `.github/workflows/ci.yml`, and `CLAUDE.md` itself) cite this
 exact path, `docs/CORRECTNESS_OPEN_ITEMS.md`, and every one of those
-citations is of the form `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` —
-never a line number. As long as this filename resolves and stays a
-one-hop pointer to whichever tier file item N actually lives in, all 42
-citations (several of them in *published* `aligned-vmem` rustdoc that
-ships to docs.rs) keep resolving without editing a single one of them.
-Deleting this file outright would have forced touching all 42 sites,
-including the four publish-facing citations task #889 already had to
-repair once, for zero reader benefit — the reader is exactly as well
-served by "read the index, follow the tier pointer" as by "grep the
-monolith."
+citations is of the form `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` --
+never a line number, never a filename. As long as this filename resolves and
+this section stays a complete, accurate item-N -> file lookup, all 42
+citations (several of them in *published* `aligned-vmem` rustdoc that ships
+to docs.rs) keep resolving without editing a single one of them. Deleting
+this file outright would have forced touching all 42 sites, including the
+four publish-facing citations task #889 already had to repair once, for
+zero reader benefit.
 
-**The seven files (the `[T]` tier further split into four number-range
-files, task #1221, 2026-08-20 — see the note at the end of this section):**
+**Task #1222 (2026-08-20): the `[T]` tier's four number-range files
+(task #1221, same day) are REPLACED by nine THEMATIC files.** The owner
+rejected balancing-by-line-count and asked for a category split instead --
+grouping the 70 `[T]`-tier cards by what they are actually ABOUT, derived
+by reading every card rather than assumed from category names supplied in
+the task brief (three of the five candidate axes suggested at task time --
+platform/OS contracts, CI coverage, test hygiene — turned out real and are
+below; "documentation/indexes/publish-facing surface" and "audits and their
+verdicts" turned out to be TWO different real axes each, not one, once the
+cards were actually read — see the category table below for the split each
+one became).
 
+**The cost this split has to justify, and how it is paid:** a thematic
+filename is NOT a one-hop lookup by item number the way `TRACKED_044_093.md`
+was — a reader who knows only "item 61" cannot derive its filename from the
+number alone. The table below is the fix: it is the complete, mechanically
+verified item-N -> file map for all 70 `[T]`-tier numbers (including the
+`59a`/`59b` sub-items), built by grouping this file's own category
+assignments, not hand-typed. **A reader or script citing an item by number
+looks it up in this table** (or greps `docs/correctness-open-items/*.md`
+directly, which still works and needs no table at all).
+
+**The nine `[T]`-tier files, their criterion, and their card count:**
+
+- **`docs/correctness-open-items/TRACKED_hook_safety.md`** (4 cards) --
+  bench-internals `dbg_*` hook safety & the tripwire scanner. Criterion: the
+  safety/soundness of a `dbg_*`/`bench-internals` measurement hook that
+  touches live allocator state, its `unsafe`/feature-gating correctness, or
+  the `tests/dbg_hook_safety_tripwire.rs` scanner's own coverage of that
+  hazard class — the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b,
+  R31-15). Evidence this is a real, cohesive axis: items 5/7/8/9 are four
+  consecutive rounds (R29 through R31) of the SAME bug class recurring and
+  being re-fixed — `dbg_decomp_full_cycle`'s dangling cursor (item 5),
+  `dbg_decomp_reserve_and_keep`/`_release`'s mint-then-redeem hazard
+  (item 7), `has_bench_internals_cfg`'s `cfg_attr` gap and
+  `dbg_large_cache_hits`'s gating (item 8), and `ReservedSmallSegment`'s
+  scoping/`needs_drop`/scanner-name-prefix follow-ups (item 9) — not four
+  unrelated findings that happen to mention `dbg_`.
+- **`docs/correctness-open-items/TRACKED_verification_coverage.md`**
+  (5 cards) — miri / loom / kani proof coverage. Criterion: whether an
+  `unsafe` seam or algorithmic invariant has (or lacks) interpreter/
+  model-checker PROOF coverage — distinct from ordinary CI gate wiring (a
+  test exists but does not run under some job) and from platform empirical
+  verification (real hardware, not a formal tool). Evidence: items 17/18
+  name specific seams/proofs miri/kani never reached; items 41/61/84 are
+  the miri-job's own creation and a documented loss of two of its
+  guards — all five are about the PROOF TOOL's reach, not about a job
+  merely being unwired (that is category 4 below).
+- **`docs/correctness-open-items/TRACKED_platform_contracts.md`**
+  (13 cards) — per-OS/arch runtime contracts (aligned-vmem, numa-shim).
+  Criterion: whether code behaves correctly on a specific OS/architecture
+  (HugeTLB, Darwin `madvise`, Windows large pages, BSD/Android/tvOS/
+  watchOS/MIPS, page-size constants, numa-shim syscalls), or whether that
+  OS-specific behavior has been empirically verified on real hardware
+  versus only reasoned-from-spec. Evidence: this is the single largest
+  cohesive cluster in the material — items 43/47/60 are explicitly framed
+  by their own filing task as "REASONED-FROM-SPEC, never empirically
+  executed" for a named OS family; 48/52/53/58/59/59a/59b are one
+  continuous HugeTLB/Darwin-decommit investigation across many rounds; 6/26
+  are single confirmed platform-divergence bugs (Windows decommit crash;
+  numa-shim macOS+miri fix unconfirmed on real macOS) of the identical
+  shape.
+- **`docs/correctness-open-items/TRACKED_ci_gate_coverage.md`** (18
+  cards) — local/CI gate wiring & sentinel/guard-script coverage.
+  Criterion: whether an existing test, oracle, or guard script actually
+  RUNS under some gate (`npm run check` and/or a CI job) — wiring, dead
+  scripts, missing feature/profile rows, sentinel-guard scope — as opposed
+  to whether the underlying OS behavior is platform-verified (category 3)
+  or proof-verified (category 2). This is the largest category by card
+  count because it is where the R22-3 "flagged in a commit body, reached
+  no index" failure mode recurs most: items 80/82/87 are explicitly filed
+  as records of exactly that recurrence for three different scripts;
+  50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
+  no gate runs it, or runs it under the wrong profile/feature set"; 19/25
+  are the same shape for MSRV and a compile-fail harness specifically.
+- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (4
+  cards) — flaky / order-dependent / scheduler-sensitive tests. Criterion:
+  a test that fails intermittently because of timing, thread ordering, or
+  shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
+  failure, not a coverage gap (no test exists) or a platform gap (no
+  runner exists). Evidence: 12/14 are both literal "failed once, could not
+  reliably reproduce" filings with their own root-cause investigations;
+  63/69 are a scheduler-sensitive threshold and a missing serialization
+  guard — all four are about a test's own execution nondeterminism, a
+  materially different defect from "nothing runs this test" (category 4).
+- **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
+  (4 cards) — documented-but-unproven panic-/unwind-safety residuals in
+  shipping code. Criterion: a known, honestly-recorded gap in a
+  panic-safety or unwind-safety guarantee of shipping (non-hook,
+  non-platform-specific) code — a residual the code's OWN doc comments
+  already name, not yet a proven live bug. Evidence: items 22/23 are both
+  literally transcribed from a shipping type's own doc-comment "what this
+  guard does NOT guarantee" section (`RemoteFreeRing::DrainHeadPublish`,
+  `InitStateGuard`); 16 is the release-notes counterpart for the same
+  `dealloc_foreign_routing` residual class; 66 is `Reservation`'s
+  committed-length contract being documented-not-checked, the same
+  "doc-comment names a residual" shape.
+- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (9
+  cards) — crates.io publish-readiness: metadata, naming, dependencies,
+  NO-GO audits. Criterion: a decision or blocker that gates a crate's
+  crates.io publication — naming/description/license/dependency
+  one-way-door decisions, semver-coupling decisions, or a NO-GO verdict
+  (and its blocking findings) from an independent pre-publication audit.
+  Evidence: 90/91/93 are three of the four independent `aligned-vmem`
+  publication-readiness audits, each an explicit NO-GO verdict with M1-M4
+  blockers; 24/28/29/85 are one-way-door metadata/dependency decisions
+  (README crate-count claim, `racy-ptr-cell` naming, `deny(missing_docs)`,
+  `captrack` supply-chain pin) that all explicitly "become permanent the
+  moment the crate first publishes"; 27 and 46 are a compile-error UX
+  tradeoff and a semver-coupling acceptance, both pre-publish decisions
+  for a crate about to ship.
+- **`docs/correctness-open-items/TRACKED_process_record.md`** (11
+  cards) — commit-message / count / citation record corrections.
+  Criterion: the card's entire content is a RECORD correction — a wrong
+  count, a wrong citation, a commit-prefix taxonomy mis-slot, or a "filed
+  as a follow-up" claim that was never actually filed — needing no code,
+  test, or script change, only an accurate durable record. Evidence: 10 of
+  the 11 cards (all but 86) are explicitly tagged "record correction" or
+  "closed on filing" in their own card header, the strongest possible
+  signal this is a real, self-declared category rather than an imposed
+  one; 78/79/81/83 are R30-12 taxonomy mis-slots and commit-body count
+  errors; 67/68/89 are citation/claim corrections; 20/21 are CHANGELOG/
+  taxonomy record gaps; 86 is this very index's own split-deferral
+  decision and its reversal — a record about the index, not about code.
+- **`docs/correctness-open-items/TRACKED_misc.md`** (2 cards) --
+  residual, does not fit any category above. Per this task's brief: a
+  card that does not fit is collected here, NOT forced into the
+  closest-sounding bucket. Item 45 (numa-shim `RefCell`-vs-`Cell`
+  defensive-coding/panic-safety nit) is not an OS-CONTRACT question (it
+  never claims the OS behaves differently than documented), not a
+  `dbg_*` hook, and not flakiness. Item 49 (aligned-vmem edition-2021-
+  vs-2024 explicit-`unsafe{}`-block hygiene, ten FFI call sites) is about
+  unsafe-ANNOTATION style at ordinary FFI call sites, not about a
+  `bench-internals` measurement hook (category 1's actual criterion) or a
+  CI-wiring gap (both hooks in item 49 already compile and run today; the
+  gap is only that edition 2024 would make the implicit form a hard
+  error). Two cards, two unrelated reasons, correctly NOT merged into one
+  invented "code hygiene" category of convenience.
 - **`docs/correctness-open-items/ACTIVE.md`** — the **[A]** tier: active
   cards, a real next step a round should consider taking. Small (6 cards
-  at split time).
-- **`docs/correctness-open-items/TRACKED_005_008.md`,
-  `TRACKED_009_018.md`, `TRACKED_019_043.md`, `TRACKED_044_093.md`** — the
-  **[T]** tier: tracked, not yet actioned. The bulk of the open cards (70
-  at task #1221's re-split, including the `59a`/`59b` sub-items),
-  partitioned by ITEM-NUMBER RANGE (each filename's suffix is its
-  inclusive item-number range) rather than by topic, because every
-  citation of this index across the repo is of the form `` `docs/
-  CORRECTNESS_OPEN_ITEMS.md` item N `` — by number, never by topic — so a
-  number-range filename is a one-hop lookup with no translation table.
-  Ranges are balanced by LINE COUNT, not card count (card sizes vary from
-  2 lines to 293): `005_008` (4 cards/~638 lines), `009_018` (10
-  cards/~518 lines), `019_043` (13 cards/~573 lines), `044_093` (50
-  cards/~577 lines).
+  at split time). Unchanged by this task.
 - **`docs/correctness-open-items/RESOLVED.md`** — the "Recently resolved
   (closure trail — do not re-list as open)" section: one-line pointers per
   closed item, each resolving further into `ARCHIVE.md`'s full narrative.
+  Unchanged by this task.
 - **`docs/correctness-open-items/ARCHIVE.md`** — the full dated historical
-  closure narratives, moved (byte-identical relocation, not re-derived)
-  from the retired `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` (the R34-24
-  split task #1109 created on 2026-08-18). Consulted on demand, not part
-  of the mandatory round-start read.
+  closure narratives. Consulted on demand, not part of the mandatory
+  round-start read. Unchanged by this task.
 
-**What to read at round start:** `ACTIVE.md` then all four
-`TRACKED_*.md` files, in number order — together they are the full
+**What to read at round start:** `ACTIVE.md` then all nine `TRACKED_*.md`
+files (any order — unlike the retired number-range split, there is no
+natural reading sequence across themes) — together they are the full
 OPEN-item content this file's own "Round start" convention rule (above)
 already requires reading end-to-end; `RESOLVED.md` and `ARCHIVE.md` are
-consulted on demand, exactly as the single-file version's own "Recently
-resolved" section and the old `CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` were.
+consulted on demand, exactly as before.
 
-**Task #1221 (2026-08-20): the `[T]` tier's own `TRACKED.md` (2,322
-lines) had itself grown past the R34-24 ~1,000-line threshold — the same
-rule whose enforcement created it at task #1217 earlier the same day —
-and was split again, this time by item-number range (tier was already
-exhausted as an axis: every card in that file was `[T]`). `TRACKED.md`
-no longer exists; it is fully replaced by the four `TRACKED_NNN_NNN.md`
-files listed above. No card body was reworded, only relocated; the two
-`tests/no_stale_doc_references.rs` tests that parse specific cards
-(items 87 and 59a, both now in `TRACKED_044_093.md`) were re-pointed at
-their new path in the same commit.
+**Item-number -> file lookup table (task #1222, mechanically generated from
+this file's own category assignments — not hand-typed).** Covers all 70
+`[T]`-tier numbers, including `59a`/`59b`:
 
-**Citing an item going forward:** the established convention —
+| Item | File |
+| --- | --- |
+| 5 | `TRACKED_hook_safety.md` |
+| 6 | `TRACKED_platform_contracts.md` |
+| 7 | `TRACKED_hook_safety.md` |
+| 8 | `TRACKED_hook_safety.md` |
+| 9 | `TRACKED_hook_safety.md` |
+| 10 | `TRACKED_process_record.md` |
+| 12 | `TRACKED_test_flakiness.md` |
+| 14 | `TRACKED_test_flakiness.md` |
+| 16 | `TRACKED_correctness_residuals.md` |
+| 17 | `TRACKED_verification_coverage.md` |
+| 18 | `TRACKED_verification_coverage.md` |
+| 19 | `TRACKED_ci_gate_coverage.md` |
+| 20 | `TRACKED_process_record.md` |
+| 21 | `TRACKED_process_record.md` |
+| 22 | `TRACKED_correctness_residuals.md` |
+| 23 | `TRACKED_correctness_residuals.md` |
+| 24 | `TRACKED_publish_readiness.md` |
+| 25 | `TRACKED_ci_gate_coverage.md` |
+| 26 | `TRACKED_platform_contracts.md` |
+| 27 | `TRACKED_publish_readiness.md` |
+| 28 | `TRACKED_publish_readiness.md` |
+| 29 | `TRACKED_publish_readiness.md` |
+| 41 | `TRACKED_verification_coverage.md` |
+| 43 | `TRACKED_platform_contracts.md` |
+| 44 | `TRACKED_platform_contracts.md` |
+| 45 | `TRACKED_misc.md` |
+| 46 | `TRACKED_publish_readiness.md` |
+| 47 | `TRACKED_platform_contracts.md` |
+| 48 | `TRACKED_platform_contracts.md` |
+| 49 | `TRACKED_misc.md` |
+| 50 | `TRACKED_ci_gate_coverage.md` |
+| 51 | `TRACKED_ci_gate_coverage.md` |
+| 52 | `TRACKED_platform_contracts.md` |
+| 53 | `TRACKED_platform_contracts.md` |
+| 54 | `TRACKED_ci_gate_coverage.md` |
+| 55 | `TRACKED_ci_gate_coverage.md` |
+| 58 | `TRACKED_platform_contracts.md` |
+| 59 | `TRACKED_platform_contracts.md` |
+| 59a | `TRACKED_platform_contracts.md` |
+| 59b | `TRACKED_platform_contracts.md` |
+| 60 | `TRACKED_platform_contracts.md` |
+| 61 | `TRACKED_verification_coverage.md` |
+| 63 | `TRACKED_test_flakiness.md` |
+| 64 | `TRACKED_ci_gate_coverage.md` |
+| 65 | `TRACKED_ci_gate_coverage.md` |
+| 66 | `TRACKED_correctness_residuals.md` |
+| 67 | `TRACKED_process_record.md` |
+| 68 | `TRACKED_process_record.md` |
+| 69 | `TRACKED_test_flakiness.md` |
+| 70 | `TRACKED_ci_gate_coverage.md` |
+| 72 | `TRACKED_ci_gate_coverage.md` |
+| 73 | `TRACKED_ci_gate_coverage.md` |
+| 74 | `TRACKED_ci_gate_coverage.md` |
+| 76 | `TRACKED_ci_gate_coverage.md` |
+| 78 | `TRACKED_process_record.md` |
+| 79 | `TRACKED_process_record.md` |
+| 80 | `TRACKED_ci_gate_coverage.md` |
+| 81 | `TRACKED_process_record.md` |
+| 82 | `TRACKED_ci_gate_coverage.md` |
+| 83 | `TRACKED_process_record.md` |
+| 84 | `TRACKED_verification_coverage.md` |
+| 85 | `TRACKED_publish_readiness.md` |
+| 86 | `TRACKED_process_record.md` |
+| 87 | `TRACKED_ci_gate_coverage.md` |
+| 88 | `TRACKED_ci_gate_coverage.md` |
+| 89 | `TRACKED_process_record.md` |
+| 90 | `TRACKED_publish_readiness.md` |
+| 91 | `TRACKED_publish_readiness.md` |
+| 92 | `TRACKED_ci_gate_coverage.md` |
+| 93 | `TRACKED_publish_readiness.md` |
+
+**Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
 correct; this file stays the canonical citation target precisely so nothing
 downstream needs to learn a new path. A reader or script that needs the
-card body follows the tier pointer above (or, if the item number is
+card body consults the lookup table above (or, if the item number is
 unknown ahead of time, greps `docs/correctness-open-items/*.md`, which is
 the only meaningful behavior change versus grepping the old monolith).
 
-**Card census at split time (task #1217, 2026-08-20; re-derived unchanged
-after task #1221's further `[T]`-tier re-split, same day).** Re-derived
-during review from the committed files themselves, not from the split's
-own working copy — see the paragraph below for why that distinction
-mattered here. Reproduce with:
+**Card census (task #1217, 2026-08-20; re-derived after task #1221's
+number-range re-split; re-derived again, unchanged in total, after task
+#1222's thematic re-split, same day).** Re-derived during review from the
+committed files themselves, not from the split's own working copy — see
+the paragraph below (task #1217's own finding) for why that distinction
+mattered. Reproduce with:
 
 ```text
 grep -cE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md
@@ -158,31 +345,37 @@ grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
 ```
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ 70 `[T]`-tier cards**
-(5–10, 12, 14, 16–29, 41, 43–55, 58, 59, 59a, 59b, 60, 61, 63–70, 72–74,
-76, 78–93, plus 85 which sits out of numeric order between 47 and 48)
+(5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
+76, 78-93, plus 85 which sits out of numeric order between 47 and 48)
 **= 76 total open cards**, plus 40 "Recently resolved" pointer lines
 resolving into 38 archive entries (two archive item-number collisions,
 `3` appearing twice, predate this split and are inherited unchanged — see
 `docs/correctness-open-items/ARCHIVE.md`'s own "Structure" section).
-Items 1–4's original flaky-test cards are separately already-resolved
-stub pointers inside the `[T]` tier's own intro text, superseded by real
-cards later reusing numbers 1 and 2 for unrelated `[A]`-tier findings — a
-pre-existing, intentional renumbering documented at task #1143, not a
-defect introduced by this split.
+Items 1-4's original flaky-test cards are separately already-resolved
+stub pointers inside the `[T]` tier's own intro text (now duplicated
+verbatim at the top of `TRACKED_test_flakiness.md`, the file whose theme
+they most resemble, so a reader landing there first still sees the
+pointer), superseded by real cards later reusing numbers 1 and 2 for
+unrelated `[A]`-tier findings — a pre-existing, intentional renumbering
+documented at task #1143, not a defect introduced by any split.
 
-**One card was lost by this split and restored in review — recorded
-because the loss mechanism is reusable, not because it survived.** The
-split was performed in a git worktree branched from a commit that did not
-yet contain `105cf53` (task #1209), so its source copy of the pre-split
-file was 2,555 lines where the shared checkout held 2,566. Those 11 lines
-were exactly **item 93**, the card filing the fourth independent audit's
-NO-GO verdict — the single newest card in the file. The split's own
-card census PASSED while item 93 was missing, because it compared the
-output against that same stale source: a census that re-derives both
-sides from one snapshot cannot detect a card the snapshot never had.
-This is the same class as task #1116, where the FIRST split of this index
-truncated 9 pointers mid-heading and lost the verdict on 19 of 32 — that
-one was caught by an independent reader, this one by re-running the
-census against `git show HEAD:docs/CORRECTNESS_OPEN_ITEMS.md` instead of
-against the worktree. **Census both sides from committed history, not
-from the working copy the transformation itself read.**
+**One card was lost by the task-#1217 split and restored in review --
+recorded because the loss mechanism is reusable, not because it survived
+into this split.** The task-#1217 split was performed in a git worktree
+branched from a commit that did not yet contain `105cf53` (task #1209), so
+its source copy of the pre-split file was 2,555 lines where the shared
+checkout held 2,566. Those 11 lines were exactly **item 93**, the card
+filing the fourth independent audit's NO-GO verdict — the single newest
+card in the file at that time. The split's own card census PASSED while
+item 93 was missing, because it compared the output against that same
+stale source: a census that re-derives both sides from one snapshot cannot
+detect a card the snapshot never had. This is the same class as task
+#1116, where the FIRST split of this index truncated 9 pointers
+mid-heading and lost the verdict on 19 of 32 — that one was caught by an
+independent reader, item 93's loss by re-running the census against
+`git show HEAD:docs/CORRECTNESS_OPEN_ITEMS.md` instead of against the
+worktree. **Census both sides from committed history, not from the working
+copy the transformation itself read.** Task #1222 (this split) re-applied
+that lesson: its own census (above) was run against `git show
+main:<old-path>` for all four number-range files, not against this
+worktree's own copies, before any new file was written.

@@ -107,8 +107,8 @@ Core instructions, mandatory for all code in this repository. They
   keeps round-start reading fast (`docs/CORRECTNESS_OPEN_ITEMS.md` split
   2026-08-20, task #1217, reversing item 86's 2026-08-19 deferral of
   exactly this split — see that item's card in
-  `docs/correctness-open-items/TRACKED_044_093.md`), splitting the OPEN
-  portion itself by an axis the index already uses (here, its own
+  `docs/correctness-open-items/TRACKED_process_record.md`), splitting the
+  OPEN portion itself by an axis the index already uses (here, its own
   `[A]`/`[T]` tier key) into a small folder —
   `docs/correctness-open-items/{ACTIVE,TRACKED,RESOLVED,ARCHIVE}.md` — is
   an equally sanctioned instance of this rule, provided the top-level
@@ -121,16 +121,35 @@ Core instructions, mandatory for all code in this repository. They
   doing so is the difference between the mandatory round-start read
   covering the FULL open-item content in one or two short files versus one
   long one. **A tier file that itself later grows past the threshold
-  splits again, by an axis it already exposes, one level deeper** —
-  `docs/correctness-open-items/TRACKED.md` (the `[T]` tier from the split
-  immediately above) hit exactly this the same day (task #1221,
-  2026-08-20): every card in it was already `[T]`, so tier was exhausted
-  as a further axis, and it split instead by ITEM-NUMBER RANGE into
+  splits again, by an axis it already exposes, one level deeper — and if
+  the first-chosen axis turns out wrong for citation stability, the split
+  can be REDONE along a different axis the same day.** The `[T]` tier from
+  the split immediately above hit the threshold the same day (task #1221,
+  2026-08-20): every card in it was already `[T]`, so tier was exhausted as
+  a further axis, and it first split by ITEM-NUMBER RANGE into
   `TRACKED_005_008.md` / `TRACKED_009_018.md` / `TRACKED_019_043.md` /
-  `TRACKED_044_093.md` (`TRACKED.md` itself no longer exists) — chosen
-  because every citation of this index is by item number, never by topic
-  or line, so a number-range filename needs no new taxonomy and stays a
-  one-hop lookup.
+  `TRACKED_044_093.md` — chosen because every citation of this index is by
+  item number, never by topic or line, so a number-range filename needs no
+  new taxonomy and stays a one-hop lookup. **The owner rejected
+  balancing-by-line-count and asked for a THEMATIC split instead, the same
+  day (task #1222)**: the four number-range files were replaced by nine
+  files grouped by what each card is actually ABOUT (derived by reading all
+  70 cards, not assumed) —
+  `docs/correctness-open-items/TRACKED_hook_safety.md`,
+  `TRACKED_verification_coverage.md`, `TRACKED_platform_contracts.md`,
+  `TRACKED_ci_gate_coverage.md`, `TRACKED_test_flakiness.md`,
+  `TRACKED_correctness_residuals.md`, `TRACKED_publish_readiness.md`,
+  `TRACKED_process_record.md`, and a small explicitly-named residual,
+  `TRACKED_misc.md`, for the two cards that fit no other category (neither
+  `TRACKED.md` nor the four `TRACKED_NNN_NNN.md` files exist any longer).
+  A thematic filename is NOT a one-hop lookup by item number the way the
+  number-range filenames were — the cost this reopens is paid by
+  `docs/CORRECTNESS_OPEN_ITEMS.md` itself carrying a complete,
+  mechanically-generated item-N → file lookup table covering all 70
+  numbers (including the `59a`/`59b` sub-items), so a citation by number
+  stays a two-hop (not one-hop) but still mechanical and always-correct
+  lookup. See `docs/CORRECTNESS_OPEN_ITEMS.md`'s own "Structure" section
+  for the full criterion-by-criterion breakdown and the table.
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
 - **Between phases: run tests and commit.** Before moving to the next phase,

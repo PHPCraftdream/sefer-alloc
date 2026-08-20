@@ -1,49 +1,34 @@
-# Correctness / CI-debt open items — [T] Tracked tier (items 5-8)
+# Correctness / CI-debt open items -- [T] Tracked tier -- bench-internals `dbg_*` hook safety & the tripwire scanner
 
-**Part of the split index.** This file holds the full text of **[T]**
-(tracked, not yet actioned) cards **5 through 8**. Start at
-`docs/CORRECTNESS_OPEN_ITEMS.md` for the purpose/scope/convention
-header and the round-start reading order; come here for these
-specific card bodies. See `docs/correctness-open-items/ACTIVE.md` for the
-**[A]** tier, `docs/correctness-open-items/RESOLVED.md` for the closure
-trail, and the sibling `TRACKED_009_018.md` / `TRACKED_019_043.md` /
-`TRACKED_044_093.md` files for the rest of the **[T]** tier's number
-ranges (the "see 'Recently resolved' in RESOLVED.md" notes inside this
-file's own item-1..4 stub pointers refer to that sibling file, not a
-section further down this one).
+**Part of the split index.** This file holds the full text of every **[T]**
+(tracked, not yet actioned) card whose subject matches this file's own
+criterion (below). Start at `docs/CORRECTNESS_OPEN_ITEMS.md` for the
+purpose/scope/convention header and the round-start reading order, and for
+the complete item-number to file lookup table; come here for these specific
+card bodies. See `docs/correctness-open-items/ACTIVE.md` for the **[A]**
+tier, `docs/correctness-open-items/RESOLVED.md` for the closure trail, and
+the sibling `[T]`-tier files (`TRACKED_verification_coverage.md`, `TRACKED_platform_contracts.md`, `TRACKED_ci_gate_coverage.md`, `TRACKED_test_flakiness.md`, `TRACKED_correctness_residuals.md`, `TRACKED_publish_readiness.md`, `TRACKED_process_record.md`, `TRACKED_misc.md`) for the rest of
+the tier.
 
-**Why split by number range, not by topic (task #1221, 2026-08-20):**
-this file is one of four that together replace the single
-`docs/correctness-open-items/TRACKED.md` (2,322 lines, task #1217),
-which had itself grown past CLAUDE.md's R34-24 ~1,000-line threshold.
+**Criterion for this file:** A card belongs here if it is about the safety/soundness of a `dbg_*`/`bench-internals` measurement hook that touches live allocator state, its `unsafe`/feature-gating correctness, or the `tests/dbg_hook_safety_tripwire.rs` scanner's own coverage of that hazard class -- the R25-1 lineage (R29-7/8/17, R30-1/2, R31-4/14b, R31-15).
+
+**Card count:** 4.
+
+**Why split by theme, not by item-number range (task #1222, 2026-08-20):**
+task #1221 (same day) split the former single `TRACKED.md` into four
+number-range files, balanced by line count. The owner rejected that split
+and asked for a thematic split instead -- grouping cards by what they are
+actually ABOUT, derived from reading all 70 cards rather than assumed.
 Every one of the 42+ code/CI/script citations of this index across the
-repo cites an item by NUMBER (`` `docs/CORRECTNESS_OPEN_ITEMS.md` item
-N ``), never by line or topic — so a number-range filename is a
-one-hop lookup with no translation table required, and needed no new
-taxonomy invented under time pressure (a thematic split was considered
-and rejected for exactly that reason). Ranges were chosen to balance
-by LINE COUNT (card sizes vary enormously — one card here is 293
-lines), not by card count: this file is 4 cards / ~638 lines; see the
-sibling files for the other three ranges (10 cards/~518 lines; 13
-cards/~573 lines; 50 cards/~577 lines). (Split 2026-08-20, task #1221.)
+repo cites an item by NUMBER, never by topic or file, so
+`docs/CORRECTNESS_OPEN_ITEMS.md` (the thin index) now carries a complete
+item-N to file lookup table covering all 70 numbers (including the
+`59a`/`59b` sub-items) -- that table, not this file's name, is what keeps
+the by-number citation convention a one-hop lookup under a thematic split.
+(Split 2026-08-20, task #1222, superseding task #1221's number-range
+split the same day.)
 
 ---
-
-### [T] Tracked, not yet actioned
-
-_(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
-was resolved by an urgent CI-fix task — see "Recently resolved" in RESOLVED.md.)_
-
-_(item 2, the 11 `--features "hardened medium-classes"` clippy dead-code
-errors, was resolved by R23-5 (task #374) — see "Recently resolved" in RESOLVED.md.)_
-
-_(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
-(task #375) — see "Recently resolved" in RESOLVED.md.)_
-
-_(item 4, `canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
-assertion proving no double-release but not no leak, was resolved by R28-2
-(task #431) — see "Recently resolved" in RESOLVED.md.)_
-
 5. **Findings from the R29 post-round independent readonly review
    (`docs/reviews/2026-07-29-r29-readonly-review.md`) not yet independently
    re-verified or actioned beyond this index entry.** The review's two P0/P1
@@ -336,38 +321,6 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      No `src/` behavior change (the two counterfactual breaks used for
      non-vacuity verification were both reverted before this commit — `git
      diff` on `src/` is empty). No version bumps.
-
-6. **[T, filed 2026-07-30 during R30-1/task #450's verification]
-   `examples/r29_3_decomposition_gate.rs` crashes with
-   `STATUS_ACCESS_VIOLATION` when run NATIVELY on Windows** (as opposed to
-   under WSL2/Linux, which is where this example's own gate report,
-   `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`, has always
-   measured — see that doc's "Platform measured" line). The crash is in
-   Measurement B: the `write_volatile` re-fault loop immediately after
-   `HeapCore::dbg_decomp_decommit_payload`. Root cause: Windows
-   `MEM_DECOMMIT` (`crates/aligned-vmem/src/os/windows.rs`'s
-   `decommit_pages_impl` — post-split home, task #1082) genuinely UNMAPS the payload pages, unlike Linux
-   `MADV_DONTNEED`, which keeps the VA mapping resident and transparently
-   re-faults a fresh zero page on next write. The example's Measurement B
-   loop assumes the Linux semantics unconditionally (write-after-decommit
-   silently re-faults); on Windows a write to a decommitted-but-not-yet-
-   recommitted page is a hard access violation without an explicit
-   `VirtualAlloc(..., MEM_COMMIT, ...)` recommit call, which the example
-   never makes. **Confirmed unrelated to R30-1's `small_cur` fix**: the
-   crash reproduces identically with that fix applied or reverted, and
-   lives in a code path (`dbg_decomp_decommit_payload` → `os::decommit_pages`
-   → `crates/aligned-vmem`) R30-1's diff never touches; isolated by running just
-   the R30-1-relevant hooks' pre-fill/A/C/A' loops (which never call
-   `dbg_decomp_decommit_payload`) natively on Windows for hundreds of
-   iterations with no crash. **Needs (future round):** either gate
-   Measurement B's re-fault loop on `cfg(not(windows))` with an honest
-   "irreducible floor not measured on this platform" note, or add the
-   missing `VirtualAlloc(MEM_COMMIT)` recommit call before the
-   `write_volatile` loop so the measurement is platform-correct everywhere
-   (this would also make Measurement B's timing include the ACTUAL Windows
-   recommit cost — currently assumed `0 ns` "implicit" per the doc's own
-   §2 table, which is a Linux-only claim; Windows `MEM_COMMIT` is a real
-   syscall, not implicit).
 
 7. **[T, filed 2026-07-30, R30-10/task #459]
    `dbg_decomp_reserve_and_keep`/`dbg_decomp_release`
@@ -666,3 +619,169 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      clippy --features "production bench-internals alloc-stats"
      --all-targets -- -D warnings` clean; `cargo clippy --features
      production -- -D warnings` clean; `cargo fmt --check` clean.
+
+9. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 31 full
+   independent review (`docs/reviews/2026-07-31-r31-full-review.md` §7
+   P2-4, P2-5, P2-11, P2-12)]** The following four P2 findings were NOT
+   independently re-verified before filing — flagged here at the review's
+   own confidence/severity, for a future round to check and either action
+   or dismiss, per this file's own convention (item 8 above is the direct
+   precedent for this exact "filed, not fixed" pattern, one round earlier).
+   Note: the review's P2-6 (`ReservedSmallSegment` should be `#[must_use]`)
+   is NOT filed here — it was fixed directly in the same task that filed
+   this item (one-line, zero-risk, per the task brief's own instruction to
+   check first) — see the Round 31 review-response CHANGELOG entry.
+   - **P2-4 — `ReservedSmallSegment`'s `pub(super)` scoping doc claim is
+     wrong in three places.** The review's claim:
+     `src/alloc_core/reserved_small_segment.rs:23-27` and `:80-85` say
+     `new_from_reservation` is "callable only from within
+     `alloc_core_small_pool.rs`'s own module tree," and `:108-112` says
+     `into_base` is "not exposed outside this module tree" — both
+     overstate. Actual scope is `pub(in crate::alloc_core)` (since
+     `reserved_small_segment` is declared `pub mod` as a direct child of
+     `alloc_core` in `src/alloc_core/mod.rs:99`), reachable from every
+     sibling module under `alloc_core` (`alloc_core_large.rs`,
+     `alloc_core_small.rs`, `alloc_core_small_magazine.rs`, …), not just
+     `alloc_core_small_pool.rs` — Rust has no sibling-module-only
+     visibility, so the stated scoping is not even expressible. The review
+     states this is NOT a live exploit (whole-repo grep found exactly one
+     caller of each) and the load-bearing property (external
+     unforgeability across the crate boundary) is unaffected — a
+     documentation-only defect. Suggested fix per the review (doc-only):
+     "reachable from anywhere inside `alloc_core`; in practice called from
+     exactly one site (`alloc_core_small_pool.rs:1095`). Rust has no
+     sibling-module-only visibility, so this is the tightest expressible
+     bound."
+   - **P2-5 — the double-release counterfactual test has a cheap runtime
+     check its own file's two-options analysis missed.** The review's
+     claim: `tests/r31_4_reserved_small_segment_handle.rs` weighs exactly
+     two options (`trybuild` vs. prose) for proving a compile-error
+     property, but a third exists at zero cost:
+     `assert!(core::mem::needs_drop::<ReservedSmallSegment>())` —
+     `needs_drop` is callable at runtime, and a type with a `Drop` impl can
+     never be `Copy` (a hard rustc rule), so combined with the file's
+     existing by-value-signature exercise this is the complete
+     compile-error argument, and unlike the prose it would actually FAIL if
+     a future refactor removed `Drop` and added `Copy`.
+   - **P2-11 — `AllocCore::dbg_large_cache_hits` remains a safe `pub fn` in
+     a plain `production` build, unlike its `HeapCore`-level sibling R31-4
+     tightened.** The review's claim, verified by its own out-of-tree
+     compile probe: `AllocCore::dbg_large_cache_hits` compiles against
+     `features = ["production"]` alone (R31-4/item 8 P2-2 above tightened
+     only the `HeapCore` delegation, not this one). It is allowlisted in
+     `tests/dbg_hook_safety_tripwire.rs`'s `PURE_OBSERVERS`
+     (`:213`) and is a zero-argument `&self` counter read with no pointer
+     and no mutation, so the review calls it a *sanctioned* exception under
+     the tripwire — but notes CLAUDE.md's benchmark-hook rule 2 ("no
+     production caller ⇒ MUST default to `bench-internals`") applies to it
+     by the identical reasoning R31-4 used against its own sibling, and the
+     R31-4 commit does not say why the pair was split. Suggested fix per
+     the review: one sentence of justification, or a matching tightening
+     to `all(alloc-decommit, bench-internals)`.
+   - **P2-12 — the R31-4 retrofit narrowed tripwire coverage of the exact
+     hook shape it hardened.** The review's claim: `scan_file`
+     (`tests/dbg_hook_safety_tripwire.rs:814`) matches only `pub fn dbg_` /
+     `pub unsafe fn dbg_`; the raw-pointer RETURN that used to live on
+     `dbg_decomp_reserve_and_keep` (and was therefore scanned) now lives on
+     `ReservedSmallSegment::base(&self) -> *mut u8`, a differently-named
+     method the scanner's name-prefix match cannot see. The review calls
+     this harmless today (`bench-internals`-gated; returns a pointer the
+     caller already legitimately holds) but a coverage gap for the scanner
+     going forward. Suggested fix per the review: rename to `dbg_base()`,
+     or widen the scanner to also enumerate `#[doc(hidden)] pub fn`
+     returning `*mut`/`*const` on measurement-only types.
+   - **Next trigger:** independent re-verification of each sub-finding
+     (re-read the `mod.rs` declarations for P2-4's visibility claim;
+     confirm `needs_drop::<ReservedSmallSegment>()` for P2-5; re-run the
+     review's out-of-tree compile probe for P2-11; re-read `scan_file`'s
+     match logic for P2-12), then either apply the review's suggested fixes
+     or record a reasoned dismissal, in a future round. None of these
+     threaten correctness per the review's own text.
+   - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P2-4,
+     P2-5, P2-11, P2-12 (the review's own text is the only source cited
+     here — this entry is a filing, not an independent confirmation).
+
+   **[FIXED, R31-14b/task #484, 2026-07-31.]**
+   All four claims independently re-verified before fixing, per the "Next
+   trigger" instruction above.
+
+   - **P2-4 confirmed and fixed (doc-only).** Re-read `src/alloc_core/mod.rs`
+     directly: `reserved_small_segment` is declared `pub mod` as a direct
+     child of `alloc_core` (line 99), a SIBLING of `alloc_core_small_pool`
+     (declared `mod alloc_core_small_pool` at line 22), not nested inside
+     it — confirming `pub(super)` on `new_from_reservation`/`into_base`
+     resolves to `pub(in crate::alloc_core)`, reachable from every module
+     under `alloc_core`. Confirmed the single real caller via
+     `grep -n "new_from_reservation\|into_base"
+     src/alloc_core/alloc_core_small_pool.rs` → lines 1095 and 1117 exactly.
+     Fixed all three overstated doc-comment locations
+     (`reserved_small_segment.rs:23-27`, `:80-85`, `:108-112`) to state
+     "reachable from anywhere inside `alloc_core`... Rust has no
+     sibling-module-only visibility, so this is the tightest expressible
+     bound," with the exact caller line numbers cited, matching the
+     review's own suggested wording.
+   - **P2-5 confirmed and fixed.** Re-read
+     `tests/r31_4_reserved_small_segment_handle.rs` and confirmed it weighed
+     exactly two options (trybuild vs. prose), no `needs_drop` check.
+     Verified the runtime counterfactual independently: compiled a
+     throwaway `struct NoDrop { x: *mut u8 }` (no `Drop` impl) and confirmed
+     `core::mem::needs_drop::<NoDrop>()` returns `false` — proving the new
+     assertion is non-vacuous (it WOULD fail if `ReservedSmallSegment` lost
+     its `Drop` impl), not merely a decoration. Added
+     `reserved_small_segment_needs_drop_so_it_cannot_be_copy` (a new `#[test]`
+     asserting `core::mem::needs_drop::<ReservedSmallSegment>()`) plus a
+     documented "option 3" in the file's module doc explaining the argument
+     and citing this review finding.
+   - **P2-11 confirmed; decision: keep as a sanctioned exception, add
+     justification (not tighten).** Re-verified `AllocCore::dbg_large_cache_hits`
+     (`src/alloc_core/alloc_core_large_cache.rs:544`) is gated
+     `#[cfg(feature = "alloc-decommit")]` alone — reachable in plain
+     `production`. Unlike its `HeapCore` sibling (R31-4/item 8 P2-2 above,
+     which had ZERO callers outside `bench-internals`-gated examples before
+     tightening), this method has genuine `#[test]` regression callers that
+     run in a plain `production` test build without `bench-internals`:
+     `tests/alloc_zeroed_fresh_large_skip.rs` and
+     `tests/regression_large_cache_span_usable_stable.rs` both gate only on
+     `#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]` and
+     assert on this method's return value — confirmed by running
+     `cargo test --features production --test alloc_zeroed_fresh_large_skip
+     --test regression_large_cache_span_usable_stable`, both green.
+     Tightening to `bench-internals` would break these two real test files.
+     CLAUDE.md's benchmark-hook rule 2 ("no production caller ⇒
+     `bench-internals`") does not apply here precisely because a production
+     caller (the test binary) DOES exist, which is the deciding difference
+     from the `HeapCore` sibling's case. Added a doc-comment paragraph to
+     `dbg_large_cache_hits` explaining this asymmetry explicitly, so a
+     future reader does not have to re-derive it.
+   - **P2-12 confirmed and fixed.** Re-read `tests/dbg_hook_safety_tripwire.rs`'s
+     `scan_file` (`:814`, `trimmed.starts_with("pub fn dbg_")`) and confirmed
+     it structurally cannot match `pub fn base`. Renamed
+     `ReservedSmallSegment::base` → `dbg_base` and updated all call sites
+     (`tests/r31_4_reserved_small_segment_handle.rs` ×3,
+     `examples/r29_3_decomposition_gate.rs` ×3, confirmed via a repo-wide
+     `grep -rn "handle\.base()\|h2\.base()"` returning zero hits post-fix).
+     The rename alone surfaced a SECOND, related gap the review did not
+     flag: the tripwire scans the attribute block immediately preceding
+     each `pub fn dbg_*` line, not the enclosing `impl` block's own `#[cfg]`
+     — `dbg_base` was gated only at the `impl ReservedSmallSegment` level,
+     so after the rename `cargo test --features "production bench-internals
+     alloc-stats" --test dbg_hook_safety_tripwire` genuinely FAILED
+     ("NEW unaccounted-for SAFE, non-bench-internals-gated hooks:
+     ...::dbg_base") until a redundant per-method
+     `#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]`
+     was added directly on `dbg_base` — confirming both that the tripwire
+     genuinely works end-to-end and that repeating the gate per-item (the
+     established pattern elsewhere in this crate, e.g.
+     `heap_core_diag.rs`'s methods) is required, not optional decoration.
+   - **Verification (all four together):** `cargo build --features
+     "production bench-internals alloc-stats" --all-targets` clean;
+     `cargo test --features "production bench-internals alloc-stats"` green
+     (231 test-binary result lines, 0 failed); `cargo test --features
+     production --test alloc_zeroed_fresh_large_skip --test
+     regression_large_cache_span_usable_stable --test
+     regression_large_cache_multi_size_cycle` green; `cargo clippy
+     --features "production bench-internals alloc-stats" --all-targets -- -D
+     warnings` clean; `cargo clippy --features production -- -D warnings`
+     clean; `cargo clippy --features experimental --all-targets -- -D
+     warnings` clean; `cargo clippy --all-features --all-targets -- -D
+     warnings` clean; `cargo fmt --check` clean.
