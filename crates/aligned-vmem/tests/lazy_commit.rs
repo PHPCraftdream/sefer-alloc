@@ -48,8 +48,13 @@ const MIB: usize = 1024 * 1024;
 /// huge-pages fault-injection bench-internals"` (no `aligned_vmem_mock`, matching the
 /// Windows CI row) failed `windows_lazy_reserve_saves_commit_charge`
 /// nondeterministically under default (parallel) `--test-threads`, passed
-/// reliably under `--test-threads=1`. Every test in this file now holds
-/// `SERIAL` for its whole body, so no `win_reserve_commit`-touching test
+/// reliably under `--test-threads=1`. Every test in this file that can reach
+/// `win_reserve_commit` now holds `SERIAL` for its whole body (task #1224
+/// audit of this claim found one literal exception to the "every test"
+/// wording this comment previously used:
+/// `lazy_reserve_rejects_bad_contracts` takes no lock -- every one of its
+/// five calls is rejected in validation before any backend call, so it moves
+/// no counter and needs none), so no `win_reserve_commit`-touching test
 /// can run concurrently with the one that measures an exact delta. Gated
 /// identically to `windows_lazy_reserve_saves_commit_charge` (only the
 /// Windows + `bench-internals`, non-`aligned_vmem_mock` build ever references this

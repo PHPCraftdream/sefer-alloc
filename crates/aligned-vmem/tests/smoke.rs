@@ -12,20 +12,59 @@ use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
 
-/// Zero-trust review of task #882: under `bench-internals`, every
-/// `decommit`/`decommit_lazy` call increments the PROCESS-GLOBAL
-/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` counters (see
-/// `libc_madvise` in `lib.rs`). libtest runs this file's tests on parallel
-/// threads by default, so any test that both resets those counters and then
-/// asserts an EXACT count on them would otherwise race against every other
-/// test in this same binary that also calls `decommit`/`decommit_lazy`
-/// concurrently — mirroring the exact hazard `tests/fault_injection.rs`'s own
-/// `SERIAL` mutex already exists to prevent for its process-global hooks.
-/// Every test in this file that calls `decommit`/`decommit_lazy` takes this
-/// lock for its whole body so the shared counters are exercised
-/// single-threaded when it matters (`bench-internals` builds); the lock
-/// itself is cheap enough to hold unconditionally even when the feature is
-/// off, so no `#[cfg]` branching is needed here.
+/// Serial guard for this file's PROCESS-GLOBAL `bench-internals` counters.
+///
+/// History: introduced by the zero-trust review of task #882 for
+/// `UNIX_MADVISE_ATTEMPTS`/`UNIX_MADVISE_SUCCESSES` (every
+/// `decommit`/`decommit_lazy` call that reaches the backend increments them --
+/// see `libc_madvise` in the unix backend). Task #1189 added two more readers
+/// (`unix_munmap_release_is_attempted_exactly_once_and_does_not_fail` and its
+/// Windows twin read `UNIX_MUNMAP_*` / `WINDOWS_VIRTUALFREE_RELEASE_*` release
+/// deltas), and task #1224 closed the gap that both additions left open.
+///
+/// task #1224 — the rule this lock now enforces, same as task #1223 established
+/// in `tests/decommit_capability.rs`: a mutex excludes only the parties that
+/// TAKE it, so a test that MOVES a counter must hold this lock even if it never
+/// READS one. In this binary the moved counters and their movers are:
+///
+/// - `UNIX_MADVISE_ATTEMPTS`/`_SUCCESSES` (unix): moved by any well-formed
+///   `decommit`/`decommit_lazy`;
+/// - `UNIX_MUNMAP_ATTEMPTS`/`_FAILURES` (unix): moved by EVERY release of a
+///   reservation -- `Drop`, `release()`, `release_parts()`;
+/// - `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS`/`_FAILURES` (windows): same, via
+///   `VirtualFree(MEM_RELEASE)`.
+///
+/// The release counters are the broad ones: on both platforms every test that
+/// obtains a reservation releases it, so EVERY test in this file that obtains a
+/// reservation holds this lock for its whole body (46 of 54 as of #1224). The
+/// 8 that do not are exactly the tests that provably move none of the above:
+/// 4 pure tests that never reserve (`page_size_is_a_valid_os_page`,
+/// `validate_page_size_falls_back_on_invalid_values`,
+/// `apple_silicon_page_size_is_16_kib`,
+/// `vmem_error_kinds_are_distinguishable`), 2 whose every reserve-family call
+/// is rejected at validation before any OS call (`rejects_bad_contracts`,
+/// `try_reserve_overflow_is_invalid_argument_on_all_platforms`), and the 2
+/// `leak_zeroed_pages` tests, whose reservation is `mem::forget`-leaked and so
+/// is never released (it does move the Windows reserve-commit path counters on
+/// Windows, but no test in this binary reads those).
+///
+/// Cost, stated rather than paid silently: serializing 46 of 54 tests makes
+/// this binary effectively single-threaded. That is accepted because the
+/// alternative is the #1223 failure mode (`main` went red on
+/// `decommit_capability.rs` because a reserving sibling landed inside a locked
+/// reader's window; here every reserve-and-drop in the binary can land inside
+/// `unix_munmap_release_is_attempted_exactly_once_and_does_not_fail`'s
+/// attempts-delta-of-exactly-1 window), and because these tests are dominated
+/// by page-granule work inside each test, not by cross-test parallelism. A
+/// future test added to this file must take this lock if it obtains (and hence
+/// releases) a reservation or calls `decommit`/`decommit_lazy` with a
+/// well-formed range.
+///
+/// The lock itself is cheap enough to hold unconditionally even when
+/// `bench-internals` is off (then no counter exists to protect and the lock
+/// serializes for nothing -- paid for consistency with the 13 pre-#1224 lock
+/// sites, which were already unconditional, and so that scheduling does not
+/// differ between feature rows), so no `#[cfg]` branching is used here.
 static SERIAL: Mutex<()> = Mutex::new(());
 
 // task #719: `unsafe impl Send for Reservation {}` had no test at all pinning
@@ -42,6 +81,7 @@ const _: () = assert_send::<Reservation>();
 /// V7 fix: Reservation now has a Debug impl.
 #[test]
 fn reservation_has_debug_output() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
     let debug_str = format!("{:?}", r);
     assert!(
@@ -89,6 +129,7 @@ fn reservation_has_debug_output() {
 /// `true`.
 #[test]
 fn ordinary_reservation_never_reports_huge() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * MIB, 2 * MIB).expect("ordinary reservation");
     assert!(
         !r.is_huge(),
@@ -109,6 +150,7 @@ fn ordinary_reservation_never_reports_huge() {
 #[cfg(windows)]
 #[test]
 fn windows_single_call_fast_path_reservation_len_reports_commit_len_not_true_size() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve 4 KiB, aligned to 4 KiB");
     assert_eq!(
         r.reservation_len(),
@@ -122,6 +164,7 @@ fn windows_single_call_fast_path_reservation_len_reports_commit_len_not_true_siz
 /// V8 fix: ReservationParts prevents swapping len and align.
 #[test]
 fn reservation_parts_prevents_parameter_swap() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
     let parts = r.into_reservation_parts();
 
@@ -152,6 +195,7 @@ fn reservation_parts_prevents_parameter_swap() {
 /// exercises (the reservation → new → release direction was the gap).
 #[test]
 fn reservation_parts_new_roundtrips_through_release() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // This is the "self-hosted allocator" path: you recorded (ptr, len, align)
     // somewhere else, and now you need to release the reservation without
     // reconstructing the full `Reservation`.
@@ -186,6 +230,7 @@ fn reservation_parts_new_roundtrips_through_release() {
 
 #[test]
 fn reserve_is_aligned_and_writable() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 4 * MIB;
     let r = reserve_aligned(span, span).expect("reserve 4 MiB aligned 4 MiB");
     let base = r.as_ptr();
@@ -232,6 +277,7 @@ fn reserve_is_aligned_and_writable() {
 /// `align`). The test asserts normal success, correct alignment, and writability.
 #[test]
 fn reserve_aligned_with_align_greater_than_size() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let align = 4 * MIB;
     let size = PAGE;
     let r = reserve_aligned(size, align).expect("reserve with align > size");
@@ -255,6 +301,7 @@ fn reserve_aligned_with_align_greater_than_size() {
 
 #[test]
 fn manual_release_via_into_parts() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -520,6 +567,7 @@ fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
 
 #[test]
 fn recommit_rejects_contract_violating_offsets() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // task #712 (rust-intel audit MEDIUM, already crashed an in-repo
     // consumer): `recommit`/`try_recommit` used to clamp a contract
     // VIOLATION (misaligned offsets, or `start > end`) to the same
@@ -566,6 +614,7 @@ fn recommit_rejects_contract_violating_offsets() {
 /// reorder is visible to the test suite.
 #[test]
 fn recommit_rejects_misaligned_empty_range() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 2 * MIB;
     let r = reserve_aligned(span, span).expect("reserve");
     let base = r.as_ptr();
@@ -697,6 +746,7 @@ fn apple_silicon_page_size_is_16_kib() {
 
 #[test]
 fn try_reserve_reports_invalid_argument() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // 0.2 fallible API: a contract violation yields InvalidArgument (no OS call).
     let e = match try_reserve_aligned(0, PAGE) {
         Ok(_) => panic!("zero size must be rejected"),
@@ -806,13 +856,19 @@ fn macos_decommit_madvise_syscall_actually_succeeds() {
     // which run in the same process under `cargo test`'s default
     // multi-threaded-but-shared-process test execution).
     //
-    // Round-6 closing review SC9: this also zeroes UNIX_EXACT_RESERVE_ATTEMPTS/
-    // _HITS and the Windows counters, which every `reserve_aligned` call in
-    // this file's ~14 other tests also increments -- none of them holds
-    // SERIAL or asserts on those counters today, so there is no live race,
-    // but a future test that does add such an assertion would get a
-    // silently flaky result rather than a compile error unless it also
-    // joins SERIAL's contract.
+    // Round-6 closing review SC9 (passage corrected by task #1224): this also
+    // zeroes UNIX_EXACT_RESERVE_ATTEMPTS/_HITS and the Windows counters. Two
+    // claims in the original SC9 wording had rotted by #1224: "every
+    // `reserve_aligned` call in this file's ~14 other tests also increments"
+    // them (on 64-bit the exact-reserve counters only increment for
+    // `huge && align == LINUX_HUGE_PAGE_SIZE`, so ordinary reserves move them
+    // on 32-bit targets only), and "none of them holds SERIAL" (since #1224
+    // every test in this file that obtains a reservation holds SERIAL -- see
+    // SERIAL's own doc for the criterion and the 8 exceptions, none of which
+    // reserves). No test in this binary asserts on those counters today, so
+    // there is no live race; a future test that does add such an assertion
+    // joins SERIAL's contract by the same rule and is thereby protected, not
+    // silently flaky.
     reset_bench_internals_counters();
 
     // SAFETY: base is a live, exclusively-owned reservation for `span` bytes;
@@ -1049,6 +1105,7 @@ fn leak_zeroed_pages_exact_multiple_needs_no_rounding() {
 #[test]
 #[should_panic(expected = "align must be a power of two >= PAGE")]
 fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // Reserve real memory so `base`/`reservation` are non-null and valid --
     // the panic under test is specifically about the `align` contract, not
     // the already-tested null checks.
@@ -1081,6 +1138,7 @@ fn from_raw_parts_rejects_non_power_of_two_align_immediately() {
 #[test]
 #[should_panic(expected = "must form a valid Layout")]
 fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`align` come from a genuinely live reservation above;
@@ -1107,6 +1165,7 @@ fn from_raw_parts_rejects_an_overflowing_reservation_len_immediately() {
 #[test]
 #[should_panic(expected = "reservation_len must be non-zero")]
 fn from_raw_parts_rejects_zero_reservation_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`align` come from a genuinely live reservation above;
@@ -1134,6 +1193,7 @@ fn from_raw_parts_rejects_zero_reservation_len_immediately() {
 #[test]
 #[should_panic(expected = "reservation_len must be non-zero and a multiple of PAGE")]
 fn from_raw_parts_rejects_non_page_multiple_reservation_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`align` come from a genuinely live reservation above;
@@ -1159,6 +1219,7 @@ fn from_raw_parts_rejects_non_page_multiple_reservation_len_immediately() {
 #[test]
 #[should_panic(expected = "len must be non-zero and a multiple of PAGE")]
 fn from_raw_parts_rejects_zero_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
@@ -1184,6 +1245,7 @@ fn from_raw_parts_rejects_zero_len_immediately() {
 #[test]
 #[should_panic(expected = "len must be non-zero and a multiple of PAGE")]
 fn from_raw_parts_rejects_non_page_multiple_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
@@ -1211,6 +1273,7 @@ fn from_raw_parts_rejects_non_page_multiple_len_immediately() {
 #[test]
 #[should_panic(expected = "base must be aligned to align")]
 fn from_raw_parts_rejects_misaligned_base_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // Construct a misaligned `base` by adding a small offset. `.wrapping_add(1)`
@@ -1241,6 +1304,7 @@ fn from_raw_parts_rejects_misaligned_base_immediately() {
 #[test]
 #[should_panic(expected = "reservation_len must be >= len + (base - reservation)")]
 fn from_raw_parts_rejects_insufficient_reservation_len_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
@@ -1266,6 +1330,7 @@ fn from_raw_parts_rejects_insufficient_reservation_len_immediately() {
 /// contract violations, not legitimate input.
 #[test]
 fn from_raw_parts_accepts_a_valid_reservation() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(PAGE, PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len`/`align` are exactly the triple `into_parts`
@@ -1292,6 +1357,7 @@ fn from_raw_parts_accepts_a_valid_reservation() {
 #[test]
 #[should_panic(expected = "base must be >= reservation")]
 fn from_raw_parts_rejects_base_below_reservation_immediately() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(2 * PAGE, 2 * PAGE).expect("reserve");
     let (raw, raw_len, align) = r.into_parts();
     // SAFETY: `raw`/`raw_len`/`align` come from a genuinely live reservation above;
@@ -1313,6 +1379,7 @@ fn from_raw_parts_rejects_base_below_reservation_immediately() {
 
 #[test]
 fn distinct_reservations_do_not_overlap() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let span = 2 * MIB;
     let a = reserve_aligned(span, span).expect("a");
     let b = reserve_aligned(span, span).expect("b");
@@ -1384,6 +1451,7 @@ fn vmem_error_kinds_are_distinguishable() {
 // on miri-interpreter-specific resource limits this test was never about.
 #[cfg_attr(miri, ignore)]
 fn try_reserve_huge_size_is_a_genuine_os_refusal_not_invalid_argument() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // task #713 end-to-end: a well-formed (page-aligned, power-of-two-aligned)
     // but far-past-any-realistic-commit-budget size must reach the real OS
     // backend and be classified as a genuine OS refusal -- NOT
@@ -1486,6 +1554,7 @@ fn reservation_decommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::decommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_decommit_out_of_bounds_is_safe_no_op() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1532,6 +1601,7 @@ fn reservation_recommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::recommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_recommit_out_of_bounds_returns_false() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1562,6 +1632,7 @@ fn reservation_try_recommit_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::try_recommit` rejects out-of-bounds calls.
 #[test]
 fn reservation_try_recommit_out_of_bounds_returns_invalid_argument() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1591,6 +1662,7 @@ fn reservation_decommit_lazy_in_bounds_matches_free_function() {
 /// Task #947/A-2: safe `Reservation::decommit_lazy` rejects out-of-bounds calls.
 #[test]
 fn reservation_decommit_lazy_out_of_bounds_is_safe_no_op() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(2 * MIB, 2 * MIB).expect("reserve");
     let ps = page_size();
 
@@ -1608,6 +1680,7 @@ fn reservation_decommit_lazy_out_of_bounds_is_safe_no_op() {
 #[cfg(feature = "lazy-commit")]
 #[test]
 fn reservation_commit_range_in_bounds_matches_free_function() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use aligned_vmem::reserve_aligned_lazy;
 
     // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
@@ -1638,6 +1711,7 @@ fn reservation_commit_range_in_bounds_matches_free_function() {
 #[cfg(feature = "lazy-commit")]
 #[test]
 fn reservation_commit_range_out_of_bounds_returns_false() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use aligned_vmem::reserve_aligned_lazy;
 
     // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
@@ -1662,6 +1736,7 @@ fn reservation_commit_range_out_of_bounds_returns_false() {
 #[cfg(feature = "lazy-commit")]
 #[test]
 fn reservation_try_commit_range_in_bounds_matches_free_function() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use aligned_vmem::reserve_aligned_lazy;
 
     // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
@@ -1693,6 +1768,7 @@ fn reservation_try_commit_range_in_bounds_matches_free_function() {
 #[cfg(feature = "lazy-commit")]
 #[test]
 fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use aligned_vmem::reserve_aligned_lazy;
 
     // `reserve_aligned_lazy` now yields a `LazyReservation` (the tracked handle);
@@ -1722,6 +1798,7 @@ fn reservation_try_commit_range_out_of_bounds_returns_invalid_argument() {
 /// a fully functional reservation.
 #[test]
 fn into_full_parts_roundtrip_is_lossless() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let r = reserve_aligned(4 * PAGE, 2 * PAGE).expect("reserve");
     let original_base = r.as_ptr();
     let original_len = r.len();
@@ -1778,6 +1855,7 @@ fn into_full_parts_roundtrip_is_lossless() {
 /// a false "// SAFETY: ... for the PURPOSE OF THIS TEST ONLY" comment.
 #[test]
 fn into_full_parts_preserves_granted_huge() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // Case 1: granted_huge == false (ordinary reservation)
     // Verify on a REAL reservation, not a fake pointer.
     let r = reserve_aligned(4 * PAGE, 2 * PAGE).expect("reserve");
@@ -1872,10 +1950,25 @@ fn into_full_parts_preserves_granted_huge() {
 /// [`SERIAL`] for the whole body (mirroring every other counter-reading test
 /// in this file, e.g. `macos_decommit_madvise_syscall_actually_succeeds`),
 /// snapshot `unix_munmap_attempts()`/`unix_munmap_failures()`, drop a live
-/// reservation (the ONLY `munmap` call in this window -- no concurrent
-/// reserve/release activity in this process, since `SERIAL` excludes every
-/// other test in this binary and this is a single-reservation test), then
-/// assert attempts increased by exactly 1 and failures did not increase.
+/// reservation, then assert attempts increased by exactly 1 and failures did
+/// not increase.
+///
+/// **The parenthetical this doc carried from #1189 to #1224 -- "the ONLY
+/// `munmap` call in this window -- no concurrent reserve/release activity in
+/// this process, since `SERIAL` excludes every other test in this binary" --
+/// was FALSE for that entire period**: a mutex excludes only the parties that
+/// take it, and until task #1224 every other test in this binary that
+/// released a reservation did so WITHOUT holding `SERIAL` (the exact shape
+/// #1223's commit body called out when it fixed the same class in
+/// `decommit_capability.rs`, naming this file's release-oracle pair as the
+/// next-most-exposed victims). Any sibling's drop landing between the two
+/// snapshots below would have read `attempts_before + 2`; this test stayed
+/// green by scheduling luck, and its clean history was never evidence the
+/// claim held. Since #1224 every test in this binary that releases a
+/// reservation holds `SERIAL` (the 8 exceptions move no release counter --
+/// see SERIAL's own doc), so the drop below is now genuinely the only
+/// `munmap` inside the window. The claim is not self-maintaining: a new
+/// reserving test added without the lock makes it false again.
 ///
 /// **Vacuous-pass check:** perturbing `libc_munmap` to skip its
 /// `UNIX_MUNMAP_ATTEMPTS.fetch_add` call (simulating the release call site
@@ -1924,12 +2017,22 @@ fn unix_munmap_release_is_attempted_exactly_once_and_does_not_fail() {
 /// reset-to-zero only; it would NOT catch the increment being deleted").
 /// `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS` (added alongside this test) turns
 /// that named gap into a real attempt/success oracle: hold [`SERIAL`] for
-/// the whole body, snapshot both counters, drop a live reservation (the
-/// ONLY `VirtualFree(MEM_RELEASE)` call in this window), then assert
-/// attempts increased by exactly 1 and failures did not increase --
+/// the whole body, snapshot both counters, drop a live reservation, then
+/// assert attempts increased by exactly 1 and failures did not increase --
 /// mirroring `tests/lazy_commit.rs`'s existing
 /// `safe_decommit_over_never_committed_tail_succeeds` delta-assert pattern
 /// for `WINDOWS_VIRTUALFREE_DECOMMIT_ATTEMPTS`/`_FAILURES`.
+///
+/// **Window-honesty correction (task #1224; the Unix twin above carries the
+/// full narrative):** "the ONLY `VirtualFree(MEM_RELEASE)` call in this
+/// window" was asserted here from #1189 to #1224 without basis -- every
+/// other test in this binary that released a reservation did so without
+/// holding `SERIAL`, so any sibling's drop inside the snapshot window would
+/// have read `attempts_before + 2`. Since #1224 every releasing test in this
+/// binary holds `SERIAL` (see SERIAL's own doc for the criterion and the 8
+/// lock-free exceptions, which release nothing), so the drop below really is
+/// the only release call in the window. A new reserving test added without
+/// the lock silently re-opens the window.
 ///
 /// **Vacuous-pass check:** perturbing `winapi_virtual_release` to skip its
 /// `WINDOWS_VIRTUALFREE_RELEASE_ATTEMPTS.fetch_add` call makes this test

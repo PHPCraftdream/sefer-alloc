@@ -30,6 +30,41 @@ const SPAN: usize = 2 * 1024 * 1024;
 /// entries (the mock log is process-global; sibling test binaries are
 /// separate processes, but sibling tests in this binary share it). Mirrors
 /// the file-local SERIAL pattern of `decommit_capability.rs`.
+///
+/// task #1224 census for this file, by the criterion "takes the lock iff it
+/// moves state some reader in THIS binary reads":
+///
+/// - The readers are `method_records_nothing_for_a_violated_range_in_release_mock`
+///   (mock log, mock+release rows only) and the two `huge_decommit_attempts`
+///   counter readers (`method_try_decommit_huge_skip_returns_ok_and_counts`,
+///   `method_try_decommit_reports_malformed_range_on_huge_flagged_reservation`).
+///   All three already held this lock.
+/// - `lazy_method_silently_skips_a_violated_range_on_every_profile` and
+///   `method_silently_skips_a_violated_range_in_release` do not read the log,
+///   but they DO produce mock call-log entries (a `Call::Reserve` on their
+///   `reserve_aligned`, a `Call::Release` on the reservation's drop) in the
+///   same mock+release binary that drains the log (ci.yml's
+///   `--release --cfg aligned_vmem_mock --test reservation_decommit_contract`
+///   row compiles exactly these two plus the locked tests), so per the #1223
+///   rule -- a test that MOVES shared state takes the lock even if it never
+///   reads it -- both now hold it. Today their entries cannot fail the
+///   reader's two asserts (they emit no `Call::Decommit`/`Call::DecommitLazy`,
+///   and extra records cannot break an `any` match); the lock is held so
+///   that stays true if the reader's asserts are ever strengthened to count
+///   or exhaustively match drained records.
+/// - The debug-only trio (`method_trips_the_tripwire_on_a_violated_range_in_debug`,
+///   `method_bounds_check_precedes_the_tripwire_in_debug`,
+///   `method_trips_on_an_empty_misaligned_range_in_debug`) also produce log
+///   entries under mock, but never in the same binary as the mock-log reader
+///   (that reader is `not(debug_assertions)`; the trio is `debug_assertions`),
+///   and they move no `huge_decommit_attempts` counter (their reservations
+///   are ordinary and every decommit call they make is violated, so it never
+///   reaches the huge skip), so no reader in any binary they inhabit reads
+///   anything they move. They stay unlocked.
+/// - No test in this binary reads the munmap/VirtualFree-release counters,
+///   so this file's releases need no lock for them (unlike `tests/smoke.rs`,
+///   where two release-delta readers live in the same binary -- see that
+///   file's own SERIAL doc).
 static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The debug tripwire must fire THROUGH the safe method: `Reservation::decommit`
@@ -83,6 +118,11 @@ fn method_bounds_check_precedes_the_tripwire_in_debug() {
 /// `decommit_lazy`) fails this test in every debug run.
 #[test]
 fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
+    // task #1224: this test produces mock call-log entries (Reserve on the
+    // reserve_aligned below, Release on `r`'s drop) in the same mock+release
+    // binary that drains the log -- see SERIAL's own doc for why that
+    // obliges this lock although this test reads nothing.
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit_lazy(4 * ps, 2 * ps); // start > end
@@ -110,6 +150,9 @@ fn lazy_method_silently_skips_a_violated_range_on_every_profile() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn method_silently_skips_a_violated_range_in_release() {
+    // task #1224: same obligation as `lazy_method_silently_skips...` above
+    // (produces mock log entries in the mock+release row that drains them).
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
     let ps = page_size();
     r.decommit(4 * ps, 2 * ps); // start > end
