@@ -121,6 +121,29 @@ fn decommit_reclaims_and_zeroes_matches_platform_cfg() {
 fn can_decommit_reclaim_and_zero_returns_false_for_huge_reservations() {
     use aligned_vmem::reserve_aligned_huge;
 
+    // task #1223: this test asserts nothing about counters, but the
+    // reservation below DOES move them: `size == align == 2 MiB` is exactly
+    // `align == LINUX_HUGE_PAGE_SIZE`, the entry condition of `unix_reserve`'s
+    // exact-size `MAP_HUGETLB` fast path, which increments
+    // `UNIX_EXACT_RESERVE_ATTEMPTS` and then `UNIX_EXACT_RESERVE_HITS`
+    // (`src/os/unix.rs`). Three sibling tests in THIS binary read those
+    // counters as before/after deltas under `SERIAL`, and libtest runs this
+    // file's tests concurrently, so a reservation made outside the lock lands
+    // inside someone else's measurement window. That is not hypothetical: it
+    // turned `main` red once (an increment pair landed between the sibling's
+    // two separate loads, so its attempts delta read 0 while its hits delta
+    // read 1). A test does not have to READ the counters to be obliged to
+    // take this lock -- it only has to MOVE them.
+    //
+    // The `#[cfg]` matches `SERIAL`'s own gate: the counters this lock exists
+    // to protect are `bench-internals`-only, so without that feature there is
+    // no counter to move and no reader to protect -- and `SERIAL` itself does
+    // not exist to be locked. Omitting this gate is an E0425 in every feature
+    // row that lacks `bench-internals`; the first attempt at this fix did
+    // exactly that and the local gate caught it before the push.
+    #[cfg(feature = "bench-internals")]
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
     // Try to reserve with huge pages. This may fall back to ordinary pages
     // if huge pages are not available (no hugetlb pool, unprivileged, etc.).
     let size = 2 * MIB; // Linux huge-page size
@@ -155,6 +178,21 @@ fn can_decommit_reclaim_and_zero_returns_false_for_huge_reservations() {
 #[test]
 fn can_decommit_reclaim_and_zero_matches_platform_for_ordinary_reservations() {
     use aligned_vmem::reserve_aligned;
+
+    // task #1223: same obligation as the sibling above, reached by a different
+    // route. This is an ORDINARY reservation, so on 64-bit it cannot enter
+    // `unix_reserve`'s huge fast path (that one is gated on `huge`) -- but
+    // `try_reserve_aligned_exact`, which increments the SAME two counters, is
+    // compiled under `target_pointer_width = "32"` and fires for ordinary
+    // requests there. Taking the lock unconditionally is the cheap, uniform
+    // answer; making it conditional on POINTER WIDTH would recreate the exact
+    // "green on the host I tested, racy on the host I did not" shape this
+    // task exists to remove. The `#[cfg]` below is a different axis and is
+    // mandatory, not a judgement call: it is `SERIAL`'s own gate, and this
+    // is the one test in this file with no `#[cfg]` of its own, so without
+    // it the default-feature row fails to compile with E0425.
+    #[cfg(feature = "bench-internals")]
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
 
     let ordinary_r = reserve_aligned(4 * MIB, 4 * MIB).expect("reserve 4 MiB");
     assert!(
@@ -597,6 +635,16 @@ fn simulated_huge_flag_drives_the_same_branch_dispatch_on_any_host() {
 fn try_decommit_rejects_out_of_bounds_huge_aligned_range_before_any_eligibility_check() {
     use aligned_vmem::reserve_aligned_huge;
 
+    // task #1223: `size == align == 2 MiB` enters `unix_reserve`'s exact-size
+    // `MAP_HUGETLB` fast path and moves `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS`,
+    // which three sibling tests in this binary read as deltas under `SERIAL`.
+    // This test asserts nothing about counters and would pass either way --
+    // the lock is here to keep it out of THEIR measurement windows. The
+    // `#[cfg]` is `SERIAL`'s own gate: this test's own `#[cfg]` is
+    // `feature = "huge-pages"`, which does NOT imply `bench-internals`.
+    #[cfg(feature = "bench-internals")]
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+
     let size = 2 * MIB;
     let mut reservation = reserve_aligned_huge(size, size).expect("huge reservation (or fallback)");
 
@@ -687,6 +735,18 @@ fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
         // ordinary-page fallback is expected and acceptable everywhere else.
         return;
     }
+
+    // task #1223: taken AFTER the env-var early return (an early return would
+    // otherwise hold and drop the lock for nothing) but BEFORE the
+    // reservation, which enters `unix_reserve`'s exact-size `MAP_HUGETLB`
+    // fast path at `size == align == 2 MiB` and moves
+    // `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS`. This test is the one MOST likely
+    // to collide: it only runs inside the `aligned-vmem-hugetlb-real` job,
+    // which is exactly where the counter-reading siblings also run for real.
+    // The `#[cfg]` is `SERIAL`'s own gate: this test's own `#[cfg]` is
+    // linux/android + `huge-pages`, which does NOT imply `bench-internals`.
+    #[cfg(feature = "bench-internals")]
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
 
     let size = 2 * MIB; // Linux/Android huge-page size.
     let reservation = reserve_aligned_huge(size, size)
@@ -808,7 +868,18 @@ fn ci_hugetlb_real_pool_oracle_refuses_ordinary_page_fallback() {
 ///    is called AFTER acquiring the lock but BEFORE the decommit call, so the
 ///    baseline this test reads cannot be contaminated by a concurrently
 ///    running test in the same process (this file's other `#[test]` fns that
-///    touch these counters all join the same `SERIAL` contract).
+///    touch these counters all join the same `SERIAL` contract). That last
+///    parenthesis was FALSE until task #1223: four `#[test]` fns in this
+///    file reserved memory without taking `SERIAL` at all, three of them at
+///    `size == align == 2 MiB` -- exactly `unix_reserve`'s exact-size
+///    `MAP_HUGETLB` fast-path entry condition, which moves
+///    `UNIX_EXACT_RESERVE_ATTEMPTS`/`_HITS`. Holding the lock never excluded
+///    them, because a mutex only excludes the parties that take it; the
+///    claim described an obligation nobody had written down rather than one
+///    the code enforced. It cost a red `main`. The claim is true as written
+///    NOW only because #1223 added the four missing `SERIAL.lock()` calls --
+///    it is not self-maintaining, and a new reserving test added to this
+///    file without the lock silently makes it false again.
 ///
 /// **Counterfactual (built OUTSIDE this repo, since a real hugetlb pool is
 /// not available in this sandbox on Windows):** substituted `libc_madvise`'s
@@ -1040,6 +1111,20 @@ fn ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess() {
         return;
     }
 
+    // task #1223: this `#[cfg]` closes a PRE-EXISTING break this task happened
+    // to surface, not one it introduced. This test's own gate is linux/android
+    // + `huge-pages` -- deliberately narrower than its siblings', because it
+    // reads memory CONTENT rather than counters and so does not need
+    // `bench-internals` -- but `SERIAL`'s gate IS `bench-internals`. So
+    // `cargo check -p aligned-vmem --tests --features=huge-pages` for a Linux
+    // target has been an E0425 here on `main`, proven by re-running that exact
+    // command against an unmodified checkout at `1b72e73`. It survived because
+    // NEITHER the CI matrix NOR the local gate ever builds `huge-pages`
+    // WITHOUT `bench-internals` for a Unix target: every row that enables
+    // `huge-pages` also enables `bench-internals`, or is Windows, where this
+    // whole fn is cfg'd out. Exactly the blind spot CLAUDE.md's
+    // `cargo-hack --feature-powerset` note exists for, on a real row.
+    #[cfg(feature = "bench-internals")]
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
 
     let size = 2 * MIB; // Linux/Android huge-page size; the full span is exactly one eligible huge page.
@@ -1138,8 +1223,20 @@ fn ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess() {
 /// PROCESS's own counters -- this test's binary (`decommit_capability`) is
 /// a separate OS process from the job's other two test binaries
 /// (`huge_pages`, `reservation_decommit_contract`), so nothing outside this
-/// one `#[test]` fn's own `SERIAL`-guarded window can touch them. A hard
-/// assert here is the CORRECT strength, not a compromise -- see
+/// one `#[test]` fn's own `SERIAL`-guarded window can touch them. Both
+/// halves of that sentence -- "`SERIAL` excludes every other test in this
+/// binary" above, and "nothing outside this window can touch them" here --
+/// were FALSE until task #1223, and this test was the more exposed of the
+/// two counter-reading tests, not the less: its assert is `munmap` delta
+/// EXACTLY 1, and EVERY reservation in this file emits one `munmap` on
+/// drop, so any of the four then-unlocked tests dropping a reservation
+/// inside this window would have pushed the delta to 2 and failed it. It
+/// never fired only because the four unlocked tests happened not to overlap
+/// this one; the counter-reading sibling that DID fire (the align > 2 MiB
+/// oracle below) needed the narrower coincidence of an increment landing
+/// between two adjacent loads. Do not read this test's clean history as
+/// evidence the reasoning was sound. A hard assert here is the CORRECT
+/// strength, not a compromise -- see
 /// `UNIX_MUNMAP_ATTEMPTS`'s own doc comment
 /// (`src/bench_internals/unix.rs`) for the general reasoning this specific
 /// test applies.
@@ -1180,7 +1277,11 @@ fn ci_hugetlb_real_pool_decommit_actually_zeroes_memory_on_reaccess() {
 ///    (acquired before the reservation, released only when the function
 ///    returns), so no other test in THIS binary can run concurrently; no
 ///    other binary shares this process's counters (see the module-level
-///    reasoning above).
+///    reasoning above). "No other test in THIS binary can run
+///    concurrently" is a claim about what the OTHER tests do, not about
+///    what this one does -- it holds only while every reserving test in
+///    this file also takes `SERIAL`, which four of them did not until task
+///    #1223. See the corrected paragraph above for the full account.
 /// 5. **The counter increment being deleted from `libc_munmap` (the actual
 ///    regression this test exists to catch):** would make `attempts_after
 ///    == attempts_before` (delta 0, not 1), failing the first assert below
@@ -1381,6 +1482,26 @@ fn ci_hugetlb_real_pool_release_is_attempted_exactly_once_and_does_not_fail() {
 /// 6. **A concurrent reservation/release in the same process touching the
 ///    same counters:** `SERIAL` is held for this test's entire body,
 ///    identical contract to every other counter-touching test in this file.
+///    THIS BULLET WAS FALSE AND THIS TEST IS WHAT PROVED IT (task #1223).
+///    Holding `SERIAL` excludes only the tests that also take it, and four
+///    `#[test]` fns in this file reserved without it -- three of them at
+///    `size == align == 2 MiB`, which is precisely `unix_reserve`'s
+///    exact-size `MAP_HUGETLB` fast-path entry condition and therefore
+///    moves the two counters this test measures. The failure mode was
+///    narrow enough to survive three green runs of the
+///    `aligned-vmem-hugetlb-real` job and then turn `main` red on the
+///    fourth: the two post-loop reads below are SEPARATE atomic loads
+///    (`exact_attempts_after`, then `exact_hits_after`), so an interloper's
+///    attempts-then-hits increment pair landing between them leaves the
+///    attempts delta reading 0 (assert passes) and the hits delta reading 1
+///    (assert fails) -- which is exactly the `left: 1, right: 0` CI
+///    recorded. #1223 added the four missing locks, making the bullet true
+///    as written; it is not self-enforcing, so a new reserving test added
+///    to this file without `SERIAL` silently re-breaks it. The reads are
+///    deliberately left as two loads: a single fused read would narrow this
+///    particular window without closing the underlying hole (an interloper
+///    reserving anywhere inside the loop would still corrupt both deltas),
+///    and narrowing a race until it stops reproducing is how it comes back.
 #[test]
 #[cfg(all(
     any(target_os = "linux", target_os = "android"),
