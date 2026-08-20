@@ -1,0 +1,66 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## 0.1.0 - Unreleased
+
+First release. Everything below is new in this version; nothing has shipped
+before it.
+
+### Added
+
+- **`build_table(params) -> [usize; N]`** — a `const fn` that builds a
+  mimalloc-style size-class table: a geometric progression
+  (`round_up(prev * num / den, min_block)`, minimum step `min_block`, starting
+  at `min_block`) sorted-merged with an explicit `extras` list. Both `extras`
+  preconditions — every entry a multiple of `min_block`, the list strictly
+  increasing — plus `min_block` being a power of two, `geo_count > 0`, a
+  non-zero growth denominator, and `N == geo_count + extras.len()` are
+  **machine-checked**: a violation is a `const`-evaluation panic, i.e. a
+  compile error at the consumer's table definition, never a silently accepted
+  bad table (task #731 tightened several of these from bare division panics
+  to named asserts).
+- **`build_size2class(table) -> [u8; L]`** — derives the O(1) `size → class`
+  lookup from a table at compile time using the monotone-pointer technique
+  (`O(buckets + classes)` const-eval), with a compile-time pin that the class
+  count fits a `u8`, and a machine-checked global-monotonicity/disjointness
+  pass over the merged table.
+- **`size2class_len(max_class, min_block)`** — the `const fn` a consumer uses
+  to pin the lookup length `L` (`max_class / min_block + 1`) as a `const`
+  expression; asserts `min_block` is a power of two like its siblings
+  (task #731).
+- **`Params<'a>`** — the scheme's parameter set (`min_block`, `growth` as
+  `(num, den)` — `(5, 4)` is the classic mimalloc 1.25× spacing — `geo_count`,
+  `extras`, `huge_threshold`), all plain data so the whole scheme is usable in
+  `const` context. `#[non_exhaustive]` **with** a `const fn new` constructor
+  (task #728): future field additions are semver-MINOR, and the const
+  constructor keeps the type constructible in `const` context where struct
+  literals no longer compile.
+- **`SizeClasses<N, L>`** — the built scheme, generic over table length `N`
+  and lookup length `L`, both pure functions of `Params`:
+  - `const fn build(params)` — bake the whole scheme into a `const`/`static`;
+  - accessors `table()`, `size2class()`, `min_block()`, `min_block_shift()`,
+    `small_align_max()`, `small_max()`, `count()`, `block_size(idx)`,
+    `is_huge(size)`;
+  - **`class_for(size, align) -> Option<usize>`** — resolve a request to the
+    smallest class whose block is `>= max(size, align)` **and** a multiple of
+    `align` (`None` routes to the caller's large path). O(1) fast path for
+    `align <= min_block` (every block is `min_block`-aligned, so divisibility
+    is trivially satisfied); for larger power-of-two alignments, a provably
+    equivalent **jump** slow path rounds the block up to the next multiple of
+    `align` and re-seeds through the lookup, skipping whole runs of
+    non-divisible classes instead of stepping one class at a time. Without
+    that classifier, every `align >= 512` request silently falls through to
+    the caller's whole-segment path — the real bug class in hand-rolled
+    allocators this crate exists to remove. `align` must be a power of two
+    (the `Layout` contract), enforced by a `debug_assert!` (task #729) — a
+    violation yields a suboptimal class choice, not memory unsafety.
+- `is_huge` compares against the caller-supplied `huge_threshold` policy
+  parameter — the crate has no notion of an OS segment size; the consumer
+  decides where "large" ends and "huge" begins for its own segment policy.
+- The whole crate is `no_std`, zero-dependency, and `#![forbid(unsafe_code)]`;
+  the geometric-advance multiply is checked so an overflowing scheme is a
+  loud error rather than a silently wrapped (wrong-but-valid-looking) table
+  (task #701).
