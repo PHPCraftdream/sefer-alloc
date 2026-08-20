@@ -178,7 +178,14 @@ pub(crate) static SIZE2CLASS: [u8; S2C_LEN] =
 
 /// Sefer's concrete size-class scheme — one const instantiation of the crate's
 /// `const`-generic [`SizeClassesImpl`]. Drives every classification query.
-const SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
+///
+/// `static`, not `const`, for the same reason as [`SIZE2CLASS`] above:
+/// `SizeClassesImpl` embeds its own copy of the size2class table, so at the
+/// `medium-classes` size it trips the identical `clippy::large_const_arrays`
+/// `.rodata`-duplication lint. `SizeClassesImpl<N, L>` derives only
+/// `Debug, Clone, Copy` — plain data, no interior mutability — so `static` is
+/// sound.
+static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 
 /// A classifier over [`SIZE_CLASS_TABLE`]. A zero-sized forwarder to the crate
 /// scheme [`SC`] — kept so the in-tree `SizeClasses::class_for(..)` /
