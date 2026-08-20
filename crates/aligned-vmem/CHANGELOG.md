@@ -182,6 +182,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **`DecommitOutcome::Skipped`'s own rustdoc made two false exhaustiveness
+  claims about its variant's source (task #1192).** Introduced one task
+  earlier (task #1180, `b920b29`) and not yet published: the doc claimed
+  "the one source of this variant" is a huge-page Rust-level skip, and that
+  the free [`try_decommit`] function "never produces `Skipped`" because it
+  "always forwards to the backend" — both false. The free `try_decommit`
+  short-circuits to `Ok(DecommitOutcome::Skipped)` on an empty range
+  (`start == end`) BEFORE any backend call (`api/decommit.rs:387-389`), and
+  `Reservation::try_decommit` has the identical empty-range branch
+  (`reservation.rs:852-856`) alongside its huge-page skip — so `Skipped` in
+  fact has two independent sources, one of which is reachable from the free
+  function too. The class of defect is a dropped hedge: the correct,
+  already-present wording lived one doc block away
+  (`try_decommit`'s own rustdoc, "it can never produce `Skipped` **for a
+  non-empty range**") and simply was not carried over when
+  `DecommitOutcome`'s doc was written — the same lost-hedge pattern task
+  #1185 (`50ea281`) fixed elsewhere in this crate. `DecommitOutcome::Skipped`'s
+  doc now names both sources explicitly and states which is exclusive to
+  `Reservation::try_decommit`. No behavior changed — doc-only. Pinned by a
+  new test, `skipped_variant_is_produced_by_an_empty_range_on_the_free_function`
+  (`tests/decommit_outcome.rs`), which needs no `huge-pages` feature (the
+  empty-range source is unconditional) — previously `Skipped` was only
+  covered by the `huge-pages`-gated fabricated-huge-flag test, leaving the
+  free function's own `start == end` branch with zero test coverage.
 - **`decommit`/`Reservation::decommit` panicked in a DEBUG build under a
   poisoned page-size query, contradicting the crate's own documented no-op
   contract for that state (task #1173, finding L1).** The poison branch

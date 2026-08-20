@@ -26,18 +26,27 @@ use crate::error::VmemError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecommitOutcome {
     /// No backend call was made — a Rust-level skip, decided before any
-    /// syscall. The one source of this variant: a well-formed, in-span range
-    /// on a huge-page reservation ([`Reservation::is_huge`](crate::Reservation::is_huge)
-    /// == `true`) that does not take the Linux/Android kernel >= 5.18
-    /// huge-aligned real-backend path — see
-    /// [`Reservation::decommit`](crate::Reservation::decommit)'s "Huge-page
-    /// granularity" doc for the exact eligibility split (Windows: always;
-    /// Linux/Android: only a range that is NOT huge-page-size-aligned at
-    /// both endpoints, or when the `huge-pages` feature is off). The free
-    /// [`try_decommit`](crate::try_decommit) function itself never produces
-    /// `Skipped` — it has no `is_huge()` to consult and always forwards to
-    /// the backend; only [`Reservation::try_decommit`](crate::Reservation::try_decommit)
-    /// can.
+    /// syscall. Two sources, both a well-formed range:
+    ///
+    /// - **An empty range** (`start == end`), on either
+    ///   [`try_decommit`](crate::try_decommit) or
+    ///   [`Reservation::try_decommit`](crate::Reservation::try_decommit) — a
+    ///   deliberate no-op, checked before any huge-page eligibility question
+    ///   even applies.
+    /// - **A well-formed, in-span, non-empty range on a huge-page
+    ///   reservation** ([`Reservation::is_huge`](crate::Reservation::is_huge)
+    ///   == `true`) that does not take the Linux/Android kernel >= 5.18
+    ///   huge-aligned real-backend path — see
+    ///   [`Reservation::decommit`](crate::Reservation::decommit)'s "Huge-page
+    ///   granularity" doc for the exact eligibility split (Windows: always;
+    ///   Linux/Android: only a range that is NOT huge-page-size-aligned at
+    ///   both endpoints, or when the `huge-pages` feature is off). Only
+    ///   [`Reservation::try_decommit`](crate::Reservation::try_decommit) has
+    ///   an [`is_huge()`](crate::Reservation::is_huge) to consult, so this
+    ///   second source is exclusive to it — the free
+    ///   [`try_decommit`](crate::try_decommit) function has no such
+    ///   eligibility check and, for a non-empty range, always forwards to the
+    ///   backend.
     Skipped,
     /// The backend call was made and the kernel/OS **accepted** it — Linux
     /// `madvise(2)` returned `0`, or Windows `VirtualFree(MEM_DECOMMIT)`

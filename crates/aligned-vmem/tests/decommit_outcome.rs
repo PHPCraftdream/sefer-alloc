@@ -31,8 +31,28 @@
 //!   from `man 2 madvise`'s own documented `ENOMEM`/`EINVAL` cases for an
 //!   address range that is not a valid part of the process's address space,
 //!   not independently observed on a Unix CI run as part of THIS task.
+//! - [`skipped_variant_is_produced_by_an_empty_range_on_the_free_function`]
+//!   (task #1192) closes the gap the other three left: before this test, the
+//!   free `try_decommit`'s `start == end` short-circuit
+//!   (`api/decommit.rs:387-389`) had NO test coverage at all — `Skipped` was
+//!   only exercised via the `huge-pages`-gated fabricated-huge-flag test
+//!   above. This test needs no feature gate and no fabrication: an empty,
+//!   page-aligned range is a well-formed no-op on ANY reservation, ordinary
+//!   or huge, so it is the one `Skipped` source that is unconditionally real
+//!   on every host and every feature configuration.
 
-use aligned_vmem::{page_size, reserve_aligned, try_decommit, DecommitOutcome, Reservation};
+use aligned_vmem::{page_size, reserve_aligned, try_decommit, DecommitOutcome};
+// `Reservation` is named ONLY by the huge-skip test below, which is gated on
+// `huge-pages` — so importing it unconditionally makes the DEFAULT feature row
+// fail `cargo clippy -p aligned-vmem --all-targets -- -D warnings`
+// (`.github/workflows/ci.yml`'s first aligned-vmem clippy row) with
+// `unused_imports`. That is not hypothetical: it shipped in `b920b29` (task
+// #1180, the commit that created this file) and left `main` red on that one
+// row until task #1192 measured it against a clean HEAD worktree. Gating the
+// import with the same `cfg` as its only user is the minimal fix; do not
+// widen it back.
+#[cfg(feature = "huge-pages")]
+use aligned_vmem::Reservation;
 
 const SPAN: usize = 2 * 1024 * 1024;
 
@@ -59,6 +79,39 @@ fn advised_variant_is_produced_by_a_genuinely_accepted_decommit() {
         Ok(DecommitOutcome::Advised),
         "an in-span, page-aligned, non-empty range on an ordinary \
          reservation must be genuinely advised to the OS and accepted"
+    );
+}
+
+/// `DecommitOutcome::Skipped`: an empty, well-formed range (`start == end`)
+/// on the FREE `try_decommit` function — the short-circuit at
+/// `api/decommit.rs:387-389`, checked and returned before
+/// `dispatch_try_decommit` is ever called. Deliberately does NOT require the
+/// `huge-pages` feature: this is the one `Skipped` source the free function
+/// itself can produce (see the corrected doc on `DecommitOutcome::Skipped`),
+/// independent of any huge-page eligibility question.
+///
+/// **What would make this fail if the free `try_decommit` regressed:** if the
+/// `if start == end { return Ok(DecommitOutcome::Skipped); }` branch were
+/// changed to fall through to `dispatch_try_decommit` instead of
+/// short-circuiting (i.e. forwarding an empty range to the real backend),
+/// this test would observe `Advised` or `Refused` instead of `Skipped` and
+/// fail — a direct counterfactual on the exact defect class task #1192
+/// exists to guard against (the rustdoc claiming the free function "always
+/// forwards to the backend").
+#[test]
+fn skipped_variant_is_produced_by_an_empty_range_on_the_free_function() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let r = reserve_aligned(SPAN, SPAN).expect("reserve 2 MiB");
+    let ps = page_size();
+
+    // SAFETY: `r` is live and `[ps, ps)` (empty) is trivially within its
+    // usable span.
+    let out = unsafe { try_decommit(r.as_ptr(), ps, ps) };
+    assert_eq!(
+        out,
+        Ok(DecommitOutcome::Skipped),
+        "an empty (start == end) well-formed range on the free try_decommit \
+         must short-circuit to Skipped before any backend call"
     );
 }
 
