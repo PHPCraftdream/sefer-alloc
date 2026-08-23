@@ -79,6 +79,105 @@ the reversal record.)
       real decision point is now the 0.2.0 boundary (or a purely additive
       cfg alongside the existing feature). See task #1263 and the corrected
       comment in crates/numa-shim/Cargo.toml.
+    - **RECOMMENDATION (2026-08-23, task #1264 — F2 of
+      `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`
+      re-raised this card; task #1264 is docs-only research, no code was
+      changed):** the audit asks the owner to settle, before the next
+      publish, whether the `mock` seam becomes a build-time cfg, moves to a
+      test-support crate, or stays a Cargo feature as an explicit risk
+      acceptance. What follows is a recommendation with THIS crate's
+      concrete numbers — the decision itself remains the owner's (breaking
+      changes are an owner call per CLAUDE.md). One fact changes the
+      calculus since item 42 was last weighed: **the next release is
+      already 0.2.0-shaped and already breaking** —
+      `crates/numa-shim/CHANGELOG.md`'s Unreleased "Changed" section bumps
+      `aligned-vmem` 0.1 → 0.2 with `reserve_on_node`'s return type moving
+      with it, and the audit's own F1 recommends shipping the next release
+      as 0.2.0. The "free until first publish" window that #1263's
+      correction said had closed is therefore open ONE more time, in
+      modified form: removing `mock` rides the already-breaking 0.2.0 at
+      zero MARGINAL semver cost.
+      - **(a) build-time `--cfg numa_shim_mock` (mirror task #962, commit
+        `18c29e4`):** the proven in-repo template — aligned-vmem's
+        conversion was 13 files, +245/−212, 46 cfg sites, with a ±136-line
+        ci.yml treatment. For numa-shim the concrete shape: 27
+        `feature = "mock"` cfg sites across 5 files (22 lines in
+        `src/lib.rs`: the `pub mod mock` gate at `:97`, four mock/real
+        dispatch pairs inside `current_node_resolution` `:311`/`:323`,
+        `current_node` `:363`/`:380`, `bind_range` `:459`/`:467`,
+        `reserve_on_node` `:511`/`:527`, the doc-hidden Linux forwarder at
+        `:691`, and 11 `allow(dead_code)` `cfg_attr` sites; plus
+        `tests/mock_dispatch.rs`, `tests/node_resolution.rs`,
+        `tests/node_resolution_linux.rs`, `benches/numa_bench.rs`);
+        `crates/numa-shim/Cargo.toml` drops `mock = []`, adds
+        `[lints.rust] unexpected_cfgs` (mirroring
+        `crates/aligned-vmem/Cargo.toml:179`), and must resolve
+        `[[bench]] numa_bench`'s `required-features = ["mock"]` — a bench
+        cannot require a cfg flag; post-#962 `vmem_bench` carries no
+        required-features, so the bench compiles under both arms or gets an
+        internal cfg gate. The part #962 did NOT have: numa-shim's mock has
+        a CROSS-CRATE consumer — the root crate's `numa-aware-mock` (root
+        `Cargo.toml:721`) gates 8 root test files (6 of them
+        `use numa_shim::mock;`). So the root diff is: `numa-aware-mock =
+        ["numa-aware"]` (keep the gate feature, stop forwarding the
+        soon-gone `numa-shim/mock`), each of the 8 files' single cfg site
+        re-gated to also require the cfg flag (so plain `--all-features`
+        builds SKIP them silently instead of failing on the missing
+        `numa_shim::mock` module — the exact semantics aligned-vmem's own
+        tests adopted with `#![cfg(aligned_vmem_mock)]`),
+        `'cfg(numa_shim_mock)'` added to root `Cargo.toml:104`'s check-cfg
+        list, and explicit `RUSTFLAGS="--cfg numa_shim_mock"` steps on the
+        CI rows that want mock coverage (`ci.yml` `numa-shim-mock`
+        `:2622-2623`, `numa-shim-windows` `:2652-2653`, `numa-shim-macos`
+        `:2675`, plus dedicated rows replacing the mock coverage today's
+        `--all-features` clippy rows at `:2632`/`:2661` reach only
+        incidentally). Estimate: ~15 files, ~35 gate edits — a comparable
+        one-task size to #962, against a proven pattern. Semver: breaking
+        (removes 0.1.0's published `mock` feature), covered by the 0.2.0
+        bump the release already needs. A staged variant (a′) exists if the
+        owner wants zero break at 0.2.0: land the cfg ADDITIVELY
+        (`any(feature = "mock", numa_shim_mock)` per site), document `mock`
+        as deprecated, remove it at 0.3.0 — the additive path the corrected
+        `crates/numa-shim/Cargo.toml` comment itself names — at the cost of
+        uglier gate expressions and the hazard surviving through 0.2.x.
+      - **(b) separate unpublished test-support crate:** for THIS crate not
+        a file move but an architecture change: the mock's value is that it
+        sits INSIDE the dispatch arms of
+        `current_node`/`current_node_resolution`/`bind_range`/
+        `reserve_on_node` (`src/lib.rs:311-527`), so CI asserts the REAL
+        wrapping logic. A separate crate can reach that only via new
+        injection surface on numa-shim (runtime backend indirection or
+        `#[doc(hidden)]` hooks) — i.e. NEW published API surface, the
+        opposite of what the audit asks — or by duplicating the wrapping
+        logic in the test crate, which then tests a copy rather than the
+        shipped code. Larger diff than (a), strictly smaller benefit; not
+        recommended.
+      - **(c) keep the feature, record explicit risk acceptance:** zero
+        code diff — this card plus a CHANGELOG line IS the record. The risk
+        accepted, concretely: any downstream graph in which one target
+        enables `numa-shim/mock` silently swaps real NUMA syscalls for the
+        recording stub for every other consumer in that graph — this repo
+        itself demonstrates how easily that happens (every root
+        `--all-features` build enables it via `numa-aware-mock`); docs.rs
+        is protected only by the hand-maintained explicit feature list
+        (`crates/numa-shim/Cargo.toml:27-28`), and `cargo doc
+        --all-features` anywhere still renders the mock as reference API.
+        The audit pre-commits to treating a warning as insufficient for a
+        confident GO (F2: «простого README-предупреждения недостаточно» — a
+        README warning alone is not enough), so (c) means knowingly
+        shipping the next release with F2 still an open P1.
+      - **Recommended: (a) at the 0.2.0 boundary.** The semver objection —
+        the only reason numa-shim's conversion was deferred while
+        aligned-vmem's was executed — no longer applies, because 0.2.0 is
+        already breaking for `vmem-integration` users regardless; the
+        pattern is proven in-repo at nearly this exact scale; and (a) is
+        the only option that structurally closes F2 rather than documenting
+        it. Fallback if the owner judges the diff too large for the
+        pre-release window: staged (a′). (c) is acceptable only as a
+        conscious decision to keep F2 open at release. **This
+        recommendation does NOT close this card — the owner's recorded
+        decision does; until then item 42 stays OPEN with this section as
+        the standing briefing.**
 
 62. **MIPS targets: release decision to fail compilation at compile time rather than accept buildable-but-broken targets.** (Filed 2026-08-16, task #1017, finding R4-1 of `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`.) MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux: MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while the crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) because `libc_mmap` issues `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set, but the failure is silent (no diagnostic points to the constant error). The crate previously documented MIPS as "not supported" but still allowed compilation, publishing a buildable-but-broken target.
 
