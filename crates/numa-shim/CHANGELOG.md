@@ -80,6 +80,19 @@ request. At release time, consolidate this section under a dated
   (the sibling crate's own 0.2 release); `reserve_on_node`'s return type
   moves with it.
 
+### Owner decisions pending
+
+- **Semver policy for the two `#[doc(hidden)]` test-only modules** —
+  `pub mod cpumap` (parser helpers) and `pub mod linux`
+  (`dbg_node_resolution_for_cpu`); audit finding F5, scope-expanded by a
+  later zero-trust review to cover both. Recommendation recorded (option
+  (c): commit both to the published surface at the next release, with
+  `cpumap` promoted to documented API); **owner decision pending, nothing
+  implemented**. Neither module is in published 0.1.0 — the next publish is
+  what freezes them as public API, so the decision must land in that
+  release's scope. Full writeup: task #1267 addendum on item 100 in
+  `docs/correctness-open-items/TRACKED_publish_readiness.md` (task #1267).
+
 ## 0.1.0 - 2026-06-29
 
 First crates.io release, published from this repository's then-`crates/numa`
