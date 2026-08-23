@@ -198,7 +198,7 @@ directly, which still works and needs no table at all).
   50/51/54/55/64/65/70/72/73/74/76/88/92 are each "a real test exists, but
   no gate runs it, or runs it under the wrong profile/feature set"; 19/25
   are the same shape for MSRV and a compile-fail harness specifically.
-- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (4
+- **`docs/correctness-open-items/TRACKED_test_flakiness.md`** (5
   cards) — flaky / order-dependent / scheduler-sensitive tests. Criterion:
   a test that fails intermittently because of timing, thread ordering, or
   shared process-wide state — an ACTUALLY-OBSERVED nondeterministic
@@ -206,8 +206,10 @@ directly, which still works and needs no table at all).
   runner exists). Evidence: 12/14 are both literal "failed once, could not
   reliably reproduce" filings with their own root-cause investigations;
   63/69 are a scheduler-sensitive threshold and a missing serialization
-  guard — all four are about a test's own execution nondeterminism, a
-  materially different defect from "nothing runs this test" (category 4).
+  guard; 96 is a CI-observed scheduler-jitter threshold failure the test's
+  own comment already accepts as a risk class — all five are about a
+  test's own execution nondeterminism, a materially different defect from
+  "nothing runs this test" (category 4).
 - **`docs/correctness-open-items/TRACKED_correctness_residuals.md`**
   (4 cards) — documented-but-unproven panic-/unwind-safety residuals in
   shipping code. Criterion: a known, honestly-recorded gap in a
@@ -364,6 +366,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 93 | `TRACKED_publish_readiness.md` |
 | 94 | `TRACKED_publish_readiness.md` |
 | 95 | `TRACKED_ci_gate_coverage.md` |
+| 96 | `TRACKED_test_flakiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
@@ -388,7 +391,7 @@ grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/corre
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-95, plus 85 which sits out of numeric order between 46 and 90 in
+76, 78-96, plus 85 which sits out of numeric order between 46 and 90 in
 `TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the
 pre-#1222 files and rotted at the thematic re-split — corrected at #1239)
 **= the total open-card count, deliberately not typed here** — for the

@@ -12,7 +12,7 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 4.
+**Card count:** 5.
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -194,3 +194,22 @@ resolved" in RESOLVED.md.)_
 63. **Flaky test — `shadow_path_activation_oracle_fast_and_slow_both_reachable` scheduler-sensitive percentage thresholds.** See "Recently resolved" §3 for full resolution.
 
 69. **CLOSED** by task #1063 (added the missing `serial_guard()` call to `windows_virtualfree_release_failures_accessor_exists`). See "Recently resolved" in RESOLVED.md for the full closure narrative.
+
+96. **[T, filed 2026-08-23, task #1247] `wasted_dirty_drains_stays_low_under_class_aware_routing`
+    (`tests/class_aware_dirty_routing.rs`, around lines 680-709) failed once in CI on the F1-F4
+    push (commit `7037a4c`), not reproduced on immediate rerun.** Failure:
+    `assertion failed: ratio < 0.20` with the observed ratio at 26.7%
+    (`ratio = wasted / drained` from `run_round(8)`) — the test's own threshold comment
+    (lines ~695-701) already documents this as an accepted risk: "20% is a generous
+    ceiling... tolerating real-world scheduler jitter and the rare cross-class same-segment
+    carve." Confirmed transient, not a regression introduced by the F1-F4 push: the push's
+    diff (tasks #1240/#1242/#1244/#1246, range `a1554aa..7037a4c`) never touches
+    `tests/class_aware_dirty_routing.rs` or any file `class_aware_dirty_routing`'s own
+    module doc names as production dependencies; `gh run rerun <run-id> --failed` on the
+    same landing SHA came back 100% green across all 40 non-skipped jobs, including the one
+    that had failed. Filed per this file's own convention (see item 12's identical shape —
+    one CI-observed failure, confirmed non-reproducible, recorded as a data point) so a
+    repeat occurrence has this one on record rather than being independently re-diagnosed
+    from scratch. Not investigated further here — the test's own threshold already accepts
+    this failure class; tightening it or replacing the ratio-threshold approach entirely is
+    out of scope for a filing task.
