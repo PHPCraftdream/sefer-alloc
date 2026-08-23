@@ -1154,8 +1154,10 @@ mod platform {
                 // double-release. (Matched to this file's style: other "nothing more
                 // we can do" cleanup paths release silently; this one is at least
                 // counted, not silently ignored.)
-                // Note: No logging here — this crate is no_std-compatible and the
-                // existing pattern is to silently ignore unrecoverable errors.
+                // Note: No logging here — this file's existing cleanup paths for
+                // unrecoverable errors are silent (see the sibling MEM_RESERVE
+                // failure branches above); matching that established pattern
+                // rather than introducing a new one for this single site.
             }
             return None;
         }
