@@ -744,7 +744,8 @@ compile_error!(
     "aligned-vmem does not support MIPS: MAP_ANON/MAP_HUGETLB constant values \
      differ from the values this crate hardcodes, causing every reservation to \
      fail with EBADF at runtime with no diagnostic. See \
-     docs/CORRECTNESS_OPEN_ITEMS.md item 62 for the release decision record."
+     https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md \
+     item 62 for the release decision record."
 );
 
 /// Linux/Android `MAP_HUGETLB` (request huge pages at mmap time).

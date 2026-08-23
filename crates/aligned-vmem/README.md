@@ -141,6 +141,13 @@ reservation"), and what the file-mapping crates don't directly offer.
   (`page_size()`), not just `PAGE`. This is required because `commit_range`
   operates on whole runtime pages, and a `size` not aligned to `page_size()` would
   create an unwritable tail that cannot be committed via the public API.
+- **`reserve_aligned` (eager) does NOT enforce the `page_size()` half of this
+  contract, unlike the lazy constructor above.** A `size` that is a `PAGE`
+  multiple but not also a `page_size()` multiple is accepted — on a host
+  where those differ (e.g. Apple Silicon macOS, 16 KiB pages), the resulting
+  reservation's span can never be fully decommitted: `decommit(0, size)` on
+  it is a debug-build panic and a silent permanent no-op in release. Round
+  `size` up to a `page_size()` multiple yourself if it is not already one.
 
 Note: `decommit`/`decommit_lazy` and `recommit`/`commit_range` validate the
 same granularity, but respond differently to a violated range — this
@@ -347,7 +354,7 @@ The following targets are supported but have not been empirically verified in CI
 - **Android (bionic)** — 32-bit targets use a 32-bit `off_t` by default (matching glibc behavior without `_FILE_OFFSET_BITS=64`); this is reasoned from bionic's design documentation, not CI-verified.
 - **32-bit musl Linux** (e.g., `armv7-unknown-linux-musleabihf`) — `off_t` is correctly declared as 64-bit on all musl architectures (musl uses 64-bit `off_t` on all architectures), so the crate's dual-arch `OffT` type is safe; the i686-unknown-linux-musl target is compile-checked in CI (see the CI-verified list above), but other 32-bit musl targets are not.
 - **Apple platforms beyond macOS** (iOS, tvOS, watchOS) — constants and behavior are derived from Apple's unified documentation; no CI runner currently tests these targets.
-- **MIPS** — **not supported (compile_error!)**. MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux/Android. MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while this crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) but the failure is silent (no diagnostic points to the constant error). Rather than compile a buildable-but-broken crate, MIPS targets fail compilation with a clear diagnostic. This is a release decision; see `docs/CORRECTNESS_OPEN_ITEMS.md` item 62 for the decision record. Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values.
+- **MIPS** — **not supported (compile_error!)**. MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux/Android. MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while this crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) but the failure is silent (no diagnostic points to the constant error). Rather than compile a buildable-but-broken crate, MIPS targets fail compilation with a clear diagnostic. This is a release decision; see <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md> item 62 for the decision record. Adding support requires adding a `#[cfg(any(target_arch = "mips", target_arch = "mips64"))]` arm with the correct MIPS-specific constant values.
 
 **Note:** The absence of CI verification for a target means only that this project's own test suite has not executed on that platform. The platform-specific constants (e.g., `MADV_DONTNEED = 4`, Linux's `_SC_PAGESIZE = 30`, macOS's `_SC_PAGESIZE = 29`) are sourced from the respective OS's official documentation and header files. If you use this crate on a reasoned-from-spec target and encounter issues, please file a bug report.
 
@@ -357,7 +364,7 @@ The following targets are supported but have not been empirically verified in CI
 - **Unix, `MAP_ANON = 0x1000` arm**: macOS, iOS, tvOS, watchOS, FreeBSD, NetBSD, OpenBSD, DragonFly BSD.
 - **Unix, everything else** (e.g. Solaris, illumos, AIX, Haiku): **fails compilation** with a diagnostic naming the missing `MAP_ANON` definition — `cfg(unix)` alone is NOT a promise of support.
 - **MIPS** (any Unix OS): **fails compilation** (see the MIPS entry above).
-- **Windows**: the Win32 backend (`VirtualAlloc`/`VirtualFree`/`VirtualProtect`); see the CI-verified list for which targets are tested.
+- **Windows**: the Win32 backend (`VirtualAlloc`/`VirtualFree`); see the CI-verified list for which targets are tested.
 
 Only the targets in the CI-verified list above have had the test suite actually run on them; everything else in the matrix is reasoned-from-spec.
 

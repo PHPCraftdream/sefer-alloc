@@ -69,3 +69,15 @@ impl ReservationParts {
         (self.ptr, self.len, self.align)
     }
 }
+
+// SAFETY (Send): `ptr` describes the same exclusively-owned OS reservation
+// `Reservation` itself is `Send` for (see the identical argument on
+// `unsafe impl Send for Reservation` in `reservation.rs`) — moving a
+// `ReservationParts` to another thread moves ownership of every byte it
+// describes, leaving no aliasing on the origin thread. Every operation that
+// dereferences `ptr` is already `unsafe`, so this impl grants no new unsafe
+// capability, only cross-thread ownership transfer of the token itself.
+// Deliberately NOT `Sync` (task #1257/OH13-F4): `&ReservationParts` would
+// hand out `ptr` — a live `*mut u8` — to a second reader while the first
+// still holds the token, the same reason `Reservation` withholds `Sync` too.
+unsafe impl Send for ReservationParts {}

@@ -2672,6 +2672,76 @@ for completeness.
         states its own next trigger (a real measurement on the relevant
         host) that would reopen the question with evidence.**
 
+58. **[A] `aligned-vmem` eighth-audit perf candidates (P1-P4) — filed, none
+    measured.** (Filed 2026-08-23, task #1259, from
+    `docs/reviews/2026-08-23-152224-aligned-vmem-readonly-review-oh.md`
+    §2, revision `743b27a`.)
+
+    - **Status:** OPEN — reading-level observations only, no harness built,
+      no number measured for any of the four. Checked against this index
+      first (per the report's own §2 preamble): P1/P2/P3 have zero prior
+      mentions here; P4 is adjacent to items 48/53 (the Unix over-reserve
+      slack) but a different axis (mapping protection, not VA/pool cost).
+    - **Current-number-or-verdict:** all four unmeasured; no verdict yet.
+    - **Next trigger:** a `bench-internals` path-activation harness for
+      whichever candidate is picked up first, per this file's own rule
+      (CLAUDE.md's R30-8 entry-point/path-activation-oracle convention) —
+      none of P1-P4 may be presented as a proven speedup without one.
+    - **P1 — Windows `VirtualAlloc2` + `MEM_ADDRESS_REQUIREMENTS` (the
+      largest candidate in the report): for `align > WIN_ALLOCATION_GRANULARITY`
+      (64 KiB) — every 2/4 MiB allocator segment, the crate's own headline
+      case — `win_reserve_commit` (`src/os/windows.rs:56`) takes 2 syscalls
+      and holds `size + align` bytes of VA. `VirtualAlloc2` (Windows 10
+      1803+) can return an exactly-`align`-aligned reservation in 1 syscall
+      with zero over-reserve, and would make `reservation_len()` honest for
+      this path (it currently spends three rustdoc bullets explaining why
+      it under-reports). Cost: keeping pre-1803 support needs runtime
+      `GetModuleHandle`/`GetProcAddress` resolution cached in an atomic,
+      plus the existing two-call path retained as fallback — real new
+      machinery in the file this crate's `unsafe` lives in. Not a 0.2.0
+      change; a well-shaped 0.3.0 one, needing its own path-activation
+      oracle (resolved-vs-fallback counter) before any number is quotable.
+    - **P2 — `GetLargePageMinimum()` is a live FFI call per huge reservation,
+      for a process-constant.** `win_reserve_commit:105-111` calls it on
+      every `reserve_aligned_huge`; the value cannot change during process
+      lifetime. This crate already caches the analogous `GetSystemInfo`
+      answer (`PAGE_SIZE_CACHE`, `src/page_size.rs:21`) for exactly this
+      reason. Item 47's evidence block mentions `GetLargePageMinimum` but
+      only for a DIFFERENT proposal (a size-divisibility pre-check) that
+      does not exist — the caching question itself was not previously
+      filed. Small expected value, not on a hot path (huge reservations are
+      large upfront segments) — a while-you-are-in-there item, not a round
+      of its own.
+    - **P3 — Linux: no `MAP_NORESERVE` on the ordinary (non-huge) over-reserve,
+      so strict-overcommit hosts (`vm.overcommit_memory=2`, common in
+      hardened containers) are charged for slack the crate's own design
+      guarantees is never touched.** `libc_mmap` (`src/os/unix.rs:1033`)
+      passes no `MAP_NORESERVE`; the hugetlb half of this is already
+      documented (task #1069's comment, `reserve_aligned_huge`'s rustdoc) —
+      the ordinary half is not. **Flagged as a question, not a
+      recommendation**: `MAP_NORESERVE` moves the failure point from `mmap`
+      (a clean `None`/`Err`) to first touch (SIGSEGV/OOM-killer) — a
+      materially worse failure mode for an allocator, needing its own owner
+      decision. A narrower variant (`MAP_NORESERVE` only on the slack via a
+      second mapping) reintroduces the head/tail split task #842
+      deliberately removed for soundness, so it is not obviously better
+      either.
+    - **P4 — Unix: the over-reserve slack is mapped `PROT_READ|PROT_WRITE`,
+      so an out-of-bounds write into it silently succeeds where Windows
+      faults.** Not a safety defect (the slack is inside the crate's own
+      reservation, released with it) — a debuggability/platform-parity
+      asymmetry: Windows's two-call path commits only `[base, base+size)`,
+      so an off-by-one write past `as_ptr() + len()` raises
+      `STATUS_ACCESS_VIOLATION` immediately; the identical Unix write lands
+      in mapped, writable slack and succeeds silently, up to `align` bytes
+      past the usable span — the same platform-divergence shape the README
+      already documents for decommit (README line 191). Closing it needs
+      `mprotect(PROT_NONE)` on head and tail (extra syscalls on the reserve
+      path, partially reversing task #842's one-`munmap` design). Most
+      likely disposition per the report: a sentence in
+      `Reservation::as_ptr`'s validity section, not a code change — not
+      actioned by this filing task, left for whoever picks up P4.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

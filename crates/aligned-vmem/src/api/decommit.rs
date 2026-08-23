@@ -329,7 +329,16 @@ fn decommit_range_is_well_formed(start: usize, end: usize, ps: usize) -> bool {
 /// has no bounds/huge concept to check first; the method's bounds check and
 /// huge-skip decision must run before this is even reached, since a skip
 /// must never touch the backend at all) — so the total atomic-load count for
-/// ANY call through either entry point is now exactly one, not two or three.
+/// ANY call through either `try_decommit`-shaped entry point is now exactly
+/// one, not two or three. **Scope (task #1258/OH13-F5): this property
+/// describes the `try_decommit` dispatch path only, not this crate's other
+/// `page_size()`-reading call chains** — `LazyReservation::ensure_committed`/
+/// `shrink_committed` (`src/lazy_reservation.rs`) each still take their own
+/// `page_size()` snapshot for rounding and then call the free
+/// `try_commit_range`/`decommit`, which take a second, independent
+/// `page_size_or_poison()` snapshot internally; that pair was never touched
+/// by this task and is a separate, still-open residual, not a regression of
+/// the guarantee stated here.
 ///
 /// Returns `DecommitOutcome::Advised` / `DecommitOutcome::Refused(_)` for a
 /// call to the SELECTED backend — on the native backend (no

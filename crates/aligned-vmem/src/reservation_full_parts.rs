@@ -101,3 +101,13 @@ impl ReservationFullParts {
         }
     }
 }
+
+// SAFETY (Send): `base`/`reservation` describe the same exclusively-owned OS
+// reservation `Reservation` itself is `Send` for (see the identical argument
+// on `unsafe impl Send for Reservation` in `reservation.rs`, and on
+// `ReservationParts` in `reservation_parts.rs`) — moving a
+// `ReservationFullParts` to another thread moves ownership of every byte it
+// describes. Every operation that dereferences either pointer is already
+// `unsafe`. Deliberately NOT `Sync`, for the same reason `Reservation` and
+// `ReservationParts` withhold it (task #1257/OH13-F4).
+unsafe impl Send for ReservationFullParts {}

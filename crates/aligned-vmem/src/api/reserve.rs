@@ -10,7 +10,22 @@ use super::internal::{finish_reservation, validate_size_align, RawReservation};
 /// `align`.
 ///
 /// - `align` must be a power of two `>=` [`PAGE`](crate::page::PAGE).
-/// - `size` must be a non-zero multiple of [`PAGE`](crate::page::PAGE).
+/// - `size` must be a non-zero multiple of [`PAGE`](crate::page::PAGE) —
+///   the COMPILE-TIME 4 KiB constant, not the runtime
+///   [`page_size()`](crate::page_size::page_size). **On a host where those
+///   differ (e.g. Apple Silicon macOS, 16 KiB pages)**, a `size` that is a
+///   `PAGE` multiple but not also a `page_size()` multiple is accepted here
+///   but produces a reservation whose span can never be fully decommitted:
+///   `Reservation::decommit`/the free [`decommit`](crate::api::decommit)
+///   validate against the runtime `page_size()`, so `decommit(0, size)` on
+///   such a reservation is a debug-build panic (`debug_assert!`) and a
+///   silent permanent no-op in release. This is the SAME fail-closed
+///   contract [`try_reserve_aligned_lazy`](crate::try_reserve_aligned_lazy)'s
+///   `initial_commit` parameter already enforces at the runtime granularity
+///   (task #1256/OH13-F3) — this eager constructor does not, by design, to
+///   avoid a runtime `page_size()` read on every call; validate against
+///   `page_size()` yourself first if your `size` is not already a multiple
+///   of the platform's largest supported page size.
 ///
 /// On 32-bit Unix, first tries an ordinary exact-size `mmap` and checks
 /// whether the kernel happened to place it at an `align`-aligned address

@@ -1314,7 +1314,8 @@ impl Reservation {
     ///   supported for adoption through this constructor — this assert is
     ///   the crate's CURRENT contract, not a temporary narrowing pending a
     ///   wider one (the decision is recorded in
-    ///   `docs/CORRECTNESS_OPEN_ITEMS.md` item 90's OPEN QUESTION block). A
+    ///   <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/CORRECTNESS_OPEN_ITEMS.md>
+    ///   item 90's OPEN QUESTION block). A
     ///   future "yes", if it ever comes, would arrive as an ADDITIVE new
     ///   constructor carrying typed huge-granularity metadata — not as a
     ///   relaxation of this assert presented as a bugfix. That widening
