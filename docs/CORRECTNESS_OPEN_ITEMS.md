@@ -222,7 +222,7 @@ directly, which still works and needs no table at all).
   `dealloc_foreign_routing` residual class; 66 is `Reservation`'s
   committed-length contract being documented-not-checked, the same
   "doc-comment names a residual" shape.
-- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (15
+- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (16
   cards) — crates.io publish-readiness: metadata, naming, dependencies,
   NO-GO audits. Criterion: a decision or blocker that gates a crate's
   crates.io publication — naming/description/license/dependency
@@ -374,6 +374,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 99 | `TRACKED_publish_readiness.md` |
 | 100 | `TRACKED_publish_readiness.md` |
 | 101 | `TRACKED_publish_readiness.md` |
+| 102 | `TRACKED_publish_readiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
