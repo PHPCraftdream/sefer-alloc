@@ -2619,6 +2619,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # task #1276 (N2, 2026-08-23 numa-shim publication-readiness review):
+      # the REAL Linux backend, no `mock`. Both test steps below and the
+      # `--all-features` clippy row turn `mock` on, so until this step no
+      # per-PR CI job ran `cargo test -p numa-shim` on Linux without it:
+      # tests/smoke.rs's `sched_getcpu` + sysfs cpumap reader + real
+      # mbind(2) syscall coverage never ran on the one OS where those are
+      # real, and `pub mod linux` + tests/node_resolution_linux.rs (gated
+      # `all(target_os = "linux", not(miri), not(feature = "mock"))`) were
+      # compiled by no CI job on ANY platform -- leaving
+      # NodeResolution::FellBackToZero with zero automated coverage. Job id
+      # intentionally kept as `numa-shim-mock` despite no longer being
+      # mock-only: the id is cited by name in CHANGELOG.md,
+      # docs/correctness-open-items/*, and several review docs.
+      - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
       # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
@@ -2630,6 +2644,22 @@ jobs:
       # numa-shim-windows below, since Windows is this crate's own primary
       # dev platform for its Windows-only code.
       - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
+      # task #1276 (N3, same review): numa-shim had ZERO rustdoc CI
+      # coverage while its Cargo.toml pins a docs.rs feature set
+      # (`vmem-integration`) narrower than `--all-features`. Per CLAUDE.md's
+      # doc-lint rule (task #1142, the aligned-vmem-gates pattern above)
+      # both rows are required because neither subsumes the other:
+      # `--all-features` also turns on the backend-REPLACING `mock` feature
+      # that docs.rs never builds with, while the derived row below builds
+      # exactly what docs.rs renders.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --all-features --no-deps
+      - name: docs.rs feature-set doc build (mirrors package.metadata.docs.rs, not --all-features)
+        run: |
+          set -euo pipefail
+          FEATURES=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "numa-shim") | .metadata.docs.rs.features | join(",")')
+          echo "Derived docs.rs feature set: $FEATURES"
+          test -n "$FEATURES"
+          RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps --features "$FEATURES"
 
   numa-shim-windows:
     # Run the numa-shim real-syscall path on a real Windows kernel.
