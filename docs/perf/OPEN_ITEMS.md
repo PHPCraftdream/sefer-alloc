@@ -2741,6 +2741,70 @@ for completeness.
       likely disposition per the report: a sentence in
       `Reservation::as_ptr`'s validity section, not a code change — not
       actioned by this filing task, left for whoever picks up P4.
+59. **[A] `numa-shim` Sol-codex publication-audit perf candidates (P1-P5) —
+    filed, none measured; the source report explicitly ran no tests or
+    benchmarks, so every one of these is an unmeasured candidate only, never
+    quotable as a result.** (Filed 2026-08-23, task #1271, from
+    `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`
+    §"Производительность", revision `356fb44`.)
+
+    - **Status:** OPEN — reading-level observations only, no harness built,
+      no number measured for any of the five; the report itself states
+      "Ни один speedup в этом отчёте не заявляется как измеренный".
+    - **Current-number-or-verdict:** all five unmeasured; no verdict yet.
+    - **Next trigger:** per-candidate, below — none of P1-P5 may be
+      presented as a proven speedup without the path-activation/measurement
+      discipline this file's own rules require (CLAUDE.md R30-8 and the
+      entry-point rule).
+    - **P1 — hot path after the topology cache is still not O(1).**
+      `cpu_to_numa_node` walks up to 64 node entries and re-runs the cpumap
+      parser for each mask on every call (`src/lib.rs:733-740`) — O(nodes ×
+      mask bytes) of pure-Rust work per `current_node()`, even though the
+      cache already eliminated the repeated sysfs `open/read/close`. For an
+      allocator/latency-sensitive caller the report names `getcpu(2)` or a
+      pre-built reverse CPU→node index as candidates. Next trigger: measure
+      the current per-call cost from the layer the allocator actually
+      ships at, then A/B a `getcpu(2)` or reverse-index variant against it
+      (the report's own recommended-order item 7 defers exactly this
+      measurement until after the correctness/release gates).
+    - **P2 — cold start is expensive and uses a large stack frame.** The
+      first Linux call performs up to 64 sysfs `open/read/close` triples
+      and initializes a `Topology` of roughly 64 KiB on the stack
+      (`NODE_CPUMAP_BUF_LEN = 1024` × 64 plus lengths). The allocation-free
+      redesign correctly removed the reentrant `OnceLock`/global-allocator
+      hazard, but cold-path cost and stack footprint are part of the API's
+      observable behavior. Reading `/sys/.../node/online` once, or direct
+      `getcpu(2)`, may shorten the path. Next trigger: a measured
+      cold-start latency + peak-stack-cost probe before any redesign.
+    - **P3 — `CURRENT_NODE_SLOT: RefCell<u32>` could be a `Cell<u32>`** (the
+      mock backend only reads/replaces the slot wholesale,
+      `src/lib.rs:177-198`, so no borrow flag is needed). This OVERLAPS
+      correctness item 45
+      (`docs/correctness-open-items/TRACKED_misc.md` — the
+      RefCell-vs-Cell / panicking-borrow observation, including its perf
+      side): that card owns the finding; this card only records the perf
+      angle and does NOT duplicate or re-file it, and no second
+      correctness card is created. Next trigger: correctness item 45's own.
+    - **P4 — the Windows two-call reserve path already fixed its main
+      commit-charge defect** (reserves `size + align`, commits only
+      `size`); any further syscall-count reduction needs measurement and
+      must NOT reinstate the previous over-consumption. Adjacent to
+      `aligned-vmem` item 58's P1 (`VirtualAlloc2` one-syscall candidate)
+      but in `crates/numa-shim`'s own Windows virtual-NUMA code, a
+      different code path — cross-reference only, not the same item. Next
+      trigger: a syscall-count + commit-charge A/B that hard-asserts
+      commit stays at `size`.
+    - **P5 — mock's TLS/recording machinery still costs something whenever
+      it is compiled in, even when it is not the active backend** — one
+      more argument for separating the test seam from the Cargo feature.
+      This is the perf shadow of tracked item 42
+      (`docs/correctness-open-items/ACTIVE.md` item 42, the
+      `mock = []` non-additive feature-unification hazard) as re-raised by
+      the same report's F2 (task #1264, see
+      `docs/correctness-open-items/TRACKED_publish_readiness.md` item on
+      the Sol-codex audit): the seam-vs-feature decision is owned THERE,
+      not here. Next trigger: task #1264's owner decision; if the seam is
+      separated, measure feature-on vs feature-off cost then.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
