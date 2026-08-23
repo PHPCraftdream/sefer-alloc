@@ -87,6 +87,15 @@ request. At release time, consolidate this section under a dated
   open), and `FellBackToZero` does not distinguish "sysfs unreadable /
   node >= 64 (the node-0 answer may be wrong)" from "no NUMA topology at
   all (node 0 is genuinely correct)".
+- **`mock::MockCall::CurrentNodeResolution(NodeResolution)` and
+  `current_node_resolution()` recording under `mock` at all** — additive
+  mock-surface follow-up to the entry above (task #1277, finding N6 of the
+  tenth review; recorded per E7 of the eleventh): the function's `mock` arm
+  originally skipped the call log entirely, contradicting the module's
+  "records every invocation" contract; it now records its resolved return
+  value through this new variant. The variant is new public API inside the
+  `mock` surface that published 0.1.0 already carries — non-breaking, since
+  `MockCall` is `#[non_exhaustive]`.
 - The sysfs cpumap parser was extracted into a target-independent module with
   real behavioral oracles runnable on every host, not only real Linux (task
   #721) — test infrastructure (`#[doc(hidden)]`), not public API.
