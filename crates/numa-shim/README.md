@@ -59,12 +59,26 @@ unsafe { bind_range(buf.as_mut_ptr(), buf.len(), node) };
 Enables [`reserve_on_node`], which reserves aligned anonymous virtual memory
 with a NUMA preference using [`aligned-vmem`](https://crates.io/crates/aligned-vmem):
 
+```toml
+[dependencies]
+numa-shim = { version = "0.1", features = ["vmem-integration"] }
+# `reserve_on_node` returns an `aligned_vmem::Reservation`, so you need the
+# crate as a DIRECT dependency to name that type / its constants in your own
+# code — enabling a feature on numa-shim alone does NOT put `aligned_vmem`
+# in your crate's extern prelude (it is only an optional transitive dep).
+aligned-vmem = "0.2"
+```
+
 ```rust
 use numa_shim::{reserve_on_node, current_node};
-use aligned_vmem::PAGE;
+use aligned_vmem::{page_size, PAGE};
 
 let node = current_node().unwrap_or(0);
-let r = reserve_on_node(PAGE * 16, PAGE, node).expect("OOM");
+// `page_size()` is the OS's actual runtime page size; `PAGE` (4 KiB) is the
+// compile-time minimum. Prefer `page_size()` when alignment must match what
+// the kernel actually uses.
+let ps = page_size();
+let r = reserve_on_node(ps * 16, PAGE.max(ps), node).expect("OOM");
 // r is an `aligned_vmem::Reservation` — RAII, drops cleanly.
 ```
 
