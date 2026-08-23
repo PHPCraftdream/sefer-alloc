@@ -67,6 +67,18 @@ the reversal record.)
       own doc comment (updated by task #962 to cite the aligned-vmem
       precedent); `crates/aligned-vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs`
       + the removed `mock = []` (the pattern to mirror).
+    - **CORRECTION (2026-08-23, task #1263):** this card's premise that
+      numa-shim "has not yet had its first crates.io publish (task #657,
+      itself blocked)" is FALSE — numa-shim 0.1.0 was published to crates.io
+      on 2026-06-29 17:36:48 UTC (crates.io API; also stated by
+      crates/numa-shim/CHANGELOG.md). The "free to convert only until first
+      publish" window has therefore ALREADY closed: removing or narrowing
+      the `mock` feature is now a semver-breaking change to published API,
+      not a pre-publication cleanup. The deferral rationale above is
+      historical text kept per the history-is-not-rewritten convention; the
+      real decision point is now the 0.2.0 boundary (or a purely additive
+      cfg alongside the existing feature). See task #1263 and the corrected
+      comment in crates/numa-shim/Cargo.toml.
 
 62. **MIPS targets: release decision to fail compilation at compile time rather than accept buildable-but-broken targets.** (Filed 2026-08-16, task #1017, finding R4-1 of `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`.) MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux: MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while the crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) because `libc_mmap` issues `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set, but the failure is silent (no diagnostic points to the constant error). The crate previously documented MIPS as "not supported" but still allowed compilation, publishing a buildable-but-broken target.
 
