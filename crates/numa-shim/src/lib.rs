@@ -137,7 +137,13 @@ pub mod mock {
     #[non_exhaustive]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum MockCall {
-        /// `current_node()` was called; the inner value is what was returned.
+        /// `current_node()` was called; the inner value is the RAW
+        /// pre-remap slot value, which is not necessarily what the function
+        /// returned: when the slot holds `NO_NODE`, the record carries that
+        /// raw sentinel even though `current_node()` remaps it to `None` for
+        /// its caller (record-then-remap order, matching the real dispatch;
+        /// deliberately asserted by `tests/mock_dispatch.rs`'s
+        /// `current_node_scripted_no_node_yields_none`).
         ///
         /// task #778 (round-closing review, F13): unlike [`BindRange`] and
         /// [`ReserveOnNode`] below, this tuple variant deliberately does NOT
@@ -352,8 +358,13 @@ pub fn current_node_resolution() -> NodeResolution {
         // it). Skipping contradicted the `mock` module's documented
         // "records every invocation" contract, so this call now records
         // like every other public NUMA function. The recorded value is
-        // the RESOLVED outcome returned to the caller, mirroring
-        // `CurrentNode`'s "inner value is what was returned" convention.
+        // the RESOLVED outcome returned to the caller — intentionally a
+        // DIFFERENT convention from `CurrentNode`'s raw pre-remap slot
+        // recording (task #1283, review E3: this comment previously and
+        // wrongly claimed the two conventions mirrored): `NodeResolution`
+        // is itself the semantically meaningful output this function
+        // exists to expose, so the resolved outcome is what test
+        // assertions want to compare against.
         mock::record(mock::MockCall::CurrentNodeResolution(resolution));
         resolution
     }
