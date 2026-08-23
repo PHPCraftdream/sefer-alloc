@@ -12,6 +12,18 @@ not yet made, and this repository does not bump versions without an explicit
 request. At release time, consolidate this section under a dated
 `## <version> - <date>` heading.
 
+### Owner decisions pending
+
+- **`mock` feature's Cargo-unification hazard** (F2 of the 2026-08-23
+  publication audit, `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`;
+  `docs/correctness-open-items/ACTIVE.md` item 42; task #1264): before the
+  next release the owner must pick between (a) converting the seam to a
+  build-time `--cfg` flag (semver-breaking, rides the already-breaking
+  0.2.0), (b) a separate unpublished test-support crate, or (c) keeping the
+  feature with explicit risk acceptance. Recommendation written, decision
+  NOT yet made — see item 42's "RECOMMENDATION (2026-08-23, task #1264)"
+  section. Resolve this heading before cutting the release section.
+
 ### Fixed
 
 - **`mbind(2)` `maxnode` off-by-one silently dropped node 63's bit** from the
