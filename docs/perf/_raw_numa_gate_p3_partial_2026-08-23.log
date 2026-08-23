@@ -1,0 +1,27 @@
+Phase 3 (partial, HOST-LEVEL only) test run log for NUMA release gate
+Date: 2026-08-23
+Branch: numa-shim/1270-f8-release-gate
+Commit: 356fb44
+Host: Windows 11, single-socket Intel i7-11800H
+
+Hyper-V VM creation DID NOT RUN:
+- Get-VM failed with "You do not have the required permission" (non-elevated PowerShell)
+- Win32_NumaNode WMI/CIM class not present on this host
+- Get-NumaNode unavailable
+- Creating VM, verifying guest Count:2, and running in-guest suite are OUTSTANDING
+
+Host-level tests that DID run:
+
+Command 1:
+cargo test --features "production numa-aware internals" --test numa_seam --test numa_segment_id
+Result: numa_seam 5/5 passed, numa_segment_id 2/2 passed
+
+Command 2:
+SEFER_NUMA_TEST=1 cargo test --features "production numa-aware internals" --test numa_alloc -- --nocapture
+Result: 2/2 passed
+Observed output: node_a=0, node_b=0; observed_current_node=0, stamped_node_id=0
+This host reports single NUMA node (node 0); multi-node code paths NOT exercised.
+
+Note: Documentation drift - gate docs invoke with --features "production numa-aware" but actual tests require both numa-aware AND internals features (cfg-gated).
+
+Verdict: PARTIAL (single-NUMA-safe suites pass; Hyper-V in-guest procedure OUTSTANDING)

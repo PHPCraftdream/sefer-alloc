@@ -1,0 +1,16 @@
+Phase 1 mock-shim seam test run log for NUMA release gate
+Date: 2026-08-23
+Branch: numa-shim/1270-f8-release-gate
+Commit: 356fb44
+Host: Windows 11, single-socket Intel i7-11800H
+
+Command executed:
+cargo test -p numa-shim --features mock
+
+Result: 28 passed, 0 failed across 4 test binaries
+- mock_dispatch: 7/7 passed (bind_range NO_NODE/zero-len short-circuit, arg recording, current_node scripted values, capped call log)
+- cpumap_parser: 17/17 passed
+- smoke: 4/4 passed
+- lib unittests: 0
+
+Verdict: PASS
