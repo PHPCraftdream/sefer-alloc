@@ -224,6 +224,107 @@ pub mod mock {
     }
 }
 
+/// Outcome of a NUMA-node determination attempt for the calling thread.
+///
+/// This enum provides finer-grained status information than the simpler
+/// `Option<u32>` returned by [`current_node`], allowing callers to distinguish
+/// "the calling thread's CPU was genuinely resolved to this NUMA node via the
+/// platform topology" from "the topology could not be read and the function
+/// silently fell back to node 0" on Linux.
+///
+/// This is an **additive** API — [`current_node`] is unchanged and remains the
+/// recommended function for most callers. Use `current_node_resolution()` only
+/// when you need to detect the fallback case (e.g., for diagnostic logging or
+/// to trigger a warning that NUMA hints may not be effective).
+///
+/// See task #1266, audit finding F4 for background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum NodeResolution {
+    /// The calling thread's CPU was genuinely resolved to this NUMA node
+    /// via the platform topology.
+    ///
+    /// This variant is returned on Linux when the CPU index from
+    /// `sched_getcpu(2)` was found in one of the cached sysfs
+    /// `/sys/devices/system/node/nodeN/cpumap` files, on Windows when
+    /// `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` succeed,
+    /// or under the `mock` feature when the scripted node is not
+    /// [`NO_NODE`]. Note that `Resolved(0)` can legitimately indicate a
+    /// genuinely single-node system.
+    Resolved(u32),
+
+    /// Linux only: the CPU index was obtained, but no cached sysfs cpumap
+    /// contains it.
+    ///
+    /// This occurs when:
+    /// - The real topology was unreadable (e.g., sysfs permissions or
+    ///   I/O errors during the first-call cache population).
+    /// - The CPU lives on a NUMA node >= 64 — the implementation scans
+    ///   only nodes 0..63 because [`bind_range`] encodes the nodemask
+    ///   in a single `u64` (see the `node >= 64` note in that function's
+    ///   documentation).
+    /// - The kernel has no NUMA sysfs at all (single-node system where
+    ///   the `/sys/devices/system/node/` directory is absent).
+    ///
+    /// In all these cases, [`current_node`] collapses this into
+    /// `Some(0)`, which is indistinguishable from a genuinely
+    /// single-node system. This variant exists to expose the fallback.
+    FellBackToZero,
+
+    /// The platform provides no NUMA API, or the OS API failed.
+    ///
+    /// This is returned on:
+    /// - macOS (no public NUMA API).
+    /// - miri (no real OS topology).
+    /// - Unsupported platforms (e.g., FreeBSD, other Unix).
+    /// - Linux when `sched_getcpu(2)` fails (returns -1).
+    /// - Windows when `GetNumaProcessorNodeEx` fails or returns the
+    ///   `MAXUSHORT` sentinel.
+    /// - Under the `mock` feature when the scripted node is [`NO_NODE`].
+    ///
+    /// [`current_node`] returns `None` for this case.
+    Unavailable,
+}
+
+/// Return the NUMA-node resolution status for the calling thread.
+///
+/// This is an **additive** alternative to [`current_node`] that exposes the
+/// internal outcome of the node-determination logic on Linux. Unlike
+/// `current_node()`, which always returns `Some(0)` when the topology cannot
+/// be read, this function distinguishes that fallback case via
+/// [`NodeResolution::FellBackToZero`].
+///
+/// The mapping to [`current_node`] is:
+///
+/// | `current_node_resolution()` | `current_node()` |
+/// |-----------------------------|------------------|
+/// | `Resolved(n)` | `Some(n)` |
+/// | `FellBackToZero` | `Some(0)` |
+/// | `Unavailable` | `None` |
+///
+/// This function has the same first-call cost on Linux as `current_node()`
+/// (up to 64 `open`/`read`/`close` syscalls to populate the topology cache);
+/// subsequent calls are pure in-memory operations.
+#[must_use]
+pub fn current_node_resolution() -> NodeResolution {
+    #[cfg(feature = "mock")]
+    {
+        let n = mock::current_node_slot();
+        // Note: we do NOT record this call — keep it simple, mirroring the
+        // mapping without adding to the mock log. Recording would change
+        // mock log contents and break existing tests' expectations.
+        if n == NO_NODE {
+            NodeResolution::Unavailable
+        } else {
+            NodeResolution::Resolved(n)
+        }
+    }
+    #[cfg(not(feature = "mock"))]
+    {
+        platform::current_node_resolution_impl()
+    }
+}
+
 /// Return the NUMA node id of the calling thread, or `None` if not
 /// determinable.
 ///
@@ -584,6 +685,40 @@ pub mod cpumap {
 }
 
 // ---------------------------------------------------------------------------
+// Linux-only test-only forwarders (sanctioned pattern per CLAUDE.md)
+// ---------------------------------------------------------------------------
+#[cfg(all(target_os = "linux", not(miri), not(feature = "mock")))]
+#[doc(hidden)]
+pub mod linux {
+    use super::NodeResolution;
+
+    /// Test-only forwarder: map a CPU index to a `NodeResolution` without
+    /// calling `sched_getcpu(2)`.
+    ///
+    /// This is the same mapping logic used by `current_node_resolution()`,
+    /// but with a manually-specified CPU index instead of calling
+    /// `sched_getcpu(2)`. It is gated on `not(feature = "mock")` because the
+    /// real platform implementation is not used when the mock feature is
+    /// enabled.
+    ///
+    /// This function is safe to call with arbitrarily large CPU indices
+    /// (e.g., 1_000_000) — `cpu_to_numa_node_checked` returns `None` when the
+    /// CPU is not found in any cached cpumap (including when the CPU index
+    /// exceeds the cached topology's word count), so this will return
+    /// `NodeResolution::FellBackToZero` rather than panicking.
+    pub fn dbg_node_resolution_for_cpu(cpu: u32) -> NodeResolution {
+        // SAFETY: The `platform` module is defined below for the same cfg
+        // (`target_os = "linux" && not(miri)`), so `cpu_to_numa_node_checked`
+        // is available. It's `pub(super)`, so we can call it from this sibling
+        // module in the same parent.
+        match super::platform::cpu_to_numa_node_checked(cpu) {
+            Some(n) => NodeResolution::Resolved(n),
+            None => NodeResolution::FellBackToZero,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Per-platform implementations
 // ---------------------------------------------------------------------------
 
@@ -595,7 +730,7 @@ pub mod cpumap {
 // compile. Suppress dead-code only in that combination.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
-    use super::{bind_range_impl_linux, NO_NODE};
+    use super::{bind_range_impl_linux, NodeResolution, NO_NODE};
 
     pub(super) fn current_node_impl() -> u32 {
         // SAFETY: `sched_getcpu` is a POSIX function that returns the CPU index
@@ -605,6 +740,19 @@ mod platform {
             return NO_NODE;
         }
         cpu_to_numa_node(cpu as u32)
+    }
+
+    pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        // SAFETY: `sched_getcpu` is a POSIX function that returns the CPU index
+        // of the calling thread, or -1 on error. No pointer arguments.
+        let cpu = unsafe { libc_sched_getcpu() };
+        if cpu < 0 {
+            return NodeResolution::Unavailable;
+        }
+        match cpu_to_numa_node_checked(cpu as u32) {
+            Some(n) => NodeResolution::Resolved(n),
+            None => NodeResolution::FellBackToZero,
+        }
     }
 
     pub(super) fn bind_range_impl(base: *mut u8, len: usize, node: u32) {
@@ -728,20 +876,33 @@ mod platform {
     /// topology (`topology()` above). Pure in-memory bit-testing after the
     /// topology's one-time syscall-driven populate.
     ///
-    /// Returns `0` when sysfs NUMA topology files are absent (single-node
-    /// system where the kernel didn't compile NUMA support).
-    fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
+    /// Returns `None` when sysfs NUMA topology files are absent, the CPU
+    /// is not found in any cached cpumap (including when the CPU's real node
+    /// is >= 64 and thus not in the 0..63 scan range), or the topology
+    /// cache could not be populated.
+    pub(crate) fn cpu_to_numa_node_checked(cpu_idx: u32) -> Option<u32> {
         let topo = topology();
         for node in 0usize..64 {
             let len = topo.len[node];
             if len > 0 && crate::cpumap::parse_contains_cpu(&topo.buf[node][..len], cpu_idx) {
-                return node as u32;
+                return Some(node as u32);
             }
         }
-        // Single-node system or NUMA sysfs not present: treat as node 0.
-        // mbind to node 0 on a single-node machine is a no-op from the OS
-        // perspective (pages are already on node 0).
-        0
+        // CPU not found in any cached cpumap — either the topology is
+        // unavailable (single-node system with no sysfs), the CPU is on
+        // a node >= 64, or the cache population failed.
+        None
+    }
+
+    /// Map a CPU index to its NUMA node using the cached boot-static
+    /// topology (`topology()` above). Pure in-memory bit-testing after the
+    /// topology's one-time syscall-driven populate.
+    ///
+    /// Returns `0` when sysfs NUMA topology files are absent (single-node
+    /// system where the kernel didn't compile NUMA support) or when the CPU
+    /// is not found in any cached cpumap (e.g., the CPU's real node is >= 64).
+    fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
+        cpu_to_numa_node_checked(cpu_idx).unwrap_or(0)
     }
 
     /// Open the cpumap file at `path` and read its complete contents into
@@ -967,7 +1128,7 @@ unsafe fn libc_mbind(
 // compile. Suppress dead-code only in that combination.
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
-    use super::NO_NODE;
+    use super::{NodeResolution, NO_NODE};
 
     pub(super) fn current_node_impl() -> u32 {
         let mut proc_num = ProcessorNumber {
@@ -999,6 +1160,27 @@ mod platform {
             return NO_NODE;
         }
         node as u32
+    }
+
+    pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        let mut proc_num = ProcessorNumber {
+            group: 0,
+            number: 0,
+            reserved: 0,
+        };
+        // SAFETY: `proc_num` is a valid zeroed `PROCESSOR_NUMBER`; this API
+        // fills it in and never fails (documented to always succeed).
+        unsafe { GetCurrentProcessorNumberEx(&mut proc_num) };
+
+        let mut node: u16 = 0;
+        // SAFETY: `proc_num` was filled by `GetCurrentProcessorNumberEx`
+        // above and is a valid `PROCESSOR_NUMBER`; `node` is a valid `u16`
+        // out-pointer.
+        let ok = unsafe { GetNumaProcessorNodeEx(&proc_num, &mut node) };
+        if ok == 0 || node == u16::MAX {
+            return NodeResolution::Unavailable;
+        }
+        NodeResolution::Resolved(node as u32)
     }
 
     /// On Windows there is no post-reserve NUMA binding API equivalent to
@@ -1262,11 +1444,15 @@ mod platform {
 #[cfg(all(target_os = "macos", not(miri)))]
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
-    use super::NO_NODE;
+    use super::{NodeResolution, NO_NODE};
 
     /// macOS has no public NUMA API. Always returns `NO_NODE`.
     pub(super) fn current_node_impl() -> u32 {
         NO_NODE
+    }
+
+    pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        NodeResolution::Unavailable
     }
 
     /// No-op: macOS has no NUMA binding API.
@@ -1287,11 +1473,15 @@ mod platform {
 #[cfg(miri)]
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
-    use super::NO_NODE;
+    use super::{NodeResolution, NO_NODE};
 
     /// Under miri NUMA detection is not meaningful. Always returns `NO_NODE`.
     pub(super) fn current_node_impl() -> u32 {
         NO_NODE
+    }
+
+    pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        NodeResolution::Unavailable
     }
 
     /// No-op under miri.
@@ -1311,11 +1501,15 @@ mod platform {
 #[cfg(not(any(target_os = "linux", windows, target_os = "macos", miri,)))]
 #[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
-    use super::NO_NODE;
+    use super::{NodeResolution, NO_NODE};
 
     /// Unsupported platform: always returns `NO_NODE`.
     pub(super) fn current_node_impl() -> u32 {
         NO_NODE
+    }
+
+    pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        NodeResolution::Unavailable
     }
 
     /// No-op on unsupported platforms.
