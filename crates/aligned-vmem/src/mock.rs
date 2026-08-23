@@ -28,7 +28,7 @@
 //! the log of the thread the call runs ON, not the thread the
 //! reservation was created on. [`crate::Reservation`] is `Send` (see
 //! the `unsafe impl Send for Reservation` and its `SAFETY` comment in
-//! `src/lib.rs` — a reservation owns its bytes exclusively, with no
+//! `src/reservation.rs` — a reservation owns its bytes exclusively, with no
 //! thread affinity), so a test can create a reservation on thread A,
 //! move it to thread B, and drop it there. `Reservation`'s `Drop` then
 //! records `Call::Release` in thread B's log while the paired
@@ -66,7 +66,7 @@
 //! is treated as a no-op and is **not** recorded in the mock call log, unlike
 //! other well-formed calls to the same functions (the early-return happens
 //! before `mock::record` is called — see those functions' implementations
-//! in `src/lib.rs`).
+//! in `src/api/recommit.rs` and `src/api/commit_range.rs`).
 
 use core::cell::{Cell, RefCell};
 
