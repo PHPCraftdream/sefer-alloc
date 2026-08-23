@@ -163,6 +163,7 @@ fn rel_id(abs: &Path) -> String {
 /// justification needed beyond "read-only" (verified during classification
 /// by reading each body).
 const PURE_OBSERVERS: &[&str] = &[
+    "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
     "crates/racy-ptr-cell/src/lib.rs::dbg_is_ready",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_foreign_or_unroutable_frees",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_reserved_total",
