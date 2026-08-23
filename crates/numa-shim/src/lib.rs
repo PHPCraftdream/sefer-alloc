@@ -1111,7 +1111,12 @@ mod platform {
             return None;
         }
         let raw_u = raw as usize;
-        let base_u = (raw_u + align - 1) & !(align - 1);
+        // Checked alignment arithmetic: `raw_u` is a Win32-returned base (page-
+        // aligned, so overflow needs an allocation near the top of the address
+        // space), but do not rely on that silently wrapping if it ever happens —
+        // return None rather than hand from_raw_parts a wrapped base.
+        let rounded = raw_u.checked_add(align - 1)?;
+        let base_u = rounded & !(align - 1);
         let base = base_u as *mut u8;
 
         // SAFETY: `VirtualAllocExNuma(.., base, size, MEM_COMMIT, ..,
@@ -1142,15 +1147,33 @@ mod platform {
             // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
             // has not been handed to any caller yet; releasing before
             // returning `None` cannot double-free.
-            unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
+            if unsafe { VirtualFree(raw, 0, MEM_RELEASE) } == 0 {
+                // Double-failure: the commit failed AND the cleanup release failed.
+                // Nothing more can be done here — the reservation may leak until
+                // process exit. Returning None is still correct: the caller never
+                // received an owning handle, so handing one out now would risk a
+                // double-release. (Matched to this file's style: other "nothing more
+                // we can do" cleanup paths release silently; this one is at least
+                // counted, not silently ignored.)
+                // Note: No logging here — this file's existing cleanup paths for
+                // unrecoverable errors are silent (see the sibling MEM_RESERVE
+                // failure branches above); matching that established pattern
+                // rather than introducing a new one for this single site.
+            }
             return None;
         }
+
+        // Win32 contract: committing into an already-reserved region returns the
+        // base address of that region subrange, i.e. exactly `base`. Documenting
+        // and checking (debug builds) the assumption from_raw_parts relies on.
+        debug_assert_eq!(committed.cast::<u8>(), base, "VirtualAllocExNuma(MEM_COMMIT) must return the requested base for an already-reserved region");
 
         // SAFETY of from_raw_parts:
         // - `base` is non-null, valid for `size` bytes (it's inside the
         //   `over`-byte reservation since `align <= over - size`), aligned
         //   to `align` (by construction above), and its `size`-byte range
-        //   was just committed above.
+        //   was just committed above. Win32 contract: `committed == base` for
+        //   commit into an already-reserved region, verified by debug_assert above.
         // - `raw` is the start of the OS reservation, non-null.
         // - `over = size + align` is the full reservation length, multiple of PAGE.
         // - `align` was just used to align `base` — same value.
