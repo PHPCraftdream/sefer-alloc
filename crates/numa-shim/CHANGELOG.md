@@ -81,7 +81,6 @@ request. At release time, consolidate this section under a dated
   release's scope. Full writeup: task #1267 addendum on item 100 in
   `docs/correctness-open-items/TRACKED_publish_readiness.md` (task #1267).
 
-
 ## 0.1.0 - 2026-06-29
 
 First crates.io release, published from this repository's then-`crates/numa`
