@@ -577,7 +577,7 @@ Per-crate status:
 The extraction **improved the audit story**, not just reorganised code.
 An auditor who wants to verify the OS-memory unsafe no longer has to read
 through a large general-purpose allocator crate — they can audit `aligned-vmem`
-(~400 lines, sole purpose: OS aperture) and `numa-shim` (~300 lines, sole
+(sole purpose: OS aperture) and `numa-shim` (sole
 purpose: NUMA syscalls) in complete isolation. Each has one responsibility,
 one reason to have `unsafe`, and its own `cargo test`.
 
