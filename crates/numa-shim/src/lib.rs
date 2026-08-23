@@ -25,15 +25,23 @@
 //!
 //! Runnable form: `tests/smoke.rs`.
 //!
+//! ## Safety
+//!
+//! The public API is safe to call from `#![forbid(unsafe_code)]` consumers
+//! with one exception: [`bind_range`] — the crate's single `pub unsafe fn`,
+//! because it hands a raw address range to the OS — carries its own
+//! documented `# Safety` contract (task #1277, review N7: this fact used to
+//! live only in a `//` comment, invisible in rendered docs).
+//!
 //! ## Feature flags
 //!
 //! | Flag | Effect |
 //! |------|--------|
-//! | `vmem-integration` | Enables [`reserve_on_node`], which uses the `aligned-vmem` crate for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
+//! | `vmem-integration` | Enables `reserve_on_node`, which uses the `aligned-vmem` crate for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
 //!
 //! ## Platform matrix
 //!
-//! | Platform | [`current_node`] | [`bind_range`] | [`reserve_on_node`] (feature) |
+//! | Platform | [`current_node`] | [`bind_range`] | `reserve_on_node` (feature) |
 //! |----------|-----------------|----------------|-------------------------------|
 //! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | `mbind(2)` via syscall | mmap then mbind |
 //! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | no-op | mmap (no mbind) |
@@ -44,8 +52,13 @@
 
 // This crate intentionally contains unsafe OS FFI code.
 // The public API is safe EXCEPT `bind_range`, a `pub unsafe fn` carrying
-// its own documented `# Safety` contract; all other unsafe is confined to
-// platform modules and clearly documented with // SAFETY: proof comments.
+// its own documented `# Safety` contract; all other unsafe lives in the
+// per-OS `mod platform` blocks plus a small set of crate-root Linux mbind
+// FFI helpers (`bind_range_impl_linux`, `libc_mbind`, and the
+// `extern "C" { fn syscall(...) }` declaration they call through), each
+// documented with // SAFETY: proof comments. task #1277 (review N7): the
+// old "confined to platform modules" claim was false — those crate-root
+// helpers sit outside every `mod platform`.
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -96,6 +109,7 @@ pub use aligned_vmem::Reservation;
 /// task #715 decision for its identical `mock` feature.
 #[cfg(feature = "mock")]
 pub mod mock {
+    use crate::NodeResolution;
     use core::cell::RefCell;
 
     /// Maximum number of calls `CALLS` retains before `record()` stops
@@ -140,6 +154,20 @@ pub mod mock {
         /// [`BindRange`]: MockCall::BindRange
         /// [`ReserveOnNode`]: MockCall::ReserveOnNode
         CurrentNode(u32),
+        /// `current_node_resolution()` was called; the inner value is what
+        /// was returned.
+        ///
+        /// task #1277 (review N6): `current_node_resolution()` previously
+        /// did not record at all, contradicting this module's "records
+        /// every invocation" contract; this variant closes that gap. Like
+        /// [`CurrentNode`], this single-field tuple variant deliberately
+        /// carries no field-level `#[non_exhaustive]` (same reasoning as
+        /// task #778/F13's note on `CurrentNode`): one value with no
+        /// plausible second field to grow into, keeping equality-oracle
+        /// `assert_eq!` sites possible.
+        ///
+        /// [`CurrentNode`]: MockCall::CurrentNode
+        CurrentNodeResolution(NodeResolution),
         /// `bind_range(base, len, node)` was called (past the short-circuit).
         #[non_exhaustive]
         BindRange {
@@ -311,14 +339,23 @@ pub fn current_node_resolution() -> NodeResolution {
     #[cfg(feature = "mock")]
     {
         let n = mock::current_node_slot();
-        // Note: we do NOT record this call — keep it simple, mirroring the
-        // mapping without adding to the mock log. Recording would change
-        // mock log contents and break existing tests' expectations.
-        if n == NO_NODE {
+        let resolution = if n == NO_NODE {
             NodeResolution::Unavailable
         } else {
             NodeResolution::Resolved(n)
-        }
+        };
+        // task #1277 (review N6): this arm used to deliberately skip
+        // recording, with a note claiming recording "would break existing
+        // tests' expectations" — it would not: no existing test inspects
+        // the log after calling this function (`tests/mock_dispatch.rs`
+        // never calls it; `tests/node_resolution.rs` never drains after
+        // it). Skipping contradicted the `mock` module's documented
+        // "records every invocation" contract, so this call now records
+        // like every other public NUMA function. The recorded value is
+        // the RESOLVED outcome returned to the caller, mirroring
+        // `CurrentNode`'s "inner value is what was returned" convention.
+        mock::record(mock::MockCall::CurrentNodeResolution(resolution));
+        resolution
     }
     #[cfg(not(feature = "mock"))]
     {
@@ -396,7 +433,7 @@ pub fn current_node() -> Option<u32> {
 /// to `node` at the first page-fault after the call.
 ///
 /// On Windows: no-op. Windows has no post-reserve NUMA binding API; use
-/// [`reserve_on_node`] (with the `vmem-integration` feature) to bind at
+/// `reserve_on_node` (with the `vmem-integration` feature) to bind at
 /// reservation time via `VirtualAllocExNuma`.
 ///
 /// On macOS / miri / other: no-op.
