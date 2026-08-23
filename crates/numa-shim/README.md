@@ -84,24 +84,22 @@ let r = reserve_on_node(ps * 16, PAGE.max(ps), node).expect("OOM");
 
 Without this feature, `numa-shim` has **zero runtime dependencies**.
 
-### `mock`
+### `mock` (build-time cfg flag)
 
 Test-only: replaces the real platform NUMA syscalls with a recording stub
 (`numa_shim::mock`) so CI can assert the wrapping logic on any target,
-including macOS and miri, where no real NUMA API exists.
+including macOS and miri, where no real NUMA API exists. Enabled by the
+build-time cfg flag `numa_shim_mock` via `RUSTFLAGS="--cfg numa_shim_mock"`
+(task #1288, mirroring aligned-vmem's task #962), NOT a Cargo feature.
 
-**⚠ Cargo feature-unification hazard (task #726):** `mock` is a
-non-additive, backend-REPLACING feature, and Cargo unifies features across a
-build's whole dependency graph, not per edge. If ANY crate anywhere
-downstream of your build enables `numa-shim/mock` — including a sibling
-workspace member's own `[dev-dependencies]` — every other consumer in that
-same build silently gets the mock backend too, with no compile error and no
-warning. Enable this feature only in a leaf test/dev target — never in a
-library's own `[dependencies]`, and never in a shared `[dev-dependencies]`
-entry reachable from more than one build target in the same workspace. See
-the `mock` feature's own doc comment in `Cargo.toml` and the `mock` module's
-own rustdoc for the full reasoning (matching `aligned-vmem`'s identical
-`mock` feature, task #715).
+**Resolution:** This used to be a Cargo feature whose unification hazard was
+documented as an open risk (task #726). Resolved 2026-08-23 (task #1288) by
+converting it to the build-time `--cfg numa_shim_mock` flag. The cfg still
+applies build-graph-wide once set — what changed is WHO can set it: only the
+top-level build invoker via an explicit RUSTFLAGS/build-script choice, never a
+transitive dependency through Cargo's additive feature-unification, and never
+`--all-features`/docs.rs/`cargo add` by accident. Migration for 0.1.0
+`--features mock` consumers: see the CHANGELOG's "Removed" section.
 
 ## Public API
 

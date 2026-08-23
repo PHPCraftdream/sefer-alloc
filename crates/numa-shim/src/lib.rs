@@ -85,29 +85,30 @@ pub use aligned_vmem::Reservation;
 /// wrapping logic is correct on any target (including macOS and miri,
 /// where real NUMA syscalls are absent).
 ///
-/// Enabled by feature `mock`.  When enabled, the public NUMA functions
-/// dispatch into this module instead of the platform implementations.
+/// Enabled by the build-time cfg flag `numa_shim_mock` (`RUSTFLAGS="--cfg numa_shim_mock"`).
+/// When enabled, the public NUMA functions dispatch into this module instead of
+/// the platform implementations.
 ///
 /// The recording log is capped at [`mock::CALLS_CAP`] entries (task
 /// #726/#778) — see [`mock::drain`]'s own doc for what that means for a
 /// caller driving more calls than the cap without an intervening drain.
 ///
-/// # Cargo feature-unification hazard (task #726)
+/// # Why a `--cfg` flag, not a Cargo feature (task #1288, item 42)
 ///
-/// `mock` is a NON-ADDITIVE, backend-REPLACING feature, and Cargo unifies
-/// features across a build's WHOLE dependency graph, not per edge. If ANY
-/// crate anywhere downstream of your build enables `numa-shim/mock`
-/// (including a sibling workspace member's own `[dev-dependencies]`), every
-/// OTHER consumer in that SAME build silently gets the mock backend too —
-/// with no compile error and no warning. **Enable this feature only in a
-/// leaf test/dev target — never in a library's own `[dependencies]`, and
-/// never in a shared `[dev-dependencies]` entry reachable from more than one
-/// build target in the same workspace.** See the `mock` feature's own doc
-/// comment in `Cargo.toml` for the full reasoning and the stronger
-/// alternative (a `--cfg` flag instead of a Cargo feature) considered and
-/// deferred for this crate's first publish, matching `aligned-vmem`'s own
-/// task #715 decision for its identical `mock` feature.
-#[cfg(feature = "mock")]
+/// This module used to be gated on a `mock` Cargo feature. That was a hazard
+/// because Cargo unifies features across a build's WHOLE dependency graph, so
+/// any one target enabling `numa-shim/mock` silently replaced the real syscalls
+/// for every consumer sharing that graph (this repo's own root crate demonstrated
+/// it: `numa-aware-mock` forwarded to `numa-shim/mock`). Converted 2026-08-23
+/// (task #1288) mirroring aligned-vmem's task #962. The cfg still applies
+/// build-graph-wide once set — what changed is WHO can set it: only the top-level
+/// build invoker via an explicit RUSTFLAGS/build-script choice, never a
+/// transitive dependency via Cargo's additive feature-unification, and never
+/// `--all-features`/docs.rs/`cargo add` by accident. The flag is declared in this
+/// crate's `[lints.rust unexpected_cfgs]` in Cargo.toml so it produces no
+/// unexpected-cfg warnings. Removing the feature is semver-breaking against
+/// published 0.1.0 (see CHANGELOG "Removed").
+#[cfg(numa_shim_mock)]
 pub mod mock {
     use crate::NodeResolution;
     use core::cell::RefCell;
@@ -237,8 +238,8 @@ pub mod mock {
     ///
     /// R11-5: reentrancy-safe. The `Vec::push` inside the borrow guard
     /// allocates via the global allocator; if the global allocator IS
-    /// sefer-alloc under `numa-aware-mock` (which `--all-features` enables),
-    /// that allocation re-enters `current_node()` → `record()`, which would
+    /// sefer-alloc under `numa-aware-mock` (which requires BOTH the feature
+    /// AND `--cfg numa_shim_mock`), that allocation re-enters `current_node()` → `record()`, which would
     /// deadlock on a plain `borrow_mut()` (already borrowed). `try_with` +
     /// `try_borrow_mut` silently drops the recording on re-entry — the
     /// RETURNED value (from `current_node_slot`) is unaffected; only the
@@ -283,7 +284,7 @@ pub enum NodeResolution {
     /// `sched_getcpu(2)` was found in one of the cached sysfs
     /// `/sys/devices/system/node/nodeN/cpumap` files, on Windows when
     /// `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` succeed,
-    /// or under the `mock` feature when the scripted node is not
+    /// or under the `numa_shim_mock` cfg when the scripted node is not
     /// [`NO_NODE`]. Note that `Resolved(0)` can legitimately indicate a
     /// genuinely single-node system.
     Resolved(u32),
@@ -342,7 +343,7 @@ pub enum NodeResolution {
 /// subsequent calls are pure in-memory operations.
 #[must_use]
 pub fn current_node_resolution() -> NodeResolution {
-    #[cfg(feature = "mock")]
+    #[cfg(numa_shim_mock)]
     {
         let n = mock::current_node_slot();
         let resolution = if n == NO_NODE {
@@ -368,7 +369,7 @@ pub fn current_node_resolution() -> NodeResolution {
         mock::record(mock::MockCall::CurrentNodeResolution(resolution));
         resolution
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(numa_shim_mock))]
     {
         platform::current_node_resolution_impl()
     }
@@ -408,7 +409,7 @@ pub fn current_node_resolution() -> NodeResolution {
 /// equally cheap.
 #[must_use]
 pub fn current_node() -> Option<u32> {
-    #[cfg(feature = "mock")]
+    #[cfg(numa_shim_mock)]
     {
         let n = mock::current_node_slot();
         mock::record(mock::MockCall::CurrentNode(n));
@@ -417,7 +418,7 @@ pub fn current_node() -> Option<u32> {
         // (`u32::MAX`) produced `Some(NO_NODE)` -- violating this function's
         // own documented "returns `Option`, never the sentinel" guarantee,
         // and making every consumer's `None` branch impossible to exercise
-        // under `mock`, the very feature that exists so CI can assert this
+        // under `numa_shim_mock`, the very cfg that exists so CI can assert this
         // wrapping logic. Mirrored the real dispatch's remapping below.
         if n == NO_NODE {
             None
@@ -425,7 +426,7 @@ pub fn current_node() -> Option<u32> {
             Some(n)
         }
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(numa_shim_mock))]
     {
         let raw = platform::current_node_impl();
         if raw == NO_NODE {
@@ -504,7 +505,7 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 {
         return;
     }
-    #[cfg(feature = "mock")]
+    #[cfg(numa_shim_mock)]
     {
         mock::record(mock::MockCall::BindRange {
             base: base as usize,
@@ -512,7 +513,7 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
             node,
         });
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(numa_shim_mock))]
     {
         // SAFETY: caller guarantees [base, base+len) is a valid mapped range (see the `# Safety` contract above).
         platform::bind_range_impl(base, len, node);
@@ -556,7 +557,7 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
 #[cfg(feature = "vmem-integration")]
 #[must_use]
 pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation> {
-    #[cfg(feature = "mock")]
+    #[cfg(numa_shim_mock)]
     {
         mock::record(mock::MockCall::ReserveOnNode { size, align, node });
         // Still chain to aligned_vmem so the test can verify the Reservation works.
@@ -572,7 +573,7 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
         }
         Some(r)
     }
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(numa_shim_mock))]
     {
         platform::reserve_on_node_impl(size, align, node)
     }
@@ -586,7 +587,7 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
 // code organization, not a genuine platform requirement, and it meant the
 // crate's own most intricate parsing logic (the most-significant-word-first
 // cpumap bitmask format) could ONLY be exercised on a real Linux host. This
-// crate's own `mock` feature bypasses the whole `platform` module rather
+// crate's own `numa_shim_mock` cfg bypasses the whole `platform` module rather
 // than exercising it, so before this change there was no way to run these
 // functions on ANY host this project's CI or this session actually has.
 // Moving them here (still `#[doc(hidden)]`, not part of this crate's public
@@ -736,7 +737,7 @@ pub mod cpumap {
 // ---------------------------------------------------------------------------
 // Linux-only test-only forwarders (sanctioned pattern per CLAUDE.md)
 // ---------------------------------------------------------------------------
-#[cfg(all(target_os = "linux", not(miri), not(feature = "mock")))]
+#[cfg(all(target_os = "linux", not(miri), not(numa_shim_mock)))]
 #[doc(hidden)]
 pub mod linux {
     use super::NodeResolution;
@@ -746,9 +747,9 @@ pub mod linux {
     ///
     /// This is the same mapping logic used by `current_node_resolution()`,
     /// but with a manually-specified CPU index instead of calling
-    /// `sched_getcpu(2)`. It is gated on `not(feature = "mock")` because the
-    /// real platform implementation is not used when the mock feature is
-    /// enabled.
+    /// `sched_getcpu(2)`. It is gated on `not(numa_shim_mock)` because the
+    /// real platform implementation is not used when the `numa_shim_mock` cfg is
+    /// set.
     ///
     /// This function is safe to call with arbitrarily large CPU indices
     /// (e.g., 1_000_000) — `cpu_to_numa_node_checked` returns `None` when the
@@ -777,7 +778,7 @@ pub mod linux {
 // these platform impls, so every symbol here is (expectedly) unused. `mock`
 // exists precisely to bypass the real syscalls; the platform code still must
 // compile. Suppress dead-code only in that combination.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
     use super::{bind_range_impl_linux, NodeResolution, NO_NODE};
 
@@ -1069,7 +1070,7 @@ mod platform {
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 // Reached only from the platform module, which is itself unused under `mock`.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
     // task #722 (rust-intel audit §F1): DEVIATION -- this nodemask is a
     // single u64, so nodes >= 64 are silently skipped rather than bound;
@@ -1109,24 +1110,24 @@ unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
     not(miri),
     not(any(target_arch = "x86_64", target_arch = "aarch64"))
 ))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 unsafe fn bind_range_impl_linux(_base: *mut u8, _len: usize, _node: u32) {
     // mbind syscall number unknown for this arch; binding is skipped silently.
 }
 
 /// `MPOL_PREFERRED`: soft preferred-node policy; kernel falls back on pressure.
 #[cfg(all(target_os = "linux", not(miri)))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 const MPOL_PREFERRED: i32 = 1;
 
 /// Syscall number for `mbind(2)` on x86_64.
 #[cfg(all(target_os = "linux", not(miri), target_arch = "x86_64"))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 const SYS_MBIND: i64 = 237;
 
 /// Syscall number for `mbind(2)` on aarch64.
 #[cfg(all(target_os = "linux", not(miri), target_arch = "aarch64"))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 const SYS_MBIND: i64 = 235;
 
 // `syscall(2)` from glibc/musl — always present, does not require libnuma.
@@ -1144,7 +1145,7 @@ extern "C" {
     not(miri),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 unsafe fn libc_mbind(
     addr: *mut core::ffi::c_void,
     len: u64,
@@ -1175,7 +1176,7 @@ unsafe fn libc_mbind(
 // these platform impls, so every symbol here is (expectedly) unused. `mock`
 // exists precisely to bypass the real syscalls; the platform code still must
 // compile. Suppress dead-code only in that combination.
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
     use super::{NodeResolution, NO_NODE};
 
@@ -1524,7 +1525,7 @@ mod platform {
 // explicit macOS+miri CI job was added. If you ever touch this block or the
 // `#[cfg(miri)]` block below, keep them mutually exclusive.
 #[cfg(all(target_os = "macos", not(miri)))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
     use super::{NodeResolution, NO_NODE};
 
@@ -1553,7 +1554,7 @@ mod platform {
 
 // ---- miri stub (any OS under miri) ----------------------------------------
 #[cfg(miri)]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
     use super::{NodeResolution, NO_NODE};
 
@@ -1581,7 +1582,7 @@ mod platform {
 
 // ---- Fallback: unsupported platform (e.g. FreeBSD, other Unix) ------------
 #[cfg(not(any(target_os = "linux", windows, target_os = "macos", miri,)))]
-#[cfg_attr(feature = "mock", allow(dead_code))]
+#[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
     use super::{NodeResolution, NO_NODE};
 

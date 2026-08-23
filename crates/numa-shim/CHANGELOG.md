@@ -16,13 +16,10 @@ request. At release time, consolidate this section under a dated
 
 - **`mock` feature's Cargo-unification hazard** (F2 of the 2026-08-23
   publication audit, `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`;
-  `docs/correctness-open-items/ACTIVE.md` item 42; task #1264): before the
-  next release the owner must pick between (a) converting the seam to a
-  build-time `--cfg` flag (semver-breaking, rides the already-breaking
-  0.2.0), (b) a separate unpublished test-support crate, or (c) keeping the
-  feature with explicit risk acceptance. Recommendation written, decision
-  NOT yet made — see item 42's "RECOMMENDATION (2026-08-23, task #1264)"
-  section. Resolve this heading before cutting the release section.
+  `docs/correctness-open-items/ACTIVE.md` item 42; task #1264): DECISION MADE
+  2026-08-23 (task #1288) — option (a): converted to the build-time `--cfg numa_shim_mock`
+  flag, mirroring aligned-vmem's task #962. See the `### Removed` section below for the
+  breaking-change entry and migration note.
 - **Semver policy for the two `#[doc(hidden)]` test-only modules** —
   `pub mod cpumap` (parser helpers) and `pub mod linux`
   (`dbg_node_resolution_for_cpu`); audit finding F5, scope-expanded by a
@@ -114,19 +111,20 @@ request. At release time, consolidate this section under a dated
 
 ### Removed
 
-Three changes already in this tree are **semver-breaking against published
+Four changes in this tree are **semver-breaking against published
 0.1.0's `--features mock` surface** and are recorded here as a group (task
 #1274, finding N1 of the tenth independent review,
 `docs/reviews/2026-08-23-183220-numa-shim-publication-readiness-review-oh.md`).
-Two were made under `53b3ca2`'s stated premise "all decided now, before this
+Three were made under `53b3ca2`'s stated premise "all decided now, before this
 crate's first crates.io publish" — which was false: 0.1.0 was published
 2026-06-29, six weeks earlier. Task #1263's premise correction covered only
 the `mock` Cargo-feature decision (decision 5 of 5 in that commit), not
 these API breaks — that remainder is recorded on
-`docs/correctness-open-items/ACTIVE.md` item 42. Under Cargo's 0.x rules a
-release containing any of the three cannot be `0.1.1`; which version this
-becomes is the still-open F1 owner decision (task #1262) — this section
-records what already broke, independent of that choice.
+`docs/correctness-open-items/ACTIVE.md` item 42. A fourth breaking change
+was added by task #1288 (2026-08-23). Under Cargo's 0.x rules a release
+containing any of these cannot be `0.1.1`; which version this becomes is
+the still-open F1 owner decision (task #1262) — this section records what
+already broke, independent of that choice.
 
 - **BREAKING — `mock::MockCall` is now `#[non_exhaustive]`** (commit
   `dbfeca3`, 2026-07-19, three weeks after the 0.1.0 publish): a 0.1.0
@@ -147,6 +145,18 @@ records what already broke, independent of that choice.
   in-repo the moment it landed (`tests/mock_dispatch.rs`'s construction and
   field-pattern tests both failed to compile until switched to `matches!`
   with `..`), which is the downstream experience by demonstration.
+- **BREAKING — the `mock` Cargo feature itself is removed** (task #1288,
+  2026-08-23, item 42 option (a), mirroring aligned-vmem's task #962): the
+  recording mock backend is now enabled ONLY by the build-time cfg flag
+  `numa_shim_mock` (`RUSTFLAGS="--cfg numa_shim_mock"`). The cfg still
+  applies build-graph-wide once set; what changed is WHO can set it — only
+  the top-level build invoker via an explicit RUSTFLAGS/build-script choice,
+  never a transitive dependency through Cargo's additive feature-unification,
+  and never `--all-features`/docs.rs/`cargo add` by accident. Migration for a
+  0.1.0 `--features mock` consumer (one line): replace `cargo test --features numa-shim/mock`
+  (or `--features mock` inside the crate) with `RUSTFLAGS="--cfg numa_shim_mock" cargo test`
+  — the `numa_shim::mock` module, its API, and the dispatch behavior are unchanged;
+  only the activation mechanism moved.
 
 ## 0.1.0 - 2026-06-29
 

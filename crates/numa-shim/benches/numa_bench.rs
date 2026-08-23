@@ -3,29 +3,50 @@
 //!
 //! Run:
 //! ```text
-//! cargo bench -p numa-shim --bench numa_bench --features mock -- --calibrate 1
-//! cargo bench -p numa-shim --bench numa_bench --features mock
+//! RUSTFLAGS="--cfg numa_shim_mock" cargo bench -p numa-shim --bench numa_bench -- --calibrate 1
+//! RUSTFLAGS="--cfg numa_shim_mock" cargo bench -p numa-shim --bench numa_bench
 //! ```
 //!
 //! All workloads use the `mock` backend for deterministic runs on any host
-//! (including systems without real NUMA hardware). The `mock` feature REPLACES
-//! the real platform backend, so `bind_range` is safe to call with dummy
-//! pointers (the mock never dereferences them).
-
-#![cfg(feature = "mock")]
-
-use std::hint::black_box;
-
-use bench_scale_tool::Harness;
-use numa_shim::{bind_range, current_node, mock, NO_NODE};
-
-/// Page-sized buffer for bind_range workloads.
-///
-/// The mock backend never touches this memory, but we pass a valid allocation
-/// to keep the test honest — the real backend would require it.
-const PAGE: usize = 4096;
+//! (including systems without real NUMA hardware). The backend is enabled by
+//! the build-time cfg `numa_shim_mock` (task #1288), no longer a Cargo feature.
+//! The mock backend REPLACES the real platform backend, so `bind_range` is safe
+//! to call with dummy pointers (the mock never dereferences them).
 
 fn main() {
+    #[cfg(not(numa_shim_mock))]
+    {
+        // Fail-loud guard (task #1288): this bench measures the `numa_shim_mock`
+        // recording backend, which is no longer a Cargo feature — it is compiled
+        // in only by `RUSTFLAGS="--cfg numa_shim_mock"`. A runtime panic (rather
+        // than `compile_error!`) so that every REAL-backend `cargo test` /
+        // `cargo clippy --all-targets` row — which BUILD this bench target but
+        // never RUN it — stays green; the only invocation that reaches this
+        // panic is a `cargo bench` run without the cfg, which must fail loudly
+        // rather than report a vacuous pass (the task #1070 "Breakage B" class).
+        panic!(
+            "numa_bench measures the numa-shim mock backend, but this binary was \
+             built WITHOUT `--cfg numa_shim_mock`. Rerun with:\n  \
+             RUSTFLAGS=\"--cfg numa_shim_mock\" cargo bench -p numa-shim --bench numa_bench"
+        );
+    }
+    #[cfg(numa_shim_mock)]
+    run();
+}
+
+#[cfg(numa_shim_mock)]
+fn run() {
+    use std::hint::black_box;
+
+    use bench_scale_tool::Harness;
+    use numa_shim::{bind_range, current_node, mock, NO_NODE};
+
+    /// Page-sized buffer for bind_range workloads.
+    ///
+    /// The mock backend never touches this memory, but we pass a valid allocation
+    /// to keep the test honest — the real backend would require it.
+    const PAGE: usize = 4096;
+
     let mut h = Harness::new("numa_bench", env!("CARGO_MANIFEST_DIR"));
 
     // ── current_node() ─────────────────────────────────────────────────────

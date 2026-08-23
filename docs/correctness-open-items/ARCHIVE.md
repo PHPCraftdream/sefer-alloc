@@ -1531,3 +1531,160 @@ pre-split text.)*
     - **Verification (before/after on the same working tree):** OLD code, clean tree: `scanned 555 file(s)`; OLD code + one untracked gitignored `tmp/peek.rs` (content-free) added: `scanned 556 file(s)` — the pollution reproduced on this host (the reporting host's 558 = its 555 tracked + its 3 tmp files); NEW code with `tmp/peek.rs` still present: `scanned 555 file(s) (555 tracked .rs in the index...)` = `git ls-files -- '*.rs' | wc -l` exactly, every counter unchanged (213 call sites, 52 candidate args, both per-flow partitions identical), ALL GREEN. Demo file removed afterwards; clean-tree re-run identical.
     - **INFO 14 recorded here (same defect class — scan-count provenance), decision: no amendment, non-retroactive:** `9681a21`'s body cites "scanned 554 file(s)". Measured against the commit itself (`git ls-tree -r --name-only 9681a21 | grep -c '\.rs$'` = 554), the figure coincides exactly with that commit's tracked `.rs` count, so a clean clone at that commit reproduces it today; HEAD's 555 differs by exactly the one `.rs` file committed after it (`tests/decomp_hooks_forced_page.rs`). What the commit does NOT record is the scan-set identity (clean vs dirty working tree at measurement time) — under the old walker the same printed figure could equally have come from a dirty tree (e.g. 551 tracked + 3 untracked), and that ambiguity is unresolvable post hoc. The verdict is unaffected (the counter-partition fix is arithmetically self-consistent and re-verified green on the current tree). The commit is NOT amended (history non-retroactive); this card plus the tracked-tree fix close the class going forward.
     - **Evidence:** task #1088's diff to `scripts/verify-vmem-page-constant-call-sites.mjs`; `git ls-tree -r --name-only 9681a21 | grep -c '\.rs$'`; `git diff --name-status 9681a21..HEAD -- '*.rs'`.
+
+42. **`numa-shim`'s `mock` Cargo-feature-unification hazard remains a Cargo
+    feature (deliberately deferred) — the aligned-vmem half of this item is
+    CLOSED, see "Recently resolved" below.** (Filed 2026-08-09, task
+    #776/F13, round-closing review of the aligned-vmem round; moved into
+    the `[A]` tier 2026-08-14, task #934/C-9; aligned-vmem half resolved
+    2026-08-16, task #962 — this card now covers ONLY the numa-shim half.)
+
+    - **Status:** OPEN, not urgent — numa-shim has not yet had its first
+      crates.io publish (task #657, itself blocked), so the "free to convert
+      only until first publish" deadline that made the aligned-vmem half
+      URGENT has not fired for numa-shim yet. `crates/numa-shim/Cargo.toml`'s
+      `mock = []` feature retains the same Cargo-feature-unification hazard
+      the aligned-vmem half had (documented in its own `Cargo.toml` comment,
+      explicitly cross-referencing the aligned-vmem conversion as proof the
+      `--cfg` approach works — see task #962's own commit).
+    - **Next trigger:** settle the `--cfg` conversion decision for numa-shim
+      before its own first publish (task #657) — same maintainer call, same
+      mechanical shape (Cargo.toml + cfg-gated call sites + CI rows) as the
+      aligned-vmem conversion task #962 just completed, which is now the
+      reference implementation to follow.
+    - **Evidence:** `crates/numa-shim/Cargo.toml`'s `mock = []` feature and its
+      own doc comment (updated by task #962 to cite the aligned-vmem
+      precedent); `crates/aligned-vmem/Cargo.toml`'s `[lints.rust] unexpected_cfgs`
+      + the removed `mock = []` (the pattern to mirror).
+    - **CORRECTION (2026-08-23, task #1263):** this card's premise that
+      numa-shim "has not yet had its first crates.io publish (task #657,
+      itself blocked)" is FALSE — numa-shim 0.1.0 was published to crates.io
+      on 2026-06-29 17:36:48 UTC (crates.io API; also stated by
+      crates/numa-shim/CHANGELOG.md). The "free to convert only until first
+      publish" window has therefore ALREADY closed: removing or narrowing
+      the `mock` feature is now a semver-breaking change to published API,
+      not a pre-publication cleanup. The deferral rationale above is
+      historical text kept per the history-is-not-rewritten convention; the
+      real decision point is now the 0.2.0 boundary (or a purely additive
+      cfg alongside the existing feature). See task #1263 and the corrected
+      comment in crates/numa-shim/Cargo.toml.
+    - **RECOMMENDATION (2026-08-23, task #1264 — F2 of
+      `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`
+      re-raised this card; task #1264 is docs-only research, no code was
+      changed):** the audit asks the owner to settle, before the next
+      publish, whether the `mock` seam becomes a build-time cfg, moves to a
+      test-support crate, or stays a Cargo feature as an explicit risk
+      acceptance. What follows is a recommendation with THIS crate's
+      concrete numbers — the decision itself remains the owner's (breaking
+      changes are an owner call per CLAUDE.md). One fact changes the
+      calculus since item 42 was last weighed: **the next release is
+      already 0.2.0-shaped and already breaking** —
+      `crates/numa-shim/CHANGELOG.md`'s Unreleased "Changed" section bumps
+      `aligned-vmem` 0.1 → 0.2 with `reserve_on_node`'s return type moving
+      with it, and the audit's own F1 recommends shipping the next release
+      as 0.2.0. The "free until first publish" window that #1263's
+      correction said had closed is therefore open ONE more time, in
+      modified form: removing `mock` rides the already-breaking 0.2.0 at
+      zero MARGINAL semver cost.
+      - **(a) build-time `--cfg numa_shim_mock` (mirror task #962, commit
+        `18c29e4`):** the proven in-repo template — aligned-vmem's
+      conversion was 13 files, +245/−212, 46 cfg sites, with a ±136-line
+      ci.yml treatment. For numa-shim the concrete shape: 27
+      `feature = "mock"` cfg sites across 5 files (22 lines in
+      `src/lib.rs`: the `pub mod mock` gate at `:97`, four mock/real
+      dispatch pairs inside `current_node_resolution` `:311`/`:323`,
+      `current_node` `:363`/`:380`, `bind_range` `:459`/`:467`,
+      `reserve_on_node` `:511`/`:527`, the doc-hidden Linux forwarder at
+      `:691`, and 11 `allow(dead_code)` `cfg_attr` sites; plus
+      `tests/mock_dispatch.rs`, `tests/node_resolution.rs`,
+      `tests/node_resolution_linux.rs`, `benches/numa_bench.rs`);
+      `crates/numa-shim/Cargo.toml` drops `mock = []`, adds
+      `[lints.rust] unexpected_cfgs` (mirroring
+      `crates/aligned-vmem/Cargo.toml:179`), and must resolve
+      `[[bench]] numa_bench`'s `required-features = ["mock"]` — a bench
+      cannot require a cfg flag; post-#962 `vmem_bench` carries no
+      required-features, so the bench compiles under both arms or gets an
+      internal cfg gate. The part #962 did NOT have: numa-shim's mock has
+      a CROSS-CRATE consumer — the root crate's `numa-aware-mock` (root
+      `Cargo.toml:721`) gates 8 root test files (6 of them
+      `use numa_shim::mock;`). So the root diff is: `numa-aware-mock =
+      ["numa-aware"]` (keep the gate feature, stop forwarding the
+      soon-gone `numa-shim/mock`), each of the 8 files' single cfg site
+      re-gated to also require the cfg flag (so plain `--all-features`
+      builds SKIP them silently instead of failing on the missing
+      `numa_shim::mock` module — the exact semantics aligned-vmem's own
+      tests adopted with `#![cfg(aligned_vmem_mock)]`),
+      `'cfg(numa_shim_mock)'` added to root `Cargo.toml:104`'s check-cfg
+      list, and explicit `RUSTFLAGS="--cfg numa_shim_mock"` steps on the
+      CI rows that want mock coverage (`ci.yml` `numa-shim-mock`
+      `:2622-2623`, `numa-shim-windows` `:2652-2653`, `numa-shim-macos`
+      `:2675`, plus dedicated rows replacing the mock coverage today's
+      `--all-features` clippy rows at `:2632`/`:2661` reach only
+      incidentally). Estimate: ~15 files, ~35 gate edits — a comparable
+      one-task size to #962, against a proven pattern. Semver: breaking
+      (removes 0.1.0's published `mock` feature), covered by the 0.2.0
+      bump the release already needs. A staged variant (a′) exists if the
+      owner wants zero break at 0.2.0: land the cfg ADDITIVELY
+      (`any(feature = "mock", numa_shim_mock)` per site), document `mock`
+      as deprecated, remove it at 0.3.0 — the additive path the corrected
+      `crates/numa-shim/Cargo.toml` comment itself names — at the cost of
+      uglier gate expressions and the hazard surviving through 0.2.x.
+      - **(b) separate unpublished test-support crate:** for THIS crate not
+        a file move but an architecture change: the mock's value is that it
+        sits INSIDE the dispatch arms of
+        `current_node`/`current_node_resolution`/`bind_range`/
+        `reserve_on_node` (`src/lib.rs:311-527`), so CI asserts the REAL
+        wrapping logic. A separate crate can reach that only via new
+        injection surface on numa-shim (runtime backend indirection or
+        `#[doc(hidden)]` hooks) — i.e. NEW published API surface, the
+        opposite of what the audit asks — or by duplicating the wrapping
+        logic in the test crate, which then tests a copy rather than the
+        shipped code. Larger diff than (a), strictly smaller benefit; not
+        recommended.
+      - **(c) keep the feature, record explicit risk acceptance:** zero
+        code diff — this card plus a CHANGELOG line IS the record. The risk
+        accepted, concretely: any downstream graph in which one target
+        enables `numa-shim/mock` silently swaps real NUMA syscalls for the
+        recording stub for every other consumer in that graph — this repo
+        itself demonstrates how easily that happens (every root
+        `--all-features` build enables it via `numa-aware-mock`); docs.rs
+        is protected only by the hand-maintained explicit feature list
+        (`crates/numa-shim/Cargo.toml:27-28`), and `cargo doc
+        --all-features` anywhere still renders the mock as reference API.
+        The audit pre-commits to treating a warning as insufficient for a
+        confident GO (F2: «простого README-предупреждения недостаточно» — a
+        README warning alone is not enough), so (c) means knowingly
+        shipping the next release with F2 still an open P1.
+      - **Recommended: (a) at the 0.2.0 boundary.** The semver objection —
+        the only reason numa-shim's conversion was deferred while
+        aligned-vmem's was executed — no longer applies, because 0.2.0 is
+        already breaking for `vmem-integration` users regardless; the
+        pattern is proven in-repo at nearly this exact scale; and (a) is
+        the only option that structurally closes F2 rather than documenting
+        it. Fallback if the owner judges the diff too large for the
+        pre-release window: staged (a′). (c) is acceptable only as a
+        conscious decision to keep F2 open at release. **This
+        recommendation does NOT close this card — the owner's recorded
+        decision does; until then item 42 stays OPEN with this section as
+        the standing briefing.**
+    - **CORRECTION SCOPE NOTE (2026-08-23, task #1274, tenth review N1):**
+      task #1263's premise correction above covered only decision (5) of
+      `53b3ca2` — the `mock` Cargo FEATURE. The same commit's "before this
+      crate's first crates.io publish" premise was equally false for its
+      decisions (1) and (4), which — with `dbfeca3`'s 2026-07-19 enum-level
+      `#[non_exhaustive]` on `MockCall` from the same already-published
+      window — are THREE semver-breaking changes to published 0.1.0's
+      `--features mock` surface: `CALLS`/`CURRENT_NODE_SLOT` `pub` →
+      `pub(crate)` (item removal), `#[non_exhaustive]` on `MockCall`
+      (breaks exhaustive match), and `#[non_exhaustive]` on the
+      `BindRange`/`ReserveOnNode` variants (breaks struct-literal
+      construction / exhaustive field patterns). Recorded in
+      `crates/numa-shim/CHANGELOG.md`'s Unreleased `### Removed` section by
+      task #1274. Consequence: the next release cannot be `0.1.1`, which
+      strengthens this card's recommendation (a) — 0.2.0 is already
+      breaking on three additional axes beyond the `aligned-vmem` 0.2
+      return-type move. Full finding: N1 of
+      `docs/reviews/2026-08-23-183220-numa-shim-publication-readiness-review-oh.md`.
+
+
+  **CLOSED 2026-08-23, task #1288** (option (a) of the task #1264 recommendation, executed): `mock` is no longer a Cargo feature — the recording mock backend is compiled in only by the build-time `--cfg numa_shim_mock` flag (`RUSTFLAGS="--cfg numa_shim_mock"`), mirroring aligned-vmem's task #962 conversion (item 42's already-closed aligned-vmem half, RESOLVED.md entry 42a). The cfg still applies build-graph-wide once set; what changed is WHO can set it: only the top-level build invoker via an explicit RUSTFLAGS/build-script choice, never a transitive dependency through Cargo's additive feature-unification, and never `--all-features`/docs.rs/`cargo add` by accident. Semver: breaking against published 0.1.0's `--features mock` surface — recorded as the fourth breaking change in `crates/numa-shim/CHANGELOG.md`'s Unreleased "Removed" section (rides the same already-breaking next release as the three task-#1274 changes; the version number itself remains the open F1 owner decision, task #1262). Cross-crate consumers migrated: root `numa-aware-mock` is now a marker feature (`["numa-aware"]`); 7 of the 8 root test files mentioning `numa-aware-mock` were re-gated to also require `numa_shim_mock` (the 8th, r12_1_directory_scan_no_aliasing, mentions the feature only in a still-valid doc comment and needed no change) (6 run under the cfg, alloc_core_reentrancy SKIPS under the cfg); ci.yml rows converted with task-#1101-style sentinel greps. Commit: the task #1288 commit on branch numa-shim/1288-mock-cfg-migration.

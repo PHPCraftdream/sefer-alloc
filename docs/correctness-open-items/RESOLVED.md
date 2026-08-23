@@ -29,6 +29,8 @@ item number unchanged), followed by the relocation note; the full byte-identical
 narrative lives in `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` § "Recently resolved —
 full closure trail".
 
+- 42. **`numa-shim`'s `mock` Cargo-feature-unification hazard (item 42's numa-shim half)** — **CLOSED** (2026-08-23, task #1288, option (a) of the task #1264 recommendation): `mock` converted from a Cargo feature to the build-time `--cfg numa_shim_mock` flag, mirroring aligned-vmem's task #962. — full closure narrative (byte-identical, unmodified) in `docs/correctness-open-items/ARCHIVE.md` § "Recently resolved — full closure trail".
+
 - 77. **[M1, record correction — closed on filing] Commit bodies `d58bd67` (task #1086) and `a988e51` (task #1085) both claim a below-real-page skip treatment that only TWO of the THREE forced-page test files actually received: the record, not the code, was wrong.** (Filed and corrected 2026-08-18, task #1096/finding M1.) — full closure narrative (byte-identical, unmodified) moved to `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure trail" (R34-24 split, task #1109, 2026-08-18).
 
 - 51. **`aligned-vmem`'s `#[cfg(unix)]` code was never compiled by the standard LOCAL verification matrix on the campaign's Windows host** (filed round 8, task #904, finding UC5 of `docs/reviews/2026-08-13-aligned-vmem-round8-closing-review.md`) — **CLOSED** by task #1059, option (a): a permanent cross-target gate in `npm run check`. **Reopened and re-closed by task #1071 — see the CORRECTION block below.** — full closure narrative (byte-identical, unmodified) moved to `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure trail" (R34-24 split, task #1109, 2026-08-18).

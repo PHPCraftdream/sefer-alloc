@@ -6,9 +6,9 @@
 //! `docs/PHASE_NUMA_DESIGN.md` §4.1 for the design note this test enforces.
 //!
 //! Mechanism: drive `HeapRegistry::claim` / `recycle` / `claim` against
-//! `numa-shim`'s `mock` backend (gated on the `numa-aware-mock` feature,
-//! which enables `numa-shim/mock` for deterministic scripting of what
-//! `current_node()` returns). Without the `invalidate_numa_node_cache` call
+//! `numa-shim`'s `mock` backend (enabled by the build-time cfg
+//! `numa_shim_mock` — task #1288; the `numa-aware-mock` feature is this crate's
+//! marker). Without the `invalidate_numa_node_cache` call
 //! in `HeapRegistry::claim`, the second claim would inherit the first
 //! claim's cached value (a stale node from a now-recycled slot) and never
 //! re-query — the exact bug §4.1's "slot-recycle correctness point" exists
@@ -25,11 +25,15 @@
 //! claim for end-to-end coverage.
 //!
 //! Build/run:
-//!   cargo test --features "numa-aware-mock alloc-global" --test numa_cache_invalidation
+//!   RUSTFLAGS="--cfg numa_shim_mock" cargo test --features "numa-aware-mock alloc-global internals" --test numa_cache_invalidation
 
+// The `numa_shim_mock` conjunct means plain `--all-features` builds SKIP this
+// file cleanly (empty binary) instead of failing on the absent `numa_shim::mock`
+// module — mock coverage runs only where the cfg is explicitly set (task #1288).
 #![cfg(all(
     all(feature = "numa-aware-mock", feature = "alloc-global"),
-    feature = "internals"
+    feature = "internals",
+    numa_shim_mock
 ))]
 
 use std::alloc::Layout;

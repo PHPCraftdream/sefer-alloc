@@ -1232,6 +1232,19 @@ jobs:
       - name: test (--all-features)
         if: ${{ !cancelled() }}
         run: cargo test --all-features --no-fail-fast
+      # task #1288: `--all-features` above no longer activates numa-shim's mock
+      # backend (the `mock` Cargo feature is gone — replaced by the build-time
+      # `--cfg numa_shim_mock`), so the six `numa-aware-mock` mock-gated root
+      # test files (numa_cache_invalidation, numa_periodic_refresh, the
+      # segment_directory_numa* family) SKIP cleanly under it. This row is
+      # their dedicated coverage: all features PLUS the cfg flag, which is
+      # exactly what the old `--all-features` row ran them under via feature
+      # unification. The grep sentinel (task #1101 pattern) proves the mock
+      # files actually RAN — without the cfg this row would be green-and-dead.
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo test --all-features --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test cached_node_invalidates_across_slot_recycle ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+        shell: bash
 
   test-feature-isolation:
     # R13-5 (task #275, P1): CI only ever tested `production` and
@@ -1408,12 +1421,10 @@ jobs:
           --test r14_4_promotion_move_leg_reduction
           --test r14_4_promotion_feature_off_non_disturbance
       # R29-14 (P2, sourced from the 2026-07-29 "oh-acceleration-code-project"
-      # readonly review, §3.3): `--all-features` (the broadest per-PR clippy/
-      # test coverage) enables `numa-aware-mock`, which forces `numa-shim` to
-      # compile its `#[cfg(feature = "mock")]` dispatch arms instead of the
-      # real OS integration (`mbind(2)` on Linux, `VirtualAllocExNuma` on
-      # Windows) gated `#[cfg(not(feature = "mock"))]` in
-      # `crates/numa-shim/src/lib.rs`. The shim crate itself IS tested on real
+      # readonly review, §3.3): post-#1288 `--all-features` no longer forces anything
+      # in numa-shim (the mock is a `--cfg numa_shim_mock` build flag; `numa-aware-mock`
+      # no longer forwards to it), so the real (non-mock) cfg arm is what
+      # `--all-features` compiles everywhere. The shim crate itself IS tested on real
       # kernels per-PR (`numa-shim-windows`/`numa-shim-macos`, `-p numa-shim`
       # without `mock`), but that covers only the shim IN ISOLATION — not
       # whether `sefer-alloc` built with `numa-aware` and WITHOUT
@@ -1428,7 +1439,7 @@ jobs:
       # needing NUMA-capable hardware to execute it (confirmed via `cargo
       # metadata --features "production numa-aware"`: `numa-shim`'s resolved
       # feature set is `["default", "vmem-integration"]` — `mock` is absent,
-      # unlike under `--all-features` where it is present). Folded into this
+      # and the cfg cannot be set by features at all). Folded into this
       # job (not a new one) because it is already the home for narrow
       # feature-COMBINATION checks on `ubuntu-latest`, including one
       # build-only row just above (`build (--features "alloc-global
@@ -1897,19 +1908,11 @@ jobs:
       - run: cargo check -p aligned-vmem --all-features
       - run: cargo test -p aligned-vmem --no-run --all-features
       # numa-shim-specific MSRV checks (task #1282/E8, item 102 — the same
-      # class item 88/task #1173 closed for aligned-vmem above): the
+      # class item 88/task #1173 closed for aligned-vmem above): post-#1288 the
       # workspace-root `--all-features` steps at the top of this job reach
-      # numa-shim only through `numa-aware-mock` -> `numa-shim/mock` (root
-      # Cargo.toml:721) plus the root pin's own `features =
-      # ["vmem-integration"]` (`:914`), so the `cfg(not(feature = "mock"))`
-      # arms of all four public functions and the entire `pub mod linux`
-      # module are never compiled on the pinned 1.88 toolchain, and
-      # numa-shim's own tests/benches/dev-dependency graph is never built
-      # at 1.88 at all. The plain `cargo check` row is the exact
-      # default-feature configuration `cargo add numa-shim` produces (its
-      # `default` feature set is empty — no `mock`, no `vmem-integration`);
-      # the `--all-features` test row builds the full test +
-      # dev-dependency graph under 1.88.
+      # numa-shim with `vmem-integration` only and the real arms are ALWAYS
+      # compiled (mock is a build flag, not a feature); the two rows keep their
+      # value (default-feature cargo-add config + full test/dev graph at 1.88).
       - run: cargo check -p numa-shim
       - run: cargo test -p numa-shim --no-run --all-features
 
@@ -2636,10 +2639,10 @@ jobs:
         with:
           components: clippy
       # task #1276 (N2, 2026-08-23 numa-shim publication-readiness review):
-      # the REAL Linux backend, no `mock`. The two `mock` test steps below
-      # and the `--all-features` clippy row turn `mock` on, so until this
-      # step no per-PR CI job ran `cargo test -p numa-shim` on Linux
-      # without it:
+      # the REAL Linux backend, no `mock`. The two `mock` test steps below now
+      # set the build-time cfg `numa_shim_mock` via RUSTFLAGS, and `--all-features`
+      # no longer turns `mock` on at all (task #1288). Until this step no per-PR
+      # CI job ran `cargo test -p numa-shim` on Linux without it:
       # tests/smoke.rs's `sched_getcpu` + sysfs cpumap reader + real
       # mbind(2) syscall coverage never ran on the one OS where those are
       # real, and `pub mod linux` + tests/node_resolution_linux.rs (gated
@@ -2650,8 +2653,26 @@ jobs:
       # mock-only: the id is cited by name in CHANGELOG.md,
       # docs/correctness-open-items/*, and several review docs.
       - run: cargo test -p numa-shim
-      - run: cargo test -p numa-shim --features mock
-      - run: cargo test -p numa-shim --features "mock vmem-integration"
+      # task #1288: `mock` is no longer a Cargo feature — the mock backend is
+      # compiled in only by the build-time cfg `numa_shim_mock` (RUSTFLAGS).
+      # tests/mock_dispatch.rs and tests/node_resolution.rs are both
+      # `#![cfg(numa_shim_mock)]`-gated at the top level, so a typo'd cfg
+      # compiles them to ZERO tests with exit 0 (green-and-dead) — the greps
+      # require one named test per FILE (task #1101 sentinel pattern; the
+      # vacuous-green hazard this guards against is task #1070 "Breakage B").
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-mock.log"
+          grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-mock.log"
+          grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-mock.log"
+        shell: bash
+      # The same cfg plus `vmem-integration` (still a real Cargo feature), so
+      # mock_dispatch.rs's `reserve_on_node` arms compile and run. Same
+      # self-verifying grep (the sentinel test only exists under BOTH the cfg
+      # and the feature).
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-mock-vmem.log"
+          grep -F "test reserve_on_node_chains_and_records ... ok" "$RUNNER_TEMP/numa-shim-mock-vmem.log"
+        shell: bash
       # task #1282 (E2, 2026-08-23 publication-readiness review, item 102):
       # the REAL Linux `reserve_on_node` path — `platform::reserve_on_node_impl`
       # in crates/numa-shim/src/lib.rs, `aligned_vmem::reserve_aligned` +
@@ -2670,19 +2691,26 @@ jobs:
       # coverage anywhere in this file -- the four numa-shim-* jobs all ran
       # cargo test only, so a clippy regression here (e.g. the
       # GetCurrentProcess-unused-in-default-features bug F9 itself fixed)
-      # had zero CI signal. `--all-features` here is the Linux-cross-
-      # relevant combination; DEFAULT features is checked on
-      # numa-shim-windows below, since Windows is this crate's own primary
-      # dev platform for its Windows-only code.
+      # had zero CI signal. `--all-features` here is now real-backend-only
+      # (the mock is a build cfg, not a feature, so --all-features cannot
+      # reach it); DEFAULT features is checked on numa-shim-windows below,
+      # since Windows is this crate's own primary dev platform for its
+      # Windows-only code.
       - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
+      # task #1288: `--all-features` above can no longer reach the mock (it is
+      # not a Cargo feature), so the mock arm gets this dedicated row — the
+      # exact treatment aligned-vmem's conversion (task #962) gave its own mock
+      # clippy coverage.
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo clippy -p numa-shim --all-targets -- -D warnings
       # task #1276 (N3, same review): numa-shim had ZERO rustdoc CI
       # coverage while its Cargo.toml pins a docs.rs feature set
       # (`vmem-integration`) narrower than `--all-features`. Per CLAUDE.md's
       # doc-lint rule (task #1142, the aligned-vmem-gates pattern above)
       # both rows are required because neither subsumes the other:
-      # `--all-features` also turns on the backend-REPLACING `mock` feature
-      # that docs.rs never builds with, while the derived row below builds
-      # exactly what docs.rs renders.
+      # `--all-features` is now exactly the docs.rs set (the crate's only
+      # remaining opt-in feature is `vmem-integration`; the mock is unreachable
+      # via features entirely), while the derived row below builds exactly
+      # what docs.rs renders.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --all-features --no-deps
       - name: docs.rs feature-set doc build (mirrors package.metadata.docs.rs, not --all-features)
         run: |
@@ -2710,8 +2738,11 @@ jobs:
           components: clippy
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
-      - run: cargo test -p numa-shim --features mock
-      - run: cargo test -p numa-shim --features "mock vmem-integration"
+      # task #1288: mock via the build-time cfg (see the numa-shim-mock job's
+      # sentinel rows; plain conversion here — the Linux job is the primary
+      # mock-coverage home).
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration
       # task #778 (round-closing review, F9): DEFAULT features is what
       # `cargo add numa-shim` produces for a downstream consumer -- checked
       # here (Windows, this crate's primary platform) rather than on the
@@ -2720,6 +2751,10 @@ jobs:
       # otherwise never see exercised.
       - run: cargo clippy -p numa-shim --all-targets -- -D warnings
       - run: cargo clippy -p numa-shim --all-features --all-targets -- -D warnings
+      # task #1288: `--all-features` above can no longer reach the mock (it is
+      # not a Cargo feature), so the mock arm gets this dedicated row — the
+      # exact treatment the numa-shim-mock job's own mock clippy row gives it.
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo clippy -p numa-shim --all-targets -- -D warnings
 
   numa-shim-macos:
     # macOS NUMA support is a documented no-op (no public NUMA API), but
@@ -2733,7 +2768,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
-      - run: cargo test -p numa-shim --features mock
+      # task #1288: mock via the build-time cfg
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim
 
   numa-shim-macos-miri:
     # Publish-readiness task #635 (P1, F1 of the 2026-08-06 numa-shim review):
@@ -2768,7 +2804,10 @@ jobs:
           components: miri
       - run: cargo miri test -p numa-shim
       - run: cargo miri test -p numa-shim --features vmem-integration
-      - run: cargo miri test -p numa-shim --features mock
+      # task #1288: mock via the build-time cfg (RUSTFLAGS propagates through
+      # cargo to the miri-driven compilation, same as the aligned-vmem miri
+      # row's use of RUSTFLAGS cfgs)
+      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim
 
   numa-real-kernel:
     # NUMA Phase 2: validate the real-kernel Linux integration path on every

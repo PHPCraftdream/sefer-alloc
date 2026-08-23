@@ -3,7 +3,7 @@
 //! These tests verify the new additive API that distinguishes "genuinely
 //! resolved" from "fell back to node 0" on Linux, task #1266 audit finding F4.
 
-#![cfg(feature = "mock")]
+#![cfg(numa_shim_mock)]
 
 use numa_shim::{current_node, current_node_resolution, mock, NodeResolution};
 
