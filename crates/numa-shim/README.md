@@ -141,6 +141,12 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32);
 pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation>;
 ```
 
+The two `#[doc(hidden)]` test-only modules — `numa_shim::cpumap` and
+`numa_shim::linux` — are not part of this surface: they are test oracles,
+exempt from this crate's SemVer guarantees, and may change or be removed
+in any release (including patch releases) without a deprecation period
+(task #1289).
+
 ## Linux syscall numbers
 
 | Architecture | `SYS_MBIND` |

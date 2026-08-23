@@ -595,6 +595,15 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
 // directly, on every target, closing the round-closing audit's §D1a finding
 // for this half of its "zero behavioral oracles" claim.
 // ---------------------------------------------------------------------------
+/// Test-oracle-only module: sysfs cpumap parsing helpers.
+///
+/// `#[doc(hidden)]` and **exempt from this crate's SemVer guarantees**
+/// (task #1289, following the `serde::__private` convention): everything in
+/// this module — signatures, names, existence — may change or be removed
+/// in ANY release, including patch releases, without a deprecation period.
+/// Do not depend on it from code outside this crate's own `tests/`;
+/// `cargo-semver-checks` likewise excludes `#[doc(hidden)]` items from its
+/// public-API model.
 #[doc(hidden)]
 pub mod cpumap {
     /// Write `/sys/devices/system/node/nodeN/cpumap\0` into `buf` and return
@@ -736,6 +745,15 @@ pub mod cpumap {
 // ---------------------------------------------------------------------------
 // Linux-only test-only forwarders (sanctioned pattern per CLAUDE.md)
 // ---------------------------------------------------------------------------
+/// Test-oracle-only module: Linux-only test forwarders.
+///
+/// `#[doc(hidden)]` and **exempt from this crate's SemVer guarantees**
+/// (task #1289, following the `serde::__private` convention): everything in
+/// this module — signatures, names, existence — may change or be removed
+/// in ANY release, including patch releases, without a deprecation period.
+/// Do not depend on it from code outside this crate's own `tests/`;
+/// `cargo-semver-checks` likewise excludes `#[doc(hidden)]` items from its
+/// public-API model.
 #[cfg(all(target_os = "linux", not(miri), not(feature = "mock")))]
 #[doc(hidden)]
 pub mod linux {
