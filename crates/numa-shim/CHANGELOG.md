@@ -12,6 +12,27 @@ not yet made, and this repository does not bump versions without an explicit
 request. At release time, consolidate this section under a dated
 `## <version> - <date>` heading.
 
+### NUMA gate verification caveat (owner risk acceptance, 2026-08-23)
+
+- **This release's real-multi-socket and real-Linux-kernel NUMA binding
+  behavior has NOT been independently verified** beyond mock-dispatch and
+  single-node host-level testing. Of the four phases
+  `docs/NUMA_RELEASE_GATE.md` requires before a `0.x.y` release touching
+  this crate: Phase 1 (mock dispatch) passed (31/0 at `c427dd6`, task
+  #1279; the final pre-tag re-run is still owed per the eleventh
+  review's E1 ordering rule), Phase 3 (Windows virtual NUMA) is PARTIAL
+  — host-level suites only, the in-guest Hyper-V procedure never ran —
+  and Phases 2 (real Linux kernel / QEMU) and 4 (real 2-socket metal)
+  did not run at all: the development environment has no Linux kernel
+  access and no multi-socket cloud instance access.
+- Per an explicit owner decision dated 2026-08-23 (task #1290), this
+  release publishes anyway with Phases 2 and 4 outstanding — a knowing,
+  recorded risk acceptance, NOT a judgment that those phases are
+  unnecessary. Full record with the release-SHA placeholder:
+  `docs/NUMA_GATE_2026-08-23_0.2.0_phase24_waiver.md`.
+- **Users on genuine NUMA hardware should independently validate
+  node-binding correctness before relying on it in production.**
+
 ### Owner decisions pending
 
 - **`mock` feature's Cargo-unification hazard** (F2 of the 2026-08-23
