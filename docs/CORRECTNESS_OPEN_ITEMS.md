@@ -222,7 +222,7 @@ directly, which still works and needs no table at all).
   `dealloc_foreign_routing` residual class; 66 is `Reservation`'s
   committed-length contract being documented-not-checked, the same
   "doc-comment names a residual" shape.
-- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (10
+- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (11
   cards) — crates.io publish-readiness: metadata, naming, dependencies,
   NO-GO audits. Criterion: a decision or blocker that gates a crate's
   crates.io publication — naming/description/license/dependency
@@ -367,6 +367,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 94 | `TRACKED_publish_readiness.md` |
 | 95 | `TRACKED_ci_gate_coverage.md` |
 | 96 | `TRACKED_test_flakiness.md` |
+| 97 | `TRACKED_publish_readiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
@@ -391,7 +392,7 @@ grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/corre
 
 **6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
-76, 78-96, plus 85 which sits out of numeric order between 46 and 90 in
+76, 78-97, plus 85 which sits out of numeric order between 46 and 90 in
 `TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the
 pre-#1222 files and rotted at the thematic re-split — corrected at #1239)
 **= the total open-card count, deliberately not typed here** — for the
