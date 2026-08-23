@@ -178,6 +178,24 @@ the reversal record.)
         recommendation does NOT close this card — the owner's recorded
         decision does; until then item 42 stays OPEN with this section as
         the standing briefing.**
+    - **CORRECTION SCOPE NOTE (2026-08-23, task #1274, tenth review N1):**
+      task #1263's premise correction above covered only decision (5) of
+      `53b3ca2` — the `mock` Cargo FEATURE. The same commit's "before this
+      crate's first crates.io publish" premise was equally false for its
+      decisions (1) and (4), which — with `dbfeca3`'s 2026-07-19 enum-level
+      `#[non_exhaustive]` on `MockCall` from the same already-published
+      window — are THREE semver-breaking changes to published 0.1.0's
+      `--features mock` surface: `CALLS`/`CURRENT_NODE_SLOT` `pub` →
+      `pub(crate)` (item removal), `#[non_exhaustive]` on `MockCall`
+      (breaks exhaustive match), and `#[non_exhaustive]` on the
+      `BindRange`/`ReserveOnNode` variants (breaks struct-literal
+      construction / exhaustive field patterns). Recorded in
+      `crates/numa-shim/CHANGELOG.md`'s Unreleased `### Removed` section by
+      task #1274. Consequence: the next release cannot be `0.1.1`, which
+      strengthens this card's recommendation (a) — 0.2.0 is already
+      breaking on three additional axes beyond the `aligned-vmem` 0.2
+      return-type move. Full finding: N1 of
+      `docs/reviews/2026-08-23-183220-numa-shim-publication-readiness-review-oh.md`.
 
 62. **MIPS targets: release decision to fail compilation at compile time rather than accept buildable-but-broken targets.** (Filed 2026-08-16, task #1017, finding R4-1 of `docs/reviews/2026-08-16-aligned-vmem-independent-prerelease-audit-r4.md`.) MIPS (both `mips` and `mips64`) uses different `MAP_ANON`/`MAP_HUGETLB` constant values than the `asm-generic/mman-common.h` values this crate hardcodes for Linux: MIPS defines `MAP_ANONYMOUS = 0x0800` and `MAP_HUGETLB = 0x80000`, while the crate uses `0x20` and `0x40000` respectively. With the wrong constants, every `reserve_aligned` call fails closed at runtime with `EBADF` (invalid file descriptor) because `libc_mmap` issues `mmap(..., MAP_PRIVATE, -1, 0)` with no anonymous flag properly set, but the failure is silent (no diagnostic points to the constant error). The crate previously documented MIPS as "not supported" but still allowed compilation, publishing a buildable-but-broken target.
 
