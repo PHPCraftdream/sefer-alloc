@@ -1296,8 +1296,16 @@ mod platform {
         // Checked alignment arithmetic: `raw_u` is a Win32-returned base (page-
         // aligned, so overflow needs an allocation near the top of the address
         // space), but do not rely on that silently wrapping if it ever happens —
-        // return None rather than hand from_raw_parts a wrapped base.
-        let rounded = raw_u.checked_add(align - 1)?;
+        // release the reservation and return None rather than hand from_raw_parts
+        // a wrapped base (task #1275 N4: this early return previously leaked the
+        // just-made reservation; the sibling MEM_COMMIT-failure branch below
+        // already released on ITS error path).
+        let Some(rounded) = raw_u.checked_add(align - 1) else {
+            // SAFETY: `raw` came from the MEM_RESERVE above and was never
+            // handed out; releasing before returning None cannot double-free.
+            unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
+            return None;
+        };
         let base_u = rounded & !(align - 1);
         let base = base_u as *mut u8;
 
@@ -1326,22 +1334,24 @@ mod platform {
             )
         };
         if committed.is_null() {
+            // Commit failed — release the reservation before returning None.
+            // Returning None is still correct even if this release itself
+            // fails: the caller never received an owning handle, so handing
+            // one out now would risk a double-release. The release's own
+            // failure is unreportable through this Option-returning
+            // signature (None already means "no reservation", so the double
+            // failure — commit failed AND the cleanup release failed; the
+            // region leaks until process exit — is indistinguishable from
+            // the ordinary failure path). Silent by choice, matching this
+            // file's other unrecoverable cleanup paths (the sibling
+            // MEM_RESERVE failure branches above); no diagnostics counter
+            // exists in this crate to record it (task #1275 N5 removed an
+            // earlier comment that falsely claimed one).
+            //
             // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
             // has not been handed to any caller yet; releasing before
             // returning `None` cannot double-free.
-            if unsafe { VirtualFree(raw, 0, MEM_RELEASE) } == 0 {
-                // Double-failure: the commit failed AND the cleanup release failed.
-                // Nothing more can be done here — the reservation may leak until
-                // process exit. Returning None is still correct: the caller never
-                // received an owning handle, so handing one out now would risk a
-                // double-release. (Matched to this file's style: other "nothing more
-                // we can do" cleanup paths release silently; this one is at least
-                // counted, not silently ignored.)
-                // Note: No logging here — this file's existing cleanup paths for
-                // unrecoverable errors are silent (see the sibling MEM_RESERVE
-                // failure branches above); matching that established pattern
-                // rather than introducing a new one for this single site.
-            }
+            let _ = unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
             return None;
         }
 
