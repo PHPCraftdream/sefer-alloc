@@ -707,10 +707,10 @@ pub mod linux {
     /// exceeds the cached topology's word count), so this will return
     /// `NodeResolution::FellBackToZero` rather than panicking.
     pub fn dbg_node_resolution_for_cpu(cpu: u32) -> NodeResolution {
-        // SAFETY: The `platform` module is defined below for the same cfg
+        // No unsafe here: `platform` is defined below under the same cfg
         // (`target_os = "linux" && not(miri)`), so `cpu_to_numa_node_checked`
-        // is available. It's `pub(super)`, so we can call it from this sibling
-        // module in the same parent.
+        // is available; it's `pub(crate)`, so this sibling module (both live
+        // directly under the crate root) can call it.
         match super::platform::cpu_to_numa_node_checked(cpu) {
             Some(n) => NodeResolution::Resolved(n),
             None => NodeResolution::FellBackToZero,
