@@ -222,7 +222,7 @@ directly, which still works and needs no table at all).
   `dealloc_foreign_routing` residual class; 66 is `Reservation`'s
   committed-length contract being documented-not-checked, the same
   "doc-comment names a residual" shape.
-- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (13
+- **`docs/correctness-open-items/TRACKED_publish_readiness.md`** (14
   cards) — crates.io publish-readiness: metadata, naming, dependencies,
   NO-GO audits. Criterion: a decision or blocker that gates a crate's
   crates.io publication — naming/description/license/dependency
@@ -235,7 +235,9 @@ directly, which still works and needs no table at all).
   `captrack` supply-chain pin) that all explicitly "become permanent the
   moment the crate first publishes"; 27 and 46 are a compile-error UX
   tradeoff and a semver-coupling acceptance, both pre-publish decisions
-  for a crate about to ship.
+  for a crate about to ship; 100 is the first independent audit of this
+  campaign to target `numa-shim` rather than `aligned-vmem`, another
+  explicit NO-GO verdict.
 - **`docs/correctness-open-items/TRACKED_process_record.md`** (11
   cards) — commit-message / count / citation record corrections.
   Criterion: the card's entire content is a RECORD correction — a wrong
@@ -370,6 +372,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 97 | `TRACKED_publish_readiness.md` |
 | 98 | `TRACKED_publish_readiness.md` |
 | 99 | `TRACKED_publish_readiness.md` |
+| 100 | `TRACKED_publish_readiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
