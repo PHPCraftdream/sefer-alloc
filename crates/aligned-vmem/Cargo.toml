@@ -22,8 +22,9 @@ categories = ["memory-management", "os"]
 # task #962, per docs/CORRECTNESS_OPEN_ITEMS.md item 42) so `all-features`
 # CANNOT turn it on. `bench-internals` is excluded — it is a diagnostic
 # counter surface with no consumer-facing purpose. Mirrors the same decision
-# made for `numa-shim` (`crates/numa-shim/Cargo.toml` — note that numa-shim's own
-# mock is still a feature there).
+# made for `numa-shim` (`crates/numa-shim/Cargo.toml` — note that numa-shim's
+# own `mock` has since ALSO been converted to the build-time `--cfg numa_shim_mock`
+# flag, task #1288, 2026-08-23).
 [package.metadata.docs.rs]
 features = ["lazy-commit", "huge-pages", "fault-injection"]
 rustdoc-args = ["--cfg", "docsrs"]

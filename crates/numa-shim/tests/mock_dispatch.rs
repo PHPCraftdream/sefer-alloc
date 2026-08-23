@@ -4,12 +4,12 @@
 //! that our wrapping logic invokes the platform NUMA functions with the
 //! right arguments WITHOUT depending on real multi-NUMA hardware.
 //!
-//! Gated on `feature = "mock"`.  Run with:
-//!   `cargo test -p numa-shim --features mock`
+//! Gated on the build-time cfg `numa_shim_mock`. Run with:
+//!   `RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim`
 //! (and for the reserve_on_node tests):
-//!   `cargo test -p numa-shim --features "mock vmem-integration"`
+//!   `RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration`
 
-#![cfg(feature = "mock")]
+#![cfg(numa_shim_mock)]
 
 use numa_shim::{bind_range, current_node, mock, NO_NODE};
 
@@ -41,7 +41,7 @@ fn current_node_default_zero() {
 /// the scripted slot in `Some` UNCONDITIONALLY, so `set_current_node(NO_NODE)`
 /// produced `Some(NO_NODE)` -- violating this function's own documented
 /// "returns `Option`, never the sentinel" guarantee, and making the `None`
-/// branch impossible to exercise under `mock` (the feature that exists
+/// branch impossible to exercise under `numa_shim_mock` (the cfg that exists
 /// precisely so CI can assert the wrapping logic). Proves the fix: scripting
 /// the sentinel now yields a genuine `None`.
 #[test]

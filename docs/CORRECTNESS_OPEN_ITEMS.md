@@ -397,7 +397,7 @@ grep -hcE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/TRACKED_*.md
 grep -hE '^[0-9]+[a-z]*\. \*\*' docs/correctness-open-items/ACTIVE.md docs/correctness-open-items/TRACKED_*.md | wc -l
 ```
 
-**6 `[A]`-tier cards** (1, 2, 11, 13, 42, 62) **+ the `[T]`-tier cards**
+**5 `[A]`-tier cards** (1, 2, 11, 13, 62) **+ the `[T]`-tier cards**
 (5-10, 12, 14, 16-29, 41, 43-55, 58, 59, 59a, 59b, 60, 61, 63-70, 72-74,
 76, 78-97, plus 85 which sits out of numeric order between 46 and 90 in
 `TRACKED_publish_readiness.md`; "between 47 and 48" was true only of the

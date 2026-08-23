@@ -32,13 +32,16 @@
 //! local-first locality exactly as R11-6 intended.
 //!
 //! Build/run:
-//!   cargo test --features "numa-aware-mock alloc-segment-directory" \
-//!       --test segment_directory_numa_high_node_ids
+//!   RUSTFLAGS="--cfg numa_shim_mock" cargo test --features "numa-aware-mock alloc-segment-directory internals" --test segment_directory_numa_high_node_ids
 
+// The `numa_shim_mock` conjunct means plain `--all-features` builds SKIP this
+// file cleanly (empty binary) instead of failing on the absent `numa_shim::mock`
+// module — mock coverage runs only where the cfg is explicitly set (task #1288).
 #![cfg(all(
     feature = "numa-aware-mock",
     feature = "alloc-segment-directory",
-    feature = "internals"
+    feature = "internals",
+    numa_shim_mock
 ))]
 
 use std::alloc::Layout;

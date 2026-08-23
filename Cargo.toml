@@ -101,7 +101,11 @@ loom = "0.7"
 # Declare both so `unexpected cfg` warnings are silent across the workspace.
 # The third entry gates the root crate's forced-page test module (task #1080;
 # same task-#962 cfg-flag pattern as aligned-vmem's own lints entry).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)'] }
+# The fourth entry gates the root crate's NUMA mock test files (task #1288;
+# same task-#962 cfg-flag pattern; `numa_shim_mock` is set via
+# `RUSTFLAGS="--cfg numa_shim_mock"` and required IN ADDITION to the
+# `numa-aware-mock` feature by the mock-gated integration tests).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)', 'cfg(aligned_vmem_page_size_override)', 'cfg(numa_shim_mock)'] }
 
 [lints]
 # Inherit the workspace-shared lint table above ([workspace.lints.rust]).
@@ -706,19 +710,34 @@ hardened = ["fastbin"]
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
 # macOS: no-op (no public NUMA API). Default OFF. Requires `alloc-core`.
 numa-aware = ["alloc-core", "dep:numa-shim"]
-# R11-5 TEST-ONLY: enables `numa-shim`'s `mock` backend so integration tests
-# can script `current_node()`'s return value deterministically (the
-# `tests/numa_cache_invalidation.rs` slot-recycle regression uses this to
-# mock a DIFFERENT node for the second claim and assert the newly-claimed
-# slot's cached value is the NEW mock node, not the stale one from before
-# recycling). NOT part of `production` or any other default bundle; pulling
-# it in via `--all-features` is intentional (every feature combination must
-# compile), and is sound — the platform impls in `numa-shim` are still
-# compiled under `mock` (only `#[cfg_attr(feature = "mock", allow(dead_code))]`,
-# never `#[cfg(not(feature = "mock"))]`), so the real Linux sysfs loop /
-# Windows Win32 path stay type-checked under `--all-features`. Purely
-# additive over `numa-aware`.
-numa-aware-mock = ["numa-aware", "numa-shim/mock"]
+# R11-5 TEST-ONLY: marker/gate feature for the NUMA mock integration tests
+# (numa_cache_invalidation, numa_periodic_refresh, segment_directory_numa*, etc.).
+# Task #1288: no longer forwards to `numa-shim/mock` (that feature no longer
+# exists — converted to the build-time `--cfg numa_shim_mock` flag, mirroring
+# aligned-vmem's task #962). The feature now only turns on `numa-aware` and acts
+# as the marker these test files require; the mock backend itself is activated
+# ONLY by the cfg flag, which only the top-level build invoker can set via
+# `RUSTFLAGS="--cfg numa_shim_mock"` — never a transitive dependency via
+# Cargo's additive feature-unification, and never `--all-features` by accident.
+# Consequently, under plain `--all-features` (no cfg) these mock-using test files
+# SKIP cleanly (empty test binaries) instead of running against the mock backend;
+# the rows that exercise them set BOTH the feature(s) and the cfg flag (see ci.yml).
+#
+# The NUMA mock integration tests (`tests/numa_cache_invalidation.rs`,
+# `tests/numa_periodic_refresh.rs`, the `segment_directory_numa*.rs` family) need
+# deterministic control over what `current_node()` returns across `claim()` /
+# `recycle()` boundaries — they script the mock to return one node for the
+# first claim and a DIFFERENT node for the second, proving the cache is
+# invalidated at recycle time (see `docs/PHASE_NUMA_DESIGN.md` §4.1). Without the
+# mock, the real platform `current_node()` is stable for a thread's lifetime,
+# making the slot-recycle regression invisible (the second claim would always
+# see the same node as the first, so the stale-cache bug would never surface).
+#
+# NOT part of `production` or any other default bundle; pulling it in via
+# `--all-features` is intentional (every feature combination must compile)
+# and harmless — post-#1288 it activates nothing in `numa-shim` at all.
+# Purely additive over `numa-aware`.
+numa-aware-mock = ["numa-aware"]
 # R7-B0: EXPERIMENTAL incremental Windows commit foundation. Exposes
 # `aligned_vmem::reserve_aligned_lazy` (reserve VA + commit only an initial
 # sub-range) and `aligned_vmem::commit_range` (commit additional pages within

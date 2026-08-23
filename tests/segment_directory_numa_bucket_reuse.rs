@@ -76,13 +76,16 @@
 //!      post-fix (green) it reuses the slot node 0 (then the 9th node) freed.
 //!
 //! Build/run:
-//!   cargo test --features "numa-aware-mock alloc-segment-directory" \
-//!       --test segment_directory_numa_bucket_reuse
+//!   RUSTFLAGS="--cfg numa_shim_mock" cargo test --features "numa-aware-mock alloc-segment-directory internals" --test segment_directory_numa_bucket_reuse
 
+// The `numa_shim_mock` conjunct means plain `--all-features` builds SKIP this
+// file cleanly (empty binary) instead of failing on the absent `numa_shim::mock`
+// module — mock coverage runs only where the cfg is explicitly set (task #1288).
 #![cfg(all(
     feature = "numa-aware-mock",
     feature = "alloc-segment-directory",
-    feature = "internals"
+    feature = "internals",
+    numa_shim_mock
 ))]
 
 use std::alloc::Layout;

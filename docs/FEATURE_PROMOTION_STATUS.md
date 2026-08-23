@@ -72,7 +72,7 @@ and the already-in-`production` features are excluded by construction
 | `bench-internals` | yes (`Cargo.toml:485`, `=[]`) | no (measurement-only hook gate) | **deliberately-opt-in by construction** — exists solely to keep measurement `unsafe fn dbg_*` hooks out of a plain `--features production` build (CLAUDE.md benchmark-hook rule 2) | `Cargo.toml:436–485`. |
 | `hardened` | yes (`Cargo.toml:598`) | no | **deliberately-opt-in** — paranoid defence-in-depth that costs a non-power-of-two modulo on EVERY small free; explicitly "NOT free enough to enable unconditionally" | `Cargo.toml:581–598`. |
 | `numa-aware` | yes (`Cargo.toml:603`) | no committed multi-node measurement | **deliberately-opt-in** — host-specific (no-op / macOS); promotion is a host-deployment question, not a gate question | `Cargo.toml:599–603`. (R28 review §2.4/§3.3 flag a separate NUMA-pool correctness gap + a per-PR compile-coverage gap — tracked in the review, not a promotion question.) |
-| `numa-aware-mock` | yes (`Cargo.toml:616`) | no | **deliberately-opt-in** — TEST-ONLY (`numa-shim/mock` backend for scripted tests) | `Cargo.toml:604–616`. |
+| `numa-aware-mock` | yes (`Cargo.toml:616`) | no | **deliberately-opt-in** — TEST-ONLY marker feature; the mock backend itself is now the build-time `--cfg numa_shim_mock` (task #1288) — the feature alone no longer activates any mock; tests using it additionally require the cfg. | `Cargo.toml:604–616`. |
 | `experimental` | yes (`Cargo.toml:117`) | no | **deliberately-opt-in** — research/RCU+epoch concurrent tier umbrella ("no semver guarantees, research-tier") | `Cargo.toml:109–117`. |
 | `pinning` | yes (`Cargo.toml:133`) | no | **deliberately-opt-in** — thread-per-core runner over `experimental` | `Cargo.toml:118–133`. |
 

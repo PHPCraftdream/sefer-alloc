@@ -17,54 +17,40 @@ categories = ["os", "memory-management"]
 # at length — actually appears on the published docs page; the default
 # feature set is empty (see `[features]` below), so a plain `cargo doc`
 # render omits it entirely (task #644). Deliberately an explicit list, NOT
-# `all-features = true`: `all-features` would also turn on `mock`, which
-# REPLACES the real platform backend (not merely additive) and would surface
-# the test-only recording module as if it were ordinary reference API —
-# aligned-vmem's own `mock` has since been converted to the build-time
-# `--cfg aligned_vmem_mock` flag (task #962, `../aligned-vmem/Cargo.toml`); numa-shim's
-# own `mock` remains a Cargo feature, and its conversion is deliberately
-# deferred (docs/CORRECTNESS_OPEN_ITEMS.md item 42).
+# `all-features = true`: `mock` is no longer a Cargo feature (converted to
+# the build-time `--cfg numa_shim_mock` flag in task #1288, mirroring
+# aligned-vmem's task #962), so `all-features` CANNOT turn it on at all —
+# the explicit list is kept for clarity and future-proofing.
 [package.metadata.docs.rs]
 features = ["vmem-integration"]
 
 [features]
 default = []
 vmem-integration = ["dep:aligned-vmem"]
-# Test-only: replace platform syscalls with a recording mock.  Lets every
-# CI run (any target) assert the wrapping logic without touching the real
-# kernel.  See docs/NUMA_TESTING_OPTIONS.md Phase 1.
+# NOTE: this used to be a Cargo feature whose unification hazard was
+# documented as an open risk (task #726, rust-intel audit §C10; docs/CORRECTNESS_OPEN_ITEMS.md
+# item 42). RESOLVED 2026-08-23 (task #1288) by converting it to the
+# build-time `--cfg numa_shim_mock` flag — mirroring aligned-vmem's task #962.
+# The cfg still applies build-graph-wide once set — what changed is WHO can set
+# it: only the top-level build invoker via an explicit `RUSTFLAGS="--cfg numa_shim_mock"`
+# (or build-script) choice, never a transitive dependency through Cargo's
+# additive feature-unification, and never `--all-features`/docs.rs/`cargo add` by
+# accident. The `numa_shim::mock` module, its API, and the dispatch behavior are
+# unchanged; only the activation mechanism moved. Removing the feature is
+# semver-breaking against published 0.1.0 (see CHANGELOG "Removed"); see
+# docs/NUMA_TESTING_OPTIONS.md Phase 1 for the original design note.
 #
-# CARGO FEATURE-UNIFICATION HAZARD (task #726, rust-intel audit §C10) — read
-# before enabling: this is a NON-ADDITIVE, backend-REPLACING feature. Cargo
-# unifies features across a build's WHOLE dependency graph, not per edge —
-# so if ANY crate anywhere downstream of your build (including a sibling
-# workspace member's own `[dev-dependencies]`) enables `numa-shim/mock`,
-# every OTHER consumer in that SAME build silently gets the mock backend
-# too: `current_node`/`bind_range`/`reserve_on_node` stop touching the real
-# OS for THEM as well, with no compile error and no warning. Enable this
-# feature ONLY in a leaf test/dev target (a `[[test]]`, an integration-test
-# crate, or a `[dev-dependencies]` entry in a binary that is never itself a
-# library dependency of anything else) — never in a library's own
-# `[dependencies]`, and never in a `[dev-dependencies]` entry reachable from
-# more than one build target in the same workspace. Same policy as
-# `aligned-vmem`'s own `mock` (a Cargo feature at the time, `../aligned-vmem/Cargo.toml`,
-# task #715): a stronger fix (a build-time `--cfg` flag instead of a Cargo
-# feature, matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
-# unify) has since been PROVEN next door — aligned-vmem's `mock` WAS
-# converted to the `--cfg aligned_vmem_mock` build flag (task #962,
-# `../aligned-vmem/Cargo.toml`). numa-shim 0.1.0 HAS been published to crates.io
-# (2026-06-29 17:36:48 UTC, confirmed via the crates.io API and
-# crates/numa-shim/CHANGELOG.md), so the old "still unpublished / zero external
-# consumers" premise is FALSE (task #1263); consequently removing or narrowing the
-# `mock` feature is now a semver-breaking change to already-published API (the
-# mock feature is part of 0.1.0's published feature surface), not a free
-# pre-publication cleanup; any --cfg conversion per item 42 must now be a
-# semver-major change (0.2.0) if it removes the feature, or purely additive if
-# it merely adds the cfg alongside. Corrected by task #1263.
-mock = []
-
 [dependencies]
 aligned-vmem = { version = "0.2", path = "../aligned-vmem", optional = true }
+
+# `numa_shim_mock` is a build-time cfg (set via `RUSTFLAGS="--cfg numa_shim_mock"`),
+# NOT a Cargo feature — cfg flags do not unify across the build's dependency
+# graph, which is the whole point of the task #1288 conversion (mirroring
+# aligned-vmem's task #962). Declaring it here keeps `unexpected_cfgs` silent
+# for this crate (same pattern as `crates/aligned-vmem/Cargo.toml`'s own
+# `[lints.rust]` table; this crate has no `[lints] workspace = true`).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(numa_shim_mock)'] }
 
 [lib]
 name = "numa_shim"
@@ -76,4 +62,11 @@ bench-scale-tool = "0.1"
 [[bench]]
 name = "numa_bench"
 harness = false
-required-features = ["mock"]
+# This bench is NOT gated on `required-features` — the bench target is built
+# (but never run) by `cargo test` / `cargo clippy --all-targets` / `cargo bench` rows,
+# but it fails LOUDLY at runtime (see the panic in
+# `benches/numa_bench.rs`) when invoked without `RUSTFLAGS="--cfg numa_shim_mock"`.
+# A silently-skipped or no-op-passing bench is the vacuous-green hazard that
+# burned this repo before (task #1070 "Breakage B"); a runtime panic (rather
+# than `compile_error!`) is used so that real-backend `cargo test` / `cargo clippy
+# --all-targets` rows — which BUILD this bench target but never RUN it — stay green.
