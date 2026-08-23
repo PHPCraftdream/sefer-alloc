@@ -23,6 +23,16 @@ request. At release time, consolidate this section under a dated
   feature with explicit risk acceptance. Recommendation written, decision
   NOT yet made — see item 42's "RECOMMENDATION (2026-08-23, task #1264)"
   section. Resolve this heading before cutting the release section.
+- **Semver policy for the two `#[doc(hidden)]` test-only modules** —
+  `pub mod cpumap` (parser helpers) and `pub mod linux`
+  (`dbg_node_resolution_for_cpu`); audit finding F5, scope-expanded by a
+  later zero-trust review to cover both. Recommendation recorded (option
+  (c): commit both to the published surface at the next release, with
+  `cpumap` promoted to documented API); **owner decision pending, nothing
+  implemented**. Neither module is in published 0.1.0 — the next publish is
+  what freezes them as public API, so the decision must land in that
+  release's scope. Full writeup: task #1267 addendum on item 100 in
+  `docs/correctness-open-items/TRACKED_publish_readiness.md` (task #1267).
 
 ### Fixed
 
@@ -70,6 +80,13 @@ request. At release time, consolidate this section under a dated
   `Resolved(n)` when the CPU is found in the cached sysfs cpumap,
   `FellBackToZero` when the CPU is not found (including nodes >= 64 or
   unreadable topology), and `Unavailable` when `sched_getcpu(2)` fails.
+
+  Scope note (task #1274, finding N8 of the tenth review): this addition
+  addresses DETECTION only — `bind_range` with `node >= 64` still silently
+  no-ops with no caller-detectable signal (F4's binding-side ask remains
+  open), and `FellBackToZero` does not distinguish "sysfs unreadable /
+  node >= 64 (the node-0 answer may be wrong)" from "no NUMA topology at
+  all (node 0 is genuinely correct)".
 - The sysfs cpumap parser was extracted into a target-independent module with
   real behavioral oracles runnable on every host, not only real Linux (task
   #721) — test infrastructure (`#[doc(hidden)]`), not public API.
@@ -79,19 +96,48 @@ request. At release time, consolidate this section under a dated
 - `aligned-vmem` optional dependency bumped from `0.1` to `0.2`
   (the sibling crate's own 0.2 release); `reserve_on_node`'s return type
   moves with it.
+- `Cargo.toml` metadata (non-breaking): `categories` dropped
+  `"no-std::no-alloc"` — correct, the crate links std
+  (`std::thread_local!`, `std::sync::OnceLock`); and `homepage` moved from
+  `.../crates/numa` to `.../crates/numa-shim`, matching the post-publish
+  directory rename (both flagged by finding N1 of the tenth review;
+  recorded by task #1274).
 
-### Owner decisions pending
+### Removed
 
-- **Semver policy for the two `#[doc(hidden)]` test-only modules** —
-  `pub mod cpumap` (parser helpers) and `pub mod linux`
-  (`dbg_node_resolution_for_cpu`); audit finding F5, scope-expanded by a
-  later zero-trust review to cover both. Recommendation recorded (option
-  (c): commit both to the published surface at the next release, with
-  `cpumap` promoted to documented API); **owner decision pending, nothing
-  implemented**. Neither module is in published 0.1.0 — the next publish is
-  what freezes them as public API, so the decision must land in that
-  release's scope. Full writeup: task #1267 addendum on item 100 in
-  `docs/correctness-open-items/TRACKED_publish_readiness.md` (task #1267).
+Three changes already in this tree are **semver-breaking against published
+0.1.0's `--features mock` surface** and are recorded here as a group (task
+#1274, finding N1 of the tenth independent review,
+`docs/reviews/2026-08-23-183220-numa-shim-publication-readiness-review-oh.md`).
+Two were made under `53b3ca2`'s stated premise "all decided now, before this
+crate's first crates.io publish" — which was false: 0.1.0 was published
+2026-06-29, six weeks earlier. Task #1263's premise correction covered only
+the `mock` Cargo-feature decision (decision 5 of 5 in that commit), not
+these API breaks — that remainder is recorded on
+`docs/correctness-open-items/ACTIVE.md` item 42. Under Cargo's 0.x rules a
+release containing any of the three cannot be `0.1.1`; which version this
+becomes is the still-open F1 owner decision (task #1262) — this section
+records what already broke, independent of that choice.
+
+- **BREAKING — `mock::MockCall` is now `#[non_exhaustive]`** (commit
+  `dbfeca3`, 2026-07-19, three weeks after the 0.1.0 publish): a 0.1.0
+  consumer's exhaustive `match` over the three variants stops compiling
+  until a wildcard arm is added.
+- **BREAKING — `mock::CALLS` and `mock::CURRENT_NODE_SLOT` are no longer
+  public** (narrowed `pub` → `pub(crate)`, commit `53b3ca2`, task #726,
+  2026-08-09): an item removal — a 0.1.0 consumer that names either
+  thread-local directly now gets a not-found/unresolved-import error. The
+  public API was and remains the encapsulating pair `mock::drain()` /
+  `mock::set_current_node()`.
+- **BREAKING — the `MockCall::BindRange` and `MockCall::ReserveOnNode`
+  struct variants are now `#[non_exhaustive]`** (commit `53b3ca2`, task
+  #726, 2026-08-09): struct-literal construction
+  (`MockCall::BindRange { base, len, node }`) and exhaustive field patterns
+  both stop compiling — every construction site and field pattern needs
+  `..`. `53b3ca2`'s own commit body records this exact failure occurring
+  in-repo the moment it landed (`tests/mock_dispatch.rs`'s construction and
+  field-pattern tests both failed to compile until switched to `matches!`
+  with `..`), which is the downstream experience by demonstration.
 
 ## 0.1.0 - 2026-06-29
 
