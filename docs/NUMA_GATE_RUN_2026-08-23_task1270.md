@@ -10,7 +10,7 @@
 - Phase 3 — Windows virtual NUMA (docs/NUMA_WINDOWS_DEV_RECIPE.md): create a Hyper-V Gen2 VM, apply `Set-VMProcessor -MaximumCountPerNumaNode 2 -MaximumCountPerNumaSocket 1 -CompatibilityForMigrationEnabled $false` + static memory; guest must show `Win32_NumaNode Count: 2`; then inside the guest run `SEFER_NUMA_TEST=1 cargo test --features "production numa-aware" --test numa_alloc --test numa_segment_id --test numa_seam`.
 - Phase 4 — real multi-socket topology (docs/NUMA_RELEASE_GATE.md): AWS/Azure 2-socket metal instance; `numactl --hardware` MUST show 2 nodes; run the env-guarded NUMA suite in release mode; verify /proc/self/numa_maps physical placement.
 
-## What ran on this host (Windows 11, single-socket Intel i7-11800H, Win32_ComputerSystem NumberOfProcessors=1)
+## What ran on this host (Windows 10 Pro 10.0.19045, single-socket Intel i7-11800H, Win32_ComputerSystem NumberOfProcessors=1)
 
 ### Phase 1 — RAN, PASS
 Command: `cargo test -p numa-shim --features mock`
