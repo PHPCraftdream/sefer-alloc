@@ -81,11 +81,15 @@ must both additionally be multiples of the huge-page size (2 MiB), or the
 request is rejected up front**; **on Windows, large pages (`MEM_LARGE_PAGES`) are only ever requested and possibly granted via the single-call fast path; the two-call path never requests large pages, so `is_huge()` is always `false` for a reservation that takes it**; otherwise the request falls back
 to ordinary pages — see the function's own rustdoc for the full technical
 explanation; use `Reservation::is_huge` to detect whether a reservation actually
-got large/huge pages on either platform), and `fault-injection` (`fault_injection::arm_fail_next` /
-`arm_fail_at` — an armed hook on the REAL `try_commit_range` syscall path,
-DISTINCT from the mock backend: it changes nothing about which backend runs, it only
-forces a specific real commit call to report failure, for a consumer that
-needs the genuine OS backend under test). The mock backend (recording call log +
+got large/huge pages on either platform), and `fault-injection` — a PUBLIC,
+process-global, opt-in Cargo feature with armed hooks on TWO real syscall
+paths: `fault_injection::arm_fail_next` / `arm_fail_at` on the REAL
+`try_commit_range` syscall path, and (since task #1219)
+`fault_injection::arm_fail_next_decommit` on the REAL decommit dispatch path
+(`try_decommit` / `Reservation::try_decommit`) — DISTINCT from the mock
+backend: it changes nothing about which backend runs, it only forces a
+specific real commit or decommit call to report failure, for a consumer that
+needs the genuine OS backend under test. The mock backend (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
 OOM-path tests on any target — **replaces** the commit/decommit/recommit
 backend with a stub) is enabled via the `aligned_vmem_mock` cfg flag

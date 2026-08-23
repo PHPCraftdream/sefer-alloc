@@ -115,7 +115,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `reset_bench_internals_counters()`
   - `validate_page_size()` for testing page size validation logic
 - Mock backend converted from Cargo feature to build-time `--cfg aligned_vmem_mock` flag (no Cargo feature unification risk)
-- `fault-injection` feature for deterministic OOM testing on the real commit path
+- `fault-injection` feature for deterministic OOM/refusal testing on the real
+  commit AND decommit paths (public, process-global, opt-in Cargo feature —
+  see the bullet immediately below for the decommit-side hook)
 - **`fault_injection::arm_fail_next_decommit(n)`** (task #1219) — the
   decommit-side sibling of the commit-side `arm_fail_next`/`arm_fail_at`
   hooks. The next `n` calls through the real decommit dispatch point
@@ -287,7 +289,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   and this is the record. The figure that MATTERS — the filtered count —
   was right in both, which is the whole reason the filtered form is the
   one cited). The stable command is that grep piped through
-  `grep -vE ":\s*(///|//!|//)"`, giving 10 real construction sites.
+  `grep -vE ":\s*(///|//!|//)"`, giving 10 real construction sites (at the
+  time this paragraph was written — see the task #1249 note below for why
+  that total has since moved to 11).
   Known limitation of that filter, recorded rather than fixed blind: the
   pattern matches a comment marker ANYWHERE in the line, so a code line
   containing an inline `// …` after a colon would be excluded wrongly. No
@@ -305,6 +309,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   gap, not a wrong count. `VmemError::os_refusal_unknown_code`'s doc now
   names both test-only sources (and all three test-only sites) explicitly
   and states why they are not a fifth or sixth PRODUCTION source.
+  **[Added task #1249, per a sixth independent audit's F4 finding: this
+  paragraph's own count is now stale, superseded (not rewritten — this is
+  history) by `src/error.rs`'s live doc on `os_refusal_unknown_code`.]**
+  Task #1219 (already described earlier in this file) added a second
+  `fault-injection`-gated construction site — the decommit-side hook in
+  `api/decommit.rs`'s `dispatch_try_decommit` — growing the `fault-injection`
+  SOURCE from one site to two, without this paragraph's count ever being
+  revisited. Re-run today: the same stable command gives **11** real
+  construction sites, **7 production** (unchanged) and **4 test-only**
+  across the SAME two sources (mock: still 2 sites; `fault-injection`: now
+  2 sites, not 1). The live, current-state count lives in
+  `src/error.rs`'s `os_refusal_unknown_code` doc comment, which this task
+  updated in place; this CHANGELOG paragraph is left as the historical
+  record of the task-#1173/#1194/#1204 saga it describes and is not
+  retroactively renumbered.
   **No new error kind was introduced** — the
   task #1106/L2 record's reasoning (zero consumers anywhere match on WHICH
   source produced the sentinel; every consumer goes through

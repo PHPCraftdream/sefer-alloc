@@ -73,17 +73,20 @@ huge-pages = []
 # `[lints.rust unexpected_cfgs]` below so it produces no `unexpected cfg`
 # warnings.
 
-# Real-path commit fault injection: an armed "fail the next N / fail exactly
-# the k-th" hook on the REAL `try_commit_range` syscall path (`lazy-commit`),
-# DISTINCT from `mock` — `mock` replaces the whole backend (reservations still
-# hit the OS, but commit/decommit/recommit never do), so a consumer that needs
-# the real backend under test (real segment reservations, real commit
-# accounting) cannot use `mock`. `fault-injection` changes nothing about which
-# backend runs; it only splices two checks in front of the real commit syscall
-# so a test can deterministically force it to report OS-refused. Implies
-# `lazy-commit` (the hook's only consumer is in `try_commit_range`, which is
-# only compiled when `lazy-commit` is enabled). Off by default; NOT part of any
-# bundle; zero cost when disabled (the hook body is compiled out entirely,
+# Real-path fault injection, PUBLIC, PROCESS-GLOBAL, opt-in: armed "fail the
+# next N / fail exactly the k-th" hooks on TWO real syscall paths —
+# `try_commit_range` (`lazy-commit`) and, since task #1219, decommit's
+# `dispatch_try_decommit` (reached by both the free `try_decommit` and
+# `Reservation::try_decommit`) — DISTINCT from `mock` — `mock` replaces the
+# whole backend (reservations still hit the OS, but commit/decommit/recommit
+# never do), so a consumer that needs the real backend under test (real
+# segment reservations, real commit accounting) cannot use `mock`.
+# `fault-injection` changes nothing about which backend runs; it only splices
+# a check in front of the real commit/decommit syscall so a test can
+# deterministically force it to report OS-refused. Implies `lazy-commit` (the
+# commit-side hook's only consumer is in `try_commit_range`, which is only
+# compiled when `lazy-commit` is enabled). Off by default; NOT part of any
+# bundle; zero cost when disabled (the hook bodies are compiled out entirely,
 # not just branched around at runtime).
 #
 # WHY THIS STAYS A CARGO FEATURE while `mock` above became a `--cfg` flag
@@ -100,10 +103,11 @@ huge-pages = []
 #     against a fiction. That is unacceptable at any probability.
 #   - `fault-injection` only ADDS a check in front of the real backend call.
 #     It is DISARMED unless someone explicitly arms it, and the worst it can
-#     do when armed is make `try_commit_range` report an error the caller is
-#     already obliged to handle (it returns `Result`). No allocation becomes
-#     fake, no memory-safety property is weakened, and the real syscall path
-#     is unchanged when disarmed.
+#     do when armed is make `try_commit_range` or decommit's fallible entry
+#     points (the free `try_decommit` / `Reservation::try_decommit`) report an
+#     error the caller is already obliged to handle (both return `Result`).
+#     No allocation becomes fake, no memory-safety property is weakened, and
+#     the real syscall path is unchanged when disarmed.
 # So the cost of unification here is a liveness/robustness surprise a caller
 # must already be prepared for, not a silently-wrong test result. Converting
 # it to a `--cfg` would remove a documented feature from the public surface

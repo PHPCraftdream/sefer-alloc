@@ -306,8 +306,14 @@ impl Reservation {
     ///
     /// **Scope:** this is a platform-level query about the ordinary native backend's
     /// contract. It does NOT apply to:
-    /// - **huge-page reservations** (those with [`Self::is_huge`] == `true`) — decommit
-    ///   silently fails there (see the free [`decommit`] function's rustdoc for details).
+    /// - **huge-page reservations** (those with [`Self::is_huge`] == `true`) — eligibility
+    ///   there depends on the platform, the requested range, and (on Linux/Android) the
+    ///   running kernel, not on a single platform-wide answer: on Windows decommit is a
+    ///   guaranteed no-op; on Linux/Android with kernel >= 5.18, a huge-page-size-aligned
+    ///   range CAN actually decommit (see the free [`decommit`] function's "Huge-page
+    ///   granularity" rustdoc section for the exact split, and
+    ///   [`Self::can_decommit_reclaim_and_zero`]'s own huge-page bullet for the
+    ///   conservative instance-level answer this platform-level query cannot give).
     /// - **miri** — under miri, the backend is a no-op that doesn't model RSS or reclaim.
     /// - **the `aligned_vmem_mock` cfg** (`RUSTFLAGS="--cfg aligned_vmem_mock"`) — the
     ///   recording mock backend's decommit logs the call WITHOUT touching the OS, so it
