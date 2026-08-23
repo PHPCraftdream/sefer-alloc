@@ -28,8 +28,10 @@ request. At release time, consolidate this section under a dated
   (`dbg_node_resolution_for_cpu`); audit finding F5, scope-expanded by a
   later zero-trust review to cover both. Recommendation recorded (option
   (c): commit both to the published surface at the next release, with
-  `cpumap` promoted to documented API); **owner decision pending, nothing
-  implemented**. Neither module is in published 0.1.0 — the next publish is
+  `cpumap` promoted to documented API); **DECIDED** (task #1289,
+  owner-confirmed): keep both structurally as-is (still `#[doc(hidden)]`,
+  still `pub`) and declare both semver-exempt — see the Changed entry
+  below. Neither module is in published 0.1.0 — the next publish is
   what freezes them as public API, so the decision must land in that
   release's scope. Full writeup: task #1267 addendum on item 100 in
   `docs/correctness-open-items/TRACKED_publish_readiness.md` (task #1267).
@@ -111,6 +113,19 @@ request. At release time, consolidate this section under a dated
   `.../crates/numa` to `.../crates/numa-shim`, matching the post-publish
   directory rename (both flagged by finding N1 of the tenth review;
   recorded by task #1274).
+- **The two `#[doc(hidden)]` test-only modules are declared semver-exempt**
+  — `pub mod cpumap` (sysfs cpumap parser helpers) and `pub mod linux`
+  (`dbg_node_resolution_for_cpu`), resolving the "Owner decisions pending"
+  entry above (audit finding F5; task #1289, owner-confirmed): both keep
+  their exact current structure (still `#[doc(hidden)]`, still `pub`) and
+  are now explicitly exempt from this crate's SemVer guarantees —
+  everything in them (signatures, names, existence) may change or be
+  removed in ANY release, including patch releases, without a deprecation
+  period. Do not depend on them from code outside this crate's own
+  `tests/`. This is the `serde::__private` convention (hidden from
+  rendered docs, exemption stated in each module's own doc comment), and
+  `cargo-semver-checks` already excludes `#[doc(hidden)]` items from its
+  public-API model. Docs-only change: zero code, zero visibility change.
 
 ### Removed
 
