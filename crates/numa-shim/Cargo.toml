@@ -52,11 +52,15 @@ vmem-integration = ["dep:aligned-vmem"]
 # feature, matching this repo's `cfg(loom)`/`cfg(kani)` precedent — cfg flags do not
 # unify) has since been PROVEN next door — aligned-vmem's `mock` WAS
 # converted to the `--cfg aligned_vmem_mock` build flag (task #962,
-# `../aligned-vmem/Cargo.toml`). The SAME conversion for numa-shim remains
-# deliberately DEFERRED to this crate's own upcoming round (still
-# unpublished, task #657, zero external consumers) per
-# docs/CORRECTNESS_OPEN_ITEMS.md item 42. Revisit if/when this crate gains
-# external consumers and the hazard is reported for real.
+# `../aligned-vmem/Cargo.toml`). numa-shim 0.1.0 HAS been published to crates.io
+# (2026-06-29 17:36:48 UTC, confirmed via the crates.io API and
+# crates/numa-shim/CHANGELOG.md), so the old "still unpublished / zero external
+# consumers" premise is FALSE (task #1263); consequently removing or narrowing the
+# `mock` feature is now a semver-breaking change to already-published API (the
+# mock feature is part of 0.1.0's published feature surface), not a free
+# pre-publication cleanup; any --cfg conversion per item 42 must now be a
+# semver-major change (0.2.0) if it removes the feature, or purely additive if
+# it merely adds the cfg alongside. Corrected by task #1263.
 mock = []
 
 [dependencies]
