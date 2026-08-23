@@ -48,6 +48,16 @@ request. At release time, consolidate this section under a dated
   never-drained call log cannot grow without bound; `drain()` documents that
   it returns a silently truncated oldest-first prefix past the cap (tasks
   #726, #778).
+- **`NodeResolution` enum and `current_node_resolution()` function** —
+  additive API that lets callers distinguish "genuinely resolved to this
+  NUMA node via platform topology" from "silently fell back to node 0" on
+  Linux (task #1266, audit finding F4). `current_node()` remains unchanged;
+  use `current_node_resolution()` only when you need to detect the fallback
+  case (e.g., for diagnostic logging or warnings that NUMA hints may not be
+  effective). The Linux implementation distinguishes the three cases:
+  `Resolved(n)` when the CPU is found in the cached sysfs cpumap,
+  `FellBackToZero` when the CPU is not found (including nodes >= 64 or
+  unreadable topology), and `Unavailable` when `sched_getcpu(2)` fails.
 - The sysfs cpumap parser was extracted into a target-independent module with
   real behavioral oracles runnable on every host, not only real Linux (task
   #721) — test infrastructure (`#[doc(hidden)]`), not public API.
