@@ -43,8 +43,9 @@
 //! | other | `None` | no-op | `reserve_aligned` (no binding) |
 
 // This crate intentionally contains unsafe OS FFI code.
-// The public API is safe; all unsafe is confined to platform modules and
-// clearly documented with // SAFETY: proof comments.
+// The public API is safe EXCEPT `bind_range`, a `pub unsafe fn` carrying
+// its own documented `# Safety` contract; all other unsafe is confined to
+// platform modules and clearly documented with // SAFETY: proof comments.
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -364,7 +365,7 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
     }
     #[cfg(not(feature = "mock"))]
     {
-        // SAFETY: caller guarantees [base, base+len) is a valid OS reservation.
+        // SAFETY: caller guarantees [base, base+len) is a valid mapped range (see the `# Safety` contract above).
         platform::bind_range_impl(base, len, node);
     }
 }

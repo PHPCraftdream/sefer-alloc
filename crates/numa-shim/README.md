@@ -100,7 +100,11 @@ pub fn current_node() -> Option<u32>;
 
 /// Bind [base, base+len) to a NUMA node (Linux: mbind; others: no-op).
 /// # Safety
-/// [base, base+len) must be a valid OS reservation owned by the caller.
+/// [base, base+len) must be a valid MAPPED RANGE (OS reservation, heap
+/// allocation, or any other live mapping) owned exclusively by the caller.
+/// `mbind(MPOL_PREFERRED)` applies at PAGE granularity, so neighboring data
+/// sharing a page is affected too. When `node == NO_NODE` or `len == 0`, the
+/// function returns immediately without touching `base` (any address permitted).
 pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32);
 
 /// Reserve aligned anonymous memory with NUMA preference (feature = "vmem-integration").
