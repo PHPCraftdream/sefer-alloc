@@ -1896,6 +1896,22 @@ jobs:
       # root step above already exercises the other three.
       - run: cargo check -p aligned-vmem --all-features
       - run: cargo test -p aligned-vmem --no-run --all-features
+      # numa-shim-specific MSRV checks (task #1282/E8, item 102 — the same
+      # class item 88/task #1173 closed for aligned-vmem above): the
+      # workspace-root `--all-features` steps at the top of this job reach
+      # numa-shim only through `numa-aware-mock` -> `numa-shim/mock` (root
+      # Cargo.toml:721) plus the root pin's own `features =
+      # ["vmem-integration"]` (`:914`), so the `cfg(not(feature = "mock"))`
+      # arms of all four public functions and the entire `pub mod linux`
+      # module are never compiled on the pinned 1.88 toolchain, and
+      # numa-shim's own tests/benches/dev-dependency graph is never built
+      # at 1.88 at all. The plain `cargo check` row is the exact
+      # default-feature configuration `cargo add numa-shim` produces (its
+      # `default` feature set is empty — no `mock`, no `vmem-integration`);
+      # the `--all-features` test row builds the full test +
+      # dev-dependency graph under 1.88.
+      - run: cargo check -p numa-shim
+      - run: cargo test -p numa-shim --no-run --all-features
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -2620,9 +2636,10 @@ jobs:
         with:
           components: clippy
       # task #1276 (N2, 2026-08-23 numa-shim publication-readiness review):
-      # the REAL Linux backend, no `mock`. Both test steps below and the
-      # `--all-features` clippy row turn `mock` on, so until this step no
-      # per-PR CI job ran `cargo test -p numa-shim` on Linux without it:
+      # the REAL Linux backend, no `mock`. The two `mock` test steps below
+      # and the `--all-features` clippy row turn `mock` on, so until this
+      # step no per-PR CI job ran `cargo test -p numa-shim` on Linux
+      # without it:
       # tests/smoke.rs's `sched_getcpu` + sysfs cpumap reader + real
       # mbind(2) syscall coverage never ran on the one OS where those are
       # real, and `pub mod linux` + tests/node_resolution_linux.rs (gated
@@ -2635,6 +2652,20 @@ jobs:
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
+      # task #1282 (E2, 2026-08-23 publication-readiness review, item 102):
+      # the REAL Linux `reserve_on_node` path — `platform::reserve_on_node_impl`
+      # in crates/numa-shim/src/lib.rs, `aligned_vmem::reserve_aligned` +
+      # `bind_range_impl_linux`, i.e. a real mbind(2) against a real fresh
+      # mmap — was compiled by the `--all-features` clippy row below but
+      # EXECUTED by no CI job on any platform: the three test rows above
+      # either leave `vmem-integration` off (so `reserve_on_node` does not
+      # exist) or turn `mock` on (so the real backend is bypassed), while
+      # the identical `--features vmem-integration` rows in
+      # numa-shim-windows / numa-shim-macos run the real backend only on
+      # non-Linux kernels. This row runs tests/smoke.rs's
+      # `reserve_on_node_*` tests against the real Linux mbind(2) — the
+      # crate's headline capability on its headline platform.
+      - run: cargo test -p numa-shim --features vmem-integration
       # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
       # coverage anywhere in this file -- the four numa-shim-* jobs all ran
       # cargo test only, so a clippy regression here (e.g. the
