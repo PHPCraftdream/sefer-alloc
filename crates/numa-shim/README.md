@@ -56,7 +56,7 @@ unsafe { bind_range(buf.as_mut_ptr(), buf.len(), node) };
 
 ### `vmem-integration`
 
-Enables [`reserve_on_node`], which reserves aligned anonymous virtual memory
+Enables `reserve_on_node`, which reserves aligned anonymous virtual memory
 with a NUMA preference using [`aligned-vmem`](https://crates.io/crates/aligned-vmem):
 
 ```toml
@@ -111,6 +111,21 @@ pub const NO_NODE: u32 = u32::MAX;
 
 /// NUMA node of the calling thread, or None if unavailable.
 pub fn current_node() -> Option<u32>;
+
+/// Outcome of a NUMA-node determination attempt for the calling thread:
+/// Resolved(n) — CPU genuinely resolved to node n via the platform
+/// topology; FellBackToZero (Linux only) — CPU index obtained but not in
+/// any cached sysfs cpumap (unreadable topology, node >= 64, or no NUMA
+/// sysfs at all), which current_node() collapses to Some(0); Unavailable —
+/// no NUMA API on this platform or the OS API failed (current_node()
+/// returns None).
+#[non_exhaustive]
+pub enum NodeResolution { Resolved(u32), FellBackToZero, Unavailable }
+
+/// Additive alternative to current_node(): same resolution logic, but
+/// distinguishes the Linux node-0 fallback from a genuinely resolved
+/// node — use it when a fallback warning / diagnostic logging matters.
+pub fn current_node_resolution() -> NodeResolution;
 
 /// Bind [base, base+len) to a NUMA node (Linux: mbind; others: no-op).
 /// # Safety
