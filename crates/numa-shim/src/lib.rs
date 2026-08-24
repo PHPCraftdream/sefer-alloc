@@ -456,6 +456,13 @@ pub mod mock {
     /// reentrancy discipline.
     ///
     /// task #1311 (F6).
+    // Its only caller (`reserve_preferred_on_node`'s mock arm) is
+    // `#[cfg(feature = "vmem-integration")]`-gated; CI's mock-clippy step
+    // deliberately builds without that feature (task #1323, CI red on
+    // 9137c51) — same rationale as `mod platform`'s
+    // `#[cfg_attr(numa_shim_mock, allow(dead_code))]` above: compiles in
+    // some configs, structurally unused in others.
+    #[cfg_attr(not(feature = "vmem-integration"), allow(dead_code))]
     pub(crate) fn take_policy_failure_for(node: u32) -> Option<std::io::Error> {
         POLICY_FAILURE_SLOT
             .try_with(|c| {
