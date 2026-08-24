@@ -54,7 +54,11 @@ fn reserve_preferred_on_node_returns_valid_span() {
     let align = page;
     let node = current_node().unwrap_or(0);
 
-    let result = reserve_preferred_on_node(size, align, NodeId::new(node));
+    let result = reserve_preferred_on_node(
+        size,
+        align,
+        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
+    );
 
     if cfg!(all(any(target_os = "linux", windows), not(miri))) {
         let r = result.expect("NUMA-preferred reservation failed");
@@ -109,7 +113,11 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     let align = span;
     let node = current_node().unwrap_or(0);
 
-    let result = reserve_preferred_on_node(span, align, NodeId::new(node));
+    let result = reserve_preferred_on_node(
+        span,
+        align,
+        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
+    );
 
     if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
         assert!(
@@ -148,7 +156,12 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     // Repeat 8× to surface any leak in the release path (loop OOMs quickly
     // if `Drop` only frees `span` instead of `reservation_len`).
     for _ in 0..8 {
-        let r2 = reserve_preferred_on_node(span, align, NodeId::new(node)).expect("repeat reserve");
+        let r2 = reserve_preferred_on_node(
+            span,
+            align,
+            NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
+        )
+        .expect("repeat reserve");
         drop(r2);
     }
 }
@@ -171,8 +184,8 @@ fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
     use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
 
     let page = page_size();
-    let err =
-        reserve_preferred_on_node(0, page, NodeId::new(0)).expect_err("zero size must be rejected");
+    let err = reserve_preferred_on_node(0, page, NodeId::new(0).expect("literal 0, not NO_NODE"))
+        .expect_err("zero size must be rejected");
 
     let expected: fn(&ReserveNumaError) -> bool =
         if cfg!(all(any(target_os = "linux", windows), not(miri))) {
@@ -195,8 +208,14 @@ fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
     use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
 
     let page = page_size();
-    let err = reserve_preferred_on_node(page, page, NodeId::new(64))
-        .expect_err("node 64 must be rejected on Linux");
+    // 64 is not the sentinel, so construction succeeds; the rejection under
+    // test happens at reserve_preferred_on_node's Linux nodemask check.
+    let err = reserve_preferred_on_node(
+        page,
+        page,
+        NodeId::new(64).expect("literal 64 is not the NO_NODE sentinel"),
+    )
+    .expect_err("node 64 must be rejected on Linux");
     assert!(
         matches!(err, ReserveNumaError::InvalidNode),
         "expected InvalidNode, got {err:?}"
@@ -292,8 +311,12 @@ fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_
     let align = 128 * 1024;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_preferred_on_node(size, align, NodeId::new(node))
-        .expect("NUMA-preferred reservation failed");
+    let r = reserve_preferred_on_node(
+        size,
+        align,
+        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
+    )
+    .expect("NUMA-preferred reservation failed");
 
     let base = r.as_ptr();
     let committed_len = r.len();

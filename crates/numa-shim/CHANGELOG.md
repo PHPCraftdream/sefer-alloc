@@ -56,6 +56,7 @@ request. At release time, consolidate this section under a dated
 
 ### Changed
 
+- **BREAKING: `NodeId::new` rejects the `NO_NODE` sentinel — `NodeId` is valid-by-construction** — task #1309 (finding F4 of the fifteenth independent review, `docs/reviews/2026-08-24-170047-numa-shim-publication-audit-Sol-codex.md`). `NodeId::new(u32)` was an unchecked `const fn` that accepted ANY `u32` — including `NO_NODE` (`u32::MAX`), which its own doc comment said "must NOT be wrapped" — so the documented forbidden state was representable, and downstream behavior for it diverged by platform (Linux `InvalidNode`, Windows forwards the sentinel to the OS, other platforms `UnsupportedPlatform` before any node check). Now `NodeId::new(u32) -> Option<NodeId>` returns `None` for exactly `NO_NODE` and `Some(_)` for every other `u32` — deliberately NOT a general node-existence validator: platform-specific validity (Linux's 0..=63 nodemask, Windows OS forwarding) stays at `reserve_preferred_on_node`'s fallible checks. No `new_unchecked`/`unsafe` escape hatch was added; detection composes as `current_node().and_then(NodeId::new)`. `NodeId` was introduced in this same unreleased cycle (task #1306), so the net 0.1.0 -> next diff contains only the fallible signature.
 - **BREAKING: `current_node()` is fail-closed on undetermined Linux topologies** — task #1308 (F1, the only P1, of the fifteenth independent review, `docs/reviews/2026-08-24-170047-numa-shim-publication-audit-Sol-codex.md`). Previously every undetermined case — sysfs unreadable, CPU on a node >= 64, no NUMA sysfs at all — collapsed into `Some(0)`, indistinguishable from a genuinely resolved node 0; combined with task #1306's strict `reserve_preferred_on_node`, a caller could successfully install a NUMA preference for the WRONG node. Now `cpu_to_numa_node` maps lookup failure to `NO_NODE` — both failure paths (`sched_getcpu(2)` failure and topology-lookup failure) converge on the same sentinel — and `current_node()` returns `None` for it; `Some(0)` occurs only for a CPU genuinely resolved to node 0. Granular failure reason: `current_node_resolution()`.
 - **BREAKING: `NodeResolution::FellBackToZero` renamed to `NodeResolution::TopologyUnavailable`** — task #1308. The old name described a node-0 fallback that no longer exists once `current_node()` fails closed; the new name states what actually happens. Both `TopologyUnavailable` and `Unavailable` map to `None`; their distinction is diagnostic ("platform has a NUMA API and detection ran, but this CPU could not be resolved" vs "no NUMA API / the OS call itself failed"). The variant was introduced in this same unreleased cycle (task #1266), so the net 0.1.0 -> next diff contains only the new name.
 
@@ -128,9 +129,12 @@ request. At release time, consolidate this section under a dated
   real behavioral oracles runnable on every host, not only real Linux (task
   #721) — test infrastructure (`#[doc(hidden)]`), not public API.
 - **`NodeId`** (task #1306) — newtype over `u32` for NUMA node identifiers
-  in the reservation/policy API (`NodeId::new(u32)` unchecked constructor,
+  in the reservation/policy API (`NodeId::new(u32) -> Option<NodeId>`
+  constructor rejecting exactly the `NO_NODE` sentinel — made fallible by
+  task #1309, same unreleased cycle, see the Changed entry below;
   `NodeId::get() -> u32` accessor). Detection APIs keep returning
-  `Option<u32>`; the ergonomic path is `current_node().map(NodeId::new)`.
+  `Option<u32>`; the ergonomic path is `current_node().and_then(NodeId::new)`
+  (flattening to `Option<NodeId>`).
 - **`ReserveNumaError`** (task #1306) — `#[non_exhaustive]` error enum
   (`UnsupportedPlatform`, `UnsupportedArchitecture`, `InvalidArguments`,
   `InvalidNode`, `Os(std::io::Error)`) implementing `Display` and

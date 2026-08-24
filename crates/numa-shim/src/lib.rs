@@ -84,32 +84,60 @@
 pub const NO_NODE: u32 = u32::MAX;
 
 /// A NUMA node identifier for the reservation/policy API.
+///
+/// The [`NO_NODE`] sentinel is unrepresentable: [`NodeId::new`] rejects it
+/// (task #1309).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(u32);
 
 impl NodeId {
-    /// Construct a `NodeId` from a raw `u32` without validation.
+    /// Construct a `NodeId` from a raw `u32`, rejecting ONLY the
+    /// [`NO_NODE`] sentinel (`u32::MAX`).
     ///
-    /// Node validity is platform- and runtime-dependent (Linux nodemask limit
-    /// vs Windows forwarding any id to the OS). Out-of-range ids surface as
-    /// [`ReserveNumaError::InvalidNode`]/[`ReserveNumaError::Os`] from the
-    /// fallible API instead of being rejected at construction.
-    ///
-    /// The sentinel value [`NO_NODE`] (`u32::MAX`) must NOT be wrapped —
-    /// detection APIs return `Option<u32>` for the "no preference" case.
-    /// Wrap the `u32` only when a preference genuinely exists.
+    /// Returns `None` for exactly one input: [`NO_NODE`], the one value that
+    /// is invalid on EVERY platform — the "no node" state this type exists
+    /// to keep out of the reservation API (task #1309, finding F4 of the
+    /// fifteenth independent review). Every other `u32` constructs,
+    /// including ids a particular platform cannot address: node EXISTENCE
+    /// is platform- and runtime-dependent (Linux's single-`u64` nodemask
+    /// addresses nodes 0..=63 only; Windows forwards any id to the OS), so
+    /// that validation stays where it already lives — the fallible
+    /// [`reserve_preferred_on_node`] checks
+    /// ([`ReserveNumaError::InvalidNode`]/[`ReserveNumaError::Os`]), not
+    /// construction time. Do not read more validation into this constructor
+    /// than the single sentinel comparison it performs.
     ///
     /// # Ergonomic path from detection
     ///
+    /// [`current_node`] remaps the sentinel to `None` (its `Some(n)` arm can
+    /// never carry `NO_NODE`), so the composition cannot actually fail:
+    ///
     /// ```text
     /// match numa_shim::current_node() {
-    ///     Some(n) => numa_shim::reserve_preferred_on_node(size, align, NodeId::new(n)),
+    ///     // current_node() never yields the NO_NODE sentinel in its Some
+    ///     // arm, so NodeId::new(n) here is always Some(_).
+    ///     Some(n) => numa_shim::reserve_preferred_on_node(
+    ///         size,
+    ///         align,
+    ///         NodeId::new(n).expect("never the NO_NODE sentinel"),
+    ///     ),
     ///     None => aligned_vmem::reserve_aligned(size, align),
     /// }
     /// ```
-    #[must_use]
-    pub const fn new(id: u32) -> Self {
-        Self(id)
+    ///
+    /// Composed directly, the two `Option`s flatten:
+    /// `current_node().and_then(NodeId::new)` is an `Option<NodeId>`.
+    ///
+    /// No `new_unchecked`/`unsafe` constructor exists — no path needs to
+    /// bypass the one comparison.
+    // `Option` is already `#[must_use]`; a bare `#[must_use]` here would
+    // trip clippy::double_must_use under this repo's -D warnings gate.
+    pub const fn new(id: u32) -> Option<Self> {
+        if id == NO_NODE {
+            None
+        } else {
+            Some(Self(id))
+        }
     }
 
     /// Return the raw node id wrapped by this `NodeId`.

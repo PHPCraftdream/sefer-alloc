@@ -76,15 +76,18 @@ use aligned_vmem::{page_size, PAGE};
 
 // Reserve fresh memory with a NUMA preference installed BEFORE the first
 // page fault — the only point where "successfully bound" is a true
-// statement. `NodeId::new` is unchecked: an id the platform cannot address
-// surfaces as `Err(ReserveNumaError::InvalidNode)` (Linux nodemask limit)
-// or `Err(ReserveNumaError::Os(..))` (Windows forwards any id to the OS).
+// statement. `NodeId::new` rejects only the `NO_NODE` sentinel (u32::MAX):
+// an id the platform cannot address still constructs and surfaces as
+// `Err(ReserveNumaError::InvalidNode)` (Linux nodemask limit) or
+// `Err(ReserveNumaError::Os(..))` (Windows forwards any id to the OS).
 // `None` from `current_node()` means undetermined topology -> no NUMA
 // preference (task #1308; `Some(0)` only ever means genuinely-resolved node 0).
 let ps = page_size();
 let r = match current_node() {
     Some(node) => {
-        reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node))
+        // current_node() remaps the sentinel to None, so `node` here is
+        // never NO_NODE and NodeId::new cannot fail.
+        reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node).expect("never NO_NODE"))
             .expect("NUMA-preferred reservation failed")
     }
     None => {
@@ -96,7 +99,12 @@ let r = match current_node() {
 // Best-effort fallback with more detailed error handling:
 let r = match current_node() {
     Some(node) => {
-        match reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node)) {
+        // As above: `node` is never the sentinel here.
+        match reserve_preferred_on_node(
+            ps * 16,
+            PAGE.max(ps),
+            NodeId::new(node).expect("never NO_NODE"),
+        ) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
@@ -158,8 +166,9 @@ pub enum NodeResolution { Resolved(u32), TopologyUnavailable, Unavailable }
 pub fn current_node_resolution() -> NodeResolution;
 
 /// NUMA node identifier for the reservation/policy API.
-/// `NodeId::new(u32)` is unchecked; validity surfaces as a typed error
-/// from the fallible API.
+/// `NodeId::new(u32) -> Option<NodeId>` rejects only the `NO_NODE`
+/// sentinel; platform-specific node validity surfaces as a typed error
+/// from the fallible reservation API.
 pub struct NodeId(u32);
 
 /// Failure cause of a NUMA-preferred reservation attempt.
