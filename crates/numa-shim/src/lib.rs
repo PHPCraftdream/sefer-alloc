@@ -288,13 +288,13 @@ pub enum NodeResolution {
     /// [`NO_NODE`]. Note that `Resolved(0)` can legitimately indicate a
     /// genuinely single-node system.
     ///
-    /// Deliberately carries no field-level `#[non_exhaustive]`, following
-    /// task #778/F13's precedent for `MockCall::CurrentNode`/
-    /// `CurrentNodeResolution`: this is a single scalar field (the resolved
-    /// node ID) with no plausible second field to grow into, so marking it
-    /// would force callers into weaker `matches!` patterns for no real
-    /// growth path this shape needs to reserve. The enum-level
-    /// `#[non_exhaustive]` above still protects against future *variants*.
+    /// Deliberately carries no field-level `#[non_exhaustive]` (see task
+    /// #778/F13 for the precedent this follows): this is a single scalar
+    /// field (the resolved node ID) with no plausible second field to grow
+    /// into, so marking it would force callers into weaker `matches!`
+    /// patterns for no real growth path this shape needs to reserve. The
+    /// enum-level `#[non_exhaustive]` above still protects against future
+    /// *variants*.
     Resolved(u32),
 
     /// Linux only: the CPU index was obtained, but no cached sysfs cpumap

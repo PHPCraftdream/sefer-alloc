@@ -217,4 +217,4 @@ gate it later".
 - [`NUMA_TESTING_OPTIONS.md`](NUMA_TESTING_OPTIONS.md) — the master Phase 1-4 plan
 - [`NUMA_WINDOWS_DEV_RECIPE.md`](NUMA_WINDOWS_DEV_RECIPE.md) — Phase 3 Hyper-V dev gate
 - [`PHASE_NUMA_DESIGN.md`](PHASE_NUMA_DESIGN.md) — design of the NUMA-aware path itself
-- [`NUMA_GATE_2026-08-23_0.2.0_phase24_waiver.md`](NUMA_GATE_2026-08-23_0.2.0_phase24_waiver.md) — dated owner risk-acceptance record: 0.2.0 published 2026-08-23 with Phases 2/4 outstanding (infrastructure unavailable in the dev environment), for that release only
+- [`NUMA_GATE_2026-08-23_0.2.0_phase24_waiver.md`](NUMA_GATE_2026-08-23_0.2.0_phase24_waiver.md) — dated owner risk-acceptance record for the queued 0.2.0 release: publishes with Phases 2/4 outstanding (infrastructure unavailable in the dev environment), for that release only

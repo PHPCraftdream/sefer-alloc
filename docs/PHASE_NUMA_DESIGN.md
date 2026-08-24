@@ -437,10 +437,10 @@ down here rather than left implicit.
 "internals", numa_shim_mock)` — the build-time cfg `numa_shim_mock` is
 required IN ADDITION to the `numa-aware-mock` feature, since task #1288
 turned `numa-shim`'s mock backend into a `--cfg numa_shim_mock` flag rather
-than a Cargo feature; run it via
+than a Cargo feature, for deterministic control of `current_node()`'s
+return value; run it via
 `RUSTFLAGS="--cfg numa_shim_mock" cargo test --features "numa-aware-mock
-alloc-global internals" --test numa_cache_invalidation` — for deterministic
-control of `current_node()`'s return value) proves the invalidation fires
+alloc-global internals" --test numa_cache_invalidation`) proves the invalidation fires
 at `claim()`: it scripts node A for the first claim, exercises the cached
 path, recycles, scripts node B, re-claims, and asserts the newly-claimed
 slot's cached value is B (not the stale A) — the exact bug this subsection
