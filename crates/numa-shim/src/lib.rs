@@ -224,7 +224,8 @@ pub mod mock {
         CALLS.with(|c| c.borrow_mut().drain(..).collect())
     }
 
-    /// Set the value the next `current_node()` call will return.
+    /// Set the value returned by subsequent `current_node()` calls, until
+    /// changed by a later `set_current_node` call.
     pub fn set_current_node(node: u32) {
         CURRENT_NODE_SLOT.with(|c| *c.borrow_mut() = node);
     }
@@ -1431,16 +1432,29 @@ mod platform {
         }
 
         // Win32 contract: committing into an already-reserved region returns the
-        // base address of that region subrange, i.e. exactly `base`. Documenting
-        // and checking (debug builds) the assumption from_raw_parts relies on.
-        debug_assert_eq!(committed.cast::<u8>(), base, "VirtualAllocExNuma(MEM_COMMIT) must return the requested base for an already-reserved region");
+        // base address of that region subrange, i.e. exactly `base`. task
+        // #1304 (P2): this was a `debug_assert_eq!` — compiled to nothing in
+        // release builds, so a contract violation there would have proceeded
+        // to `from_raw_parts` with a mismatched `base`, constructing a
+        // `Reservation` whose bookkeeping does not match what was actually
+        // committed. Checked unconditionally now: on mismatch, fail closed —
+        // release the reservation and return `None`.
+        if committed.cast::<u8>() != base {
+            // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
+            // has not been handed to any caller yet; releasing before
+            // returning `None` cannot double-free.
+            let _ = unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
+            return None;
+        }
 
         // SAFETY of from_raw_parts:
         // - `base` is non-null, valid for `size` bytes (it's inside the
         //   `over`-byte reservation since `align <= over - size`), aligned
         //   to `align` (by construction above), and its `size`-byte range
         //   was just committed above. Win32 contract: `committed == base` for
-        //   commit into an already-reserved region, verified by debug_assert above.
+        //   commit into an already-reserved region, checked unconditionally
+        //   above (task #1304: a mismatch releases the reservation and
+        //   returns `None` before this call is reached).
         // - `raw` is the start of the OS reservation, non-null.
         // - `over = size + align` is the full reservation length, multiple of PAGE.
         // - `align` was just used to align `base` — same value.
