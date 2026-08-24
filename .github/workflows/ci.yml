@@ -2738,6 +2738,24 @@ jobs:
           echo "Derived docs.rs feature set: $FEATURES"
           test -n "$FEATURES"
           RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps --features "$FEATURES"
+      # task #1326 (P2-3 of the seventeenth independent review,
+      # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md;
+      # independently found as F8 of the eighteenth,
+      # docs/reviews/2026-08-24-224323-numa-shim-publication-audit-Sol-codex.md):
+      # both rows above build numa-shim with `vmem-integration` ON (one
+      # --all-features, one derived from docs.rs's pinned set, which for this
+      # crate IS that feature), so three ungated intra-doc links to the
+      # feature-gated `reserve_preferred_on_node` (crate platform matrix,
+      # `NodeId::new`, `NodeResolution::TopologyUnavailable`) passed both while
+      # DEFAULT features -- the exact configuration `cargo add numa-shim`
+      # produces for a downstream consumer -- failed rustdoc with 3
+      # unresolved-link errors. Same gate-blindness class as CLAUDE.md's
+      # doc-lint rule (task #1142) and a recurrence of the broken-link class
+      # task #1277 fixed here once with no recurrence guard; this row is that
+      # guard. Mirrors the task #778 DEFAULT-features clippy row's rationale
+      # (numa-shim-windows below): default features is what `cargo add
+      # numa-shim` produces, and no feature-on row subsumes it.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps
 
   numa-shim-windows:
     # Run the numa-shim real-syscall path on a real Windows kernel.
