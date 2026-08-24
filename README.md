@@ -611,7 +611,6 @@ hard compile error in every configuration:
 |---|---|---|
 | [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
-| [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
 | [`src/alloc_core/dirty_by_class.rs`](src/alloc_core/dirty_by_class.rs) | The lazily-materialised per-(segment, class) dirty-bit sidecar (`PerClassDirty`); dereferences the `RacyPtrCell`-published sidecar pointer | `class-aware-dirty` |
 | [`src/alloc_core/large_cache_extended.rs`](src/alloc_core/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `RacyPtrCell` — no cross-thread publisher); reserves via `alloc_core::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
 | [`src/alloc_core/sidecar.rs`](src/alloc_core/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
@@ -635,10 +634,11 @@ Under the recommended `production` feature
 `fastbin`, and `primordial-lazy-commit` themselves do **not** open new
 `unsafe` seams — they extend existing safe code paths.
 
-`numa-aware` adds one more internal seam (`alloc_core::numa`), which in turn
-delegates to the independently-auditable `numa-shim` crate. `experimental`
-opens the older research-tier concurrent seam (now deprecated); the production
-build does not pull it in.
+`numa-aware` opens no internal unsafe seam of its own — its
+`alloc_core::numa` wrapper has been pure safe delegation to the
+independently-auditable `numa-shim` crate since task #1306 removed the
+test-only `bind_segment` seam. `experimental` opens the older research-tier
+concurrent seam (now deprecated); the production build does not pull it in.
 
 **Internal sefer-alloc item-scoped allows — tier 2 (task #101 / R4-9).**
 Each is a single `#[allow(unsafe_code)]` on an `unsafe fn` declaration (or on

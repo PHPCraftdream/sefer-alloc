@@ -2,8 +2,14 @@
 //!
 //! These tests verify the public API contracts without asserting any
 //! platform-specific NUMA topology (which differs between hosts).
+//!
+//! task #1306: the `bind_range`-era tests ("does not panic" non-assertions)
+//! are gone with the API. The `Result`-returning `reserve_preferred_on_node`
+//! gives this suite real behavioral oracles: a genuine `Ok(_)` on a fresh
+//! (never-touched) reservation, and typed `Err(_)` outcomes for contract
+//! violations and the Linux nodemask limit.
 
-use numa_shim::{bind_range, current_node, NO_NODE};
+use numa_shim::current_node;
 
 /// `current_node()` must return either `None` (NUMA unavailable) or
 /// `Some(n)` where `n < 64` (reasonable upper bound for NUMA node count).
@@ -22,75 +28,18 @@ fn current_node_returns_valid_or_none() {
     }
 }
 
-/// `bind_range` on a live owned allocation must not panic or cause UB.
-///
-/// This test allocates a page-sized buffer via `Box`, then calls `bind_range`
-/// on it. On Linux the call issues `mbind(2)` (errors are silently ignored);
-/// on Windows / macOS / miri it is a no-op. Either way the call must not panic.
-#[test]
-fn bind_range_on_owned_memory_does_not_panic() {
-    // Allocate a buffer large enough to cover at least one OS page.
-    let page = 4096usize;
-    let mut buf: Vec<u8> = vec![0u8; page];
-
-    let base = buf.as_mut_ptr();
-    let len = buf.len();
-
-    // Use NUMA node 0 as the target (always valid; no-op on single-node hosts).
-    let node = current_node().unwrap_or(0);
-
-    // SAFETY: `buf` is a live heap allocation owned exclusively by this scope.
-    // `bind_range` never reads or writes the payload bytes — it only passes
-    // `[base, base+len)` to `mbind(2)` (Linux) as kernel metadata. The Vec
-    // outlives this call.
-    unsafe { bind_range(base, len, node) };
-
-    // Verify the buffer is still accessible after the call.
-    buf[0] = 0xAB;
-    assert_eq!(buf[0], 0xAB);
-}
-
-/// `bind_range` with `NO_NODE` sentinel must be a no-op and not panic.
-///
-/// task #727 (rust-intel audit §D1): on a non-`mock` build this test has NO
-/// observable postcondition to assert -- a no-op leaves nothing to inspect,
-/// so it structurally cannot fail for the specific property its name claims
-/// ("is a no-op"). Its real, load-bearing value here is narrower: a
-/// cross-platform "doesn't crash the real dispatch path" probe (does
-/// `bind_range` itself panic/UB when built for whichever real OS this test
-/// runs on, before the mock ever enters the picture). The actual short-
-/// circuit POSTCONDITION -- that NO_NODE prevents any call from reaching the
-/// platform backend at all -- is asserted for real in
-/// `tests/mock_dispatch.rs` (`bind_range_no_node_short_circuits`, via
-/// `drain().is_empty()`); do not read this test as covering that property.
-#[test]
-fn bind_range_no_node_is_noop() {
-    let mut buf = [0u8; 16];
-    // SAFETY: `buf` is a valid stack allocation; NO_NODE causes an early return
-    // before any OS call, so no actual syscall is made.
-    unsafe { bind_range(buf.as_mut_ptr(), buf.len(), NO_NODE) };
-    // If we reach here without panic the test passes.
-}
-
-/// `bind_range` with `len == 0` must be a no-op and not panic.
-///
-/// task #727 (rust-intel audit §D1): same caveat as
-/// `bind_range_no_node_is_noop` above -- this is a cross-platform doesn't-
-/// crash-the-real-dispatch-path probe, not coverage of the short-circuit
-/// postcondition itself (that lives in `tests/mock_dispatch.rs`'s
-/// `bind_range_zero_len_short_circuits`).
-#[test]
-fn bind_range_zero_len_is_noop() {
-    let mut buf = [0u8; 1];
-    // SAFETY: len == 0 causes an early return before any OS call.
-    unsafe { bind_range(buf.as_mut_ptr(), 0, 0) };
-}
-
-/// With `vmem-integration` feature: `reserve_on_node` returns a usable span.
+/// With `vmem-integration`: `reserve_preferred_on_node` returns a usable span
+/// as a genuine `Ok` — on Linux the `mbind(2)` policy call on the complete OS
+/// reservation span actually SUCCEEDED (its return value is checked now,
+/// task #1306); on Windows the `VirtualAllocExNuma` reserve+commit chain
+/// succeeded. The old `reserve_on_node -> Option` could not distinguish
+/// "bound" from "silently unbound"; this asserts the real outcome on a
+/// reservation that has never been touched — exactly the regime where
+/// mbind's future-fault-only semantics apply.
 #[cfg(feature = "vmem-integration")]
 #[test]
-fn reserve_on_node_returns_valid_span() {
-    use numa_shim::reserve_on_node;
+fn reserve_preferred_on_node_returns_valid_span() {
+    use numa_shim::{reserve_preferred_on_node, NodeId};
 
     // Use runtime page size: macOS aarch64 (Apple Silicon) uses 16 KiB pages,
     // not the 4 KiB constant `aligned_vmem::PAGE`. mmap rejects sizes/aligns
@@ -100,8 +49,8 @@ fn reserve_on_node_returns_valid_span() {
     let align = page;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_on_node(size, align, node)
-        .expect("reserve_on_node returned None — OOM or contract violation");
+    let r = reserve_preferred_on_node(size, align, NodeId::new(node))
+        .expect("NUMA-preferred reservation failed");
 
     // Check alignment and size.
     assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
@@ -109,7 +58,7 @@ fn reserve_on_node_returns_valid_span() {
 
     // Write and read back to confirm the memory is accessible.
     // SAFETY: `r` owns the reservation; we write and read a single byte at
-    // the start of the usable span before dropping.
+    // the start of the usable span before dropping it.
     unsafe {
         r.as_ptr().write(0x5A);
         assert_eq!(r.as_ptr().read(), 0x5A);
@@ -119,19 +68,20 @@ fn reserve_on_node_returns_valid_span() {
     drop(r);
 }
 
-/// Windows-specific: `reserve_on_node` with a large alignment (> PAGE)
-/// exercises the over-reserve + trim path through `VirtualAllocExNuma` +
-/// `Reservation::from_raw_parts`. Validates that the new direct-NUMA path
-/// (task #83 follow-up) produces a usable, properly-aligned span and that
-/// `Drop` releases the WHOLE over-reserved region without leaking.
+/// Windows-specific: `reserve_preferred_on_node` with a large alignment
+/// (> PAGE) exercises the over-reserve + trim path through
+/// `VirtualAllocExNuma` + `Reservation::from_raw_parts`. Validates that the
+/// direct-NUMA path produces a usable, properly-aligned span and that `Drop`
+/// releases the WHOLE over-reserved region without leaking.
 ///
-/// On Linux/macOS this also runs (the over-reserve + trim is platform-
-/// agnostic via the mmap-based `aligned_vmem::reserve_aligned`); only the
-/// underlying syscall differs. The contract is identical.
+/// On Linux this also runs (the over-reserve + trim is platform-agnostic via
+/// the mmap-based `aligned_vmem` reservation, with `mbind` applied to the
+/// complete reservation span); only the underlying syscall differs. The
+/// contract is identical.
 #[cfg(feature = "vmem-integration")]
 #[test]
-fn reserve_on_node_large_align_round_trip() {
-    use numa_shim::reserve_on_node;
+fn reserve_preferred_on_node_large_align_round_trip() {
+    use numa_shim::{reserve_preferred_on_node, NodeId};
 
     // 4 MiB span aligned to 4 MiB — a realistic allocator-segment size that
     // exercises the over-reserve (size + align = 8 MiB on Windows) path.
@@ -142,8 +92,8 @@ fn reserve_on_node_large_align_round_trip() {
     let align = span;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_on_node(span, align, node)
-        .expect("reserve_on_node 4 MiB aligned 4 MiB returned None");
+    let r = reserve_preferred_on_node(span, align, NodeId::new(node))
+        .expect("NUMA-preferred 4 MiB-aligned reservation failed");
 
     assert_eq!(r.as_ptr() as usize % align, 0, "base must be 4 MiB-aligned");
     assert_eq!(r.len(), span);
@@ -172,19 +122,58 @@ fn reserve_on_node_large_align_round_trip() {
     // Repeat 8× to surface any leak in the release path (loop OOMs quickly
     // if `Drop` only frees `span` instead of `reservation_len`).
     for _ in 0..8 {
-        let r2 = reserve_on_node(span, align, node).expect("repeat reserve");
+        let r2 = reserve_preferred_on_node(span, align, NodeId::new(node)).expect("repeat reserve");
         drop(r2);
     }
 }
 
+/// task #1306: the new typed-error oracle the old `Option` API could not
+/// express — a zero `size` is an argument-contract violation, surfaced as
+/// `InvalidArguments`, DISTINCT from an OOM refusal (`Os`). Runs on every
+/// platform: the Windows backend validates explicitly, the Linux backend
+/// maps `aligned_vmem`'s `invalid_argument` error, and the mock mirrors both.
+#[cfg(feature = "vmem-integration")]
+#[test]
+fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
+    use aligned_vmem::page_size;
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
+
+    let page = page_size();
+    let err =
+        reserve_preferred_on_node(0, page, NodeId::new(0)).expect_err("zero size must be rejected");
+    assert!(
+        matches!(err, ReserveNumaError::InvalidArguments),
+        "expected InvalidArguments, got {err:?}"
+    );
+}
+
+/// task #1306: the Linux single-`u64` nodemask limit (nodes 0..=63) is now a
+/// typed `InvalidNode` error instead of the old silent no-op-with-unbound-
+/// reservation. Linux-only: Windows forwards any node id to the OS (its
+/// refusal surfaces as `Os`), so the `InvalidNode` variant is not assertable
+/// there.
+#[cfg(all(target_os = "linux", not(miri), feature = "vmem-integration"))]
+#[test]
+fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
+    use aligned_vmem::page_size;
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
+
+    let page = page_size();
+    let err = reserve_preferred_on_node(page, page, NodeId::new(64))
+        .expect_err("node 64 must be rejected on Linux");
+    assert!(
+        matches!(err, ReserveNumaError::InvalidNode),
+        "expected InvalidNode, got {err:?}"
+    );
+}
+
 /// task #778 (rust-intel audit round-closing review, finding F3, MEDIUM):
-/// `reserve_on_node`'s Windows path (`reserve_aligned_numa`, fixed by task
-/// #724) must commit only the caller-requested `size` bytes, NOT the whole
+/// the Windows path (`reserve_aligned_numa`, fixed by task #724) must commit
+/// only the caller-requested `size` bytes, NOT the whole
 /// `over = size + align` over-reservation. #724's own "EMPIRICALLY VERIFIED"
-/// claim cited `reserve_on_node_returns_valid_span` /
-/// `reserve_on_node_large_align_round_trip` above as proof -- the review
-/// showed both pass IDENTICALLY against the reverted pre-#724 double-commit
-/// bug (they assert alignment/length/byte-readback, none of which the bug
+/// claim cited the two round-trip tests above as proof — the review showed
+/// both pass IDENTICALLY against the reverted pre-#724 double-commit bug
+/// (they assert alignment/length/byte-readback, none of which the bug
 /// affects), so neither is a real regression test for the specific defect
 /// #724 fixed. This test IS: it inspects the OS's own bookkeeping via
 /// `VirtualQuery` and asserts the region strictly beyond `[base, base+size)`
@@ -195,8 +184,8 @@ fn reserve_on_node_large_align_round_trip() {
 /// with the tail region reporting `MEM_COMMIT`.
 #[cfg(all(windows, feature = "vmem-integration"))]
 #[test]
-fn reserve_on_node_commits_only_the_requested_span_not_the_whole_over_reservation() {
-    use numa_shim::reserve_on_node;
+fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation() {
+    use numa_shim::{reserve_preferred_on_node, NodeId};
 
     // Mirrors the real `MEMORY_BASIC_INFORMATION` (winnt.h) on 64-bit
     // Windows, the only realistic target for this crate (this repo's own
@@ -267,8 +256,8 @@ fn reserve_on_node_commits_only_the_requested_span_not_the_whole_over_reservatio
     let align = 128 * 1024;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_on_node(size, align, node)
-        .expect("reserve_on_node returned None — OOM or contract violation");
+    let r = reserve_preferred_on_node(size, align, NodeId::new(node))
+        .expect("NUMA-preferred reservation failed");
 
     let base = r.as_ptr();
     let committed_len = r.len();

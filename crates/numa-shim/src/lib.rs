@@ -6,7 +6,8 @@
 //!   via `open`/`read`/`close` from the C runtime (always present in glibc/musl).
 //! - Windows: `VirtualAllocExNuma` for NUMA-preferred reservations;
 //!   `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` for detection.
-//! - macOS / miri: no-op (no public NUMA API on macOS; miri has no real OS topology).
+//! - macOS / miri: detection reports "unavailable"; the reservation API
+//!   returns `Err(UnsupportedPlatform)` (no silent no-ops — task #1306).
 //!
 //! This is rare in the Rust ecosystem — typical NUMA crates bind to `libnuma` or
 //! `hwloc`, pulling in heavy C dependencies. `numa-shim` has **zero non-system
@@ -27,38 +28,46 @@
 //!
 //! ## Safety
 //!
-//! The public API is safe to call from `#![forbid(unsafe_code)]` consumers
-//! with one exception: [`bind_range`] — the crate's single `pub unsafe fn`,
-//! because it hands a raw address range to the OS — carries its own
-//! documented `# Safety` contract (task #1277, review N7: this fact used to
-//! live only in a `//` comment, invisible in rendered docs).
+//! The public API is safe to call from `#![forbid(unsafe_code)]` consumers —
+//! the crate has NO `pub unsafe fn`. `unsafe` is confined to the per-OS
+//! `mod platform` blocks plus a small set of crate-root Linux mbind FFI
+//! helpers (`mbind_preferred_linux`, `libc_mbind`, and the
+//! `extern "C" { fn syscall(...) }` declaration), each with `// SAFETY:` proof
+//! comments. task #1277 (review N7): the old claim that unsafe was "confined to
+//! platform modules" was false — those crate-root helpers sit outside every
+//! `mod platform`. The `bind_range` byte-range API (previously the single
+//! `pub unsafe fn`) was removed in task #1306 as it was confirmed broken
+//! (unaligned `addr` → silent EINVAL; mbind default flags affect only FUTURE
+//! faults, not already-touched pages).
 //!
 //! ## Feature flags
 //!
 //! | Flag | Effect |
 //! |------|--------|
-//! | `vmem-integration` | Enables `reserve_on_node`, which uses the `aligned-vmem` crate for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
+//! | `vmem-integration` | Enables `reserve_preferred_on_node`, which uses the `aligned-vmem` crate for the reservation step. Windows path uses `VirtualAllocExNuma`; Linux reserves then calls `mbind`. |
 //!
 //! ## Platform matrix
 //!
-//! | Platform | [`current_node`] | [`bind_range`] | `reserve_on_node` (feature) |
-//! |----------|-----------------|----------------|-------------------------------|
-//! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | `mbind(2)` via syscall | mmap then mbind |
-//! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | no-op | mmap (no mbind) |
-//! | Windows (non-miri) | `GetCurrentProcessorNumberEx` | no-op (use `reserve_on_node`) | `VirtualAllocExNuma` (direct, via `Reservation::from_raw_parts`) |
-//! | macOS | `None` | no-op | `reserve_aligned` (no binding) |
-//! | miri | `None` | no-op | `reserve_aligned` (no binding) |
-//! | other | `None` | no-op | `reserve_aligned` (no binding) |
+//! | Platform | [`current_node`] | [`reserve_preferred_on_node`] (feature) |
+//! |----------|-----------------|------------------------------------------|
+//! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | mmap then mbind (complete span, before first touch) |
+//! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | `UnsupportedArchitecture` error |
+//! | Windows (non-miri) | `GetCurrentProcessorNumberEx` | `VirtualAllocExNuma` |
+//! | macOS | `None` | `UnsupportedPlatform` error |
+//! | miri | `None` | `UnsupportedPlatform` error |
+//! | other | `None` | `UnsupportedPlatform` error |
 
 // This crate intentionally contains unsafe OS FFI code.
-// The public API is safe EXCEPT `bind_range`, a `pub unsafe fn` carrying
-// its own documented `# Safety` contract; all other unsafe lives in the
-// per-OS `mod platform` blocks plus a small set of crate-root Linux mbind
-// FFI helpers (`bind_range_impl_linux`, `libc_mbind`, and the
+// The public API is safe — all unsafe lives in the per-OS `mod platform`
+// blocks plus a small set of crate-root Linux mbind FFI helpers
+// (`mbind_preferred_linux`, `libc_mbind`, and the
 // `extern "C" { fn syscall(...) }` declaration they call through), each
 // documented with // SAFETY: proof comments. task #1277 (review N7): the
 // old "confined to platform modules" claim was false — those crate-root
-// helpers sit outside every `mod platform`.
+// helpers sit outside every `mod platform`. The `bind_range` byte-range
+// API (previously the single `pub unsafe fn`) was removed in task #1306
+// as it was confirmed broken (unaligned `addr` → silent EINVAL; mbind
+// default flags affect only FUTURE faults, not already-touched pages).
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -68,15 +77,106 @@
 ///
 /// [`current_node`] returns `None` instead of this sentinel; `NO_NODE` is
 /// provided for interop with code that uses the sentinel pattern.
+///
+/// As of task #1306, `NO_NODE` is no longer accepted by the reservation API
+/// (`reserve_preferred_on_node`). It is now used only for detection-side interop;
+/// `current_node()` returns `Option<u32>` for the no-preference case.
 pub const NO_NODE: u32 = u32::MAX;
 
-/// Re-exported so callers of [`reserve_on_node`] can name the return type as
-/// `numa_shim::Reservation` without adding a direct `aligned-vmem`
+/// A NUMA node identifier for the reservation/policy API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId(u32);
+
+impl NodeId {
+    /// Construct a `NodeId` from a raw `u32` without validation.
+    ///
+    /// Node validity is platform- and runtime-dependent (Linux nodemask limit
+    /// vs Windows forwarding any id to the OS). Out-of-range ids surface as
+    /// [`ReserveNumaError::InvalidNode`]/[`ReserveNumaError::Os`] from the
+    /// fallible API instead of being rejected at construction.
+    ///
+    /// The sentinel value [`NO_NODE`] (`u32::MAX`) must NOT be wrapped —
+    /// detection APIs return `Option<u32>` for the "no preference" case.
+    /// Wrap the `u32` only when a preference genuinely exists.
+    ///
+    /// # Ergonomic path from detection
+    ///
+    /// ```text
+    /// match numa_shim::current_node() {
+    ///     Some(n) => numa_shim::reserve_preferred_on_node(size, align, NodeId::new(n)),
+    ///     None => aligned_vmem::reserve_aligned(size, align),
+    /// }
+    /// ```
+    #[must_use]
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    /// Return the raw node id wrapped by this `NodeId`.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// The failure cause of a NUMA-preferred reservation attempt.
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum ReserveNumaError {
+    /// The platform provides no NUMA API (macOS, miri, other unsupported OS).
+    UnsupportedPlatform,
+    /// Linux architecture without a known `SYS_MBIND` syscall number.
+    UnsupportedArchitecture,
+    /// `size`/`align` violated the reservation contract (zero size, align not
+    /// a power of two >= page size, size not a page multiple, or size+align
+    /// overflow). Carried as one variant because the underlying validator
+    /// cannot distinguish which parameter was at fault.
+    InvalidArguments,
+    /// The node id cannot be addressed by this platform's nodemask — the
+    /// documented Linux implementation limit: a single `u64` nodemask
+    /// addresses nodes 0..=63 only.
+    InvalidNode,
+    /// The OS refused an operation; the io::Error was captured immediately
+    /// at the failing syscall, before any cleanup FFI could overwrite errno.
+    Os(std::io::Error),
+}
+
+impl core::fmt::Display for ReserveNumaError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnsupportedPlatform => {
+                f.write_str("NUMA-preferred reservation is unsupported on this platform")
+            }
+            Self::UnsupportedArchitecture => {
+                f.write_str("Linux architecture without a known SYS_MBIND syscall number")
+            }
+            Self::InvalidArguments => {
+                f.write_str("invalid arguments (reservation contract violation)")
+            }
+            Self::InvalidNode => {
+                f.write_str("NUMA node id cannot be addressed by this platform's nodemask")
+            }
+            Self::Os(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for ReserveNumaError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Os(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+/// Re-exported so callers of [`reserve_preferred_on_node`] can name the return
+/// type as `numa_shim::Reservation` without adding a direct `aligned-vmem`
 /// dependency of their own. This re-export makes the intentional semver
 /// coupling between the two sibling crates visible in `numa-shim`'s own
 /// public API (item 46, `docs/CORRECTNESS_OPEN_ITEMS.md`) rather than
-/// leaving it implicit — see [`reserve_on_node`]'s own doc section on the
-/// coupling for the full rationale.
+/// leaving it implicit — see [`reserve_preferred_on_node`]'s own doc section
+/// on the coupling for the full rationale.
 #[cfg(feature = "vmem-integration")]
 pub use aligned_vmem::Reservation;
 
@@ -146,20 +246,19 @@ pub mod mock {
         /// deliberately asserted by `tests/mock_dispatch.rs`'s
         /// `current_node_scripted_no_node_yields_none`).
         ///
-        /// task #778 (round-closing review, F13): unlike [`BindRange`] and
-        /// [`ReserveOnNode`] below, this tuple variant deliberately does NOT
-        /// carry `#[non_exhaustive]` -- `current_node()`'s signature is
+        /// task #778 (round-closing review, F13): unlike [`ReservePreferredOnNode`]
+        /// below, this tuple variant deliberately does NOT carry
+        /// `#[non_exhaustive]` -- `current_node()`'s signature is
         /// `fn() -> Option<u32>`, a single scalar return with no plausible
-        /// second field to grow into (unlike `bind_range`/`reserve_on_node`,
-        /// which each take multiple arguments a future API revision could
+        /// second field to grow into (unlike `reserve_preferred_on_node`,
+        /// which takes multiple arguments a future API revision could
         /// add to). Marking it would force `tests/mock_dispatch.rs`'s two
         /// `assert_eq!(calls, vec![MockCall::CurrentNode(n)])` equality-
         /// oracle sites into weaker `matches!` form for no real growth path
         /// this shape needs to reserve. This variant's single-field layout
         /// is considered frozen.
         ///
-        /// [`BindRange`]: MockCall::BindRange
-        /// [`ReserveOnNode`]: MockCall::ReserveOnNode
+        /// [`ReservePreferredOnNode`]: MockCall::ReservePreferredOnNode
         CurrentNode(u32),
         /// `current_node_resolution()` was called; the inner value is what
         /// was returned.
@@ -175,24 +274,18 @@ pub mod mock {
         ///
         /// [`CurrentNode`]: MockCall::CurrentNode
         CurrentNodeResolution(NodeResolution),
-        /// `bind_range(base, len, node)` was called (past the short-circuit).
+        /// `reserve_preferred_on_node(size, align, node)` was called; `node`
+        /// is the raw id from the `NodeId` (recorded BEFORE validation — unlike
+        /// the old `BindRange` which recorded only past its short-circuit —
+        /// so error paths like `InvalidNode` are observable in the log too;
+        /// task #1306).
         #[non_exhaustive]
-        BindRange {
-            /// Base address passed to `bind_range`, as `usize`.
-            base: usize,
-            /// Length in bytes passed to `bind_range`.
-            len: usize,
-            /// NUMA node id passed to `bind_range`.
-            node: u32,
-        },
-        /// `reserve_on_node(size, align, node)` was called.
-        #[non_exhaustive]
-        ReserveOnNode {
+        ReservePreferredOnNode {
             /// Requested reservation size in bytes.
             size: usize,
             /// Required alignment in bytes.
             align: usize,
-            /// NUMA node id passed to `reserve_on_node`.
+            /// Raw NUMA node id wrapped by the `NodeId`.
             node: u32,
         },
     }
@@ -305,9 +398,9 @@ pub enum NodeResolution {
     /// - The real topology was unreadable (e.g., sysfs permissions or
     ///   I/O errors during the first-call cache population).
     /// - The CPU lives on a NUMA node >= 64 — the implementation scans
-    ///   only nodes 0..63 because [`bind_range`] encodes the nodemask
-    ///   in a single `u64` (see the `node >= 64` note in that function's
-    ///   documentation).
+    ///   only nodes 0..63 because [`reserve_preferred_on_node`] enforces
+    ///   a single-`u64` nodemask limit (see the `InvalidNode` error in that
+    ///   function's documentation).
     /// - The kernel has no NUMA sysfs at all (single-node system where
     ///   the `/sys/devices/system/node/` directory is absent).
     ///
@@ -446,107 +539,69 @@ pub fn current_node() -> Option<u32> {
     }
 }
 
-/// Bind the virtual-memory range `[base, base + len)` to NUMA node `node`.
-///
-/// On Linux (x86_64 and aarch64): issues `mbind(2)` via the `syscall(2)`
-/// libc wrapper with `MPOL_PREFERRED` (soft preference — the kernel falls
-/// back to any node on memory pressure). This steers physical page allocation
-/// to `node` at the first page-fault after the call.
-///
-/// On Windows: no-op. Windows has no post-reserve NUMA binding API; use
-/// `reserve_on_node` (with the `vmem-integration` feature) to bind at
-/// reservation time via `VirtualAllocExNuma`.
-///
-/// On macOS / miri / other: no-op.
-///
-/// The function silently ignores OS errors (e.g. `EINVAL` on a single-node
-/// kernel): the allocation is always valid regardless of whether binding
-/// succeeded.
-///
-/// **`node >= 64` is silently skipped** (task #722, rust-intel audit §F1):
-/// the Linux implementation encodes the nodemask in a single `u64`, so it
-/// can only address node IDs 0..63. `mbind(2)` itself supports node counts
-/// up to `MAX_NUMNODES` (commonly 1024 on real kernels), so a caller on a
-/// system with 64+ NUMA nodes binding to one of the high nodes gets a
-/// silent no-op rather than an error or a wider nodemask.
-///
-/// task #725 (rust-intel audit §B5) / task #778 (round-closing review, F6):
-/// this doc previously stated the `[base, base+len)` precondition
-/// UNCONDITIONALLY, even though the function itself never touches `base`
-/// when the node/len short-circuit fires below. Every current test call
-/// site relies on exactly that short-circuit rather than a genuinely valid
-/// reservation (`tests/mock_dispatch.rs` passes a dummy `0x1000 as *mut
-/// u8`; `tests/smoke.rs`'s `bind_range_no_node_is_noop` /
-/// `bind_range_zero_len_is_noop` pass stack-array pointers under
-/// `mock`/`NO_NODE`/`len == 0`) — under the old wording those call sites
-/// were UB-by-contract despite being harmless in practice, and a future
-/// edit reordering the short-circuit after a real platform call would have
-/// silently turned them into real UB with no doc contradiction to catch it.
-/// task #725 fixed the unconditional framing; task #778/F6 fixed a residual
-/// the same audit finding also named but #725 left open: `tests/smoke.rs`'s
-/// `bind_range_on_owned_memory_does_not_panic` is the crate's ONE test call
-/// site that reaches a real platform backend on a real host (`node =
-/// current_node().unwrap_or(0)`, typically `Some(0)`, so NOT short-
-/// circuited) against a `Vec<u8>` heap buffer — not an "OS reservation" in
-/// the literal sense the `# Safety` section below used to require verbatim,
-/// though harmless in practice (`mbind(MPOL_PREFERRED)` only sets kernel
-/// page-policy metadata). The contract below now says "valid mapped range,"
-/// which a heap buffer genuinely satisfies, closing that residual too.
-///
-/// # Safety
-///
-/// When `node != NO_NODE` and `len != 0`, `[base, base + len)` must be a
-/// valid MAPPED RANGE (an OS reservation, a heap allocation, or any other
-/// live mapping) owned exclusively by the caller for the duration of the
-/// call. `mbind(2)`'s `MPOL_PREFERRED` policy applies at PAGE granularity,
-/// so any other data sharing a page with `[base, base+len)` (e.g. a heap
-/// allocator's neighboring objects) is affected by the same policy change —
-/// harmless for a policy hint, but worth knowing when reasoning about which
-/// bytes this call actually touches at the OS level. When either condition
-/// (`node`/`len`) is false, the function returns immediately without
-/// touching `base` at all (see the short-circuit at the top of the body) —
-/// `base` need not be valid, dereferenceable, or even non-dangling in that
-/// case, and any address value is permitted. The function never reads or
-/// writes payload bytes in either case — it only passes the range to
-/// `mbind(2)` (Linux) or a platform no-op, both of which set/ignore kernel
-/// page-policy metadata, never payload memory.
-pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
-    if node == NO_NODE || len == 0 {
-        return;
-    }
-    #[cfg(numa_shim_mock)]
-    {
-        mock::record(mock::MockCall::BindRange {
-            base: base as usize,
-            len,
-            node,
-        });
-    }
-    #[cfg(not(numa_shim_mock))]
-    {
-        // SAFETY: caller guarantees [base, base+len) is a valid mapped range (see the `# Safety` contract above).
-        platform::bind_range_impl(base, len, node);
-    }
-}
-
 /// Reserve `size` bytes of anonymous virtual memory with a NUMA preference for
 /// `node`, aligned to `align`.
 ///
 /// Requires the `vmem-integration` feature.
 ///
-/// - Linux: reserves via [`aligned_vmem::reserve_aligned`] then calls
-///   [`bind_range`] before the first page-fault.
-/// - Windows: calls `VirtualAllocExNuma` directly (the only way to get NUMA
-///   binding on Windows is at reservation time).
-/// - macOS / miri / other: falls back to [`aligned_vmem::reserve_aligned`]
-///   without NUMA binding.
+/// Installs a NUMA preference at RESERVATION time, before the first page fault —
+/// the only point where "successfully bound" is a true statement (mbind default
+/// flags affect only future faults; an already-touched object cannot be
+/// retroactively placed — that is why the old `bind_range` was removed, task
+/// #1306).
 ///
-/// Returns `None` on OOM or if `size`/`align` violate [`aligned_vmem`]
-/// contracts (size non-zero, align a power-of-two `>=` page size, size a
-/// multiple of page size).
+/// `MPOL_PREFERRED` is a SOFT preference: the kernel may fall back under memory
+/// pressure; success does not guarantee physical placement.
 ///
-/// When `node` is `NO_NODE` (or [`None`] from [`current_node`]) the call
-/// behaves like plain [`aligned_vmem::reserve_aligned`].
+/// ## Per-platform behavior
+///
+/// ```text
+/// // Linux x86_64/aarch64:
+/// try_reserve_aligned then mbind(MPOL_PREFERRED) on the COMPLETE
+/// underlying OS reservation span (reservation_ptr()/reservation_len(),
+/// NOT as_ptr()/len() — policy lifetime aligns with mapping lifetime,
+/// no VMA splitting around alignment slack).
+///
+/// // Linux other arch:
+/// Err(UnsupportedArchitecture).
+///
+/// // Windows:
+/// VirtualAllocExNuma at reservation time.
+///
+/// // macOS / miri / other:
+/// Err(UnsupportedPlatform).
+/// ```
+///
+/// On Linux, node ids >= 64 are rejected with `InvalidNode` (single-`u64`
+/// nodemask limit; `mbind(2)` itself supports `MAX_NUMNODES` — documented
+/// implementation limit, not a kernel limit). Windows forwards any id to the OS
+/// and reports its refusal as `Os`.
+///
+/// ## Best-effort fallback
+///
+/// This function has NO silent fallback to an unbound reservation — callers
+/// wanting plain memory should call `aligned_vmem::reserve_aligned` directly.
+/// Best-effort belongs at the call site:
+///
+/// ```text
+/// reserve_preferred_on_node(size, align, node)
+///     .or_else(|_| aligned_vmem::reserve_aligned(size, align))
+/// ```
+///
+/// If the NUMA policy fails AFTER a successful reservation, the reservation is
+/// RELEASED (dropped) and the error returned — never a half-bound reservation,
+/// never `Ok` with silent no-binding (task #1306).
+///
+/// ## Errors
+///
+/// - `InvalidArguments`: `size`/`align` violate the reservation contract (zero
+///   size, align not a power of two >= page size, size not a page multiple,
+///   or size+align overflow).
+/// - `InvalidNode`: Linux node id >= 64 (single-u64 nodemask limit).
+/// - `Os`: the OS refused the operation; the io::Error was captured immediately
+///   at the failing syscall, before any cleanup FFI could overwrite errno.
+/// - `UnsupportedPlatform`: the platform provides no NUMA API (macOS, miri, other).
+/// - `UnsupportedArchitecture`: Linux architecture without a known `SYS_MBIND`.
 ///
 /// # Semver coupling with `aligned-vmem`
 ///
@@ -564,27 +619,39 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
 /// `into_inner()` escape hatch that re-exposes the same type in a public
 /// signature anyway, reproducing the coupling it was meant to remove.
 #[cfg(feature = "vmem-integration")]
-#[must_use]
-pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation> {
+pub fn reserve_preferred_on_node(
+    size: usize,
+    align: usize,
+    node: NodeId,
+) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
     #[cfg(numa_shim_mock)]
     {
-        mock::record(mock::MockCall::ReserveOnNode { size, align, node });
-        // Still chain to aligned_vmem so the test can verify the Reservation works.
-        let r = aligned_vmem::reserve_aligned(size, align)?;
-        if node != NO_NODE {
-            let base = r.as_ptr();
-            let len = r.len();
-            mock::record(mock::MockCall::BindRange {
-                base: base as usize,
-                len,
-                node,
-            });
+        mock::record(mock::MockCall::ReservePreferredOnNode {
+            size,
+            align,
+            node: node.get(),
+        });
+        // task #1306: mirrors the real Linux backend's documented single-u64
+        // nodemask limit (nodes 0..=63) so the InvalidNode error path is
+        // assertable under the mock on EVERY host, not only Linux.
+        if node.get() >= 64 {
+            return Err(ReserveNumaError::InvalidNode);
         }
-        Some(r)
+        // Mirror the real backends' error mapping instead of the old
+        // collapsed `Option`: contract violations are `InvalidArguments`,
+        // OS refusals are `Os` — so mock-mode tests can assert the
+        // distinction the old `reserve_on_node -> Option` API collapsed.
+        aligned_vmem::try_reserve_aligned(size, align).map_err(|e| {
+            if e.is_invalid_argument() {
+                ReserveNumaError::InvalidArguments
+            } else {
+                ReserveNumaError::Os(std::io::Error::from(e))
+            }
+        })
     }
     #[cfg(not(numa_shim_mock))]
     {
-        platform::reserve_on_node_impl(size, align, node)
+        platform::reserve_preferred_on_node_impl(size, align, node)
     }
 }
 
@@ -807,7 +874,14 @@ pub mod linux {
 // compile. Suppress dead-code only in that combination.
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
-    use super::{bind_range_impl_linux, NodeResolution, NO_NODE};
+    #[cfg(all(
+        feature = "vmem-integration",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    use super::mbind_preferred_linux;
+    #[cfg(feature = "vmem-integration")]
+    use super::{NodeId, ReserveNumaError};
+    use super::{NodeResolution, NO_NODE};
 
     pub(super) fn current_node_impl() -> u32 {
         // SAFETY: `sched_getcpu` is a POSIX function that returns the CPU index
@@ -832,30 +906,48 @@ mod platform {
         }
     }
 
-    pub(super) fn bind_range_impl(base: *mut u8, len: usize, node: u32) {
-        // SAFETY: caller of bind_range is `unsafe fn` and guarantees
-        // `[base, base+len)` is a live OS reservation owned by it. mbind only
-        // sets kernel page-policy metadata, never reads/writes payload bytes.
-        unsafe { bind_range_impl_linux(base, len, node) };
-    }
-
     #[cfg(feature = "vmem-integration")]
-    pub(super) fn reserve_on_node_impl(
+    pub(super) fn reserve_preferred_on_node_impl(
         size: usize,
         align: usize,
-        node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
-        // Reserve via aligned-vmem, then bind with mbind before first page access.
-        let r = aligned_vmem::reserve_aligned(size, align)?;
-        if node != NO_NODE {
-            let base = r.as_ptr();
-            let len = r.len();
-            // SAFETY: `r` is a valid live OS reservation we own; `base` and
-            // `len` come from the freshly-created Reservation. mbind only sets
-            // kernel page-policy metadata, never reads/writes payload bytes.
-            unsafe { bind_range_impl_linux(base, len, node) };
+        node: NodeId,
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        {
+            let raw_node = node.get();
+            if raw_node >= 64 {
+                // task #722/#1306: single-u64 nodemask limit, now an explicit error
+                // instead of the old silent no-op.
+                return Err(ReserveNumaError::InvalidNode);
+            }
+            let r = aligned_vmem::try_reserve_aligned(size, align).map_err(|e| {
+                if e.is_invalid_argument() {
+                    ReserveNumaError::InvalidArguments
+                } else {
+                    ReserveNumaError::Os(std::io::Error::from(e))
+                }
+            })?;
+            // Apply the policy to the COMPLETE OS reservation span (task #1306):
+            // reservation_ptr()/reservation_len(), not as_ptr()/len().
+            // SAFETY: `r` is a fresh live OS reservation we own; mbind only sets
+            // kernel page-policy metadata, never payload bytes.
+            let rc = unsafe {
+                mbind_preferred_linux(r.reservation_ptr(), r.reservation_len(), raw_node)
+            };
+            if rc == -1 {
+                // Capture errno IMMEDIATELY — before the cleanup drop below runs
+                // munmap and overwrites it (task #1306, the errno-timing contract).
+                let err = std::io::Error::last_os_error();
+                drop(r);
+                return Err(ReserveNumaError::Os(err));
+            }
+            Ok(r)
         }
-        Some(r)
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            let _ = (size, align, node);
+            Err(ReserveNumaError::UnsupportedArchitecture)
+        }
     }
 
     /// Per-node raw cpumap byte capacity for the cached [`Topology`].
@@ -867,10 +959,10 @@ mod platform {
     /// CPUs on a SINGLE node -- comfortably past the per-node CPU count of
     /// any currently-shipping NUMA system (real multi-socket hosts run at
     /// most a few hundred CPUs per node; the crate's own separate 64-node
-    /// ceiling, documented at `bind_range_impl_linux`'s `node >= 64` guard,
-    /// already bounds total system-wide CPU count far below what 3640/node
-    /// could ever combine with in practice). This is a DEVIATION from
-    /// task #720's original 4 KiB read buffer (chosen there to cover
+    /// ceiling, documented at `reserve_preferred_on_node`'s `InvalidNode`
+    /// error, already bounds total system-wide CPU count far below what
+    /// 3640/node could ever combine with in practice). This is a DEVIATION
+    /// from task #720's original 4 KiB read buffer (chosen there to cover
     /// ~14,500 CPUs on a SINGLE node, a bound this cache does not need to
     /// match since it exists on the stack/static, not the heap, and 64
     /// nodes x 4 KiB would be 256 KiB of static storage). A node whose
@@ -1083,44 +1175,40 @@ mod platform {
 }
 
 // ---------------------------------------------------------------------------
-// Linux mbind: factored out of `platform` so both bind_range_impl and
-// reserve_on_node_impl (under vmem-integration) can call it.
+// Linux mbind: factored out of `platform` so reserve_preferred_on_node_impl
+// (under vmem-integration) can call it.
 // ---------------------------------------------------------------------------
 
-/// Bind `[base, base+len)` to NUMA node `node` via `mbind(2)`.
+/// Bind `[base, base+len)` to NUMA node `node` via `mbind(2)`, returning the
+/// syscall result.
 ///
 /// Uses `syscall(SYS_MBIND, …)` — avoids a hard dependency on `libnuma`.
-/// OS errors (e.g. `EINVAL` on a single-node kernel) are silently discarded.
+/// The caller is responsible for checking the return value and capturing
+/// errno on -1 (task #1306).
 #[cfg(all(
     target_os = "linux",
     not(miri),
+    feature = "vmem-integration",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 // Reached only from the platform module, which is itself unused under `mock`.
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
-unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
-    // task #722 (rust-intel audit §F1): DEVIATION -- this nodemask is a
-    // single u64, so nodes >= 64 are silently skipped rather than bound;
-    // real `mbind(2)` supports node counts up to `MAX_NUMNODES` (commonly
-    // 1024). Documented on `bind_range`'s own public rustdoc.
-    if node == NO_NODE || node >= 64 {
-        return;
-    }
+unsafe fn mbind_preferred_linux(base: *mut u8, len: usize, node: u32) -> i64 {
     // 64-bit nodemask with bit `node` set.
     let nodemask: u64 = 1u64 << node;
     // task #697 (rust-intel audit §F1): `maxnode` is NOT simply "number of
     // bits in the mask" -- the kernel's `get_nodes()` (mm/mempolicy.c)
     // decrements `maxnode` internally before computing which bits are
     // addressable, so `maxnode = 64` only covers bits 0..62, silently
-    // dropping bit 63 (`bind_range(node = 63)` would pass an effectively
-    // empty nodemask and `MPOL_PREFERRED` would silently degrade to local
-    // allocation, with mbind's own errors already discarded by design, so
-    // nothing would surface the miss). `libnuma` compensates for this exact
+    // dropping bit 63. `libnuma` compensates for this exact
     // kernel quirk by always passing bitmask-size + 1; mirrored here.
+    // task #1306: callers now validate node < 64, so this no longer
+    // silently drops bit 63 — the caller returns an explicit InvalidNode
+    // error instead.
     let maxnode: u64 = 65;
-    // SAFETY: `base` is the start of a live OS reservation (caller's contract).
+    // SAFETY: `base` is the start of a live OS reservation we own (caller's contract).
     // `mbind` only sets kernel page-policy metadata; it never accesses payload
-    // bytes. Errors are silently discarded — the allocation is correct regardless.
+    // bytes. Return value IS checked by the caller; errno is captured immediately on -1.
     libc_mbind(
         base as *mut core::ffi::c_void,
         len as u64,
@@ -1128,32 +1216,31 @@ unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
         &nodemask as *const u64,
         maxnode,
         0,
-    );
-}
-
-/// No-op on Linux architectures without a known `SYS_MBIND` number.
-#[cfg(all(
-    target_os = "linux",
-    not(miri),
-    not(any(target_arch = "x86_64", target_arch = "aarch64"))
-))]
-#[cfg_attr(numa_shim_mock, allow(dead_code))]
-unsafe fn bind_range_impl_linux(_base: *mut u8, _len: usize, _node: u32) {
-    // mbind syscall number unknown for this arch; binding is skipped silently.
+    )
 }
 
 /// `MPOL_PREFERRED`: soft preferred-node policy; kernel falls back on pressure.
-#[cfg(all(target_os = "linux", not(miri)))]
+#[cfg(all(target_os = "linux", not(miri), feature = "vmem-integration"))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 const MPOL_PREFERRED: i32 = 1;
 
 /// Syscall number for `mbind(2)` on x86_64.
-#[cfg(all(target_os = "linux", not(miri), target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    not(miri),
+    feature = "vmem-integration",
+    target_arch = "x86_64"
+))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 const SYS_MBIND: i64 = 237;
 
 /// Syscall number for `mbind(2)` on aarch64.
-#[cfg(all(target_os = "linux", not(miri), target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "linux",
+    not(miri),
+    feature = "vmem-integration",
+    target_arch = "aarch64"
+))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 const SYS_MBIND: i64 = 235;
 
@@ -1183,7 +1270,7 @@ unsafe fn libc_mbind(
 ) -> i64 {
     // SAFETY: SYS_MBIND is the correct syscall number for this architecture.
     // `addr` is a live mapping; `nodemask` points to a valid stack-allocated u64.
-    // Errors are ignored by the caller.
+    // Return value IS checked by the caller; errno is captured immediately on -1.
     syscall(
         SYS_MBIND,
         addr,
@@ -1205,6 +1292,8 @@ unsafe fn libc_mbind(
 // compile. Suppress dead-code only in that combination.
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
+    #[cfg(feature = "vmem-integration")]
+    use super::{NodeId, ReserveNumaError};
     use super::{NodeResolution, NO_NODE};
 
     pub(super) fn current_node_impl() -> u32 {
@@ -1260,24 +1349,13 @@ mod platform {
         NodeResolution::Resolved(node as u32)
     }
 
-    /// On Windows there is no post-reserve NUMA binding API equivalent to
-    /// Linux `mbind(2)`. Binding must happen at reservation time via
-    /// `VirtualAllocExNuma`. This function is intentionally a no-op.
-    pub(super) fn bind_range_impl(_base: *mut u8, _len: usize, _node: u32) {
-        // no-op: Windows has no post-mmap NUMA rebind. Use reserve_on_node.
-    }
-
     #[cfg(feature = "vmem-integration")]
-    pub(super) fn reserve_on_node_impl(
+    pub(super) fn reserve_preferred_on_node_impl(
         size: usize,
         align: usize,
-        node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
-        if node == NO_NODE {
-            // No NUMA preference: fall back to ordinary aligned-vmem reserve.
-            return aligned_vmem::reserve_aligned(size, align);
-        }
-        reserve_aligned_numa(size, align, node)
+        node: NodeId,
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
+        reserve_aligned_numa(size, align, node.get())
     }
 
     /// Reserve `size` bytes aligned to `align` with a NUMA preference for `node`
@@ -1331,20 +1409,25 @@ mod platform {
     /// NUMA binding entirely, with no error from either call. Comments
     /// corrected to state the true mechanism.
     ///
-    /// Returns `None` on contract violation (`align` not a power of two `>= PAGE`,
-    /// `size` zero or not a multiple of `PAGE`) or when the OS refuses the
-    /// reservation or the commit (OOM / no memory on the requested node).
+    /// Returns `Err(ReserveNumaError::InvalidArguments)` on contract violation
+    /// (`align` not a power of two `>= PAGE`, `size` zero or not a multiple of
+    /// `PAGE`, or `size + align` overflow). Returns `Err(ReserveNumaError::Os(..))`
+    /// with the GetLastError-captured io::Error when the OS refuses the reservation
+    /// or the commit (captured immediately at the failing call, before cleanup).
+    /// Returns `Ok` on success.
     #[cfg(feature = "vmem-integration")]
     fn reserve_aligned_numa(
         size: usize,
         align: usize,
         node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
         use aligned_vmem::PAGE;
         if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
-            return None;
+            return Err(ReserveNumaError::InvalidArguments);
         }
-        let over = size.checked_add(align)?;
+        let over = size
+            .checked_add(align)
+            .ok_or(ReserveNumaError::InvalidArguments)?;
 
         // SAFETY: `VirtualAllocExNuma(GetCurrentProcess(), NULL, over,
         // MEM_RESERVE, PAGE_READWRITE, node)` reserves (but does not commit)
@@ -1366,21 +1449,23 @@ mod platform {
             )
         };
         if raw.is_null() {
-            return None;
+            // Capture GetLastError IMMEDIATELY — the reservation was refused,
+            // so there is nothing to release; no other call has had a chance
+            // to overwrite it yet (task #1306, the errno-timing contract).
+            let err = std::io::Error::last_os_error();
+            return Err(ReserveNumaError::Os(err));
         }
         let raw_u = raw as usize;
         // Checked alignment arithmetic: `raw_u` is a Win32-returned base (page-
         // aligned, so overflow needs an allocation near the top of the address
         // space), but do not rely on that silently wrapping if it ever happens —
-        // release the reservation and return None rather than hand from_raw_parts
-        // a wrapped base (task #1275 N4: this early return previously leaked the
-        // just-made reservation; the sibling MEM_COMMIT-failure branch below
-        // already released on ITS error path).
+        // release the reservation and return InvalidArguments (syscall SUCCEEDED,
+        // so there is no OS error to capture; this is an argument-domain overflow).
         let Some(rounded) = raw_u.checked_add(align - 1) else {
             // SAFETY: `raw` came from the MEM_RESERVE above and was never
-            // handed out; releasing before returning None cannot double-free.
+            // handed out; releasing before returning InvalidArguments cannot double-free.
             unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
-            return None;
+            return Err(ReserveNumaError::InvalidArguments);
         };
         let base_u = rounded & !(align - 1);
         let base = base_u as *mut u8;
@@ -1398,7 +1483,7 @@ mod platform {
         // anything here. Physical pages are not allocated by EITHER call --
         // Windows allocates them on demand at first touch, regardless of
         // which call reserved/committed the range. NULL indicates commit-
-        // charge exhaustion; the reservation is released and `None` returned.
+        // charge exhaustion; the reservation is released and Os error returned.
         let committed = unsafe {
             VirtualAllocExNuma(
                 GetCurrentProcess(),
@@ -1410,25 +1495,24 @@ mod platform {
             )
         };
         if committed.is_null() {
-            // Commit failed — release the reservation before returning None.
-            // Returning None is still correct even if this release itself
-            // fails: the caller never received an owning handle, so handing
-            // one out now would risk a double-release. The release's own
-            // failure is unreportable through this Option-returning
-            // signature (None already means "no reservation", so the double
-            // failure — commit failed AND the cleanup release failed; the
-            // region leaks until process exit — is indistinguishable from
-            // the ordinary failure path). Silent by choice, matching this
-            // file's other unrecoverable cleanup paths (the sibling
-            // MEM_RESERVE failure branches above); no diagnostics counter
-            // exists in this crate to record it (task #1275 N5 removed an
-            // earlier comment that falsely claimed one).
+            // Commit failed — capture GetLastError IMMEDIATELY (task #1306, the
+            // errno-timing contract), BEFORE the VirtualFree cleanup below
+            // overwrites it. Then release the reservation and return the
+            // captured error.
+            let err = std::io::Error::last_os_error();
+            // Release the reservation. Returning Os(err) is still correct even if
+            // this release itself fails: the caller never received an owning
+            // handle, so handing one out now would risk a double-release. The
+            // release's own failure is unreportable through this Result signature
+            // (we're already returning the commit error; there's no room to carry
+            // a second error from cleanup). Silent by choice, matching this file's
+            // other unrecoverable cleanup paths (task #1275 N5).
             //
             // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
             // has not been handed to any caller yet; releasing before
-            // returning `None` cannot double-free.
+            // returning `Os(err)` cannot double-free.
             let _ = unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
-            return None;
+            return Err(ReserveNumaError::Os(err));
         }
 
         // Win32 contract: committing into an already-reserved region returns the
@@ -1438,13 +1522,16 @@ mod platform {
         // to `from_raw_parts` with a mismatched `base`, constructing a
         // `Reservation` whose bookkeeping does not match what was actually
         // committed. Checked unconditionally now: on mismatch, fail closed —
-        // release the reservation and return `None`.
+        // release the reservation (the commit succeeded, so there is no OS
+        // error to capture) and return a contract-violation error.
         if committed.cast::<u8>() != base {
             // SAFETY: `raw` was returned by the `MEM_RESERVE` call above and
             // has not been handed to any caller yet; releasing before
-            // returning `None` cannot double-free.
+            // returning the error cannot double-free.
             let _ = unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
-            return None;
+            return Err(ReserveNumaError::Os(std::io::Error::other(
+                "VirtualAllocExNuma MEM_COMMIT returned an unexpected base — Win32 contract violation (task #1304)"
+            )));
         }
 
         // SAFETY of from_raw_parts:
@@ -1454,7 +1541,7 @@ mod platform {
         //   was just committed above. Win32 contract: `committed == base` for
         //   commit into an already-reserved region, checked unconditionally
         //   above (task #1304: a mismatch releases the reservation and
-        //   returns `None` before this call is reached).
+        //   returns the error before this call is reached).
         // - `raw` is the start of the OS reservation, non-null.
         // - `over = size + align` is the full reservation length, multiple of PAGE.
         // - `align` was just used to align `base` — same value.
@@ -1474,7 +1561,7 @@ mod platform {
                 false, // ordinary VirtualAllocExNuma pages -- MEM_LARGE_PAGES is never requested here
             )
         };
-        Some(r)
+        Ok(r)
     }
 
     /// Mirrors `PROCESSOR_NUMBER` from the Windows SDK.
@@ -1567,6 +1654,8 @@ mod platform {
 #[cfg(all(target_os = "macos", not(miri)))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
+    #[cfg(feature = "vmem-integration")]
+    use super::{NodeId, ReserveNumaError};
     use super::{NodeResolution, NO_NODE};
 
     /// macOS has no public NUMA API. Always returns `NO_NODE`.
@@ -1578,17 +1667,14 @@ mod platform {
         NodeResolution::Unavailable
     }
 
-    /// No-op: macOS has no NUMA binding API.
-    pub(super) fn bind_range_impl(_base: *mut u8, _len: usize, _node: u32) {}
-
     #[cfg(feature = "vmem-integration")]
-    pub(super) fn reserve_on_node_impl(
+    pub(super) fn reserve_preferred_on_node_impl(
         size: usize,
         align: usize,
-        _node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
-        // macOS: no NUMA API; plain reserve.
-        aligned_vmem::reserve_aligned(size, align)
+        node: NodeId,
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
+        let _ = (size, align, node);
+        Err(ReserveNumaError::UnsupportedPlatform)
     }
 }
 
@@ -1596,6 +1682,8 @@ mod platform {
 #[cfg(miri)]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
+    #[cfg(feature = "vmem-integration")]
+    use super::{NodeId, ReserveNumaError};
     use super::{NodeResolution, NO_NODE};
 
     /// Under miri NUMA detection is not meaningful. Always returns `NO_NODE`.
@@ -1607,16 +1695,14 @@ mod platform {
         NodeResolution::Unavailable
     }
 
-    /// No-op under miri.
-    pub(super) fn bind_range_impl(_base: *mut u8, _len: usize, _node: u32) {}
-
     #[cfg(feature = "vmem-integration")]
-    pub(super) fn reserve_on_node_impl(
+    pub(super) fn reserve_preferred_on_node_impl(
         size: usize,
         align: usize,
-        _node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
-        aligned_vmem::reserve_aligned(size, align)
+        node: NodeId,
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
+        let _ = (size, align, node);
+        Err(ReserveNumaError::UnsupportedPlatform)
     }
 }
 
@@ -1624,6 +1710,8 @@ mod platform {
 #[cfg(not(any(target_os = "linux", windows, target_os = "macos", miri,)))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]
 mod platform {
+    #[cfg(feature = "vmem-integration")]
+    use super::{NodeId, ReserveNumaError};
     use super::{NodeResolution, NO_NODE};
 
     /// Unsupported platform: always returns `NO_NODE`.
@@ -1635,15 +1723,13 @@ mod platform {
         NodeResolution::Unavailable
     }
 
-    /// No-op on unsupported platforms.
-    pub(super) fn bind_range_impl(_base: *mut u8, _len: usize, _node: u32) {}
-
     #[cfg(feature = "vmem-integration")]
-    pub(super) fn reserve_on_node_impl(
+    pub(super) fn reserve_preferred_on_node_impl(
         size: usize,
         align: usize,
-        _node: u32,
-    ) -> Option<aligned_vmem::Reservation> {
-        aligned_vmem::reserve_aligned(size, align)
+        node: NodeId,
+    ) -> Result<aligned_vmem::Reservation, ReserveNumaError> {
+        let _ = (size, align, node);
+        Err(ReserveNumaError::UnsupportedPlatform)
     }
 }

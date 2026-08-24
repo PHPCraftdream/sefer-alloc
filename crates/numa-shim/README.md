@@ -10,8 +10,8 @@ Rust program already links to.
 |----------|---------------|----------------|
 | Linux x86_64 / aarch64 | `sched_getcpu` + sysfs `/sys/devices/system/node/nodeN/cpumap` | `mbind(2)` via raw `syscall(2)` — **no libnuma, no hwloc** |
 | Windows | `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` | `VirtualAllocExNuma` (via `vmem-integration` feature) |
-| macOS | not available (no public NUMA API) | no-op |
-| miri | not available | no-op |
+| macOS | not available (no public NUMA API) | not supported — `Err(UnsupportedPlatform)` |
+| miri | not available | not supported — `Err(UnsupportedPlatform)` |
 
 ## Why yet another NUMA crate?
 
@@ -32,37 +32,38 @@ calls the kernel directly:
 [dependencies]
 numa-shim = "0.1"
 
-# Optional: enables reserve_on_node() which wraps aligned-vmem
+# Optional: enables reserve_preferred_on_node() which wraps aligned-vmem
 # numa-shim = { version = "0.1", features = ["vmem-integration"] }
 ```
 
 ```rust
-use numa_shim::{current_node, bind_range, NO_NODE};
+use numa_shim::current_node;
 
 // Detect the current thread's NUMA node.
 match current_node() {
     Some(node) => println!("on NUMA node {node}"),
     None       => println!("NUMA unavailable"),
 }
-
-// Bind a live allocation to a NUMA node (Linux: mbind; Windows/macOS: no-op).
-let mut buf = vec![0u8; 4096];
-let node = current_node().unwrap_or(0);
-// SAFETY: `buf` is a live allocation owned by this scope.
-unsafe { bind_range(buf.as_mut_ptr(), buf.len(), node) };
 ```
+
+There is deliberately **no "bind an existing allocation" API**. Linux
+`mbind(2)` with default flags only affects *future* page faults, and requires
+a page-aligned address — so binding an already-touched object (e.g. a heap
+`Vec`) would be a silent no-op lie. NUMA placement must be requested at
+**reservation time**, before the first touch — see
+[`reserve_preferred_on_node`](#vmem-integration) below.
 
 ## Feature flags
 
 ### `vmem-integration`
 
-Enables `reserve_on_node`, which reserves aligned anonymous virtual memory
+Enables `reserve_preferred_on_node`, which reserves aligned anonymous virtual memory
 with a NUMA preference using [`aligned-vmem`](https://crates.io/crates/aligned-vmem):
 
 ```toml
 [dependencies]
 numa-shim = { version = "0.1", features = ["vmem-integration"] }
-# `reserve_on_node` returns an `aligned_vmem::Reservation`, so you need the
+# `reserve_preferred_on_node` returns an `aligned_vmem::Reservation`, so you need the
 # crate as a DIRECT dependency to name that type / its constants in your own
 # code — enabling a feature on numa-shim alone does NOT put `aligned_vmem`
 # in your crate's extern prelude (it is only an optional transitive dep).
@@ -70,16 +71,29 @@ aligned-vmem = "0.2"
 ```
 
 ```rust
-use numa_shim::{reserve_on_node, current_node};
+use numa_shim::{current_node, NodeId, ReserveNumaError, reserve_preferred_on_node};
 use aligned_vmem::{page_size, PAGE};
 
-let node = current_node().unwrap_or(0);
-// `page_size()` is the OS's actual runtime page size; `PAGE` (4 KiB) is the
-// compile-time minimum. Prefer `page_size()` when alignment must match what
-// the kernel actually uses.
+// Reserve fresh memory with a NUMA preference installed BEFORE the first
+// page fault — the only point where "successfully bound" is a true
+// statement. `NodeId::new` is unchecked: an id the platform cannot address
+// surfaces as `Err(ReserveNumaError::InvalidNode)` (Linux nodemask limit)
+// or `Err(ReserveNumaError::Os(..))` (Windows forwards any id to the OS).
 let ps = page_size();
-let r = reserve_on_node(ps * 16, PAGE.max(ps), node).expect("OOM");
+let node = current_node().unwrap_or(0);
+let r = reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node))
+    .expect("NUMA-preferred reservation failed");
 // r is an `aligned_vmem::Reservation` — RAII, drops cleanly.
+
+// Best-effort fallback is composed AT THE CALL SITE (the function itself
+// never silently falls back to an unbound reservation):
+let r = match reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node)) {
+    Ok(r) => r,
+    Err(e) => {
+        eprintln!("NUMA preference failed ({e}); using an unbound reservation");
+        aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
+    }
+};
 ```
 
 Without this feature, `numa-shim` has **zero runtime dependencies**.
@@ -104,7 +118,7 @@ transitive dependency through Cargo's additive feature-unification, and never
 ## Public API
 
 ```rust
-/// Sentinel: no NUMA node / unsupported platform.
+/// Sentinel: no NUMA node / unsupported platform (detection-side interop only; the reservation API takes `NodeId`, never the sentinel).
 pub const NO_NODE: u32 = u32::MAX;
 
 /// NUMA node of the calling thread, or None if unavailable.
@@ -125,18 +139,32 @@ pub enum NodeResolution { Resolved(u32), FellBackToZero, Unavailable }
 /// node — use it when a fallback warning / diagnostic logging matters.
 pub fn current_node_resolution() -> NodeResolution;
 
-/// Bind [base, base+len) to a NUMA node (Linux: mbind; others: no-op).
-/// # Safety
-/// [base, base+len) must be a valid MAPPED RANGE (OS reservation, heap
-/// allocation, or any other live mapping) owned exclusively by the caller.
-/// `mbind(MPOL_PREFERRED)` applies at PAGE granularity, so neighboring data
-/// sharing a page is affected too. When `node == NO_NODE` or `len == 0`, the
-/// function returns immediately without touching `base` (any address permitted).
-pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32);
+/// NUMA node identifier for the reservation/policy API.
+/// `NodeId::new(u32)` is unchecked; validity surfaces as a typed error
+/// from the fallible API.
+pub struct NodeId(u32);
 
-/// Reserve aligned anonymous memory with NUMA preference (feature = "vmem-integration").
+/// Failure cause of a NUMA-preferred reservation attempt.
+#[non_exhaustive]
+pub enum ReserveNumaError {
+    UnsupportedPlatform,
+    UnsupportedArchitecture,
+    InvalidArguments,
+    InvalidNode,
+    Os(std::io::Error),
+}
+
+/// Reserve aligned anonymous memory with a preferred NUMA node, installing
+/// the preference at reservation time — before the first page fault.
+/// Linux: mbind(MPOL_PREFERRED) on the COMPLETE OS reservation span, return
+/// value checked, reservation released on policy failure. Windows:
+/// VirtualAllocExNuma. No silent fallback anywhere.
 #[cfg(feature = "vmem-integration")]
-pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation>;
+pub fn reserve_preferred_on_node(
+    size: usize,
+    align: usize,
+    node: NodeId,
+) -> Result<aligned_vmem::Reservation, ReserveNumaError>;
 ```
 
 The two `#[doc(hidden)]` test-only modules — `numa_shim::cpumap` and
@@ -152,13 +180,14 @@ in any release (including patch releases) without a deprecation period
 | x86_64      | 237         |
 | aarch64     | 235         |
 
-On other Linux architectures `bind_range` is a documented no-op (the syscall
-number is unknown; contributions welcome).
+On other Linux architectures `reserve_preferred_on_node` returns
+`Err(ReserveNumaError::UnsupportedArchitecture)` — no silent skip (the
+syscall number is unknown; contributions welcome).
 
-**`node >= 64` is silently skipped** (task #722): the Linux nodemask is a
-single `u64`, so only node IDs 0..63 can be addressed, even though
-`mbind(2)` itself supports node counts up to `MAX_NUMNODES` (commonly 1024
-on real kernels).
+**`node >= 64` returns `Err(ReserveNumaError::InvalidNode)`** (task #1306;
+previously a silent skip): the Linux nodemask is a single `u64`, so only
+node IDs 0..63 can be addressed, even though `mbind(2)` itself supports
+node counts up to `MAX_NUMNODES` (commonly 1024 on real kernels).
 
 ## MSRV
 

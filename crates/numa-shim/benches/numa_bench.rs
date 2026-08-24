@@ -6,12 +6,14 @@
 //! RUSTFLAGS="--cfg numa_shim_mock" cargo bench -p numa-shim --bench numa_bench -- --calibrate 1
 //! RUSTFLAGS="--cfg numa_shim_mock" cargo bench -p numa-shim --bench numa_bench
 //! ```
+//! (the `reserve_preferred_on_node` bench additionally needs
+//! `--features vmem-integration`.)
 //!
 //! All workloads use the `mock` backend for deterministic runs on any host
 //! (including systems without real NUMA hardware). The backend is enabled by
 //! the build-time cfg `numa_shim_mock` (task #1288), no longer a Cargo feature.
-//! The mock backend REPLACES the real platform backend, so `bind_range` is safe
-//! to call with dummy pointers (the mock never dereferences them).
+//! The mock backend REPLACES the real platform backend, so the benched public
+//! functions never touch real OS topology.
 
 fn main() {
     #[cfg(not(numa_shim_mock))]
@@ -39,13 +41,7 @@ fn run() {
     use std::hint::black_box;
 
     use bench_scale_tool::Harness;
-    use numa_shim::{bind_range, current_node, mock, NO_NODE};
-
-    /// Page-sized buffer for bind_range workloads.
-    ///
-    /// The mock backend never touches this memory, but we pass a valid allocation
-    /// to keep the test honest — the real backend would require it.
-    const PAGE: usize = 4096;
+    use numa_shim::{current_node, mock};
 
     let mut h = Harness::new("numa_bench", env!("CARGO_MANIFEST_DIR"));
 
@@ -70,39 +66,24 @@ fn run() {
         black_box(n);
     });
 
-    // ── bind_range() ───────────────────────────────────────────────────────
+    // ── reserve_preferred_on_node() ────────────────────────────────────────
 
-    // bind_range on a valid page-sized allocation to a real node (7).
-    // Under mock, this records the call without touching memory; the cost is
-    // the mock-record overhead. Under the real backend, this would issue
-    // `mbind(2)` (Linux) or be a no-op (Windows/macOS).
-    let mut buf: Vec<u8> = vec![0u8; PAGE];
-    let base = buf.as_mut_ptr();
-    let len = buf.len();
-    mock::set_current_node(7);
-    h.bench("bind_range/page_to_node_7", move || {
-        // SAFETY: `buf` is a live heap allocation owned by this scope.
-        // Under mock, the function never dereferences `base`.
-        unsafe {
-            bind_range(black_box(base), black_box(len), black_box(7));
-        }
-    });
-
-    // bind_range with NO_NODE sentinel — a short-circuit no-op.
-    // This must return immediately without any backend work.
-    h.bench("bind_range/no_node_noop", move || {
-        // SAFETY: NO_NODE causes an early return before any OS call.
-        unsafe {
-            bind_range(black_box(base), black_box(len), black_box(NO_NODE));
-        }
-    });
-
-    // bind_range with len == 0 — another short-circuit no-op.
-    h.bench("bind_range/zero_len_noop", move || {
-        // SAFETY: len == 0 causes an early return before any OS call.
-        unsafe {
-            bind_range(black_box(base), black_box(0), black_box(7));
-        }
+    // task #1306: replaces the old `bind_range` benches (that API is gone).
+    // Measures the mock record + validation overhead on the cheapest real
+    // path: node 64 is out of the single-`u64` nodemask range, so every call
+    // records once and returns `Err(InvalidNode)` without touching the OS or
+    // allocating — the same record-overhead measurement intent the old
+    // bind_range benches had. Requires `vmem-integration` (the function is
+    // feature-gated), hence the cfg.
+    #[cfg(feature = "vmem-integration")]
+    h.bench("reserve_preferred_on_node/invalid_node_error", || {
+        use numa_shim::{reserve_preferred_on_node, NodeId};
+        let r = black_box(reserve_preferred_on_node(
+            black_box(4096),
+            black_box(4096),
+            black_box(NodeId::new(64)),
+        ));
+        let _ = black_box(r);
     });
 
     h.run();

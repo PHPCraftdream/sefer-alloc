@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "100% Rust NUMA detection and binding — no C/C++ libraries (no libnuma, no hwloc). Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. macOS/miri no-op. Zero crate deps by default. forbid(unsafe_code)-friendly except the one unsafe fn, bind_range."
+description = "100% Rust NUMA detection and reservation — no C/C++ libraries (no libnuma, no hwloc). Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. Zero crate deps by default; the public API is fully forbid(unsafe_code)-friendly."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa-shim"
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management"]
 
-# docs.rs: render with `vmem-integration` on so `reserve_on_node` — one of
+# docs.rs: render with `vmem-integration` on so `reserve_preferred_on_node` — one of
 # this crate's two headline capabilities, and the thing the README documents
 # at length — actually appears on the published docs page; the default
 # feature set is empty (see `[features]` below), so a plain `cargo doc`

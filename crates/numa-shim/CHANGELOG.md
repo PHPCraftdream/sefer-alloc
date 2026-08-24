@@ -119,6 +119,14 @@ request. At release time, consolidate this section under a dated
 - The sysfs cpumap parser was extracted into a target-independent module with
   real behavioral oracles runnable on every host, not only real Linux (task
   #721) — test infrastructure (`#[doc(hidden)]`), not public API.
+- **`NodeId`** (task #1306) — newtype over `u32` for NUMA node identifiers
+  in the reservation/policy API (`NodeId::new(u32)` unchecked constructor,
+  `NodeId::get() -> u32` accessor). Detection APIs keep returning
+  `Option<u32>`; the ergonomic path is `current_node().map(NodeId::new)`.
+- **`ReserveNumaError`** (task #1306) — `#[non_exhaustive]` error enum
+  (`UnsupportedPlatform`, `UnsupportedArchitecture`, `InvalidArguments`,
+  `InvalidNode`, `Os(std::io::Error)`) implementing `Display` and
+  `std::error::Error`, returned by `reserve_preferred_on_node`.
 
 ### Changed
 
@@ -144,6 +152,53 @@ request. At release time, consolidate this section under a dated
   rendered docs, exemption stated in each module's own doc comment), and
   `cargo-semver-checks` already excludes `#[doc(hidden)]` items from its
   public-API model. Docs-only change: zero code, zero visibility change.
+- **BREAKING (task #1306) — `reserve_on_node(size, align, node: u32) ->
+  Option<Reservation>` replaced by `reserve_preferred_on_node(size, align,
+  node: NodeId) -> Result<Reservation, ReserveNumaError>`** (still behind
+  `vmem-integration`). The rename states what the operation actually does —
+  `MPOL_PREFERRED` is a soft preference, not a bind. Behavioral changes
+  beyond the signature:
+  - Linux now applies the policy to the COMPLETE underlying OS reservation
+    span (`reservation_ptr()`/`reservation_len()`), not just the aligned
+    usable subrange — policy lifetime matches mapping lifetime and no VMA
+    splitting occurs around alignment slack.
+  - The `mbind(2)` return value is now CHECKED (previously discarded): a
+    policy failure after a successful reservation RELEASES the reservation
+    and returns `Err(ReserveNumaError::Os(..))` with errno captured
+    immediately at the failing syscall — never a half-bound reservation,
+    never `Ok` with a silent no-binding.
+  - The silent `node >= 64` no-op is now `Err(ReserveNumaError::InvalidNode)`
+    (documented single-`u64` nodemask implementation limit).
+  - Linux architectures without a known `SYS_MBIND` number now return
+    `Err(ReserveNumaError::UnsupportedArchitecture)` instead of silently
+    skipping the bind.
+  - macOS / miri / other unsupported platforms now return
+    `Err(ReserveNumaError::UnsupportedPlatform)` instead of silently
+    falling back to an UNBOUND reservation. No best-effort fallback exists
+    anywhere inside the function; callers wanting best-effort compose it
+    visibly at the call site:
+    `reserve_preferred_on_node(size, align, node).or_else(|_| aligned_vmem::reserve_aligned(size, align))`.
+  - Invalid `size`/`align` (aligned-vmem contract violations) now return
+    `Err(ReserveNumaError::InvalidArguments)` instead of `None`
+    (indistinguishable from OOM in the old API).
+- **BREAKING (task #1306) — raw `u32` node parameters removed from the
+  reservation API**: `NodeId` is now the node parameter type, and `NO_NODE`
+  (`u32::MAX`) is no longer accepted by any reservation/policy signature —
+  "no preference" is expressed by calling `aligned_vmem::reserve_aligned`
+  directly (or the documented `.or_else` composition), not by a sentinel.
+  `NO_NODE` still exists as a detection-side interop constant
+  (`current_node()` returns `Option<u32>` and never the sentinel).
+- **BREAKING (task #1306) — `mock::MockCall::ReserveOnNode` replaced by
+  `mock::MockCall::ReservePreferredOnNode { size, align, node: u32 }`**
+  (still `#[non_exhaustive]`): records the call BEFORE validation (unlike
+  the old `BindRange`, which recorded only past its short-circuit), so
+  error paths such as `InvalidNode` are observable in the call log. The
+  old API's separate `BindRange` record no longer exists — the new function
+  installs policy inside the platform backend, which the mock replaces
+  wholesale.
+- `Cargo.toml` `description` (task #1306, metadata): no longer claims
+  "except the one unsafe fn, bind_range" — the crate now has NO
+  `pub unsafe fn` at all.
 
 ### Removed
 
@@ -157,7 +212,7 @@ crate's first crates.io publish" — which was false: 0.1.0 was published
 the `mock` Cargo-feature decision (decision 5 of 5 in that commit), not
 these API breaks — that remainder is recorded on
 `docs/correctness-open-items/ACTIVE.md` item 42. A fourth breaking change
-was added by task #1288 (2026-08-23). Under Cargo's 0.x rules a release
+was added by task #1288 (2026-08-23), and the main-API breaks of task #1306 (2026-08-24) follow it. Under Cargo's 0.x rules a release
 containing any of these cannot be `0.1.1`; which version this becomes is
 the still-open F1 owner decision (task #1262) — this section records what
 already broke, independent of that choice.
@@ -193,6 +248,21 @@ already broke, independent of that choice.
   (or `--features mock` inside the crate) with `RUSTFLAGS="--cfg numa_shim_mock" cargo test`
   — the `numa_shim::mock` module, its API, and the dispatch behavior are unchanged;
   only the activation mechanism moved.
+- **BREAKING (task #1306, 2026-08-24) — `bind_range(base, len, node)` removed
+  entirely** (the crate's single `pub unsafe fn`). The byte-range binding API
+  was confirmed broken by design, not by a fixable bug: `mbind(2)` requires a
+  page-aligned `addr`, so an ordinary heap `Vec` (the crate's own README
+  example) silently got `EINVAL` — and the discarded return value hid it; and
+  even with alignment fixed, `mbind` with default flags only affects FUTURE
+  page faults, so an already-touched allocation could never be retroactively
+  placed. Full analysis:
+  `docs/NUMA_BIND_RANGE_CONTRACT_RECOMMENDATION_2026-08-24-121245-Sol-codex.md`.
+  There is no replacement for the "bind an existing object" use case — it is
+  not truthfully implementable. Reserve with `reserve_preferred_on_node`
+  instead.
+- **BREAKING (task #1306) — `mock::MockCall::BindRange` variant removed**
+  together with `bind_range` itself (see the Changed entry for its
+  replacement).
 
 ## 0.1.0 - 2026-06-29
 
