@@ -1432,6 +1432,40 @@ mod platform {
         cpu_to_numa_node_checked(cpu_idx).unwrap_or(NO_NODE)
     }
 
+    /// `EINTR` — a signal interrupted the syscall before it made any
+    /// progress; POSIX permits re-issuing the identical call. Defined
+    /// locally because this crate deliberately avoids the `libc` crate
+    /// (same local-constant precedent as `SYS_MBIND`/`MPOL_PREFERRED`);
+    /// value from Linux `asm-generic errno-base.h`, identical on x86_64
+    /// and aarch64.
+    const EINTR: i32 = 4;
+
+    /// Bound on consecutive EINTR retries for one `open(2)`/`read(2)`
+    /// progress step in `read_cpumap_into` (task #1319, sixteenth review
+    /// P2). Bounded rather than unbounded so a pathological signal storm
+    /// (a profiler or interval timer firing faster than the syscall can
+    /// complete) cannot spin the `OnceLock` topology initializer forever —
+    /// every thread hitting `current_node()` blocks on that initializer,
+    /// so an unbounded retry would trade the permanent-`None` availability
+    /// bug for a hang. 16 is far above what a healthy-but-signal-busy
+    /// process produces per progress step (one stray signal clears on the
+    /// first retry; each retry is one cheap re-issued syscall on a <=4 KiB
+    /// kernel-backed sysfs file), while capping worst-case init delay at
+    /// ~16 syscall re-issues per step. The streak resets on any forward
+    /// progress, so this bounds CONSECUTIVE interruptions, not total
+    /// retries across the read loop.
+    const EINTR_RETRY_LIMIT: u32 = 16;
+
+    /// Pure retry decision for task #1319: given the errno of a failed
+    /// `open`/`read` (captured before any cleanup FFI call, per task
+    /// #1306's errno-timing contract) and the number of consecutive EINTR
+    /// retries already spent without progress, may the caller re-issue the
+    /// identical syscall? Every other errno fails closed exactly as before
+    /// the fix.
+    fn should_retry_eintr(err: &std::io::Error, consecutive_eintr: u32) -> bool {
+        err.raw_os_error() == Some(EINTR) && consecutive_eintr < EINTR_RETRY_LIMIT
+    }
+
     /// Open the cpumap file at `path` and read its complete contents into
     /// the caller-supplied fixed buffer `out`, returning the byte count.
     ///
@@ -1449,14 +1483,39 @@ mod platform {
     /// an init-time stack scratch buffer (`CPUMAP_READ_BUF_LEN`), so this
     /// function remains allocation-free (task #777: the original heap `Vec`
     /// destination created a reentrancy hazard; fixed-size storage removes it).
+    ///
+    /// task #1319 (sixteenth review P2): a transient `EINTR` from
+    /// `open`/`read` is retried a bounded number of times
+    /// (`EINTR_RETRY_LIMIT`) before counting as a failure — one signal
+    /// during the process's first `current_node()` call must not
+    /// permanently disable NUMA detection (the caller caches the result
+    /// in a process-lifetime `OnceLock`). Every other errno, and
+    /// retry-limit exhaustion, fail closed exactly as the pre-#1319 code
+    /// did.
     fn read_cpumap_into(path: &[u8], out: &mut [u8]) -> Option<usize> {
-        // SAFETY: `path` is a valid nul-terminated C string constructed above.
-        // `open` is a POSIX syscall; we check for -1 on error.
-        let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
-        if fd < 0 {
+        let mut open_eintr_streak = 0u32;
+        let fd = loop {
+            // SAFETY: `path` is a valid nul-terminated C string constructed
+            // by the caller. `open` is a POSIX syscall; we check for a
+            // negative return on error.
+            let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
+            if fd >= 0 {
+                break fd;
+            }
+            // Capture errno IMMEDIATELY — before any subsequent FFI call
+            // can overwrite it (task #1306, the errno-timing contract).
+            // Allocation-free: see the read loop below.
+            let err = std::io::Error::last_os_error();
+            if should_retry_eintr(&err, open_eintr_streak) {
+                // Re-issue the identical open: EINTR means no fd was
+                // created, so there is nothing to close before retrying.
+                open_eintr_streak += 1;
+                continue;
+            }
             return None;
-        }
+        };
         let mut total = 0usize;
+        let mut read_eintr_streak = 0u32;
         loop {
             if total >= out.len() {
                 // SAFETY: `fd` was opened by us and must be closed exactly once.
@@ -1475,6 +1534,21 @@ mod platform {
                 )
             };
             if n < 0 {
+                // Capture errno IMMEDIATELY — before the `libc_close`
+                // cleanup below can overwrite it (task #1306, the
+                // errno-timing contract). `last_os_error()`/`raw_os_error()`
+                // are allocation-free (the errno code is stored inline, no
+                // heap), preserving task #777's allocation-free requirement
+                // for this OnceLock-initializer path.
+                let err = std::io::Error::last_os_error();
+                if should_retry_eintr(&err, read_eintr_streak) {
+                    // Re-issue the SAME read — same fd, same buffer offset,
+                    // same remaining length: POSIX guarantees a read that
+                    // fails with EINTR transferred zero bytes, so `total`
+                    // already marks the correct resume point.
+                    read_eintr_streak += 1;
+                    continue;
+                }
                 // SAFETY: same as above.
                 unsafe { libc_close(fd) };
                 return None;
@@ -1483,6 +1557,10 @@ mod platform {
                 break; // EOF: `out[..total]` holds the complete file.
             }
             total += n as usize;
+            // Forward progress: a subsequent EINTR starts a fresh streak, so
+            // `EINTR_RETRY_LIMIT` bounds consecutive interruptions, never a
+            // progressing read loop.
+            read_eintr_streak = 0;
         }
         // SAFETY: `fd` was opened by us and must be closed exactly once.
         unsafe { libc_close(fd) };
