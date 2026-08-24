@@ -18,10 +18,12 @@ categories = ["os", "memory-management"]
 # fifteenth review finding F11), not an untested "might work" gap: the
 # crate's Windows FFI test layout has always assumed a 64-bit pointer
 # width and CI has only ever covered 64-bit `windows-latest`.
-# Documentation-only policy — no `cfg(target_pointer_width)` gate is
-# enforced in code. The same statement lives in README.md's platform
-# table and src/lib.rs's crate-doc platform matrix; keep the three in
-# sync.
+# Compile-time enforced (task #1321, sixteenth review P2): src/lib.rs
+# emits `compile_error!` under `cfg(all(windows,
+# target_pointer_width = "32"))`, so a 32-bit Windows build fails loudly
+# instead of silently compiling an unsupported configuration. The same
+# statement lives in README.md's platform table and src/lib.rs's
+# crate-doc platform matrix; keep the three in sync.
 
 # docs.rs: render with `vmem-integration` on so `reserve_preferred_on_node` — one of
 # this crate's two headline capabilities, and the thing the README documents

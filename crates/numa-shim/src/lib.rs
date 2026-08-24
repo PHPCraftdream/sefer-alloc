@@ -62,10 +62,13 @@
 //! explicitly out of scope — an owner policy decision (task #1313,
 //! fifteenth review finding F11), matching a Windows FFI test layout that
 //! has always assumed a 64-bit pointer width and CI coverage that has only
-//! ever run 64-bit `windows-latest`. This is a documentation policy, not a
-//! code gate: no `cfg(target_pointer_width)` check is enforced (no behavior
-//! change). The README's platform table states the same policy; the two are
-//! kept in sync deliberately.
+//! ever run 64-bit `windows-latest`. This policy is compile-time enforced
+//! (task #1321, sixteenth review P2): the crate root emits `compile_error!`
+//! under `cfg(all(windows, target_pointer_width = "32"))`, so a 32-bit
+//! Windows build fails loudly instead of silently compiling an unsupported
+//! configuration; 32-bit non-Windows targets are unaffected and keep
+//! compiling normally. The README's platform table states the same policy;
+//! the two are kept in sync deliberately.
 
 // This crate intentionally contains unsafe OS FFI code.
 // The public API is safe — all unsafe lives in the per-OS `mod platform`
@@ -80,6 +83,21 @@
 // default flags affect only FUTURE faults, not already-touched pages).
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
+
+// task #1321 (sixteenth review P2): the 64-bit-only Windows policy stated
+// in the platform matrix above is enforced here, not just documented. The
+// condition is Windows-specific by construction — 32-bit non-Windows
+// targets (e.g. i686-unknown-linux-gnu) are not in this crate's scope
+// restriction and keep compiling normally. Placed after the inner
+// attributes because a macro invocation is an item and must not separate
+// `//!` docs / `#![...]` attributes from each other.
+#[cfg(all(windows, target_pointer_width = "32"))]
+compile_error!(
+    "numa-shim supports 64-bit Windows only (owner policy, task #1313/F11, \
+     enforced by task #1321); 32-bit Windows (target_pointer_width = \"32\") \
+     is out of scope -- see the crate-level platform-matrix doc comment and \
+     README.md's platform table for the full policy statement"
+);
 
 /// Sentinel value meaning "no NUMA node / feature disabled / unsupported
 /// platform". This constant is useful when interfacing with APIs that return
