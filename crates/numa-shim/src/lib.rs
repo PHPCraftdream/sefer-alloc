@@ -357,17 +357,18 @@ pub mod mock {
 /// Outcome of a NUMA-node determination attempt for the calling thread.
 ///
 /// This enum provides finer-grained status information than the simpler
-/// `Option<u32>` returned by [`current_node`], allowing callers to distinguish
-/// "the calling thread's CPU was genuinely resolved to this NUMA node via the
-/// platform topology" from "the topology could not be read and the function
-/// silently fell back to node 0" on Linux.
+/// `Option<u32>` returned by [`current_node`], exposing WHY a node could
+/// not be determined rather than just that it could not.
 ///
-/// This is an **additive** API — [`current_node`] is unchanged and remains the
-/// recommended function for most callers. Use `current_node_resolution()` only
-/// when you need to detect the fallback case (e.g., for diagnostic logging or
-/// to trigger a warning that NUMA hints may not be effective).
+/// As of task #1308, [`current_node`] itself fails closed — it returns `None`
+/// for every non-`Resolved` outcome — so the distinction this enum exposes is
+/// diagnostic ("WHY detection failed") not a way to recover a node-0 answer.
+/// [`current_node`] remains the recommended function for most callers; use
+/// `current_node_resolution()` for diagnostic logging / warnings that NUMA
+/// hints may not be effective.
 ///
-/// See task #1266, audit finding F4 for background.
+/// See task #1266, audit finding F4 for background, and task #1308 for the
+/// fail-closed origin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum NodeResolution {
@@ -404,10 +405,14 @@ pub enum NodeResolution {
     /// - The kernel has no NUMA sysfs at all (single-node system where
     ///   the `/sys/devices/system/node/` directory is absent).
     ///
-    /// In all these cases, [`current_node`] collapses this into
-    /// `Some(0)`, which is indistinguishable from a genuinely
-    /// single-node system. This variant exists to expose the fallback.
-    FellBackToZero,
+    /// [`current_node`] returns `None` for this variant as well (task #1308
+    /// — it previously collapsed it into `Some(0)`). This variant exists
+    /// to distinguish "the platform HAS a NUMA API and detection ran, but
+    /// this specific CPU could not be resolved" from [`NodeResolution::Unavailable`]
+    /// ("the platform has no NUMA API / the OS call itself failed") — a real,
+    /// useful distinction for diagnostic/logging callers even though both map
+    /// to `None` in `current_node()`.
+    TopologyUnavailable,
 
     /// The platform provides no NUMA API, or the OS API failed.
     ///
@@ -427,17 +432,17 @@ pub enum NodeResolution {
 /// Return the NUMA-node resolution status for the calling thread.
 ///
 /// This is an **additive** alternative to [`current_node`] that exposes the
-/// internal outcome of the node-determination logic on Linux. Unlike
-/// `current_node()`, which always returns `Some(0)` when the topology cannot
-/// be read, this function distinguishes that fallback case via
-/// [`NodeResolution::FellBackToZero`].
+/// internal outcome of the node-determination logic on Linux. Both functions
+/// now fail closed for non-`Resolved` outcomes (task #1308); this function's
+/// added value is the granular "WHY" for diagnostics, not recovering a
+/// `Some(0)` that `current_node()` no longer produces.
 ///
 /// The mapping to [`current_node`] is:
 ///
 /// | `current_node_resolution()` | `current_node()` |
 /// |-----------------------------|------------------|
 /// | `Resolved(n)` | `Some(n)` |
-/// | `FellBackToZero` | `Some(0)` |
+/// | `TopologyUnavailable` | `None` |
 /// | `Unavailable` | `None` |
 ///
 /// This function has the same first-call cost on Linux as `current_node()`
@@ -480,24 +485,27 @@ pub fn current_node_resolution() -> NodeResolution {
 /// Return the NUMA node id of the calling thread, or `None` if not
 /// determinable.
 ///
+/// Returns `Some(n)` only when the calling thread's CPU was genuinely
+/// resolved to node `n` via the platform topology.
+///
 /// Returns `None` when:
-/// - The platform does not provide a NUMA API (macOS, miri, unsupported OS).
-/// - The OS API returns an error (e.g. single-NUMA host with disabled NUMA
-///   support in the kernel).
+/// - The platform provides no NUMA API (macOS, miri, unsupported OS).
+/// - The OS API call itself failed.
+/// - (Linux, changed in task #1308) The topology could not resolve the
+///   calling thread's CPU to any node — including sysfs being entirely
+///   absent (single-node kernel with no NUMA support compiled in), a CPU
+///   whose real node is >= 64, or any sysfs read/permission failure.
 ///
-/// On a single-node Linux system where sysfs NUMA files are absent, this
-/// function returns `Some(0)` (all CPUs are on node 0).
+/// On Linux, `Some(0)` now occurs ONLY for a CPU genuinely resolved to node
+/// 0 — it is NOT returned for absent sysfs or any other undetermined case.
+/// For the granular reason WHY detection failed, use
+/// [`current_node_resolution()`].
 ///
-/// **On Linux, `None` for "CPU index cannot be mapped to a NUMA node via
-/// sysfs" is currently UNREACHABLE** (task #722, rust-intel audit §F2, an
-/// earlier revision of this doc claimed that case existed): every sysfs
-/// read/permission failure, every truncated cpumap read, and every CPU
-/// whose real node is `>= 64` all collapse into the SAME `Some(0)` fallback
-/// as a genuinely topology-absent single-node system — the code does not
-/// currently distinguish "no NUMA topology exists" from "topology exists
-/// but this CPU's real node could not be determined." A caller cannot tell
-/// these apart from the return value alone; `Some(0)` from this function on
-/// Linux does not guarantee the calling thread is actually on node 0.
+/// Historical note: before task #1308, every undetermined case (unreadable
+/// sysfs, a CPU on a node >= 64, a kernel with no NUMA sysfs at all) collapsed
+/// into the same `Some(0)` as a genuinely node-0-resolved CPU — tasks
+/// #722/#725 documented that collapse, and task #1308 made the mapping
+/// fail-closed (finding F1 of the fifteenth independent review).
 ///
 /// **First-call cost on Linux** (task #778, round-closing review, F12): the
 /// VERY FIRST call to this function on a real Linux host performs up to 64
@@ -695,7 +703,7 @@ pub mod cpumap {
     /// supports Linux x86_64/aarch64, so 8192 entries (1 byte each, 8 KiB)
     /// cover every possible set bit on any supported kernel. A CPU ID >= 8192
     /// stays unmapped and degrades exactly like the old oversized-file case:
-    /// not found → `None` → `FellBackToZero`.
+    /// not found → `None` → `TopologyUnavailable`.
     ///
     /// This constant deliberately bounds GLOBAL CPU-ID space, correcting the
     /// old `NODE_CPUMAP_BUF_LEN` comment's wrong per-node reasoning (task
@@ -888,7 +896,7 @@ pub mod cpumap {
     /// Built once inside the `OnceLock` topology initializer; allocation-free
     /// (static storage only). CPU IDs >= `MAX_INDEXED_CPUS` stay unmapped and
     /// degrade exactly like the old oversized-file case (unmapped → `None` →
-    /// `FellBackToZero`).
+    /// `TopologyUnavailable`).
     ///
     /// First-mapping-wins semantics for overlapping masks: when `index_node`
     /// processes multiple nodes that both claim the same CPU, the first node
@@ -990,7 +998,7 @@ pub mod linux {
     /// (e.g., 1_000_000) — `cpu_to_numa_node_checked` returns `None` when the
     /// CPU is not found in any cached cpumap (including when the CPU index
     /// exceeds the cached topology's word count), so this will return
-    /// `NodeResolution::FellBackToZero` rather than panicking.
+    /// `NodeResolution::TopologyUnavailable` rather than panicking.
     pub fn dbg_node_resolution_for_cpu(cpu: u32) -> NodeResolution {
         // No unsafe here: `platform` is defined below under the same cfg
         // (`target_os = "linux" && not(miri)`), so `cpu_to_numa_node_checked`
@@ -998,7 +1006,29 @@ pub mod linux {
         // directly under the crate root) can call it.
         match super::platform::cpu_to_numa_node_checked(cpu) {
             Some(n) => NodeResolution::Resolved(n),
-            None => NodeResolution::FellBackToZero,
+            None => NodeResolution::TopologyUnavailable,
+        }
+    }
+
+    /// Test-only forwarder: `current_node()`-equivalent `Option<u32>` mapping
+    /// for a manually-specified CPU index, without calling `sched_getcpu(2)`.
+    ///
+    /// Mirrors `current_node()`'s wrapper around `current_node_impl()`: the
+    /// raw node from `cpu_to_numa_node` — which returns `NO_NODE` when the
+    /// topology cannot resolve the CPU (task #1308) — maps to `None`; any
+    /// genuinely resolved node maps to `Some(n)`. Counterfactual oracle for
+    /// the fail-closed fix: before task #1308, `cpu_to_numa_node` substituted
+    /// `0` for lookup failure, so an unmapped CPU produced `Some(0)` here —
+    /// indistinguishable from a genuinely resolved node 0.
+    ///
+    /// Safe to call with arbitrarily large CPU indices (e.g., 1_000_000):
+    /// returns `None` rather than panicking.
+    pub fn dbg_current_node_for_cpu(cpu: u32) -> Option<u32> {
+        let raw = super::platform::cpu_to_numa_node(cpu);
+        if raw == super::NO_NODE {
+            None
+        } else {
+            Some(raw)
         }
     }
 }
@@ -1043,7 +1073,7 @@ mod platform {
         }
         match cpu_to_numa_node_checked(cpu as u32) {
             Some(n) => NodeResolution::Resolved(n),
-            None => NodeResolution::FellBackToZero,
+            None => NodeResolution::TopologyUnavailable,
         }
     }
 
@@ -1131,12 +1161,12 @@ mod platform {
     /// this cache also opens: the initializer below reads 64 sysfs files
     /// SEQUENTIALLY, so a hotplug event landing mid-scan can freeze a TORN
     /// snapshot for the rest of the process's lifetime (a CPU that existed
-    /// only after the scan passed its node's file permanently falls back to
-    /// the `Some(0)` single-node answer, where the OLD un-cached per-call
-    /// derivation would have self-corrected on the very next call). Still
-    /// acceptable for the same reason as the broader hotplug caveat above
-    /// (a soft `MPOL_PREFERRED` hint), but worth naming as its own distinct
-    /// property rather than folding it into the "after the first call"
+    /// only after the scan passed its node's file now permanently resolves
+    /// as undetermined — `None` from `current_node()`, task #1308's fail-closed
+    /// mapping; previously it silently fell back to the `Some(0)` single-node
+    /// answer). Still acceptable for the same reason as the broader hotplug
+    /// caveat above (a soft `MPOL_PREFERRED` hint), but worth naming as its own
+    /// distinct property rather than folding it into the "after the first call"
     /// wording, which reads as covering only post-scan hotplug.
     ///
     /// task #777 (rust-intel audit round-closing review, finding F1, HIGH):
@@ -1185,8 +1215,8 @@ mod platform {
     /// is not found in any cached cpumap (including when the CPU's real node
     /// is >= 64 and thus not in the 0..63 scan range), the topology
     /// cache could not be populated, or the CPU ID is at or beyond the
-    /// reverse index's `MAX_INDEXED_CPUS` capacity (task #1310: same silent
-    /// fallback as the old oversized-file case).
+    /// reverse index's `MAX_INDEXED_CPUS` capacity (task #1310: same
+    /// degradation as the old oversized-file case).
     pub(crate) fn cpu_to_numa_node_checked(cpu_idx: u32) -> Option<u32> {
         topology().lookup(cpu_idx)
     }
@@ -1195,11 +1225,18 @@ mod platform {
     /// topology (`topology()` above). Pure in-memory reverse-index lookup after
     /// the topology's one-time syscall-driven populate.
     ///
-    /// Returns `0` when sysfs NUMA topology files are absent (single-node
-    /// system where the kernel didn't compile NUMA support) or when the CPU
-    /// is not found in any cached cpumap (e.g., the CPU's real node is >= 64).
-    fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
-        cpu_to_numa_node_checked(cpu_idx).unwrap_or(0)
+    /// Returns [`NO_NODE`] when sysfs NUMA topology files are absent, the CPU
+    /// is not found in any cached cpumap (including when the CPU's real node
+    /// is >= 64 and thus not in the 0..63 scan range), the topology
+    /// cache could not be populated, or the CPU ID is at or beyond the
+    /// reverse index's `MAX_INDEXED_CPUS` capacity (task #1310: same
+    /// degradation as the old oversized-file case). This is exactly the set of
+    /// conditions under which `cpu_to_numa_node_checked` returns `None`, and
+    /// `current_node()` maps this sentinel to `None` (task #1308 — it previously
+    /// substituted `0`, making an undeterminable node indistinguishable from a
+    /// genuinely resolved node 0).
+    pub(crate) fn cpu_to_numa_node(cpu_idx: u32) -> u32 {
+        cpu_to_numa_node_checked(cpu_idx).unwrap_or(NO_NODE)
     }
 
     /// Open the cpumap file at `path` and read its complete contents into

@@ -1,7 +1,9 @@
 //! Tests for the `NodeResolution` enum and `current_node_resolution()` function.
 //!
-//! These tests verify the new additive API that distinguishes "genuinely
-//! resolved" from "fell back to node 0" on Linux, task #1266 audit finding F4.
+//! These tests verify the new additive API that distinguishes WHY a node
+//! could not be determined — current_node() now fails closed for both
+//! non-Resolved outcomes (task #1308), so the enum's value is diagnostic,
+//! not a way to recover a node-0 answer.
 
 #![cfg(numa_shim_mock)]
 

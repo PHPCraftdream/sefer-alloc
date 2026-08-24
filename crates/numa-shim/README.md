@@ -79,18 +79,35 @@ use aligned_vmem::{page_size, PAGE};
 // statement. `NodeId::new` is unchecked: an id the platform cannot address
 // surfaces as `Err(ReserveNumaError::InvalidNode)` (Linux nodemask limit)
 // or `Err(ReserveNumaError::Os(..))` (Windows forwards any id to the OS).
+// `None` from `current_node()` means undetermined topology -> no NUMA
+// preference (task #1308; `Some(0)` only ever means genuinely-resolved node 0).
 let ps = page_size();
-let node = current_node().unwrap_or(0);
-let r = reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node))
-    .expect("NUMA-preferred reservation failed");
-// r is an `aligned_vmem::Reservation` — RAII, drops cleanly.
+let r = match current_node() {
+    Some(node) => {
+        reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node))
+            .expect("NUMA-preferred reservation failed")
+    }
+    None => {
+        // No NUMA preference — plain aligned reservation.
+        aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
+    }
+};
 
-// Best-effort fallback is composed AT THE CALL SITE (the function itself
-// never silently falls back to an unbound reservation):
-let r = match reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node)) {
-    Ok(r) => r,
-    Err(e) => {
-        eprintln!("NUMA preference failed ({e}); using an unbound reservation");
+// Best-effort fallback with more detailed error handling:
+let r = match current_node() {
+    Some(node) => {
+        match reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node)) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!(
+                    "NUMA preference on node {} failed ({}); using an unbound reservation",
+                    node, e
+                );
+                aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
+            }
+        }
+    }
+    None => {
         aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
     }
 };
@@ -121,22 +138,23 @@ transitive dependency through Cargo's additive feature-unification, and never
 /// Sentinel: no NUMA node / unsupported platform (detection-side interop only; the reservation API takes `NodeId`, never the sentinel).
 pub const NO_NODE: u32 = u32::MAX;
 
-/// NUMA node of the calling thread, or None if unavailable.
+/// NUMA node of the calling thread, or None if undeterminable (no NUMA API,
+/// OS failure, or — on Linux — topology could not resolve this CPU).
 pub fn current_node() -> Option<u32>;
 
 /// Outcome of a NUMA-node determination attempt for the calling thread:
 /// Resolved(n) — CPU genuinely resolved to node n via the platform
-/// topology; FellBackToZero (Linux only) — CPU index obtained but not in
+/// topology; TopologyUnavailable (Linux only) — CPU index obtained but not in
 /// any cached sysfs cpumap (unreadable topology, node >= 64, or no NUMA
-/// sysfs at all), which current_node() collapses to Some(0); Unavailable —
-/// no NUMA API on this platform or the OS API failed (current_node()
-/// returns None).
+/// sysfs at all), which current_node() maps to None; Unavailable — no NUMA
+/// API on this platform or the OS API failed (current_node() returns None).
+/// Fail-closed behavior: both non-Resolved variants map to None (task #1308).
 #[non_exhaustive]
-pub enum NodeResolution { Resolved(u32), FellBackToZero, Unavailable }
+pub enum NodeResolution { Resolved(u32), TopologyUnavailable, Unavailable }
 
 /// Additive alternative to current_node(): same resolution logic, but
-/// distinguishes the Linux node-0 fallback from a genuinely resolved
-/// node — use it when a fallback warning / diagnostic logging matters.
+/// distinguishes WHY detection failed (diagnostics) — both non-Resolved
+/// outcomes map to None, not a way to recover a node-0 answer.
 pub fn current_node_resolution() -> NodeResolution;
 
 /// NUMA node identifier for the reservation/policy API.

@@ -115,9 +115,10 @@ fn multi_node_sparse_global_ids_map_correctly() {
 /// - CPU 8192 and 9000 are beyond MAX_INDEXED_CPUS and should return None
 ///
 /// None is exactly what `cpu_to_numa_node_checked` returns for unmapped CPUs,
-/// which `current_node_resolution()` maps to `FellBackToZero` and `current_node()`
-/// to `Some(0)` — the same silent fallback the old design produced for oversized
-/// files (degradation semantics preserved).
+/// which `current_node_resolution()` maps to `TopologyUnavailable` and
+/// `current_node()` to `None` (fail-closed, task #1308 — it previously mapped
+/// to `Some(0)`, the same silent fallback the old design produced for oversized
+/// files; degradation semantics preserved).
 #[test]
 fn cpu_beyond_capacity_degrades_like_old_buffer_too_small() {
     let mut index = ReverseIndex::new();
