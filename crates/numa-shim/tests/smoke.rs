@@ -49,6 +49,26 @@ fn parse_maps_range(line: &[u8]) -> Option<(usize, usize)> {
     Some((start, end))
 }
 
+/// Returns `true` if `NUMA_SHIM_REQUIRE_ORACLE=1` is set in the environment.
+///
+/// task #1324 (P2-1 of the seventeenth independent review,
+/// `docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md`).
+/// The inverse of the root crate's `SEFER_NUMA_TEST=1` gate
+/// (`tests/numa_alloc.rs`): that env var OPTS IN to running the expensive
+/// real-multi-NUMA-hardware tests; this one declares that this process runs
+/// on a host that is SUPPOSED to have working NUMA detection — the
+/// `numa-shim-mock` CI job's real-Linux
+/// `cargo test -p numa-shim --features vmem-integration` row is the only
+/// place that sets it. Under it, the `current_node() == None` skip arms in
+/// this file's positive tests PANIC instead of skipping: `current_node()`
+/// is this crate's own detection chain, so a None there means detection
+/// regressed, not that this host lacks NUMA hardware. Unset (local/dev
+/// runs and every other CI row): today's tolerant skip, unchanged.
+#[cfg(feature = "vmem-integration")]
+fn require_oracle() -> bool {
+    std::env::var("NUMA_SHIM_REQUIRE_ORACLE").as_deref() == Ok("1")
+}
+
 #[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
 #[test]
 fn parse_maps_range_normal_line() {
@@ -155,6 +175,18 @@ fn reserve_preferred_on_node_returns_valid_span() {
     }
 
     let Some(node) = current_node() else {
+        // task #1324 (seventeenth review P2-1): on the real-Linux CI row
+        // (NUMA_SHIM_REQUIRE_ORACLE=1) this None is a regression in the
+        // crate's OWN detection chain, not a topology limitation.
+        if require_oracle() {
+            panic!(
+                "current_node() returned None but NUMA_SHIM_REQUIRE_ORACLE=1 is set — \
+                 this CI row exists specifically to prove NUMA detection works; a None \
+                 here means the crate's own detection chain (sched_getcpu -> sysfs \
+                 cpumap -> ReverseIndex::lookup) regressed, not that this host lacks \
+                 NUMA hardware (task #1324, seventeenth review P2-1)"
+            );
+        }
         eprintln!(
             "skip: current_node() could not resolve a node on this host \
              (undetermined topology — task #1308's fail-closed detection); \
@@ -238,6 +270,18 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     }
 
     let Some(node) = current_node() else {
+        // task #1324 (seventeenth review P2-1): on the real-Linux CI row
+        // (NUMA_SHIM_REQUIRE_ORACLE=1) this None is a regression in the
+        // crate's OWN detection chain, not a topology limitation.
+        if require_oracle() {
+            panic!(
+                "current_node() returned None but NUMA_SHIM_REQUIRE_ORACLE=1 is set — \
+                 this CI row exists specifically to prove NUMA detection works; a None \
+                 here means the crate's own detection chain (sched_getcpu -> sysfs \
+                 cpumap -> ReverseIndex::lookup) regressed, not that this host lacks \
+                 NUMA hardware (task #1324, seventeenth review P2-1)"
+            );
+        }
         eprintln!(
             "skip: current_node() could not resolve a node on this host \
              (undetermined topology — task #1308's fail-closed detection); \
