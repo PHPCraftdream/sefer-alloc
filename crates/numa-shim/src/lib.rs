@@ -48,7 +48,7 @@
 //!
 //! ## Platform matrix
 //!
-//! | Platform | [`current_node`] | [`reserve_preferred_on_node`] (feature) |
+//! | Platform | [`current_node`] | `reserve_preferred_on_node` (feature) |
 //! |----------|-----------------|------------------------------------------|
 //! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | mmap then mbind (complete span, before first touch) |
 //! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | `UnsupportedArchitecture` error |
@@ -130,7 +130,7 @@ impl NodeId {
     /// is platform- and runtime-dependent (Linux's single-`u64` nodemask
     /// addresses nodes 0..=63 only; Windows forwards any id to the OS), so
     /// that validation stays where it already lives — the fallible
-    /// [`reserve_preferred_on_node`] checks
+    /// `reserve_preferred_on_node` checks
     /// ([`ReserveNumaError::InvalidNode`]/[`ReserveNumaError::Os`]), not
     /// construction time. Do not read more validation into this constructor
     /// than the single sentinel comparison it performs.
@@ -572,7 +572,7 @@ pub enum NodeResolution {
     /// - The real topology was unreadable (e.g., sysfs permissions or
     ///   I/O errors during the first-call cache population).
     /// - The CPU lives on a NUMA node >= 64 — the implementation scans
-    ///   only nodes 0..63 because [`reserve_preferred_on_node`] enforces
+    ///   only nodes 0..63 because `reserve_preferred_on_node` enforces
     ///   a single-`u64` nodemask limit (see the `InvalidNode` error in that
     ///   function's documentation).
     /// - The kernel has no NUMA sysfs at all (single-node system where
