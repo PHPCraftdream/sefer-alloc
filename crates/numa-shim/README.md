@@ -1,12 +1,12 @@
 # numa-shim
 
-**100 % Rust NUMA detection and binding — no C / C++ libraries.**
+**100 % Rust NUMA detection and placement — no C / C++ libraries.**
 
 The key differentiator: **zero C / C++ crate dependencies** — no `libnuma`, no
 `hwloc`, no `libcuda`. Only the system libc / `kernel32` syscalls that any
 Rust program already links to.
 
-| Platform | Node detection | Memory binding |
+| Platform | Node detection | Memory placement |
 |----------|---------------|----------------|
 | Linux x86_64 / aarch64 | `sched_getcpu` + sysfs `/sys/devices/system/node/nodeN/cpumap` | `mbind(2)` via raw `syscall(2)` — **no libnuma, no hwloc** |
 | Windows | `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` | `VirtualAllocExNuma` (via `vmem-integration` feature) |
@@ -46,11 +46,16 @@ match current_node() {
 }
 ```
 
-There is deliberately **no "bind an existing allocation" API**. Linux
-`mbind(2)` with default flags only affects *future* page faults, and requires
-a page-aligned address — so binding an already-touched object (e.g. a heap
-`Vec`) would be a silent no-op lie. NUMA placement must be requested at
-**reservation time**, before the first touch — see
+There is deliberately **no "migrate an existing allocation" API**. That is a
+crate-scope decision, not an OS limitation: Linux `mbind(2)` *can* move
+already-resident pages, but only via its `MPOL_MF_MOVE`/`MPOL_MF_MOVE_ALL`
+flags — a privileged, partially-failing operation whose contract is
+different, more complex, and riskier than reservation-time preference; this
+crate does not take it on. With default flags (all this crate ever passes),
+`mbind(2)` affects only *future* page faults — a preference installed after
+an allocation's first touch would leave its resident pages exactly where
+they are. A NUMA preference must therefore be requested at **reservation
+time**, before the first touch — see
 [`reserve_preferred_on_node`](#vmem-integration) below.
 
 ## Feature flags
@@ -63,10 +68,13 @@ with a NUMA preference using [`aligned-vmem`](https://crates.io/crates/aligned-v
 ```toml
 [dependencies]
 numa-shim = { version = "0.1", features = ["vmem-integration"] }
-# `reserve_preferred_on_node` returns an `aligned_vmem::Reservation`, so you need the
-# crate as a DIRECT dependency to name that type / its constants in your own
-# code — enabling a feature on numa-shim alone does NOT put `aligned_vmem`
-# in your crate's extern prelude (it is only an optional transitive dep).
+# `reserve_preferred_on_node` returns an `aligned_vmem::Reservation`, but you
+# do NOT need `aligned-vmem` as a direct dependency just to name that type:
+# numa-shim re-exports it (`numa_shim::Reservation`). The direct dependency
+# below is only for using `aligned-vmem`'s own items — `page_size()` / `PAGE`,
+# or `reserve_aligned` for the best-effort fallback shown below — because a
+# feature enabled on numa-shim does not put `aligned_vmem` in YOUR crate's
+# extern prelude (it stays an optional transitive dep).
 aligned-vmem = "0.2"
 ```
 
@@ -75,8 +83,9 @@ use numa_shim::{current_node, NodeId, ReserveNumaError, reserve_preferred_on_nod
 use aligned_vmem::{page_size, PAGE};
 
 // Reserve fresh memory with a NUMA preference installed BEFORE the first
-// page fault — the only point where "successfully bound" is a true
-// statement. `NodeId::new` rejects only the `NO_NODE` sentinel (u32::MAX):
+// page fault — the only point where a preference can be in place before any
+// page is touched (still SOFT: "installed," not "placement guaranteed").
+// `NodeId::new` rejects only the `NO_NODE` sentinel (u32::MAX):
 // an id the platform cannot address still constructs and surfaces as
 // `Err(ReserveNumaError::InvalidNode)` (Linux nodemask limit) or
 // `Err(ReserveNumaError::Os(..))` (Windows forwards any id to the OS).
@@ -180,6 +189,12 @@ pub enum ReserveNumaError {
     InvalidNode,
     Os(std::io::Error),
 }
+
+/// Re-export of `aligned_vmem::Reservation` — the return type of
+/// `reserve_preferred_on_node`, nameable as `numa_shim::Reservation` with NO
+/// direct `aligned-vmem` dependency.
+#[cfg(feature = "vmem-integration")]
+pub use aligned_vmem::Reservation;
 
 /// Reserve aligned anonymous memory with a preferred NUMA node, installing
 /// the preference at reservation time — before the first page fault.
