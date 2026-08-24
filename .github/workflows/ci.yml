@@ -2741,8 +2741,21 @@ jobs:
       # task #1288: mock via the build-time cfg (see the numa-shim-mock job's
       # sentinel rows; plain conversion here — the Linux job is the primary
       # mock-coverage home).
-      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim
-      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration
+      #
+      # task #1291: this job's `run:` steps default to `pwsh` (windows-latest
+      # has no workflow-level `shell: bash` default), which does not
+      # understand bash's `VAR=val cmd` prefix syntax — the inline
+      # `RUSTFLAGS="--cfg ..." cargo ...` form landed by #1288 failed CI here
+      # with "The term 'RUSTFLAGS=--cfg numa_shim_mock' is not recognized...".
+      # An `env:` block is shell-agnostic (Actions sets the env var on the
+      # child process before invoking the shell, regardless of shell), so it
+      # works under both pwsh and bash without needing `shell: bash` too.
+      - run: cargo test -p numa-shim
+        env:
+          RUSTFLAGS: "--cfg numa_shim_mock"
+      - run: cargo test -p numa-shim --features vmem-integration
+        env:
+          RUSTFLAGS: "--cfg numa_shim_mock"
       # task #778 (round-closing review, F9): DEFAULT features is what
       # `cargo add numa-shim` produces for a downstream consumer -- checked
       # here (Windows, this crate's primary platform) rather than on the
@@ -2754,7 +2767,11 @@ jobs:
       # task #1288: `--all-features` above can no longer reach the mock (it is
       # not a Cargo feature), so the mock arm gets this dedicated row — the
       # exact treatment the numa-shim-mock job's own mock clippy row gives it.
-      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo clippy -p numa-shim --all-targets -- -D warnings
+      # task #1291: `env:` block, not an inline `VAR=val` prefix — see the
+      # note on this job's `cargo test` mock rows above for why.
+      - run: cargo clippy -p numa-shim --all-targets -- -D warnings
+        env:
+          RUSTFLAGS: "--cfg numa_shim_mock"
 
   numa-shim-macos:
     # macOS NUMA support is a documented no-op (no public NUMA API), but
