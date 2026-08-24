@@ -8,7 +8,19 @@
 
 #![cfg(all(target_os = "linux", not(miri), not(numa_shim_mock)))]
 
-use numa_shim::{current_node, current_node_resolution, linux, NodeResolution};
+use numa_shim::{linux, NodeResolution};
+
+// Raw FFI declared directly in this test file — the same self-contained
+// pattern `tests/policy_oracle_linux.rs` uses for its own raw `syscall(2)`
+// declaration — rather than reaching into crate internals for the
+// production declaration in `src/lib.rs` (which stays untouched, task
+// #1332). One sample of the calling thread's current CPU is all the
+// single-snapshot oracle below needs; `sched_getcpu(2)` takes no
+// arguments and returns the CPU index or -1 on failure (glibc does not
+// set errno for it).
+extern "C" {
+    fn sched_getcpu() -> core::ffi::c_int;
+}
 
 #[test]
 fn dbg_huge_cpu_index_is_topology_unavailable() {
@@ -31,15 +43,37 @@ fn dbg_huge_cpu_index_current_node_is_none() {
 
 #[test]
 fn current_node_agrees_with_resolution_mapping() {
-    // Verify the documented mapping on this real host:
+    // Single-snapshot oracle (task #1332, eighteenth review F5): the old
+    // body called `current_node()` and `current_node_resolution()` as two
+    // INDEPENDENT calls, each internally taking its own `sched_getcpu()`
+    // snapshot — on a real multi-node host the scheduler is free to migrate
+    // this thread between the two calls, so two individually-CORRECT
+    // snapshots (`Some(0)` from the first call's CPU, `Resolved(1)` from
+    // the second's) would fail the comparison as a false failure. Instead
+    // take ONE `sched_getcpu()` sample here and feed that SAME value into
+    // the two doc-hidden test-only forwarders, which never re-sample the
+    // CPU — no scheduler migration can occur between two calls that do
+    // not consult the scheduler at all.
+    //
+    // Verify the documented mapping for that one snapshot:
     // - Resolved(n) -> Some(n)
     // - TopologyUnavailable -> None
     // - Unavailable -> None
     //
     // NodeResolution is #[non_exhaustive] from outside the crate, so a
     // wildcard arm is REQUIRED (do not enumerate all variants).
-    let node = current_node();
-    match current_node_resolution() {
+    let raw = unsafe { sched_getcpu() };
+    if raw < 0 {
+        eprintln!(
+            "skip: sched_getcpu() returned {raw} on this host; \
+             the single-snapshot mapping oracle needs one valid CPU sample \
+             (task #1332, eighteenth review F5)"
+        );
+        return;
+    }
+    let cpu = raw as u32;
+    let node = linux::dbg_current_node_for_cpu(cpu);
+    match linux::dbg_node_resolution_for_cpu(cpu) {
         NodeResolution::Resolved(n) => assert_eq!(node, Some(n)),
         _ => assert_eq!(node, None),
     }
