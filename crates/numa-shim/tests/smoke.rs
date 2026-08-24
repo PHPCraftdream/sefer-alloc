@@ -11,8 +11,83 @@
 
 use numa_shim::current_node;
 
+/// Helper for parsing `/proc/self/maps`: parse a hex `usize` without a
+/// `0x` prefix. Returns `None` if the input is empty or exceeds twice the
+/// platform pointer width in hex digits (16 on 64-bit targets)
+/// (fail-closed, matching `crate::cpumap::parse_hex_u32`'s style).
+#[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
+fn parse_hex_usize(s: &[u8]) -> Option<usize> {
+    if s.is_empty() || s.len() > 2 * core::mem::size_of::<usize>() {
+        return None;
+    }
+    let mut n: usize = 0;
+    for &b in s {
+        let digit = match b {
+            b'0'..=b'9' => b - b'0',
+            b'a'..=b'f' => b - b'a' + 10,
+            b'A'..=b'F' => b - b'A' + 10,
+            _ => return None,
+        };
+        n = n.wrapping_mul(16).wrapping_add(digit as usize);
+    }
+    Some(n)
+}
+
+/// Helper for parsing `/proc/self/maps`: extract the first field
+/// `<hexstart>-<hexend>` (dash then hex up to the first space or end of line).
+/// Returns `None` if the format is malformed (no dash or invalid hex).
+#[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
+fn parse_maps_range(line: &[u8]) -> Option<(usize, usize)> {
+    let dash_pos = line.iter().position(|&b| b == b'-')?;
+    let start = parse_hex_usize(&line[..dash_pos])?;
+    let after_dash = &line[dash_pos + 1..];
+    let space_or_end = after_dash
+        .iter()
+        .position(|&b| b == b' ')
+        .unwrap_or(after_dash.len());
+    let end = parse_hex_usize(&after_dash[..space_or_end])?;
+    Some((start, end))
+}
+
+#[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
+#[test]
+fn parse_maps_range_normal_line() {
+    let line = b"7f0abc000000-7f0abd000000 rw-p 00000000 00:00 0   /path/to/thing";
+    assert_eq!(
+        parse_maps_range(line),
+        Some((0x7f0abc000000, 0x7f0abd000000))
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
+#[test]
+fn parse_maps_range_no_path() {
+    let line = b"7f0abc000000-7f0abd000000 rw-p 00000000 00:00 0";
+    assert_eq!(
+        parse_maps_range(line),
+        Some((0x7f0abc000000, 0x7f0abd000000))
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "vmem-integration", not(miri)))]
+#[test]
+fn parse_maps_range_malformed() {
+    let line = b"7f0abc000000 7f0abd000000 rw-p 00000000 00:00 0"; // no dash
+    assert_eq!(parse_maps_range(line), None);
+}
+
 /// `current_node()` must return either `None` (NUMA unavailable) or
-/// `Some(n)` where `n < 64` (reasonable upper bound for NUMA node count).
+/// `Some(n)` where the bound is platform-conditional:
+/// - On Linux: `n < 64` (the Linux nodemask API uses a `u64` bitset,
+///   so the detection topology scan only covers nodes 0..=63)
+/// - On Windows: `n <= u16::MAX as u32` (the `GetNumaProcessorNodeEx`
+///   API returns a `u16` node number)
+/// - On other platforms (macOS, etc.): `None` is the only outcome
+///
+/// The Linux bound is NOT an arbitrary "any u32" check: it reflects
+/// the detection contract's dependence on the reservation API's
+/// single-u64 nodemask limit (finding F8, point 3 of
+/// docs/reviews/2026-08-24-170047-numa-shim-publication-audit-Sol-codex.md).
 #[test]
 fn current_node_returns_valid_or_none() {
     match current_node() {
@@ -20,10 +95,17 @@ fn current_node_returns_valid_or_none() {
             // NUMA unavailable on this host/platform — acceptable.
         }
         Some(node) => {
-            assert!(
-                node < 64,
-                "NUMA node {node} is unreasonably large (expected < 64)"
-            );
+            if cfg!(target_os = "linux") {
+                assert!(
+                    node < 64,
+                    "NUMA node {node} exceeds Linux nodemask limit (expected < 64)"
+                );
+            } else {
+                assert!(
+                    node <= u16::MAX as u32,
+                    "NUMA node {node} exceeds Windows API bound (expected <= u16::MAX)"
+                );
+            }
         }
     }
 }
@@ -41,6 +123,11 @@ fn current_node_returns_valid_or_none() {
 /// per the module doc's platform-support table, that surfaces as an explicit
 /// `Err(UnsupportedPlatform)`, not a silent unbound no-op (task #1306's
 /// whole point); this test asserts THAT outcome there instead.
+///
+/// Self-skip discipline: positive NUMA policy tests run only when
+/// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
+/// (task #1311, F8.2). This covers the container/cgroup case where the
+/// detected node may not be in allowed memory nodes.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_returns_valid_span() {
@@ -52,37 +139,51 @@ fn reserve_preferred_on_node_returns_valid_span() {
     let page = aligned_vmem::page_size();
     let size = page * 4;
     let align = page;
-    let node = current_node().unwrap_or(0);
 
-    let result = reserve_preferred_on_node(
-        size,
-        align,
-        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
-    );
-
-    if cfg!(all(any(target_os = "linux", windows), not(miri))) {
-        let r = result.expect("NUMA-preferred reservation failed");
-
-        // Check alignment and size.
-        assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
-        assert_eq!(r.len(), size);
-
-        // Write and read back to confirm the memory is accessible.
-        // SAFETY: `r` owns the reservation; we write and read a single byte at
-        // the start of the usable span before dropping it.
-        unsafe {
-            r.as_ptr().write(0x5A);
-            assert_eq!(r.as_ptr().read(), 0x5A);
-        }
-
-        // Drop releases the reservation back to the OS (RAII).
-        drop(r);
-    } else {
+    if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
+        // Unsupported platform: must error, not succeed.
+        let result = reserve_preferred_on_node(
+            size,
+            align,
+            NodeId::new(0).expect("literal 0, not the NO_NODE sentinel"),
+        );
         assert!(
             matches!(result, Err(ReserveNumaError::UnsupportedPlatform)),
             "expected UnsupportedPlatform, got {result:?}"
         );
+        return;
     }
+
+    let Some(node) = current_node() else {
+        eprintln!(
+            "skip: current_node() could not resolve a node on this host \
+             (undetermined topology — task #1308's fail-closed detection); \
+             the NUMA-preference path needs a genuinely resolved node, not \
+             a node-0 guess (task #1311, F8.2)"
+        );
+        return;
+    };
+    let node =
+        NodeId::new(node).expect("current_node()'s Some arm never yields the NO_NODE sentinel");
+
+    let result = reserve_preferred_on_node(size, align, node);
+
+    let r = result.expect("NUMA-preferred reservation failed");
+
+    // Check alignment and size.
+    assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
+    assert_eq!(r.len(), size);
+
+    // Write and read back to confirm the memory is accessible.
+    // SAFETY: `r` owns the reservation; we write and read a single byte at
+    // the start of the usable span before dropping it.
+    unsafe {
+        r.as_ptr().write(0x5A);
+        assert_eq!(r.as_ptr().read(), 0x5A);
+    }
+
+    // Drop releases the reservation back to the OS (RAII).
+    drop(r);
 }
 
 /// Windows-specific: `reserve_preferred_on_node` with a large alignment
@@ -99,6 +200,16 @@ fn reserve_preferred_on_node_returns_valid_span() {
 /// macOS and any platform under miri have no NUMA-preference API — see
 /// `reserve_preferred_on_node_returns_valid_span`'s doc comment above for why
 /// this asserts `Err(UnsupportedPlatform)` there instead.
+///
+/// Self-skip discipline: positive NUMA policy tests run only when
+/// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
+/// (task #1311, F8.2).
+///
+/// Release oracle (task #1311, F8.1): after `drop(r)`, the OS's own
+/// bookkeeping is queried to confirm the entire over-reservation is freed.
+/// Four probes are checked (reservation start, usable span start, usable
+/// span last page, reservation last page) — this catches the exact regression
+/// where Drop frees only `span` instead of `reservation_len`.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_large_align_round_trip() {
@@ -111,15 +222,14 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     let page = aligned_vmem::page_size();
     let span = 4 * 1024 * 1024;
     let align = span;
-    let node = current_node().unwrap_or(0);
-
-    let result = reserve_preferred_on_node(
-        span,
-        align,
-        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
-    );
 
     if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
+        // Unsupported platform: must error, not succeed.
+        let result = reserve_preferred_on_node(
+            span,
+            align,
+            NodeId::new(0).expect("literal 0, not the NO_NODE sentinel"),
+        );
         assert!(
             matches!(result, Err(ReserveNumaError::UnsupportedPlatform)),
             "expected UnsupportedPlatform, got {result:?}"
@@ -127,7 +237,20 @@ fn reserve_preferred_on_node_large_align_round_trip() {
         return;
     }
 
-    let r = result.expect("NUMA-preferred 4 MiB-aligned reservation failed");
+    let Some(node) = current_node() else {
+        eprintln!(
+            "skip: current_node() could not resolve a node on this host \
+             (undetermined topology — task #1308's fail-closed detection); \
+             the NUMA-preference path needs a genuinely resolved node, not \
+             a node-0 guess (task #1311, F8.2)"
+        );
+        return;
+    };
+    let node =
+        NodeId::new(node).expect("current_node()'s Some arm never yields the NO_NODE sentinel");
+
+    let r = reserve_preferred_on_node(span, align, node)
+        .expect("NUMA-preferred 4 MiB-aligned reservation failed");
 
     assert_eq!(r.as_ptr() as usize % align, 0, "base must be 4 MiB-aligned");
     assert_eq!(r.len(), span);
@@ -149,20 +272,120 @@ fn reserve_preferred_on_node_large_align_round_trip() {
         }
     }
 
-    // Drop must release the WHOLE over-reservation, not just `span` bytes —
-    // verified by absence of leaks under repeated reservation in a loop.
+    // Drop must release the WHOLE over-reservation, not just `span` bytes.
+    // Capture values before drop for the release oracle.
+    let base = r.as_ptr() as usize;
+    let raw = r.reservation_ptr() as usize;
+    let over = r.reservation_len();
+
     drop(r);
 
-    // Repeat 8× to surface any leak in the release path (loop OOMs quickly
-    // if `Drop` only frees `span` instead of `reservation_len`).
-    for _ in 0..8 {
-        let r2 = reserve_preferred_on_node(
-            span,
-            align,
-            NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
-        )
-        .expect("repeat reserve");
-        drop(r2);
+    // Windows oracle: query VirtualQuery to verify all four probes report MEM_FREE.
+    #[cfg(windows)]
+    {
+        // Duplicate of the struct in `reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation`.
+        // This duplication is deliberate: the struct in that test must stay untouched per task #1313/F11 (32-bit Windows policy
+        // undecided), so this is a second copy that will share that test's fate.
+        #[repr(C)]
+        struct MemoryBasicInformation {
+            base_address: *mut core::ffi::c_void,
+            allocation_base: *mut core::ffi::c_void,
+            allocation_protect: u32,
+            partition_id: u16,
+            region_size: usize,
+            state: u32,
+            protect: u32,
+            type_: u32,
+        }
+
+        extern "system" {
+            fn VirtualQuery(
+                lp_address: *const core::ffi::c_void,
+                lp_buffer: *mut MemoryBasicInformation,
+                dw_length: usize,
+            ) -> usize;
+        }
+
+        const MEM_FREE: u32 = 0x0001_0000;
+
+        // SAFETY: `MemoryBasicInformation` is `#[repr(C)]` and zero-initialized
+        // fields are all valid bit patterns (pointers, u32s, usize, u16) --
+        // `VirtualQuery` overwrites every field it succeeds on before this
+        // value is read.
+        fn query_state(addr: *const core::ffi::c_void) -> u32 {
+            let mut mbi = MemoryBasicInformation {
+                base_address: core::ptr::null_mut(),
+                allocation_base: core::ptr::null_mut(),
+                allocation_protect: 0,
+                partition_id: 0,
+                region_size: 0,
+                state: 0,
+                protect: 0,
+                type_: 0,
+            };
+            // SAFETY: `addr` is a valid address (just freed, but still a valid
+            // address in this process's address space); `&mut mbi` is a valid,
+            // correctly-sized out-pointer. `VirtualQuery` never fails for an
+            // address inside the calling process's own address space.
+            let n = unsafe {
+                VirtualQuery(
+                    addr,
+                    &mut mbi,
+                    core::mem::size_of::<MemoryBasicInformation>(),
+                )
+            };
+            assert_ne!(n, 0, "VirtualQuery failed for {addr:p}");
+            mbi.state
+        }
+
+        // Probes: reservation start, usable span start, usable span last page, reservation last page.
+        let probes = [raw, base, base + span - page, raw + over - page];
+        for probe in probes {
+            let state = query_state(probe as *const core::ffi::c_void);
+            assert_eq!(
+                state, MEM_FREE,
+                "probe at {:#x} is not MEM_FREE (got {:#x}); \
+                 MEM_RESERVE/MEM_COMMIT here means the release did not \
+                 cover the whole reservation (task #1311, F8.1)",
+                probe, state
+            );
+        }
+
+        // Note: there is a residual raciness — cargo-test runs tests in parallel
+        // threads, so a foreign mapping could theoretically land inside the just-
+        // freed region between `drop(r)` and the probes. This is unlikely because
+        // the four probes are megabytes apart while every other reservation in
+        // this test binary is tiny, and the window is sub-millisecond.
+    }
+
+    // Linux oracle: read /proc/self/maps and assert NO mapping covers ANY probe.
+    #[cfg(all(target_os = "linux", not(miri)))]
+    {
+        let maps =
+            std::fs::read_to_string("/proc/self/maps").expect("failed to read /proc/self/maps");
+
+        // Probes: reservation start, usable span start, usable span last page, reservation last page.
+        let probes = [raw, base, base + span - page, raw + over - page];
+        for probe in probes {
+            for line in maps.lines() {
+                let (s, e) = parse_maps_range(line.as_bytes())
+                    .unwrap_or_else(|| panic!("malformed /proc/self/maps line: {line}"));
+                // Fail if the probe is covered by any mapping.
+                assert!(
+                    !(s <= probe && probe < e),
+                    "probe at {:#x} is covered by mapping {:#x}-{:#x} (task #1311, F8.1)",
+                    probe,
+                    s,
+                    e
+                );
+            }
+        }
+
+        // Note: there is a residual raciness — cargo-test runs tests in parallel
+        // threads, so a foreign mapping could theoretically land inside the just-
+        // freed region between `drop(r)` and the read. This is unlikely because
+        // the four probes are megabytes apart while every other reservation in
+        // this test binary is tiny, and the window is sub-millisecond.
     }
 }
 
@@ -237,6 +460,10 @@ fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
 /// counterfactual verified (see the task #778 commit message): reverting to
 /// the pre-#724 single `MEM_RESERVE | MEM_COMMIT` call makes this test fail
 /// with the tail region reporting `MEM_COMMIT`.
+///
+/// Self-skip discipline: positive NUMA policy tests run only when
+/// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
+/// (task #1311, F8.2).
 #[cfg(all(windows, feature = "vmem-integration"))]
 #[test]
 fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation() {
@@ -309,14 +536,21 @@ fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_
     // path actually over-reserves (aligned-vmem task #848 changed this to be conditional
     // on align > 64 KiB). This keeps the test's purpose (probing tail slack) intact.
     let align = 128 * 1024;
-    let node = current_node().unwrap_or(0);
 
-    let r = reserve_preferred_on_node(
-        size,
-        align,
-        NodeId::new(node).expect("unwrap_or(0) is never the NO_NODE sentinel"),
-    )
-    .expect("NUMA-preferred reservation failed");
+    let Some(node) = current_node() else {
+        eprintln!(
+            "skip: current_node() could not resolve a node on this host \
+             (undetermined topology — task #1308's fail-closed detection); \
+             the NUMA-preference path needs a genuinely resolved node, not \
+             a node-0 guess (task #1311, F8.2)"
+        );
+        return;
+    };
+    let node =
+        NodeId::new(node).expect("current_node()'s Some arm never yields the NO_NODE sentinel");
+
+    let r =
+        reserve_preferred_on_node(size, align, node).expect("NUMA-preferred reservation failed");
 
     let base = r.as_ptr();
     let committed_len = r.len();
