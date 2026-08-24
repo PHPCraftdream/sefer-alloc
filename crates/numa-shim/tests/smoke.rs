@@ -36,10 +36,15 @@ fn current_node_returns_valid_or_none() {
 /// "bound" from "silently unbound"; this asserts the real outcome on a
 /// reservation that has never been touched — exactly the regime where
 /// mbind's future-fault-only semantics apply.
+///
+/// macOS and any platform under miri have no NUMA-preference API at all —
+/// per the module doc's platform-support table, that surfaces as an explicit
+/// `Err(UnsupportedPlatform)`, not a silent unbound no-op (task #1306's
+/// whole point); this test asserts THAT outcome there instead.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_returns_valid_span() {
-    use numa_shim::{reserve_preferred_on_node, NodeId};
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
 
     // Use runtime page size: macOS aarch64 (Apple Silicon) uses 16 KiB pages,
     // not the 4 KiB constant `aligned_vmem::PAGE`. mmap rejects sizes/aligns
@@ -49,23 +54,31 @@ fn reserve_preferred_on_node_returns_valid_span() {
     let align = page;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_preferred_on_node(size, align, NodeId::new(node))
-        .expect("NUMA-preferred reservation failed");
+    let result = reserve_preferred_on_node(size, align, NodeId::new(node));
 
-    // Check alignment and size.
-    assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
-    assert_eq!(r.len(), size);
+    if cfg!(all(any(target_os = "linux", windows), not(miri))) {
+        let r = result.expect("NUMA-preferred reservation failed");
 
-    // Write and read back to confirm the memory is accessible.
-    // SAFETY: `r` owns the reservation; we write and read a single byte at
-    // the start of the usable span before dropping it.
-    unsafe {
-        r.as_ptr().write(0x5A);
-        assert_eq!(r.as_ptr().read(), 0x5A);
+        // Check alignment and size.
+        assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
+        assert_eq!(r.len(), size);
+
+        // Write and read back to confirm the memory is accessible.
+        // SAFETY: `r` owns the reservation; we write and read a single byte at
+        // the start of the usable span before dropping it.
+        unsafe {
+            r.as_ptr().write(0x5A);
+            assert_eq!(r.as_ptr().read(), 0x5A);
+        }
+
+        // Drop releases the reservation back to the OS (RAII).
+        drop(r);
+    } else {
+        assert!(
+            matches!(result, Err(ReserveNumaError::UnsupportedPlatform)),
+            "expected UnsupportedPlatform, got {result:?}"
+        );
     }
-
-    // Drop releases the reservation back to the OS (RAII).
-    drop(r);
 }
 
 /// Windows-specific: `reserve_preferred_on_node` with a large alignment
@@ -78,10 +91,14 @@ fn reserve_preferred_on_node_returns_valid_span() {
 /// the mmap-based `aligned_vmem` reservation, with `mbind` applied to the
 /// complete reservation span); only the underlying syscall differs. The
 /// contract is identical.
+///
+/// macOS and any platform under miri have no NUMA-preference API — see
+/// `reserve_preferred_on_node_returns_valid_span`'s doc comment above for why
+/// this asserts `Err(UnsupportedPlatform)` there instead.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_large_align_round_trip() {
-    use numa_shim::{reserve_preferred_on_node, NodeId};
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
 
     // 4 MiB span aligned to 4 MiB — a realistic allocator-segment size that
     // exercises the over-reserve (size + align = 8 MiB on Windows) path.
@@ -92,8 +109,17 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     let align = span;
     let node = current_node().unwrap_or(0);
 
-    let r = reserve_preferred_on_node(span, align, NodeId::new(node))
-        .expect("NUMA-preferred 4 MiB-aligned reservation failed");
+    let result = reserve_preferred_on_node(span, align, NodeId::new(node));
+
+    if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
+        assert!(
+            matches!(result, Err(ReserveNumaError::UnsupportedPlatform)),
+            "expected UnsupportedPlatform, got {result:?}"
+        );
+        return;
+    }
+
+    let r = result.expect("NUMA-preferred 4 MiB-aligned reservation failed");
 
     assert_eq!(r.as_ptr() as usize % align, 0, "base must be 4 MiB-aligned");
     assert_eq!(r.len(), span);
@@ -129,9 +155,15 @@ fn reserve_preferred_on_node_large_align_round_trip() {
 
 /// task #1306: the new typed-error oracle the old `Option` API could not
 /// express — a zero `size` is an argument-contract violation, surfaced as
-/// `InvalidArguments`, DISTINCT from an OOM refusal (`Os`). Runs on every
-/// platform: the Windows backend validates explicitly, the Linux backend
-/// maps `aligned_vmem`'s `invalid_argument` error, and the mock mirrors both.
+/// `InvalidArguments`, DISTINCT from an OOM refusal (`Os`). Runs on Linux and
+/// Windows: the Windows backend validates explicitly, the Linux backend maps
+/// `aligned_vmem`'s `invalid_argument` error, and the mock mirrors both.
+///
+/// On macOS and any platform under miri, the platform check itself is
+/// unconditional and runs BEFORE argument validation (there is no NUMA API
+/// to validate arguments against), so the outcome there is
+/// `UnsupportedPlatform`, not `InvalidArguments` — see
+/// `reserve_preferred_on_node_returns_valid_span`'s doc comment above.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
@@ -141,10 +173,14 @@ fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
     let page = page_size();
     let err =
         reserve_preferred_on_node(0, page, NodeId::new(0)).expect_err("zero size must be rejected");
-    assert!(
-        matches!(err, ReserveNumaError::InvalidArguments),
-        "expected InvalidArguments, got {err:?}"
-    );
+
+    let expected: fn(&ReserveNumaError) -> bool =
+        if cfg!(all(any(target_os = "linux", windows), not(miri))) {
+            |e| matches!(e, ReserveNumaError::InvalidArguments)
+        } else {
+            |e| matches!(e, ReserveNumaError::UnsupportedPlatform)
+        };
+    assert!(expected(&err), "unexpected error variant: {err:?}");
 }
 
 /// task #1306: the Linux single-`u64` nodemask limit (nodes 0..=63) is now a

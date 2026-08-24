@@ -1248,6 +1248,7 @@ const SYS_MBIND: i64 = 235;
 #[cfg(all(
     target_os = "linux",
     not(miri),
+    feature = "vmem-integration",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 extern "C" {
@@ -1257,6 +1258,7 @@ extern "C" {
 #[cfg(all(
     target_os = "linux",
     not(miri),
+    feature = "vmem-integration",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 #[cfg_attr(numa_shim_mock, allow(dead_code))]

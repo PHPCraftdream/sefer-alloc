@@ -2777,11 +2777,14 @@ jobs:
           RUSTFLAGS: "--cfg numa_shim_mock"
 
   numa-shim-macos:
-    # macOS NUMA support is a documented no-op (no public NUMA API), but
-    # we still exercise the smoke tests + mock dispatch to ensure the
-    # cross-platform compile + the API contract (None / NO_NODE returns)
-    # don't regress.  Lightweight per-PR coverage.
-    name: numa-shim real macOS kernel (no-op contract)
+    # macOS has no public per-allocation NUMA API. task #1306: the reservation
+    # path (`reserve_preferred_on_node`) surfaces this as an explicit
+    # `Err(ReserveNumaError::UnsupportedPlatform)` (no silent unbound no-op —
+    # see the module doc's platform-support table), while detection-only
+    # calls (`current_node`) keep returning `None`. We still exercise the
+    # smoke tests + mock dispatch to ensure the cross-platform compile + this
+    # API contract don't regress. Lightweight per-PR coverage.
+    name: numa-shim real macOS kernel (unsupported-platform contract)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
