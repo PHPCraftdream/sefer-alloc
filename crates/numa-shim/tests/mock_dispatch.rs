@@ -72,9 +72,9 @@ fn current_node_scripted_no_node_yields_none() {
 }
 
 /// task #1306: `reserve_preferred_on_node` records its arguments through the
-/// `NodeId` (raw `u32` in the log). Exactly ONE record per call — the policy
-/// installation happens inside the platform backend, which the mock replaces
-/// wholesale, so there is no second `BindRange`-style record anymore.
+/// `NodeId` (raw `u32` in the log). task #1311 (F6): a SUCCESSFUL call now records
+/// TWO entries — the public call, then the simulated policy installation — so the
+/// log reflects the real Linux backend's two-stage reserve-then-policy contract.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_records_args() {
@@ -89,8 +89,8 @@ fn reserve_preferred_on_node_records_args() {
     let calls = fresh_drain();
     assert_eq!(
         calls.len(),
-        1,
-        "exactly one record per call -- the bind happens inside the backend the mock replaces"
+        2,
+        "success path now records two entries: ReservePreferredOnNode then InstallPolicy succeeded:true"
     );
     // task #726 (rust-intel audit §C1a): the struct-like variants carry
     // field-level `#[non_exhaustive]`, so an external crate (this
@@ -101,6 +101,14 @@ fn reserve_preferred_on_node_records_args() {
             size: PAGE_4,
             align: PAGE,
             node: 3,
+            ..
+        }
+    ));
+    assert!(matches!(
+        calls[1],
+        mock::MockCall::InstallPolicy {
+            node: 3,
+            succeeded: true,
             ..
         }
     ));
@@ -198,4 +206,198 @@ fn calls_log_is_capped_not_unbounded() {
         PUSHES,
         calls.len()
     );
+}
+
+/// task #1311 (F6): scripted policy failure returns the exact error and
+/// releases the reservation exactly once. The log shows the three-stage
+/// sequence: reserve → policy failed → release.
+#[cfg(feature = "vmem-integration")]
+#[test]
+fn scripted_policy_failure_returns_os_error_and_releases_exactly_once() {
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
+    use std::io::Error;
+    fresh_drain();
+    mock::clear_policy_failure();
+    // Script ENOMEM (errno 12) for node 3
+    let original_err = Error::from_raw_os_error(12);
+    let original_display = original_err.to_string();
+    mock::set_policy_failure(3, original_err);
+    let result = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(3).expect("literal 3, not NO_NODE"),
+    );
+    let err = result.expect_err("scripted policy failure must return Err");
+    assert!(
+        matches!(err, ReserveNumaError::Os(_)),
+        "expected Os error, got {:?}",
+        err
+    );
+    let os_err = match err {
+        ReserveNumaError::Os(e) => e,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        os_err.raw_os_error(),
+        Some(12),
+        "errno must be preserved exactly"
+    );
+    assert_eq!(
+        os_err.to_string(),
+        original_display,
+        "Display representation must match the original error"
+    );
+    let calls = fresh_drain();
+    assert_eq!(
+        calls.len(),
+        3,
+        "exactly three records: reserve, failed policy, release"
+    );
+    // Index-based ordering asserts to prove the sequence
+    assert!(matches!(
+        calls[0],
+        mock::MockCall::ReservePreferredOnNode { node: 3, .. }
+    ));
+    assert!(matches!(
+        calls[1],
+        mock::MockCall::InstallPolicy {
+            node: 3,
+            succeeded: false,
+            ..
+        }
+    ));
+    assert!(matches!(
+        calls[2],
+        mock::MockCall::PolicyFailureRelease { node: 3 }
+    ));
+}
+
+/// task #1311 (F6): a policy failure scripted for one node does not affect
+/// calls to a different node. The slot stays armed or is not consumed for
+/// the different node.
+#[cfg(feature = "vmem-integration")]
+#[test]
+fn policy_failure_script_for_other_node_does_not_fire() {
+    use numa_shim::{reserve_preferred_on_node, NodeId};
+    fresh_drain();
+    mock::clear_policy_failure();
+    mock::set_policy_failure(5, std::io::Error::from_raw_os_error(12));
+    // Call with node 3 — should succeed
+    let r = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(3).expect("literal 3, not NO_NODE"),
+    )
+    .expect("call to node 3 must succeed");
+    let calls = fresh_drain();
+    assert_eq!(calls.len(), 2, "reserve and succeeded policy, no release");
+    assert!(matches!(
+        calls[0],
+        mock::MockCall::ReservePreferredOnNode { node: 3, .. }
+    ));
+    assert!(matches!(
+        calls[1],
+        mock::MockCall::InstallPolicy {
+            node: 3,
+            succeeded: true,
+            ..
+        }
+    ));
+    drop(r);
+    // Call again with node 3 — still succeeds (slot for node 5 still armed)
+    fresh_drain();
+    let r2 = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(3).expect("literal 3, not NO_NODE"),
+    )
+    .expect("second call to node 3 must still succeed");
+    let calls2 = fresh_drain();
+    assert_eq!(
+        calls2.len(),
+        2,
+        "second call still records reserve and succeeded policy"
+    );
+    assert!(matches!(
+        calls2[1],
+        mock::MockCall::InstallPolicy {
+            node: 3,
+            succeeded: true,
+            ..
+        }
+    ));
+    drop(r2);
+}
+
+/// task #1311 (F6): a scripted policy failure is one-shot — consumed by the
+/// first matching call, after which the node behaves normally (no re-arming
+/// required).
+#[cfg(feature = "vmem-integration")]
+#[test]
+fn policy_failure_script_is_one_shot() {
+    use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
+    fresh_drain();
+    mock::clear_policy_failure();
+    mock::set_policy_failure(4, std::io::Error::from_raw_os_error(12));
+    // First call to node 4 — fails with Os
+    let result = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(4).expect("literal 4, not NO_NODE"),
+    );
+    assert!(
+        matches!(result, Err(ReserveNumaError::Os(_))),
+        "first call must fail with Os"
+    );
+    let calls = fresh_drain();
+    assert_eq!(calls.len(), 3, "reserve, failed policy, release");
+    // Second call to node 4, no re-scripting — succeeds
+    fresh_drain();
+    let r2 = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(4).expect("literal 4, not NO_NODE"),
+    )
+    .expect("second call must succeed (one-shot consumed)");
+    let calls2 = fresh_drain();
+    assert_eq!(calls2.len(), 2, "reserve and succeeded policy, no release");
+    assert!(matches!(
+        calls2[1],
+        mock::MockCall::InstallPolicy {
+            node: 4,
+            succeeded: true,
+            ..
+        }
+    ));
+    drop(r2);
+}
+
+/// task #1311 (F6): the `InstallPolicy` record includes the complete OS
+/// reservation length, which must be at least the requested size.
+#[cfg(feature = "vmem-integration")]
+#[test]
+fn install_policy_records_the_complete_reservation_len() {
+    use numa_shim::{reserve_preferred_on_node, NodeId};
+    fresh_drain();
+    mock::clear_policy_failure();
+    let r = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(7).expect("literal 7, not NO_NODE"),
+    )
+    .expect("reserve");
+    let calls = fresh_drain();
+    assert_eq!(calls.len(), 2);
+    if let mock::MockCall::InstallPolicy {
+        reservation_len, ..
+    } = &calls[1]
+    {
+        assert!(
+            *reservation_len >= PAGE_4,
+            "reservation_len must be at least the requested size"
+        );
+    } else {
+        panic!("second record must be InstallPolicy");
+    }
+    drop(r);
 }

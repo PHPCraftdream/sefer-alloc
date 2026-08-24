@@ -316,6 +316,38 @@ pub mod mock {
             /// Raw NUMA node id wrapped by the `NodeId`.
             node: u32,
         },
+        /// The mock's simulated policy-installation stage ran for a reservation
+        /// that had ALREADY succeeded (mirrors the real Linux backend's post-
+        /// reservation `mbind(2)`).
+        ///
+        /// `reservation_len` is `Reservation::reservation_len()` at policy time —
+        /// the complete OS span the real backend mbinds (not the aligned usable
+        /// subrange). `succeeded == false` only when a scripted failure fired
+        /// via `set_policy_failure`.
+        ///
+        /// task #1311 (F6).
+        #[non_exhaustive]
+        InstallPolicy {
+            /// Raw NUMA node id the policy was applied to.
+            node: u32,
+            /// Complete OS reservation length at policy time.
+            reservation_len: usize,
+            /// Whether the simulated policy installation succeeded.
+            succeeded: bool,
+        },
+        /// The mock RELEASED a just-made reservation because the policy stage
+        /// failed.
+        ///
+        /// This record is pushed strictly AFTER the `Drop` of the reservation ran,
+        /// so its presence is the observable proof that the two-stage cleanup
+        /// contract executed. Exactly one such record per failed call is the
+        /// "released exactly once" postcondition.
+        ///
+        /// task #1311 (F6).
+        PolicyFailureRelease {
+            /// Raw NUMA node id of the released reservation.
+            node: u32,
+        },
     }
 
     std::thread_local! {
@@ -332,6 +364,17 @@ pub mod mock {
         pub(crate) static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
         /// Value returned by `current_node()` under the mock.  Default 0.
         pub(crate) static CURRENT_NODE_SLOT: RefCell<u32> = const { RefCell::new(0) };
+        /// Scripted policy-installation failure for a specific node id.
+        ///
+        /// Holds `Some((node, err))` when a test has armed a failure for
+        /// calls with that exact node. Consumed by the first matching call
+        /// (`take_policy_failure_for`).
+        ///
+        /// Internal state encapsulated by `set_policy_failure`/`clear_policy_failure`/
+        /// `take_policy_failure_for` — mirrors the convention documented for
+        /// `CALLS`/`CURRENT_NODE_SLOT` above (task #726): `pub(crate)` internals
+        /// behind encapsulating functions, not part of the crate's semver surface.
+        pub(crate) static POLICY_FAILURE_SLOT: RefCell<Option<(u32, std::io::Error)>> = const { RefCell::new(None) };
     }
 
     /// Drain every recorded call since the last drain (or test start).
@@ -354,6 +397,73 @@ pub mod mock {
     /// Internal: read the scripted current_node value.
     pub(crate) fn current_node_slot() -> u32 {
         CURRENT_NODE_SLOT.with(|c| *c.borrow())
+    }
+
+    /// Script a simulated policy-installation failure for calls with the exact
+    /// node id `node`.
+    ///
+    /// The scripted error surfaces as `ReserveNumaError::Os(err)` — the same
+    /// variant the real Linux backend returns when `mbind(2)` fails after a
+    /// successful reservation.
+    ///
+    /// # One-shot semantics
+    ///
+    /// The failure is consumed by the FIRST matching `reserve_preferred_on_node`
+    /// call with this exact node id. Subsequent calls with the same node succeed
+    /// (unless re-armed).
+    ///
+    /// # Node-scoped semantics
+    ///
+    /// A call with a different node id is unaffected. Test hygiene requires
+    /// calling `clear_policy_failure()` after each test.
+    ///
+    /// task #1311 (F6).
+    pub fn set_policy_failure(node: u32, err: std::io::Error) {
+        POLICY_FAILURE_SLOT.with(|c| *c.borrow_mut() = Some((node, err)));
+    }
+
+    /// Reset the scripted policy-installation failure.
+    ///
+    /// Test hygiene: call this at the start or end of each test that uses
+    /// `set_policy_failure` to avoid leaking state across tests.
+    ///
+    /// task #1311 (F6).
+    pub fn clear_policy_failure() {
+        POLICY_FAILURE_SLOT.with(|c| *c.borrow_mut() = None);
+    }
+
+    /// Internal: consume the scripted policy-installation failure for `node`.
+    ///
+    /// Returns `Some(err)` if a failure is armed for this exact node, consuming
+    /// it. Returns `None` if no failure is armed or the armed failure is for a
+    /// different node.
+    ///
+    /// # Reentrancy safety
+    ///
+    /// Uses `try_with`/`try_borrow_mut` like `record()`: on borrow failure,
+    /// returns `None` rather than panicking. This is defensive — the mock never
+    /// allocates inside the guard, but the pattern matches the established
+    /// reentrancy discipline.
+    ///
+    /// task #1311 (F6).
+    pub(crate) fn take_policy_failure_for(node: u32) -> Option<std::io::Error> {
+        POLICY_FAILURE_SLOT
+            .try_with(|c| {
+                if let Ok(mut b) = c.try_borrow_mut() {
+                    b.take().and_then(|(armed_node, err)| {
+                        if armed_node == node {
+                            Some(err)
+                        } else {
+                            // Different node: put it back and report none
+                            *b = Some((armed_node, err));
+                            None
+                        }
+                    })
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(None)
     }
 
     /// Internal: record a call.
@@ -670,6 +780,14 @@ pub fn reserve_preferred_on_node(
         // task #1306: mirrors the real Linux backend's documented single-u64
         // nodemask limit (nodes 0..=63) so the InvalidNode error path is
         // assertable under the mock on EVERY host, not only Linux.
+        //
+        // task #1311 (F6, doc-honesty): the mock approximates the REAL LINUX
+        // backend's contract here. Real Windows FORWARDS any node id (including >= 64)
+        // to the OS and reports the refusal as `Os`; real macOS returns
+        // `UnsupportedPlatform` unconditionally BEFORE this check. The mock has
+        // no per-platform simulation mode, and making it platform-faithful would
+        // break its run-anywhere purpose (mock tests on Windows hosts assert the
+        // Linux-shaped `InvalidNode`).
         if node.get() >= 64 {
             return Err(ReserveNumaError::InvalidNode);
         }
@@ -677,13 +795,50 @@ pub fn reserve_preferred_on_node(
         // collapsed `Option`: contract violations are `InvalidArguments`,
         // OS refusals are `Os` — so mock-mode tests can assert the
         // distinction the old `reserve_on_node -> Option` API collapsed.
-        aligned_vmem::try_reserve_aligned(size, align).map_err(|e| {
-            if e.is_invalid_argument() {
-                ReserveNumaError::InvalidArguments
-            } else {
-                ReserveNumaError::Os(std::io::Error::from(e))
+        let r = match aligned_vmem::try_reserve_aligned(size, align) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(if e.is_invalid_argument() {
+                    ReserveNumaError::InvalidArguments
+                } else {
+                    ReserveNumaError::Os(std::io::Error::from(e))
+                })
             }
-        })
+        };
+        let reservation_len = r.reservation_len();
+
+        // task #1311 (F6): two-stage reserve-then-policy, mirroring the real
+        // Linux backend. Check for a scripted policy failure for this node.
+        match mock::take_policy_failure_for(node.get()) {
+            Some(err) => {
+                // task #1311 (F6): mirror the real Linux backend's post-mbind
+                // failure path — release the just-made reservation, then return
+                // the error. The ORIGINAL error is returned untouched: the mock
+                // twin of the real backend's capture-errno-IMMEDIATELY-before-
+                // cleanup contract (see the Linux impl's comment in
+                // `platform::reserve_preferred_on_node_impl`).
+                mock::record(mock::MockCall::InstallPolicy {
+                    node: node.get(),
+                    reservation_len,
+                    succeeded: false,
+                });
+                drop(r);
+                // Record-after-drop ordering is load-bearing: the release record
+                // can only be pushed after the reservation's Drop ran, proving
+                // the cleanup executed.
+                mock::record(mock::MockCall::PolicyFailureRelease { node: node.get() });
+                Err(ReserveNumaError::Os(err))
+            }
+            None => {
+                // Policy succeeded: record the install and return the reservation.
+                mock::record(mock::MockCall::InstallPolicy {
+                    node: node.get(),
+                    reservation_len,
+                    succeeded: true,
+                });
+                Ok(r)
+            }
+        }
     }
     #[cfg(not(numa_shim_mock))]
     {
