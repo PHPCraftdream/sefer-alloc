@@ -503,9 +503,9 @@ pub fn current_node_resolution() -> NodeResolution {
 /// VERY FIRST call to this function on a real Linux host performs up to 64
 /// `open`/`read`/`close` syscall triples (one per candidate NUMA node) to
 /// populate a process-lifetime topology cache; every subsequent call is a
-/// pure in-memory bit-test with no syscalls at all. For a crate whose
-/// selling point is "zero dependencies, `forbid(unsafe_code)`-friendly for
-/// consumers," this first-call cost is a contract-level fact a caller on a
+/// pure in-memory reverse-index lookup with no syscalls at all. For a crate
+/// whose selling point is "zero dependencies, `forbid(unsafe_code)`-friendly
+/// for consumers," this first-call cost is a contract-level fact a caller on a
 /// latency-sensitive cold path should know about — most callers should call
 /// this once early (e.g. at startup) rather than assuming every call is
 /// equally cheap.
@@ -656,23 +656,25 @@ pub fn reserve_preferred_on_node(
 }
 
 // ---------------------------------------------------------------------------
-// Linux cpumap parsing (task #721): extracted from the Linux-only `platform`
-// module below into a target-INDEPENDENT module. These five functions are
-// pure byte-slice parsing with no syscalls and no OS dependency whatsoever
-// -- gating them inside `#[cfg(target_os = "linux")]` was an accident of
-// code organization, not a genuine platform requirement, and it meant the
-// crate's own most intricate parsing logic (the most-significant-word-first
-// cpumap bitmask format) could ONLY be exercised on a real Linux host. This
-// crate's own `numa_shim_mock` cfg bypasses the whole `platform` module rather
-// than exercising it, so before this change there was no way to run these
-// functions on ANY host this project's CI or this session actually has.
-// Moving them here (still `#[doc(hidden)]`, not part of this crate's public
-// API — see the established "doc-hidden test-only forwarders" pattern in
-// `CLAUDE.md`) lets `tests/cpumap_parser.rs` exercise the real parsing logic
-// directly, on every target, closing the round-closing audit's §D1a finding
-// for this half of its "zero behavioral oracles" claim.
+// Linux cpumap parsing and reverse index (task #721, #1310): extracted from
+// the Linux-only `platform` module below into a target-INDEPENDENT module.
+// This module provides pure byte-slice parsing helpers and a boot-time
+// reverse index (cpu -> node) with no syscalls and no OS dependency
+// whatsoever -- gating them inside `#[cfg(target_os = "linux")]` was an
+// accident of code organization, not a genuine platform requirement, and it
+// meant the crate's own most intricate parsing logic (the
+// most-significant-word-first cpumap bitmask format) could ONLY be exercised
+// on a real Linux host. This crate's own `numa_shim_mock` cfg bypasses the
+// whole `platform` module rather than exercising it, so before this change
+// there was no way to run these functions on ANY host this project's CI or
+// this session actually has. Moving them here (still `#[doc(hidden)]`, not
+// part of this crate's public API — see the established "doc-hidden test-only
+// forwarders" pattern in `CLAUDE.md`) lets `tests/cpumap_parser.rs` and
+// `tests/cpumap_reverse_index.rs` exercise the real parsing logic and reverse
+// index construction directly, on every target, closing the round-closing
+// audit's §D1a finding for this half of its "zero behavioral oracles" claim.
 // ---------------------------------------------------------------------------
-/// Test-oracle-only module: sysfs cpumap parsing helpers.
+/// Test-oracle-only module: sysfs cpumap parsing helpers and reverse index.
 ///
 /// `#[doc(hidden)]` and **exempt from this crate's SemVer guarantees**
 /// (task #1289, following the `serde::__private` convention): everything in
@@ -683,6 +685,69 @@ pub fn reserve_preferred_on_node(
 /// public-API model.
 #[doc(hidden)]
 pub mod cpumap {
+    /// Maximum number of CPUs that can be indexed in the reverse index.
+    ///
+    /// A Linux node cpumap file is the GLOBAL cpumask `cpumask_of_node(node) &
+    /// cpu_online_mask`; bit indices are global logical CPU IDs, all `< nr_cpu_ids
+    /// <= NR_CPUS` (kernel config). The kernel's per-arch `NR_CPUS` ceiling:
+    /// x86_64 caps at 8192 (arch/x86/Kconfig `range 2 8192`), arm64 at 4096;
+    /// other Linux archs are at or below these. This crate's platform matrix
+    /// supports Linux x86_64/aarch64, so 8192 entries (1 byte each, 8 KiB)
+    /// cover every possible set bit on any supported kernel. A CPU ID >= 8192
+    /// stays unmapped and degrades exactly like the old oversized-file case:
+    /// not found → `None` → `FellBackToZero`.
+    ///
+    /// This constant deliberately bounds GLOBAL CPU-ID space, correcting the
+    /// old `NODE_CPUMAP_BUF_LEN` comment's wrong per-node reasoning (task
+    /// #1310, review finding F5). The old comment claimed a 1024-byte buffer
+    /// covers "~3640 CPUs on a SINGLE node" — FALSE: on many-node/sparse-ID
+    /// systems ALL nodes' cpumaps can simultaneously exceed a small buffer
+    /// because the width tracks global ID space, not per-node CPU count.
+    pub const MAX_INDEXED_CPUS: usize = 8192;
+
+    /// Sentinel value in the reverse index meaning "no node mapped".
+    ///
+    /// Node values are 0..=63, so 255 (`u8::MAX`) is unambiguous as the unmapped
+    /// sentinel.
+    pub const CPU_UNMAPPED: u8 = u8::MAX;
+
+    /// Parse a Linux cpumap and invoke `on_cpu` for every set bit.
+    ///
+    /// Format: comma-separated hex 32-bit words, most-significant word first,
+    /// optional trailing newline. Example: `"00000000,00000003\n"` means CPUs 0
+    /// and 1 are in this node.
+    ///
+    /// This is the SINGLE format interpreter used by both `parse_contains_cpu`
+    /// and the reverse-index build (task #1310): there is no second divergent
+    /// parsing path.
+    ///
+    /// Returns `true` on full success, `false` on ANY malformed input (fail-closed).
+    /// A malformed token ANYWHERE in the text causes failure — real sysfs never
+    /// produces malformed tokens.
+    pub fn parse_each_set_cpu(data: &[u8], mut on_cpu: impl FnMut(u32)) -> bool {
+        let data = trim_end(data);
+        let word_count = data.iter().filter(|&&b| b == b',').count() + 1;
+        // Iterate words from MSB to LSB (leftmost word covers highest CPU indices).
+        for w in 0..word_count {
+            let left_index = word_count - 1 - w;
+            let word_str = match nth_token(data, left_index, b',') {
+                Some(s) => s,
+                None => return false,
+            };
+            let val = match parse_hex_u32(word_str) {
+                Some(v) => v,
+                None => return false,
+            };
+            // Iterate each bit in the word (LSB first = lower CPU IDs).
+            for bit in 0..32 {
+                if (val >> bit) & 1 == 1 {
+                    on_cpu((w * 32 + bit) as u32);
+                }
+            }
+        }
+        true
+    }
+
     /// Write `/sys/devices/system/node/nodeN/cpumap\0` into `buf` and return
     /// the nul-terminated slice. Avoids heap allocation.
     pub fn format_sysfs_path(buf: &mut [u8; 64], node: u32) -> &[u8] {
@@ -736,25 +801,19 @@ pub mod cpumap {
     /// Format: comma-separated hex 32-bit words, most-significant first,
     /// optional trailing newline. Example: `"00000000,00000003\n"` means
     /// CPUs 0 and 1 are in this node.
+    ///
+    /// Now layered on the single `parse_each_set_cpu` interpreter (task #1310).
+    /// One behavioral nuance: a malformed token ANYWHERE in the text fails the
+    /// probe (previously only the target word's token was validated); both are
+    /// fail-closed `false`, and real sysfs never produces malformed tokens.
     pub fn parse_contains_cpu(data: &[u8], cpu_idx: u32) -> bool {
-        let data = trim_end(data);
-        let word_count = data.iter().filter(|&&b| b == b',').count() + 1;
-        let target_word = (cpu_idx / 32) as usize;
-        let bit_in_word = cpu_idx % 32;
-        if target_word >= word_count {
-            return false;
-        }
-        // The leftmost word covers the highest CPU indices.
-        let left_index = word_count - 1 - target_word;
-        let word_str = match nth_token(data, left_index, b',') {
-            Some(s) => s,
-            None => return false,
-        };
-        let val = match parse_hex_u32(word_str) {
-            Some(v) => v,
-            None => return false,
-        };
-        (val >> bit_in_word) & 1 == 1
+        let mut found = false;
+        let ok = parse_each_set_cpu(data, |b| {
+            if b == cpu_idx {
+                found = true;
+            }
+        });
+        ok && found
     }
 
     /// Trim trailing `\n`/`\r`/` ` bytes.
@@ -816,6 +875,88 @@ pub mod cpumap {
             val = val.wrapping_shl(4) | digit as u32;
         }
         Some(val)
+    }
+
+    /// Fixed-size reverse index mapping CPU IDs to node IDs.
+    ///
+    /// This is the replacement for the per-node raw-text cache (task #1310,
+    /// review findings F5+F10). The old design cached `[[u8; 1024]; 64]` (~64.5
+    /// KiB) of raw cpumap text and re-parsed up to ~64 KiB per lookup (O(nodes
+    /// × bytes)). This design parses each node's cpumap exactly once at init and
+    /// stores a compact 8 KiB array (`[u8; 8192]`) for O(1) lookup.
+    ///
+    /// Built once inside the `OnceLock` topology initializer; allocation-free
+    /// (static storage only). CPU IDs >= `MAX_INDEXED_CPUS` stay unmapped and
+    /// degrade exactly like the old oversized-file case (unmapped → `None` →
+    /// `FellBackToZero`).
+    ///
+    /// First-mapping-wins semantics for overlapping masks: when `index_node`
+    /// processes multiple nodes that both claim the same CPU, the first node
+    /// processed wins. The real caller scans nodes in ascending order (0..63),
+    /// so this reproduces the old ascending-scan's lowest-node-wins behavior.
+    pub struct ReverseIndex {
+        map: [u8; MAX_INDEXED_CPUS],
+    }
+
+    impl Default for ReverseIndex {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl ReverseIndex {
+        /// Create a new empty reverse index (all entries unmapped).
+        pub const fn new() -> Self {
+            Self {
+                map: [CPU_UNMAPPED; MAX_INDEXED_CPUS],
+            }
+        }
+
+        /// Index a node's cpumap text into this reverse index.
+        ///
+        /// Returns `false` WITHOUT modifying anything if:
+        /// - `node > 63` (defensive; the real caller scans 0..64)
+        /// - The text is malformed (any token fails hex parsing)
+        ///
+        /// Implementation: two-stage dry-run then actual write (init-time only,
+        /// so the double parse is acceptable). Stage 1 validates the entire
+        /// text; stage 2 writes the mapping for each CPU where currently unmapped
+        /// (first-mapping-wins). CPUs >= `MAX_INDEXED_CPUS` are silently skipped
+        /// (documented degradation).
+        pub fn index_node(&mut self, node: u32, data: &[u8]) -> bool {
+            if node > 63 {
+                return false;
+            }
+            // Stage 1: dry-run validation (fail-closed per node).
+            if !parse_each_set_cpu(data, |_| {}) {
+                return false;
+            }
+            // Stage 2: actually index, first-mapping-wins.
+            parse_each_set_cpu(data, |cpu| {
+                if (cpu as usize) < MAX_INDEXED_CPUS {
+                    let entry = &mut self.map[cpu as usize];
+                    if *entry == CPU_UNMAPPED {
+                        *entry = node as u8;
+                    }
+                }
+                // CPUs >= MAX_INDEXED_CPUS: silently skipped, same as
+                // old buffer-too-small case.
+            });
+            true
+        }
+
+        /// Look up the node for a CPU ID.
+        ///
+        /// Returns `Some(node_id)` if the CPU is indexed, `None` otherwise.
+        /// O(1) array probe after init.
+        pub fn lookup(&self, cpu: u32) -> Option<u32> {
+            let entry = self.map.get(cpu as usize)?;
+            if *entry == CPU_UNMAPPED {
+                None
+            } else {
+                Some(*entry as u32)
+            }
+        }
     }
 }
 
@@ -950,25 +1091,30 @@ mod platform {
         }
     }
 
-    /// Per-node raw cpumap byte capacity for the cached [`Topology`].
+    /// Scratch buffer size for reading a single node's cpumap file during init.
     ///
-    /// task #777 (rust-intel audit round-closing review, finding F1):
-    /// bounds each node's cached cpumap to a FIXED size instead of a
-    /// heap-allocated `Vec` (see `Topology`'s own doc for why). 1024 bytes
-    /// of comma-separated 8-hex-digit words covers `1024 / 9 * 32 ≈ 3640`
-    /// CPUs on a SINGLE node -- comfortably past the per-node CPU count of
-    /// any currently-shipping NUMA system (real multi-socket hosts run at
-    /// most a few hundred CPUs per node; the crate's own separate 64-node
-    /// ceiling, documented at `reserve_preferred_on_node`'s `InvalidNode`
-    /// error, already bounds total system-wide CPU count far below what
-    /// 3640/node could ever combine with in practice). This is a DEVIATION
-    /// from task #720's original 4 KiB read buffer (chosen there to cover
-    /// ~14,500 CPUs on a SINGLE node, a bound this cache does not need to
-    /// match since it exists on the stack/static, not the heap, and 64
-    /// nodes x 4 KiB would be 256 KiB of static storage). A node whose
-    /// cpumap file is wider than this buffer is treated identically to a
-    /// read failure -- `false`/not-cached, same as before.
-    const NODE_CPUMAP_BUF_LEN: usize = 1024;
+    /// This is an init-time SCRATCH buffer for reading ONE node's cpumap text
+    /// at a time inside the `OnceLock` initializer. The raw text is no longer
+    /// cached per-node (task #1310 replaced the per-node raw-text cache with
+    /// the reverse index).
+    ///
+    /// A complete cpumap for the full indexable global CPU-ID space is
+    /// `ceil(MAX_INDEXED_CPUS / 32) = 256` words at 9 bytes per word (8 hex
+    /// chars plus one separator; the final separator is the trailing
+    /// newline) = 2304 bytes. 4096 (one page, task #720's original size)
+    /// holds the complete text for any system within `MAX_INDEXED_CPUS`
+    /// with headroom.
+    ///
+    /// A file WIDER than this buffer implies > ~455 words > 14560 global CPU
+    /// IDs — beyond every supported kernel's `NR_CPUS`. Such a file is treated
+    /// as a read failure (node not indexed), preserving task #720 §C4's
+    /// fail-closed no-silent-truncation rule.
+    ///
+    /// NOTE: This bound is on GLOBAL CPU-ID space (the file is a global
+    /// cpumask), NOT per-node CPU count — explicitly correcting the old
+    /// comment's wrong "3640 CPUs on a SINGLE node" justification (review
+    /// finding F5, task #1310).
+    const CPUMAP_READ_BUF_LEN: usize = 4096;
 
     /// Boot-static cpu→node topology, parsed via sysfs ONCE and cached for
     /// the life of the process (task #723, rust-intel audit §E5: each
@@ -982,7 +1128,7 @@ mod platform {
     ///
     /// task #778 (round-closing review, F12): the caveat above covers
     /// hotplug AFTER the first call; it does not cover the narrower window
-    /// this cache also opens: `topology()` reads 64 sysfs files
+    /// this cache also opens: the initializer below reads 64 sysfs files
     /// SEQUENTIALLY, so a hotplug event landing mid-scan can freeze a TORN
     /// snapshot for the rest of the process's lifetime (a CPU that existed
     /// only after the scan passed its node's file permanently falls back to
@@ -995,7 +1141,7 @@ mod platform {
     ///
     /// task #777 (rust-intel audit round-closing review, finding F1, HIGH):
     /// task #723's original design cached `Vec<Vec<u8>>` -- ~65 heap
-    /// allocations inside the `OnceLock::get_or_init` initializer below.
+    /// allocations inside the `OnceLock::get_or_init` initializer.
     /// `current_node()` is reachable from `AllocCore::alloc` (via
     /// `current_node_cached` on a cache miss, inside `reserve_small_segment`
     /// / `alloc_large_slow`), and the parent `sefer-alloc` crate's own `M5`
@@ -1003,69 +1149,51 @@ mod platform {
     /// specifically so it never re-enters the global allocator. Under a real
     /// `#[global_allocator] = SeferAlloc` + `numa-aware` deployment on
     /// Linux, the FIRST allocation needing a NUMA lookup would have
-    /// triggered `topology()`'s heap allocation, which re-enters
-    /// `GlobalAlloc::alloc`, which re-enters `current_node()`, which
-    /// re-enters `OnceLock::get_or_init` on the SAME `TOPOLOGY` cell mid-
-    /// initialization -- documented by `std::sync::OnceLock` as "an error
-    /// to reentrantly initialize the cell from `f`... current implementation
-    /// deadlocks" -- confirmed by the reviewing agent in a standalone
-    /// scratch reproduction on this exact toolchain. Fixed by making the
-    /// cache allocation-free: `Topology` below holds only fixed-size
-    /// stack/static data (`[[u8; NODE_CPUMAP_BUF_LEN]; 64]` +
-    /// `[usize; 64]`), so populating it touches no `Vec`/`Box`/heap at all,
-    /// and the reentrancy hazard is structurally removed rather than
-    /// guarded against.
-    struct Topology {
-        /// Node `i`'s cpumap byte length (0 if unreadable or oversized).
-        len: [usize; 64],
-        /// Node `i`'s raw cpumap file bytes, `buf[i][..len[i]]` valid.
-        buf: [[u8; NODE_CPUMAP_BUF_LEN]; 64],
-    }
+    /// triggered heap allocation, which re-enters `GlobalAlloc::alloc`,
+    /// which re-enters `current_node()`, which re-enters
+    /// `OnceLock::get_or_init` on the SAME cell mid-initialization --
+    /// documented by `std::sync::OnceLock` as "an error to reentrantly
+    /// initialize the cell from `f`... current implementation deadlocks".
+    /// Fixed by making the cache allocation-free: the reverse index
+    /// (`crate::cpumap::ReverseIndex`) uses only fixed-size static storage
+    /// (`[u8; MAX_INDEXED_CPUS]`, 8 KiB), and the scratch buffer below lives
+    /// on the stack inside the initializer, so populating the topology touches
+    /// no `Vec`/`Box`/heap at all, and the reentrancy hazard is structurally
+    /// removed rather than guarded against.
+    static TOPOLOGY: std::sync::OnceLock<crate::cpumap::ReverseIndex> = std::sync::OnceLock::new();
 
-    static TOPOLOGY: std::sync::OnceLock<Topology> = std::sync::OnceLock::new();
-
-    fn topology() -> &'static Topology {
+    fn topology() -> &'static crate::cpumap::ReverseIndex {
         TOPOLOGY.get_or_init(|| {
-            let mut t = Topology {
-                len: [0; 64],
-                buf: [[0u8; NODE_CPUMAP_BUF_LEN]; 64],
-            };
+            let mut index = crate::cpumap::ReverseIndex::new();
+            let mut buf = [0u8; CPUMAP_READ_BUF_LEN];
             for node in 0u32..64 {
                 let mut path = [0u8; 64];
                 let path_str = crate::cpumap::format_sysfs_path(&mut path, node);
-                if let Some(n) = read_cpumap_into(path_str, &mut t.buf[node as usize]) {
-                    t.len[node as usize] = n;
+                if let Some(n) = read_cpumap_into(path_str, &mut buf) {
+                    index.index_node(node, &buf[..n]);
                 }
             }
-            t
+            index
         })
     }
 
     /// Map a CPU index to its NUMA node using the cached boot-static
-    /// topology (`topology()` above). Pure in-memory bit-testing after the
-    /// topology's one-time syscall-driven populate.
+    /// topology (`topology()` above). Pure in-memory reverse-index lookup after
+    /// the topology's one-time syscall-driven populate.
     ///
     /// Returns `None` when sysfs NUMA topology files are absent, the CPU
     /// is not found in any cached cpumap (including when the CPU's real node
-    /// is >= 64 and thus not in the 0..63 scan range), or the topology
-    /// cache could not be populated.
+    /// is >= 64 and thus not in the 0..63 scan range), the topology
+    /// cache could not be populated, or the CPU ID is at or beyond the
+    /// reverse index's `MAX_INDEXED_CPUS` capacity (task #1310: same silent
+    /// fallback as the old oversized-file case).
     pub(crate) fn cpu_to_numa_node_checked(cpu_idx: u32) -> Option<u32> {
-        let topo = topology();
-        for node in 0usize..64 {
-            let len = topo.len[node];
-            if len > 0 && crate::cpumap::parse_contains_cpu(&topo.buf[node][..len], cpu_idx) {
-                return Some(node as u32);
-            }
-        }
-        // CPU not found in any cached cpumap — either the topology is
-        // unavailable (single-node system with no sysfs), the CPU is on
-        // a node >= 64, or the cache population failed.
-        None
+        topology().lookup(cpu_idx)
     }
 
     /// Map a CPU index to its NUMA node using the cached boot-static
-    /// topology (`topology()` above). Pure in-memory bit-testing after the
-    /// topology's one-time syscall-driven populate.
+    /// topology (`topology()` above). Pure in-memory reverse-index lookup after
+    /// the topology's one-time syscall-driven populate.
     ///
     /// Returns `0` when sysfs NUMA topology files are absent (single-node
     /// system where the kernel didn't compile NUMA support) or when the CPU
@@ -1087,12 +1215,11 @@ mod platform {
     /// `out` (task #720, rust-intel audit §C4: a truncated read must never
     /// be silently treated as complete -- the most-significant-word-first
     /// `word_count`/`left_index` arithmetic would misalign on a prefix and
-    /// return a WRONG node rather than failing loudly; task #777 preserves
-    /// this fail-closed behavior while replacing the original heap `Vec`
-    /// destination with `out: &mut [u8; NODE_CPUMAP_BUF_LEN]`, a fixed
-    /// buffer that lives inside `Topology`'s own storage -- no allocation
-    /// anywhere in this function).
-    fn read_cpumap_into(path: &[u8], out: &mut [u8; NODE_CPUMAP_BUF_LEN]) -> Option<usize> {
+    /// return a WRONG node rather than failing loudly). The caller supplies
+    /// an init-time stack scratch buffer (`CPUMAP_READ_BUF_LEN`), so this
+    /// function remains allocation-free (task #777: the original heap `Vec`
+    /// destination created a reentrancy hazard; fixed-size storage removes it).
+    fn read_cpumap_into(path: &[u8], out: &mut [u8]) -> Option<usize> {
         // SAFETY: `path` is a valid nul-terminated C string constructed above.
         // `open` is a POSIX syscall; we check for -1 on error.
         let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
@@ -1101,20 +1228,20 @@ mod platform {
         }
         let mut total = 0usize;
         loop {
-            if total >= NODE_CPUMAP_BUF_LEN {
+            if total >= out.len() {
                 // SAFETY: `fd` was opened by us and must be closed exactly once.
                 unsafe { libc_close(fd) };
                 return None;
             }
             // SAFETY: `out[total..]` is a valid writable sub-slice of `out`
-            // (length `NODE_CPUMAP_BUF_LEN - total > 0`, checked above);
+            // (length `out.len() - total > 0`, checked above);
             // `fd` was returned by the successful `open` call above and not
             // yet closed.
             let n = unsafe {
                 libc_read(
                     fd,
                     out[total..].as_mut_ptr() as *mut core::ffi::c_void,
-                    NODE_CPUMAP_BUF_LEN - total,
+                    out.len() - total,
                 )
             };
             if n < 0 {
