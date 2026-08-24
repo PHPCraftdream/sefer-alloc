@@ -373,6 +373,28 @@ const GRANDFATHERED = new Map([
       'does not foreclose it. Durable record: item 78, sub-card 6 ' +
       '(task #1238).',
   ],
+  [
+    'e25ec74',
+    'NOT a genuine mis-slot — a second FALSE-POSITIVE exemption (task ' +
+      '#1335), same class as 2f9d7b9 through a different macro: docs(numa-shim): ' +
+      'prefix on a task-#1333 doc-honesty commit whose ENTIRE crates/numa-shim/' +
+      'src/lib.rs delta is //!/// doc-comment lines (already correctly ' +
+      'recognized as comment by hasNonCommentChange). The one non-comment ' +
+      'changed line in the whole commit is Cargo.toml\'s `description = "..."` ' +
+      'key-value line — genuine TOML content, not a #-comment, so the regex ' +
+      'correctly does not suppress it — but it is crates.io-facing PACKAGE ' +
+      'METADATA PROSE (the same "zero C library dependencies" -> "zero ' +
+      'third-party C/C++ dependencies" wording correction the doc comments ' +
+      'already carry, kept in sync per this crate\'s own convention), not ' +
+      'shipping/opt-in code; Cargo.toml\'s version field is untouched. No ' +
+      'honest alternative prefix fits better — docs(numa-shim): is correct. ' +
+      'Not taught to the guard as a new exception path (a "Cargo.toml ' +
+      'description field" special case would be exactly the guard-cleverness ' +
+      '2f9d7b9\'s own entry warns against — see that entry\'s reasoning, ' +
+      'which applies unchanged here). UNPUSHED: the owner may still reword it ' +
+      'by rebase — this exemption records that decision point, it does not ' +
+      'foreclose it. Durable record: item 78, sub-card 7 (task #1335).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
