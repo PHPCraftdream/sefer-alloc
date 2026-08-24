@@ -14,6 +14,17 @@
 //! the build-time cfg `numa_shim_mock` (task #1288), no longer a Cargo feature.
 //! The mock backend REPLACES the real platform backend, so the benched public
 //! functions never touch real OS topology.
+//!
+//! Bench-name honesty (task #1333, eighteenth review F10): the
+//! `current_node/first_call` and `current_node/warm_call` benches measure
+//! MOCK dispatch + call-recording overhead ONLY. Under `numa_shim_mock`
+//! there is no sysfs topology scan (no real cold path exists to measure)
+//! and no real cache (both benches read the same scripted thread-local
+//! slot), so NEITHER number is evidence about real-backend cold sysfs cost
+//! or production warm-lookup cost. Real-backend cold/warm calibration is
+//! measure-first work tracked in `docs/perf/OPEN_ITEMS.md` item 59; the
+//! per-bench inline comments below restate this where it matters most.
+//! Bench NAMES are kept unchanged for historical bench-id continuity.
 
 fn main() {
     #[cfg(not(numa_shim_mock))]

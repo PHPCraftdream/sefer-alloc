@@ -1,10 +1,11 @@
 # numa-shim
 
-**100 % Rust NUMA detection and placement — no C / C++ libraries.**
+**Rust NUMA detection and placement — zero third-party C/C++ dependencies.**
 
-The key differentiator: **zero C / C++ crate dependencies** — no `libnuma`, no
-`hwloc`, no `libcuda`. Only the system libc / `kernel32` syscalls that any
-Rust program already links to.
+The key differentiator: **zero third-party C/C++ dependencies** — no `libnuma`,
+no `hwloc`, no `libcuda`. The crate calls the system libc / `kernel32` directly
+via FFI (`sched_getcpu`, raw `syscall(2)`, `VirtualAllocExNuma`) — system
+interfaces any Rust program already links to, not third-party C libraries.
 
 | Platform | Node detection | Memory placement |
 |----------|---------------|----------------|
