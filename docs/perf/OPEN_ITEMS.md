@@ -2748,9 +2748,7 @@ for completeness.
     `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`
     §"Производительность", revision `356fb44`.)
 
-    - **Status:** OPEN — reading-level observations only, no harness built,
-      no number measured for any of the five; the report itself states
-      "Ни один speedup в этом отчёте не заявляется как измеренный".
+    - **Status:** OPEN — reading-level observations only, no harness built, no number measured for any of the five; the report itself states "Ни один speedup в этом отчёте не заявляется как измеренный". Task #1310 (2026-08-24) structurally implemented P1's reverse-index candidate: `cpu_to_numa_node_checked` is now a single O(1) array probe over an `[u8; 8192]` reverse index built once at init, replacing the O(nodes × cpumap-bytes) per-lookup re-parse — a complexity change only; NO wall-clock number claimed or measured; the remaining open question is the report's `getcpu(2)`-vs-sysfs+reverse-index A/B, still unmeasured.
     - **Current-number-or-verdict:** all five unmeasured; no verdict yet.
     - **Next trigger:** per-candidate, below — none of P1-P5 may be
       presented as a proven speedup without the path-activation/measurement
@@ -2762,18 +2760,14 @@ for completeness.
       mask bytes) of pure-Rust work per `current_node()`, even though the
       cache already eliminated the repeated sysfs `open/read/close`. For an
       allocator/latency-sensitive caller the report names `getcpu(2)` or a
-      pre-built reverse CPU→node index as candidates. Next trigger: measure
-      the current per-call cost from the layer the allocator actually
-      ships at, then A/B a `getcpu(2)` or reverse-index variant against it
-      (the report's own recommended-order item 7 defers exactly this
-      measurement until after the correctness/release gates).
+      pre-built reverse CPU→node index as candidates. **Structurally improved by task #1310 (2026-08-24): lookup is now a single O(1) array probe over an `[u8; 8192]` reverse index built once at init, replacing the O(nodes × cpumap-bytes) per-lookup re-parse — complexity change only; still no wall-clock measurement.** Next trigger: measure the `getcpu(2)`-vs-sysfs+reverse-index A/B (the report's own recommended-order item 7 defers exactly this measurement until after the correctness/release gates).
     - **P2 — cold start is expensive and uses a large stack frame.** The
       first Linux call performs up to 64 sysfs `open/read/close` triples
       and initializes a `Topology` of roughly 64 KiB on the stack
       (`NODE_CPUMAP_BUF_LEN = 1024` × 64 plus lengths). The allocation-free
       redesign correctly removed the reentrant `OnceLock`/global-allocator
       hazard, but cold-path cost and stack footprint are part of the API's
-      observable behavior. Reading `/sys/.../node/online` once, or direct
+      observable behavior. **Structurally improved by task #1310 (2026-08-24): the init frame is now ~8 KiB index + 4 KiB scratch instead of a ~64.5 KiB `Topology`; cold-start syscall count (up to 64 open/read/close triples) unchanged; still unmeasured.** Reading `/sys/.../node/online` once, or direct
       `getcpu(2)`, may shorten the path. Next trigger: a measured
       cold-start latency + peak-stack-cost probe before any redesign.
     - **P3 — `CURRENT_NODE_SLOT: RefCell<u32>` could be a `Cell<u32>`** (the
