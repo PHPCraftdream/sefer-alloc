@@ -1338,23 +1338,43 @@ mod platform {
     use super::{NodeResolution, NO_NODE};
 
     pub(super) fn current_node_impl() -> u32 {
+        // task #1331 (eighteenth review F3,
+        // docs/reviews/2026-08-24-224323-numa-shim-publication-audit-Sol-codex.md):
+        // complete topology initialization BEFORE taking the `sched_getcpu()`
+        // snapshot. The old order (snapshot, then `cpu_to_numa_node` ->
+        // `topology()`'s `OnceLock` init) ran the up-to-64-file sysfs scan
+        // BETWEEN the snapshot and the lookup on the first-ever call, so a
+        // scheduler migration during that scan made the returned node reflect
+        // where the thread WAS before init started rather than where it is on
+        // return. With init first, only the small, irreducible
+        // snapshot-to-lookup window any snapshot-style API has remains; warm
+        // calls are unaffected (same single `OnceLock` check either way).
+        // `topo` is obtained once and `.lookup` called on it directly --
+        // `cpu_to_numa_node` would re-enter `topology()` for a redundant
+        // second `OnceLock` check (harmless once initialized, but pointless).
+        let topo = topology();
         // SAFETY: `sched_getcpu` is a POSIX function that returns the CPU index
         // of the calling thread, or -1 on error. No pointer arguments.
         let cpu = unsafe { libc_sched_getcpu() };
         if cpu < 0 {
             return NO_NODE;
         }
-        cpu_to_numa_node(cpu as u32)
+        topo.lookup(cpu as u32).unwrap_or(NO_NODE)
     }
 
     pub(super) fn current_node_resolution_impl() -> NodeResolution {
+        // task #1331 (eighteenth review F3): same reorder as
+        // `current_node_impl` above -- topology init completes BEFORE the
+        // `sched_getcpu()` snapshot, so the first call's sysfs scan can no
+        // longer widen the snapshot-to-lookup migration window.
+        let topo = topology();
         // SAFETY: `sched_getcpu` is a POSIX function that returns the CPU index
         // of the calling thread, or -1 on error. No pointer arguments.
         let cpu = unsafe { libc_sched_getcpu() };
         if cpu < 0 {
             return NodeResolution::Unavailable;
         }
-        match cpu_to_numa_node_checked(cpu as u32) {
+        match topo.lookup(cpu as u32) {
             Some(n) => NodeResolution::Resolved(n),
             None => NodeResolution::TopologyUnavailable,
         }
