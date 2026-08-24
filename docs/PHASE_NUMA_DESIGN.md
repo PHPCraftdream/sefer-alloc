@@ -432,8 +432,14 @@ will see the cached node lag by up to one claim's allocations before
 self-correcting on the next claim; that is the accepted bound, written
 down here rather than left implicit.
 
-**Test coverage.** `tests/numa_cache_invalidation.rs` (gated on the
-`numa-aware-mock` feature, which enables `numa-shim/mock` for deterministic
+**Test coverage.** `tests/numa_cache_invalidation.rs` (gated on
+`all(all(feature = "numa-aware-mock", feature = "alloc-global"), feature =
+"internals", numa_shim_mock)` — the build-time cfg `numa_shim_mock` is
+required IN ADDITION to the `numa-aware-mock` feature, since task #1288
+turned `numa-shim`'s mock backend into a `--cfg numa_shim_mock` flag rather
+than a Cargo feature; run it via
+`RUSTFLAGS="--cfg numa_shim_mock" cargo test --features "numa-aware-mock
+alloc-global internals" --test numa_cache_invalidation` — for deterministic
 control of `current_node()`'s return value) proves the invalidation fires
 at `claim()`: it scripts node A for the first claim, exercises the cached
 path, recycles, scripts node B, re-claims, and asserts the newly-claimed

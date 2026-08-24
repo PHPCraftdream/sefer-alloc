@@ -213,6 +213,11 @@ emulation is essentially free.
 
 ## Phase 1 — mock-shim concrete design (for follow-up task)
 
+**SUPERSEDED by task #1288 (2026-08-23): the mock is now a build-time `--cfg
+numa_shim_mock` flag, not a Cargo feature. The `mock = []` feature and
+`#[cfg(feature = "mock")]` examples below are historical — kept for
+design-history context, not current instructions.**
+
 ```rust
 // crates/numa-shim/Cargo.toml
 [features]

@@ -2646,7 +2646,7 @@ jobs:
       # tests/smoke.rs's `sched_getcpu` + sysfs cpumap reader + real
       # mbind(2) syscall coverage never ran on the one OS where those are
       # real, and `pub mod linux` + tests/node_resolution_linux.rs (gated
-      # `all(target_os = "linux", not(miri), not(feature = "mock"))`) were
+      # `all(target_os = "linux", not(miri), not(numa_shim_mock))`) were
       # compiled by no CI job on ANY platform -- leaving
       # NodeResolution::FellBackToZero with zero automated coverage. Job id
       # intentionally kept as `numa-shim-mock` despite no longer being

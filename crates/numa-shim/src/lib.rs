@@ -316,7 +316,7 @@ pub enum NodeResolution {
     /// - Linux when `sched_getcpu(2)` fails (returns -1).
     /// - Windows when `GetNumaProcessorNodeEx` fails or returns the
     ///   `MAXUSHORT` sentinel.
-    /// - Under the `mock` feature when the scripted node is [`NO_NODE`].
+    /// - Under the `numa_shim_mock` cfg when the scripted node is [`NO_NODE`].
     ///
     /// [`current_node`] returns `None` for this case.
     Unavailable,
