@@ -128,12 +128,12 @@ extern "C" {
 
 /// Wrapper for `get_mempolicy(2)` via raw `syscall(2)`.
 ///
-/// Queries the NUMA policy for a specific address `addr` using the `MPOL_F_ADDR` flag.
+/// Queries the NUMA policy for the address `addr` using the `MPOL_F_ADDR` flag.
 /// Returns the policy mode and the 64-bit nodemask on success.
 ///
 /// # Safety
 ///
-/// `addr` must be an address inside a live mapping owned by this process.
+/// `addr` must point inside a live mapping owned by this process.
 ///
 /// # Implementation notes
 ///
@@ -152,7 +152,7 @@ extern "C" {
 ///
 /// - Per-arch `SYS_GET_MEMPOLICY` constants follow the precedent of `SYS_MBIND`
 ///   in `src/lib.rs`, sourced from the same kernel syscall tables.
-unsafe fn get_mempolicy_addr(addr: usize) -> std::io::Result<(i32, u64)> {
+unsafe fn get_mempolicy_addr(addr: *mut core::ffi::c_void) -> std::io::Result<(i32, u64)> {
     let mut mode: core::ffi::c_int = 0;
     let mut nodemask: u64 = 0;
     // task #697 (rust-intel audit §F1): `maxnode` quirk — must be 65 for a 64-bit
@@ -166,8 +166,8 @@ unsafe fn get_mempolicy_addr(addr: usize) -> std::io::Result<(i32, u64)> {
     //   matching the copy-out length implied by `maxnode = 65`.
     // - `maxnode = 65` matches the 8-byte `nodemask` local exactly (the ALIGN quirk
     //   documented above — copies exactly 8 bytes, nodes 0..=63).
-    // - `addr` is a valid address inside a live mapping owned by this process
-    //   (caller's safety contract).
+    // - `addr` points inside a live mapping owned by this process (caller's
+    //   safety contract).
     // - `SYS_GET_MEMPOLICY` is the correct syscall number for this architecture
     //   (verified against kernel tables).
     // - Return value is checked; errno is captured immediately on -1
@@ -177,7 +177,7 @@ unsafe fn get_mempolicy_addr(addr: usize) -> std::io::Result<(i32, u64)> {
         &mut mode as *mut i32,
         &mut nodemask as *mut u64,
         maxnode as usize,
-        addr as *mut core::ffi::c_void,
+        addr,
         flags as usize,
     );
 
@@ -282,7 +282,7 @@ fn reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span() {
     // owned span. Any address in [base, base+len) shares the VMA policy that
     // mbind installed on the complete reservation span — mbind applies to the
     // VMA, not to individual pages, and the VMA covers the whole reservation.
-    let probe = unsafe { r.as_ptr().add(page) } as usize;
+    let probe = unsafe { r.as_ptr().add(page) }.cast::<core::ffi::c_void>();
 
     let (mode, nodemask) = unsafe {
         get_mempolicy_addr(probe)
@@ -347,7 +347,7 @@ fn plain_unbound_reservation_is_not_reported_as_preferred_for_our_node() {
 
     // Probe one page inside the reservation (same SAFETY pattern as above).
     // SAFETY: `r` owns `size` bytes at `r.as_ptr()`; adding `page` stays within.
-    let probe = unsafe { r.as_ptr().add(page) } as usize;
+    let probe = unsafe { r.as_ptr().add(page) }.cast::<core::ffi::c_void>();
 
     let (mode, nodemask) = unsafe {
         get_mempolicy_addr(probe)

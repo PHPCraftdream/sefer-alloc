@@ -327,6 +327,14 @@ fn policy_failure_script_for_other_node_does_not_fire() {
         }
     ));
     drop(r2);
+    // task #1320 (P2 of the sixteenth review): node 5's scripted failure is
+    // intentionally never consumed in this test (only node 3 is exercised), so
+    // without an explicit clear it stays armed in the thread-local
+    // POLICY_FAILURE_SLOT after this test returns — and the harness reuses
+    // worker threads across tests, leaving any later node-5 test on this
+    // thread to depend on its own defensive clear. Clear it here so this test
+    // owns its cleanup, independent of test order.
+    mock::clear_policy_failure();
 }
 
 /// task #1311 (F6): a scripted policy failure is one-shot — consumed by the
