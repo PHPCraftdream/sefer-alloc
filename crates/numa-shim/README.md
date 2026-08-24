@@ -224,8 +224,8 @@ pub fn reserve_preferred_on_node(
 ) -> Result<aligned_vmem::Reservation, ReserveNumaError>;
 ```
 
-The two `#[doc(hidden)]` test-only modules — `numa_shim::cpumap` and
-`numa_shim::linux` — are not part of this surface: they are test oracles,
+The three `#[doc(hidden)]` test-only modules — `numa_shim::cpumap`,
+`numa_shim::eintr`, and `numa_shim::linux` — are not part of this surface: they are test oracles,
 exempt from this crate's SemVer guarantees, and may change or be removed
 in any release (including patch releases) without a deprecation period
 (task #1289).
