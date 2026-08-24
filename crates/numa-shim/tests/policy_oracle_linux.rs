@@ -85,6 +85,38 @@ const MPOL_PREFERRED: i32 = 1;
 const MPOL_F_ADDR: u64 = 1 << 1;
 
 // ---------------------------------------------------------------------------
+// Errno values for the implementation-vs-environment classification
+// (task #1318, P1 of the sixteenth independent review,
+// `docs/reviews/2026-08-24-204022-numa-shim-publication-audit-Sol-codex.md`).
+//
+// Local constants because this crate deliberately avoids the `libc` crate —
+// the same precedent as the protocol constants above. Values verified
+// against the kernel's own `include/uapi/asm-generic/errno-base.h`
+// (EFAULT, EINVAL) and `include/uapi/asm-generic/errno.h` (ENOSYS);
+// identical on the x86_64/aarch64 Linux targets this file is gated to.
+// ---------------------------------------------------------------------------
+
+/// `EFAULT` (14): bad address. Every pointer argument of the crate's
+/// `mbind(2)` call comes from our own marshalling, so EFAULT can only mean
+/// OUR wrapper handed the kernel a bad address — an implementation bug,
+/// never an environment limitation.
+const ERRNO_EFAULT: i32 = 14;
+
+/// `EINVAL` (22): invalid argument. For `mbind(2)` this is a
+/// non-page-aligned `addr`, a zero `len`, or a wrong `maxnode` — all three
+/// are controlled by the crate's own wrapper (`mbind_preferred_linux`), so
+/// EINVAL here is an implementation bug in the syscall marshalling, never
+/// an environment limitation.
+const ERRNO_EINVAL: i32 = 22;
+
+/// `ENOSYS` (38): syscall not implemented. The crate bakes `SYS_MBIND` in
+/// as a per-arch constant verified against the kernel's syscall tables, so
+/// ENOSYS means the number is wrong for the running arch (e.g. a new arch
+/// gate was added without adding its constant) — an implementation bug,
+/// never an environment limitation.
+const ERRNO_ENOSYS: i32 = 38;
+
+// ---------------------------------------------------------------------------
 // Raw syscall wrapper.
 // ---------------------------------------------------------------------------
 
@@ -190,15 +222,53 @@ fn reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span() {
     let r = match reserve_preferred_on_node(size, align, node_id) {
         Ok(r) => r,
         Err(numa_shim::ReserveNumaError::Os(e)) => {
-            // Skip rather than panic: the OS may legitimately refuse in constrained
-            // environments (e.g., cgroup-restricted node) even though the implementation
-            // is correct. A loud skip keeps CI honest without a spurious failure.
-            // This follows the smoke tests' F8.2 convention for container cases.
-            eprintln!(
-                "skip: reserve_preferred_on_node refused by the OS (possibly a \
-                 cgroup-restricted node — F8.2's container case): {e}"
-            );
-            return;
+            // task #1318 (P1 of the sixteenth independent review): `Os` carries
+            // BOTH legitimate environment refusals (a cgroup-restricted node)
+            // AND implementation errors. The old unconditional skip here let a
+            // regression that makes the crate's own `mbind` wrapper ALWAYS fail
+            // leave this oracle green via skip — exactly the vacuous pass the
+            // oracle (task #1311/F3) exists to prevent. So classify the errno
+            // first: implementation errnos fail the test loudly; only
+            // environment/capability refusals keep the F8.2 container-case skip
+            // (now with the errno number printed, so a skipping CI log is
+            // diagnosable).
+            match e.raw_os_error() {
+                Some(ERRNO_EINVAL) => panic!(
+                    "reserve_preferred_on_node failed with EINVAL (errno {ERRNO_EINVAL}): \
+                     implementation bug in its mbind(2) syscall marshalling (bad \
+                     addr/len/maxnode), NOT an environment limitation — task #1318 \
+                     (sixteenth review P1)"
+                ),
+                Some(ERRNO_EFAULT) => panic!(
+                    "reserve_preferred_on_node failed with EFAULT (errno {ERRNO_EFAULT}): \
+                     implementation bug in its mbind(2) syscall marshalling (bad pointer \
+                     argument), NOT an environment limitation — task #1318 (sixteenth \
+                     review P1)"
+                ),
+                Some(ERRNO_ENOSYS) => panic!(
+                    "reserve_preferred_on_node failed with ENOSYS (errno {ERRNO_ENOSYS}): \
+                     implementation bug — the SYS_MBIND number is wrong for this arch, \
+                     NOT an environment limitation — task #1318 (sixteenth review P1)"
+                ),
+                Some(errno) => {
+                    // Environment/capability refusal (EPERM, ENOMEM, a
+                    // cgroup-restricted node, ...): skip rather than panic — the
+                    // OS may legitimately refuse in constrained environments even
+                    // though the implementation is correct. Loud skip with the
+                    // errno number, per the smoke tests' F8.2 convention.
+                    eprintln!(
+                        "skip: reserve_preferred_on_node refused by the OS with errno \
+                         {errno} (possibly a cgroup-restricted node — F8.2's container \
+                         case): {e}"
+                    );
+                    return;
+                }
+                None => panic!(
+                    "reserve_preferred_on_node failed with an Os error carrying NO raw \
+                     errno ({e}) — itself suspicious, and unclassifiable for the task \
+                     #1318 implementation-vs-environment split; failing loud"
+                ),
+            }
         }
         Err(other) => {
             // Any OTHER error variant is unexpected and should panic.
@@ -265,6 +335,13 @@ fn plain_unbound_reservation_is_not_reported_as_preferred_for_our_node() {
     let align = page;
 
     // Create a plain reservation WITHOUT calling `reserve_preferred_on_node`.
+    //
+    // task #1318 note: this negative control has NO `ReserveNumaError::Os`
+    // skip arm to tighten — it never touches the NUMA policy machinery
+    // (plain `aligned_vmem` reservation, no mbind), so there is no
+    // environment-vs-implementation errno classification to apply. Its
+    // failure mode is already loud (`.expect` below), which is the correct
+    // posture here: a negative control only proves anything if it RUNS.
     let r =
         aligned_vmem::try_reserve_aligned(size, align).expect("plain reservation should succeed");
 
