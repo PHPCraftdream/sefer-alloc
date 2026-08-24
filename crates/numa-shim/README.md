@@ -9,9 +9,20 @@ Rust program already links to.
 | Platform | Node detection | Memory placement |
 |----------|---------------|----------------|
 | Linux x86_64 / aarch64 | `sched_getcpu` + sysfs `/sys/devices/system/node/nodeN/cpumap` | `mbind(2)` via raw `syscall(2)` — **no libnuma, no hwloc** |
-| Windows | `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` | `VirtualAllocExNuma` (via `vmem-integration` feature) |
+| Windows (64-bit) | `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` | `VirtualAllocExNuma` (via `vmem-integration` feature) |
 | macOS | not available (no public NUMA API) | not supported — `Err(UnsupportedPlatform)` |
 | miri | not available | not supported — `Err(UnsupportedPlatform)` |
+
+**Windows support is 64-bit only** (`x86_64-pc-windows-msvc` and equivalent
+64-bit targets). This is an explicit policy decision (task #1313, fifteenth
+review finding F11,
+`docs/reviews/2026-08-24-170047-numa-shim-publication-audit-Sol-codex.md`),
+not a "might work, untested" gap: the crate's Windows FFI test layout has
+always assumed a 64-bit pointer width (`MEMORY_BASIC_INFORMATION`'s
+`PartitionId` field exists in winnt.h only under `#if defined(_WIN64)`), CI
+has only ever covered 64-bit `windows-latest`, and 32-bit Windows
+(`target_pointer_width = "32"`) is out of scope — no support, testing, or
+compatibility is planned for it.
 
 ## Why yet another NUMA crate?
 

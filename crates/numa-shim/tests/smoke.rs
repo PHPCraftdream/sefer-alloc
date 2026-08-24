@@ -470,9 +470,11 @@ fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_
     use numa_shim::{reserve_preferred_on_node, NodeId};
 
     // Mirrors the real `MEMORY_BASIC_INFORMATION` (winnt.h) on 64-bit
-    // Windows, the only realistic target for this crate (this repo's own
-    // Windows platform code elsewhere assumes a 64-bit pointer width too).
-    // `PartitionId` is conditionally present in the C header
+    // Windows -- the only supported Windows pointer width for this crate
+    // since task #1313 (fifteenth review F11) made 64-bit-only an explicit
+    // policy decision; before that it was an unstated assumption. This
+    // repo's own Windows platform code elsewhere assumes a 64-bit pointer
+    // width too. `PartitionId` is conditionally present in the C header
     // (`#if defined(_WIN64)`) -- included here since every supported target
     // triple for this crate is 64-bit.
     #[repr(C)]
