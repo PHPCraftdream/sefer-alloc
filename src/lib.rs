@@ -214,10 +214,10 @@
 //      * `registry::heap_registry` — `*mut HeapCore` pointer handoff out of a slot.
 //                             (under `alloc-global`)
 //
-//    Optional `numa-aware` path:
-//      * `alloc_core::numa` — thin interop wrapper around numa-shim; any
-//                             additional unsafe blocks carry `// SAFETY:` proof.
-//                             (under `numa-aware`)
+//    Optional `numa-aware` path: no new unsafe seams — `alloc_core::numa`
+//    is pure safe delegation to numa-shim (its test-only `bind_segment`
+//    unsafe seam was removed in task #1306, together with numa-shim's
+//    `bind_range`). (under `numa-aware`)
 //
 //    Optional `class-aware-dirty` path (R12-7 stage 2, EXPERIMENTAL):
 //      * `alloc_core::dirty_by_class` — dereferences the `RacyPtrCell`-

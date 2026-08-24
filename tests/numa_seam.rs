@@ -3,6 +3,12 @@
 //! Gated on `feature = "numa-aware"` — this whole file is a no-op without it.
 //! Run with:
 //!   cargo test --features "alloc-core numa-aware" --test numa_seam
+//!
+//! task #1306: the old `bind_segment` tests are gone with `bind_segment`
+//! itself (the seam forwarded to numa-shim's removed `bind_range`). What
+//! remains exercises the production surface: `current_node` and
+//! `reserve_aligned_on_node` — now including the seam's new best-effort
+//! fallback contract.
 
 #![cfg(all(feature = "numa-aware", feature = "internals"))]
 
@@ -26,33 +32,7 @@ fn current_node_returns_valid_value() {
 }
 
 // ---------------------------------------------------------------------------
-// bind_segment with NO_NODE must be a no-op (no panic, no UB)
-// ---------------------------------------------------------------------------
-
-/// Calling `bind_segment` with `NO_NODE` must be a complete no-op.  We use a
-/// stack-allocated dummy pointer — `bind_segment` with `NO_NODE` returns
-/// immediately without touching the pointer at all, so there is no UB.
-#[test]
-fn bind_segment_on_no_node_is_noop() {
-    // A dummy non-null address; we pass NO_NODE so bind_segment short-circuits
-    // before making any OS call and never dereferences the pointer.
-    let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
-    // SAFETY: NO_NODE makes bind_segment a no-op before any OS call.
-    // Must not panic or crash.
-    unsafe { numa::bind_segment(dummy, 4096, numa::NO_NODE) };
-}
-
-/// Calling `bind_segment` with `len == 0` must be a no-op regardless of node.
-#[test]
-fn bind_segment_zero_len_is_noop() {
-    let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
-    // SAFETY: len == 0 makes bind_segment a no-op before any OS call.
-    // len == 0 early-return guard.
-    unsafe { numa::bind_segment(dummy, 0, 0) };
-}
-
-// ---------------------------------------------------------------------------
-// reserve_aligned_on_node: basic smoke test
+// reserve_aligned_on_node: basic smoke tests
 // ---------------------------------------------------------------------------
 
 /// `reserve_aligned_on_node` with `NO_NODE` must behave identically to a
@@ -89,7 +69,8 @@ fn reserve_aligned_on_no_node_succeeds() {
 
 /// `reserve_aligned_on_node` with the actual NUMA node (if available) must
 /// also return a SEGMENT-aligned result.  On platforms without NUMA (macOS,
-/// miri, single-node Linux) this falls back to plain mmap — still correct.
+/// miri, single-node Linux) the seam's best-effort fallback yields a plain
+/// reservation — still correct.
 #[test]
 fn reserve_aligned_on_current_node_succeeds() {
     use sefer_alloc::SegmentLayout;
@@ -111,34 +92,34 @@ fn reserve_aligned_on_current_node_succeeds() {
     assert!(reservation_len >= segment_size);
 }
 
-// ---------------------------------------------------------------------------
-// Linux-specific: bind_segment on a real mmap'd region
-// ---------------------------------------------------------------------------
-
-/// On Linux, call `bind_segment` on a freshly mmap'd page.  `mbind` may
-/// return `EINVAL` on single-node machines (no NUMA topology exposed) — this
-/// is not a test failure; the call must simply not panic or corrupt memory.
-///
-/// We don't assert on *whether* the binding was applied (that requires
-/// numastat / move_pages which we'd need to parse), only that the function
-/// completes without panicking.
+/// task #1306: the seam is deliberately best-effort — a node id NO platform
+/// can address (Linux: out of the single-`u64` nodemask range, rejected as
+/// `InvalidNode` by the shim; Windows: the OS refuses it as `Os`; macOS/miri:
+/// `UnsupportedPlatform`) must NOT fail the allocation: the seam falls back
+/// to a plain unbound reservation and still returns `Some`. The old API
+/// reached the same observable outcome only through silent internal no-ops
+/// hidden inside the shim; this pins the fallback as the seam's own
+/// documented contract, on every platform.
 #[test]
-#[cfg(all(target_os = "linux", not(miri)))]
-fn bind_segment_with_real_node_does_not_panic() {
-    // Allocate a small anonymous mapping via std to get a real OS page.
-    // (We use Box::new to get a heap page rather than calling mmap directly,
-    // since this is a test and we're not the global allocator here.)
-    let mut buf: Vec<u8> = vec![0u8; 4096];
-    let ptr = buf.as_mut_ptr();
+fn reserve_aligned_on_node_unaddressable_node_falls_back_to_unbound() {
+    use sefer_alloc::SegmentLayout;
 
-    // SAFETY: `ptr` is a live, exclusively-owned mmap'd page.
-    // Try to bind to node 0 (always exists, even on single-node machines).
-    // mbind on a Rust-heap page is fine for testing the syscall path; the
-    // kernel will simply ignore or accept the request.
-    unsafe { numa::bind_segment(ptr, 4096, 0) };
-
-    // Verify we can still read and write the buffer (no UAF / decommit).
-    buf[0] = 42;
-    assert_eq!(buf[0], 42);
-    // If mbind had corrupted metadata, the write-back above would segfault.
+    let segment_size = SegmentLayout::SEGMENT;
+    // Any value no real host addresses and that is NOT the NO_NODE sentinel
+    // (which takes the seam's dedicated no-preference path instead).
+    let absurd_node = u32::MAX - 1;
+    let result = numa::reserve_aligned_on_node(segment_size, absurd_node);
+    assert!(
+        result.is_some(),
+        "best-effort seam must return Some even when the NUMA preference \
+         cannot be installed (node={absurd_node})"
+    );
+    let (base, _reservation, reservation_len) = result.unwrap();
+    let base_addr = base.as_ptr() as usize;
+    assert_eq!(
+        base_addr % segment_size,
+        0,
+        "fallback reservation must still be SEGMENT-aligned; got {base_addr:#x}"
+    );
+    assert!(reservation_len >= segment_size);
 }
