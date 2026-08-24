@@ -4,13 +4,19 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "100% Rust NUMA detection and reservation — no C/C++ libraries (no libnuma, no hwloc). Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. Zero crate deps by default; the public API is fully forbid(unsafe_code)-friendly."
+description = "NUMA detection and reservation in Rust — zero third-party C/C++ dependencies (no libnuma, no hwloc); direct system-libc/Win32 FFI only. Linux mbind(2) via raw syscall(2), Windows VirtualAllocExNuma, sysfs cpumap reader. Zero crate deps by default; the public API is fully forbid(unsafe_code)-friendly."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa-shim"
 documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management"]
+
+# Description wording (task #1333, eighteenth review): this crate has zero
+# THIRD-PARTY C/C++ dependencies, but it does call system libc/Win32 directly
+# via `extern "C"` — so "100% Rust"/"no C/C++ libraries" would overclaim.
+# The same phrasing lives in src/lib.rs's crate doc and README.md's headline;
+# keep the three in sync.
 
 # Platform support scope: Windows is supported on 64-bit targets ONLY
 # (`x86_64-pc-windows-msvc` and equivalent). 32-bit Windows is explicitly

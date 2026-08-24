@@ -1,6 +1,8 @@
 //! `numa-shim` — dependency-free NUMA detection and placement.
 //!
-//! **Key selling point:** zero C library dependencies.
+//! **Key selling point:** zero third-party C/C++ dependencies (no libnuma, no
+//! hwloc) — the crate calls the system libc/Win32 API surface directly via
+//! FFI rather than binding a third-party C library.
 //! - Linux: `mbind(2)` via raw `syscall(2)` (no libnuma, no hwloc).
 //! - Linux node detection: reads `/sys/devices/system/node/nodeN/cpumap` directly
 //!   via `open`/`read`/`close` from the C runtime (always present in glibc/musl).
@@ -619,8 +621,11 @@ pub enum NodeResolution {
 /// | `Unavailable` | `None` |
 ///
 /// This function has the same first-call cost on Linux as `current_node()`
-/// (up to 64 `open`/`read`/`close` syscalls to populate the topology cache);
-/// subsequent calls are pure in-memory operations.
+/// (up to 64 `open`/`read`/`close` syscalls to populate the topology cache).
+/// On subsequent calls the topology lookup itself is pure in-memory (a
+/// reverse-index probe), but every call — warm or cold — still samples the
+/// CPU first via `sched_getcpu()`, which remains a platform call on every
+/// invocation (task #1333, eighteenth review F10).
 #[must_use]
 pub fn current_node_resolution() -> NodeResolution {
     #[cfg(numa_shim_mock)]
@@ -683,8 +688,11 @@ pub fn current_node_resolution() -> NodeResolution {
 /// **First-call cost on Linux** (task #778, round-closing review, F12): the
 /// VERY FIRST call to this function on a real Linux host performs up to 64
 /// `open`/`read`/`close` syscall triples (one per candidate NUMA node) to
-/// populate a process-lifetime topology cache; every subsequent call is a
-/// pure in-memory reverse-index lookup with no syscalls at all. For a crate
+/// populate a process-lifetime topology cache; every subsequent call's
+/// topology lookup is then a pure in-memory reverse-index probe — but each
+/// call, warm or cold, still samples the CPU via `sched_getcpu()` first,
+/// which remains a platform call on every invocation (task #1333, eighteenth
+/// review F10: a cached lookup is not a syscall-free function). For a crate
 /// whose selling point is "zero dependencies, `forbid(unsafe_code)`-friendly
 /// for consumers," this first-call cost is a contract-level fact a caller on a
 /// latency-sensitive cold path should know about — most callers should call

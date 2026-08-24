@@ -345,8 +345,12 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     #[cfg(windows)]
     {
         // Duplicate of the struct in `reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation`.
-        // This duplication is deliberate: the struct in that test must stay untouched per task #1313/F11 (32-bit Windows policy
-        // undecided), so this is a second copy that will share that test's fate.
+        // This duplication is deliberate and historical: task #1311 added this second copy rather than touching that test's
+        // struct while the 32-bit Windows policy from task #1313/F11 was still undecided. That policy is now DECIDED — 64-bit
+        // Windows only (task #1313, fifteenth review F11) — and compile-enforced (task #1321, sixteenth review P2: a 32-bit
+        // Windows build fails with `compile_error!`), so the freeze's original justification is gone and a future cleanup may
+        // consolidate the two copies into one shared Windows-only test helper (eighteenth review F9). Task #1333 is docs-only
+        // and leaves both copies structurally untouched; they still share one fate — any future layout change applies to both.
         #[repr(C)]
         struct MemoryBasicInformation {
             base_address: *mut core::ffi::c_void,
@@ -540,7 +544,8 @@ fn reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_
     // Mirrors the real `MEMORY_BASIC_INFORMATION` (winnt.h) on 64-bit
     // Windows -- the only supported Windows pointer width for this crate
     // since task #1313 (fifteenth review F11) made 64-bit-only an explicit
-    // policy decision; before that it was an unstated assumption. This
+    // policy decision (compile-time enforced since task #1321, sixteenth
+    // review P2); before that it was an unstated assumption. This
     // repo's own Windows platform code elsewhere assumes a 64-bit pointer
     // width too. `PartitionId` is conditionally present in the C header
     // (`#if defined(_WIN64)`) -- included here since every supported target
