@@ -81,7 +81,7 @@ fn run() {
         let r = black_box(reserve_preferred_on_node(
             black_box(4096),
             black_box(4096),
-            black_box(NodeId::new(64)),
+            black_box(NodeId::new(64).expect("literal 64 is not the NO_NODE sentinel")),
         ));
         let _ = black_box(r);
     });

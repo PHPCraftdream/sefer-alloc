@@ -77,7 +77,13 @@ pub fn reserve_aligned_on_node(
         // No NUMA preference expressed: plain reservation, no shim detour.
         aligned_vmem::reserve_aligned(usable, SEGMENT)?
     } else {
-        match numa_shim::reserve_preferred_on_node(usable, SEGMENT, numa_shim::NodeId::new(node)) {
+        // The enclosing `node == NO_NODE` branch proves the input is not
+        // the sentinel, so NodeId::new cannot return None here.
+        match numa_shim::reserve_preferred_on_node(
+            usable,
+            SEGMENT,
+            numa_shim::NodeId::new(node).expect("node != NO_NODE, checked by the enclosing branch"),
+        ) {
             Ok(r) => r,
             // task #1306: best-effort fallback — see this function's own doc.
             // Every error class (UnsupportedPlatform / UnsupportedArchitecture

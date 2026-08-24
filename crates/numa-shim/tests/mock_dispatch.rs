@@ -80,7 +80,12 @@ fn current_node_scripted_no_node_yields_none() {
 fn reserve_preferred_on_node_records_args() {
     use numa_shim::{reserve_preferred_on_node, NodeId};
     fresh_drain();
-    let r = reserve_preferred_on_node(PAGE_4, PAGE, NodeId::new(3)).expect("reserve");
+    let r = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(3).expect("literal 3, not NO_NODE"),
+    )
+    .expect("reserve");
     let calls = fresh_drain();
     assert_eq!(
         calls.len(),
@@ -111,8 +116,12 @@ fn reserve_preferred_on_node_records_args() {
 fn reserve_preferred_on_node_out_of_range_node_is_recorded_then_rejected() {
     use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
     fresh_drain();
-    let err = reserve_preferred_on_node(PAGE_4, PAGE, NodeId::new(64))
-        .expect_err("node 64 must be rejected");
+    let err = reserve_preferred_on_node(
+        PAGE_4,
+        PAGE,
+        NodeId::new(64).expect("literal 64 is not the NO_NODE sentinel"),
+    )
+    .expect_err("node 64 must be rejected");
     assert!(
         matches!(err, ReserveNumaError::InvalidNode),
         "expected InvalidNode, got {err:?}"
@@ -138,8 +147,8 @@ fn reserve_preferred_on_node_out_of_range_node_is_recorded_then_rejected() {
 fn reserve_preferred_on_node_invalid_arguments_is_typed_not_none() {
     use numa_shim::{reserve_preferred_on_node, NodeId, ReserveNumaError};
     fresh_drain();
-    let err =
-        reserve_preferred_on_node(0, PAGE, NodeId::new(0)).expect_err("zero size must be rejected");
+    let err = reserve_preferred_on_node(0, PAGE, NodeId::new(0).expect("literal 0, not NO_NODE"))
+        .expect_err("zero size must be rejected");
     assert!(
         matches!(err, ReserveNumaError::InvalidArguments),
         "expected InvalidArguments, got {err:?}"
