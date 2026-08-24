@@ -144,6 +144,13 @@ fn current_node_returns_valid_or_none() {
 /// `Err(UnsupportedPlatform)`, not a silent unbound no-op (task #1306's
 /// whole point); this test asserts THAT outcome there instead.
 ///
+/// task #1325 (P2-2 of the seventeenth review, F2 of the eighteenth): that
+/// expectation is REAL-backend-only. The platform branch below is
+/// backend-aware — under the `numa_shim_mock` cfg the mock dispatch arm
+/// performs no platform check at all (task #1311/F6's Linux-shaped
+/// contract), so this test takes the positive path on EVERY target,
+/// including macOS and miri, matching what the mock actually returns.
+///
 /// Self-skip discipline: positive NUMA policy tests run only when
 /// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
 /// (task #1311, F8.2). This covers the container/cgroup case where the
@@ -160,7 +167,10 @@ fn reserve_preferred_on_node_returns_valid_span() {
     let size = page * 4;
     let align = page;
 
-    if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
+    if !cfg!(any(
+        numa_shim_mock,
+        all(any(target_os = "linux", windows), not(miri))
+    )) {
         // Unsupported platform: must error, not succeed.
         let result = reserve_preferred_on_node(
             size,
@@ -233,6 +243,10 @@ fn reserve_preferred_on_node_returns_valid_span() {
 /// `reserve_preferred_on_node_returns_valid_span`'s doc comment above for why
 /// this asserts `Err(UnsupportedPlatform)` there instead.
 ///
+/// Under the `numa_shim_mock` cfg the platform branch below is backend-aware
+/// and takes the positive path on every target (task #1325) — see that same
+/// doc comment.
+///
 /// Self-skip discipline: positive NUMA policy tests run only when
 /// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
 /// (task #1311, F8.2).
@@ -255,7 +269,10 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     let span = 4 * 1024 * 1024;
     let align = span;
 
-    if !cfg!(all(any(target_os = "linux", windows), not(miri))) {
+    if !cfg!(any(
+        numa_shim_mock,
+        all(any(target_os = "linux", windows), not(miri))
+    )) {
         // Unsupported platform: must error, not succeed.
         let result = reserve_preferred_on_node(
             span,
@@ -444,6 +461,11 @@ fn reserve_preferred_on_node_large_align_round_trip() {
 /// to validate arguments against), so the outcome there is
 /// `UnsupportedPlatform`, not `InvalidArguments` — see
 /// `reserve_preferred_on_node_returns_valid_span`'s doc comment above.
+///
+/// task #1325: real-backend-only expectation — under `numa_shim_mock` the
+/// mock validates arguments (mirroring the real backends' error mapping)
+/// with no platform check in front, so the `InvalidArguments` arm is taken
+/// on EVERY target.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
@@ -454,12 +476,14 @@ fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
     let err = reserve_preferred_on_node(0, page, NodeId::new(0).expect("literal 0, not NO_NODE"))
         .expect_err("zero size must be rejected");
 
-    let expected: fn(&ReserveNumaError) -> bool =
-        if cfg!(all(any(target_os = "linux", windows), not(miri))) {
-            |e| matches!(e, ReserveNumaError::InvalidArguments)
-        } else {
-            |e| matches!(e, ReserveNumaError::UnsupportedPlatform)
-        };
+    let expected: fn(&ReserveNumaError) -> bool = if cfg!(any(
+        numa_shim_mock,
+        all(any(target_os = "linux", windows), not(miri))
+    )) {
+        |e| matches!(e, ReserveNumaError::InvalidArguments)
+    } else {
+        |e| matches!(e, ReserveNumaError::UnsupportedPlatform)
+    };
     assert!(expected(&err), "unexpected error variant: {err:?}");
 }
 

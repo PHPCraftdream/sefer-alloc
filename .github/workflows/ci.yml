@@ -2809,6 +2809,36 @@ jobs:
       - run: cargo test -p numa-shim --features vmem-integration
       # task #1288: mock via the build-time cfg
       - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim
+      # task #1325 (P2-2 of the seventeenth independent review,
+      # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md;
+      # independently F2 of the eighteenth,
+      # docs/reviews/2026-08-24-224323-numa-shim-publication-audit-Sol-codex.md):
+      # the first CI row to combine the mock cfg with `vmem-integration` on a
+      # target that is neither Linux nor Windows. tests/smoke.rs's three
+      # platform branches were backend-blind (`cfg!(all(any(target_os =
+      # "linux", windows), not(miri)))` — TARGET only, never BACKEND), so
+      # under the mock on macOS they expected `Err(UnsupportedPlatform)`
+      # while the mock arm (src/lib.rs, no platform check — task #1311/F6)
+      # returns `Ok` / `InvalidArguments`: three false-red tests in exactly
+      # the configuration README.md and src/lib.rs advertise ("assert the
+      # wrapping logic ... on any target including macOS and miri"). No row
+      # ran it before: this job's mock step above leaves the feature off,
+      # and the Linux/Windows jobs that pair mock WITH the feature run on
+      # targets where the old guard happened to take the supported branch
+      # anyway. task #1325 made the three branches backend-aware; this row
+      # is the fix's first EXECUTION proof (the Windows dev host cannot
+      # reproduce the defect — its cfg!(windows) took the supported branch
+      # before the fix too). The grep sentinels (task #1101 pattern, as in
+      # the numa-shim-mock job's mock rows) name the three tests this fix is
+      # about, so a green-and-dead or renamed-away run fails loudly. The
+      # miri twin of this cell (mock + vmem-integration under miri) stays
+      # uncovered — recorded in the task #1325 CHANGELOG entry.
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_returns_valid_span ... ok" "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_large_align_round_trip ... ok" "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments ... ok" "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
+        shell: bash
 
   numa-shim-macos-miri:
     # Publish-readiness task #635 (P1, F1 of the 2026-08-06 numa-shim review):
