@@ -958,16 +958,20 @@ pub mod cpumap {
     /// Returns `true` on full success, `false` on ANY malformed input (fail-closed).
     /// A malformed token ANYWHERE in the text causes failure — real sysfs never
     /// produces malformed tokens.
+    ///
+    /// Single linear pass — each byte of `data` is visited O(1) times per call
+    /// (task #1334, finding F11 of the eighteenth independent review):
+    /// `rsplit` walks the comma-delimited words from the rightmost token
+    /// (word 0, lowest CPU indices) to the leftmost (highest CPU indices) —
+    /// exactly the word order the old `word_count`-then-`nth_token`
+    /// formulation produced via `left_index = word_count - 1 - w`, without
+    /// `nth_token`'s O(words²) rescan of all of `data` for every token.
     pub fn parse_each_set_cpu(data: &[u8], mut on_cpu: impl FnMut(u32)) -> bool {
         let data = trim_end(data);
-        let word_count = data.iter().filter(|&&b| b == b',').count() + 1;
-        // Iterate words from MSB to LSB (leftmost word covers highest CPU indices).
-        for w in 0..word_count {
-            let left_index = word_count - 1 - w;
-            let word_str = match nth_token(data, left_index, b',') {
-                Some(s) => s,
-                None => return false,
-            };
+        // rsplit yields the RIGHTMOST word first: word 0 (lowest CPU indices)
+        // is the last token in the text — identical order to the old indexed
+        // loop, in one pass with no word_count precomputation.
+        for (w, word_str) in data.rsplit(|&b| b == b',').enumerate() {
             let val = match parse_hex_u32(word_str) {
                 Some(v) => v,
                 None => return false,
