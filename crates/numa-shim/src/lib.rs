@@ -1,4 +1,4 @@
-//! `numa-shim` — dependency-free NUMA detection and binding.
+//! `numa-shim` — dependency-free NUMA detection and placement.
 //!
 //! **Key selling point:** zero C library dependencies.
 //! - Linux: `mbind(2)` via raw `syscall(2)` (no libnuma, no hwloc).
@@ -691,13 +691,12 @@ pub fn current_node() -> Option<u32> {
 /// Requires the `vmem-integration` feature.
 ///
 /// Installs a NUMA preference at RESERVATION time, before the first page fault —
-/// the only point where "successfully bound" is a true statement (mbind default
-/// flags affect only future faults; an already-touched object cannot be
-/// retroactively placed — that is why the old `bind_range` was removed, task
-/// #1306).
-///
-/// `MPOL_PREFERRED` is a SOFT preference: the kernel may fall back under memory
-/// pressure; success does not guarantee physical placement.
+/// the only point where a NUMA preference can be installed before any page is
+/// touched (mbind default flags affect only future faults; an already-touched
+/// object cannot be retroactively placed — that is why the old `bind_range` was
+/// removed, task #1306). `MPOL_PREFERRED` remains a SOFT preference even then:
+/// the kernel may fall back under memory pressure, so success means "policy
+/// installed," not "physical placement guaranteed."
 ///
 /// ## Per-platform behavior
 ///
@@ -725,7 +724,7 @@ pub fn current_node() -> Option<u32> {
 ///
 /// ## Best-effort fallback
 ///
-/// This function has NO silent fallback to an unbound reservation — callers
+/// This function has NO silent fallback to a no-preference reservation — callers
 /// wanting plain memory should call `aligned_vmem::reserve_aligned` directly.
 /// Best-effort belongs at the call site:
 ///
@@ -735,8 +734,9 @@ pub fn current_node() -> Option<u32> {
 /// ```
 ///
 /// If the NUMA policy fails AFTER a successful reservation, the reservation is
-/// RELEASED (dropped) and the error returned — never a half-bound reservation,
-/// never `Ok` with silent no-binding (task #1306).
+/// RELEASED (dropped) and the error returned — never a reservation with a
+/// half-installed policy, never `Ok` with the preference silently absent
+/// (task #1306).
 ///
 /// ## Errors
 ///
@@ -1526,8 +1526,8 @@ mod platform {
 // (under vmem-integration) can call it.
 // ---------------------------------------------------------------------------
 
-/// Bind `[base, base+len)` to NUMA node `node` via `mbind(2)`, returning the
-/// syscall result.
+/// Install an `MPOL_PREFERRED` policy over `[base, base+len)` favoring NUMA
+/// node `node` via `mbind(2)`, returning the syscall result.
 ///
 /// Uses `syscall(SYS_MBIND, …)` — avoids a hard dependency on `libnuma`.
 /// The caller is responsible for checking the return value and capturing
@@ -1708,8 +1708,8 @@ mod platform {
     }
 
     /// Reserve `size` bytes aligned to `align` with a NUMA preference for `node`
-    /// via `VirtualAllocExNuma` directly. This is the **only** way to bind
-    /// memory to a NUMA node on Windows — there is no post-reservation
+    /// via `VirtualAllocExNuma` directly. This is the **only** way to attach a
+    /// NUMA preference to memory on Windows — there is no post-reservation
     /// equivalent to Linux `mbind(2)`.
     ///
     /// Strategy (mirrors `aligned-vmem`'s own Windows reservation,
@@ -1942,9 +1942,9 @@ mod platform {
     }
 
     // `VirtualAllocExNuma` is the load-bearing call: it is the ONLY way to
-    // bind a reservation to a NUMA node on Windows (`VirtualAlloc` chooses
-    // the node by kernel heuristic; there is no `mbind`-equivalent for
-    // post-reservation binding). Declared locally to avoid pulling
+    // attach a NUMA preference to a reservation on Windows (`VirtualAlloc`
+    // chooses the node by kernel heuristic; there is no `mbind`-equivalent
+    // for post-reservation policy installation). Declared locally to avoid pulling
     // `windows-sys` / `winapi` just for one syscall.
     #[cfg(feature = "vmem-integration")]
     extern "system" {
