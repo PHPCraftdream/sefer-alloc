@@ -2666,26 +2666,29 @@ jobs:
           grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-mock.log"
         shell: bash
       # The same cfg plus `vmem-integration` (still a real Cargo feature), so
-      # mock_dispatch.rs's `reserve_on_node` arms compile and run. Same
-      # self-verifying grep (the sentinel test only exists under BOTH the cfg
-      # and the feature).
+      # mock_dispatch.rs's `reserve_preferred_on_node` arms compile and run.
+      # Same self-verifying grep (the sentinel test only exists under BOTH
+      # the cfg and the feature). task #1306: sentinel renamed along with the
+      # function it names (reserve_on_node -> reserve_preferred_on_node).
       - run: |
           RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-mock-vmem.log"
-          grep -F "test reserve_on_node_chains_and_records ... ok" "$RUNNER_TEMP/numa-shim-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_records_args ... ok" "$RUNNER_TEMP/numa-shim-mock-vmem.log"
         shell: bash
       # task #1282 (E2, 2026-08-23 publication-readiness review, item 102):
-      # the REAL Linux `reserve_on_node` path — `platform::reserve_on_node_impl`
-      # in crates/numa-shim/src/lib.rs, `aligned_vmem::reserve_aligned` +
-      # `bind_range_impl_linux`, i.e. a real mbind(2) against a real fresh
-      # mmap — was compiled by the `--all-features` clippy row below but
-      # EXECUTED by no CI job on any platform: the three test rows above
-      # either leave `vmem-integration` off (so `reserve_on_node` does not
-      # exist) or turn `mock` on (so the real backend is bypassed), while
-      # the identical `--features vmem-integration` rows in
-      # numa-shim-windows / numa-shim-macos run the real backend only on
-      # non-Linux kernels. This row runs tests/smoke.rs's
-      # `reserve_on_node_*` tests against the real Linux mbind(2) — the
-      # crate's headline capability on its headline platform.
+      # the REAL Linux `reserve_preferred_on_node` path —
+      # `platform::reserve_preferred_on_node_impl` in
+      # crates/numa-shim/src/lib.rs, `aligned_vmem::try_reserve_aligned` +
+      # `mbind_preferred_linux` (task #1306 rename), i.e. a real mbind(2)
+      # against a real fresh mmap — was compiled by the `--all-features`
+      # clippy row below but EXECUTED by no CI job on any platform: the
+      # three test rows above either leave `vmem-integration` off (so
+      # `reserve_preferred_on_node` does not exist) or turn `mock` on (so
+      # the real backend is bypassed), while the identical
+      # `--features vmem-integration` rows in numa-shim-windows /
+      # numa-shim-macos run the real backend only on non-Linux kernels.
+      # This row runs tests/smoke.rs's `reserve_preferred_on_node_*` tests
+      # against the real Linux mbind(2) — the crate's headline capability
+      # on its headline platform.
       - run: cargo test -p numa-shim --features vmem-integration
       # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
       # coverage anywhere in this file -- the four numa-shim-* jobs all ran
