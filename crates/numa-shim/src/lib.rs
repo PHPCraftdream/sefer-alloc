@@ -52,10 +52,20 @@
 //! |----------|-----------------|------------------------------------------|
 //! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | mmap then mbind (complete span, before first touch) |
 //! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | `UnsupportedArchitecture` error |
-//! | Windows (non-miri) | `GetCurrentProcessorNumberEx` | `VirtualAllocExNuma` |
+//! | Windows 64-bit (non-miri) | `GetCurrentProcessorNumberEx` | `VirtualAllocExNuma` |
 //! | macOS | `None` | `UnsupportedPlatform` error |
 //! | miri | `None` | `UnsupportedPlatform` error |
 //! | other | `None` | `UnsupportedPlatform` error |
+//!
+//! Windows is supported on 64-bit targets only (`x86_64-pc-windows-msvc`
+//! and equivalent); 32-bit Windows (`target_pointer_width = "32"`) is
+//! explicitly out of scope — an owner policy decision (task #1313,
+//! fifteenth review finding F11), matching a Windows FFI test layout that
+//! has always assumed a 64-bit pointer width and CI coverage that has only
+//! ever run 64-bit `windows-latest`. This is a documentation policy, not a
+//! code gate: no `cfg(target_pointer_width)` check is enforced (no behavior
+//! change). The README's platform table states the same policy; the two are
+//! kept in sync deliberately.
 
 // This crate intentionally contains unsafe OS FFI code.
 // The public API is safe — all unsafe lives in the per-OS `mod platform`
@@ -1804,20 +1814,35 @@ mod platform {
             let err = std::io::Error::last_os_error();
             return Err(ReserveNumaError::Os(err));
         }
-        let raw_u = raw as usize;
-        // Checked alignment arithmetic: `raw_u` is a Win32-returned base (page-
-        // aligned, so overflow needs an allocation near the top of the address
-        // space), but do not rely on that silently wrapping if it ever happens —
-        // release the reservation and return InvalidArguments (syscall SUCCEEDED,
-        // so there is no OS error to capture; this is an argument-domain overflow).
-        let Some(rounded) = raw_u.checked_add(align - 1) else {
+        // task #1313 (fifteenth review F9, the provenance half): `.addr()`
+        // reads the address without exposing provenance (strict-provenance-
+        // legal); the paired `.with_addr()` below reconstructs `base`
+        // carrying `raw`'s OWN provenance (valid for the whole `over`-byte
+        // reservation) at the computed aligned address, instead of the
+        // previous `base_u as *mut u8` cast, which manufactured a pointer
+        // with no established provenance — mirroring aligned-vmem's own
+        // task #717 fix (`crates/aligned-vmem/src/os/windows.rs`). Pure
+        // provenance mechanics: the computed address is byte-identical to
+        // the previous `raw as usize` → `base_u as *mut u8` round-trip.
+        let raw_addr = raw.addr();
+        // Checked alignment arithmetic: `raw_addr` is a Win32-returned base
+        // (page-aligned, so overflow needs an allocation near the top of the
+        // address space), but do not rely on that silently wrapping if it
+        // ever happens — release the reservation and return InvalidArguments
+        // (syscall SUCCEEDED, so there is no OS error to capture; this is an
+        // argument-domain overflow).
+        let Some(rounded) = raw_addr.checked_add(align - 1) else {
             // SAFETY: `raw` came from the MEM_RESERVE above and was never
             // handed out; releasing before returning InvalidArguments cannot double-free.
             unsafe { VirtualFree(raw, 0, MEM_RELEASE) };
             return Err(ReserveNumaError::InvalidArguments);
         };
-        let base_u = rounded & !(align - 1);
-        let base = base_u as *mut u8;
+        let base_addr = rounded & !(align - 1);
+        // `.with_addr` carries `raw`'s provenance (the live `over`-byte
+        // reservation) to the aligned address; `.cast::<u8>()` is a plain
+        // pointer-type cast (provenance-preserving), matching the
+        // `*mut u8` type `from_raw_parts` expects.
+        let base = raw.with_addr(base_addr).cast::<u8>();
 
         // SAFETY: `VirtualAllocExNuma(.., base, size, MEM_COMMIT, ..,
         // node)` commits exactly the caller-requested `size` bytes at the

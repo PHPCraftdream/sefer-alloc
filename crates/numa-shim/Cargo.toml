@@ -12,6 +12,17 @@ documentation = "https://docs.rs/numa-shim"
 keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
 categories = ["os", "memory-management"]
 
+# Platform support scope: Windows is supported on 64-bit targets ONLY
+# (`x86_64-pc-windows-msvc` and equivalent). 32-bit Windows is explicitly
+# OUT OF SCOPE — an owner policy decision (task #1313, 2026-08-24,
+# fifteenth review finding F11), not an untested "might work" gap: the
+# crate's Windows FFI test layout has always assumed a 64-bit pointer
+# width and CI has only ever covered 64-bit `windows-latest`.
+# Documentation-only policy — no `cfg(target_pointer_width)` gate is
+# enforced in code. The same statement lives in README.md's platform
+# table and src/lib.rs's crate-doc platform matrix; keep the three in
+# sync.
+
 # docs.rs: render with `vmem-integration` on so `reserve_preferred_on_node` — one of
 # this crate's two headline capabilities, and the thing the README documents
 # at length — actually appears on the published docs page; the default

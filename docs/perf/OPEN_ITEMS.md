@@ -2800,6 +2800,66 @@ for completeness.
       not here. Next trigger: task #1264's owner decision; if the seam is
       separated, measure feature-on vs feature-off cost then.
 
+60. **[A] `numa-shim` Windows `reserve_aligned_numa`: one-call
+    `MEM_RESERVE | MEM_COMMIT` fast path when `align <=`
+    `WIN_ALLOCATION_GRANULARITY` (64 KiB) — candidate only, NOT
+    implemented, NOT measured.** (Filed 2026-08-24, task #1313, from the
+    fifteenth review
+    `docs/reviews/2026-08-24-170047-numa-shim-publication-audit-Sol-codex.md`
+    finding F9 — the review's OTHER F9 half; the pointer-provenance half
+    (`.addr()`/`.with_addr()` replacing the integer pointer round-trip in
+    the two-call fallback) landed in the same task as a pure refactor with
+    byte-identical computed addresses and no perf claim.)
+
+    - **Status:** OPEN — candidate, reasoning only. No fast path built, no
+      harness built, no number measured; nothing here may be quoted as a
+      speedup.
+    - **Current-number-or-verdict:** unmeasured. Reasoning: for the common
+      `align <= WIN_ALLOCATION_GRANULARITY` (64 KiB) case, a kernel-chosen
+      `VirtualAllocExNuma(NULL, ...)` base already satisfies the alignment
+      (Win32 returns allocation-granularity-aligned bases), so the current
+      two-call sequence — `MEM_RESERVE` of `over = size + align`, then a
+      separate `MEM_COMMIT` of `size` at the aligned sub-range — pays one
+      extra syscall plus up to `align` bytes of transient VA slack that a
+      single `MEM_RESERVE | MEM_COMMIT` call of exactly `size` would not.
+      Microsoft's documented `nndPreferred` contract records the NUMA
+      preference when creating a NEW VA region (reserved or committed),
+      which the one-call form is — the same argument that made `node`
+      load-bearing on the reserve call of the existing two-call path (task
+      #778/F2) makes the one-call form NUMA-correct. Prior art to copy the
+      SHAPE of (not the code): sibling `aligned-vmem`'s own Windows
+      reservation (`crates/aligned-vmem/src/os/windows.rs`) already
+      implements exactly this fast path — a single
+      `MEM_RESERVE | MEM_COMMIT` call guarded by an UNCONDITIONAL
+      release-build runtime alignment check on the returned base (its task
+      #917/H2C6 note: the 64 KiB-granularity premise is reasoned from
+      Microsoft docs, never verified at the point of use — the check must
+      stay a real runtime check, not a `debug_assert`, per CLAUDE.md's
+      R26-4 rule), releasing and falling through to the over-reserve path
+      on mismatch.
+    - **Next trigger:** measure FIRST, then A/B, before any landing. (1)
+      Measure the current two-call path's real cost at the layer the
+      crate's consumers actually ship at (the entry-point rule: through the
+      public `reserve_preferred_on_node` → `aligned_vmem::Reservation`
+      adoption, not a bare internal probe) on a real Windows host. (2) Build
+      the one-call variant behind the same unconditional runtime alignment
+      check, and hard-assert its observable behavior matches the two-call
+      path byte-for-byte across the edge cases the existing over-reservation
+      tests already cover — commit-charge of exactly `size` (the task #724
+      double-commit regression this same function once had is the canonical
+      failure mode) and `VirtualQuery` state beyond `[base, base + size)`
+      reporting `MEM_RESERVE`, which is exactly what
+      `reserve_preferred_on_node_commits_only_the_requested_span_not_the_whole_over_reservation`
+      asserts. (3) A/B the two arms with a per-arm path-activation oracle
+      (R30-8: prove the labelled path actually ran, e.g. syscall-count
+      evidence per arm; R26-4 config evidence if any knob is swept).
+      Cross-references: deepens item 59 P4's trigger (same subject, first
+      audit's card — P4's "syscall-count + commit-charge A/B that
+      hard-asserts commit stays at `size`" is incorporated in (2)+(3)
+      above); adjacent to item 58 P1 (aligned-vmem `VirtualAlloc2`
+      one-syscall candidate — different API, different crate,
+      cross-reference only, not the same item).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
