@@ -1252,6 +1252,71 @@ pub mod linux {
 }
 
 // ---------------------------------------------------------------------------
+// Bounded-EINTR retry policy for the sysfs topology scan (task #1319,
+// seventeenth review P3-1 / task #1327): extracted from the Linux-only
+// `platform` module below into a target-INDEPENDENT module, exactly like
+// `cpumap` above. The retry decision is a pure predicate over
+// `std::io::Error` and a streak counter -- `io::Error` and `ErrorKind`
+// are fully portable std types -- so gating it inside
+// `#[cfg(target_os = "linux")]` was an accident of code organization,
+// not a genuine platform requirement (the same reasoning that extracted
+// `cpumap`), and it meant the retry policy shipped with ZERO test
+// coverage on ANY host: the Linux `platform` module does not even
+// compile on this project's Windows dev machine, and no Linux test
+// reached the private fn either. Moving it here (still `#[doc(hidden)]`,
+// semver-exempt -- same pattern as `cpumap`/`linux`) lets
+// `tests/eintr_retry.rs` exercise it on every target.
+// ---------------------------------------------------------------------------
+/// Test-oracle-only module: bounded-EINTR retry decision for the sysfs
+/// topology scan.
+///
+/// `#[doc(hidden)]` and **exempt from this crate's SemVer guarantees**
+/// (task #1289 convention, same as `cpumap` and `linux`): everything in
+/// this module — signatures, names, existence — may change or be removed
+/// in ANY release, including patch releases, without a deprecation period.
+/// Do not depend on it from code outside this crate's own `tests/`.
+#[doc(hidden)]
+pub mod eintr {
+    /// Bound on consecutive EINTR retries for one `open(2)`/`read(2)`
+    /// progress step in the Linux platform's `read_cpumap_into` (task
+    /// #1319, sixteenth review P2; relocated here target-independently by
+    /// task #1327, seventeenth review P3-1). Bounded rather than unbounded
+    /// so a pathological signal storm (a profiler or interval timer firing
+    /// faster than the syscall can complete) cannot spin the `OnceLock`
+    /// topology initializer forever -- every thread hitting
+    /// `current_node()` blocks on that initializer, so an unbounded retry
+    /// would trade the permanent-`None` availability bug for a hang. 16 is
+    /// far above what a healthy-but-signal-busy process produces per
+    /// progress step (one stray signal clears on the first retry; each
+    /// retry is one cheap re-issued syscall on a <=4 KiB kernel-backed
+    /// sysfs file), while capping worst-case init delay at ~16 syscall
+    /// re-issues per step. The streak resets on any forward progress, so
+    /// this bounds CONSECUTIVE interruptions, not total retries across the
+    /// read loop.
+    pub const EINTR_RETRY_LIMIT: u32 = 16;
+
+    /// Pure retry decision for task #1319: given the error of a failed
+    /// `open`/`read` (captured by the caller before any cleanup FFI call,
+    /// per task #1306's errno-timing contract) and the number of
+    /// consecutive EINTR retries already spent without progress, may the
+    /// caller re-issue the identical syscall?
+    ///
+    /// Interruption is detected via `err.kind() == std::io::ErrorKind::Interrupted`
+    /// (task #1327, seventeenth review P3-1) rather than a raw errno comparison:
+    /// std's own `decode_error_kind` maps `EINTR` to `Interrupted` on every Unix,
+    /// portable by construction, with no `libc`-crate dependency (this
+    /// crate deliberately has none). On the real call path --
+    /// `std::io::Error::last_os_error()` on Linux -- `EINTR` is the ONLY
+    /// errno that decodes to `Interrupted`, so the retry set is
+    /// byte-for-byte identical to the pre-#1327 `raw_os_error() ==
+    /// Some(4)` check. Every other error kind fails closed exactly as
+    /// before the fix.
+    pub fn should_retry_eintr(err: &std::io::Error, consecutive_eintr: u32) -> bool {
+        err.kind() == std::io::ErrorKind::Interrupted && consecutive_eintr < EINTR_RETRY_LIMIT
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Per-platform implementations
 // ---------------------------------------------------------------------------
 
@@ -1457,39 +1522,19 @@ mod platform {
         cpu_to_numa_node_checked(cpu_idx).unwrap_or(NO_NODE)
     }
 
-    /// `EINTR` — a signal interrupted the syscall before it made any
-    /// progress; POSIX permits re-issuing the identical call. Defined
-    /// locally because this crate deliberately avoids the `libc` crate
-    /// (same local-constant precedent as `SYS_MBIND`/`MPOL_PREFERRED`);
-    /// value from Linux `asm-generic errno-base.h`, identical on x86_64
-    /// and aarch64.
-    const EINTR: i32 = 4;
-
-    /// Bound on consecutive EINTR retries for one `open(2)`/`read(2)`
-    /// progress step in `read_cpumap_into` (task #1319, sixteenth review
-    /// P2). Bounded rather than unbounded so a pathological signal storm
-    /// (a profiler or interval timer firing faster than the syscall can
-    /// complete) cannot spin the `OnceLock` topology initializer forever —
-    /// every thread hitting `current_node()` blocks on that initializer,
-    /// so an unbounded retry would trade the permanent-`None` availability
-    /// bug for a hang. 16 is far above what a healthy-but-signal-busy
-    /// process produces per progress step (one stray signal clears on the
-    /// first retry; each retry is one cheap re-issued syscall on a <=4 KiB
-    /// kernel-backed sysfs file), while capping worst-case init delay at
-    /// ~16 syscall re-issues per step. The streak resets on any forward
-    /// progress, so this bounds CONSECUTIVE interruptions, not total
-    /// retries across the read loop.
-    const EINTR_RETRY_LIMIT: u32 = 16;
-
-    /// Pure retry decision for task #1319: given the errno of a failed
-    /// `open`/`read` (captured before any cleanup FFI call, per task
-    /// #1306's errno-timing contract) and the number of consecutive EINTR
-    /// retries already spent without progress, may the caller re-issue the
-    /// identical syscall? Every other errno fails closed exactly as before
-    /// the fix.
-    fn should_retry_eintr(err: &std::io::Error, consecutive_eintr: u32) -> bool {
-        err.raw_os_error() == Some(EINTR) && consecutive_eintr < EINTR_RETRY_LIMIT
-    }
+    /// `O_CLOEXEC` — open with close-on-exec, so a concurrent
+    /// `fork()`+`exec()` during the topology initializer's one-time
+    /// 64-node sysfs scan cannot leak the cpumap fd into the child
+    /// (task #1327, seventeenth review P3-2). Defined locally because
+    /// this crate deliberately avoids the `libc` crate (same
+    /// local-constant precedent as `SYS_MBIND`/`MPOL_PREFERRED`); value
+    /// from Linux `asm-generic/fcntl.h` (`#define O_CLOEXEC 02000000`
+    /// octal), identical on x86_64 (whose arch-specific `fcntl.h` does
+    /// not override it) and aarch64 (which uses the asm-generic header
+    /// wholesale). This is the verification for the flag: actual
+    /// close-on-exec kernel behavior is not testable without a real
+    /// fork+exec harness, which is out of scope.
+    const O_CLOEXEC: core::ffi::c_int = 0o2000000;
 
     /// Open the cpumap file at `path` and read its complete contents into
     /// the caller-supplied fixed buffer `out`, returning the byte count.
@@ -1511,19 +1556,24 @@ mod platform {
     ///
     /// task #1319 (sixteenth review P2): a transient `EINTR` from
     /// `open`/`read` is retried a bounded number of times
-    /// (`EINTR_RETRY_LIMIT`) before counting as a failure — one signal
+    /// (`crate::eintr::EINTR_RETRY_LIMIT`) before counting as a failure — one signal
     /// during the process's first `current_node()` call must not
     /// permanently disable NUMA detection (the caller caches the result
     /// in a process-lifetime `OnceLock`). Every other errno, and
     /// retry-limit exhaustion, fail closed exactly as the pre-#1319 code
-    /// did.
+    /// did. The retry decision itself lives in target-independent
+    /// `crate::eintr` (task #1327, seventeenth review P3-1), exercised by
+    /// `tests/eintr_retry.rs` on every host.
     fn read_cpumap_into(path: &[u8], out: &mut [u8]) -> Option<usize> {
         let mut open_eintr_streak = 0u32;
         let fd = loop {
+            // Flags: `O_RDONLY` (0 on Linux) | `O_CLOEXEC` — read-only with
+            // close-on-exec (task #1327, seventeenth review P3-2); O_RDONLY
+            // being 0 means the value below is exactly that combination.
             // SAFETY: `path` is a valid nul-terminated C string constructed
             // by the caller. `open` is a POSIX syscall; we check for a
             // negative return on error.
-            let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, 0) };
+            let fd = unsafe { libc_open(path.as_ptr() as *const core::ffi::c_char, O_CLOEXEC) };
             if fd >= 0 {
                 break fd;
             }
@@ -1531,7 +1581,7 @@ mod platform {
             // can overwrite it (task #1306, the errno-timing contract).
             // Allocation-free: see the read loop below.
             let err = std::io::Error::last_os_error();
-            if should_retry_eintr(&err, open_eintr_streak) {
+            if crate::eintr::should_retry_eintr(&err, open_eintr_streak) {
                 // Re-issue the identical open: EINTR means no fd was
                 // created, so there is nothing to close before retrying.
                 open_eintr_streak += 1;
@@ -1566,7 +1616,7 @@ mod platform {
                 // heap), preserving task #777's allocation-free requirement
                 // for this OnceLock-initializer path.
                 let err = std::io::Error::last_os_error();
-                if should_retry_eintr(&err, read_eintr_streak) {
+                if crate::eintr::should_retry_eintr(&err, read_eintr_streak) {
                     // Re-issue the SAME read — same fd, same buffer offset,
                     // same remaining length: POSIX guarantees a read that
                     // fails with EINTR transferred zero bytes, so `total`
