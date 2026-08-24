@@ -2689,7 +2689,23 @@ jobs:
       # This row runs tests/smoke.rs's `reserve_preferred_on_node_*` tests
       # against the real Linux mbind(2) — the crate's headline capability
       # on its headline platform.
+      #
+      # task #1324 (P2-1 of the seventeenth independent review,
+      # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md):
+      # NUMA_SHIM_REQUIRE_ORACLE=1 makes the `current_node() == None` skip
+      # arms of the four positive tests this row runs (policy_oracle_linux.rs
+      # x2, smoke.rs x2) PANIC instead of skip. The inverse of
+      # numa-real-kernel's SEFER_NUMA_TEST=1 opt-in gate: that env var says
+      # "run the expensive real-hardware test"; this one says "this host is
+      # SUPPOSED to have working detection" — current_node() is this crate's
+      # own chain (sched_getcpu -> sysfs cpumap -> ReverseIndex::lookup), so
+      # a None here means detection regressed and the row must go red, not
+      # silently skip green (an internally-skipped test still prints
+      # "... ok"). This row ONLY: the mock rows above, the Windows/macOS
+      # jobs below, and local/dev runs keep the tolerant skip.
       - run: cargo test -p numa-shim --features vmem-integration
+        env:
+          NUMA_SHIM_REQUIRE_ORACLE: "1"
       # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
       # coverage anywhere in this file -- the four numa-shim-* jobs all ran
       # cargo test only, so a clippy regression here (e.g. the
