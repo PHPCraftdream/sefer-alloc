@@ -22,7 +22,11 @@ always assumed a 64-bit pointer width (`MEMORY_BASIC_INFORMATION`'s
 `PartitionId` field exists in winnt.h only under `#if defined(_WIN64)`), CI
 has only ever covered 64-bit `windows-latest`, and 32-bit Windows
 (`target_pointer_width = "32"`) is out of scope — no support, testing, or
-compatibility is planned for it.
+compatibility is planned for it. The policy is compile-time enforced (task
+#1321, sixteenth review P2): building this crate for a 32-bit Windows
+target fails with a `compile_error!` naming this policy instead of
+silently producing an unsupported build; 32-bit non-Windows targets are
+unaffected.
 
 ## Why yet another NUMA crate?
 
