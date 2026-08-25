@@ -139,7 +139,7 @@
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
 //     Callers must supply a stateless-facade `A` (see `run`'s contract doc).
 //
-//   racy-ptr-cell (crates/racy-ptr-cell/src/lib.rs) — #![allow(unsafe_code)]
+//   racy-ptr-cell (crates/racy-ptr-cell/src/lib.rs, applying to src/imp.rs) — #![allow(unsafe_code)]
 //     Single documented reason: `unsafe impl Send/Sync` for the AtomicPtr-backed
 //     cell + `NonNull::new_unchecked`. Lazy CAS-published pointer cell; every
 //     site has `# Safety` / `// SAFETY:`. Pulled in under `alloc-core`.
