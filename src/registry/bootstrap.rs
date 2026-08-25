@@ -221,6 +221,13 @@ use loom_shim::RacyPtrCell;
 #[cfg(not(loom))]
 use racy_ptr_cell::RacyPtrCell;
 
+/// Re-exported so a consumer of [`dbg_rollback_chunk_sentinel_reenterable`]
+/// can match on its result without depending on `racy-ptr-cell` directly
+/// (it is an OPTIONAL dependency of this crate). The probe's result type is
+/// pure data with no atomics, so it is loom-agnostic and the same enum
+/// serves both the real cell and the `#[cfg(loom)]` shim.
+pub use racy_ptr_cell::RollbackProbe;
+
 #[cfg(loom)]
 mod loom_shim {
     //! Const-capable, `core::sync::atomic`-backed stand-in for
@@ -244,6 +251,12 @@ mod loom_shim {
     use core::marker::PhantomData;
     use core::ptr::NonNull;
     use core::sync::atomic::{AtomicPtr, Ordering};
+
+    // The probe's RESULT type is pure data with no atomics, so it is
+    // loom-agnostic and the shim reuses the real crate's enum rather than
+    // duplicating it -- same reasoning as the `TaggedIndex` packing reused by
+    // the CRATE-P7 shim below.
+    pub(crate) use racy_ptr_cell::RollbackProbe;
 
     const SENTINEL_INITIALIZING: usize = 1;
 
@@ -402,16 +415,20 @@ mod loom_shim {
         /// window and won instead, storing `null` unconditionally here would
         /// clobber that other owner's sentinel or published pointer — the
         /// exact clobber this probe must not cause.
-        pub(crate) fn dbg_rollback_reenterable(&self) -> Option<bool> {
+        pub(crate) fn dbg_rollback_reenterable(&self) -> RollbackProbe {
             let sentinel = core::ptr::without_provenance_mut::<T>(SENTINEL_INITIALIZING);
-            self.ptr
+            if self
+                .ptr
                 .compare_exchange(
                     core::ptr::null_mut(),
                     sentinel,
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 )
-                .ok()?;
+                .is_err()
+            {
+                return RollbackProbe::NotApplicable;
+            }
             self.ptr.store(core::ptr::null_mut(), Ordering::Release);
             let postcondition_holds = self
                 .ptr
@@ -423,10 +440,10 @@ mod loom_shim {
                 )
                 .is_ok();
             if !postcondition_holds {
-                return None;
+                return RollbackProbe::NotApplicable;
             }
             self.ptr.store(core::ptr::null_mut(), Ordering::Release);
-            Some(postcondition_holds)
+            RollbackProbe::Proven
         }
     }
 
@@ -968,7 +985,7 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
 
 /// Test-only hook (R6-OPT-P0-2 round 1, generalising the pre-chunking
 /// `dbg_rollback_sentinel_reenterable`): proves the anti-livelock rollback in
-/// [`rollback_chunk_sentinel`] actually clears the sentinel for a SPECIFIC
+/// `RacyPtrCell`'s OOM path actually clears the sentinel for a SPECIFIC
 /// chunk of the LIVE process-global registry, without invoking
 /// `std::process::abort` (which would kill the test harness).
 ///
@@ -999,12 +1016,13 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
 ///    `ensure_chunk_slow` winner performs). If the chunk has ALREADY been
 ///    materialised (a real, non-null non-sentinel pointer) or is
 ///    (impossibly, under this test's own discipline) mid-init by another
-///    caller, the CAS simply fails and this function returns `None` — it
-///    never disturbs a live or contended chunk.
+///    caller, the CAS simply fails and this function reports
+///    [`RollbackProbe::NotApplicable`] — it never disturbs a live or
+///    contended chunk.
 /// 2. With the sentinel now in place (as if we were the real
-///    materialisation winner that hit OOM), it calls
-///    [`rollback_chunk_sentinel`] — the IDENTICAL function the production
-///    OOM-bailout calls before `std::process::abort()`.
+///    materialisation winner that hit OOM), it performs the IDENTICAL
+///    sentinel-to-null `Release` store the production OOM-bailout performs
+///    before `std::process::abort()`.
 /// 3. It then verifies the anti-livelock postcondition directly: a
 ///    subsequent `compare_exchange(null, SENTINEL, ..)` must SUCCEED,
 ///    proving the rollback actually cleared the sentinel back to `null` (if
@@ -1017,14 +1035,20 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
 ///    chunk index remains available for a LATER real `claim()` to
 ///    materialise normally.
 ///
-/// Returns `Some(true)` if the rollback was proven to clear the sentinel,
-/// `Some(false)` if the postcondition CAS unexpectedly failed (rollback is
-/// broken — the counterfactual this test is designed to catch), or `None` if
-/// the chunk was not observed `UNINIT` (already materialised, or contended)
-/// and this check could not run (callers should treat that as "not
-/// applicable", never as failure).
+/// Returns exactly what the forwarded-to cell method returns, and carries
+/// its contract verbatim: [`RollbackProbe::Proven`] if the rollback was
+/// proven to clear the sentinel, [`RollbackProbe::NotApplicable`] if the
+/// check could not run — either the chunk was not observed `UNINIT` on
+/// entry (already materialised, or contended), or a concurrent claimer
+/// re-won it during the probe's own rollback-then-reCAS window.
+///
+/// **There is deliberately no "rollback is broken" answer**, and an earlier
+/// version of this doc was wrong to promise one: the probe cannot
+/// distinguish a broken rollback from a legitimate concurrent owner, since
+/// both make its postcondition CAS fail identically. A caller must treat
+/// `NotApplicable` as "could not test", never as failure.
 #[doc(hidden)]
-pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> Option<bool> {
+pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> RollbackProbe {
     // Forward to `RacyPtrCell::dbg_rollback_reenterable`, which drives the
     // chunk's REAL cell through the EXACT `null -> sentinel -> rollback ->
     // re-CAS` sequence the internal OOM-bailout runs and proves the
@@ -1034,7 +1058,7 @@ pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> Option<bool>
     // machine), so this hook exercises the shipped code path, not a copy — and
     // on the LIVE process-global registry chunk, exactly as before the
     // extraction. The cell's own entry CAS is the "only touch it if UNINIT"
-    // guard (returns `None` on a materialised/contended chunk), so a
+    // guard (reports NotApplicable on a materialised/contended chunk), so a
     // caller-chosen high chunk index no other test claims stays safe.
     REGISTRY.chunks[chunk_idx].dbg_rollback_reenterable()
 }
@@ -1166,8 +1190,8 @@ mod overflow_sidecar {
     /// concede to the documented-sound bounded leak" (see
     /// `push_with_overflow_retry`'s existing handling in
     /// `heap_core_xthread.rs`). So this function's OOM branch simply rolls
-    /// the sentinel back (the SAME anti-livelock argument
-    /// `rollback_chunk_sentinel` documents, narrowed to one sidecar pointer)
+    /// the sentinel back (the SAME anti-livelock argument the chunk path's
+    /// own rollback rests on, narrowed to one sidecar pointer)
     /// and returns `false` — strictly SIMPLER than the chunk path's OOM
     /// handling: no `abort()` needed at all, because the surrounding protocol
     /// already has the right shape.
@@ -1299,8 +1323,9 @@ mod overflow_sidecar {
     }
 
     /// Roll `sidecar_ptr` back from `SENTINEL_INITIALIZING` to `null` —
-    /// mirrors [`super::rollback_chunk_sentinel`] exactly (same anti-livelock
-    /// argument, narrowed to one sidecar pointer instead of a chunk slot).
+    /// mirrors the chunk path's own sentinel rollback exactly (same
+    /// anti-livelock argument, narrowed to one sidecar pointer instead of a
+    /// chunk slot).
     /// Kept as its own function so the test-only hook below exercises EXACTLY
     /// the same code the production OOM-bailout runs.
     #[cold]

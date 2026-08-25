@@ -8,7 +8,7 @@
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use racy_ptr_cell::RacyPtrCell;
+use racy_ptr_cell::{RacyPtrCell, RollbackProbe};
 
 #[repr(align(4))]
 struct Payload {
@@ -185,18 +185,18 @@ fn align_of_one_payload_panics_at_construction() {
 
 #[test]
 fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
-    // task #708 (2/2): `dbg_rollback_reenterable`'s happy-path contract
-    // (Some(true) + the restore postcondition) is asserted only in the
-    // PARENT repo's own integration test, which does not ship with the
-    // standalone published crate. Within crates/racy-ptr-cell itself the
-    // only call site discards the result -- stubbing the probe to
-    // unconditionally return None previously left the whole suite green.
+    // `dbg_rollback_reenterable`'s happy-path contract (Proven + the
+    // restore postcondition) used to be asserted only in the PARENT repo's
+    // own integration test, which does not ship with the standalone
+    // published crate. Within crates/racy-ptr-cell itself the only call site
+    // discarded the result -- stubbing the probe to unconditionally return
+    // the not-applicable arm left the whole suite green.
 
     // Happy-path arm: a fresh (UNINIT) cell.
     let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
     assert_eq!(
         cell.dbg_rollback_reenterable(),
-        Some(true),
+        RollbackProbe::Proven,
         "on a fresh UNINIT cell the probe must observe and restore UNINIT"
     );
     // Restore postcondition: the cell is back to UNINIT, not left at the
@@ -214,7 +214,7 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     // something other than UNINIT and must not touch the cell at all).
     assert_eq!(
         cell.dbg_rollback_reenterable(),
-        None,
+        RollbackProbe::NotApplicable,
         "on an already-READY cell the probe is not applicable"
     );
     // Confirm the probe truly left the READY cell untouched.

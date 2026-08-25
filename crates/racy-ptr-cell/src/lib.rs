@@ -356,6 +356,29 @@ fn spin_hint() {
 /// [`RacyPtrCell::get_or_try_init`], not by this constant alone.
 const SENTINEL_INITIALIZING: usize = 1;
 
+/// The outcome of [`RacyPtrCell::dbg_rollback_reenterable`] — exactly the two
+/// answers that probe can give, and no third one it could never produce.
+///
+/// In particular there is no "rollback is broken" variant: the probe cannot
+/// distinguish that from "another thread legitimately owns the cell now",
+/// because both make its postcondition CAS fail identically. See the
+/// method's own docs for the full argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackProbe {
+    /// The rollback provably cleared the sentinel: the probe's postcondition
+    /// CAS re-won the cell afterwards, so no future winner or spinning loser
+    /// can be wedged by it. The cell is restored to `UNINIT` before
+    /// returning.
+    Proven,
+    /// The probe could not run its check, and this is NOT evidence that
+    /// rollback is broken. Either the cell was not `UNINIT` when the probe
+    /// entered (already `READY`, or owned by another thread at that
+    /// instant), or a real `get_or_try_init` caller re-won the cell during
+    /// the probe's own rollback-then-reCAS window. In both cases the probe
+    /// leaves the cell exactly as it found it.
+    NotApplicable,
+}
+
 /// A lazy, CAS-published pointer cell: `UNINIT -> INITIALIZING -> READY` over a
 /// single `AtomicPtr<T>`, with fallible init (OOM rolls back and losers
 /// re-race). See the [crate-level docs](crate) for the full state machine, the
@@ -811,22 +834,23 @@ impl<T> RacyPtrCell<T> {
     /// sentinel was genuinely cleared, so no future winner or spinning loser is
     /// wedged).
     ///
-    /// Returns `Some(true)` if the rollback provably cleared the sentinel
-    /// (the postcondition CAS re-won the cell; it is restored to `UNINIT`
-    /// before returning). `None` covers TWO distinct "could not test"
-    /// cases, deliberately conflated because neither is evidence rollback is
-    /// broken: (a) the cell was not observed `UNINIT` on the entry CAS
-    /// (already `READY`, or another thread owned it at that instant), or
-    /// (b) the postcondition CAS in step 3 failed because a real
-    /// `get_or_try_init` caller raced in and re-won the cell during the
-    /// probe's own rollback-then-reCAS window — in that case the probe
-    /// leaves the cell alone (does NOT touch the new owner's state) and
-    /// reports "not applicable". `Some(false)` is intentionally
-    /// unreachable: this probe cannot distinguish "rollback is broken" from
-    /// "someone else legitimately owns the cell now" by construction (both
-    /// look identical from here — the postcondition CAS just fails either
-    /// way), so it never claims rollback failure, only "clean" or
-    /// "inconclusive".
+    /// Returns [`RollbackProbe::Proven`] if the rollback provably cleared the
+    /// sentinel (the postcondition CAS re-won the cell; it is restored to
+    /// `UNINIT` before returning). [`RollbackProbe::NotApplicable`] covers
+    /// TWO distinct "could not test" cases, deliberately conflated because
+    /// neither is evidence rollback is broken: (a) the cell was not observed
+    /// `UNINIT` on the entry CAS (already `READY`, or another thread owned it
+    /// at that instant), or (b) the postcondition CAS in step 3 failed
+    /// because a real `get_or_try_init` caller raced in and re-won the cell
+    /// during the probe's own rollback-then-reCAS window — in that case the
+    /// probe leaves the cell alone (does NOT touch the new owner's state).
+    ///
+    /// **There is deliberately no "rollback is broken" variant.** This probe
+    /// cannot distinguish that from "someone else legitimately owns the cell
+    /// now" by construction — both look identical from here, the
+    /// postcondition CAS simply fails either way — so the return type
+    /// encodes exactly the two answers it can actually give, and no third
+    /// one it could never produce.
     ///
     /// Exists so a consumer's test can drive the rollback on a REAL, LIVE cell
     /// (e.g. a process-global registry chunk) — proving the shipped code path,
@@ -835,7 +859,8 @@ impl<T> RacyPtrCell<T> {
     /// cell no other thread is concurrently initialising. The entry CAS is
     /// only a POINT-IN-TIME check, not mutual exclusion across the whole
     /// probe: if the cell is not observed `UNINIT` at that instant, the probe
-    /// returns `None` and touches nothing, but a concurrent
+    /// returns [`RollbackProbe::NotApplicable`] and touches nothing, but a
+    /// concurrent
     /// [`RacyPtrCell::get_or_try_init`] racing in AFTER the entry CAS (during
     /// the probe's own rollback-then-reCAS window) is not excluded by it — the
     /// probe's final restore step accounts for that by only touching the cell
@@ -854,17 +879,21 @@ impl<T> RacyPtrCell<T> {
     /// the crate README's "Test-probe API stability" section for the full
     /// rationale and the rejected feature-flag alternative.
     #[must_use]
-    pub fn dbg_rollback_reenterable(&self) -> Option<bool> {
+    pub fn dbg_rollback_reenterable(&self) -> RollbackProbe {
         // Step 1: only proceed if the cell is UNINIT (null). If it is already
         // READY or contended, do not touch it.
-        self.ptr
+        if self
+            .ptr
             .compare_exchange(
                 core::ptr::null_mut(),
                 Self::sentinel(),
                 Ordering::Acquire,
                 Ordering::Relaxed,
             )
-            .ok()?;
+            .is_err()
+        {
+            return RollbackProbe::NotApplicable;
+        }
 
         // Step 2: run the EXACT rollback the internal OOM-bailout runs (sentinel
         // -> null, Release).
@@ -895,11 +924,11 @@ impl<T> RacyPtrCell<T> {
         // concurrent owner racing in is not evidence that rollback itself is
         // broken.
         if !postcondition_holds {
-            return None;
+            return RollbackProbe::NotApplicable;
         }
         self.ptr.store(core::ptr::null_mut(), Ordering::Release);
 
-        Some(postcondition_holds)
+        RollbackProbe::Proven
     }
 }
 

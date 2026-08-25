@@ -82,6 +82,7 @@
 #![cfg(all(feature = "alloc-global", feature = "internals"))]
 
 use sefer_alloc::registry::bootstrap;
+use sefer_alloc::registry::bootstrap::RollbackProbe;
 
 /// Anti-livelock: after a chunk's OOM-bailout rollback runs, that chunk's
 /// `AtomicPtr<RegistryChunk>` must be back at `null` (`UNINIT`), not stuck at
@@ -96,22 +97,21 @@ fn oom_bailout_rollback_clears_chunk_sentinel_not_stuck() {
     let last_chunk = bootstrap::dbg_num_chunks() - 1;
 
     match bootstrap::dbg_rollback_chunk_sentinel_reenterable(last_chunk) {
-        Some(rolled_back_cleanly) => {
-            assert!(
-                rolled_back_cleanly,
-                "rollback_chunk_sentinel() must clear the chunk's AtomicPtr back \
-                 to null so a subsequent CAS(null, SENTINEL) succeeds -- if this \
-                 is false, the sentinel is stuck and every slot() caller \
-                 touching this chunk's index range (present and future) spins \
-                 forever (Task #131 livelock, chunk-scoped)"
-            );
+        RollbackProbe::Proven => {
+            // The rollback cleared the chunk's AtomicPtr back to null and a
+            // subsequent CAS(null, SENTINEL) succeeded -- the sentinel is not
+            // stuck, so no present or future slot() caller touching this
+            // chunk's index range spins forever (Task #131 livelock,
+            // chunk-scoped). This is the arm the chunk-index choice above is
+            // engineered to reach.
         }
-        None => {
+        RollbackProbe::NotApplicable => {
             // The chunk was already materialised (or contended) by the time
             // this test ran under the serial guard -- the hook correctly
             // refused to disturb it. Not expected given the chunk-index
             // choice above, but not a failure of the property under test
-            // either way; nothing to assert here.
+            // either way: the probe cannot distinguish a broken rollback from
+            // a legitimate concurrent owner, so it never reports one.
         }
     }
 
