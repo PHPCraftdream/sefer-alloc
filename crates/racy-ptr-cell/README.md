@@ -117,8 +117,19 @@ ordering baked in), proving the loom harness itself is sensitive to each
 protocol violation rather than passing vacuously:
 
 ```sh
-RUSTFLAGS="--cfg loom" cargo test --release --test loom_racy_ptr_cell
+RUSTFLAGS="--cfg loom" cargo test -p racy-ptr-cell --release --test loom_racy_ptr_cell
 ```
+
+**`--cfg loom` is a global `RUSTFLAGS` cfg — it applies to every crate in the
+build, not only this one.** Under it, this crate's atomics become
+`loom::sync::atomic`, so `RacyPtrCell::new` is **not** `const`, and a
+`static CELL: RacyPtrCell<T> = RacyPtrCell::new();` — this README's own
+usage example — fails to compile anywhere in that build. Always scope the
+flag to this crate (`-p racy-ptr-cell`, as above), or supply a `#[cfg(loom)]`
+const-capable stand-in in your own crate if you need to set the flag
+workspace-wide — see [`sefer-alloc`'s own
+`loom_shim`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/src/registry/bootstrap.rs)
+for a worked example.
 
 ## Test-probe API stability
 

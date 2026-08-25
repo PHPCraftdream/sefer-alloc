@@ -201,6 +201,15 @@ use core::ptr::NonNull;
 // tests (in `tests/`) model-check the actual implementation, not a hand-copied
 // transcription. Under normal builds it is `core::sync::atomic`, keeping the
 // crate `no_std` and allocation-free.
+//
+// CONSUMER HAZARD: `--cfg loom` is a global `RUSTFLAGS` cfg — it applies to
+// every crate in the build, not only the one whose loom suite you meant to
+// run. Under it `RacyPtrCell::new` is NOT `const` (see its doc), so a
+// `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` anywhere in the build
+// fails to compile. Scope the flag (`cargo test -p <crate> ...`), or supply a
+// `#[cfg(loom)]` const-capable stand-in in your own crate — see
+// `src/registry/bootstrap.rs`'s `loom_shim` in the `sefer-alloc` repository
+// this crate is extracted from, for a worked example.
 #[cfg(not(loom))]
 use core::sync::atomic::{AtomicPtr, Ordering};
 #[cfg(loom)]
@@ -345,9 +354,16 @@ impl<T> Drop for RollbackGuard<'_, T> {
 impl<T> RacyPtrCell<T> {
     /// Construct a fresh `UNINIT` cell (null pointer).
     ///
-    /// Under `--cfg loom` this cannot be `const` (loom's atomics have no
-    /// const constructor); on normal builds it is `const` so the cell can live
-    /// in a `static`.
+    /// **Not `const` under `--cfg loom`** (loom's atomics have no const
+    /// constructor); on normal builds it is `const` so the cell can live in a
+    /// `static`. Because `--cfg loom` is a global `RUSTFLAGS` cfg, this
+    /// applies to every crate in a build that sets it, not only crates that
+    /// mean to run loom against `RacyPtrCell` itself — a
+    /// `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` anywhere in such a
+    /// build fails to compile. Scope the flag to this crate
+    /// (`cargo test -p racy-ptr-cell ...`), or supply your own
+    /// `#[cfg(loom)]` const-capable stand-in if you need the flag
+    /// workspace-wide.
     ///
     /// # Panics
     ///
