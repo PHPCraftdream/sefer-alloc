@@ -10,6 +10,7 @@ interfaces any Rust program already links to, not third-party C libraries.
 | Platform | Node detection | Memory placement |
 |----------|---------------|----------------|
 | Linux x86_64 / aarch64 | `sched_getcpu` + sysfs `/sys/devices/system/node/nodeN/cpumap` | `mbind(2)` via raw `syscall(2)` — **no libnuma, no hwloc** |
+| Linux, other architecture | `sched_getcpu` + sysfs `/sys/devices/system/node/nodeN/cpumap` — **detection works the same as above** | not supported — `Err(UnsupportedArchitecture)` (the `mbind`-based reservation path is x86_64/aarch64-only; detection is architecture-independent) |
 | Windows (64-bit) | `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx` | `VirtualAllocExNuma` (via `vmem-integration` feature) |
 | macOS | not available (no public NUMA API) | not supported — `Err(UnsupportedPlatform)` |
 | miri | not available | not supported — `Err(UnsupportedPlatform)` |
