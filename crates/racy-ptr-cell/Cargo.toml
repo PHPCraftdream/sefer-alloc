@@ -35,3 +35,8 @@ bench-scale-tool = "0.1"
 [[bench]]
 name = "racy_ptr_cell_bench"
 harness = false
+# Stated explicitly rather than left to cargo's default: `cargo test` must
+# not treat this bench as a test target. ci.yml's clippy row relies on that
+# (it is why `--all-targets` is the step that covers the bench at all), and
+# an implicit default is not something a workflow comment should be citing.
+test = false

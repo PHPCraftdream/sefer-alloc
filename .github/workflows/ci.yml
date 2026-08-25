@@ -1823,10 +1823,15 @@ jobs:
       - run: cargo test -p racy-ptr-cell --release --no-fail-fast
       # publication readiness review cycle 2 (claude/oh, F3, task #1367):
       # `benches/racy_ptr_cell_bench.rs` ships in the published tarball but
-      # `test = false` on `[[bench]]` means neither `cargo test` step above
-      # compiles it, and no `cargo clippy -p racy-ptr-cell` row existed
-      # anywhere in this file -- `--all-targets` below covers both test
-      # files and the bench in one step.
+      # neither `cargo test` step above compiles it -- the crate's
+      # `[[bench]]` section sets `harness = false` AND, since task #1395,
+      # `test = false` explicitly (the comment here previously cited a
+      # `test = false` key the manifest had never actually contained; the
+      # key was added rather than the claim dropped, so the intent is now
+      # stated in the manifest instead of resting on a cargo default). No
+      # `cargo clippy -p racy-ptr-cell` row existed anywhere in this file
+      # either -- `--all-targets` below covers both test files and the bench
+      # in one step.
       - run: cargo clippy -p racy-ptr-cell --all-targets -- -D warnings
       # publication readiness review cycle 4 (claude/oh, F2, task #1379): no
       # `cargo doc -p racy-ptr-cell` row existed anywhere in this file, and
