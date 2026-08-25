@@ -103,47 +103,55 @@
 //!
 //! The panic sites, independently:
 //!
-//! | # | Panic site | Whose code | Reaches the panic runtime? | Message shape | Allocations before a non-allocating hook |
+//! | # | Panic site | Whose code | Reaches the panic runtime? | Message shape | Allocations before a non-allocating hook (measured — see below) |
 //! |---|---|---|---|---|---|
 //! | 1 | sentinel-collision `assert!` in `get_or_try_init` | this crate | yes | bare `&'static str` | 0 |
 //! | 2 | an unwinding `init` closure | **yours** | yes | whatever you wrote | 0 if a bare literal, ≥ 2 if formatted |
 //! | 3 | `align_of::<T>() >= 2` in `new`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
 //! | 3 | `align_of::<T>() >= 2` in `new`/`default`, non-const form | this crate | yes | bare `&'static str` | 0 |
 //!
-//! Every row that reaches the panic runtime allocates in a `std` build, and
-//! the two link environments need genuinely different mitigations, **not a
+//! **Normative contract, separate from the measurement below: `init` must
+//! not panic, full stop.** The `std` panic path *may* allocate before any
+//! hook runs — especially for a formatted message — so the absence of an
+//! allocation is never something to rely on. The numbers in this table and
+//! the paragraph below are a measurement (rustc 1.97,
+//! `x86_64-pc-windows-msvc`, `--release`, `RUST_BACKTRACE=0`, one specific
+//! non-allocating hook), not an API guarantee about the panic runtime, this
+//! crate's MSRV, other `std` implementations/targets, or future toolchains.
+//!
+//! The two link environments need genuinely different mitigations, **not a
 //! shared recipe**:
 //!
 //! - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
 //!   This closes the hazard completely: no handler, no allocation.
 //! - A `std` binary's `panic = "abort"` profile setting removes the
 //!   **unwind** (the UB when the frame below is `GlobalAlloc::alloc`), but it
-//!   does **not** stop the panic runtime from allocating: the default hook
-//!   allocates before it can print anything (measured: 2 allocations under
-//!   `panic = "abort"`, `RUST_BACKTRACE=0`, `--release`, rustc 1.97,
-//!   x86_64-pc-windows-msvc). Inside a `#[global_allocator]` that allocation
-//!   re-enters the very cell that is mid-`init`, and the thread deadlocks on
-//!   its own sentinel instead of aborting — the diagnostic the release-active
-//!   `assert!` above exists to print never reaches stderr, because the
-//!   allocation that would have printed it is the one that deadlocked. A
-//!   `std` consumer therefore needs `panic = "abort"` **and** a
-//!   `std::panic::set_hook` that goes straight to `std::process::abort`
-//!   without formatting — or, better, an `init` that cannot panic at all.
-//!   **Residual limit: a hook cannot help if the panic message is
-//!   formatted.** `std` materialises the message (`payload.get()`) as an
-//!   *argument* to the hook call, so `unwrap`/`expect`/`assert_eq!`/
+//!   does **not** stop the panic runtime from allocating: with the DEFAULT
+//!   hook, every panic sampled here allocated before it could print anything
+//!   (measured: 2 allocations under `panic = "abort"`, `RUST_BACKTRACE=0`,
+//!   `--release`, rustc 1.97, x86_64-pc-windows-msvc). Inside a
+//!   `#[global_allocator]` that allocation re-enters the very cell that is
+//!   mid-`init`, and the thread deadlocks on its own sentinel instead of
+//!   aborting — the diagnostic the release-active `assert!` above exists to
+//!   print never reaches stderr, because the allocation that would have
+//!   printed it is the one that deadlocked. A `std` consumer therefore needs
+//!   `panic = "abort"` **and** a `std::panic::set_hook` that goes straight to
+//!   `std::process::abort` without formatting — or, better, an `init` that
+//!   cannot panic at all. **Residual limit: a hook cannot help if the panic
+//!   message is formatted.** `std` materialises the message (`payload.get()`)
+//!   as an *argument* to the hook call, so `unwrap`/`expect`/`assert_eq!`/
 //!   `panic!("{}", …)` allocate before any hook runs, whether or not the hook
 //!   itself allocates — measured: 2 allocations for `Result::unwrap`, 4 for
 //!   `assert_eq!`, with the same non-allocating hook that reaches 0 for a
 //!   bare-`&'static str` panic. Only a panic whose message is a bare
-//!   `&'static str` is fully covered by the `set_hook` mitigation. The
+//!   `&'static str` was measured allocation-free under that hook. The
 //!   crate's own two `assert!`s (the sentinel-collision check and the
 //!   `align_of::<T>() >= 2` check) are of that shape and measure 0
 //!   allocations before the hook; **an unwinding `init` is your code, and
 //!   its message is whatever you wrote**, so it is covered only if you
-//!   keep it a bare literal. **The
-//!   only mitigation that covers a formatted message is an `init` that
-//!   cannot panic at all.** Note also
+//!   keep it a bare literal — and even then only as a measured observation
+//!   on one toolchain, not a promise. **The only mitigation the contract
+//!   actually rests on is an `init` that cannot panic at all.** Note also
 //!   that `panic = "abort"` compiles the crate's internal rollback guard out
 //!   entirely (it is unwind-only) — under this profile the cell-consistency
 //!   guarantee below comes from the process dying, not from the guard.
