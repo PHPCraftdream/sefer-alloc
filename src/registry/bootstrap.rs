@@ -227,10 +227,20 @@ mod loom_shim {
     //! `racy_ptr_cell::RacyPtrCell`, used ONLY under `--cfg loom` so sefer's own
     //! (unrelated) shadow-model loom harnesses can link the crate with its const
     //! `REGISTRY` static intact — see the import-site comment above. Mirrors the
-    //! real cell's API surface `bootstrap.rs` calls; behaviourally faithful (same
-    //! CAS/Release-publish/spin/rollback), but built on `core` atomics so `new`
-    //! stays `const`. It is NEVER on a loom-modeled interleaving (sefer's loom
-    //! tests do not touch chunk cells), so it needs no loom atomics.
+    //! real cell's CAS/Release-publish/spin/rollback protocol AND its panic
+    //! safety, alignment guard, and `dbg_rollback_reenterable` clobber
+    //! protection (task #1359, first racy-ptr-cell publication audit finding
+    //! F2 — an earlier version of this shim was missing all four and its doc
+    //! comment overclaimed "behaviourally faithful" anyway). Built on `core`
+    //! atomics so `new` stays `const` (`racy_ptr_cell::RacyPtrCell::new` is
+    //! non-`const` under the crate's OWN `--cfg loom`, since loom atomics have
+    //! no const constructor — this shim exists so the ROOT crate's `--cfg
+    //! loom` builds, which force racy-ptr-cell to compile under its `loom`
+    //! branch too via the shared RUSTFLAGS cfg, still get a workable `static
+    //! REGISTRY` initializer). It is NEVER on a loom-modeled interleaving
+    //! (sefer's loom tests do not touch chunk cells), so it needs no loom
+    //! atomics for the interleavings themselves — only for this same
+    //! const-constructor constraint.
     use core::marker::PhantomData;
     use core::ptr::NonNull;
     use core::sync::atomic::{AtomicPtr, Ordering};
@@ -247,8 +257,52 @@ mod loom_shim {
     // SAFETY: see the `Send` impl.
     unsafe impl<T> Sync for RacyPtrCell<T> {}
 
+    /// Rolls the sentinel back to `null` on `Drop` unless [`defuse`](Self::defuse)
+    /// was called first — mirrors `racy_ptr_cell`'s own `RollbackGuard`
+    /// (task #706's fix), so a panicking `init` closure here also leaves the
+    /// cell `UNINIT` instead of wedged in `INITIALIZING` forever.
+    struct RollbackGuard<'a, T> {
+        ptr: &'a AtomicPtr<T>,
+        defused: bool,
+    }
+
+    impl<'a, T> RollbackGuard<'a, T> {
+        #[inline]
+        fn new(ptr: &'a AtomicPtr<T>) -> Self {
+            Self {
+                ptr,
+                defused: false,
+            }
+        }
+
+        #[inline]
+        fn defuse(&mut self) {
+            self.defused = true;
+        }
+    }
+
+    impl<T> Drop for RollbackGuard<'_, T> {
+        #[inline]
+        fn drop(&mut self) {
+            if !self.defused {
+                self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+            }
+        }
+    }
+
     impl<T> RacyPtrCell<T> {
+        /// # Panics
+        ///
+        /// Panics (as a const-eval failure in the `static` usage this shim
+        /// exists for) if `align_of::<T>() < 2` — mirrors
+        /// `racy_ptr_cell::RacyPtrCell::new`'s own guard: the `INITIALIZING`
+        /// sentinel is the address `1`, which needs a spare low bit.
         pub(crate) const fn new() -> Self {
+            assert!(
+                core::mem::align_of::<T>() >= 2,
+                "RacyPtrCell<T> requires align_of::<T>() >= 2 so the INITIALIZING \
+                 sentinel (address 1) can never collide with a real published pointer"
+            );
             RacyPtrCell {
                 ptr: AtomicPtr::new(core::ptr::null_mut()),
                 _marker: PhantomData,
@@ -285,16 +339,34 @@ mod loom_shim {
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
-                    Ok(_) => match init() {
-                        Some(ptr) => {
-                            self.ptr.store(ptr.as_ptr(), Ordering::Release);
-                            return Some(ptr);
+                    Ok(_) => {
+                        // Hold a rollback guard across `init()` so a panicking
+                        // `init` also rolls the sentinel back (task #706-class
+                        // fix, mirroring the real crate).
+                        let mut guard = RollbackGuard::new(&self.ptr);
+                        match init() {
+                            Some(ptr) => {
+                                let raw = ptr.as_ptr();
+                                // Release-active check (task #707-class fix,
+                                // mirroring the real crate): a safe `init`
+                                // closure can hand back the sentinel address
+                                // itself, which would otherwise get published
+                                // as if `READY` and wedge every reader.
+                                assert!(
+                                    Self::is_ready(raw),
+                                    "RacyPtrCell (loom_shim): init returned the null/sentinel address"
+                                );
+                                self.ptr.store(raw, Ordering::Release);
+                                guard.defuse();
+                                return Some(ptr);
+                            }
+                            None => {
+                                guard.defuse();
+                                self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+                                return None;
+                            }
                         }
-                        None => {
-                            self.ptr.store(core::ptr::null_mut(), Ordering::Release);
-                            return None;
-                        }
-                    },
+                    }
                     Err(_) => loop {
                         let p = self.ptr.load(Ordering::Acquire);
                         let a = p.addr();
@@ -315,6 +387,14 @@ mod loom_shim {
             Self::is_ready(self.ptr.load(Ordering::Acquire))
         }
 
+        /// Mirrors `racy_ptr_cell::RacyPtrCell::dbg_rollback_reenterable`'s
+        /// own conditional-restore contract (task #1359-class fix): the
+        /// final restore-to-null only fires if this probe's own
+        /// postcondition CAS actually re-won the cell. If a concurrent
+        /// `get_or_try_init` raced in during the probe's rollback-then-reCAS
+        /// window and won instead, storing `null` unconditionally here would
+        /// clobber that other owner's sentinel or published pointer — the
+        /// exact clobber this probe must not cause.
         pub(crate) fn dbg_rollback_reenterable(&self) -> Option<bool> {
             let sentinel = core::ptr::without_provenance_mut::<T>(SENTINEL_INITIALIZING);
             self.ptr
@@ -326,7 +406,7 @@ mod loom_shim {
                 )
                 .ok()?;
             self.ptr.store(core::ptr::null_mut(), Ordering::Release);
-            let held = self
+            let postcondition_holds = self
                 .ptr
                 .compare_exchange(
                     core::ptr::null_mut(),
@@ -335,8 +415,11 @@ mod loom_shim {
                     Ordering::Relaxed,
                 )
                 .is_ok();
+            if !postcondition_holds {
+                return None;
+            }
             self.ptr.store(core::ptr::null_mut(), Ordering::Release);
-            Some(held)
+            Some(postcondition_holds)
         }
     }
 
