@@ -124,14 +124,18 @@
 //! or `fork()` only from a thread you know holds no cell and treat `exec()`
 //! in the child as mandatory. Do not allocate in a signal handler.
 //!
-//! There are **three** panic sites in total: that sentinel-collision
-//! `assert!`, an unwinding `init`, and the `align_of::<T>() >= 2` check in
-//! [`RacyPtrCell::new`] / [`RacyPtrCell::default`] (a const-eval failure in
-//! the documented `static` form — which never reaches a panic runtime at
-//! all; a runtime panic when reached from a non-const context). The two
-//! that reach the panic runtime allocate in a `std` build, and the two link
-//! environments need genuinely different mitigations, **not a shared
-//! recipe**:
+//! The panic sites, independently:
+//!
+//! | # | Panic site | Whose code | Reaches the panic runtime? | Message shape | Allocations before a non-allocating hook |
+//! |---|---|---|---|---|---|
+//! | 1 | sentinel-collision `assert!` in `get_or_try_init` | this crate | yes | bare `&'static str` | 0 |
+//! | 2 | an unwinding `init` closure | **yours** | yes | whatever you wrote | 0 if a bare literal, ≥ 2 if formatted |
+//! | 3 | `align_of::<T>() >= 2` in `new`/`default`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
+//! | 3 | `align_of::<T>() >= 2` in `new`/`default`, non-const form | this crate | yes | bare `&'static str` | 0 |
+//!
+//! Every row that reaches the panic runtime allocates in a `std` build, and
+//! the two link environments need genuinely different mitigations, **not a
+//! shared recipe**:
 //!
 //! - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
 //!   This closes the hazard completely: no handler, no allocation.
@@ -197,14 +201,14 @@
 //! The whole cell is one `AtomicPtr<T>` driven by `compare_exchange`; that is
 //! not an incidental implementation choice, it is the entire mechanism. This
 //! crate therefore needs `target_has_atomic = "ptr"` and will **not compile**
-//! on a target without it — notably `thumbv6m-none-eabi` (Cortex-M0/M0+),
-//! `riscv32imc-unknown-none-elf` (no `A` extension), and `msp430-none-elf`.
-//! This crate is `no_std` and allocation-free, but neither property implies
-//! pointer-width CAS: those targets have load/store atomics but no
-//! `compare_exchange`. A build on an unsupported target fails fast with an
-//! explicit [`compile_error!`] naming the requirement, rather than the more
-//! cryptic "no method named `compare_exchange`" error a bare unresolved
-//! import would otherwise produce.
+//! on a target without it. `thumbv6m-none-eabi` (Cortex-M0/M0+) and
+//! `riscv32imc-unknown-none-elf` (no `A` extension) have load/store atomics
+//! but no CAS; `msp430-none-elf` has no atomics at all. This crate is
+//! `no_std` and allocation-free, but neither property implies pointer-width
+//! CAS. A build on an unsupported target fails fast with an explicit
+//! [`compile_error!`] naming the requirement, rather than the three bare
+//! "no method named `compare_exchange`" errors an unguarded build would
+//! otherwise produce.
 
 // This crate is a single-file seam crate: `unsafe` is confined to this one
 // module, lifted by the crate-level `#![allow(unsafe_code)]` below. There is a
@@ -229,17 +233,17 @@
 // The whole cell is one AtomicPtr driven by compare_exchange (see the
 // crate-doc "Portability limit" section above) — that requires pointer-width
 // atomic CAS from the target. Fail fast with an explicit, named reason
-// instead of the cryptic "no method named `compare_exchange`" unresolved-item
-// error a naive use would otherwise produce on e.g.
-// thumbv6m-none-eabi/riscv32imc/msp430.
+// instead of the three bare "no method named `compare_exchange`" E0599s a
+// naive use would otherwise produce on e.g. thumbv6m-none-eabi/riscv32imc/msp430.
 #[cfg(not(target_has_atomic = "ptr"))]
 compile_error!(
     "racy-ptr-cell requires a target with pointer-width atomic \
      compare-and-swap (target_has_atomic = \"ptr\"): the whole cell is one \
-     AtomicPtr driven by compare_exchange. Targets with load/store atomics \
-     but no CAS -- thumbv6m-none-eabi (Cortex-M0/M0+), \
-     riscv32imc-unknown-none-elf (no `A` extension), msp430-none-elf -- are \
-     NOT supported, despite this crate being no_std and allocation-free."
+     AtomicPtr driven by compare_exchange. thumbv6m-none-eabi \
+     (Cortex-M0/M0+) and riscv32imc-unknown-none-elf (no `A` extension) have \
+     load/store atomics but no CAS; msp430-none-elf has no atomics at all. \
+     None of these are supported, despite this crate being no_std and \
+     allocation-free."
 );
 
 use core::marker::PhantomData;

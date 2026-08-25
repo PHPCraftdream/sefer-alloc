@@ -20,18 +20,6 @@ It fills the niche `std::sync::OnceLock` cannot:
   fail at all, its `get_or_try_init` is still unstable, and both park the
   losing threads for the duration of the winner's init.
 
-## Portability limit — requires pointer-width atomic CAS
-
-The whole cell is one `AtomicPtr<T>` driven by `compare_exchange`, so this
-crate needs `target_has_atomic = "ptr"` and will **not compile** on a target
-without it — notably `thumbv6m-none-eabi` (Cortex-M0/M0+),
-`riscv32imc-unknown-none-elf` (no `A` extension), and `msp430-none-elf`.
-`no_std` and allocation-free do not imply pointer-width CAS: those targets
-have load/store atomics but no `compare_exchange`. A build on an unsupported
-target fails fast with an explicit `compile_error!` naming the requirement,
-rather than the more cryptic "no method named `compare_exchange`" error a
-bare unresolved import would otherwise produce.
-
 ```text
 static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();
 
@@ -87,12 +75,17 @@ In a forking process, publish every cell before the first `fork()`, or
 `fork()` only from a thread you know holds no cell and `exec()` in the child.
 Do not allocate in a signal handler.
 
-Three panic sites exist in total: that sentinel-collision `assert!`, an
-unwinding `init`, and the `align_of::<T>() >= 2` check in `new`/`default` (a
-const-eval failure in the documented `static` form — which never reaches a
-panic runtime at all; a runtime panic when reached from a non-const context).
-The two that reach the panic runtime allocate in a `std` build, and the two
-link environments need genuinely different mitigations, **not a shared
+The panic sites, independently:
+
+| # | Panic site | Whose code | Reaches the panic runtime? | Message shape | Allocations before a non-allocating hook |
+|---|---|---|---|---|---|
+| 1 | sentinel-collision `assert!` in `get_or_try_init` | this crate | yes | bare `&'static str` | 0 |
+| 2 | an unwinding `init` closure | **yours** | yes | whatever you wrote | 0 if a bare literal, ≥ 2 if formatted |
+| 3 | `align_of::<T>() >= 2` in `new`/`default`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
+| 3 | `align_of::<T>() >= 2` in `new`/`default`, non-const form | this crate | yes | bare `&'static str` | 0 |
+
+Every row that reaches the panic runtime allocates in a `std` build, and the
+two link environments need genuinely different mitigations, **not a shared
 recipe**:
 
 - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself. This
@@ -122,6 +115,18 @@ recipe**:
   also that `panic = "abort"` compiles this crate's internal rollback guard
   out entirely (it is unwind-only) — under this profile the cell-consistency
   guarantee above comes from the process dying, not from the guard.
+
+## Portability limit — requires pointer-width atomic CAS
+
+The whole cell is one `AtomicPtr<T>` driven by `compare_exchange`, so this
+crate needs `target_has_atomic = "ptr"` and will **not compile** on a target
+without it. `thumbv6m-none-eabi` (Cortex-M0/M0+) and
+`riscv32imc-unknown-none-elf` (no `A` extension) have load/store atomics but
+no CAS; `msp430-none-elf` has no atomics at all. `no_std` and
+allocation-free do not imply pointer-width CAS. A build on an unsupported
+target fails fast with an explicit `compile_error!` naming the requirement,
+rather than the three bare "no method named `compare_exchange`" errors an
+unguarded build would otherwise produce.
 
 ## The two rules people get wrong
 

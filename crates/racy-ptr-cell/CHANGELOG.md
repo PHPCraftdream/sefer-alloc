@@ -77,3 +77,8 @@ before it.
   `#[should_panic]` counterfactuals proving the harness is non-vacuous.
   `loom` is a `cfg(loom)`-gated library dependency only; a normal build pulls
   in zero non-`std` dependencies.
+- **Portability requirement**: the cell is one `AtomicPtr<T>` driven by
+  `compare_exchange`, so the crate requires `target_has_atomic = "ptr"` and
+  fails at compile time with an explicit `compile_error!` on targets without
+  it (`thumbv6m-none-eabi`, `riscv32imc-unknown-none-elf`, `msp430-none-elf`).
+  `no_std` and allocation-free do not imply pointer-width CAS.
