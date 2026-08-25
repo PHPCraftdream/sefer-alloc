@@ -42,11 +42,16 @@
 //! ## The spin-wait (no parking, no `std`)
 //!
 //! Losers busy-spin with [`core::hint::spin_loop`] — there is no OS park/unpark
-//! (that would need `std` sync and could re-enter the allocator). The spin
-//! window is exactly one init closure (typically one OS reservation + one
-//! publish store), so the busy-wait is bounded and short in practice. This is a
-//! deliberate design constraint of the "safe inside the global allocator"
-//! niche, not an oversight — see the module docs above.
+//! (that would need `std` sync and could re-enter the allocator). **There is
+//! no bounded-latency guarantee**: a loser waits for exactly as long as the
+//! winner's `init` closure takes, and `init` is arbitrary caller code — a
+//! closure that blocks on a syscall, gets preempted, or simply runs long
+//! makes every loser wait that long too. The intended usage (typically one
+//! OS reservation + one publish store) keeps the spin short in practice, but
+//! that is a caller obligation, not something this cell enforces: **`init`
+//! must be fast and non-blocking**, on top of the re-entry restriction below.
+//! This is a deliberate design constraint of the "safe inside the global
+//! allocator" niche, not an oversight — see the module docs above.
 //!
 //! ## Sentinel encoding
 //!
@@ -353,6 +358,11 @@ impl<T> RacyPtrCell<T> {
     /// it runs while this thread holds the `INITIALIZING` sentinel, so it must
     /// not itself call back into `get_or_try_init` on the SAME cell (that would
     /// spin forever — the current thread is the only one able to publish).
+    ///
+    /// `init` must also be fast and non-blocking: every loser thread spins for
+    /// exactly as long as the winner's `init` call takes (see the module docs'
+    /// "spin-wait" section) — there is no bounded-latency guarantee from the
+    /// cell itself, only from the caller keeping `init` short.
     ///
     /// # Panics
     ///
