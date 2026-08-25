@@ -86,13 +86,24 @@ recipe**:
 - A `std` binary's `panic = "abort"` profile setting removes the **unwind**
   (the UB when the frame below is `GlobalAlloc::alloc`), but it does **not**
   stop the panic runtime from allocating: the default hook allocates before it
-  can print anything (measured: 3 allocations on the first panic,
-  `RUST_BACKTRACE=0`, `--release`). Inside a `#[global_allocator]` that
-  allocation re-enters the very cell that is mid-`init`, and the thread
-  deadlocks on its own sentinel instead of aborting. A `std` consumer
-  therefore needs `panic = "abort"` **and** a `std::panic::set_hook` that goes
-  straight to `std::process::abort` without formatting — or, better, an `init`
-  that cannot panic at all.
+  can print anything (measured: 2 allocations under `panic = "abort"`,
+  `RUST_BACKTRACE=0`, `--release`, rustc 1.97, x86_64-pc-windows-msvc).
+  Inside a `#[global_allocator]` that allocation re-enters the very cell that
+  is mid-`init`, and the thread deadlocks on its own sentinel instead of
+  aborting. A `std` consumer therefore needs `panic = "abort"` **and** a
+  `std::panic::set_hook` that goes straight to `std::process::abort` without
+  formatting — or, better, an `init` that cannot panic at all. **Residual
+  limit: a hook cannot help if the panic message is formatted.** `std`
+  materialises the message as an *argument* to the hook call, so
+  `unwrap`/`expect`/`assert_eq!`/`panic!("{}", …)` allocate before any hook
+  runs — measured: 2 allocations for `Result::unwrap`, 4 for `assert_eq!`,
+  with the same non-allocating hook that reaches 0 for a bare-`&'static str`
+  panic. Only a panic whose message is a bare `&'static str` (as this crate's
+  own three panic sites are) is fully covered. **The only mitigation that
+  covers a formatted message is an `init` that cannot panic at all.** Note
+  also that `panic = "abort"` compiles this crate's internal rollback guard
+  out entirely (it is unwind-only) — under this profile the cell-consistency
+  guarantee above comes from the process dying, not from the guard.
 
 ## The two rules people get wrong
 
