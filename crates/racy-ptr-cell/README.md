@@ -48,7 +48,8 @@ The cell is built for this niche, but the niche has hard rules that are
   otherwise re-enter the allocator being bootstrapped. It runs while your
   thread holds the `INITIALIZING` sentinel.
 - **`init` must not block** — every loser thread spins for exactly as long as
-  `init` runs. There is no bounded-latency guarantee.
+  `init` runs, provided a winner is currently running at all. There is no
+  bounded-latency guarantee.
 - **`init` must not panic, and no panic may unwind through a `GlobalAlloc`
   method** — [unwinding out of a global allocator is undefined
   behaviour](https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety).
@@ -57,6 +58,22 @@ The cell is built for this niche, but the niche has hard rules that are
 - **An `init` that returns the sentinel address (`1`) is a caller bug**, caught
   by a release-active `assert!` — a violated precondition, not a recoverable
   allocator error.
+
+**The cell is neither fork-safe nor async-signal-safe.** `INITIALIZING` is
+owned by a specific thread — no misbehaving `init` is needed to break it:
+
+- **`fork()` in a multithreaded process.** If a thread holds the sentinel when
+  another thread calls `fork()`, the child inherits a cell stuck at
+  `INITIALIZING` with no thread able to publish or roll it back — every
+  subsequent caller in the child spins forever, and there is no reset API.
+- **An allocating signal handler.** If a signal interrupts the thread holding
+  the sentinel and the handler allocates, the allocator re-enters the same
+  cell from inside the handler and spins on a sentinel owned by the very
+  thread it interrupted — an unrecoverable self-deadlock.
+
+In a forking process, publish every cell before the first `fork()`, or
+`fork()` only from a thread you know holds no cell and `exec()` in the child.
+Do not allocate in a signal handler.
 
 Three panic sites exist in total: that sentinel-collision `assert!`, an
 unwinding `init`, and the `align_of::<T>() >= 2` check in `new`/`default`. All

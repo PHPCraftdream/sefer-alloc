@@ -59,14 +59,17 @@
 //! Losers busy-spin with [`core::hint::spin_loop`] — there is no OS park/unpark
 //! (that would need `std` sync and could re-enter the allocator). **There is
 //! no bounded-latency guarantee**: a loser waits for exactly as long as the
-//! winner's `init` closure takes, and `init` is arbitrary caller code — a
-//! closure that blocks on a syscall, gets preempted, or simply runs long
-//! makes every loser wait that long too. The intended usage (typically one
-//! OS reservation + one publish store) keeps the spin short in practice, but
-//! that is a caller obligation, not something this cell enforces: **`init`
-//! must be fast and non-blocking**, on top of the re-entry restriction below.
-//! This is a deliberate design constraint of the "usable inside the global
-//! allocator" niche, not an oversight — see the module docs above.
+//! winner's `init` closure takes — **provided a winner is currently running
+//! at all**. `init` is arbitrary caller code — a closure that blocks on a
+//! syscall, gets preempted, or simply runs long makes every loser wait that
+//! long too. The intended usage (typically one OS reservation + one publish
+//! store) keeps the spin short in practice, but that is a caller obligation,
+//! not something this cell enforces: **`init` must be fast and
+//! non-blocking**, on top of the re-entry restriction below. A cell whose
+//! `INITIALIZING` owner has stopped running (see "Fork and signal safety"
+//! below) is waited on forever, not merely for a long time. This is a
+//! deliberate design constraint of the "usable inside the global allocator"
+//! niche, not an oversight — see the module docs above.
 //!
 //! ## Using this inside a `#[global_allocator]`
 //!
@@ -95,6 +98,31 @@
 //!   [`RacyPtrCell::get_or_try_init`]'s `# Panics` exists to make that bug
 //!   loud — it is a violated precondition, not a condition an allocator is
 //!   expected to survive.
+//!
+//! ### Fork and signal safety
+//!
+//! The rules above are all about what `init` *does*; two further hazards
+//! break the cell from **outside** `init`, with no misbehaving closure
+//! anywhere. **The cell is neither fork-safe nor async-signal-safe.**
+//! `INITIALIZING` is owned by a specific thread:
+//!
+//! - **`fork()` in a multithreaded process.** If one thread holds the
+//!   sentinel (running `init`) when another thread calls `fork()`, the child
+//!   process inherits a cell that reads `INITIALIZING` but has no thread that
+//!   can ever publish or roll it back — every subsequent caller in the child
+//!   spins forever. There is no reset API: `dbg_rollback_reenterable`'s entry
+//!   CAS requires the cell to already be `null` and is a no-op on a
+//!   sentinel-holding cell, by design.
+//! - **An allocating signal handler.** If a signal is delivered to the thread
+//!   that holds the sentinel and the handler allocates (directly, or
+//!   transitively — a `format!`, a `Vec`, a panic-hook path), the allocator
+//!   reaches the same cell from inside the handler, the claim CAS fails, and
+//!   the handler spins on a sentinel owned by the very thread it interrupted:
+//!   an unrecoverable single-thread self-deadlock.
+//!
+//! In a forking process, either publish every cell before the first `fork()`,
+//! or `fork()` only from a thread you know holds no cell and treat `exec()`
+//! in the child as mandatory. Do not allocate in a signal handler.
 //!
 //! There are **three** panic sites in total: that sentinel-collision
 //! `assert!`, an unwinding `init`, and the `align_of::<T>() >= 2` check in
