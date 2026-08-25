@@ -389,6 +389,99 @@ fn real_survives_oom_rollback_two_threads() {
 }
 
 // ============================================================================
+// Real-type property 7: `get()` never reports a cell held at INITIALIZING.
+// ============================================================================
+
+/// Pins [`RacyPtrCell::get`]'s own published contract directly, rather than
+/// inferring it from the exactly-once oracles: while a winner thread really
+/// holds the `INITIALIZING` sentinel, a concurrent reader's `get()` must
+/// return `None` — never `Some(sentinel)`, never `Some(null)` — and once the
+/// winner has published, `get()` must return that exact pointer.
+///
+/// The exactly-once tests above catch an `is_ready` regression only
+/// indirectly (a caller handed address `1` would fail on the `init_marker`
+/// dereference). This one states the reader-side contract as its own
+/// property: the reader calls `get()` and asserts, for every observation at
+/// every interleaving, that the value is either `None` or the real published
+/// pointer.
+///
+/// The winner deliberately does an observable store inside `init`, so the
+/// sentinel is genuinely held across a scheduling point loom can interleave
+/// the reader into.
+#[test]
+fn real_get_returns_none_while_a_winner_holds_the_sentinel() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(2);
+    builder.check(|| {
+        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let in_init = Arc::new(AtomicBool::new(false));
+
+        // Winner: holds the sentinel across an observable step inside init.
+        let (cw, iw) = (Arc::clone(&cell), Arc::clone(&in_init));
+        let w = thread::spawn(move || {
+            cw.get_or_try_init(|| {
+                // Announce that the sentinel is now held, giving the reader
+                // below a scheduling point to be interleaved into rather
+                // than landing entirely before the claim CAS.
+                iw.store(true, Ordering::Release);
+                Some(make_payload())
+            })
+            .expect("init must succeed (no OOM in this model)")
+        });
+
+        // Reader: only ever calls the public `get()`, never `get_or_try_init`.
+        let (cr, ir) = (Arc::clone(&cell), Arc::clone(&in_init));
+        let r = thread::spawn(move || {
+            // Two observations are enough — loom explores the scheduling,
+            // not the iteration count.
+            for _ in 0..2 {
+                let _init_started = ir.load(Ordering::Acquire);
+                match cr.get() {
+                    None => {
+                        // UNINIT or INITIALIZING — both correct for `get()`.
+                    }
+                    Some(p) => {
+                        let addr = p.as_ptr().addr();
+                        assert_ne!(addr, 0, "get() must never report null as Some");
+                        assert_ne!(
+                            addr, SENTINEL,
+                            "get() must never report the INITIALIZING sentinel as Some \
+                             — a reader would treat a mid-init cell as published"
+                        );
+                        // SAFETY: `get()` returned `Some`, so per its own
+                        // contract the winner's `Release` publish
+                        // happened-before this `Acquire` load and the pointee
+                        // is fully written.
+                        let marker = unsafe { (*p.as_ptr()).init_marker.load(Ordering::Relaxed) };
+                        assert_eq!(
+                            marker, 0xDEAD_BEEF,
+                            "a pointer handed out by get() must point at a fully \
+                             constructed pointee"
+                        );
+                    }
+                }
+            }
+        });
+
+        let winner = w.join().unwrap();
+        r.join().unwrap();
+
+        // After the winner joined the cell is READY, and `get()` must agree
+        // with what the winner published.
+        assert_eq!(
+            cell.get(),
+            Some(winner),
+            "once the winner has published, get() must return that exact pointer"
+        );
+
+        // SAFETY: `winner` is the single published pointer from
+        // `make_payload()`'s leak; both threads have joined, so it is
+        // reclaimed exactly once here.
+        unsafe { reclaim_payload(winner) };
+    });
+}
+
+// ============================================================================
 // Real-type property 6: dbg_rollback_reenterable vs. a concurrent real winner.
 // ============================================================================
 
@@ -447,13 +540,13 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
             if let Some(p) = r {
                 // `NonNull<Payload>`/`*mut Payload` is `!Send`, so the
                 // pointer itself cannot cross this thread boundary through
-                // the shared `Mutex<Vec<_>>` (task #709) -- expose its
-                // provenance instead of discarding it via a bare `.addr()`,
-                // so the address can be reconstructed later with
-                // `with_exposed_provenance_mut` (well-defined under the
-                // exposed-provenance model) rather than a provenance-losing
-                // `usize as *mut T` cast (UB under strict provenance).
-                pa.lock().unwrap().push(p.as_ptr().expose_provenance());
+                // the shared `Mutex<Vec<_>>`. Only the ADDRESS is recorded,
+                // purely so the assertions below can compare what each
+                // caller observed; it is never turned back into a pointer.
+                // Reclaim goes through `cell.get()` after the joins instead,
+                // which keeps the whole test strict-provenance-clean with no
+                // expose/with_exposed round trip at all.
+                pa.lock().unwrap().push(p.as_ptr().addr());
             }
         });
 
@@ -470,8 +563,9 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
                 Some(make_payload())
             });
             if let Some(p) = r {
-                // Same rationale as thread A above.
-                pb.lock().unwrap().push(p.as_ptr().expose_provenance());
+                // Same rationale as thread A above: address only, for
+                // comparison.
+                pb.lock().unwrap().push(p.as_ptr().addr());
             }
         });
 
@@ -510,30 +604,29 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
             "both real callers must observe the SAME published pointer"
         );
 
-        // Reclaim whatever was actually published (dedup — both callers may
-        // report the same address).
-        let mut unique = seen.clone();
-        unique.sort_unstable();
-        unique.dedup();
+        let published_addr = seen[0];
         drop(seen);
-        for addr in unique {
-            // SAFETY: `addr` came from `expose_provenance()` on a pointer
-            // returned by a successful `get_or_try_init` (a leaked
-            // `make_payload()` box), so `with_exposed_provenance_mut`
-            // reconstructs a pointer with that same exposed provenance --
-            // unlike a bare `addr as *mut Payload` cast, which strict
-            // provenance treats as having NO valid provenance and makes
-            // deallocating through it UB (task #709). Reclaimed exactly once
-            // here (dedup'd) after all threads joined.
-            unsafe {
-                reclaim_payload(
-                    core::ptr::NonNull::new(core::ptr::with_exposed_provenance_mut::<Payload>(
-                        addr,
-                    ))
-                    .unwrap(),
-                );
-            }
-        }
+
+        // Reclaim the ONE published payload through the cell itself. All
+        // threads have joined, so the cell is quiescent and `get()` hands
+        // back the published pointer with its provenance intact -- no
+        // expose/with_exposed round trip, and no dedup needed, because there
+        // is exactly one published pointer by the exactly-once assertion
+        // above.
+        let published_ptr = cell
+            .get()
+            .expect("the cell must be READY once both real callers succeeded");
+        assert_eq!(
+            published_ptr.as_ptr().addr(),
+            published_addr,
+            "cell.get() must hand back the same pointer the callers observed"
+        );
+        // SAFETY: `published_ptr` is the pointer a successful
+        // `get_or_try_init` published (a leaked `make_payload()` box), read
+        // straight out of the cell with its original provenance. Every
+        // thread has joined, so nothing else can touch it, and it is
+        // reclaimed exactly once here.
+        unsafe { reclaim_payload(published_ptr) };
     });
 }
 

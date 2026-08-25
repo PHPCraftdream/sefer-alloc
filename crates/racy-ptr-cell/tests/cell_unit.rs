@@ -62,7 +62,7 @@ fn init_runs_once_then_fast_path() {
 
 #[test]
 fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
-    // task #706: if `init` unwinds instead of returning, the RollbackGuard
+    // If `init` unwinds instead of returning, the RollbackGuard
     // must still roll the INITIALIZING sentinel back to null -- otherwise
     // every subsequent caller (this same cell, any thread) spins forever on
     // the loser path, since nothing else will ever move the cell out of
@@ -83,15 +83,14 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     // The subsequent call must succeed -- the cell recovered. Run it on a
     // background thread and bound OUR wait with a timeout: WITHOUT the
     // RollbackGuard fix, this call spins forever on the loser path (the
-    // sentinel never left INITIALIZING) -- exactly the livelock task #706
-    // exists to close. A bounded wait turns "hangs forever" into a reported
+    // sentinel never left INITIALIZING) -- exactly the livelock the
+    // rollback guard exists to close. A bounded wait turns "hangs forever" into a reported
     // test failure instead of wedging the whole test run; the spinning
     // thread (if the bug were present) would be orphaned, not joined, and
     // reaped at process exit.
     // `NonNull<Payload>` is `!Send`, so the worker thread does not send the
     // pointer itself across the channel at all -- only a completion signal
-    // (task #1360-class, first racy-ptr-cell publication audit finding F1:
-    // an earlier version of this test ferried the pointer's address as a
+    // (an earlier version of this test ferried the pointer's address as a
     // `usize` and reconstructed it via `with_exposed_provenance_mut`, with a
     // comment claiming this was clean under `-Zmiri-strict-provenance` --
     // false, since that flag forbids the exposed-provenance mechanism
@@ -102,17 +101,27 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     let cell = std::sync::Arc::new(cell);
     let cell2 = std::sync::Arc::clone(&cell);
     let (tx, rx) = std::sync::mpsc::channel();
-    let _handle = std::thread::spawn(move || {
+    let handle = std::thread::spawn(move || {
         let ok = cell2.get_or_try_init(|| Some(leak(0xABCD))).is_some();
         let _ = tx.send(ok);
     });
 
     let init_succeeded = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
         "get_or_try_init after a panicking init did not return within 5s \
-         -- the INITIALIZING sentinel is stuck forever (task #706's \
-         livelock is back)",
+         -- the INITIALIZING sentinel is stuck forever (the rollback \
+         guard's livelock is back)",
     );
     assert!(init_succeeded, "init must succeed");
+    // The signal proved the worker got past `get_or_try_init`; join it too,
+    // so the worker's own lifetime and any panic inside it are this test's
+    // business rather than something silently reaped at process exit. Only
+    // reachable on the green path -- if the sentinel were stuck, the
+    // `recv_timeout` above has already failed the test, and the spinning
+    // worker stays deliberately unjoined (joining it would hang forever,
+    // turning a reported failure back into a wedged run).
+    handle
+        .join()
+        .expect("the worker thread must not panic on the green path");
     let p = cell.get().expect("cell is ready after the signal above");
 
     assert!(cell.dbg_is_ready());
@@ -128,7 +137,7 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
 #[test]
 #[should_panic(expected = "init returned the null/sentinel address")]
 fn init_returning_the_sentinel_address_panics() {
-    // task #707: a SAFE init closure can construct and return the sentinel
+    // A SAFE init closure can construct and return the sentinel
     // address (1) -- `NonNull` only rules out null, not this specific
     // address. Without a release-active guard this would get published as
     // if it were READY, and every reader (this thread's own fast path
@@ -169,7 +178,7 @@ fn oom_rolls_back_and_retry_succeeds() {
 #[test]
 #[should_panic(expected = "RacyPtrCell<T> requires align_of::<T>() >= 2")]
 fn align_of_one_payload_panics_at_construction() {
-    // task #708 (1/2): the align_of::<T>() >= 2 guard in `new`/`default` is
+    // The align_of::<T>() >= 2 guard in `new`/`default` is
     // soundness/liveness-load-bearing -- an align-1 T could publish a real
     // pointer at address 1, which every reader would misread as the
     // INITIALIZING sentinel and spin on forever. This was documented (`#
