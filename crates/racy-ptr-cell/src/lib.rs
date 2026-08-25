@@ -30,16 +30,16 @@
 //!
 //! - **`no_std` and allocation-free** — the cell itself is one `AtomicPtr`; it
 //!   never touches the heap.
-//! - **safe inside a `#[global_allocator]`, on its success paths** — those use
-//!   NO `std` sync primitive (no `Mutex`, no parking, no `OnceLock`) and
-//!   allocate nothing, so they cannot re-enter the very allocator being
-//!   bootstrapped. Its two panic paths (the sentinel-collision `assert!`, an
-//!   unwinding `init`) go through the `std` panic runtime, which DOES
-//!   allocate — a `#[global_allocator]` consumer should treat both as
-//!   fatal-by-construction (`panic = "abort"` plus a non-allocating
-//!   `#[panic_handler]`). It is used by hand-rolled allocators, runtimes, and
-//!   bare-metal bootstraps that must publish a process-`'static` pointer
-//!   before any heap exists.
+//! - **usable inside a `#[global_allocator]`** — the cell's own non-panicking
+//!   operations use NO `std` sync primitive (no `Mutex`, no parking, no
+//!   `OnceLock`) and allocate nothing, so the cell itself cannot re-enter the
+//!   allocator being bootstrapped. That is a property of the CELL, not of a
+//!   whole `get_or_try_init` call: the caller's `init` closure runs inside
+//!   that call and carries hard obligations of its own — see
+//!   ["Using this inside a `#[global_allocator]`"](#using-this-inside-a-global_allocator)
+//!   below. Used by hand-rolled allocators, runtimes, and bare-metal
+//!   bootstraps that must publish a process-`'static` pointer before any heap
+//!   exists.
 //! - **fallible with rollback + re-race** — `OnceLock::get_or_init` cannot
 //!   fail; `get_or_try_init` poisons the cell on `Err`. This cell rolls back so
 //!   a later attempt (after the OS frees memory, say) can succeed.
@@ -55,8 +55,44 @@
 //! OS reservation + one publish store) keeps the spin short in practice, but
 //! that is a caller obligation, not something this cell enforces: **`init`
 //! must be fast and non-blocking**, on top of the re-entry restriction below.
-//! This is a deliberate design constraint of the "safe inside the global
+//! This is a deliberate design constraint of the "usable inside the global
 //! allocator" niche, not an oversight — see the module docs above.
+//!
+//! ## Using this inside a `#[global_allocator]`
+//!
+//! The cell is built for this niche, but the niche has hard rules that are the
+//! CALLER's to keep — the cell can enforce none of them:
+//!
+//! - **`init` must not allocate**, directly or transitively, and must not
+//!   otherwise re-enter the allocator being bootstrapped. `init` runs while
+//!   this thread holds the `INITIALIZING` sentinel; an allocation from inside
+//!   it re-enters an allocator whose own bootstrap is mid-flight.
+//! - **`init` must not block** — every loser thread spins for exactly as long
+//!   as `init` runs (see "The spin-wait" above).
+//! - **`init` must not panic, and no panic may unwind through a `GlobalAlloc`
+//!   method** — [unwinding out of a global allocator is undefined
+//!   behaviour][ga]. This crate's rollback guard keeps the CELL consistent
+//!   across an unwinding `init` (the sentinel is rolled back, not left wedged),
+//!   but it cannot make the unwind itself sound once the frame below is
+//!   `GlobalAlloc::alloc`.
+//! - **An `init` that returns the sentinel address is a caller bug, not a
+//!   recoverable error.** The release-active `assert!` documented under
+//!   [`RacyPtrCell::get_or_try_init`]'s `# Panics` exists to make that bug
+//!   loud — it is a violated precondition, not a condition an allocator is
+//!   expected to survive.
+//!
+//! There are **three** panic sites in total: that sentinel-collision
+//! `assert!`, an unwinding `init`, and the `align_of::<T>() >= 2` check in
+//! [`RacyPtrCell::new`] / [`RacyPtrCell::default`] (a const-eval failure in
+//! the documented `static` form; a runtime panic when reached from a non-const
+//! context). All three go through the panic runtime, which allocates in a
+//! `std` build. Make them fatal instead — and note these are **different
+//! mechanisms for different link environments, not two halves of one recipe**:
+//! a `std` binary sets `panic = "abort"` in its profile (the panic runtime
+//! belongs to `std`, so no crate can supply its own `#[panic_handler]` there);
+//! a `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
+//!
+//! [ga]: https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety
 //!
 //! ## Sentinel encoding
 //!
@@ -375,6 +411,11 @@ impl<T> RacyPtrCell<T> {
     /// "spin-wait" section) — there is no bounded-latency guarantee from the
     /// cell itself, only from the caller keeping `init` short.
     ///
+    /// Calling this from inside a `#[global_allocator]` adds further hard
+    /// obligations on `init` (no allocation, no unwind) — see the crate docs'
+    /// ["Using this inside a `#[global_allocator]`"](crate#using-this-inside-a-global_allocator)
+    /// section.
+    ///
     /// # Panics
     ///
     /// Panics if the winning `init` call returns `Some(ptr)` where `ptr`'s
@@ -388,7 +429,10 @@ impl<T> RacyPtrCell<T> {
     /// propagates out of `get_or_try_init` and the cell is left in `UNINIT`
     /// (not wedged in `INITIALIZING`) — a later call, on any thread, may
     /// retry `init`. This mirrors the OOM/`None` rollback above; the only
-    /// difference is how the winner exits.
+    /// difference is how the winner exits. Note what this does and does not
+    /// buy: it keeps the CELL consistent, but it does not make the unwind
+    /// itself sound when the frame below is a `GlobalAlloc` method, where
+    /// unwinding is undefined behaviour regardless of this cell's state.
     pub fn get_or_try_init<F>(&self, mut init: F) -> Option<NonNull<T>>
     where
         F: FnMut() -> Option<NonNull<T>>,

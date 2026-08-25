@@ -7,12 +7,14 @@ It fills the niche `std::sync::OnceLock` cannot:
 
 - **`no_std`, allocation-free** — the cell is one `AtomicPtr`; it never touches
   the heap.
-- **safe inside a `#[global_allocator]`, on its success paths** — no `std`
-  sync primitive, no parking, no allocation, so it can publish a
-  process-`'static` pointer *before any heap exists* without re-entering the
-  allocator it is bootstrapping. Its two panic paths (sentinel-collision,
-  unwinding `init`) allocate under `std` and are NOT reentrancy-safe — treat
-  both as fatal-by-construction.
+- **usable inside a `#[global_allocator]`** — the cell's own non-panicking
+  operations use no `std` sync primitive, no parking and no allocation, so it
+  can publish a process-`'static` pointer *before any heap exists* without
+  itself re-entering the allocator it is bootstrapping. That is a property of
+  the cell, not of a whole call: your `init` closure runs inside it and must
+  not allocate, block, or unwind — see
+  [Using this inside a `#[global_allocator]`](#using-this-inside-a-global_allocator)
+  below before adopting it there.
 - **fallible with rollback + re-race** — on winner OOM the sentinel rolls back
   to `null` and losers re-race the CAS (unlike `OnceLock`, which poisons/blocks
   a failed initialiser).
@@ -22,9 +24,39 @@ static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();
 
 let chunk: Option<NonNull<Chunk>> = CHUNK.get_or_try_init(|| {
     // OS reservation etc.; return None on OOM to roll back and let losers re-race.
+    // Inside a #[global_allocator], this closure must not allocate, block, or
+    // unwind -- see the section below.
     reserve_and_init() // -> Option<NonNull<Chunk>>
 });
 ```
+
+## Using this inside a `#[global_allocator]`
+
+The cell is built for this niche, but the niche has hard rules that are
+**yours** to keep — the cell can enforce none of them:
+
+- **`init` must not allocate**, directly or transitively, and must not
+  otherwise re-enter the allocator being bootstrapped. It runs while your
+  thread holds the `INITIALIZING` sentinel.
+- **`init` must not block** — every loser thread spins for exactly as long as
+  `init` runs. There is no bounded-latency guarantee.
+- **`init` must not panic, and no panic may unwind through a `GlobalAlloc`
+  method** — [unwinding out of a global allocator is undefined
+  behaviour](https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety).
+  The crate's rollback guard keeps the *cell* consistent across an unwinding
+  `init`, but it cannot make the unwind itself sound.
+- **An `init` that returns the sentinel address (`1`) is a caller bug**, caught
+  by a release-active `assert!` — a violated precondition, not a recoverable
+  allocator error.
+
+Three panic sites exist in total: that sentinel-collision `assert!`, an
+unwinding `init`, and the `align_of::<T>() >= 2` check in `new`/`default`. All
+three go through the panic runtime, which allocates in a `std` build. Make them
+fatal instead — and note these are **different mechanisms for different link
+environments, not two halves of one recipe**: a `std` binary sets
+`panic = "abort"` in its profile (the panic runtime belongs to `std`, so no
+crate can supply its own `#[panic_handler]` there); a `no_std` binary supplies
+a non-allocating `#[panic_handler]` itself.
 
 ## The two rules people get wrong
 

@@ -14,11 +14,16 @@ before it.
 - **`RacyPtrCell<T>`** — a lazy, CAS-published pointer cell implementing the
   three-state machine `UNINIT(null) → INITIALIZING(sentinel) → READY(real
   pointer)` over a **single** `AtomicPtr<T>`. `no_std`, allocation-free (the
-  cell is one word and never touches the heap), and safe to use inside a
-  `#[global_allocator]`: it uses no `std` sync primitive — no `Mutex`, no
-  parking, no `OnceLock` — so it cannot re-enter the allocator it is
-  bootstrapping, and can publish a process-`'static` pointer before any heap
-  exists.
+  cell is one word and never touches the heap), and usable inside a
+  `#[global_allocator]`: the cell's own non-panicking operations use no `std`
+  sync primitive — no `Mutex`, no parking, no `OnceLock` — so the cell itself
+  cannot re-enter the allocator it is bootstrapping, and can publish a
+  process-`'static` pointer before any heap exists. That is a property of the
+  cell, not of a whole call: the caller's `init` closure runs inside
+  `get_or_try_init` and must not allocate, block, or unwind — unwinding out of
+  a `GlobalAlloc` method is undefined behaviour. See the crate docs'
+  "Using this inside a `#[global_allocator]`" section for the full caller
+  contract.
 - **`RacyPtrCell::get_or_try_init(init)`** — fallible initialisation with OOM
   rollback and loser re-race. The thread that wins the `null → sentinel` CAS
   runs the caller's init closure exactly once and publishes the resulting
