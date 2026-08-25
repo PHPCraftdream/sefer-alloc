@@ -399,6 +399,7 @@ grep -cE '^\| *[0-9]+[a-z]? *\|' docs/CORRECTNESS_OPEN_ITEMS.md
 | 124 | `TRACKED_publish_readiness.md` |
 | 125 | `TRACKED_publish_readiness.md` |
 | 126 | `TRACKED_publish_readiness.md` |
+| 127 | `TRACKED_publish_readiness.md` |
 
 **Citing an item going forward:** the established convention --
 `` `docs/CORRECTNESS_OPEN_ITEMS.md` item N `` — is UNCHANGED and remains
