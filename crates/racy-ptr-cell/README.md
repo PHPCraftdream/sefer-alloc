@@ -76,9 +76,11 @@ In a forking process, publish every cell before the first `fork()`, or
 Do not allocate in a signal handler.
 
 Three panic sites exist in total: that sentinel-collision `assert!`, an
-unwinding `init`, and the `align_of::<T>() >= 2` check in `new`/`default`. All
-three go through the panic runtime, which allocates in a `std` build — and the
-two link environments need genuinely different mitigations, **not a shared
+unwinding `init`, and the `align_of::<T>() >= 2` check in `new`/`default` (a
+const-eval failure in the documented `static` form — which never reaches a
+panic runtime at all; a runtime panic when reached from a non-const context).
+The two that reach the panic runtime allocate in a `std` build, and the two
+link environments need genuinely different mitigations, **not a shared
 recipe**:
 
 - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself. This
@@ -98,8 +100,12 @@ recipe**:
   `unwrap`/`expect`/`assert_eq!`/`panic!("{}", …)` allocate before any hook
   runs — measured: 2 allocations for `Result::unwrap`, 4 for `assert_eq!`,
   with the same non-allocating hook that reaches 0 for a bare-`&'static str`
-  panic. Only a panic whose message is a bare `&'static str` (as this crate's
-  own three panic sites are) is fully covered. **The only mitigation that
+  panic. Only a panic whose message is a bare `&'static str` is fully
+  covered. The crate's own two `assert!`s (the sentinel-collision check and
+  the `align_of::<T>() >= 2` check) are of that shape and measure 0
+  allocations before the hook; **the third panic site above — an unwinding
+  `init` — is your code, and its message is whatever you wrote**, so it is
+  covered only if you keep it a bare literal. **The only mitigation that
   covers a formatted message is an `init` that cannot panic at all.** Note
   also that `panic = "abort"` compiles this crate's internal rollback guard
   out entirely (it is unwind-only) — under this profile the cell-consistency

@@ -127,10 +127,11 @@
 //! There are **three** panic sites in total: that sentinel-collision
 //! `assert!`, an unwinding `init`, and the `align_of::<T>() >= 2` check in
 //! [`RacyPtrCell::new`] / [`RacyPtrCell::default`] (a const-eval failure in
-//! the documented `static` form; a runtime panic when reached from a non-const
-//! context). All three go through the panic runtime, which allocates in a
-//! `std` build — and the two link environments need genuinely different
-//! mitigations, **not a shared recipe**:
+//! the documented `static` form — which never reaches a panic runtime at
+//! all; a runtime panic when reached from a non-const context). The two
+//! that reach the panic runtime allocate in a `std` build, and the two link
+//! environments need genuinely different mitigations, **not a shared
+//! recipe**:
 //!
 //! - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
 //!   This closes the hazard completely: no handler, no allocation.
@@ -154,9 +155,14 @@
 //!   itself allocates — measured: 2 allocations for `Result::unwrap`, 4 for
 //!   `assert_eq!`, with the same non-allocating hook that reaches 0 for a
 //!   bare-`&'static str` panic. Only a panic whose message is a bare
-//!   `&'static str` (as this crate's own three panic sites are) is fully
-//!   covered by the `set_hook` mitigation. **The only mitigation that covers
-//!   a formatted message is an `init` that cannot panic at all.** Note also
+//!   `&'static str` is fully covered by the `set_hook` mitigation. The
+//!   crate's own two `assert!`s (the sentinel-collision check and the
+//!   `align_of::<T>() >= 2` check) are of that shape and measure 0
+//!   allocations before the hook; **the third panic site above — an
+//!   unwinding `init` — is your code, and its message is whatever you
+//!   wrote**, so it is covered only if you keep it a bare literal. **The
+//!   only mitigation that covers a formatted message is an `init` that
+//!   cannot panic at all.** Note also
 //!   that `panic = "abort"` compiles the crate's internal rollback guard out
 //!   entirely (it is unwind-only) — under this profile the cell-consistency
 //!   guarantee below comes from the process dying, not from the guard.
