@@ -1505,6 +1505,26 @@ mod platform {
     /// on the stack inside the initializer, so populating the topology touches
     /// no `Vec`/`Box`/heap at all, and the reentrancy hazard is structurally
     /// removed rather than guarded against.
+    ///
+    /// task #1340 (nineteenth review P3-3): the task #777 paragraph above
+    /// analysed and eliminated HEAP use; the initializer's STACK use — the
+    /// axis that rewrite did not consider — is documented here so a
+    /// downstream consumer running `current_node()` on a deliberately
+    /// small thread has the fact. The closure's named locals are the 8 KiB
+    /// `ReverseIndex` (`[u8; MAX_INDEXED_CPUS]` = 8192 bytes), the 4 KiB
+    /// cpumap scratch buffer (`[u8; CPUMAP_READ_BUF_LEN]` = 4096 bytes),
+    /// and the 64-byte sysfs path buffer (plus the small frames of
+    /// `format_sysfs_path`/`read_cpumap_into`), and returning the index by
+    /// move into the `OnceLock` cell can add a second transient 8 KiB copy
+    /// when that move is not elided (Rust does not guarantee NRVO). Peak
+    /// frame: 12,352 bytes of named locals (~12 KiB) best case, ~20 KiB
+    /// worst — negligible against the default 2 MiB Rust thread stack, but
+    /// a stack overflow inside a `OnceLock` initializer ABORTS the process
+    /// (not a recoverable `Result`) — the same failure class the
+    /// allocation-free rewrite above eliminated on the heap axis, stated
+    /// here for the stack axis. Budget for it if calling `current_node()`
+    /// from a thread built with a small custom
+    /// `std::thread::Builder::stack_size(...)`.
     static TOPOLOGY: std::sync::OnceLock<crate::cpumap::ReverseIndex> = std::sync::OnceLock::new();
 
     fn topology() -> &'static crate::cpumap::ReverseIndex {

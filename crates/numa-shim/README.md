@@ -95,7 +95,7 @@ aligned-vmem = "0.2"
 ```
 
 ```rust
-use numa_shim::{current_node, NodeId, ReserveNumaError, reserve_preferred_on_node};
+use numa_shim::{current_node, NodeId, reserve_preferred_on_node};
 use aligned_vmem::{page_size, PAGE};
 
 // Reserve fresh memory with a NUMA preference installed BEFORE the first
@@ -120,6 +120,7 @@ let r = match current_node() {
         aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
     }
 };
+drop(r);
 
 // Best-effort fallback with more detailed error handling:
 let r = match current_node() {
@@ -144,6 +145,7 @@ let r = match current_node() {
         aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)).expect("OOM")
     }
 };
+drop(r);
 ```
 
 Without this feature, `numa-shim` has **zero runtime dependencies**.
@@ -167,7 +169,7 @@ transitive dependency through Cargo's additive feature-unification, and never
 
 ## Public API
 
-```rust
+```text
 /// Sentinel: no NUMA node / unsupported platform (detection-side interop only; the reservation API takes `NodeId`, never the sentinel).
 pub const NO_NODE: u32 = u32::MAX;
 

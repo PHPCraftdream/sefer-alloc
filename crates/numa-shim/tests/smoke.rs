@@ -475,9 +475,17 @@ fn reserve_preferred_on_node_large_align_round_trip() {
 
         // Note: there is a residual raciness — cargo-test runs tests in parallel
         // threads, so a foreign mapping could theoretically land inside the just-
-        // freed region between `drop(r)` and the probes. This is unlikely because
-        // the four probes are megabytes apart while every other reservation in
-        // this test binary is tiny, and the window is sub-millisecond.
+        // freed region between `drop(r)` and the probes. task #1340 (nineteenth
+        // review P3-2) corrects this note's old "unlikely because the four
+        // probes are megabytes apart" reasoning: probe spacing is not a
+        // mitigation — an 8 MiB freshly-freed hole comfortably fits another
+        // test's whole mapping wherever the OS places it (the Linux twin note
+        // below works the placement question out in detail for mmap's
+        // top-down default). What actually keeps this oracle stable is the
+        // sub-millisecond window plus the absence of concurrent mapping
+        // creation inside it in this test binary; if it ever trips, suspect a
+        // placement collision with a concurrent test's mapping, not a failed
+        // release.
     }
 
     // Linux oracle: read /proc/self/maps and assert NO mapping covers ANY probe.
@@ -505,9 +513,24 @@ fn reserve_preferred_on_node_large_align_round_trip() {
 
         // Note: there is a residual raciness — cargo-test runs tests in parallel
         // threads, so a foreign mapping could theoretically land inside the just-
-        // freed region between `drop(r)` and the read. This is unlikely because
-        // the four probes are megabytes apart while every other reservation in
-        // this test binary is tiny, and the window is sub-millisecond.
+        // freed region between `drop(r)` and the read. task #1340 (nineteenth
+        // review P3-2) corrects this note's old reasoning, which assumed a
+        // concurrent mmap lands "somewhere in megabytes of slack": under
+        // Linux's DEFAULT layout (`arch_get_unmapped_area_topdown`,
+        // x86_64/aarch64) a new anonymous mapping takes the top of the
+        // highest sufficient gap — and immediately after `drop(r)` the
+        // just-freed ~8 MiB region IS that gap (everything above it is
+        // still mapped; the top-down allocator packs downward from
+        // mmap_base). A concurrent mmap in the window therefore lands
+        // ending exactly at `raw + over` — covering probe #4, the HIGHEST
+        // probe, preferentially — and such mappings are not hypothetical:
+        // libtest spawns a fresh thread per test, and each thread stack is
+        // a multi-MiB anonymous mapping that fits this hole. The oracle's
+        // real protection is only the sub-millisecond window and this
+        // binary's lack of concurrent mmap activity inside it — a risk
+        // that silently grows if this file gains more mmap-performing
+        // tests. If it ever trips, suspect a placement collision with a
+        // concurrent test's mapping, not a failed release.
     }
 }
 
