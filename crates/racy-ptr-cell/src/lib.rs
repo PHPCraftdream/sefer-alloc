@@ -475,10 +475,17 @@ impl<T> RacyPtrCell<T> {
             match self.ptr.compare_exchange(
                 core::ptr::null_mut(),
                 Self::sentinel(),
-                // Success `Acquire`: pairs with a later winner's `Release`
-                // publish observed by future `Acquire` readers. (We are that
-                // winner here; the pairing matters for the fast-path/loser
-                // loads.)
+                // Success `Acquire`: synchronises-with the `Release` rollback
+                // store (OOM at :544, or the unwind guard's `Drop`) of a
+                // PREVIOUS winner that abandoned the cell — the only prior
+                // `Release` stores that can leave it `null`. It says nothing
+                // about the publish this thread is about to perform: an
+                // acquire cannot pair with a release that has not happened
+                // yet. The load-bearing pair for the pointee is this winner's
+                // own `Release` publish below against every reader's
+                // `Acquire` load. Whether `Relaxed` would suffice here (a
+                // rollback leaves no payload state to acquire) is an open
+                // perf question, not settled by this comment.
                 Ordering::Acquire,
                 // Failure `Relaxed`: we re-load in the spin loop below.
                 Ordering::Relaxed,
