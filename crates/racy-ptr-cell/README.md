@@ -31,6 +31,14 @@ let chunk: Option<NonNull<Chunk>> = CHUNK.get_or_try_init(|| {
 });
 ```
 
+**One rule applies to every user, allocator or not:** the `init` closure runs
+while your thread holds the `INITIALIZING` sentinel, so it must not wait on
+that same cell — and the restriction is **transitive**. Several cells form a
+lock-order graph: thread 1 wins `A` and its `init` initialises `B` while
+thread 2 wins `B` and its `init` initialises `A`, and both spin forever at
+100% CPU with no direct self-recursion anywhere. Acquire multiple cells in a
+fixed global order, exactly as you would locks.
+
 ## Using this inside a `#[global_allocator]`
 
 The cell is built for this niche, but the niche has hard rules that are

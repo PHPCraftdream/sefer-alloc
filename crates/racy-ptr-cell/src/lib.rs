@@ -79,6 +79,11 @@
 //!   it re-enters an allocator whose own bootstrap is mid-flight.
 //! - **`init` must not block** — every loser thread spins for exactly as long
 //!   as `init` runs (see "The spin-wait" above).
+//! - **`init` must not wait on another cell that can wait back** — the
+//!   re-entry restriction is transitive, and several cells form a lock-order
+//!   graph. An allocator bootstrap is exactly the shape that produces this
+//!   (many per-chunk cells plus a sidecar path); see
+//!   [`RacyPtrCell::get_or_try_init`]'s own docs for the two-cell deadlock.
 //! - **`init` must not panic, and no panic may unwind through a `GlobalAlloc`
 //!   method** — [unwinding out of a global allocator is undefined
 //!   behaviour][ga]. This crate's rollback guard keeps the CELL consistent
@@ -416,6 +421,14 @@ impl<T> RacyPtrCell<T> {
     /// it runs while this thread holds the `INITIALIZING` sentinel, so it must
     /// not itself call back into `get_or_try_init` on the SAME cell (that would
     /// spin forever — the current thread is the only one able to publish).
+    ///
+    /// The restriction is **transitive, and multiple cells form a lock-order
+    /// graph**: `init` must not wait, through any chain of calls, on a cell
+    /// whose own initialiser can wait on this one. Two cells are enough for a
+    /// deadlock with no direct self-recursion anywhere — thread 1 wins `A` and
+    /// its `init` initialises `B`, while thread 2 wins `B` and its `init`
+    /// initialises `A`; both spin forever at 100% CPU. Acquire multiple cells
+    /// in a fixed global order, exactly as you would locks.
     ///
     /// `init` must also be fast and non-blocking: every loser thread spins for
     /// exactly as long as the winner's `init` call takes (see the module docs'
