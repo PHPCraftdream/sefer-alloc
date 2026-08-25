@@ -587,6 +587,14 @@ impl<T> RacyPtrCell<T> {
     /// winning attempt. The returned pointer is never null and never the
     /// sentinel.
     ///
+    /// `init` is [`FnOnce`], not `FnMut`, because ONE call to this method
+    /// invokes it **at most once**: whichever way the winner arm exits
+    /// (publish, OOM rollback, or unwind) it leaves the method, and the
+    /// loser arm never calls `init` at all — a loser that falls out of the
+    /// spin on a rollback re-races the CAS and, if it wins, is making its
+    /// own first and only call. `FnOnce` is therefore the accurate bound,
+    /// and it lets you pass a closure that consumes what it captures.
+    ///
     /// `init` must be reentrancy-safe with respect to whatever the cell guards:
     /// it runs while this thread holds the `INITIALIZING` sentinel, so it must
     /// not itself call back into `get_or_try_init` on the SAME cell (that would
@@ -627,9 +635,12 @@ impl<T> RacyPtrCell<T> {
     /// buy: it keeps the CELL consistent, but it does not make the unwind
     /// itself sound when the frame below is a `GlobalAlloc` method, where
     /// unwinding is undefined behaviour regardless of this cell's state.
-    pub fn get_or_try_init<F>(&self, mut init: F) -> Option<NonNull<T>>
+    #[must_use = "`None` means `init` reported OOM and the cell was rolled \
+                  back to UNINIT — it is NOT initialised, and discarding \
+                  this hides the failure"]
+    pub fn get_or_try_init<F>(&self, init: F) -> Option<NonNull<T>>
     where
-        F: FnMut() -> Option<NonNull<T>>,
+        F: FnOnce() -> Option<NonNull<T>>,
     {
         loop {
             // Fast path: already READY.

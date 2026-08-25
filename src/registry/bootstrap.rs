@@ -325,9 +325,9 @@ mod loom_shim {
             }
         }
 
-        pub(crate) fn get_or_try_init<F>(&self, mut init: F) -> Option<NonNull<T>>
+        pub(crate) fn get_or_try_init<F>(&self, init: F) -> Option<NonNull<T>>
         where
-            F: FnMut() -> Option<NonNull<T>>,
+            F: FnOnce() -> Option<NonNull<T>>,
         {
             let sentinel = core::ptr::without_provenance_mut::<T>(SENTINEL_INITIALIZING);
             loop {
