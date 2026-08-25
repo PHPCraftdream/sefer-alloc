@@ -1563,10 +1563,31 @@ mod platform {
     /// from Linux `asm-generic/fcntl.h` (`#define O_CLOEXEC 02000000`
     /// octal), identical on x86_64 (whose arch-specific `fcntl.h` does
     /// not override it) and aarch64 (which uses the asm-generic header
-    /// wholesale). This is the verification for the flag: actual
-    /// close-on-exec kernel behavior is not testable without a real
-    /// fork+exec harness, which is out of scope.
+    /// wholesale), and on every other real rustc Linux target arch
+    /// EXCEPT sparc/sparc64 (task #1339, nineteenth review P3-1):
+    /// sparc's UAPI defines `O_CLOEXEC` as `0x400000`, so `0o2000000`
+    /// (`0x80000`) is not close-on-exec there at all — the hardening
+    /// would be silently absent with nothing signaling it. (alpha and
+    /// parisc, where `0o2000000` instead means `O_DIRECT`, diverge too,
+    /// but neither is a real rustc target — verified against
+    /// `rustc --print target-list`; hexagon's only Linux target,
+    /// hexagon-unknown-linux-musl, uses the asm-generic value and is
+    /// unaffected.) On sparc/sparc64 the constant is therefore compiled
+    /// to `0` below: the fd opens WITHOUT close-on-exec — a
+    /// knowingly-inert hardening, honest in code — rather than passing
+    /// an unrelated bit to `open(2)`. This is the verification for the
+    /// flag: actual close-on-exec kernel behavior is not testable
+    /// without a real fork+exec harness, which is out of scope.
+    #[cfg(not(any(target_arch = "sparc", target_arch = "sparc64")))]
     const O_CLOEXEC: core::ffi::c_int = 0o2000000;
+    /// task #1339 (nineteenth review P3-1): sparc/sparc64's UAPI
+    /// `O_CLOEXEC` is `0x400000`, not the asm-generic `0o2000000` the
+    /// sibling constant above uses — passing that bit would not set
+    /// close-on-exec there. Open without the flag instead of with a
+    /// wrong one; see the sibling constant's doc comment for the full
+    /// arch-by-arch rationale.
+    #[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
+    const O_CLOEXEC: core::ffi::c_int = 0;
 
     /// Open the cpumap file at `path` and read its complete contents into
     /// the caller-supplied fixed buffer `out`, returning the byte count.
@@ -1601,7 +1622,9 @@ mod platform {
         let fd = loop {
             // Flags: `O_RDONLY` (0 on Linux) | `O_CLOEXEC` — read-only with
             // close-on-exec (task #1327, seventeenth review P3-2); O_RDONLY
-            // being 0 means the value below is exactly that combination.
+            // being 0 means the value below is exactly that combination
+            // (on sparc/sparc64 `O_CLOEXEC` compiles to `0`, so this is
+            // plain `O_RDONLY` — task #1339, nineteenth review P3-1).
             // SAFETY: `path` is a valid nul-terminated C string constructed
             // by the caller. `open` is a POSIX syscall; we check for a
             // negative return on error.
