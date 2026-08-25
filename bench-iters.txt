@@ -4,11 +4,9 @@
 # Counts are STATIC across runs so run wall-time is a comparable speed signal.
 # Hand-edit an N to pin/nudge it; delete a line to force recalibration.
 
-numa_bench::bind_range/no_node_noop = 135135688
-numa_bench::bind_range/page_to_node_7 = 92667997
-numa_bench::bind_range/zero_len_noop = 144500459
-numa_bench::current_node/first_call = 60997699
-numa_bench::current_node/warm_call = 60567349
+numa_bench::current_node/first_call = 4089913
+numa_bench::current_node/warm_call = 4071783
+numa_bench::reserve_preferred_on_node/invalid_node_error = 3845036
 racy_ptr_cell_bench::get/hot = 270839749
 racy_ptr_cell_bench::get_or_try_init/cold = 4404261
 racy_ptr_cell_bench::get_or_try_init/warm_already_ready = 185011429
