@@ -353,12 +353,47 @@ impl<T> RacyPtrCell<T> {
     #[must_use = "`None` means `init` reported OOM and the cell was rolled \
                   back to UNINIT — it is NOT initialised, and discarding \
                   this hides the failure"]
+    #[inline]
     pub fn get_or_try_init<F>(&self, init: F) -> Option<NonNull<T>>
     where
         F: FnOnce() -> Option<NonNull<T>>,
     {
+        // Fast path, and nothing else: one `Acquire` load plus the readiness
+        // test. Everything the already-published case does NOT need — the
+        // claim CAS, the rollback guard, the release-active `assert!`, the
+        // loser spin, the re-race loop — lives in `init_slow`, which is
+        // `#[cold] #[inline(never)]` so none of it is inlined into a
+        // caller that only ever hits this branch.
+        let p = self.ptr.load(Ordering::Acquire);
+        if Self::is_ready(p) {
+            // SAFETY: `is_ready(p)` just proved `p` is non-null (neither the
+            // `null` UNINIT value nor the `SENTINEL_INITIALIZING` marker), so
+            // `p` is a real published pointer.
+            return Some(unsafe { NonNull::new_unchecked(p) });
+        }
+        self.init_slow(init)
+    }
+
+    /// The full `UNINIT -> INITIALIZING -> READY` protocol: claim CAS, init
+    /// closure, publish/rollback, loser spin, re-race. Split out of
+    /// [`RacyPtrCell::get_or_try_init`] so the already-READY fast path stays
+    /// small enough to inline on its own; correctness is unchanged, and the
+    /// re-checked fast path at the top of the loop below is still needed
+    /// here (a re-racing loser re-enters it after a rollback).
+    ///
+    /// Note this does NOT deduplicate monomorphised code: the slow path is
+    /// still generic over `F`, so one copy exists per closure type. It only
+    /// keeps that copy out of the caller's hot path.
+    #[cold]
+    #[inline(never)]
+    fn init_slow<F>(&self, init: F) -> Option<NonNull<T>>
+    where
+        F: FnOnce() -> Option<NonNull<T>>,
+    {
         loop {
-            // Fast path: already READY.
+            // Re-checked fast path: a loser that fell out of the spin on a
+            // rollback, or lost the CAS to a winner that has since
+            // published, lands here.
             let p = self.ptr.load(Ordering::Acquire);
             if Self::is_ready(p) {
                 // SAFETY: `is_ready(p)` just proved `p` is non-null (neither
@@ -380,9 +415,20 @@ impl<T> RacyPtrCell<T> {
                 // acquire cannot pair with a release that has not happened
                 // yet. The load-bearing pair for the pointee is this winner's
                 // own `Release` publish below against every reader's
-                // `Acquire` load. Whether `Relaxed` would suffice here (a
-                // rollback leaves no payload state to acquire) is an open
-                // perf question, not settled by this comment.
+                // `Acquire` load.
+                //
+                // Whether `Relaxed` would suffice here — a rollback leaves no
+                // payload state for a new winner to acquire — remains an open
+                // question, and is DELIBERATELY not acted on. Weakening it
+                // needs BOTH a loom counterfactual proving the weaker form
+                // sound and a measurement showing it is worth anything, and
+                // the second half is unobtainable on the hardware this crate
+                // is developed on: `Acquire` on x86-64 is a plain load, so a
+                // local A/B can only ever report noise. The same applies to
+                // the loser spin's per-iteration `Acquire` below. Both stay
+                // as they are — over-strong, never under-strong — until
+                // someone can measure them on a weakly-ordered target
+                // (AArch64/ARM) with a model to back the change.
                 Ordering::Acquire,
                 // Failure `Relaxed`: we re-load in the spin loop below.
                 Ordering::Relaxed,
