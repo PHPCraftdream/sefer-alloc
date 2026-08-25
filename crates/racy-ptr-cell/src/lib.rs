@@ -30,11 +30,16 @@
 //!
 //! - **`no_std` and allocation-free** — the cell itself is one `AtomicPtr`; it
 //!   never touches the heap.
-//! - **safe inside a `#[global_allocator]`** — it uses NO `std` sync primitive
-//!   (no `Mutex`, no parking, no `OnceLock`), so it cannot re-enter the very
-//!   allocator it is bootstrapping. It is used by hand-rolled allocators,
-//!   runtimes, and bare-metal bootstraps that must publish a process-`'static`
-//!   pointer before any heap exists.
+//! - **safe inside a `#[global_allocator]`, on its success paths** — those use
+//!   NO `std` sync primitive (no `Mutex`, no parking, no `OnceLock`) and
+//!   allocate nothing, so they cannot re-enter the very allocator being
+//!   bootstrapped. Its two panic paths (the sentinel-collision `assert!`, an
+//!   unwinding `init`) go through the `std` panic runtime, which DOES
+//!   allocate — a `#[global_allocator]` consumer should treat both as
+//!   fatal-by-construction (`panic = "abort"` plus a non-allocating
+//!   `#[panic_handler]`). It is used by hand-rolled allocators, runtimes, and
+//!   bare-metal bootstraps that must publish a process-`'static` pointer
+//!   before any heap exists.
 //! - **fallible with rollback + re-race** — `OnceLock::get_or_init` cannot
 //!   fail; `get_or_try_init` poisons the cell on `Err`. This cell rolls back so
 //!   a later attempt (after the OS frees memory, say) can succeed.

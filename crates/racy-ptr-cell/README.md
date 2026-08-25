@@ -7,9 +7,12 @@ It fills the niche `std::sync::OnceLock` cannot:
 
 - **`no_std`, allocation-free** — the cell is one `AtomicPtr`; it never touches
   the heap.
-- **safe inside a `#[global_allocator]`** — no `std` sync primitive, no
-  parking, no reentrancy, so it can publish a process-`'static` pointer *before
-  any heap exists* without re-entering the allocator it is bootstrapping.
+- **safe inside a `#[global_allocator]`, on its success paths** — no `std`
+  sync primitive, no parking, no allocation, so it can publish a
+  process-`'static` pointer *before any heap exists* without re-entering the
+  allocator it is bootstrapping. Its two panic paths (sentinel-collision,
+  unwinding `init`) allocate under `std` and are NOT reentrancy-safe — treat
+  both as fatal-by-construction.
 - **fallible with rollback + re-race** — on winner OOM the sentinel rolls back
   to `null` and losers re-race the CAS (unlike `OnceLock`, which poisons/blocks
   a failed initialiser).
