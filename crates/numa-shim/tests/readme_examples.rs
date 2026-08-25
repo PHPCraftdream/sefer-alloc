@@ -35,6 +35,27 @@
 //! example now ends each of its two demonstration blocks with an
 //! explicit `drop(r);`.
 //!
+//! ## task #1341: the `src/lib.rs` doc snippets (twentieth review F1)
+//!
+//! The twentieth independent review
+//! (`docs/reviews/2026-08-25-021741-numa-shim-publication-audit-run-17-Sol-codex.md`,
+//! finding F1 — its single blocking P2) found that two public rustdoc
+//! examples in `src/lib.rs` did not compile, invisible to every gate
+//! because this repo's no-doctest convention keeps them in ` ```text `
+//! fences rustdoc never type-checks: `NodeId::new`'s "Ergonomic path
+//! from detection" match mixed a `Result` arm with an `Option` arm, and
+//! `reserve_preferred_on_node`'s "Best-effort fallback" snippet called
+//! `Result::or_else` with a closure returning `Option`. Both snippets
+//! are now type-correct in the source, and this file remains the
+//! compile oracle: the tests below carry each corrected snippet as real
+//! compiled-and-run Rust, so a future type error in a ` ```text `
+//! example fails CI here instead of hiding behind the fence (the same
+//! guard this file established for the README example in task #1340).
+//! The crate-level `//! ## Usage` snippet — whose unused `NO_NODE`
+//! import was F1's third sub-finding — is carried here too: cheap
+//! insurance, since its only compile risk was exactly that unused
+//! import, and it pins the snippet's import list against `-D warnings`.
+//!
 //! ## Compilation gating
 //!
 //! The whole file is `#![cfg(feature = "vmem-integration")]`-gated (the
@@ -50,6 +71,13 @@
 //! crate (the same situation `tests/smoke.rs` lived in before task
 //! #1337 made its own predicates arch-aware), and it is named here so it
 //! stays a known property rather than a surprise.
+//! As of task #1341 the same caveat extends to this file's
+//! `node_id_new_ergonomic_path_snippet_compiles_and_runs` (it too
+//! `.expect`s the preferred reservation on the `Some` arm); the other
+//! two #1341 tests cannot hit it — the usage snippet performs no
+//! reservation, and the best-effort snippet's `.ok()` routes an
+//! `Err(UnsupportedArchitecture)` into the fallback reservation, which
+//! is exactly the path that snippet exists to demonstrate.
 
 #![cfg(feature = "vmem-integration")]
 
@@ -116,4 +144,92 @@ fn readme_vmem_integration_example_compiles_and_runs() {
     };
     drop(r);
     // === END: README.md "### `vmem-integration`" example ===
+}
+
+/// Runs the crate-level `//! ## Usage` snippet from `src/lib.rs` —
+/// task #1341 (twentieth review F1): the snippet's `use` line imported
+/// `NO_NODE`, which the body never names — a warning-level defect
+/// (hard error under a downstream `-D warnings` build) that a
+/// ` ```text ` fence can never catch, plus a `None`-arm message that
+/// mis-stated `None` as covering single-node hosts (a correctly
+/// resolved single-node host returns `Some(0)` since task #1308).
+/// Statements are the corrected snippet verbatim, modulo rustfmt's
+/// canonical formatting inside this fn.
+#[test]
+fn crate_usage_snippet_compiles_and_runs() {
+    // === BEGIN: src/lib.rs crate-doc "## Usage" snippet ===
+    use numa_shim::current_node;
+
+    match current_node() {
+        Some(node) => println!("Running on NUMA node {node}"),
+        None => println!("NUMA topology unavailable (detection failed or unsupported platform)"),
+    }
+    // === END: src/lib.rs crate-doc "## Usage" snippet ===
+}
+
+/// Runs `NodeId::new`'s "# Ergonomic path from detection" snippet from
+/// `src/lib.rs` — task #1341 (twentieth review F1): the snippet's match
+/// had one arm returning `reserve_preferred_on_node(...)`'s
+/// `Result<Reservation, ReserveNumaError>` and the other returning
+/// `aligned_vmem::reserve_aligned(...)`'s `Option<Reservation>` —
+/// different types, so the match as documented could never compile.
+/// Both arms now yield `Reservation` via `.expect`, the resolution the
+/// README's `vmem-integration` example (oracled by the test above)
+/// already established. Statements are the corrected snippet verbatim;
+/// the snippet's placeholder `size`/`align` are bound to concrete
+/// values the same way the README example binds them.
+#[test]
+fn node_id_new_ergonomic_path_snippet_compiles_and_runs() {
+    // === BEGIN: src/lib.rs NodeId::new "# Ergonomic path from detection" snippet ===
+    use aligned_vmem::{page_size, PAGE};
+    use numa_shim::NodeId;
+
+    let ps = page_size();
+    let size = ps * 16;
+    let align = PAGE.max(ps);
+    let r = match numa_shim::current_node() {
+        // current_node() never yields the NO_NODE sentinel in its Some
+        // arm, so NodeId::new(n) here is always Some(_).
+        Some(n) => numa_shim::reserve_preferred_on_node(
+            size,
+            align,
+            NodeId::new(n).expect("never the NO_NODE sentinel"),
+        )
+        .expect("NUMA-preferred reservation failed"),
+        None => aligned_vmem::reserve_aligned(size, align).expect("OOM"),
+    };
+    drop(r);
+    // === END: src/lib.rs NodeId::new "# Ergonomic path from detection" snippet ===
+}
+
+/// Runs `reserve_preferred_on_node`'s "## Best-effort fallback" snippet
+/// from `src/lib.rs` — task #1341 (twentieth review F1): the snippet
+/// called `Result::or_else` with a closure returning
+/// `Option<Reservation>` (`aligned_vmem::reserve_aligned`), which cannot
+/// type-check — `Result::or_else`'s closure must return the same
+/// `Result` type. The corrected form composes `Result::ok()` (narrowing
+/// to `Option`, deliberately discarding the specific error — that is
+/// what "best-effort" means here) with `Option::or_else`. `NodeId::new(0)`
+/// stands in for the snippet's `node` placeholder: 0 always constructs
+/// (only `NO_NODE` is rejected), and on every backend this suite runs
+/// under the chain yields a reservation — real Linux/Windows and the
+/// mock succeed on node 0 directly, while a real unsupported platform
+/// (macOS) takes the `.ok()`-to-`None` fallback path the snippet exists
+/// to demonstrate.
+#[test]
+fn best_effort_fallback_snippet_compiles_and_runs() {
+    // === BEGIN: src/lib.rs reserve_preferred_on_node "## Best-effort fallback" snippet ===
+    use aligned_vmem::{page_size, PAGE};
+    use numa_shim::{reserve_preferred_on_node, NodeId};
+
+    let ps = page_size();
+    let size = ps * 16;
+    let align = PAGE.max(ps);
+    let node = NodeId::new(0).expect("0 is never the NO_NODE sentinel");
+    let r = reserve_preferred_on_node(size, align, node)
+        .ok()
+        .or_else(|| aligned_vmem::reserve_aligned(size, align))
+        .expect("both the NUMA-preferred and the fallback reservation failed");
+    drop(r);
+    // === END: src/lib.rs reserve_preferred_on_node "## Best-effort fallback" snippet ===
 }

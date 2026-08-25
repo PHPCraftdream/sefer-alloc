@@ -18,11 +18,11 @@
 //! ## Usage
 //!
 //! ```text
-//! use numa_shim::{current_node, NO_NODE};
+//! use numa_shim::current_node;
 //!
 //! match current_node() {
 //!     Some(node) => println!("Running on NUMA node {node}"),
-//!     None       => println!("NUMA unavailable or single-node host"),
+//!     None       => println!("NUMA topology unavailable (detection failed or unsupported platform)"),
 //! }
 //! ```
 //!
@@ -150,8 +150,9 @@ impl NodeId {
     ///         size,
     ///         align,
     ///         NodeId::new(n).expect("never the NO_NODE sentinel"),
-    ///     ),
-    ///     None => aligned_vmem::reserve_aligned(size, align),
+    ///     )
+    ///     .expect("NUMA-preferred reservation failed"),
+    ///     None => aligned_vmem::reserve_aligned(size, align).expect("OOM"),
     /// }
     /// ```
     ///
@@ -773,8 +774,16 @@ pub fn current_node() -> Option<u32> {
 ///
 /// ```text
 /// reserve_preferred_on_node(size, align, node)
-///     .or_else(|_| aligned_vmem::reserve_aligned(size, align))
+///     .ok()
+///     .or_else(|| aligned_vmem::reserve_aligned(size, align))
 /// ```
+///
+/// The `.ok()` deliberately narrows the `Result` to `Option`, discarding
+/// the specific `ReserveNumaError` — that is what best-effort means
+/// here: the caller has already chosen "just get me memory" over the
+/// diagnosis. Callers that need the error should keep the `Result` and
+/// match on it explicitly (the README's `vmem-integration` section shows
+/// that form).
 ///
 /// If the NUMA policy fails AFTER a successful reservation, the reservation is
 /// RELEASED (dropped) and the error returned — never a reservation with a
