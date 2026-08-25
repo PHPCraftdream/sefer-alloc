@@ -1798,6 +1798,13 @@ jobs:
       # reverted, since `debug_assert!` still fires in a debug build.
       - run: cargo test -p racy-ptr-cell --no-fail-fast
       - run: cargo test -p racy-ptr-cell --release --no-fail-fast
+      # publication readiness review cycle 2 (claude/oh, F3, task #1367):
+      # `benches/racy_ptr_cell_bench.rs` ships in the published tarball but
+      # `test = false` on `[[bench]]` means neither `cargo test` step above
+      # compiles it, and no `cargo clippy -p racy-ptr-cell` row existed
+      # anywhere in this file -- `--all-targets` below covers both test
+      # files and the bench in one step.
+      - run: cargo clippy -p racy-ptr-cell --all-targets -- -D warnings
       # rust-intel round-closing review (task #772, finding F5, 2026-08-09):
       # tagged-index-stack advertises `categories = [..., "no-std::no-alloc"]`
       # but was never cross-built for ANY bare-metal target -- it can't use
