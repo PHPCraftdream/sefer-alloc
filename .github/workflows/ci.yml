@@ -1239,11 +1239,17 @@ jobs:
       # segment_directory_numa* family) SKIP cleanly under it. This row is
       # their dedicated coverage: all features PLUS the cfg flag, which is
       # exactly what the old `--all-features` row ran them under via feature
-      # unification. The grep sentinel (task #1101 pattern) proves the mock
-      # files actually RAN — without the cfg this row would be green-and-dead.
+      # unification. The six grep sentinels (task #1101 pattern; task #1299/T9
+      # added the five below beyond the original one) prove the mock files
+      # actually RAN — without the cfg this row would be green-and-dead.
       - run: |
           RUSTFLAGS="--cfg numa_shim_mock" cargo test --all-features --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/root-numa-mock.log"
           grep -F "test cached_node_invalidates_across_slot_recycle ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test cached_node_refreshes_after_mid_claim_migration ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test per_node_oracle_holds_after_mixed_node_workload ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test ninth_node_reuses_freed_bucket_after_earlier_node_goes_idle ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test directory_returns_local_not_foreign_for_high_node_ids ... ok" "$RUNNER_TEMP/root-numa-mock.log"
+          grep -F "test clear_bit_on_never_registered_node_does_not_claim_a_bucket ... ok" "$RUNNER_TEMP/root-numa-mock.log"
         shell: bash
 
   test-feature-isolation:
@@ -1915,6 +1921,12 @@ jobs:
       # value (default-feature cargo-add config + full test/dev graph at 1.88).
       - run: cargo check -p numa-shim
       - run: cargo test -p numa-shim --no-run --all-features
+      # task #1299 (T12, item 103): closes the mock-arm MSRV gap the comment
+      # above left open — `--all-features` can no longer reach the
+      # `numa_shim_mock` cfg (it is a build flag, not a feature) post-#1288.
+      - run: cargo test -p numa-shim --no-run
+        env:
+          RUSTFLAGS: "--cfg numa_shim_mock"
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -2807,10 +2819,24 @@ jobs:
       # An `env:` block is shell-agnostic (Actions sets the env var on the
       # child process before invoking the shell, regardless of shell), so it
       # works under both pwsh and bash without needing `shell: bash` too.
-      - run: cargo test -p numa-shim
+      # task #1299 (T8, item 103's twelfth independent readiness review): the
+      # mock rows below previously had no `tee`+`grep -F` sentinel, unlike the
+      # Linux job's own mock rows above ("`#![cfg(numa_shim_mock)]`-gated at
+      # the top level, so a typo'd cfg compiles them to ZERO tests with exit 0
+      # (green-and-dead) — the greps require one named test per FILE" — task
+      # #1101 sentinel pattern, guarding against the task #1070 "Breakage B"
+      # vacuous-green hazard). Adding the same sentinels here closes that gap.
+      - run: |
+          cargo test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-windows-mock.log"
+          grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-windows-mock.log"
+          grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-windows-mock.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg numa_shim_mock"
-      - run: cargo test -p numa-shim --features vmem-integration
+      - run: |
+          cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-windows-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_records_args ... ok" "$RUNNER_TEMP/numa-shim-windows-mock-vmem.log"
+        shell: bash
         env:
           RUSTFLAGS: "--cfg numa_shim_mock"
       # task #778 (round-closing review, F9): DEFAULT features is what
@@ -2846,7 +2872,15 @@ jobs:
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
       # task #1288: mock via the build-time cfg
-      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim
+      # task #1299 (T8, item 103): add the same `tee`+`grep -F` sentinels the
+      # Linux job's mock rows already carry ("compiles them to ZERO tests with
+      # exit 0 (green-and-dead)" — task #1101 sentinel pattern, task #1070
+      # "Breakage B" vacuous-green hazard) — this row previously had none.
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-mock.log"
+          grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-macos-mock.log"
+          grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-macos-mock.log"
+        shell: bash
       # task #1325 (P2-2 of the seventeenth independent review,
       # docs/reviews/2026-08-24-223343-numa-shim-publication-audit-oh.md;
       # independently F2 of the eighteenth,
@@ -2914,7 +2948,15 @@ jobs:
       # task #1288: mock via the build-time cfg (RUSTFLAGS propagates through
       # cargo to the miri-driven compilation, same as the aligned-vmem miri
       # row's use of RUSTFLAGS cfgs)
-      - run: RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim
+      # task #1299 (T8, item 103): sentinel added — this is the only miri x
+      # mock cell in the whole workflow, so a typo'd cfg compiling this row's
+      # tests to zero and exiting 0 (task #1101/#1070 "Breakage B"
+      # green-and-dead hazard) would otherwise go undetected here specifically.
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+          grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+          grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+        shell: bash
 
   numa-real-kernel:
     # NUMA Phase 2: validate the real-kernel Linux integration path on every
