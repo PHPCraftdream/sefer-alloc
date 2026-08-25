@@ -317,6 +317,8 @@ mod loom_shim {
         pub(crate) fn get(&self) -> Option<NonNull<T>> {
             let p = self.ptr.load(Ordering::Acquire);
             if Self::is_ready(p) {
+                // SAFETY: `is_ready(p)` proved `p` is neither null nor the
+                // sentinel, so it is a real published pointer.
                 Some(unsafe { NonNull::new_unchecked(p) })
             } else {
                 None
@@ -331,6 +333,8 @@ mod loom_shim {
             loop {
                 let p = self.ptr.load(Ordering::Acquire);
                 if Self::is_ready(p) {
+                    // SAFETY: `is_ready(p)` proved `p` is neither null nor the
+                    // sentinel, so it is a real published pointer.
                     return Some(unsafe { NonNull::new_unchecked(p) });
                 }
                 match self.ptr.compare_exchange(
@@ -375,6 +379,9 @@ mod loom_shim {
                             continue;
                         }
                         if a != 0 {
+                            // SAFETY: `a != 0` rules out null, and the
+                            // `== SENTINEL_INITIALIZING` arm above already
+                            // returned — so `p` is a real published pointer.
                             return Some(unsafe { NonNull::new_unchecked(p) });
                         }
                         break;
