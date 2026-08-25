@@ -21,8 +21,7 @@
 //!   that observes the rollback (`null`) falls out of the spin and **re-races
 //!   the CAS itself**.
 //! - On winner **OOM** the sentinel is rolled back to `null` and losers
-//!   re-race — unlike [`core::cell::OnceCell`] / `std::sync::OnceLock`, which
-//!   poison or block on a failed initialiser.
+//!   re-race the CAS themselves, rather than being parked and woken.
 //!
 //! ## Why not `OnceLock`?
 //!
@@ -40,9 +39,20 @@
 //!   below. Used by hand-rolled allocators, runtimes, and bare-metal
 //!   bootstraps that must publish a process-`'static` pointer before any heap
 //!   exists.
-//! - **fallible with rollback + re-race** — `OnceLock::get_or_init` cannot
-//!   fail; `get_or_try_init` poisons the cell on `Err`. This cell rolls back so
-//!   a later attempt (after the OS frees memory, say) can succeed.
+//! - **fallible without parking** — `OnceLock::get_or_init` cannot fail at
+//!   all, and its `get_or_try_init` is still unstable (`once_cell_try`). Both
+//!   also PARK the losing threads for the duration of the winner's init. This
+//!   cell reports failure as a plain `None` per caller and lets losers re-race
+//!   the CAS with no OS involvement, so a later attempt (after the OS frees
+//!   memory, say) can succeed without a blocking primitive anywhere.
+//!
+//!   To be precise about what `OnceLock` does and does not do, since this
+//!   crate's earlier docs got it wrong: `OnceLock::get_or_try_init` does NOT
+//!   poison the cell on `Err`, and a failed or panicking initialiser leaves it
+//!   uninitialised and retryable (`std` drives it through
+//!   `Once::call_once_force`, which deliberately ignores poisoning). The real
+//!   distinctions are the ones above — `no_std`, no parking, no internal
+//!   allocation, and a raw-pointer/lifetime posture — not recoverability.
 //!
 //! ## The spin-wait (no parking, no `std`)
 //!
@@ -225,8 +235,9 @@ unsafe impl<T> Sync for RacyPtrCell<T> {}
 /// loser busy-spins at 100% CPU indefinitely (they spin on `==
 /// INITIALIZING`, which never changes), and every future
 /// `get_or_try_init`/`get` caller observes permanent `INITIALIZING` — a
-/// silent whole-process livelock, strictly worse than `OnceLock`'s poison
-/// (which at least panics loudly for every subsequent caller).
+/// silent whole-process livelock, and a strictly worse outcome than the
+/// `OnceLock` equivalent, which leaves its cell uninitialised and lets the
+/// next caller retry.
 ///
 /// Defused (via [`RollbackGuard::defuse`]) on both non-unwinding exits — the
 /// successful publish and the explicit `None`/OOM rollback — so the normal

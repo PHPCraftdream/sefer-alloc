@@ -15,9 +15,10 @@ It fills the niche `std::sync::OnceLock` cannot:
   not allocate, block, or unwind — see
   [Using this inside a `#[global_allocator]`](#using-this-inside-a-global_allocator)
   below before adopting it there.
-- **fallible with rollback + re-race** — on winner OOM the sentinel rolls back
-  to `null` and losers re-race the CAS (unlike `OnceLock`, which poisons/blocks
-  a failed initialiser).
+- **fallible without parking** — on winner OOM the sentinel rolls back to
+  `null` and losers re-race the CAS themselves. `OnceLock::get_or_init` cannot
+  fail at all, its `get_or_try_init` is still unstable, and both park the
+  losing threads for the duration of the winner's init.
 
 ```text
 static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();

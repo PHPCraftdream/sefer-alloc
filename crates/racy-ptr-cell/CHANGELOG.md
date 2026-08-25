@@ -30,8 +30,10 @@ before it.
   pointer with `Release`. When init reports failure (`None`, e.g. OOM), the
   sentinel is rolled back to `null` and concurrent losers **re-race the CAS** —
   a later attempt can succeed. This is the deliberate contrast with
-  `core::cell::OnceCell` / `std::sync::OnceLock`, which poison or block on a
-  failed initialiser and whose `get_or_try_init` can never recover.
+  `std::sync::OnceLock`, whose `get_or_init` cannot fail at all, whose
+  `get_or_try_init` is still unstable (`once_cell_try`), and which parks the
+  losing threads for the duration of the winner's init instead of letting them
+  re-race.
 - **The anti-livelock loser-spin rule** — losers spin with `Acquire` loads
   only *while the state is `INITIALIZING`*, never `while != READY`. Spinning
   on `!= READY` deadlocks against the rollback path (a rolled-back cell never
