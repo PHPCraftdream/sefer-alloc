@@ -20,6 +20,18 @@ It fills the niche `std::sync::OnceLock` cannot:
   fail at all, its `get_or_try_init` is still unstable, and both park the
   losing threads for the duration of the winner's init.
 
+## Portability limit — requires pointer-width atomic CAS
+
+The whole cell is one `AtomicPtr<T>` driven by `compare_exchange`, so this
+crate needs `target_has_atomic = "ptr"` and will **not compile** on a target
+without it — notably `thumbv6m-none-eabi` (Cortex-M0/M0+),
+`riscv32imc-unknown-none-elf` (no `A` extension), and `msp430-none-elf`.
+`no_std` and allocation-free do not imply pointer-width CAS: those targets
+have load/store atomics but no `compare_exchange`. A build on an unsupported
+target fails fast with an explicit `compile_error!` naming the requirement,
+rather than the more cryptic "no method named `compare_exchange`" error a
+bare unresolved import would otherwise produce.
+
 ```text
 static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();
 

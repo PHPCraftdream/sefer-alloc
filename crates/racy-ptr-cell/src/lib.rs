@@ -191,6 +191,20 @@
 //! payload behind the pointer is `unsafe` and left to the caller, who knows the
 //! pointee's real lifetime — see [`RacyPtrCell::get`] and
 //! [`RacyPtrCell::get_or_try_init`].
+//!
+//! ## Portability limit — requires pointer-width atomic CAS
+//!
+//! The whole cell is one `AtomicPtr<T>` driven by `compare_exchange`; that is
+//! not an incidental implementation choice, it is the entire mechanism. This
+//! crate therefore needs `target_has_atomic = "ptr"` and will **not compile**
+//! on a target without it — notably `thumbv6m-none-eabi` (Cortex-M0/M0+),
+//! `riscv32imc-unknown-none-elf` (no `A` extension), and `msp430-none-elf`.
+//! This crate is `no_std` and allocation-free, but neither property implies
+//! pointer-width CAS: those targets have load/store atomics but no
+//! `compare_exchange`. A build on an unsupported target fails fast with an
+//! explicit [`compile_error!`] naming the requirement, rather than the more
+//! cryptic "no method named `compare_exchange`" error a bare unresolved
+//! import would otherwise produce.
 
 // This crate is a single-file seam crate: `unsafe` is confined to this one
 // module, lifted by the crate-level `#![allow(unsafe_code)]` below. There is a
@@ -211,6 +225,22 @@
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 #![cfg_attr(not(test), no_std)]
+
+// The whole cell is one AtomicPtr driven by compare_exchange (see the
+// crate-doc "Portability limit" section above) — that requires pointer-width
+// atomic CAS from the target. Fail fast with an explicit, named reason
+// instead of the cryptic "no method named `compare_exchange`" unresolved-item
+// error a naive use would otherwise produce on e.g.
+// thumbv6m-none-eabi/riscv32imc/msp430.
+#[cfg(not(target_has_atomic = "ptr"))]
+compile_error!(
+    "racy-ptr-cell requires a target with pointer-width atomic \
+     compare-and-swap (target_has_atomic = \"ptr\"): the whole cell is one \
+     AtomicPtr driven by compare_exchange. Targets with load/store atomics \
+     but no CAS -- thumbv6m-none-eabi (Cortex-M0/M0+), \
+     riscv32imc-unknown-none-elf (no `A` extension), msp430-none-elf -- are \
+     NOT supported, despite this crate being no_std and allocation-free."
+);
 
 use core::marker::PhantomData;
 use core::ptr::NonNull;
