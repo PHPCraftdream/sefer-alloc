@@ -12,9 +12,7 @@
 //! -- not just a real Linux machine this project's CI does not currently run
 //! these tests on either.
 
-use numa_shim::cpumap::{
-    format_sysfs_path, nth_token, parse_contains_cpu, parse_hex_u32, trim_end,
-};
+use numa_shim::cpumap::{format_sysfs_path, parse_contains_cpu, parse_hex_u32, trim_end};
 
 // ── parse_contains_cpu: the doc example, verbatim ───────────────────────────
 
@@ -113,24 +111,6 @@ fn trim_end_strips_newline_cr_and_trailing_space() {
     assert_eq!(trim_end(b"abc "), b"abc");
     assert_eq!(trim_end(b"abc"), b"abc");
     assert_eq!(trim_end(b""), b"");
-}
-
-// ── nth_token ────────────────────────────────────────────────────────────
-
-#[test]
-fn nth_token_splits_on_separator() {
-    let data = b"aa,bb,cc";
-    assert_eq!(nth_token(data, 0, b','), Some(&b"aa"[..]));
-    assert_eq!(nth_token(data, 1, b','), Some(&b"bb"[..]));
-    assert_eq!(nth_token(data, 2, b','), Some(&b"cc"[..]));
-    assert_eq!(nth_token(data, 3, b','), None);
-}
-
-#[test]
-fn nth_token_single_token_no_separator() {
-    let data = b"aa";
-    assert_eq!(nth_token(data, 0, b','), Some(&b"aa"[..]));
-    assert_eq!(nth_token(data, 1, b','), None);
 }
 
 // ── parse_hex_u32 ────────────────────────────────────────────────────────
