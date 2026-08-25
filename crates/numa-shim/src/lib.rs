@@ -1620,8 +1620,13 @@ mod platform {
     /// target-independent module so the parser can be exercised by
     /// `tests/cpumap_parser.rs` on every target, not just real Linux.
     ///
-    /// Returns `None` on open/read failure, or if the file is wider than
-    /// `out` (task #720, rust-intel audit §C4: a truncated read must never
+    /// Returns `None` on open/read failure, or if the file is as wide as
+    /// or wider than `out` (a file exactly `out.len()` bytes long is
+    /// rejected too: the `total >= out.len()` guard fires before the
+    /// EOF-proving zero-byte read can ever be issued, so it is
+    /// indistinguishable from a wider file -- doc precision noted by
+    /// item 116/task #1353's twenty-fourth review, P3-1) (task #720,
+    /// rust-intel audit §C4: a truncated read must never
     /// be silently treated as complete -- the most-significant-word-first
     /// `word_count`/`left_index` arithmetic would misalign on a prefix and
     /// return a WRONG node rather than failing loudly). The caller supplies
