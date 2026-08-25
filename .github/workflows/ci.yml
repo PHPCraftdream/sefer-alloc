@@ -1481,19 +1481,23 @@ jobs:
       # appears in the harness output.
       #
       # Task #1099/I4 (2026-08-18): the `$RUNNER_TEMP/<name>.log` path in
-      # these three rows is UNVERIFIED on a real windows runner, where it
-      # is a mixed-separator Windows path (`D:\a\_temp/x.log`) handed to
-      # MSYS tee/grep. Expected to work by construction — Actions'
-      # `shell: bash` on windows-latest resolves to Git-for-Windows bash,
-      # and Win32 path handling accepts both separators — but it has not
-      # been exercised by a completed CI run yet (the rows and this note
-      # land in the same wave). Left as-is deliberately: switching to a
-      # relative filename in the step's working directory would be an
-      # equally unverified change churned for its own sake, and the
-      # failure mode if the analysis is wrong is LOUD (a red step with
-      # grep/tee's "No such file" naming the path), not a silent
-      # green. If the first run of these rows goes red that way, replace
-      # "$RUNNER_TEMP/x.log" with "x.log" in the three steps.
+      # these three rows is a mixed-separator Windows path
+      # (`D:\a\_temp/x.log`) handed to MSYS tee/grep under Actions'
+      # `shell: bash` (Git-for-Windows bash). Originally recorded here as
+      # UNVERIFIED on a real windows runner (the rows and the note landed
+      # in the same wave). VERIFIED since (task #1352, item 115's P2-2,
+      # 2026-08-25): CI run 32828560947 (green, landing SHA 774716e), this
+      # job (`test windows (production)`, job id 97741909197, conclusion
+      # success) executed exactly this pattern — the raw job log shows the
+      # tee command under `C:\Program Files\Git\bin\bash.EXE`, the tee'd
+      # cargo output, AND grep's own stdout echoing the found sentinel
+      # line, proving tee wrote and grep read the mixed-separator path on
+      # a real windows-latest runner. The same construction is used by the
+      # numa-shim-windows job's mock sentinel rows (task #1299/T8), which
+      # this receipt covers by identity of pattern/runner/shell; the
+      # failure mode if anything ever differs remains LOUD (a red step
+      # with grep/tee's "No such file" naming the path), not a silent
+      # green.
       - run: |
           cargo test --features "production small-segment-lazy-commit internals" --test lazy_initial_commit_forced_page 2>&1 | tee "$RUNNER_TEMP/forced-page-lazy.log"
           grep -F "test forced_page::lazy_initial_commit_call_sites_survive_a_forced_64k_page ... ok" "$RUNNER_TEMP/forced-page-lazy.log"
