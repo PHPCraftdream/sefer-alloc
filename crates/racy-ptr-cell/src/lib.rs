@@ -64,9 +64,12 @@
 //! marker that is **never dereferenced, only compared** for pointer equality.
 //! Constructed via [`core::ptr::without_provenance_mut`] so it carries no
 //! provenance — strict-provenance-clean, since it is never turned back into a
-//! dereferenceable pointer. `1` is not a valid address for any `T` a caller
-//! stores here (every such `T` has alignment >= 2), so it can never collide with
-//! a real published pointer.
+//! dereferenceable pointer. An *aligned* pointer to `T` can never have address
+//! `1` (`align_of::<T>() >= 2` is asserted at construction) — but a
+//! *misaligned or synthesised* pointer at address `1` IS reachable from safe
+//! code (an `init` closure can construct and return one). That case is
+//! rejected by a release-active `assert!` in
+//! [`RacyPtrCell::get_or_try_init`] — see its `# Panics`.
 //!
 //! ## What the caller owns
 //!
@@ -132,8 +135,11 @@ fn spin_hint() {
 /// The `INITIALIZING` sentinel address: a non-null, non-real marker meaning
 /// "one thread won the CAS and is currently running the init closure". Never
 /// dereferenced — only compared for pointer equality against the cell's stored
-/// value. `1` is below the minimum alignment of any `T` stored here (asserted
-/// at construction), so it can never equal a real published pointer.
+/// value. An *aligned* pointer to `T` can never equal this address
+/// (`align_of::<T>() >= 2` is asserted at construction); a *misaligned or
+/// synthesised* pointer at this address is reachable from safe code and is
+/// rejected by a release-active `assert!` in
+/// [`RacyPtrCell::get_or_try_init`], not by this constant alone.
 const SENTINEL_INITIALIZING: usize = 1;
 
 /// A lazy, CAS-published pointer cell: `UNINIT -> INITIALIZING -> READY` over a
