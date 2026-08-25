@@ -683,6 +683,29 @@ jobs:
       - run: cargo miri test -p aligned-vmem
       - run: cargo miri test -p aligned-vmem --all-features
 
+  racy-ptr-cell-miri:
+    # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
+    # crate's central soundness argument is a provenance one (a sentinel built
+    # via without_provenance_mut, never dereferenced; three
+    # NonNull::new_unchecked sites) and had NO miri row anywhere in CI. Both
+    # forms are green today (~1.2 s) and were verified locally before adding
+    # this job. Modeled on `aligned-vmem-miri` immediately above: per-PR
+    # cadence, since the suite is small enough that miri's overhead is
+    # affordable on every PR; no leak/isolation flags needed (the crate leaks
+    # its published pointer by design, but tests reclaim via
+    # Box::from_raw, not core::mem::forget).
+    name: racy-ptr-cell under miri (interpreter, strict-provenance included)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test -p racy-ptr-cell
+      - run: cargo miri test -p racy-ptr-cell
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
