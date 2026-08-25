@@ -1580,22 +1580,30 @@ mod platform {
     /// but neither is a real rustc target — verified against
     /// `rustc --print target-list`; hexagon's only Linux target,
     /// hexagon-unknown-linux-musl, uses the asm-generic value and is
-    /// unaffected.) On sparc/sparc64 the constant is therefore compiled
-    /// to `0` below: the fd opens WITHOUT close-on-exec — a
-    /// knowingly-inert hardening, honest in code — rather than passing
-    /// an unrelated bit to `open(2)`. This is the verification for the
-    /// flag: actual close-on-exec kernel behavior is not testable
-    /// without a real fork+exec harness, which is out of scope.
+    /// unaffected.) On sparc/sparc64 the sibling constant below applies
+    /// the correct `0x400000` value instead (task #1345, twenty-second
+    /// review F1): task #1339 (nineteenth review P3-1) had compiled it
+    /// to `0` — disabling the hardening rather than risking an unrelated
+    /// bit — because at the time the correct sparc value was unverified;
+    /// once the correct value was documented AND independently
+    /// cross-checked, disabling the hardening was no longer justified, so
+    /// task #1345 applies it. This is the verification for the flag:
+    /// actual close-on-exec kernel behavior is not testable without a
+    /// real fork+exec harness, which is out of scope.
     #[cfg(not(any(target_arch = "sparc", target_arch = "sparc64")))]
     const O_CLOEXEC: core::ffi::c_int = 0o2000000;
-    /// task #1339 (nineteenth review P3-1): sparc/sparc64's UAPI
-    /// `O_CLOEXEC` is `0x400000`, not the asm-generic `0o2000000` the
-    /// sibling constant above uses — passing that bit would not set
-    /// close-on-exec there. Open without the flag instead of with a
-    /// wrong one; see the sibling constant's doc comment for the full
-    /// arch-by-arch rationale.
+    /// task #1339 (nineteenth review P3-1) originally compiled this to
+    /// `0` (disabling close-on-exec) because sparc/sparc64's UAPI
+    /// `O_CLOEXEC` value, `0x400000`, differs from the asm-generic
+    /// `0o2000000` the sibling constant above uses, and passing that bit
+    /// would not set close-on-exec there — better an honestly-inert flag
+    /// than a wrong one. task #1345 (twenty-second review F1) applies the
+    /// correct `0x400000` instead: the value was already documented here
+    /// and has now been independently cross-checked, so the hardening no
+    /// longer needs to stay disabled. See the sibling constant's doc
+    /// comment for the full arch-by-arch rationale.
     #[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
-    const O_CLOEXEC: core::ffi::c_int = 0;
+    const O_CLOEXEC: core::ffi::c_int = 0x400000;
 
     /// Open the cpumap file at `path` and read its complete contents into
     /// the caller-supplied fixed buffer `out`, returning the byte count.
@@ -1631,8 +1639,10 @@ mod platform {
             // Flags: `O_RDONLY` (0 on Linux) | `O_CLOEXEC` — read-only with
             // close-on-exec (task #1327, seventeenth review P3-2); O_RDONLY
             // being 0 means the value below is exactly that combination
-            // (on sparc/sparc64 `O_CLOEXEC` compiles to `0`, so this is
-            // plain `O_RDONLY` — task #1339, nineteenth review P3-1).
+            // (on sparc/sparc64 `O_CLOEXEC` is `0x400000`, sparc's real
+            // UAPI value — task #1345, twenty-second review F1, applying
+            // it after task #1339, nineteenth review P3-1 had left it
+            // disabled pending cross-check).
             // SAFETY: `path` is a valid nul-terminated C string constructed
             // by the caller. `open` is a POSIX syscall; we check for a
             // negative return on error.
