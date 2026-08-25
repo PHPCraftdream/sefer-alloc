@@ -2703,7 +2703,26 @@ jobs:
       # silently skip green (an internally-skipped test still prints
       # "... ok"). This row ONLY: the mock rows above, the Windows/macOS
       # jobs below, and local/dev runs keep the tolerant skip.
-      - run: cargo test -p numa-shim --features vmem-integration
+      #
+      # task #1338 (P2-3 of the nineteenth independent review,
+      # docs/reviews/2026-08-25-022026-numa-shim-publication-audit-oh.md):
+      # green-and-dead sentinels for this row (task #1101 sentinel pattern;
+      # task #1070 "Breakage B" is the vacuous-green hazard). This is the one
+      # CI row that executes tests/policy_oracle_linux.rs — the kernel-record
+      # oracle for the crate's headline capability — and that file compiles
+      # under FIVE simultaneous `#![cfg(...)]` conditions (target_os = "linux",
+      # not(miri), not(numa_shim_mock), feature = "vmem-integration",
+      # any(target_arch = "x86_64", target_arch = "aarch64")). If any one
+      # silently breaks (feature rename, stray cfg leak, arch-clause edit, cfg
+      # typo) the file compiles to ZERO tests and this row still exits 0 with
+      # no signal — NUMA_SHIM_REQUIRE_ORACLE=1 (task #1324) closes the
+      # silent-SKIP hole but cannot close the never-COMPILED hole: an absent
+      # test cannot read an env var. The greps make that a hard CI failure.
+      - run: |
+          cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+          grep -F "test reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+          grep -F "test plain_unbound_reservation_is_not_reported_as_preferred_for_our_node ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+        shell: bash
         env:
           NUMA_SHIM_REQUIRE_ORACLE: "1"
       # task #778 (round-closing review, F9): crates/numa-shim had NO clippy
