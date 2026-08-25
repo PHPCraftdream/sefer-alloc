@@ -481,11 +481,20 @@ fn reserve_preferred_on_node_large_align_round_trip() {
         // mitigation — an 8 MiB freshly-freed hole comfortably fits another
         // test's whole mapping wherever the OS places it (the Linux twin note
         // below works the placement question out in detail for mmap's
-        // top-down default). What actually keeps this oracle stable is the
-        // sub-millisecond window plus the absence of concurrent mapping
-        // creation inside it in this test binary; if it ever trips, suspect a
-        // placement collision with a concurrent test's mapping, not a failed
-        // release.
+        // top-down default). task #1348 (twenty-first review P3-2) corrects
+        // task #1340's own follow-up claim in turn: concurrent mappers in
+        // this binary are NOT purely hypothetical — libtest spawns a fresh
+        // thread per test (each thread stack is a multi-MiB anonymous
+        // mapping) and this same file already has one other mmap-performing
+        // test (`reserve_preferred_on_node_returns_valid_span`) — so the
+        // oracle's real protection is the sub-millisecond window between
+        // `drop(r)` and the probes, not the absence of concurrent mapping
+        // activity (which does exist, just rarely enough to land in that
+        // window). A collision requires an unlucky scheduling interleave; it
+        // is not structurally excluded, and the risk does not wait for this
+        // file to grow more mmap-performing tests to become real. If it ever
+        // trips, suspect a placement collision with a concurrent test's
+        // mapping, not a failed release.
     }
 
     // Linux oracle: read /proc/self/maps and assert NO mapping covers ANY probe.
@@ -524,13 +533,20 @@ fn reserve_preferred_on_node_large_align_round_trip() {
         // mmap_base). A concurrent mmap in the window therefore lands
         // ending exactly at `raw + over` — covering probe #4, the HIGHEST
         // probe, preferentially — and such mappings are not hypothetical:
-        // libtest spawns a fresh thread per test, and each thread stack is
-        // a multi-MiB anonymous mapping that fits this hole. The oracle's
-        // real protection is only the sub-millisecond window and this
-        // binary's lack of concurrent mmap activity inside it — a risk
-        // that silently grows if this file gains more mmap-performing
-        // tests. If it ever trips, suspect a placement collision with a
-        // concurrent test's mapping, not a failed release.
+        // libtest spawns a fresh thread per test (each thread stack is a
+        // multi-MiB anonymous mapping that fits this hole), and this same
+        // file already has one other mmap-performing test
+        // (`reserve_preferred_on_node_returns_valid_span`). task #1348
+        // (twenty-first review P3-2) corrects the claim that used to follow
+        // from here: the oracle's real protection is the sub-millisecond
+        // window between `drop(r)` and the read, NOT the absence of
+        // concurrent mmap activity in this binary (that activity exists
+        // today, via libtest's own thread stacks and the sibling test named
+        // above). A collision requires an unlucky scheduling interleave; it
+        // is not structurally excluded, and the risk is present now, not
+        // only if this file gains more mmap-performing tests later. If it
+        // ever trips, suspect a placement collision with a concurrent
+        // test's mapping, not a failed release.
     }
 }
 
