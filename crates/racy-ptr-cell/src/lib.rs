@@ -129,11 +129,24 @@
 //! [`RacyPtrCell::new`] / [`RacyPtrCell::default`] (a const-eval failure in
 //! the documented `static` form; a runtime panic when reached from a non-const
 //! context). All three go through the panic runtime, which allocates in a
-//! `std` build. Make them fatal instead — and note these are **different
-//! mechanisms for different link environments, not two halves of one recipe**:
-//! a `std` binary sets `panic = "abort"` in its profile (the panic runtime
-//! belongs to `std`, so no crate can supply its own `#[panic_handler]` there);
-//! a `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
+//! `std` build — and the two link environments need genuinely different
+//! mitigations, **not a shared recipe**:
+//!
+//! - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
+//!   This closes the hazard completely: no handler, no allocation.
+//! - A `std` binary's `panic = "abort"` profile setting removes the
+//!   **unwind** (the UB when the frame below is `GlobalAlloc::alloc`), but it
+//!   does **not** stop the panic runtime from allocating: the default hook
+//!   allocates before it can print anything (measured: 3 allocations on the
+//!   first panic, `RUST_BACKTRACE=0`, `--release`). Inside a
+//!   `#[global_allocator]` that allocation re-enters the very cell that is
+//!   mid-`init`, and the thread deadlocks on its own sentinel instead of
+//!   aborting — the diagnostic the release-active `assert!` above exists to
+//!   print never reaches stderr, because the allocation that would have
+//!   printed it is the one that deadlocked. A `std` consumer therefore needs
+//!   `panic = "abort"` **and** a `std::panic::set_hook` that goes straight to
+//!   `std::process::abort` without formatting — or, better, an `init` that
+//!   cannot panic at all.
 //!
 //! [ga]: https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety
 //!
