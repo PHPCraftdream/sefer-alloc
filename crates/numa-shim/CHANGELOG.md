@@ -33,7 +33,7 @@ request. At release time, consolidate this section under a dated
 - **Users on genuine NUMA hardware should independently validate
   node-binding correctness before relying on it in production.**
 
-### Owner decisions pending
+### Resolved owner decisions
 
 - **`mock` feature's Cargo-unification hazard** (F2 of the 2026-08-23
   publication audit, `docs/reviews/2026-08-23-164206-numa-shim-publication-audit-Sol-codex.md`;
