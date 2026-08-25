@@ -63,11 +63,16 @@ vmem-integration = ["dep:aligned-vmem"]
 aligned-vmem = { version = "0.2", path = "../aligned-vmem", optional = true }
 
 # `numa_shim_mock` is a build-time cfg (set via `RUSTFLAGS="--cfg numa_shim_mock"`),
-# NOT a Cargo feature — cfg flags do not unify across the build's dependency
-# graph, which is the whole point of the task #1288 conversion (mirroring
-# aligned-vmem's task #962). Declaring it here keeps `unexpected_cfgs` silent
-# for this crate (same pattern as `crates/aligned-vmem/Cargo.toml`'s own
-# `[lints.rust]` table; this crate has no `[lints] workspace = true`).
+# NOT a Cargo feature — a cfg flag is not subject to Cargo feature unification
+# (a dependency cannot enable it for its dependents, the way one crate enabling
+# a shared Cargo feature turns it on for every crate in the build); when
+# supplied through global RUSTFLAGS it still affects the whole target graph
+# being compiled, so the distinguishing property vs a feature is WHO can turn
+# it on, not per-crate locality. Avoiding dependency-triggered activation is
+# the whole point of the task #1288 conversion (mirroring aligned-vmem's
+# task #962). Declaring it here keeps `unexpected_cfgs` silent for this crate
+# (same pattern as `crates/aligned-vmem/Cargo.toml`'s own `[lints.rust]`
+# table; this crate has no `[lints] workspace = true`).
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(numa_shim_mock)'] }
 

@@ -49,26 +49,6 @@ git grep -l "docs/CORRECTNESS_OPEN_ITEMS\.md" -- ':!docs/' | wc -l
 split the same day.)
 
 ---
-45. **`numa-shim`'s `CURRENT_NODE_SLOT: RefCell<u32>` where a `Cell<u32>`
-    would do, and its accessor still uses a panicking `borrow_mut()`.**
-    (Filed 2026-08-09, task #778/F4, round-closing review — audit §A2,
-    INFO, left untouched by task #726's visibility narrowing.)
-
-    - **Status:** OPEN — cosmetic/defensive, not a live bug.
-    - **Current-number-or-verdict:** `crates/numa-shim/src/lib.rs`'s
-      `CURRENT_NODE_SLOT` thread-local is `RefCell<u32>`; `Cell<u32>` would
-      be strictly sufficient (only ever `get`/`set` a `Copy` value) and
-      would structurally rule out the §B17 reentrant-borrow hazard this
-      same module documents and defends against for its sibling `CALLS`
-      cell (`record()`'s `try_borrow_mut`) — `set_current_node` still calls
-      a PANICKING `RefCell::borrow_mut()` (`crates/numa-shim/src/lib.rs:149` as
-      of task #726), not the `try_borrow_mut` pattern its sibling was
-      deliberately given.
-    - **Evidence:**
-      `docs/reviews/2026-08-07-numa-shim-rust-intel-audit.md` §A2.
-    - **Next trigger:** low priority — fold into any future edit that
-      touches the `mock` module's thread-locals (e.g. a future `CALLS_CAP`
-      follow-up, item 46's public-surface work, or a `mock` API revision
-      before first publish, task #657).
+45. **CLOSED** by task #1342 (twentieth review F3, `docs/reviews/2026-08-25-021741-numa-shim-publication-audit-run-17-Sol-codex.md`; fired the item's own "fold into any future edit that touches the `mock` module's thread-locals" trigger). See 'Recently resolved' in RESOLVED.md for the full closure narrative.
 
 49. **CLOSED** by task #997 (P3-8 pass 2). See 'Recently resolved' in RESOLVED.md for the full closure narrative.

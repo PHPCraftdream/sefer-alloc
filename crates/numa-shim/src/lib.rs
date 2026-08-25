@@ -270,7 +270,7 @@ pub use aligned_vmem::Reservation;
 #[cfg(numa_shim_mock)]
 pub mod mock {
     use crate::NodeResolution;
-    use core::cell::RefCell;
+    use core::cell::{Cell, RefCell};
 
     /// Maximum number of calls `CALLS` retains before `record()` stops
     /// pushing.
@@ -394,7 +394,7 @@ pub mod mock {
         /// as the only surface.
         pub(crate) static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
         /// Value returned by `current_node()` under the mock.  Default 0.
-        pub(crate) static CURRENT_NODE_SLOT: RefCell<u32> = const { RefCell::new(0) };
+        pub(crate) static CURRENT_NODE_SLOT: Cell<u32> = const { Cell::new(0) };
         /// Scripted policy-installation failure for a specific node id.
         ///
         /// Holds `Some((node, err))` when a test has armed a failure for
@@ -422,12 +422,12 @@ pub mod mock {
     /// Set the value returned by subsequent `current_node()` calls, until
     /// changed by a later `set_current_node` call.
     pub fn set_current_node(node: u32) {
-        CURRENT_NODE_SLOT.with(|c| *c.borrow_mut() = node);
+        CURRENT_NODE_SLOT.with(|c| c.set(node));
     }
 
     /// Internal: read the scripted current_node value.
     pub(crate) fn current_node_slot() -> u32 {
-        CURRENT_NODE_SLOT.with(|c| *c.borrow())
+        CURRENT_NODE_SLOT.with(|c| c.get())
     }
 
     /// Script a simulated policy-installation failure for calls with the exact
@@ -1071,27 +1071,6 @@ pub mod cpumap {
             end -= 1;
         }
         &data[..end]
-    }
-
-    /// Return the `n`-th token (0-indexed) delimited by `sep`.
-    pub fn nth_token(data: &[u8], n: usize, sep: u8) -> Option<&[u8]> {
-        let mut idx = 0usize;
-        let mut start = 0usize;
-        for (i, &b) in data.iter().enumerate() {
-            if b == sep {
-                if idx == n {
-                    return Some(&data[start..i]);
-                }
-                idx += 1;
-                start = i + 1;
-            }
-        }
-        // Last token (no trailing separator).
-        if idx == n {
-            Some(&data[start..])
-        } else {
-            None
-        }
     }
 
     /// Parse a hex string (no `0x` prefix) as `u32`. Returns `None` on error,
