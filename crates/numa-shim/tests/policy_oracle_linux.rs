@@ -179,7 +179,12 @@ const ERRNO_EINVAL: i32 = 22;
 /// a seccomp/sandbox policy denying the syscall (a legitimate environment)
 /// or a wrong syscall number (an implementation bug); the eighteenth review
 /// chose fail-closed PANIC over a separate sandbox-probe, so this arm is
-/// deliberately loud.
+/// deliberately loud. That PANIC classification is the RESERVE arm's and is
+/// unchanged (task #1336 explicitly does not weaken it); since task #1336
+/// (nineteenth review P2-1) the PREFLIGHT (`get_mems_allowed()`'s own error
+/// arm) treats ENOSYS as an environment skip alongside EPERM — a seccomp
+/// policy can deny a syscall with ENOSYS as well as EPERM, and the
+/// nineteenth review named both.
 const ERRNO_ENOSYS: i32 = 38;
 
 /// `ENOMEM` (12): the ONLY errno mbind(2)'s ERRORS section documents for
@@ -195,7 +200,12 @@ const ERRNO_ENOMEM: i32 = 12;
 /// the crate never passes) — kept on the skip allowlist anyway because
 /// seccomp-based sandboxes (e.g. docker's default profile) deny mbind with
 /// exactly EPERM: the F8.2 container case this skip arm has always existed
-/// for. (Value verified against include/uapi/asm-generic/errno-base.h.)
+/// for. Since task #1336 (nineteenth review P2-1) this constant serves BOTH
+/// the reserve arm's skip and the MPOL_F_MEMS_ALLOWED preflight's own error
+/// classification: docker gates get_mempolicy/mbind/set_mempolicy as ONE
+/// CAP_SYS_NICE group, so the preflight is EPERM-denied in exactly the same
+/// container case — before the reserve arm could ever be reached. (Value
+/// verified against include/uapi/asm-generic/errno-base.h.)
 const ERRNO_EPERM: i32 = 1;
 
 // ---------------------------------------------------------------------------
@@ -385,13 +395,73 @@ fn reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span() {
     // masks, is a real topology shape), and mbind(2) documents EINVAL for
     // exactly that case — which task #1318's classification wrongly treated
     // as impossible. Probe first; skip loudly if disallowed.
-    let allowed = unsafe {
-        get_mems_allowed().expect(
-            "get_mempolicy(MPOL_F_MEMS_ALLOWED) preflight must succeed; if this \
-             environment sandbox-denies the NUMA policy syscalls (seccomp \
-             EPERM/ENOSYS), the policy oracle cannot run here at all — \
-             task #1329 (eighteenth review F1.1)",
-        )
+    //
+    // task #1336 (nineteenth review P2-1): the preflight's OWN failure is now
+    // errno-classified with the same allowlist philosophy the reserve arm
+    // below already implements. Docker's default seccomp profile gates
+    // get_mempolicy, mbind and set_mempolicy as ONE CAP_SYS_NICE group and
+    // denies all three with EPERM — so in a container the preflight fails
+    // BEFORE the reserve arm's `Some(ERRNO_EPERM) => skip` (written for
+    // exactly that environment) is ever reached, and the pre-#1336 bare
+    // `.expect` made the whole suite hard-RED on containerized Linux where
+    // pre-#1329 it correctly skipped. EPERM/ENOSYS (a seccomp policy can
+    // deny with either) are environment skips here; everything else still
+    // panics, fail-closed. Under NUMA_SHIM_REQUIRE_ORACLE=1 (task #1324)
+    // the skip is FATAL: that env var declares this host is supposed to
+    // support the NUMA policy syscalls, and the repo's own CI row that sets
+    // it is not a container.
+    let allowed = match unsafe { get_mems_allowed() } {
+        Ok(allowed) => allowed,
+        Err(e) => match e.raw_os_error() {
+            // -- ALLOWLIST (task #1336): the only errnos classified as
+            //    environment at the PREFLIGHT. Everything not here panics
+            //    below, fail-closed — mirroring the reserve arm's posture.
+            Some(errno @ ERRNO_EPERM) | Some(errno @ ERRNO_ENOSYS) => {
+                let errno_name = if errno == ERRNO_EPERM {
+                    "EPERM"
+                } else {
+                    "ENOSYS"
+                };
+                // task #1324 pattern: on the real-Linux CI row the denial is
+                // a broken promise (that row is not a container), so it stays
+                // fatal instead of silently skipping the flagship oracle.
+                if require_oracle() {
+                    panic!(
+                        "get_mempolicy(MPOL_F_MEMS_ALLOWED) preflight refused with \
+                         {errno_name} (errno {errno}) but NUMA_SHIM_REQUIRE_ORACLE=1 is \
+                         set — this CI row exists specifically to prove the real NUMA \
+                         policy path works; a denial here means the host was declared \
+                         oracle-required while its seccomp/container sandbox denies the \
+                         NUMA policy syscalls (get_mempolicy/mbind/set_mempolicy) as a \
+                         group — task #1336 (nineteenth review P2-1): {e}"
+                    );
+                }
+                eprintln!(
+                    "skip: get_mempolicy(MPOL_F_MEMS_ALLOWED) preflight refused with \
+                     {errno_name} (errno {errno}) — the environment's seccomp/container \
+                     sandbox denies the NUMA policy syscalls as a group \
+                     (get_mempolicy/mbind/set_mempolicy), so the policy oracle cannot \
+                     run in this environment; the preflight twin of the reserve arm's \
+                     ERRNO_EPERM container case, which the same sandbox denies too — \
+                     task #1336 (nineteenth review P2-1): {e}"
+                );
+                return;
+            }
+            // -- Fail-closed below (task #1336), same posture as before for
+            //    genuinely unexpected failures.
+            Some(errno) => panic!(
+                "get_mempolicy(MPOL_F_MEMS_ALLOWED) preflight failed with UNCLASSIFIED \
+                 errno {errno}: {e} — not on the task #1336 environment allowlist \
+                 (EPERM/ENOSYS only), so it fails loud instead of hiding behind a \
+                 green skip (nineteenth review P2-1)"
+            ),
+            None => panic!(
+                "get_mempolicy(MPOL_F_MEMS_ALLOWED) preflight failed with an Os error \
+                 carrying NO raw errno ({e}) — itself suspicious, and unclassifiable \
+                 for the implementation-vs-environment split; failing loud (task \
+                 #1336, nineteenth review P2-1)"
+            ),
+        },
     };
     if !node_bit_set(&allowed, node) {
         // Legitimate environment restriction, NOT a regression: the node
