@@ -178,7 +178,7 @@ fn align_of_one_payload_panics_at_construction() {
     // named runtime-panic route (the `new()` route is `const fn`, so a
     // `static` usage with an align-1 T fails to COMPILE via const-eval,
     // which is untestable here without a `compile_fail` doctest --
-    // CLAUDE.md bans doctests; `default()`'s runtime arm checks the exact
+    // This repository bans doctests; `default()`'s runtime arm checks the exact
     // same predicate).
     let _ = RacyPtrCell::<u8>::default();
 }

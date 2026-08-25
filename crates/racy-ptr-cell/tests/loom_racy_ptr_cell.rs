@@ -47,7 +47,7 @@
 //! - `counterfactual_spin_on_ready_livelocks_on_oom_rollback` — models the
 //!   SAME three-state `UNINIT -> INITIALIZING -> READY` protocol, but over a
 //!   simpler `AtomicU8` 3-state encoding rather than the packed
-//!   `AtomicPtr`-with-sentinel `RacyPtrCell` actually uses (task #710: this
+//!   `AtomicPtr`-with-sentinel `RacyPtrCell` actually uses (this
 //!   simplification is deliberate — the livelock property under test depends
 //!   only on the state machine's transitions, not on how a state is encoded
 //!   into bits — but it means this ONE counterfactual is not literally
@@ -61,8 +61,15 @@
 //! # How to run
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg loom" cargo test --release --test loom_racy_ptr_cell
+//! RUSTFLAGS="--cfg loom" cargo test -p racy-ptr-cell --release \
+//!     --test loom_racy_ptr_cell
 //! ```
+//!
+//! Keep the `-p racy-ptr-cell`: `--cfg loom` is a global `RUSTFLAGS` cfg that
+//! reaches every crate in the build, and under it `RacyPtrCell::new` is not
+//! `const` — so an unscoped run can break any `static CELL: RacyPtrCell<T> =
+//! RacyPtrCell::new();` elsewhere in the workspace. The README says the same
+//! thing under "Running the loom suite"; this command must not drift from it.
 
 #![cfg(loom)]
 

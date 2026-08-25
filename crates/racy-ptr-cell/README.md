@@ -15,10 +15,11 @@ It fills the niche `std::sync::OnceLock` cannot:
   not allocate, block, or unwind — see
   [Using this inside a `#[global_allocator]`](#using-this-inside-a-global_allocator)
   below before adopting it there.
-- **fallible without parking** — on winner OOM the sentinel rolls back to
+- **fallible without blocking** — on winner OOM the sentinel rolls back to
   `null` and losers re-race the CAS themselves. `OnceLock::get_or_init` cannot
-  fail at all, its `get_or_try_init` is still unstable, and both park the
-  losing threads for the duration of the winner's init.
+  fail at all, its `get_or_try_init` is still unstable, and both may block the
+  losing threads for the duration of the winner's init (blocking is the
+  documented contract; the mechanism `std` uses is an implementation detail).
 
 ```text
 static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();
@@ -128,8 +129,9 @@ targets, or future toolchains.
 The two link environments need genuinely different mitigations, **not a
 shared recipe**:
 
-- A `no_std` binary supplies a non-allocating `#[panic_handler]` itself. This
-  closes the hazard completely: no handler, no allocation.
+- A `no_std` binary supplies its own `#[panic_handler]`. Written not to
+  allocate, it closes the hazard completely: the whole panic path is yours,
+  so nothing on it can re-enter the allocator.
 - A `std` binary's `panic = "abort"` profile setting removes the **unwind**
   (the UB when the frame below is `GlobalAlloc::alloc`), but it does **not**
   stop the panic runtime from allocating: with the DEFAULT hook, every panic
@@ -217,7 +219,7 @@ for a worked example.
 
 `RacyPtrCell` exposes two `dbg_`-prefixed methods — `dbg_is_ready` and
 `dbg_rollback_reenterable` — that are NOT hidden from `rustdoc`. This is a
-deliberate posture decision (task #710), not an oversight:
+deliberate posture decision, not an oversight:
 
 - `dbg_rollback_reenterable`'s own doc explicitly invites downstream
   consumers to call it FROM their own test suites, to drive the OOM-rollback
@@ -230,26 +232,17 @@ deliberate posture decision (task #710), not an oversight:
   `#[doc(hidden)]`, which only affects documentation visibility, not the
   semver surface.
 - The alternative considered — gating both methods behind a non-default
-  Cargo feature (e.g. `test-probes`), the default CLAUDE.md's benchmark-hook
-  rule (2) recommends for any hook with no production caller — was rejected.
-  Cost, restated precisely (the earlier "would require restructuring the
-  whole existing test suite" framing overstated it): `[[test]]
-  required-features` exists, so the real cost is only the corresponding CI
-  matrix addition. The rejection is still correct on its actual merits:
-  neither method accepts a raw pointer or touches allocator metadata (the
-  hazard CLAUDE.md's rule targets), and this crate's `dbg_*` surface is
-  independently policed by the root repo's
-  `tests/dbg_hook_safety_tripwire.rs` allowlist, which requires a reviewed
-  justification per hook and already covers both.
+  Cargo feature (e.g. `test-probes`) — was rejected. The cost is small
+  (`[[test]] required-features` exists; the real cost is only the
+  corresponding CI matrix addition), but so is the benefit: neither method
+  accepts a raw pointer or touches allocator metadata, which is the hazard
+  a feature gate would be protecting against.
 - `dbg_is_ready` is functionally identical to `get().is_some()` — same
-  single `Acquire` load, same predicate. It is not exempt from CLAUDE.md's
-  "no production caller" framing on a technicality, either: the root
-  `sefer-alloc` crate's `Registry::dbg_chunk_is_materialised`
-  (`src/registry/bootstrap.rs`) is a real, exercised caller of this exact
-  method (via `RacyPtrCell::dbg_is_ready`), used to assert chunk-
-  materialisation state in that crate's own regression tests. It stays
-  public for that reason, not because it offers any capability `get`
-  lacks.
+  single `Acquire` load, same predicate. It stays public because it has a
+  real, exercised caller downstream, not because it offers any capability
+  `get` lacks: it reads as a self-documenting boolean assertion
+  (`assert!(cell.dbg_is_ready())`) at a call site that would otherwise need
+  an `.is_some()`/`.is_none()` match.
 
 Both methods carry the crate's ordinary semver guarantee: they are public
 API, not "test-only, may change or vanish any time" hidden internals. Their

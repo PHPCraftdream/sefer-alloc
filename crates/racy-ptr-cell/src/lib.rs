@@ -21,7 +21,7 @@
 //!   that observes the rollback (`null`) falls out of the spin and **re-races
 //!   the CAS itself**.
 //! - On winner **OOM** the sentinel is rolled back to `null` and losers
-//!   re-race the CAS themselves, rather than being parked and woken.
+//!   re-race the CAS themselves, rather than being blocked and woken.
 //!
 //! ## Why not `OnceLock`?
 //!
@@ -39,9 +39,11 @@
 //!   below. Used by hand-rolled allocators, runtimes, and bare-metal
 //!   bootstraps that must publish a process-`'static` pointer before any heap
 //!   exists.
-//! - **fallible without parking** — `OnceLock::get_or_init` cannot fail at
+//! - **fallible without blocking** — `OnceLock::get_or_init` cannot fail at
 //!   all, and its `get_or_try_init` is still unstable (`once_cell_try`). Both
-//!   also PARK the losing threads for the duration of the winner's init. This
+//!   may also BLOCK the losing threads for the duration of the winner's init
+//!   (the documented contract is that losers block; the mechanism `std` uses
+//!   to do so is an implementation detail, not a stable promise). This
 //!   cell reports failure as a plain `None` per caller and lets losers re-race
 //!   the CAS with no OS involvement, so a later attempt (after the OS frees
 //!   memory, say) can succeed without a blocking primitive anywhere.
@@ -122,8 +124,9 @@
 //! The two link environments need genuinely different mitigations, **not a
 //! shared recipe**:
 //!
-//! - A `no_std` binary supplies a non-allocating `#[panic_handler]` itself.
-//!   This closes the hazard completely: no handler, no allocation.
+//! - A `no_std` binary supplies its own `#[panic_handler]`. Written not to
+//!   allocate, it closes the hazard completely: the whole panic path is
+//!   yours, so nothing on it can re-enter the allocator.
 //! - A `std` binary's `panic = "abort"` profile setting removes the
 //!   **unwind** (the UB when the frame below is `GlobalAlloc::alloc`), but it
 //!   does **not** stop the panic runtime from allocating: with the DEFAULT
@@ -154,13 +157,14 @@
 //!   actually rests on is an `init` that cannot panic at all.** Note also
 //!   that `panic = "abort"` compiles the crate's internal rollback guard out
 //!   entirely (it is unwind-only) — under this profile the cell-consistency
-//!   guarantee below comes from the process dying, not from the guard.
+//!   guarantee above comes from the process dying, not from the guard.
 //!
 //! ### Fork and signal safety
 //!
-//! The rules above are all about what `init` *does*; two further hazards
-//! break the cell from **outside** `init`, with no misbehaving closure
-//! anywhere. **The cell is neither fork-safe nor async-signal-safe.**
+//! Everything above is about `init` and the panic path it can reach; two
+//! further hazards break the cell from **outside** any of that, with no
+//! misbehaving closure and no panic anywhere. **The cell is neither
+//! fork-safe nor async-signal-safe.**
 //! `INITIALIZING` is owned by a specific thread:
 //!
 //! - **`fork()` in a multithreaded process.** If one thread holds the
@@ -261,24 +265,28 @@
 //! it from), immediately below the named one.
 
 // This crate is a single-file seam crate: `unsafe` is confined to this one
-// module, lifted by the crate-level `#![allow(unsafe_code)]` below. There is a
-// SINGLE documented reason to hold `unsafe` here: constructing the
-// never-dereferenced `INITIALIZING` sentinel pointer via
-// `core::ptr::without_provenance_mut` (a `const fn` that is safe on modern
-// toolchains) requires no `unsafe`; the only genuinely `unsafe` surface is the
-// pointer-sentinel comparison discipline plus the caller-facing accessors that
-// hand back the raw pointer. All raw-pointer *dereferencing* is the CALLER's
-// responsibility (this crate never reads through `T`). The crate body's own
-// `unsafe` is confined to two audited kinds: `unsafe impl Send/Sync` for the
-// `AtomicPtr`-backed cell (justified below), and `unsafe { NonNull::new_unchecked(p) }`
-// at the accessor sites where `p` was already proven non-null by an
-// `is_ready`/`!= 0` check. The `#![allow(unsafe_code)]` is retained (rather than
-// `#![forbid]`) so the crate can expose the raw `*mut T` / `NonNull<T>` seam
-// types and those confined sites. Every `unsafe fn` / `unsafe impl` carries a
+// module, lifted by the crate-level `#![allow(unsafe_code)]` below. ONE
+// documented reason holds `unsafe` here — handing a raw `*mut T` /
+// `NonNull<T>` back to the caller — and it materialises at exactly two
+// audited kinds of site:
+//
+//   1. `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell (justified
+//      below at the impls themselves);
+//   2. `unsafe { NonNull::new_unchecked(p) }` at the accessor sites where
+//      `p` was already proven non-null by an `is_ready`/`!= 0` check.
+//
+// Note what is NOT on that list: constructing the never-dereferenced
+// `INITIALIZING` sentinel via `core::ptr::without_provenance_mut` needs no
+// `unsafe` at all (it is a safe `const fn` on modern toolchains) — the
+// sentinel-comparison discipline is a correctness invariant, not an `unsafe`
+// one. All raw-pointer *dereferencing* is the CALLER's responsibility; this
+// crate never reads through `T`. The `#![allow(unsafe_code)]` is retained
+// (rather than `#![forbid]`) so the crate can expose the raw seam types and
+// those two site kinds. Every `unsafe fn` / `unsafe impl` carries a
 // `# Safety` / `// SAFETY:` justification.
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 
 // The whole cell is one AtomicPtr driven by compare_exchange (see the
 // crate-doc "Portability limit" section above) — that requires pointer-width
@@ -351,8 +359,8 @@ const SENTINEL_INITIALIZING: usize = 1;
 /// A lazy, CAS-published pointer cell: `UNINIT -> INITIALIZING -> READY` over a
 /// single `AtomicPtr<T>`, with fallible init (OOM rolls back and losers
 /// re-race). See the [crate-level docs](crate) for the full state machine, the
-/// anti-livelock loser-spin rule, and the "safe inside a `#[global_allocator]`"
-/// niche.
+/// anti-livelock loser-spin rule, and the "usable inside a
+/// `#[global_allocator]`" niche.
 ///
 /// The cell never drops, frees, or reads through the pointee — it only
 /// publishes and hands back the `*mut T` the init closure produced.
@@ -387,7 +395,7 @@ unsafe impl<T> Send for RacyPtrCell<T> {}
 // SAFETY: see the `Send` impl above.
 unsafe impl<T> Sync for RacyPtrCell<T> {}
 
-/// RAII rollback guard held across the init closure (task #706): if `init`
+/// RAII rollback guard held across the init closure: if `init`
 /// unwinds instead of returning, the winner thread's stack unwinds through
 /// this guard's `Drop`, which stores `null` with `Release` — exactly the
 /// same rollback the explicit OOM path performs. Without this, an unwinding
@@ -403,7 +411,7 @@ unsafe impl<T> Sync for RacyPtrCell<T> {}
 /// successful publish and the explicit `None`/OOM rollback — so the normal
 /// paths are unaffected; this guard only ever fires on the unwind path.
 ///
-/// Test coverage note (task #774, finding F10): `tests/cell_unit.rs`'s
+/// Test coverage note: `tests/cell_unit.rs`'s
 /// `panicking_init_rolls_back_and_subsequent_call_succeeds` proves a
 /// strictly weaker property than the one described above — that a
 /// SUBSEQUENT call on an already-quiescent cell succeeds after a panicking
@@ -637,10 +645,11 @@ impl<T> RacyPtrCell<T> {
             match self.ptr.compare_exchange(
                 core::ptr::null_mut(),
                 Self::sentinel(),
-                // Success `Acquire`: synchronises-with the `Release` rollback
-                // store (OOM at :544, or the unwind guard's `Drop`) of a
-                // PREVIOUS winner that abandoned the cell — the only prior
-                // `Release` stores that can leave it `null`. It says nothing
+                // Success `Acquire`: synchronises-with whichever `Release`
+                // store last returned the cell to `null` — the explicit OOM
+                // rollback in this function's own winner arm, the unwind
+                // guard's `Drop`, or either of `dbg_rollback_reenterable`'s
+                // two null-stores. It says nothing
                 // about the publish this thread is about to perform: an
                 // acquire cannot pair with a release that has not happened
                 // yet. The load-bearing pair for the pointee is this winner's
@@ -658,14 +667,13 @@ impl<T> RacyPtrCell<T> {
                     // initialiser. Hold a rollback guard across `init()` so an
                     // UNWINDING init (a panic in caller code, or the `assert!`
                     // below firing) also rolls the sentinel back — see
-                    // `RollbackGuard`'s own doc for why this is load-bearing
-                    // (task #706).
+                    // `RollbackGuard`'s own doc for why this is load-bearing.
                     let mut guard = RollbackGuard::new(&self.ptr);
                     match init() {
                         Some(ptr) => {
                             let raw = ptr.as_ptr();
                             // Release-active `assert!`, not `debug_assert!`
-                            // (task #707): a SAFE init closure can construct
+                            // a SAFE init closure can construct
                             // `NonNull::new(without_provenance_mut(1))` and
                             // hand back the very SENTINEL address this cell
                             // uses to mean "still initialising". In release,
@@ -682,7 +690,7 @@ impl<T> RacyPtrCell<T> {
                             // guarantee that is reachable from 100% safe
                             // code — exactly the class `debug_assert!` is
                             // NOT meant for. If this fires, the rollback
-                            // guard above (task #706) unwinds it cleanly.
+                            // guard above unwinds it cleanly.
                             assert!(
                                 Self::is_ready(raw),
                                 "RacyPtrCell: init returned the null/sentinel address"
@@ -718,7 +726,7 @@ impl<T> RacyPtrCell<T> {
                 Err(_) => {
                     // ── Loser ───────────────────────────────────────────────
                     // Spin ONLY while the state is INITIALIZING. This is the
-                    // Phase-F1 anti-livelock rule: a `!= READY` spin would
+                    // anti-livelock rule: a `!= READY` spin would
                     // deadlock if the winner rolled back to null after OOM
                     // (READY never comes). Falling out on any non-INITIALIZING
                     // observation lets us return READY (winner published) or
@@ -759,19 +767,18 @@ impl<T> RacyPtrCell<T> {
     /// This is functionally identical to `get().is_some()` — same single
     /// `Acquire` load, same predicate, no capability `get` lacks — it does
     /// **not** avoid racing a concurrent init any differently than `get`
-    /// does (task #774, finding F4 corrected an earlier doc claiming
+    /// does (an earlier version of this doc claimed
     /// otherwise). It exists as a named, self-documenting boolean
     /// introspection primitive: a caller writing `assert!(cell.dbg_is_ready())`
     /// reads as "assert the cell materialised" without an
-    /// `.is_some()`/`.is_none()` match at the call site. A real in-repo
-    /// consumer already relies on exactly this: the root `sefer-alloc`
-    /// crate's `Registry::dbg_chunk_is_materialised`
-    /// (`src/registry/bootstrap.rs`) forwards to this method to assert
-    /// chunk-materialisation state in its own regression tests.
+    /// `.is_some()`/`.is_none()` match at the call site. The `sefer-alloc`
+    /// allocator this crate was extracted from relies on exactly that: its
+    /// own `Registry::dbg_chunk_is_materialised` forwards here to assert
+    /// chunk-materialisation state in its regression tests.
     ///
     /// # Stability
     ///
-    /// This is a deliberate, STABLE part of the public API (task #710) — a
+    /// This is a deliberate, STABLE part of the public API — a
     /// `dbg_`-prefixed test-probe surface, not a hidden implementation
     /// detail. It carries the crate's normal semver guarantee like any
     /// other public item; a `#[doc(hidden)]` posture was rejected precisely
@@ -826,7 +833,7 @@ impl<T> RacyPtrCell<T> {
     ///
     /// # Stability
     ///
-    /// This is a deliberate, STABLE part of the public API (task #710), not
+    /// This is a deliberate, STABLE part of the public API, not
     /// `#[doc(hidden)]`. This function is explicitly written to be called
     /// FROM a downstream consumer's own test suite ("a consumer's test can
     /// drive the rollback on a REAL, LIVE cell" above) — a `#[doc(hidden)]`

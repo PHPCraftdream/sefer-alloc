@@ -1,4 +1,4 @@
-//! `bench-scale-tool` fixed-iteration benches for `RacyPtrCell<T>` (task #760).
+//! `bench-scale-tool` fixed-iteration benches for `RacyPtrCell<T>`.
 //!
 //! This crate previously had zero benches of its own — it is the hottest
 //! primitive in the sefer-alloc allocator's init paths (lazy CAS-published
