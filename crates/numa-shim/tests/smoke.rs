@@ -151,6 +151,19 @@ fn current_node_returns_valid_or_none() {
 /// contract), so this test takes the positive path on EVERY target,
 /// including macOS and miri, matching what the mock actually returns.
 ///
+/// task #1337 (P2-2 of the nineteenth review,
+/// `docs/reviews/2026-08-25-022026-numa-shim-publication-audit-oh.md`):
+/// the platform branch below is now ARCH-aware, not just OS/backend-aware.
+/// Production's Linux arm is itself split by
+/// `any(target_arch = "x86_64", target_arch = "aarch64")`
+/// (`platform::reserve_preferred_on_node_impl`), and its negation returns
+/// `UnsupportedArchitecture` — the crate-doc platform matrix's "Linux
+/// other arch" row. A real Linux target that is not x86_64/aarch64
+/// asserts THAT outcome below (before the `current_node()` self-skip
+/// logic, which never runs there: the call errors first). Windows carries
+/// no arch restriction in production and keeps today's behavior; so does
+/// the mock, which takes the supported path unconditionally.
+///
 /// Self-skip discipline: positive NUMA policy tests run only when
 /// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
 /// (task #1311, F8.2). This covers the container/cgroup case where the
@@ -167,7 +180,26 @@ fn reserve_preferred_on_node_returns_valid_span() {
     let size = page * 4;
     let align = page;
 
-    if !cfg!(any(
+    // task #1337 (nineteenth review P2-2): real backend on a Linux arch
+    // outside x86_64/aarch64 — production's other-arch arm returns
+    // UnsupportedArchitecture before any argument/node validation.
+    if cfg!(all(
+        not(numa_shim_mock),
+        target_os = "linux",
+        not(miri),
+        not(any(target_arch = "x86_64", target_arch = "aarch64"))
+    )) {
+        let result = reserve_preferred_on_node(
+            size,
+            align,
+            NodeId::new(0).expect("literal 0, not the NO_NODE sentinel"),
+        );
+        assert!(
+            matches!(result, Err(ReserveNumaError::UnsupportedArchitecture)),
+            "expected UnsupportedArchitecture, got {result:?}"
+        );
+        return;
+    } else if !cfg!(any(
         numa_shim_mock,
         all(any(target_os = "linux", windows), not(miri))
     )) {
@@ -247,6 +279,12 @@ fn reserve_preferred_on_node_returns_valid_span() {
 /// and takes the positive path on every target (task #1325) — see that same
 /// doc comment.
 ///
+/// task #1337 (nineteenth review P2-2): arch-aware predicate here too —
+/// a real Linux target that is not x86_64/aarch64 asserts
+/// `Err(UnsupportedArchitecture)` instead of taking the positive path (see
+/// `reserve_preferred_on_node_returns_valid_span`'s doc comment above for
+/// the full rationale).
+///
 /// Self-skip discipline: positive NUMA policy tests run only when
 /// `current_node()` genuinely returns `Some(_)`; otherwise they skip loudly
 /// (task #1311, F8.2).
@@ -269,7 +307,26 @@ fn reserve_preferred_on_node_large_align_round_trip() {
     let span = 4 * 1024 * 1024;
     let align = span;
 
-    if !cfg!(any(
+    // task #1337 (nineteenth review P2-2): real backend on a Linux arch
+    // outside x86_64/aarch64 — production's other-arch arm returns
+    // UnsupportedArchitecture before any argument/node validation.
+    if cfg!(all(
+        not(numa_shim_mock),
+        target_os = "linux",
+        not(miri),
+        not(any(target_arch = "x86_64", target_arch = "aarch64"))
+    )) {
+        let result = reserve_preferred_on_node(
+            span,
+            align,
+            NodeId::new(0).expect("literal 0, not the NO_NODE sentinel"),
+        );
+        assert!(
+            matches!(result, Err(ReserveNumaError::UnsupportedArchitecture)),
+            "expected UnsupportedArchitecture, got {result:?}"
+        );
+        return;
+    } else if !cfg!(any(
         numa_shim_mock,
         all(any(target_os = "linux", windows), not(miri))
     )) {
@@ -470,6 +527,12 @@ fn reserve_preferred_on_node_large_align_round_trip() {
 /// mock validates arguments (mirroring the real backends' error mapping)
 /// with no platform check in front, so the `InvalidArguments` arm is taken
 /// on EVERY target.
+///
+/// task #1337 (nineteenth review P2-2): on a real Linux target that is
+/// not x86_64/aarch64, production's arch check fires BEFORE argument
+/// validation, so the outcome there is `UnsupportedArchitecture`, not
+/// `InvalidArguments` — the expected-variant selection below gained that
+/// third arm.
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
@@ -480,7 +543,14 @@ fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
     let err = reserve_preferred_on_node(0, page, NodeId::new(0).expect("literal 0, not NO_NODE"))
         .expect_err("zero size must be rejected");
 
-    let expected: fn(&ReserveNumaError) -> bool = if cfg!(any(
+    let expected: fn(&ReserveNumaError) -> bool = if cfg!(all(
+        not(numa_shim_mock),
+        target_os = "linux",
+        not(miri),
+        not(any(target_arch = "x86_64", target_arch = "aarch64"))
+    )) {
+        |e| matches!(e, ReserveNumaError::UnsupportedArchitecture)
+    } else if cfg!(any(
         numa_shim_mock,
         all(any(target_os = "linux", windows), not(miri))
     )) {
@@ -496,6 +566,13 @@ fn reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments() {
 /// reservation. Linux-only: Windows forwards any node id to the OS (its
 /// refusal surfaces as `Os`), so the `InvalidNode` variant is not assertable
 /// there.
+///
+/// task #1337 (nineteenth review P2-2): the `node >= 64` nodemask check
+/// exists only inside production's x86_64/aarch64 arm (and the mock's
+/// Linux-shaped mirror of it, task #1311/F6), so on a real Linux target
+/// that is not x86_64/aarch64 this test asserts
+/// `Err(UnsupportedArchitecture)` instead — the other-arch arm returns
+/// before the node id is ever examined.
 #[cfg(all(target_os = "linux", not(miri), feature = "vmem-integration"))]
 #[test]
 fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
@@ -511,10 +588,23 @@ fn reserve_preferred_on_node_rejects_node_beyond_nodemask_range() {
         NodeId::new(64).expect("literal 64 is not the NO_NODE sentinel"),
     )
     .expect_err("node 64 must be rejected on Linux");
-    assert!(
-        matches!(err, ReserveNumaError::InvalidNode),
-        "expected InvalidNode, got {err:?}"
-    );
+    // task #1337 (nineteenth review P2-2): the OS/backend dimension is
+    // already fully handled by this test's `#[cfg(target_os = "linux")]`
+    // compile gate, so only the mock-vs-arch dimension remains here.
+    if cfg!(any(
+        numa_shim_mock,
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        assert!(
+            matches!(err, ReserveNumaError::InvalidNode),
+            "expected InvalidNode, got {err:?}"
+        );
+    } else {
+        assert!(
+            matches!(err, ReserveNumaError::UnsupportedArchitecture),
+            "expected UnsupportedArchitecture, got {err:?}"
+        );
+    }
 }
 
 /// task #778 (rust-intel audit round-closing review, finding F3, MEDIUM):
