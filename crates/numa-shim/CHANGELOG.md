@@ -4,13 +4,7 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-
-Changes since the 0.1.0 publish of 2026-06-29. This section's heading is
-deliberately version-neutral: the next version number is an owner decision
-not yet made, and this repository does not bump versions without an explicit
-request. At release time, consolidate this section under a dated
-`## <version> - <date>` heading.
+## 0.2.0 - 2026-08-25
 
 ### NUMA gate verification caveat (owner risk acceptance, 2026-08-23)
 

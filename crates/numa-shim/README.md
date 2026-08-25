@@ -47,10 +47,10 @@ calls the kernel directly:
 
 ```toml
 [dependencies]
-numa-shim = "0.1"
+numa-shim = "0.2"
 
 # Optional: enables reserve_preferred_on_node() which wraps aligned-vmem
-# numa-shim = { version = "0.1", features = ["vmem-integration"] }
+# numa-shim = { version = "0.2", features = ["vmem-integration"] }
 ```
 
 ```rust
@@ -84,7 +84,7 @@ with a NUMA preference using [`aligned-vmem`](https://crates.io/crates/aligned-v
 
 ```toml
 [dependencies]
-numa-shim = { version = "0.1", features = ["vmem-integration"] }
+numa-shim = { version = "0.2", features = ["vmem-integration"] }
 # `reserve_preferred_on_node` returns an `aligned_vmem::Reservation`, but you
 # do NOT need `aligned-vmem` as a direct dependency just to name that type:
 # numa-shim re-exports it (`numa_shim::Reservation`). The direct dependency

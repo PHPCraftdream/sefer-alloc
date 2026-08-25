@@ -930,7 +930,7 @@ tagged-index-stack = { path = "crates/tagged-index-stack", version = "0.1", opti
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.
-numa-shim = { path = "crates/numa-shim", version = "0.1", features = ["vmem-integration"], optional = true }
+numa-shim = { path = "crates/numa-shim", version = "0.2", features = ["vmem-integration"], optional = true }
 
 [dev-dependencies]
 # Phase 2 dependency: the locality bench compares `Region` against raw
