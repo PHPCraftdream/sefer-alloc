@@ -226,12 +226,16 @@
 //! `riscv32imc-unknown-none-elf` (no `A` extension) have load/store atomics
 //! but no CAS; `msp430-none-elf` has no atomics at all. This crate is
 //! `no_std` and allocation-free, but neither property implies pointer-width
-//! CAS. A build on an unsupported target fails fast with an explicit
-//! [`compile_error!`] naming the requirement, rather than the "no method
-//! named `compare_exchange`" errors an unguarded build would otherwise
-//! produce on `thumbv6m-none-eabi`/`riscv32imc-unknown-none-elf`, or the
-//! unresolved `AtomicPtr` import on `msp430-none-elf`, which has no atomics
-//! for `core` to define it from.
+//! CAS. A build on an unsupported target gets an explicit
+//! [`compile_error!`] naming the requirement as its **first** diagnostic —
+//! the guard is a bare `#[cfg(not(target_has_atomic = "ptr"))]` on the
+//! `compile_error!` alone, not a `#[cfg(target_has_atomic = "ptr")]` around
+//! the rest of the crate, so rustc still checks that body afterward and
+//! reports the same "no method named `compare_exchange`" errors an
+//! unguarded build would produce on
+//! `thumbv6m-none-eabi`/`riscv32imc-unknown-none-elf`, or the unresolved
+//! `AtomicPtr` import on `msp430-none-elf` (no atomics for `core` to define
+//! it from), immediately below the named one.
 
 // This crate is a single-file seam crate: `unsafe` is confined to this one
 // module, lifted by the crate-level `#![allow(unsafe_code)]` below. There is a
@@ -255,10 +259,11 @@
 
 // The whole cell is one AtomicPtr driven by compare_exchange (see the
 // crate-doc "Portability limit" section above) — that requires pointer-width
-// atomic CAS from the target. Fail fast with an explicit, named reason
-// instead of the "no method named `compare_exchange`" E0599s a naive use
-// would otherwise produce on thumbv6m-none-eabi/riscv32imc, or the unresolved
-// AtomicPtr import (E0432) on msp430, which has no atomics at all.
+// atomic CAS from the target. This is only a bare cfg on the compile_error!
+// itself, not a cfg(target_has_atomic = "ptr") around the rest of the crate,
+// so it names the reason FIRST, ahead of (not instead of) the follow-on
+// E0599s (thumbv6m-none-eabi/riscv32imc) or E0432 (msp430) an unguarded
+// build would otherwise produce.
 #[cfg(not(target_has_atomic = "ptr"))]
 compile_error!(
     "racy-ptr-cell requires a target with pointer-width atomic \
