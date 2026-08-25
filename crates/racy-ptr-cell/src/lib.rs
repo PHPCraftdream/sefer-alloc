@@ -99,30 +99,7 @@
 //!   loud — it is a violated precondition, not a condition an allocator is
 //!   expected to survive.
 //!
-//! ### Fork and signal safety
-//!
-//! The rules above are all about what `init` *does*; two further hazards
-//! break the cell from **outside** `init`, with no misbehaving closure
-//! anywhere. **The cell is neither fork-safe nor async-signal-safe.**
-//! `INITIALIZING` is owned by a specific thread:
-//!
-//! - **`fork()` in a multithreaded process.** If one thread holds the
-//!   sentinel (running `init`) when another thread calls `fork()`, the child
-//!   process inherits a cell that reads `INITIALIZING` but has no thread that
-//!   can ever publish or roll it back — every subsequent caller in the child
-//!   spins forever. There is no reset API: `dbg_rollback_reenterable`'s entry
-//!   CAS requires the cell to already be `null` and is a no-op on a
-//!   sentinel-holding cell, by design.
-//! - **An allocating signal handler.** If a signal is delivered to the thread
-//!   that holds the sentinel and the handler allocates (directly, or
-//!   transitively — a `format!`, a `Vec`, a panic-hook path), the allocator
-//!   reaches the same cell from inside the handler, the claim CAS fails, and
-//!   the handler spins on a sentinel owned by the very thread it interrupted:
-//!   an unrecoverable single-thread self-deadlock.
-//!
-//! In a forking process, either publish every cell before the first `fork()`,
-//! or `fork()` only from a thread you know holds no cell and treat `exec()`
-//! in the child as mandatory. Do not allocate in a signal handler.
+//! ### Panic sites and the two link environments
 //!
 //! The panic sites, independently:
 //!
@@ -130,7 +107,7 @@
 //! |---|---|---|---|---|---|
 //! | 1 | sentinel-collision `assert!` in `get_or_try_init` | this crate | yes | bare `&'static str` | 0 |
 //! | 2 | an unwinding `init` closure | **yours** | yes | whatever you wrote | 0 if a bare literal, ≥ 2 if formatted |
-//! | 3 | `align_of::<T>() >= 2` in `new`/`default`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
+//! | 3 | `align_of::<T>() >= 2` in `new`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
 //! | 3 | `align_of::<T>() >= 2` in `new`/`default`, non-const form | this crate | yes | bare `&'static str` | 0 |
 //!
 //! Every row that reaches the panic runtime allocates in a `std` build, and
@@ -162,14 +139,39 @@
 //!   `&'static str` is fully covered by the `set_hook` mitigation. The
 //!   crate's own two `assert!`s (the sentinel-collision check and the
 //!   `align_of::<T>() >= 2` check) are of that shape and measure 0
-//!   allocations before the hook; **the third panic site above — an
-//!   unwinding `init` — is your code, and its message is whatever you
-//!   wrote**, so it is covered only if you keep it a bare literal. **The
+//!   allocations before the hook; **an unwinding `init` is your code, and
+//!   its message is whatever you wrote**, so it is covered only if you
+//!   keep it a bare literal. **The
 //!   only mitigation that covers a formatted message is an `init` that
 //!   cannot panic at all.** Note also
 //!   that `panic = "abort"` compiles the crate's internal rollback guard out
 //!   entirely (it is unwind-only) — under this profile the cell-consistency
 //!   guarantee below comes from the process dying, not from the guard.
+//!
+//! ### Fork and signal safety
+//!
+//! The rules above are all about what `init` *does*; two further hazards
+//! break the cell from **outside** `init`, with no misbehaving closure
+//! anywhere. **The cell is neither fork-safe nor async-signal-safe.**
+//! `INITIALIZING` is owned by a specific thread:
+//!
+//! - **`fork()` in a multithreaded process.** If one thread holds the
+//!   sentinel (running `init`) when another thread calls `fork()`, the child
+//!   process inherits a cell that reads `INITIALIZING` but has no thread that
+//!   can ever publish or roll it back — every subsequent caller in the child
+//!   spins forever. There is no reset API: `dbg_rollback_reenterable`'s entry
+//!   CAS requires the cell to already be `null` and is a no-op on a
+//!   sentinel-holding cell, by design.
+//! - **An allocating signal handler.** If a signal is delivered to the thread
+//!   that holds the sentinel and the handler allocates (directly, or
+//!   transitively — a `format!`, a `Vec`, a panic-hook path), the allocator
+//!   reaches the same cell from inside the handler, the claim CAS fails, and
+//!   the handler spins on a sentinel owned by the very thread it interrupted:
+//!   an unrecoverable single-thread self-deadlock.
+//!
+//! In a forking process, either publish every cell before the first `fork()`,
+//! or `fork()` only from a thread you know holds no cell and treat `exec()`
+//! in the child as mandatory. Do not allocate in a signal handler.
 //!
 //! [ga]: https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety
 //!
@@ -206,9 +208,11 @@
 //! but no CAS; `msp430-none-elf` has no atomics at all. This crate is
 //! `no_std` and allocation-free, but neither property implies pointer-width
 //! CAS. A build on an unsupported target fails fast with an explicit
-//! [`compile_error!`] naming the requirement, rather than the three bare
-//! "no method named `compare_exchange`" errors an unguarded build would
-//! otherwise produce.
+//! [`compile_error!`] naming the requirement, rather than the "no method
+//! named `compare_exchange`" errors an unguarded build would otherwise
+//! produce on `thumbv6m-none-eabi`/`riscv32imc-unknown-none-elf`, or the
+//! unresolved `AtomicPtr` import on `msp430-none-elf`, which has no atomics
+//! for `core` to define it from.
 
 // This crate is a single-file seam crate: `unsafe` is confined to this one
 // module, lifted by the crate-level `#![allow(unsafe_code)]` below. There is a
@@ -233,8 +237,9 @@
 // The whole cell is one AtomicPtr driven by compare_exchange (see the
 // crate-doc "Portability limit" section above) — that requires pointer-width
 // atomic CAS from the target. Fail fast with an explicit, named reason
-// instead of the three bare "no method named `compare_exchange`" E0599s a
-// naive use would otherwise produce on e.g. thumbv6m-none-eabi/riscv32imc/msp430.
+// instead of the "no method named `compare_exchange`" E0599s a naive use
+// would otherwise produce on thumbv6m-none-eabi/riscv32imc, or the unresolved
+// AtomicPtr import (E0432) on msp430, which has no atomics at all.
 #[cfg(not(target_has_atomic = "ptr"))]
 compile_error!(
     "racy-ptr-cell requires a target with pointer-width atomic \

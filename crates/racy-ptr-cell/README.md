@@ -81,7 +81,7 @@ The panic sites, independently:
 |---|---|---|---|---|---|
 | 1 | sentinel-collision `assert!` in `get_or_try_init` | this crate | yes | bare `&'static str` | 0 |
 | 2 | an unwinding `init` closure | **yours** | yes | whatever you wrote | 0 if a bare literal, ≥ 2 if formatted |
-| 3 | `align_of::<T>() >= 2` in `new`/`default`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
+| 3 | `align_of::<T>() >= 2` in `new`, `static` form | this crate | **no** — const-eval failure, compile time | n/a | n/a |
 | 3 | `align_of::<T>() >= 2` in `new`/`default`, non-const form | this crate | yes | bare `&'static str` | 0 |
 
 Every row that reaches the panic runtime allocates in a `std` build, and the
@@ -108,9 +108,9 @@ recipe**:
   panic. Only a panic whose message is a bare `&'static str` is fully
   covered. The crate's own two `assert!`s (the sentinel-collision check and
   the `align_of::<T>() >= 2` check) are of that shape and measure 0
-  allocations before the hook; **the third panic site above — an unwinding
-  `init` — is your code, and its message is whatever you wrote**, so it is
-  covered only if you keep it a bare literal. **The only mitigation that
+  allocations before the hook; **an unwinding `init` is your code, and its
+  message is whatever you wrote**, so it is covered only if you keep it a
+  bare literal. **The only mitigation that
   covers a formatted message is an `init` that cannot panic at all.** Note
   also that `panic = "abort"` compiles this crate's internal rollback guard
   out entirely (it is unwind-only) — under this profile the cell-consistency
@@ -125,8 +125,10 @@ without it. `thumbv6m-none-eabi` (Cortex-M0/M0+) and
 no CAS; `msp430-none-elf` has no atomics at all. `no_std` and
 allocation-free do not imply pointer-width CAS. A build on an unsupported
 target fails fast with an explicit `compile_error!` naming the requirement,
-rather than the three bare "no method named `compare_exchange`" errors an
-unguarded build would otherwise produce.
+rather than the "no method named `compare_exchange`" errors an unguarded
+build would otherwise produce on `thumbv6m-none-eabi`/`riscv32imc-unknown-none-elf`,
+or the unresolved `AtomicPtr` import on `msp430-none-elf`, which has no
+atomics for `core` to define it from.
 
 ## The two rules people get wrong
 
