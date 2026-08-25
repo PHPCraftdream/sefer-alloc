@@ -1828,6 +1828,15 @@ jobs:
       # anywhere in this file -- `--all-targets` below covers both test
       # files and the bench in one step.
       - run: cargo clippy -p racy-ptr-cell --all-targets -- -D warnings
+      # publication readiness review cycle 4 (claude/oh, F2, task #1379): no
+      # `cargo doc -p racy-ptr-cell` row existed anywhere in this file, and
+      # the root `docs` job below is `--no-deps` (never reaches a dependency
+      # crate) and deliberately drops `RUSTDOCFLAGS: "-D warnings"` -- not
+      # hypothetical, task #1376's own commit caught two broken intra-doc
+      # links in this crate by a manual local run two commits ago. No
+      # `--all-features` needed: the crate declares no Cargo features and no
+      # `[package.metadata.docs.rs]`, so this row is docs.rs's exact build.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p racy-ptr-cell --no-deps
       # rust-intel round-closing review (task #772, finding F5, 2026-08-09):
       # tagged-index-stack advertises `categories = [..., "no-std::no-alloc"]`
       # but was never cross-built for ANY bare-metal target -- it can't use
