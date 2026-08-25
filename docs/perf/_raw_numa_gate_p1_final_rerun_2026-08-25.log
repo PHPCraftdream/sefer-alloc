@@ -1,0 +1,110 @@
+   Compiling numa-shim v0.2.0 (D:\dev\rust\sefer-alloc\crates\numa-shim)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.82s
+     Running unittests src\lib.rs (D:\dev\rust\.cargo-target\debug\deps\numa_shim-6140c54992718691.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cpumap_parser.rs (D:\dev\rust\.cargo-target\debug\deps\cpumap_parser-7736475a23b10d78.exe)
+
+running 15 tests
+test cpu_32_is_bit_0_of_the_leftmost_word ... ok
+test cpu_63_is_bit_31_of_the_leftmost_word ... ok
+test cpu_beyond_mask_coverage_returns_false ... ok
+test empty_token_is_rejected ... ok
+test format_sysfs_path_does_not_panic_on_five_plus_digit_node ... ok
+test doc_example_cpus_0_and_1_set ... ok
+test empty_input_is_rejected ... ok
+test format_sysfs_path_node_0 ... ok
+test format_sysfs_path_multi_digit_node ... ok
+test trim_end_strips_newline_cr_and_trailing_space ... ok
+test invalid_hex_digit_is_rejected ... ok
+test parse_hex_u32_accepts_lower_and_upper_case ... ok
+test parse_hex_u32_rejects_tokens_longer_than_8_digits ... ok
+test single_word_mask_cpu_0_and_cpu_31 ... ok
+test parse_hex_u32_rejects_empty_and_invalid ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cpumap_reverse_index.rs (D:\dev\rust\.cargo-target\debug\deps\cpumap_reverse_index-b3538d19e0ffb14a.exe)
+
+running 6 tests
+test malformed_text_is_fail_closed_per_node ... ok
+test overlapping_masks_lowest_node_wins ... ok
+test capacity_boundary_and_alignment ... ok
+test cpu_beyond_capacity_degrades_like_old_buffer_too_small ... ok
+test multi_node_sparse_global_ids_map_correctly ... ok
+test probe_agrees_with_reverse_index_within_capacity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\eintr_retry.rs (D:\dev\rust\.cargo-target\debug\deps\eintr_retry-5fec2a8883adaab5.exe)
+
+running 3 tests
+test interrupted_error_with_fresh_streak_is_retried ... ok
+test non_interrupted_error_never_retries ... ok
+test retry_limit_exhaustion_fails_closed ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mock_dispatch.rs (D:\dev\rust\.cargo-target\debug\deps\mock_dispatch-628bbd22767d2895.exe)
+
+running 4 tests
+test current_node_default_zero ... ok
+test current_node_records_scripted_value ... ok
+test current_node_scripted_no_node_yields_none ... ok
+test calls_log_is_capped_not_unbounded ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\node_id.rs (D:\dev\rust\.cargo-target\debug\deps\node_id-bdc6b422f0aa5059.exe)
+
+running 2 tests
+test new_accepts_every_non_sentinel_value ... ok
+test new_rejects_exactly_the_no_node_sentinel ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\node_resolution.rs (D:\dev\rust\.cargo-target\debug\deps\node_resolution-c015965110aefcf4.exe)
+
+running 5 tests
+test resolution_records_in_mock_log ... ok
+test resolution_unavailable_records_in_mock_log ... ok
+test resolution_matches_current_node_resolved_zero ... ok
+test resolution_matches_current_node_resolved_nonzero ... ok
+test resolution_matches_current_node_unavailable ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\node_resolution_linux.rs (D:\dev\rust\.cargo-target\debug\deps\node_resolution_linux-3d8db650b407238d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\policy_oracle_linux.rs (D:\dev\rust\.cargo-target\debug\deps\policy_oracle_linux-2125b98984deb89b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\readme_examples.rs (D:\dev\rust\.cargo-target\debug\deps\readme_examples-dd9c448c1fb2984d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\smoke.rs (D:\dev\rust\.cargo-target\debug\deps\smoke-602c06b0c3bf0c6e.exe)
+
+running 1 test
+test current_node_returns_valid_or_none ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests numa_shim
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
