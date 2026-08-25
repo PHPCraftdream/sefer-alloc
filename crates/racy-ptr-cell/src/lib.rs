@@ -169,9 +169,28 @@
 //!   the handler spins on a sentinel owned by the very thread it interrupted:
 //!   an unrecoverable single-thread self-deadlock.
 //!
-//! In a forking process, either publish every cell before the first `fork()`,
-//! or `fork()` only from a thread you know holds no cell and treat `exec()`
-//! in the child as mandatory. Do not allocate in a signal handler.
+//! The invariant is stronger than "the calling thread holds no cell": a
+//! thread's own state says nothing about a **different** thread that is
+//! mid-`init` on some other cell the moment `fork()` runs, and that other
+//! thread does not exist in the child to ever finish. The rule that actually
+//! holds is **`fork()` must not race any thread's `init`, anywhere in the
+//! process** — not just once, before some notional "first" fork; every
+//! subsequent `fork()`, and every cell created or reset afterward, is bound
+//! by the same rule. Two disciplines follow, depending on what the child does
+//! before `exec()`:
+//!
+//! - **Child touches the allocator or this cell before `exec()`.** Serialize
+//!   `fork()` against every initializer with a process-wide barrier —
+//!   acquired before `fork()`, held until no cell anywhere is
+//!   `INITIALIZING` — so the fork actually happens with the invariant
+//!   proven, not merely with the calling thread's own state as evidence.
+//! - **Child only execs.** After `fork()`, call nothing but an
+//!   async-signal-safe `exec` — not the Rust allocator, not this cell, not
+//!   any other non-async-signal-safe API — and on its failure terminate
+//!   through an async-signal-safe path (e.g. `_exit`), never through the
+//!   ordinary panic/allocator path.
+//!
+//! Do not allocate in a signal handler.
 //!
 //! [ga]: https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html#safety
 //!
