@@ -64,20 +64,36 @@
 //! compile. Unlike that file there is no platform/arch clause — every
 //! backend the test suite runs on either resolves a node (real or mock)
 //! and performs a preferred reservation, or takes the documented `None`
-//! fallback branch. The one combination that would panic inside the
-//! example is a REAL Linux backend on a non-x86_64/aarch64 arch with
-//! resolvable topology (`Err(UnsupportedArchitecture)` reaches the
-//! example's `.expect`); no CI row builds that combination for this
-//! crate (the same situation `tests/smoke.rs` lived in before task
-//! #1337 made its own predicates arch-aware), and it is named here so it
-//! stays a known property rather than a surprise.
-//! As of task #1341 the same caveat extends to this file's
-//! `node_id_new_ergonomic_path_snippet_compiles_and_runs` (it too
-//! `.expect`s the preferred reservation on the `Some` arm); the other
-//! two #1341 tests cannot hit it — the usage snippet performs no
-//! reservation, and the best-effort snippet's `.ok()` routes an
-//! `Err(UnsupportedArchitecture)` into the fallback reservation, which
-//! is exactly the path that snippet exists to demonstrate.
+//! fallback branch.
+//!
+//! ## task #1346: the `Some` arm no longer panics on `UnsupportedArchitecture`
+//! (22nd review F2)
+//!
+//! Before this task, a REAL Linux backend on a non-x86_64/aarch64 arch
+//! with resolvable topology (e.g. `riscv64gc-unknown-linux-gnu`,
+//! `s390x-unknown-linux-gnu`, `powerpc64le-unknown-linux-gnu`) could
+//! reach `current_node()`'s `Some(n)` arm — detection is
+//! architecture-independent — while `reserve_preferred_on_node` returns
+//! `Err(ReserveNumaError::UnsupportedArchitecture)` on those arches (the
+//! `mbind`-based reservation path is x86_64/aarch64-only). Both the
+//! README's first `vmem-integration` example and `NodeId::new`'s
+//! "Ergonomic path from detection" snippet used to `.expect("NUMA-preferred
+//! reservation failed")` on that `Result`, panicking on exactly that
+//! combination — no CI row for this crate builds that combination (the
+//! same gap `tests/smoke.rs` had before task #1337 made its own
+//! predicates arch-aware), so the panic path was previously named here as
+//! a known property rather than a surprise. Both sites (and this file's
+//! `readme_vmem_integration_example_compiles_and_runs` and
+//! `node_id_new_ergonomic_path_snippet_compiles_and_runs`) now compose
+//! `.ok().or_else(|| aligned_vmem::reserve_aligned(size, align))` instead,
+//! matching the established idiom already used by
+//! `reserve_preferred_on_node`'s own "Best-effort fallback" doc section
+//! and the README's second example — so `UnsupportedArchitecture` (or any
+//! other reservation-backend error) now falls back to a plain reservation
+//! instead of panicking. Re-verified after this fix: neither test in this
+//! file retains a panic path other than a genuine OOM from the fallback
+//! reservation itself (`.expect("OOM")`), matching every other test in
+//! this file — there is no longer a known-panic combination to caveat.
 
 #![cfg(feature = "vmem-integration")]
 
@@ -106,13 +122,18 @@ fn readme_vmem_integration_example_compiles_and_runs() {
     let r = match current_node() {
         Some(node) => {
             // current_node() remaps the sentinel to None, so `node` here is
-            // never NO_NODE and NodeId::new cannot fail.
+            // never NO_NODE and NodeId::new cannot fail. The reservation
+            // itself can still fail (e.g. `UnsupportedArchitecture` on a
+            // real Linux target outside x86_64/aarch64) — `.ok().or_else(...)`
+            // falls back to a plain reservation rather than panicking on that.
             reserve_preferred_on_node(
                 ps * 16,
                 PAGE.max(ps),
                 NodeId::new(node).expect("never NO_NODE"),
             )
-            .expect("NUMA-preferred reservation failed")
+            .ok()
+            .or_else(|| aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)))
+            .expect("OOM")
         }
         None => {
             // No NUMA preference — plain aligned reservation.
@@ -175,9 +196,16 @@ fn crate_usage_snippet_compiles_and_runs() {
 /// different types, so the match as documented could never compile.
 /// Both arms now yield `Reservation` via `.expect`, the resolution the
 /// README's `vmem-integration` example (oracled by the test above)
-/// already established. Statements are the corrected snippet verbatim;
-/// the snippet's placeholder `size`/`align` are bound to concrete
-/// values the same way the README example binds them.
+/// already established. Task #1346 (22nd review F2) then replaced the
+/// `Some` arm's `.expect("NUMA-preferred reservation failed")` with
+/// `.ok().or_else(|| aligned_vmem::reserve_aligned(size, align))` so the
+/// arm no longer panics on a genuine reservation failure (e.g.
+/// `UnsupportedArchitecture` on a real Linux target outside
+/// x86_64/aarch64) — only a genuine OOM from the fallback itself still
+/// panics, matching the `None` arm's existing style. Statements are the
+/// corrected snippet verbatim; the snippet's placeholder `size`/`align`
+/// are bound to concrete values the same way the README example binds
+/// them.
 #[test]
 fn node_id_new_ergonomic_path_snippet_compiles_and_runs() {
     // === BEGIN: src/lib.rs NodeId::new "# Ergonomic path from detection" snippet ===
@@ -195,7 +223,9 @@ fn node_id_new_ergonomic_path_snippet_compiles_and_runs() {
             align,
             NodeId::new(n).expect("never the NO_NODE sentinel"),
         )
-        .expect("NUMA-preferred reservation failed"),
+        .ok()
+        .or_else(|| aligned_vmem::reserve_aligned(size, align))
+        .expect("OOM"),
         None => aligned_vmem::reserve_aligned(size, align).expect("OOM"),
     };
     drop(r);

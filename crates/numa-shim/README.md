@@ -111,9 +111,14 @@ let ps = page_size();
 let r = match current_node() {
     Some(node) => {
         // current_node() remaps the sentinel to None, so `node` here is
-        // never NO_NODE and NodeId::new cannot fail.
+        // never NO_NODE and NodeId::new cannot fail. The reservation itself
+        // can still fail (e.g. `UnsupportedArchitecture` on a real Linux
+        // target outside x86_64/aarch64) — `.ok().or_else(...)` falls back
+        // to a plain reservation rather than panicking on that.
         reserve_preferred_on_node(ps * 16, PAGE.max(ps), NodeId::new(node).expect("never NO_NODE"))
-            .expect("NUMA-preferred reservation failed")
+            .ok()
+            .or_else(|| aligned_vmem::reserve_aligned(ps * 16, PAGE.max(ps)))
+            .expect("OOM")
     }
     None => {
         // No NUMA preference — plain aligned reservation.
