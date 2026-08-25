@@ -88,33 +88,32 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     // test failure instead of wedging the whole test run; the spinning
     // thread (if the bug were present) would be orphaned, not joined, and
     // reaped at process exit.
-    // `NonNull<Payload>` is `!Send`, so ferry the address (a plain `usize`)
-    // across the channel instead and reconstruct `NonNull` on this thread.
+    // `NonNull<Payload>` is `!Send`, so the worker thread does not send the
+    // pointer itself across the channel at all -- only a completion signal
+    // (task #1360-class, first racy-ptr-cell publication audit finding F1:
+    // an earlier version of this test ferried the pointer's address as a
+    // `usize` and reconstructed it via `with_exposed_provenance_mut`, with a
+    // comment claiming this was clean under `-Zmiri-strict-provenance` --
+    // false, since that flag forbids the exposed-provenance mechanism
+    // entirely, as commit `ead400a`'s own message already admitted. Fetching
+    // the pointer via `cell.get()` on THIS thread after the signal arrives
+    // sidesteps the provenance question outright: no pointer-to-integer
+    // round-trip anywhere in this test).
     let cell = std::sync::Arc::new(cell);
     let cell2 = std::sync::Arc::clone(&cell);
     let (tx, rx) = std::sync::mpsc::channel();
     let _handle = std::thread::spawn(move || {
-        let p = cell2
-            .get_or_try_init(|| Some(leak(0xABCD)))
-            .map(|p| p.as_ptr().expose_provenance());
-        let _ = tx.send(p);
+        let ok = cell2.get_or_try_init(|| Some(leak(0xABCD))).is_some();
+        let _ = tx.send(ok);
     });
 
-    let addr = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect(
-            "get_or_try_init after a panicking init did not return within 5s \
-             -- the INITIALIZING sentinel is stuck forever (task #706's \
-             livelock is back)",
-        )
-        .expect("init must succeed");
-    // `addr` is the exposed provenance of a pointer this same process just
-    // published via `expose_provenance()` above; reconstructing it via
-    // `with_exposed_provenance_mut` (rather than a plain `as` cast) keeps
-    // this test clean under `-Zmiri-strict-provenance` (task #774, finding
-    // F2 -- mirrors task #709's identical fix one file over in
-    // tests/loom_racy_ptr_cell.rs).
-    let p = NonNull::new(core::ptr::with_exposed_provenance_mut::<Payload>(addr)).unwrap();
+    let init_succeeded = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+        "get_or_try_init after a panicking init did not return within 5s \
+         -- the INITIALIZING sentinel is stuck forever (task #706's \
+         livelock is back)",
+    );
+    assert!(init_succeeded, "init must succeed");
+    let p = cell.get().expect("cell is ready after the signal above");
 
     assert!(cell.dbg_is_ready());
     assert_eq!(cell.get(), Some(p));
