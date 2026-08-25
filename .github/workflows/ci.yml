@@ -2792,6 +2792,24 @@ jobs:
       # (numa-shim-windows below): default features is what `cargo add
       # numa-shim` produces, and no feature-on row subsumes it.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p numa-shim --no-deps
+      # task #1356 (P3-5 of item 117's twenty-fifth independent review,
+      # docs/correctness-open-items/TRACKED_publish_readiness.md): the three
+      # rustdoc rows above never compile `pub mod mock` — it is gated behind
+      # the build-time cfg `numa_shim_mock` (not a Cargo feature since task
+      # #1288), so no combination of `--features`/`--all-features` can reach
+      # it, and its public items (`MockCall`, `set_current_node`, `drain`,
+      # `CALLS_CAP`, ...) had zero rustdoc coverage in CI — a broken
+      # intra-doc link or rustdoc lint inside the module would pass every
+      # row above. The cfg rides in RUSTDOCFLAGS, NOT RUSTFLAGS: cargo does
+      # not forward RUSTFLAGS to rustdoc invocations (verified locally with
+      # `cargo doc -v`: the rustdoc command line carries only the Cargo.toml
+      # `[lints.rust unexpected_cfgs]`-derived `--check-cfg
+      # 'cfg(numa_shim_mock)'`, never the cfg itself), so an
+      # `RUSTFLAGS=... cargo doc` row would be green-and-dead — no mock docs
+      # generated, zero warnings, exit 0. Inline `VAR=val` prefixes match
+      # this job's own rows above (ubuntu bash; the `env:`-block form is the
+      # Windows-shell workaround of task #1291, not needed here).
+      - run: RUSTDOCFLAGS="--cfg numa_shim_mock -D warnings" cargo doc -p numa-shim --no-deps
 
   numa-shim-windows:
     # Run the numa-shim real-syscall path on a real Windows kernel.
@@ -2907,8 +2925,11 @@ jobs:
       # before the fix too). The grep sentinels (task #1101 pattern, as in
       # the numa-shim-mock job's mock rows) name the three tests this fix is
       # about, so a green-and-dead or renamed-away run fails loudly. The
-      # miri twin of this cell (mock + vmem-integration under miri) stays
-      # uncovered — recorded in the task #1325 CHANGELOG entry.
+      # miri twin of this cell (mock + vmem-integration under miri) stayed
+      # uncovered from task #1325 (recorded in its CHANGELOG entry) until
+      # task #1356 (item 117's P3-5, twenty-fifth review): the
+      # numa-shim-macos-miri job below now carries its own
+      # mock+vmem-integration row with the same three sentinels.
       - run: |
           RUSTFLAGS="--cfg numa_shim_mock" cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
           grep -F "test reserve_preferred_on_node_returns_valid_span ... ok" "$RUNNER_TEMP/numa-shim-macos-mock-vmem.log"
@@ -2960,6 +2981,29 @@ jobs:
           RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
           grep -F "test current_node_records_scripted_value ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
           grep -F "test resolution_matches_current_node_resolved_zero ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock.log"
+        shell: bash
+      # task #1356 (P3-5 of item 117's twenty-fifth independent review,
+      # docs/correctness-open-items/TRACKED_publish_readiness.md; framed by
+      # the review itself as hardening, not a release blocker): the miri
+      # twin of numa-shim-macos's mock+vmem-integration row above — the last
+      # uncovered cell of this crate's {real, mock} x {default,
+      # vmem-integration} miri matrix, a known gap since task #1325 (see
+      # the now-updated comment on that job's row). The mock's positive
+      # path is miri-compatible by construction: under `numa_shim_mock` the
+      # smoke.rs platform branches all take the mock arm (task #1325 made
+      # them backend-aware, target_os-independent), and the mock's
+      # reservation comes from aligned-vmem's own `#[cfg(miri)]` backend
+      # (crates/aligned-vmem/src/os/miri.rs), not a real mmap. Same three
+      # sentinels as the non-miri twin above (task #1101 pattern; the task
+      # #1070 "Breakage B" vacuous-green hazard): this is the workflow's
+      # only miri x mock x feature cell, so a typo'd cfg or dropped feature
+      # compiling its tests to zero would otherwise be undetected here
+      # specifically.
+      - run: |
+          RUSTFLAGS="--cfg numa_shim_mock" cargo miri test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_returns_valid_span ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_large_align_round_trip ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
+          grep -F "test reserve_preferred_on_node_rejects_zero_size_with_invalid_arguments ... ok" "$RUNNER_TEMP/numa-shim-macos-miri-mock-vmem.log"
         shell: bash
 
   numa-real-kernel:
