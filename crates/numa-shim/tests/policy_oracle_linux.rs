@@ -624,11 +624,26 @@ fn plain_unbound_reservation_is_not_reported_as_preferred_for_our_node() {
     // Create a plain reservation WITHOUT calling `reserve_preferred_on_node`.
     //
     // task #1318 note: this negative control has NO `ReserveNumaError::Os`
-    // skip arm to tighten — it never touches the NUMA policy machinery
-    // (plain `aligned_vmem` reservation, no mbind), so there is no
-    // environment-vs-implementation errno classification to apply. Its
-    // failure mode is already loud (`.expect` below), which is the correct
-    // posture here: a negative control only proves anything if it RUNS.
+    // skip arm to tighten for the RESERVATION itself — `aligned_vmem::try_reserve_aligned`
+    // never touches the NUMA policy machinery (plain reservation, no mbind), so there is
+    // no environment-vs-implementation errno classification to apply to that call. Its
+    // failure mode stays loud (`.expect` below), which is the correct posture: a negative
+    // control only proves anything if it RUNS.
+    //
+    // task #1347 (twenty-first review P2-1) correction: the paragraph above used to also
+    // claim this test "never touches the NUMA policy machinery" as a whole, and on that
+    // basis left the `get_mempolicy_addr(probe)` call below as a bare `.expect` with no
+    // errno classification. That claim was factually wrong — `get_mempolicy_addr` issues
+    // `get_mempolicy(2)` via raw syscall, which is the SAME syscall task #1336 (nineteenth
+    // review P2-1, ~200 lines above) already established is in Docker's default seccomp
+    // profile's denied group alongside `mbind`/`set_mempolicy` (one CAP_SYS_NICE gate,
+    // EPERM). On containerized Linux, `current_node()` can succeed (sysfs is readable) and
+    // this plain reservation can succeed (no mbind involved), yet `get_mempolicy_addr`
+    // below still hits the seccomp denial the preflight above was fixed for — moving the
+    // exact hard-panic task #1336 eliminated from the positive oracle to this negative
+    // control instead. Classified below with the SAME allowlist the preflight uses
+    // (`ERRNO_EPERM`/`ERRNO_ENOSYS` skip, everything else panics fail-closed, escalated to
+    // fatal under `NUMA_SHIM_REQUIRE_ORACLE=1`).
     let r =
         aligned_vmem::try_reserve_aligned(size, align).expect("plain reservation should succeed");
 
@@ -636,9 +651,62 @@ fn plain_unbound_reservation_is_not_reported_as_preferred_for_our_node() {
     // SAFETY: `r` owns `size` bytes at `r.as_ptr()`; adding `page` stays within.
     let probe = unsafe { r.as_ptr().add(page) }.cast::<core::ffi::c_void>();
 
-    let (mode, nodemask) = unsafe {
-        get_mempolicy_addr(probe)
-            .expect("get_mempolicy(MPOL_F_ADDR) on a live reservation must succeed")
+    // task #1347 (twenty-first review P2-1): mirrors the positive oracle's
+    // `get_mems_allowed()` preflight classification above (task #1336, nineteenth review
+    // P2-1) at this sibling `get_mempolicy_addr` call site, which that earlier task missed.
+    let (mode, nodemask) = match unsafe { get_mempolicy_addr(probe) } {
+        Ok(result) => result,
+        Err(e) => match e.raw_os_error() {
+            // -- ALLOWLIST (task #1347): the only errnos classified as
+            //    environment here. Everything not here panics below,
+            //    fail-closed — mirroring the preflight's posture.
+            Some(errno @ ERRNO_EPERM) | Some(errno @ ERRNO_ENOSYS) => {
+                let errno_name = if errno == ERRNO_EPERM {
+                    "EPERM"
+                } else {
+                    "ENOSYS"
+                };
+                // task #1324 pattern: on the real-Linux CI row the denial is
+                // a broken promise (that row is not a container), so it stays
+                // fatal instead of silently skipping the negative control.
+                if require_oracle() {
+                    panic!(
+                        "get_mempolicy(MPOL_F_ADDR) on the negative control's plain \
+                         reservation refused with {errno_name} (errno {errno}) but \
+                         NUMA_SHIM_REQUIRE_ORACLE=1 is set — this CI row exists \
+                         specifically to prove the real NUMA policy path works; a denial \
+                         here means the host was declared oracle-required while its \
+                         seccomp/container sandbox denies the NUMA policy syscalls \
+                         (get_mempolicy/mbind/set_mempolicy) as a group — task #1347 \
+                         (twenty-first review P2-1): {e}"
+                    );
+                }
+                eprintln!(
+                    "skip: get_mempolicy(MPOL_F_ADDR) on the negative control's plain \
+                     reservation refused with {errno_name} (errno {errno}) — the \
+                     environment's seccomp/container sandbox denies the NUMA policy \
+                     syscalls as a group (get_mempolicy/mbind/set_mempolicy), so the \
+                     negative control cannot run in this environment; the same container \
+                     case task #1336 fixed for the positive oracle's preflight, now also \
+                     applied here — task #1347 (twenty-first review P2-1): {e}"
+                );
+                return;
+            }
+            // -- Fail-closed below (task #1347), same posture as the preflight
+            //    for genuinely unexpected failures.
+            Some(errno) => panic!(
+                "get_mempolicy(MPOL_F_ADDR) on the negative control's plain reservation \
+                 failed with UNCLASSIFIED errno {errno}: {e} — not on the task #1347 \
+                 environment allowlist (EPERM/ENOSYS only), so it fails loud instead of \
+                 hiding behind a green skip (twenty-first review P2-1)"
+            ),
+            None => panic!(
+                "get_mempolicy(MPOL_F_ADDR) on the negative control's plain reservation \
+                 failed with an Os error carrying NO raw errno ({e}) — itself suspicious, \
+                 and unclassifiable for the implementation-vs-environment split; failing \
+                 loud (task #1347, twenty-first review P2-1)"
+            ),
+        },
     };
 
     // Assert that the plain mapping is NOT reported as "MPOL_PREFERRED, exactly our node."
