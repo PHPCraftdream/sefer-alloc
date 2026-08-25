@@ -2722,6 +2722,7 @@ jobs:
           cargo test -p numa-shim --features vmem-integration 2>&1 | tee "$RUNNER_TEMP/numa-shim-oracle-linux.log"
           grep -F "test reserve_preferred_on_node_installs_mpol_preferred_on_the_usable_span ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
           grep -F "test plain_unbound_reservation_is_not_reported_as_preferred_for_our_node ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
+          grep -F "test readme_vmem_integration_example_compiles_and_runs ... ok" "$RUNNER_TEMP/numa-shim-oracle-linux.log"
         shell: bash
         env:
           NUMA_SHIM_REQUIRE_ORACLE: "1"

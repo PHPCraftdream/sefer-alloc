@@ -140,7 +140,11 @@ impl NodeId {
     /// # Ergonomic path from detection
     ///
     /// [`current_node`] remaps the sentinel to `None` (its `Some(n)` arm can
-    /// never carry `NO_NODE`), so the composition cannot actually fail:
+    /// never carry `NO_NODE`), so `NodeId::new(n)` in this composition can
+    /// never fail. The reservation call itself can still fail (e.g.
+    /// `UnsupportedArchitecture` on a real Linux target outside
+    /// x86_64/aarch64), so the best-effort `.ok().or_else(...)` fallback is
+    /// used instead of an `.expect(...)` on the reservation:
     ///
     /// ```text
     /// match numa_shim::current_node() {
@@ -151,7 +155,9 @@ impl NodeId {
     ///         align,
     ///         NodeId::new(n).expect("never the NO_NODE sentinel"),
     ///     )
-    ///     .expect("NUMA-preferred reservation failed"),
+    ///     .ok()
+    ///     .or_else(|| aligned_vmem::reserve_aligned(size, align))
+    ///     .expect("OOM"),
     ///     None => aligned_vmem::reserve_aligned(size, align).expect("OOM"),
     /// }
     /// ```
