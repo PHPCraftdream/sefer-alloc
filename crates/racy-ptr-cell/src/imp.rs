@@ -65,9 +65,13 @@ pub enum RollbackProbe {
     /// The probe could not run its check, and this is NOT evidence that
     /// rollback is broken. Either the cell was not `UNINIT` when the probe
     /// entered (already `READY`, or owned by another thread at that
-    /// instant), or a real `get_or_try_init` caller re-won the cell during
-    /// the probe's own rollback-then-reCAS window. In both cases the probe
-    /// leaves the cell exactly as it found it.
+    /// instant) — in which case the probe never touched it at all — or a
+    /// real `get_or_try_init` caller re-won the cell during the probe's own
+    /// rollback-then-reCAS window, in which case the probe still does not
+    /// touch it, but the cell is no longer necessarily `UNINIT`: the real
+    /// caller may already be running `init`, or may have published `READY`,
+    /// by the time this returns. Either way the probe never clobbers a
+    /// state it does not own.
     NotApplicable,
 }
 
