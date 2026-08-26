@@ -540,7 +540,19 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         &self.table
     }
 
-    /// The derived O(1) `size→class` lookup.
+    /// The derived O(1) `size→class` lookup, as built by [`build_size2class`]
+    /// -- see that function's doc for the indexing formula, the `L - 1`
+    /// top-bucket clamp, and why that clamp is a harmless unreachable
+    /// sentinel for [`class_for`](Self::class_for) but not necessarily for a
+    /// caller indexing this raw array directly.
+    ///
+    /// LOW-LEVEL: this accessor does not itself guard `need <= small_max` the
+    /// way [`class_for`](Self::class_for) does. Indexing it directly for a
+    /// `size` past [`small_max`](Self::small_max) lands on the clamped top
+    /// bucket and returns the LAST class index -- a false "fits" instead of
+    /// the `None` [`class_for`](Self::class_for) would give. Prefer
+    /// [`class_for`](Self::class_for) unless you specifically need the raw
+    /// LUT and are prepared to apply that guard yourself.
     #[must_use]
     pub const fn size2class(&self) -> &[u8; L] {
         &self.size2class
