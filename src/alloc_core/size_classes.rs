@@ -189,7 +189,7 @@ pub(crate) static SIZE2CLASS: [u8; S2C_LEN] =
 /// `SizeClassesImpl` embeds its own copy of the size2class table, so at the
 /// `medium-classes` size it trips the identical `clippy::large_const_arrays`
 /// `.rodata`-duplication lint. `SizeClassesImpl<N, L>` derives only
-/// `Debug, Clone, Copy` — plain data, no interior mutability — so `static` is
+/// `Debug, Clone` — plain data, no interior mutability — so `static` is
 /// sound.
 static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 

@@ -68,6 +68,11 @@ before it.
   parameter — the crate has no notion of an OS segment size; the consumer
   decides where "large" ends and "huge" begins for its own segment policy.
 - The whole crate is `no_std`, zero-dependency, and `#![forbid(unsafe_code)]`;
-  the geometric-advance multiply is checked so an overflowing scheme is a
-  loud error rather than a silently wrapped (wrong-but-valid-looking) table
-  (task #701).
+  the geometric-advance step is computed in `u128` and range-checked, so an
+  overflowing scheme is a loud error rather than a silently wrapped
+  (wrong-but-valid-looking) table, and a scheme whose next class fits is not
+  rejected merely because an intermediate product does not.
+- `SizeClasses` is `Clone` but deliberately **not** `Copy`: an instance
+  embeds both tables (~16 KiB for a realistic scheme), so `Copy` would make
+  a full-object duplicate look as cheap as a move. Settled before the first
+  release, since removing `Copy` afterwards would be a breaking change.

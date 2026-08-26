@@ -566,10 +566,12 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// `block_size`'s panic doc, since that panic is the correct behavior for
 /// an out-of-contract `idx`.
 ///
-/// Deliberately `Copy` (plain const data, no interior mutability, meant
-/// for `const`/`static` use; removing it post-release would be breaking)
-/// — the default SEFER instance is ~16 KiB, so pass it by reference.
-#[derive(Debug, Clone, Copy)]
+/// Deliberately NOT `Copy`: an instance embeds both tables, so a realistic
+/// scheme is ~16 KiB, and `Copy` would give that a `let a = b;`-cheap
+/// syntax. `Clone` keeps explicit duplication available while forcing the
+/// call site to say so. Intended use is a `const`/`static` referenced in
+/// place; no method needs ownership.
+#[derive(Debug, Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
     size2class: [u8; L],
