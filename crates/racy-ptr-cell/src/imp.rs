@@ -142,18 +142,21 @@ unsafe impl<T> Sync for RacyPtrCell<T> {}
 /// `panicking_init_rolls_back_and_subsequent_call_succeeds` proves a
 /// strictly weaker property than the one described above — that a
 /// SUBSEQUENT call on an already-quiescent cell succeeds after a panicking
-/// init unwound and rolled back. It does not model a loser thread that was
-/// ALREADY spinning inside `get_or_try_init` at the moment the winner's
-/// `init` unwinds. The two properties coincide for the guard's current
-/// implementation (both reduce to "the cell left `INITIALIZING`"), so this
-/// is a coverage gap, not a known hole in the fix — a future change that
-/// made the rollback conditional (e.g. skipping it when a loser is
-/// observed waiting) could pass the existing test while reintroducing the
-/// spin. Not closed by a loom test here: loom's deterministic scheduling
-/// model and `std::panic::catch_unwind` do not compose cleanly (loom needs
-/// to replay every interleaving of an unwind path, which its own docs do
-/// not treat as a first-class supported pattern), and the ROI did not
-/// justify building a bespoke harness for it in this round.
+/// init unwound and rolled back. The property that matters most — a loser
+/// thread ALREADY spinning inside `get_or_try_init` at the moment the
+/// winner's `init` unwinds — is proven by the same file's
+/// `unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins`: a
+/// deterministic handshake (the loser only calls `get_or_try_init` after
+/// observing the winner already holds the sentinel, and the winner only
+/// unwinds after observing the loser is about to call) makes the loser's
+/// first CAS attempt provably see the live sentinel, so a future change
+/// that made the rollback conditional (e.g. skipping it when no loser is
+/// observed waiting) would reintroduce the spin and this test would time
+/// out, not merely fail an assertion. Not closed by a loom test: loom's
+/// deterministic scheduling model and `std::panic::catch_unwind` do not
+/// compose cleanly (loom needs to replay every interleaving of an unwind
+/// path, which its own docs do not treat as a first-class supported
+/// pattern).
 struct RollbackGuard<'a, T> {
     ptr: &'a AtomicPtr<T>,
     defused: bool,

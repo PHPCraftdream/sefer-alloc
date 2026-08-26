@@ -135,6 +135,102 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
 }
 
 #[test]
+fn unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins() {
+    // The property the test above does NOT cover, and this crate's own
+    // RollbackGuard doc names as a coverage gap explicitly: a loser thread
+    // that is ALREADY spinning inside get_or_try_init, observing the
+    // sentinel, at the exact moment the winner's init unwinds. The current
+    // unconditional Release rollback makes this correct today -- this is
+    // not a known bug -- but a future change that skipped the rollback
+    // conditionally (e.g. "only roll back if no loser is observed waiting")
+    // could pass the OTHER panic test above (which never has a loser
+    // waiting at all) while reintroducing exactly this livelock.
+    //
+    // Deterministic ordering, not a timing guess: the winner announces
+    // `in_init` only after it already holds the sentinel (the CAS already
+    // succeeded by then); the loser waits for that flag before calling
+    // get_or_try_init at all, so its first CAS attempt is guaranteed to
+    // observe the sentinel (nothing else can have rolled it back yet --
+    // the winner is deliberately blocked below, waiting on the loser's own
+    // "about to call" signal, and cannot unwind before that). The only
+    // non-guaranteed part is exactly how many spin iterations the loser
+    // completes before the winner's unwind machinery finishes running the
+    // RollbackGuard's Drop -- a panic-driven stack unwind is orders of
+    // magnitude slower than a spin_loop iteration, so in practice the loser
+    // is spinning, not merely "about to call", well before rollback fires.
+    let cell = std::sync::Arc::new(RacyPtrCell::<Payload>::new());
+    let in_init = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let loser_about_to_call = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let (cw, iw, lw) = (
+        std::sync::Arc::clone(&cell),
+        std::sync::Arc::clone(&in_init),
+        std::sync::Arc::clone(&loser_about_to_call),
+    );
+    let winner = std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cw.get_or_try_init(|| -> Option<NonNull<Payload>> {
+                iw.store(true, Ordering::Release);
+                while !lw.load(Ordering::Acquire) {
+                    std::thread::yield_now();
+                }
+                panic!("simulated init panic while a loser is already spinning");
+            })
+        }));
+        assert!(
+            result.is_err(),
+            "the panic must propagate out of get_or_try_init"
+        );
+    });
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (cl, il, ll) = (
+        std::sync::Arc::clone(&cell),
+        std::sync::Arc::clone(&in_init),
+        std::sync::Arc::clone(&loser_about_to_call),
+    );
+    let loser = std::thread::spawn(move || {
+        while !il.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        ll.store(true, Ordering::Release);
+        let ok = cl.get_or_try_init(|| Some(leak(0xF00D))).is_some();
+        let _ = tx.send(ok);
+    });
+
+    // Bounded wait, not an unconditional join: on the failure path (rollback
+    // stuck), the loser spins forever and must stay unjoined, reported as a
+    // timeout rather than a wedged test run -- the exact pattern the
+    // existing panic-rollback test above already establishes.
+    let loser_succeeded = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+        "the loser did not return within 5s -- a loser already spinning \
+         when the winner's init unwound was not woken (the INITIALIZING \
+         sentinel is stuck)",
+    );
+    assert!(
+        loser_succeeded,
+        "the loser must successfully re-race and win the CAS after the winner's rollback"
+    );
+
+    // Green path only: both threads are known to have finished by now.
+    winner
+        .join()
+        .expect("winner thread must not panic outside its own catch_unwind");
+    loser.join().expect("loser thread must not panic");
+
+    let p = cell
+        .get()
+        .expect("cell is ready after the loser's successful init");
+    assert!(cell.dbg_is_ready());
+    // SAFETY: p is the leaked, still-live payload.
+    assert_eq!(unsafe { p.as_ref().marker }, 0xF00D);
+    // SAFETY: p was leaked exactly once by leak()'s Box::leak (via the
+    // loser's init closure) and never freed since; reclaiming it here
+    // (once, at test end) pairs with that leak.
+    unsafe { drop(Box::from_raw(p.as_ptr())) };
+}
+
+#[test]
 #[should_panic(expected = "init returned the null/sentinel address")]
 fn init_returning_the_sentinel_address_panics() {
     // A SAFE init closure can construct and return the sentinel
