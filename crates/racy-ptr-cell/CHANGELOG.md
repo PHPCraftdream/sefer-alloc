@@ -71,9 +71,10 @@ before it.
 - **Stable test-probe API**: `dbg_is_ready()` (single-`Acquire`-load
   readiness probe) and `dbg_rollback_reenterable() -> RollbackProbe`
   (drives a live cell through the exact `null → sentinel → rollback →
-  re-CAS` sequence and proves the postcondition, without a
-  process-terminating OOM; restores observed state and never clobbers a
-  concurrent real winner). `RollbackProbe` is a closed two-variant enum
+  re-CAS` sequence, without a process-terminating OOM). Restores `UNINIT`
+  when it returns `Proven`; on `NotApplicable` it never clobbers a
+  concurrent owner's state, but that state is not required to match what
+  the probe observed on entry. `RollbackProbe` is a closed two-variant enum
   (`Proven` / `NotApplicable`) — the probe has exactly two possible answers,
   and the type says so. Documented, semver-stable public surface intended
   for downstream consumers' own test suites.
