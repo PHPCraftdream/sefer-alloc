@@ -64,7 +64,9 @@ impl SegmentLayout {
 
     /// The O(1) size→class lookup table (compile-time-derived from
     /// [`SIZE_CLASS_TABLE`](Self::SIZE_CLASS_TABLE)). `SIZE2CLASS[k]` is the
-    /// smallest class index whose block size covers `k * MIN_BLOCK` bytes.
+    /// smallest class index whose block size is `>= (k + 1) * MIN_BLOCK`
+    /// bytes -- except the last entry, a harmless sentinel `class_for` never
+    /// actually queries (see the crate's `build_size2class` doc for why).
     ///
     /// Exposed as a slice for the same semver reason as
     /// [`SIZE_CLASS_TABLE`](Self::SIZE_CLASS_TABLE): its length is derived

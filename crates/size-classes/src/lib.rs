@@ -202,8 +202,11 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// entry is not a multiple of `min_block`, if any `extras` entry is less
 /// than `min_block` (the scheme's minimum block size), if `extras` is not
 /// strictly increasing, if the geometric progression's advance step
-/// overflows `usize` (only reachable with an extreme `min_block`/`growth`
-/// combination), or if the merged table (geometric run + `extras`) is not
+/// overflows `usize` (reachable not just with an extreme `min_block`/`growth`
+/// combination but also with a large enough `geo_count` alone -- e.g. at the
+/// crate's own default `min_block = 16`, `growth = (5, 4)`, `geo_count = 177`
+/// already overflows), or if the merged table (geometric run + `extras`) is
+/// not
 /// itself strictly increasing — the per-entry `extras` checks above catch
 /// misshapen `extras`, but not an `extras` entry that ties or interleaves
 /// with a value the geometric run also produces, which only the merged

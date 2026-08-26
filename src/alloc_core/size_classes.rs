@@ -168,7 +168,9 @@ const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
 
 /// The O(1) size→class lookup table, **derived at compile time from
 /// [`SIZE_CLASS_TABLE`]** by the crate's `build_size2class`. `SIZE2CLASS[k]` is
-/// the index of the smallest class whose `block_size >= (k + 1) * MIN_BLOCK`.
+/// the index of the smallest class whose `block_size >= (k + 1) * MIN_BLOCK`
+/// -- except the last entry, a harmless sentinel `class_for` never actually
+/// queries (see the crate's `build_size2class` doc for why).
 ///
 /// `static`, not `const`: a single fixed-address item shared by every
 /// reference, avoiding the `.rodata` duplication `clippy::large_const_arrays`
