@@ -13,9 +13,9 @@
 //!
 //! - [`build_table`] — a `const fn` sorted-merge of a geometric progression
 //!   (`geo_count` classes, each `round_up(prev * num / den, min_block)`) with
-//!   a strictly increasing, `min_block`-multiple list of explicit `extras`
-//!   (page-aligned classes, an exact size the geometric run skips, a
-//!   feature-gated medium tier, …).
+//!   a strictly increasing, `min_block`-multiple, `>= min_block` list of
+//!   explicit `extras` (page-aligned classes, an exact size the geometric
+//!   run skips, a feature-gated medium tier, …).
 //! - [`build_size2class`] — derives the O(1) `size→class` lookup from a table
 //!   at compile time with the monotone-pointer technique
 //!   (`O(buckets + classes)` const-eval) and a compile-time `u8` pin.
