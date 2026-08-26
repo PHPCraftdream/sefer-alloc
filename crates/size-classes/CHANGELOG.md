@@ -29,10 +29,11 @@ before it.
   division panics to named asserts; the publication audit's P2-1/P2-2
   findings closed the two remaining gaps — a release-profile overflow in
   the length arithmetic, and the merged-table monotonicity check itself).
-- **`build_size2class(table) -> [u8; L]`** — derives the O(1) `size → class`
-  lookup from a table at compile time using the monotone-pointer technique
-  (`O(buckets + classes)` const-eval), with a compile-time pin that the class
-  count fits a `u8`, and a machine-checked global-monotonicity/disjointness
+- **`build_size2class(table, min_block) -> [u8; L]`** — derives the O(1)
+  `size → class` lookup from a table at compile time using the
+  monotone-pointer technique (`O(buckets + classes)` const-eval), with a
+  compile-time pin that every class INDEX fits a `u8` (up to 256 classes,
+  indices `0..=255`), and a machine-checked global-monotonicity/disjointness
   pass over the merged table — this stays in place as defense-in-depth for a
   table a caller assembles by hand rather than through `build_table`.
 - **`size2class_len(max_class, min_block)`** — the `const fn` a consumer uses
