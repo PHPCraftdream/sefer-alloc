@@ -89,6 +89,11 @@ fn sefer_table_matches_reference_and_is_strictly_increasing() {
     assert_eq!(&SEFER_TABLE[..], &want[..]);
     // Derive-not-hardcode: the count is whatever the params produce.
     assert_eq!(SEFER_SC.count(), SEFER_N);
+    // rush-tests review T3/task #1478: these two accessors had zero call
+    // sites anywhere in the suite -- an accessor returning the wrong FIELD
+    // (e.g. min_block() returning huge_threshold) would pass everything else.
+    assert_eq!(SEFER_SC.min_block(), SEFER_MIN_BLOCK);
+    assert_eq!(SEFER_SC.small_align_max(), SEFER_MIN_BLOCK); // documented == min_block
     for w in SEFER_TABLE.windows(2) {
         assert!(w[0] < w[1], "table must be strictly increasing: {w:?}");
     }
@@ -114,6 +119,12 @@ fn sefer_class_for_matches_reference_over_full_small_sweep() {
         aligns.push(a);
         a <<= 1;
     }
+    // rush-tests review T5/task #1480: `a` here is the first power of two
+    // STRICTLY GREATER than SEFER_MAX -- every align tested above stays
+    // `<= SEFER_MAX`, so `need = max(size, align)` was never pushed past
+    // `small_max` by `align` alone (only ever by `size`). Pushing it makes
+    // the early-rejection branch's ALIGN-driven trigger reachable too.
+    aligns.push(a);
     for &align in &aligns {
         for size in 1..=(SEFER_MAX + 1) {
             let got = SEFER_SC.class_for(size, align);
