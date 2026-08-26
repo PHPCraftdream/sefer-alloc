@@ -173,6 +173,10 @@ const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
 /// `static`, not `const`: a single fixed-address item shared by every
 /// reference, avoiding the `.rodata` duplication `clippy::large_const_arrays`
 /// flags at the `medium-classes` ~64 KiB size.
+///
+/// Deliberate trade-off: [`SC`] embeds its own identical copy of this table
+/// (both const-derive from the same `PARAMS`, so drift is impossible) — the
+/// price is one extra table-sized `.rodata` copy (~16 KiB default).
 pub(crate) static SIZE2CLASS: [u8; S2C_LEN] =
     size_classes::build_size2class::<TABLE_LEN, S2C_LEN>(&SIZE_CLASS_TABLE, MIN_BLOCK);
 
@@ -209,8 +213,9 @@ impl SizeClasses {
     /// `SizeClasses::class_for` for the fast/slow (#114/B1 divisibility-jump)
     /// path detail.
     ///
-    /// `size` here is already clamped to `>= MIN_BLOCK` by the only caller
-    /// ([`super::alloc_core::AllocCore::alloc`]).
+    /// `size` here is already clamped to `>= MIN_BLOCK` by every caller (see
+    /// e.g. `AllocCore::alloc`/realloc, the registry heap-core entry points,
+    /// and the `SegmentLayout::class_for` re-export).
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
         SC.class_for(size, align)

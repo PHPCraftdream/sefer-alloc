@@ -77,6 +77,11 @@ impl SegmentLayout {
     /// allocator entry points clamp it). This is the O(1) lookup
     /// (`SIZE2CLASS[(size-1) >> MIN_BLOCK_SHIFT]`) — exposed so tests can drive
     /// it directly and compare against an independent linear-scan reference.
+    ///
+    /// `align` must be a power of two (else the underlying `debug_assert!`
+    /// panics, debug builds only); the parenthetical formula is the fast path
+    /// only — `align > min_block` takes the divisibility-jump slow path
+    /// (see the crate's `SizeClasses::class_for`).
     #[must_use]
     pub const fn class_for(size: usize, align: usize) -> Option<usize> {
         super::size_classes::SizeClasses::class_for(size, align)

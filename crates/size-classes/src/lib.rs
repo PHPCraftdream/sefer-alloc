@@ -82,12 +82,12 @@ pub struct Params<'a> {
     /// min_block` (the builder sorted-merges them). All three preconditions
     /// are **machine-checked**: a non-`min_block`-multiple entry, an entry
     /// below `min_block` (rejects the degenerate `0` "class"), or a
-    /// non-strictly-increasing entry, is a `const`-evaluation panic (compile
-    /// error) in [`build_table`], and disjointness from the geometric run —
-    /// together with global table monotonicity — is separately
-    /// machine-checked in [`build_size2class`]. Typical uses: page-aligned
-    /// classes, an exact size the geometric run skips, a feature-gated
-    /// medium tier.
+    /// non-strictly-increasing entry panics identically in `const` evaluation
+    /// (compile error) and at runtime in [`build_table`], and disjointness
+    /// from the geometric run — together with global table monotonicity — is
+    /// separately machine-checked in [`build_size2class`]. Typical uses:
+    /// page-aligned classes, an exact size the geometric run skips, a
+    /// feature-gated medium tier.
     ///
     /// task #728 (rust-intel audit §B1b, INFO): `Params`'s borrowed
     /// lifetime `'a` was reviewed and is justified, not a defect — this is
@@ -545,7 +545,8 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// Build a scheme from [`Params`] at compile time. `N` and `L` must match
     /// the params (see [`build_table`] / [`build_size2class`] for the exact
-    /// obligations); a mismatch is a `const`-evaluation panic (compile error).
+    /// obligations); a mismatch panics identically in `const` evaluation
+    /// (compile error) and at runtime.
     ///
     /// `small_align_max` — the alignment ceiling of the O(1) fast path — is set
     /// to `min_block`: every block is `min_block`-aligned by construction, so
