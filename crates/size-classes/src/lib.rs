@@ -27,7 +27,8 @@
 //!   stepping by one. Without it, a request whose `align` exceeds what the
 //!   caller's classifier happens to handle silently falls through to the
 //!   caller's whole-segment path — a real bug class in hand-rolled allocators
-//!   (SEFER's own motivating case: `align >= 512`). The classifier picks an
+//!   (`sefer-alloc`'s own motivating case, the allocator this crate was
+//!   extracted from: `align >= 512`). The classifier picks an
 //!   align-*divisible* stride; align-aligned block *addresses* additionally
 //!   require the caller's carve base to be `align`-aligned — a documented
 //!   precondition of `class_for`, which this crate (sizes only, no
@@ -162,11 +163,11 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// `const fn` cannot call `slice::sort`), keeping the combined table strictly
 /// increasing and every entry a multiple of `min_block`.
 ///
-/// `growth = (0, den)` is a deliberately valid scheme, not a contract
-/// violation: a zero numerator makes the geometric term always `<= prev`, so
-/// every class falls back to the `min_block`-step minimum, degrading the
-/// whole run to a flat `min_block`, `2 * min_block`, `3 * min_block`, …
-/// sequence.
+/// `growth = (num, den)` with `num <= den` (including `(0, den)`) is a
+/// deliberately valid scheme, not a contract violation: a ratio `<= 1` makes
+/// the geometric term always `<= prev`, so every class falls back to the
+/// `min_block`-step minimum, degrading the whole run to a flat `min_block`,
+/// `2 * min_block`, `3 * min_block`, … sequence.
 ///
 /// # Panics
 ///

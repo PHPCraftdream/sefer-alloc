@@ -68,7 +68,8 @@ before it.
     that classifier, a request whose `align` exceeds what the caller's
     classifier happens to handle silently falls through to the caller's
     whole-segment path — the real bug class in hand-rolled allocators this
-    crate exists to remove (SEFER's own motivating case: `align >= 512`).
+    crate exists to remove (`sefer-alloc`'s own motivating case, the
+    allocator this crate was extracted from: `align >= 512`).
     `align` must be a power of two (the `Layout` contract), enforced by a
     `debug_assert!` (task #729) — a violation yields a suboptimal/wrong class
     choice, not memory unsafety. The divisibility check is a STRIDE property,

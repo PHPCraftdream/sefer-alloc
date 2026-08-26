@@ -20,8 +20,9 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   lookup, skipping whole runs of non-divisible classes. Without it a request
   whose `align` exceeds what the caller's classifier happens to handle
   silently falls through to the caller's whole-segment path — a real bug
-  class in hand-rolled allocators (SEFER's own motivating case: `align >=
-  512`). The classifier chooses an align-**divisible** stride; block
+  class in hand-rolled allocators (`sefer-alloc`'s own motivating case, the
+  allocator this crate was extracted from: `align >= 512`). The classifier
+  chooses an align-**divisible** stride; block
   **addresses** are align-aligned iff the base you carve from is
   (`address(k) = base + k * block_size` — stride divisibility preserves the
   base's alignment, it cannot create it). This is the caller's documented
