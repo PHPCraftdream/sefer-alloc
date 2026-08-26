@@ -759,3 +759,42 @@ fn exactly_257_classes_are_rejected() {
     let table = build_table::<N>(&PARAMS);
     let _ = build_size2class::<N, 258>(&table, 1);
 }
+
+// ---------------------------------------------------------------------------
+// size-classes publication audit run 2 (Sol-codex, P3-1): the advance step
+// used to reject a scheme whose intermediate `cur * num` overflows even when
+// the actual next class is representable. These two pin both directions of
+// the corrected domain.
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn representable_next_class_survives_an_unrepresentable_intermediate_product() {
+    // min_block = 2^62, growth = (3, 3), geo_count = 3.
+    // Step 2 computes cur * num = 2^63 * 3 = 27670116110564327424, past
+    // usize::MAX -- but ceil(cur * 3 / 3) == cur, so the min-step fallback
+    // yields 3 * 2^62 = 13835058055282163712, which fits. Pre-fix the
+    // checked_mul on the intermediate rejected the whole scheme.
+    const MIN_BLOCK: usize = 1usize << 62;
+    const N: usize = 3;
+    const PARAMS: Params = Params::new(MIN_BLOCK, (3, 3), N, &[], 1 << 20);
+    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+
+    assert_eq!(TABLE, [1usize << 62, 1usize << 63, 3usize << 62]);
+    // Every class still fits and the table is still strictly increasing.
+    for w in TABLE.windows(2) {
+        assert!(w[0] < w[1], "table must be strictly increasing: {w:?}");
+    }
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+#[should_panic(expected = "geometric progression overflows usize")]
+fn a_genuinely_unrepresentable_next_class_still_panics() {
+    // Counterpart to the test above: here the RESULT itself, not just the
+    // intermediate, exceeds usize -- min_block = 2^63 doubled is 2^64. The
+    // u128 widening must not weaken this into a silent wrap.
+    const MIN_BLOCK: usize = 1usize << 63;
+    const N: usize = 2;
+    const PARAMS: Params = Params::new(MIN_BLOCK, (2, 1), N, &[], 1 << 20);
+    let _ = build_table::<N>(&PARAMS);
+}

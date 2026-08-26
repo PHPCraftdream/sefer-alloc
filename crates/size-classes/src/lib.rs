@@ -340,14 +340,24 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 // empirically verified), so a `release`-profile `const`
                 // consumer of this fix was silently wrong before it too,
                 // not just runtime call sites.
-                let mut next = cur
-                    .checked_mul(num)
-                    .expect("geometric progression overflows usize -- reduce geo_count/growth")
-                    .div_ceil(den);
-                next = next
-                    .checked_add(mask)
-                    .expect("geometric progression overflows usize -- reduce geo_count/growth")
-                    & !mask; // round up to a multiple of min_block
+                //
+                // size-classes publication audit run 2 (Sol-codex, P3-1):
+                // computed in `u128` so only the ACTUAL next class has to fit
+                // `usize`. Checking `cur * num` instead rejected schemes whose
+                // product overflows but whose quotient does not -- e.g.
+                // `min_block = 2^62`, `growth = (3, 3)`: at `cur = 2^63` the
+                // product `3 * 2^63` exceeds `usize::MAX`, yet the true next
+                // class is `3 * 2^62`, comfortably representable.
+                // `cur * num <= (2^64 - 1)^2 < 2^128`, so the `u128` math
+                // itself cannot overflow.
+                let scaled = (cur as u128 * num as u128).div_ceil(den as u128);
+                // Round up to a multiple of min_block, still in u128.
+                let rounded = (scaled + mask as u128) & !(mask as u128);
+                assert!(
+                    rounded <= usize::MAX as u128,
+                    "geometric progression overflows usize -- reduce geo_count/growth"
+                );
+                let mut next = rounded as usize;
                 if next <= cur {
                     // task #755's closing review (F4, MEDIUM): this bare `+`
                     // shares the exact overflow hazard the two `checked_*`
