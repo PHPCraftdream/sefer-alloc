@@ -141,6 +141,69 @@ fn sefer_size2class_matches_scan_for_every_bucket() {
     }
 }
 
+// A minimal scheme pinning `size2class()`'s raw-indexing-domain contract
+// (size2class() doc, Sol-run5 P2-1): min_block=16, doubling growth gives
+// table=[16,32,64], small_max=64, L = 64/16 + 1 = 5 -- small enough to name
+// every one of the three zones explicitly.
+const DOMAIN_MB: usize = 16;
+const DOMAIN_N: usize = 3;
+const DOMAIN_P: Params = Params::new(DOMAIN_MB, (2, 1), DOMAIN_N, &[], 1 << 20);
+const DOMAIN_T: [usize; DOMAIN_N] = build_table::<DOMAIN_N>(&DOMAIN_P);
+const DOMAIN_L: usize = size2class_len(DOMAIN_T[DOMAIN_N - 1], DOMAIN_MB);
+static DOMAIN_SC: SizeClasses<DOMAIN_N, DOMAIN_L> = SizeClasses::build(DOMAIN_P);
+
+#[test]
+fn size2class_raw_domain_valid_and_false_sentinel_zones() {
+    assert_eq!(DOMAIN_T, [16, 32, 64]);
+    assert_eq!(DOMAIN_L, 5);
+    let s2c = DOMAIN_SC.size2class();
+
+    // Valid domain: size <= small_max resolves to the true smallest fitting
+    // class, matching class_for.
+    for size in 1..=64usize {
+        let idx = (size - 1) >> DOMAIN_SC.min_block_shift();
+        let raw = s2c[idx] as usize;
+        assert_eq!(
+            Some(raw),
+            DOMAIN_SC.class_for(size, 1),
+            "size={size} raw lookup must agree with class_for in the valid domain"
+        );
+    }
+
+    // False-sentinel window: small_max < size <= L * min_block (65..=80)
+    // lands in-bounds on bucket L-1 and returns the LAST class index -- a
+    // false "fits" the raw array does not itself reject, unlike class_for.
+    for size in 65..=80usize {
+        let idx = (size - 1) >> DOMAIN_SC.min_block_shift();
+        assert_eq!(idx, DOMAIN_L - 1, "size={size} must land on the top bucket");
+        let raw = s2c[idx] as usize;
+        assert_eq!(
+            raw,
+            DOMAIN_N - 1,
+            "size={size} sentinel must be the last class"
+        );
+        assert_eq!(
+            DOMAIN_SC.class_for(size, 1),
+            None,
+            "class_for must correctly reject size={size}, unlike the raw sentinel"
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "index out of bounds")]
+fn size2class_raw_domain_first_out_of_bounds_size_panics() {
+    // size=81 is the first size whose raw index (80 >> 4 == 5) reaches L
+    // itself -- genuinely out-of-bounds, not a clamped sentinel.
+    let size = 81usize;
+    let idx = (size - 1) >> DOMAIN_SC.min_block_shift();
+    assert_eq!(
+        idx, DOMAIN_L,
+        "precondition: this size must compute idx == L"
+    );
+    let _ = DOMAIN_SC.size2class()[idx];
+}
+
 #[test]
 fn sefer_jump_skips_non_divisible_run_for_align_128() {
     // (128,128): seed is the ~144 B class (not 128-divisible); the jump must
