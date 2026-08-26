@@ -53,16 +53,31 @@ fn main() {
     // Slow path: align > min_block, so we need to check divisibility and
     // potentially jump over non-divisible classes. This is a different
     // asymptotic/cost from the fast path and must be measured separately.
+    //
+    // size-classes publication audit run 2 (Claude, review-2 F2): these two
+    // rows used to call `class_for(256, 256)` / `class_for(1024, 1024)`.
+    // Since 256 and 1024 are themselves table entries (`SEFER_EXTRAS`),
+    // `need = max(size, align) = align` seeds the lookup EXACTLY on an
+    // align-divisible class, so the jump loop's round-up-and-reseek body
+    // (the actual "slow path" cost) never ran once -- both rows silently
+    // measured the same one-check-then-return cost the fast path already
+    // takes. Replaced with (size, align) pairs whose seed class is NOT
+    // align-divisible, so at least one real jump executes; pinned by
+    // `sefer_bench_jump_rows_genuinely_exercise_the_slow_path` in
+    // tests/builder.rs (a path-activation oracle, so a future table change
+    // can't silently make these rows inert again without a test failing).
 
-    // Size with align=256 (> min_block=16, so divisibility-jump slow path)
+    // size=1025, align=256: seed is the 1200 B class (not 256-divisible);
+    // the jump lands on the 2048 B class.
     h.bench("class_for/large_align_slow_path", || {
-        let result = black_box(SEFER_SC.class_for(black_box(256), black_box(256)));
+        let result = black_box(SEFER_SC.class_for(black_box(1025), black_box(256)));
         black_box(result);
     });
 
-    // Size with align=1024 (> min_block=16, so divisibility-jump slow path)
+    // size=2049, align=1024: seed is the 2368 B class (not 1024-divisible);
+    // the jump lands on the 4096 B class.
     h.bench("class_for/large_align_slow_path_1024", || {
-        let result = black_box(SEFER_SC.class_for(black_box(1024), black_box(1024)));
+        let result = black_box(SEFER_SC.class_for(black_box(2049), black_box(1024)));
         black_box(result);
     });
 

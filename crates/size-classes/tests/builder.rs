@@ -154,6 +154,38 @@ fn sefer_jump_skips_non_divisible_run_for_align_128() {
     assert!(!SEFER_TABLE[seed].is_multiple_of(128));
 }
 
+#[test]
+fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
+    // task #1424 (review-2 F2): `benches/size_classes_bench.rs`'s
+    // `large_align_slow_path`/`large_align_slow_path_1024` rows used to call
+    // `class_for(256, 256)`/`class_for(1024, 1024)` -- since 256 and 1024 are
+    // themselves table entries, `need == align` lands the seed EXACTLY on an
+    // align-divisible class, so `class_for`'s jump-loop body (round up,
+    // re-seek) never ran; both rows silently measured the same fast-path-ish
+    // single check the `small_hit` row already covers, not the slow path
+    // their names claimed. This is a path-activation oracle (this repo's own
+    // R30-8 convention) for the replacement (size, align) pairs the fixed
+    // benchmark now uses -- pinning that the seed is genuinely NOT
+    // align-divisible for both, so a future table change can't silently make
+    // the bench inert again without this test catching it.
+    for &(size, align) in &[(1025usize, 256usize), (2049usize, 1024usize)] {
+        let need = size.max(align);
+        let seed = SEFER_SC.size2class()[(need - 1) >> SEFER_MIN_BLOCK.trailing_zeros()] as usize;
+        assert!(
+            !SEFER_TABLE[seed].is_multiple_of(align),
+            "size={size} align={align}: seed class {} (block {}) is already \
+             align-divisible -- the jump loop's round-up body would never run",
+            seed,
+            SEFER_TABLE[seed]
+        );
+        let got = SEFER_SC
+            .class_for(size, align)
+            .unwrap_or_else(|| panic!("({size}, {align}) must resolve"));
+        assert!(SEFER_TABLE[got].is_multiple_of(align));
+        assert!(SEFER_TABLE[got] >= need);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // `Params::extras` precondition violations — both must now be `const`-eval
 // panics (compile errors when the params are truly `const`), not silent
