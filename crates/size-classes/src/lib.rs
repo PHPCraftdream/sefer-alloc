@@ -42,9 +42,23 @@
 //! ## Deriving lengths
 //!
 //! [`SizeClasses`] is generic over both the table length `N` (`geo_count` +
-//! `extras.len()`) and the lookup length `L` (`max_class / min_block + 1`).
-//! Both are pure functions of the [`Params`] — a consumer computes them as
-//! `const` expressions (see [`size2class_len`]) so nothing is dynamic.
+//! `extras.len()`) and the lookup length `L` (`max_class / min_block + 1`,
+//! via [`size2class_len`]). Both are pure functions of the [`Params`], but
+//! `L` needs the built table's LAST entry (`max_class`) — there is no
+//! shortcut around building `TABLE` once to read it; [`SizeClasses::build`]
+//! then builds the same table again internally, from the same [`Params`],
+//! so the two never drift apart:
+//!
+//! ```text
+//! const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, HUGE_THRESHOLD);
+//! const N: usize = GEO_COUNT + EXTRAS.len();
+//! const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+//! const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
+//! static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+//! ```
+//!
+//! (Runnable form with concrete values in the crate's `README.md`, mirrored
+//! by a compiled test so it cannot silently rot.)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
