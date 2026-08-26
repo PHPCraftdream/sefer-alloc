@@ -203,10 +203,10 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// than `min_block` (the scheme's minimum block size), if `extras` is not
 /// strictly increasing, if the geometric progression's advance step
 /// overflows `usize` (reachable not just with an extreme `min_block`/`growth`
-/// combination but also with a large enough `geo_count` alone -- e.g. at the
-/// crate's own default `min_block = 16`, `growth = (5, 4)`, `geo_count = 177`
-/// already overflows), or if the merged table (geometric run + `extras`) is
-/// not
+/// combination but also with a large enough `geo_count` alone -- e.g. with
+/// `min_block = 16`, `growth = (5, 4)` (this crate's own tests' example
+/// scheme; the crate itself has no defaults), `geo_count = 177` already
+/// overflows), or if the merged table (geometric run + `extras`) is not
 /// itself strictly increasing — the per-entry `extras` checks above catch
 /// misshapen `extras`, but not an `extras` entry that ties or interleaves
 /// with a value the geometric run also produces, which only the merged
@@ -418,10 +418,15 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// class whose `block_size >= (k + 1) * min_block` -- EXCEPT the top bucket
 /// `L - 1`, whose ideal `need` (`L * min_block`) exceeds `table[N - 1]` (the
 /// largest class), so no such class exists; that bucket is clamped to
-/// `table[N - 1]` itself instead. This is harmless: [`SizeClasses::class_for`]
-/// never queries bucket `L - 1` for any in-range `size` (its own `need >
-/// small_max` early rejection catches every size that would land there), so
-/// the clamped entry is an unreachable sentinel, not an observable answer.
+/// `table[N - 1]` itself instead. For [`SizeClasses::class_for`] specifically
+/// this is harmless: it never queries bucket `L - 1` for any in-range `size`
+/// (its own `need > small_max` early rejection catches every size that would
+/// land there), so THERE the clamped entry is an unreachable sentinel, not
+/// an observable answer. A caller driving this array directly (bypassing
+/// `class_for`) can still observe it -- and for a hand-built `table` whose
+/// `small_max` is not a multiple of `min_block`, bucket `L - 1` need not even
+/// be a sentinel: it can be the correct, reachable answer for sizes in
+/// `((L - 1) * min_block, small_max]`.
 ///
 /// `L` must equal [`size2class_len`]`(max_class, min_block)`, where `max_class`
 /// is `table[N - 1]`.
