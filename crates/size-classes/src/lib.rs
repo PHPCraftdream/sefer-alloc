@@ -506,7 +506,13 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// `const` this size re-materializes at every use site, duplicating the
 /// embedded tables -- see `clippy::large_const_arrays`); no method needs
 /// ownership.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written, not derived: a derive would print both raw
+/// tables (~16 KiB + ~16 KiB of numbers for a realistic scheme) on any
+/// accidental `{:?}`/`dbg!`, burying the useful line. This prints the
+/// summary a developer actually wants; use [`table`](Self::table) /
+/// [`size2class`](Self::size2class) to inspect the raw arrays directly.
+#[derive(Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
     size2class: [u8; L],
@@ -515,6 +521,18 @@ pub struct SizeClasses<const N: usize, const L: usize> {
     small_align_max: usize,
     small_max: usize,
     huge_threshold: usize,
+}
+
+impl<const N: usize, const L: usize> core::fmt::Debug for SizeClasses<N, L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SizeClasses")
+            .field("N", &N)
+            .field("L", &L)
+            .field("min_block", &self.min_block)
+            .field("small_max", &self.small_max)
+            .field("huge_threshold", &self.huge_threshold)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<const N: usize, const L: usize> SizeClasses<N, L> {

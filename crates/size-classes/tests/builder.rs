@@ -188,6 +188,32 @@ fn size2class_raw_domain_valid_and_false_sentinel_zones() {
 }
 
 #[test]
+fn debug_impl_prints_a_summary_not_the_raw_tables() {
+    // rush2-holistic F5/task #1489: Debug is hand-written specifically to
+    // avoid dumping both raw tables (~16 KiB each for a realistic scheme).
+    // Pins that on a regression back to `#[derive(Debug)]`: DOMAIN_T has
+    // 3 entries and DOMAIN_L is 5, so a derive would print every element of
+    // `table: [16, 32, 64]` and `size2class: [0, 1, 2, 2, 2]` -- this
+    // asserts the summary fields are present and the raw field names/values
+    // are not.
+    let s = format!("{DOMAIN_SC:?}");
+    assert!(s.contains("SizeClasses"), "got: {s}");
+    assert!(s.contains(&format!("min_block: {DOMAIN_MB}")), "got: {s}");
+    assert!(
+        s.contains(&format!("small_max: {}", DOMAIN_T[DOMAIN_N - 1])),
+        "got: {s}"
+    );
+    assert!(
+        !s.contains("table:"),
+        "must not print the raw table field: {s}"
+    );
+    assert!(
+        !s.contains("size2class:"),
+        "must not print the raw LUT field: {s}"
+    );
+}
+
+#[test]
 #[should_panic(expected = "index out of bounds")]
 fn size2class_raw_domain_first_out_of_bounds_size_panics() {
     // size=81 is the first size whose raw index (80 >> 4 == 5) reaches L
