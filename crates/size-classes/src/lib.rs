@@ -154,11 +154,13 @@ impl<'a> Params<'a> {
 ///
 /// size-classes publication audit run 1 (Sol-codex, P2-1): the trailing
 /// `+ 1` was a bare add -- `size2class_len(usize::MAX, 1)` divides to
-/// `usize::MAX`, and the `+ 1` then overflows. `const`/debug traps on this;
-/// a `release` runtime call (this function is `pub`, not `const`-only)
-/// silently wrapped to `0` instead -- the exact release-silent,
-/// profile-dependent bug class this crate's own `checked_mul`/`checked_add`
-/// precedent in [`build_table`] already exists to prevent elsewhere.
+/// `usize::MAX`, and the `+ 1` then overflows. `debug` traps on this; in
+/// `release` -- both a runtime call AND a `const` evaluation, since this
+/// function is `pub`, not `const`-only, and const-eval overflow checks
+/// follow the profile for a `const fn`'s body -- it silently wrapped to
+/// `0` instead, the exact release-silent, profile-dependent bug class
+/// this crate's own `checked_mul`/`checked_add` precedent in
+/// [`build_table`] already exists to prevent elsewhere.
 /// `checked_add` turns the wrap into the same loud, named panic in every
 /// profile.
 #[must_use]
