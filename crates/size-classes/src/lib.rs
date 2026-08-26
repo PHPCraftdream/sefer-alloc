@@ -545,18 +545,28 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     }
 
     /// The derived O(1) `size→class` lookup, as built by [`build_size2class`]
-    /// -- see that function's doc for the indexing formula, the `L - 1`
-    /// top-bucket clamp, and why that clamp is a harmless unreachable
-    /// sentinel for [`class_for`](Self::class_for) but not necessarily for a
-    /// caller indexing this raw array directly.
+    /// -- see that function's doc for the indexing formula and the `L - 1`
+    /// top-bucket clamp.
     ///
-    /// LOW-LEVEL: this accessor does not itself guard `need <= small_max` the
-    /// way [`class_for`](Self::class_for) does. Indexing it directly for a
-    /// `size` past [`small_max`](Self::small_max) lands on the clamped top
-    /// bucket and returns the LAST class index -- a false "fits" instead of
-    /// the `None` [`class_for`](Self::class_for) would give. Prefer
-    /// [`class_for`](Self::class_for) unless you specifically need the raw
-    /// LUT and are prepared to apply that guard yourself.
+    /// LOW-LEVEL: unlike [`class_for`](Self::class_for), this accessor does
+    /// not itself validate a raw caller's `size`. The documented formula is
+    /// `size2class()[(size - 1) >> min_block_shift()]`, which has TWO
+    /// preconditions this array does not enforce:
+    ///
+    /// - **`size >= 1`** — `size - 1` underflows for `size == 0`.
+    /// - **`size <= small_max()`** for a genuine classification — beyond
+    ///   that boundary the raw index is NOT uniformly clamped:
+    ///   - a size still landing in the last bucket (index `L - 1`, i.e.
+    ///     `small_max() < size <= L * min_block()`) IS in-bounds and returns
+    ///     the clamped sentinel — the LAST class index, a false "fits"
+    ///     instead of the `None` [`class_for`](Self::class_for) would give;
+    ///   - a larger size computes an index `>= L`, which is genuinely
+    ///     OUT-OF-BOUNDS array indexing and panics, not a sentinel.
+    ///
+    /// [`class_for`](Self::class_for) applies both guards (and the `align`
+    /// predicate this raw LUT ignores entirely) before ever indexing —
+    /// prefer it unless you specifically need the raw LUT and are prepared
+    /// to enforce both preconditions yourself.
     #[must_use]
     pub const fn size2class(&self) -> &[u8; L] {
         &self.size2class
