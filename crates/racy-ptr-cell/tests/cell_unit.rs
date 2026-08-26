@@ -352,7 +352,17 @@ fn debug_reports_the_three_states_without_a_t_debug_bound() {
     let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
     assert_eq!(format!("{cell:?}"), "RacyPtrCell(Uninit)");
 
-    let p = cell.get_or_try_init(|| Some(leak(0xBEEF))).unwrap();
+    // `fmt` takes `&self`, so the init closure can format the SAME cell
+    // while it still holds the sentinel -- the only single-threaded way to
+    // observe `Initializing` deterministically. Without this, the impl's
+    // `SENTINEL_INITIALIZING` arm has no test coverage at all: deleting it
+    // (collapsing the output to `Ready(0x1)`) would leave the suite green.
+    let p = cell
+        .get_or_try_init(|| {
+            assert_eq!(format!("{cell:?}"), "RacyPtrCell(Initializing)");
+            Some(leak(0xBEEF))
+        })
+        .unwrap();
     assert_eq!(format!("{cell:?}"), format!("RacyPtrCell(Ready({p:p}))"));
 
     // SAFETY: p was leaked exactly once by leak()'s Box::leak and never
