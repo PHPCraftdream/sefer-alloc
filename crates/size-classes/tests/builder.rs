@@ -541,6 +541,54 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
     let _ = build_table::<N>(&params);
 }
 
+// fh publication audit P4-2: `build_table`'s own `# Panics` doc (lib.rs)
+// cites `geo_count = 183` (64-bit) / `84` (32-bit) as the first-overflowing
+// `geo_count` for `min_block = 16, growth = (5, 4)` -- this crate's own
+// tests' example scheme -- but until now no test on either width actually
+// pinned it (independently re-derived by exact-integer replay before writing
+// these: 182/83 succeed, 183/84 overflow). One `cfg`-gated pair per width,
+// mirroring the `extreme64_overflow` module's width-specific-fixture
+// pattern; the 32-bit pair only ever runs under a genuine 32-bit `usize`
+// target (e.g. `--target i686-unknown-linux-gnu`), never under the default
+// 64-bit host build.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn sefer_growth_geo_count_182_is_the_last_that_fits_on_64_bit() {
+    const GEO_COUNT: usize = 182;
+    const N: usize = GEO_COUNT;
+    let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
+    let _ = build_table::<N>(&params);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "geometric progression overflows usize")]
+fn sefer_growth_geo_count_183_overflows_on_64_bit() {
+    const GEO_COUNT: usize = 183;
+    const N: usize = GEO_COUNT;
+    let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
+    let _ = build_table::<N>(&params);
+}
+
+#[cfg(target_pointer_width = "32")]
+#[test]
+fn sefer_growth_geo_count_83_is_the_last_that_fits_on_32_bit() {
+    const GEO_COUNT: usize = 83;
+    const N: usize = GEO_COUNT;
+    let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
+    let _ = build_table::<N>(&params);
+}
+
+#[cfg(target_pointer_width = "32")]
+#[test]
+#[should_panic(expected = "geometric progression overflows usize")]
+fn sefer_growth_geo_count_84_overflows_on_32_bit() {
+    const GEO_COUNT: usize = 84;
+    const N: usize = GEO_COUNT;
+    let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
+    let _ = build_table::<N>(&params);
+}
+
 // task #755's closing review (F4, MEDIUM): the min-step fallback (`next =
 // cur + min_block`, taken when the geometric advance does not exceed `cur`)
 // had a bare `+` sharing the exact overflow hazard #701 fixed on its two
