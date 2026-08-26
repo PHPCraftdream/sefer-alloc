@@ -8,7 +8,7 @@
 //! property-generated, across three additional hand-picked schemes distinct
 //! from `SEFER_PARAMS`.
 
-use size_classes::{build_table, size2class_len, Params, SizeClasses};
+use size_classes::{build_size2class, build_table, size2class_len, Params, SizeClasses};
 
 /// A faithful, from-scratch reference table builder (a plain `Vec` version of
 /// the crate's `const fn build_table`) so tests do not trust the crate's own
@@ -317,6 +317,42 @@ fn min_step_fallback_overflow_panics_instead_of_silently_wrapping() {
     // (the geometric term is always 0, which never exceeds `cur`).
     let params = Params::new(MIN_BLOCK, (0, 1), GEO_COUNT, &[], 1 << 20);
     let _ = build_table::<N>(&params);
+}
+
+// ---------------------------------------------------------------------------
+// size-classes publication audit run 1 (Sol-codex, P2-1): `size2class_len`'s
+// trailing `+ 1` was a bare add on a value that can legitimately be
+// `usize::MAX` (`max_class / min_block`), so a release build silently
+// wrapped to `0` instead of panicking -- the exact class of release-silent,
+// profile-dependent bug the `checked_mul`/`checked_add` fixes above already
+// exist to prevent for the geometric advance. These are runtime (not
+// `const`) calls specifically because `const` evaluation already traps on
+// overflow regardless of profile -- the bug these tests pin only existed at
+// runtime, in `release`, before the fix.
+
+#[test]
+#[should_panic(expected = "size2class_len: max_class / min_block + 1 overflows usize")]
+fn size2class_len_overflow_panics_instead_of_silently_wrapping() {
+    // usize::MAX / 1 == usize::MAX; the `+ 1` then overflows. Pre-fix this
+    // silently returned 0 in release instead of panicking in every profile.
+    let _ = size2class_len(usize::MAX, 1);
+}
+
+#[test]
+#[should_panic(expected = "size2class_len: max_class / min_block + 1 overflows usize")]
+fn build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l() {
+    // The report's own contrpример: N = 1, table = [usize::MAX],
+    // min_block = 1 -> the mathematically correct L is `size2class_len`'s
+    // own overflow panic, since `usize::MAX / 1 + 1` does not fit in
+    // `usize`. Pre-fix, `build_size2class`'s inline `small_max / min_block +
+    // 1` wrapped to 0 in release, so `L == 0` (a genuinely malformed,
+    // too-short lookup for this table) satisfied the check instead of being
+    // rejected. Since the fix makes the `L` check delegate to
+    // `size2class_len` itself, this must now panic with that function's own
+    // message in every profile, not silently build an empty `[u8; 0]`
+    // lookup.
+    let table: [usize; 1] = [usize::MAX];
+    let _ = build_size2class::<1, 0>(&table, 1);
 }
 
 // ---------------------------------------------------------------------------

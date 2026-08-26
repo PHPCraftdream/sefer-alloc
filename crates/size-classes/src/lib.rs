@@ -135,7 +135,9 @@ impl<'a> Params<'a> {
 ///
 /// # Panics
 ///
-/// Panics in `const` evaluation if `min_block` is not a power of two.
+/// Panics in `const` evaluation if `min_block` is not a power of two, or if
+/// `max_class / min_block + 1` overflows `usize` (only reachable with
+/// `max_class` within `min_block` of `usize::MAX`).
 ///
 /// task #731 (rust-intel audit §B26, INFO): this is this crate's ONE `pub`
 /// function that previously had zero parameter validation -- `max_class /
@@ -146,13 +148,26 @@ impl<'a> Params<'a> {
 /// asserts `min_block.is_power_of_two()` with a named message. Added the
 /// matching assert here for the same precondition, closing the one
 /// inconsistent chokepoint.
+///
+/// size-classes publication audit run 1 (Sol-codex, P2-1): the trailing
+/// `+ 1` was a bare add -- `size2class_len(usize::MAX, 1)` divides to
+/// `usize::MAX`, and the `+ 1` then overflows. `const`/debug traps on this;
+/// a `release` runtime call (this function is `pub`, not `const`-only)
+/// silently wrapped to `0` instead -- the exact release-silent,
+/// profile-dependent bug class this crate's own `checked_mul`/`checked_add`
+/// precedent in [`build_table`] already exists to prevent elsewhere.
+/// `checked_add` turns the wrap into the same loud, named panic in every
+/// profile.
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
     assert!(
         min_block.is_power_of_two(),
         "size2class_len: min_block must be a power of two"
     );
-    max_class / min_block + 1
+    match (max_class / min_block).checked_add(1) {
+        Some(len) => len,
+        None => panic!("size2class_len: max_class / min_block + 1 overflows usize"),
+    }
 }
 
 /// Build the size-class table at compile time: a geometric progression merged
@@ -320,8 +335,10 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 ///
 /// # Panics
 ///
-/// Panics in `const` evaluation if the table is empty, if `L` is wrong, if
-/// `min_block` is not a power of two, if `table.len() >= 256` (the entry
+/// Panics in `const` evaluation if the table is empty, if `L` is wrong
+/// (including if computing the expected `L` via
+/// [`size2class_len`]`(table[N - 1], min_block)` itself overflows `usize`),
+/// if `min_block` is not a power of two, if `table.len() >= 256` (the entry
 /// type is `u8`; a table beyond 255 classes would silently truncate), or if
 /// `table` is not strictly increasing.
 #[must_use]
@@ -359,8 +376,14 @@ pub const fn build_size2class<const N: usize, const L: usize>(
     }
     let shift = min_block.trailing_zeros();
     let small_max = table[N - 1];
+    // size-classes publication audit run 1 (Sol-codex, P2-1): reuse
+    // `size2class_len` rather than re-deriving `small_max / min_block + 1`
+    // here -- the bare add duplicated in this call site is exactly the
+    // overflow hazard that function's own `checked_add` now closes, and two
+    // copies of the same unchecked formula is how one of them silently
+    // stays wrong.
     assert!(
-        L == small_max / min_block + 1,
+        L == size2class_len(small_max, min_block),
         "L must equal size2class_len(max_class, min_block)"
     );
     let _ = shift; // the caller applies the shift; recorded here for clarity.
@@ -376,10 +399,19 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         // (k+1)*min_block. Clamp to small_max so the top bucket (only ever
         // indexed by a size > small_max, which `class_for` rejects first) stays
         // in-range and resolves to the last class (a harmless sentinel).
-        let need = if (k + 1) * min_block < small_max {
-            (k + 1) * min_block
-        } else {
-            small_max
+        //
+        // size-classes publication audit run 1 (Sol-codex, P2-1): the
+        // multiply used to run BEFORE the clamp comparison, so it could
+        // overflow `usize` even though the clamped answer is always
+        // `<= small_max`. `checked_mul` makes the overflow case fall
+        // straight into the same clamp: if `(k + 1) * min_block` does not
+        // fit in `usize`, its true mathematical value is certainly greater
+        // than `small_max` (which does fit), so clamping to `small_max` is
+        // exactly the answer the unchecked multiply would have produced had
+        // it not wrapped.
+        let need = match (k + 1).checked_mul(min_block) {
+            Some(v) if v < small_max => v,
+            _ => small_max,
         };
         while class_idx < N {
             if table[class_idx] >= need {
@@ -590,7 +622,19 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             }
             // Smallest multiple of `align` strictly greater than `block` (align
             // is a power of two, so `(block | (align - 1)) + 1` rounds up).
-            let next_mult = (block | (align - 1)) + 1;
+            //
+            // size-classes publication audit run 1 (Sol-codex, P2-1): the
+            // trailing `+ 1` was a bare add -- if `block | (align - 1)` is
+            // already `usize::MAX` (no representable next multiple exists),
+            // it wrapped to `0` in release instead of correctly falling
+            // through to `None` below. `checked_add` makes "no next
+            // multiple fits in usize" resolve to exactly that `None`, the
+            // same outcome the `next_mult > self.small_max` clamp already
+            // produces for every other out-of-range case on this path.
+            let next_mult = match (block | (align - 1)).checked_add(1) {
+                Some(v) => v,
+                None => return None,
+            };
             if next_mult > self.small_max {
                 return None;
             }
