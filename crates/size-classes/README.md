@@ -10,10 +10,7 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   `min_block`-multiple, `>= min_block` explicit extra classes (page-aligned
   classes, an exact size the geometric run skips, a medium tier …) — all three
   preconditions are machine-checked, so violations panic identically in
-  `const` evaluation and at runtime, never silently accepted input; task
-  #731 corrected this line, which previously said "an arbitrary sorted
-  list," understating the `Params::extras` contract already stated
-  correctly on that field's own rustdoc.
+  `const` evaluation and at runtime, never silently accepted input.
 - `build_size2class` — derives the O(1) `size→class` lookup from a table at
   compile time (monotone-pointer, `O(buckets + classes)`), with a compile-time
   `u8` pin on the class count.
@@ -34,21 +31,19 @@ literal.
 ## Example
 
 ```text
-use size_classes::{Params, SizeClasses, size2class_len};
+use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
 const MIN_BLOCK: usize = 16;
+const GEO_COUNT: usize = 40;
 const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];
-const N: usize = 40 + EXTRAS.len();
-const MAX_CLASS: usize = /* table[N-1] — compute or pin */ 258_752;
-const L: usize = size2class_len(MAX_CLASS, MIN_BLOCK);
+const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20);
 
-const SC: SizeClasses<N, L> = SizeClasses::build(Params::new(
-    MIN_BLOCK,
-    (5, 4),
-    40,
-    EXTRAS,
-    4 * 1024 * 1024,
-));
+// Both generics are pure functions of PARAMS — derive them, don't pin them.
+const N: usize = GEO_COUNT + EXTRAS.len();
+const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
+
+const SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 
 // SC.class_for(size, align) -> Option<usize>
 // SC.block_size(idx) -> usize;  SC.count() -> usize;  SC.small_max() -> usize;

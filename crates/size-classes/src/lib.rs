@@ -50,19 +50,9 @@
 ///
 /// All fields are plain data so the whole thing is usable in `const` context.
 ///
-/// task #728 (rust-intel audit §C1a, MEDIUM): decided before this crate's
-/// first crates.io publish (task #660) -- retrofitting `#[non_exhaustive]`
-/// on an already-published all-pub-field config struct is ITSELF a breaking
-/// change, so this had to be settled now, not deferred. `Params` carries
-/// `#[non_exhaustive]`: adding a future policy field (plausible --
-/// `small_align_max` is currently hardwired to `min_block` inside
-/// `SizeClasses::build`, an obvious future knob the audit itself named) is
-/// a semver-MINOR addition instead of MAJOR for every downstream struct
-/// literal. Construct via [`Params::new`] (a `const fn`, so it works in the
-/// same `const PARAMS: Params = ...` context struct-literal syntax did) --
-/// plain `#[non_exhaustive]` alone would make this type UNCONSTRUCTABLE
-/// downstream, since `const` context has no `Default`/functional-record-
-/// update escape hatch, so the two halves cannot be shipped separately.
+/// `#[non_exhaustive]`, so a future policy field is a semver-minor addition
+/// rather than a breaking one. Construct with [`Params::new`] — a `const fn`,
+/// since `const` context has no functional-record-update escape hatch.
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct Params<'a> {
@@ -91,14 +81,9 @@ pub struct Params<'a> {
     /// bypasses [`build_table`] entirely. Typical uses: page-aligned classes,
     /// an exact size the geometric run skips, a feature-gated medium tier.
     ///
-    /// task #728 (rust-intel audit §B1b, INFO): `Params`'s borrowed
-    /// lifetime `'a` was reviewed and is justified, not a defect — this is
-    /// a `no_std`, zero-alloc, `const`-fn crate, so a borrowed slice is the
-    /// only representable form for a variable-length field, and the
-    /// zero-copy `const`-context design goal is documented at the
-    /// crate-doc level. In typical `const` usage (a `const PARAMS: Params
-    /// = Params::new(.., EXTRAS, ..)` binding to a `const`/`static` slice)
-    /// `'a` resolves to `'static`; nothing about the type requires it to.
+    /// Borrowed rather than owned because this is a `no_std`, zero-alloc
+    /// crate; in the usual `const PARAMS: Params = Params::new(.., EXTRAS,
+    /// ..)` form `'a` resolves to `'static`, but nothing requires that.
     pub extras: &'a [usize],
     /// The "huge" policy threshold: [`SizeClasses::is_huge`] reports `true` for
     /// a size `>=` this. Pure bookkeeping for the crate — the consumer decides
@@ -110,10 +95,8 @@ pub struct Params<'a> {
 impl<'a> Params<'a> {
     /// Construct a [`Params`] from its component fields.
     ///
-    /// `const fn` so this works everywhere the previous struct-literal
-    /// syntax did, including `const PARAMS: Params = Params::new(..);` —
-    /// the required construction path now that [`Params`] is
-    /// `#[non_exhaustive]` (task #728).
+    /// `const fn`, so it works in `const PARAMS: Params = Params::new(..);`
+    /// — the construction path for a `#[non_exhaustive]` type.
     #[must_use]
     pub const fn new(
         min_block: usize,
@@ -144,27 +127,10 @@ impl<'a> Params<'a> {
 /// two, or if `max_class / min_block + 1` overflows `usize` (only reachable
 /// with `max_class` within `min_block` of `usize::MAX`).
 ///
-/// task #731 (rust-intel audit §B26, INFO): this is this crate's ONE `pub`
-/// function that previously had zero parameter validation -- `max_class /
-/// min_block` hit an unguarded integer division for `min_block == 0`
-/// (panics in every profile, but with a bare "attempt to divide by zero"
-/// rather than a diagnostic naming the actual bad parameter), even though
-/// every sibling entry point ([`build_table`], [`build_size2class`])
-/// asserts `min_block.is_power_of_two()` with a named message. Added the
-/// matching assert here for the same precondition, closing the one
-/// inconsistent chokepoint.
-///
-/// size-classes publication audit run 1 (Sol-codex, P2-1): the trailing
-/// `+ 1` was a bare add -- `size2class_len(usize::MAX, 1)` divides to
-/// `usize::MAX`, and the `+ 1` then overflows. `debug` traps on this; in
-/// `release` -- both a runtime call AND a `const` evaluation, since this
-/// function is `pub`, not `const`-only, and const-eval overflow checks
-/// follow the profile for a `const fn`'s body -- it silently wrapped to
-/// `0` instead, the exact release-silent, profile-dependent bug class
-/// this crate's own `checked_mul`/`checked_add` precedent in
-/// [`build_table`] already exists to prevent elsewhere.
-/// `checked_add` turns the wrap into the same loud, named panic in every
-/// profile.
+/// Both are checked, not merely documented: an unchecked `+ 1` here would
+/// wrap to `0` in a release build — including a release-profile `const`
+/// evaluation, since const-eval overflow checks follow the `overflow-checks`
+/// profile for a `const fn`'s body — silently yielding an empty lookup.
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
     assert!(
@@ -220,29 +186,17 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
         "min_block must be a power of two"
     );
     assert!(params.geo_count > 0, "geo_count must be > 0");
-    // task #731 (rust-intel audit §B26, INFO): `growth.1` (the denominator)
-    // was never asserted non-zero -- `den == 0` reached the geometric
-    // advance step below and panicked with a BARE "attempt to divide by
-    // zero", inconsistent with every sibling precondition here (all of
-    // which name the actual bad parameter). `growth.0 == 0` is NOT
-    // rejected: it silently degrades to a linear min_block-step table via
-    // the existing `next <= cur` min-step fallback rather than panicking,
-    // which is an intentional (if unusual) valid scheme, not a contract
-    // violation -- only the denominator has no such fallback.
+    // Only the DENOMINATOR is rejected: `num == 0` degrades to a linear
+    // min_block-step table via the min-step fallback below (a valid scheme,
+    // see this function's rustdoc), but `den == 0` has no such fallback and
+    // would otherwise surface as a bare "attempt to divide by zero".
     assert!(params.growth.1 > 0, "growth denominator must be > 0");
     let geo_count = params.geo_count;
     let extras = params.extras;
-    // size-classes publication audit run 2 (Claude, review-2 F3): a bare `+`
-    // here shares the exact overflow hazard this crate has twice already
-    // named and fixed elsewhere (task #731's `den == 0`; run 1's P2-1). An
-    // absurd `geo_count` (e.g. `usize::MAX` with non-empty `extras`) wraps
-    // this sum in release, and the wrapped value COULD pass the check --
-    // but never produces a silently-wrong table: the merge loop below still
-    // runs the true (non-wrapped) `geo_count + extras.len()` iterations and
-    // is guaranteed to panic on `out[oi]` with a bare "index out of bounds"
-    // once `oi` exceeds `N`. `checked_add` turns that into the same named,
-    // parameter-identifying diagnostic every sibling precondition here
-    // already gives.
+    // `checked_add` for the diagnostic, not for soundness: a wrapped sum
+    // could pass this check, but the merge below still runs the true
+    // iteration count and would panic on `out[oi]` with a bare index error.
+    // This names the actual bad parameter instead.
     let n_matches = match geo_count.checked_add(extras.len()) {
         Some(sum) => sum == N,
         None => false,
@@ -269,17 +223,10 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 extras[i] & mask == 0,
                 "Params::extras: every entry must be a multiple of min_block"
             );
-            // size-classes publication audit run 1 (Sol-codex, P2-2): `0` is
-            // "a multiple of min_block" (the check above alone accepts it),
-            // but `min_block` is documented as the scheme's minimum block
-            // size (see `Params::min_block`) -- an `extras` entry of `0`
-            // would sort before the geometric run's own first class
-            // (`min_block`) and land in the table/`size2class`/`block_size`
-            // surface as a zero-sized class no `Layout` (`align >= 1`) can
-            // ever resolve to. Rejected outright rather than silently
-            // admitted: a caller who genuinely wants a below-`min_block`
-            // tier should lower `min_block` itself, not smuggle it in via
-            // `extras`.
+            // Catches `0`, which the multiple-of check above accepts (0 is a
+            // multiple of everything) but which would land in the table as a
+            // zero-sized class no `Layout` can resolve to. A caller wanting a
+            // smaller tier should lower `min_block`, not smuggle it in here.
             assert!(
                 extras[i] >= min_block,
                 "Params::extras: every entry must be >= min_block (min_block is the \
@@ -320,37 +267,18 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
             // Advance the geometric value for the next iteration:
             // next = round_up(ceil(cur * num / den), min_block), min step min_block.
             if gi < geo_count {
-                // task #701 (rust-intel audit §B26, MEDIUM): `cur * num` was
-                // a bare multiply on a geometrically-ACCUMULATING value --
-                // this is a library (`build_table`/`Params` are `pub`, and
-                // some call sites reach this at runtime, not just in
-                // `const` table construction), so per §B26 it cannot assume
-                // the consumer built with `overflow-checks = true`. In a
-                // release profile the multiply would silently WRAP, and the
-                // `next <= cur` min-step fallback below then MASKED that
-                // wrap into a valid-looking strictly-increasing table
-                // (min_block steps instead of the requested geometry) --
-                // `build_size2class`'s downstream monotonicity check cannot
-                // catch this, since the masked table IS still strictly
-                // increasing, just silently wrong. `checked_mul`/
-                // `checked_add` turn a release-silent wrong-table bug into
-                // an always-panicking one, with a diagnostic naming the
-                // actual overflow -- in BOTH `const` and runtime contexts:
-                // const-eval overflow checks follow the `overflow-checks`
-                // profile for a `const fn`'s body (task #1423/#1431,
-                // empirically verified), so a `release`-profile `const`
-                // consumer of this fix was silently wrong before it too,
-                // not just runtime call sites.
+                // Widened to u128 so only the ACTUAL next class has to fit
+                // `usize`: guarding `cur * num` instead would reject schemes
+                // whose product overflows but whose quotient does not (e.g.
+                // min_block = 2^62, growth = (3, 3) at cur = 2^63). The
+                // widened math cannot itself overflow, since
+                // `cur * num <= (2^64 - 1)^2 < 2^128`.
                 //
-                // size-classes publication audit run 2 (Sol-codex, P3-1):
-                // computed in `u128` so only the ACTUAL next class has to fit
-                // `usize`. Checking `cur * num` instead rejected schemes whose
-                // product overflows but whose quotient does not -- e.g.
-                // `min_block = 2^62`, `growth = (3, 3)`: at `cur = 2^63` the
-                // product `3 * 2^63` exceeds `usize::MAX`, yet the true next
-                // class is `3 * 2^62`, comfortably representable.
-                // `cur * num <= (2^64 - 1)^2 < 2^128`, so the `u128` math
-                // itself cannot overflow.
+                // Checked at all because `cur` accumulates geometrically and
+                // this is a library: an unchecked wrap would be masked by the
+                // min-step fallback below into a valid-looking but silently
+                // wrong table, in release builds and release-profile const
+                // evaluation alike.
                 let scaled = (cur as u128 * num as u128).div_ceil(den as u128);
                 // Round up to a multiple of min_block, still in u128.
                 let rounded = (scaled + mask as u128) & !(mask as u128);
@@ -360,20 +288,11 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 );
                 let mut next = rounded as usize;
                 if next <= cur {
-                    // task #755's closing review (F4, MEDIUM): this bare `+`
-                    // shares the exact overflow hazard the two `checked_*`
-                    // calls above were fixed for -- #701's own commit
-                    // message named this line and left it unguarded. It is
-                    // reachable with a `min_block` in the 2^62+ range (an
-                    // absurd but not `Params`-rejected value) and, worse,
-                    // on every step of the `growth.0 == 0` linear-degradation
-                    // scheme this crate's own docs bless as valid (see this
-                    // function's rustdoc), since that scheme's fallback IS
-                    // the only advance path. Reproduced pre-fix: a
-                    // `min_block` of `1 << 62` wraps `next` to a duplicate
-                    // AND a zero-sized class, not even monotone -- worse than
-                    // the bug #701 fixed, since #701's masked table was at
-                    // least strictly increasing.
+                    // Checked for the same reason as the widened math above,
+                    // and reached far more often: under `growth.0 == 0` this
+                    // fallback is the ONLY advance path, so every step goes
+                    // through it. Unchecked, a `min_block` near 2^62 wraps to
+                    // a duplicate zero-sized class -- not even monotone.
                     next = cur
                         .checked_add(min_block)
                         .expect("geometric progression overflows usize -- reduce geo_count/growth");
@@ -387,24 +306,13 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
         oi += 1;
     }
 
-    // size-classes publication audit run 1 (Sol-codex, P2-2): this rustdoc
-    // promises the merged table is strictly increasing, but until this
-    // check existed HERE, the only monotonicity check anywhere in the
-    // crate lived downstream in `build_size2class` -- so a standalone
-    // caller of `build_table` (a sanctioned use: the crate-level docs
-    // describe `build_table`/`build_size2class` as independent building
-    // blocks) could get back a table with a silent duplicate whenever an
-    // `extras` entry duplicates a geometric value the per-entry checks
-    // above cannot see (each `extras` entry is only
-    // checked against `min_block`-alignment and the OTHER `extras` entries,
-    // never against the geometric run it is about to be merged with). The
-    // exact reproduction: `min_block = 16`, `extras = [16, 32]` -- both
-    // pass every check above (aligned, strictly increasing among
-    // themselves) yet duplicate the geometric run's own first two classes.
-    // Checking the merged `out` directly closes the contract at its own
-    // function, not one layer downstream; `build_size2class`'s own
-    // monotonicity check stays in place as defense-in-depth for tables a
-    // caller assembles by hand rather than through `build_table`.
+    // The merged table is where an extra/geometric DUPLICATE first becomes
+    // visible: the per-entry checks above compare each extra only against
+    // `min_block` and the other extras, never against the run it is about to
+    // merge with. `min_block = 16, extras = [16, 32]` passes every check
+    // above yet duplicates the run's first two classes. Checked here so a
+    // standalone `build_table` caller gets the guarantee its rustdoc
+    // promises, rather than discovering it in `build_size2class` downstream.
     {
         let mut i = 1;
         while i < N {
@@ -505,12 +413,9 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         }
     }
     let small_max = table[N - 1];
-    // size-classes publication audit run 1 (Sol-codex, P2-1): reuse
-    // `size2class_len` rather than re-deriving `small_max / min_block + 1`
-    // here -- the bare add duplicated in this call site is exactly the
-    // overflow hazard that function's own `checked_add` now closes, and two
-    // copies of the same unchecked formula is how one of them silently
-    // stays wrong.
+    // Reuse `size2class_len` rather than re-deriving its formula: a second
+    // copy is how one of the two silently drifts out of sync (and loses the
+    // overflow check).
     assert!(
         L == size2class_len(small_max, min_block),
         "L must equal size2class_len(max_class, min_block)"
@@ -527,15 +432,10 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         // indexed by a size > small_max, which `class_for` rejects first) stays
         // in-range and resolves to the last class (a harmless sentinel).
         //
-        // size-classes publication audit run 1 (Sol-codex, P2-1): the
-        // multiply used to run BEFORE the clamp comparison, so it could
-        // overflow `usize` even though the clamped answer is always
-        // `<= small_max`. `checked_mul` makes the overflow case fall
-        // straight into the same clamp: if `(k + 1) * min_block` does not
-        // fit in `usize`, its true mathematical value is certainly greater
-        // than `small_max` (which does fit), so clamping to `small_max` is
-        // exactly the answer the unchecked multiply would have produced had
-        // it not wrapped.
+        // `checked_mul` folds overflow into that same clamp: if the product
+        // does not fit `usize`, its true value certainly exceeds `small_max`
+        // (which does fit), so `small_max` is exactly the answer an
+        // unwrapped multiply would have given.
         let need = match (k + 1).checked_mul(min_block) {
             Some(v) if v < small_max => v,
             _ => small_max,
@@ -562,12 +462,8 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// are `const` pure arithmetic — no allocation, and no panics on the lookup
 /// path FOR IN-CONTRACT INPUTS (`size >= 1`, a power-of-two `align`, and an
 /// `idx` obtained from [`class_for`](Self::class_for) rather than picked
-/// independently). task #731 (rust-intel audit §F2, INFO): the previous
-/// unqualified "no panics on the lookup path" contradicted
-/// [`block_size`](Self::block_size)'s own `# Panics` section on this same
-/// type (`idx >= N` panics there) -- qualified here rather than removing
-/// `block_size`'s panic doc, since that panic is the correct behavior for
-/// an out-of-contract `idx`.
+/// independently — an out-of-range `idx` does panic, see
+/// [`block_size`](Self::block_size)).
 ///
 /// Deliberately NOT `Copy`: an instance embeds both tables, so a realistic
 /// scheme is ~16 KiB, and `Copy` would give that a `let a = b;`-cheap
@@ -701,36 +597,26 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///
     /// # Preconditions
     ///
-    /// task #729 (rust-intel audit §F2/§B26): `align` **must be a power of
-    /// two** — the same `Layout` contract Rust's own allocator API requires
-    /// of its callers. This was previously stated only in an INTERNAL
-    /// slow-path comment, never in this function's own public contract.
-    /// For a non-power-of-two `align`, BOTH paths can silently violate the
-    /// fit predicate stated above (`block_size % align == 0`): the fast
-    /// path (`align <= small_align_max`) returns `seed` unconditionally,
-    /// without ever checking divisibility by a non-pow2 `align`; the slow
-    /// path's bitmask round-up (`(block | (align - 1)) + 1`) is only a
-    /// correct "next multiple of `align`" computation for a power-of-two
-    /// `align` and can overshoot for a non-pow2 one, skipping a class that
-    /// would actually have fit or returning `None` where a fitting class
-    /// exists. Third mode (task #1429, review-3 F2): false-ACCEPT — the
-    /// slow path's P-1 mask test `block & (align - 1) == 0` is not a
-    /// divisibility test for a non-pow2 `align` (on the SEFER scheme,
-    /// `class_for(20, 24)` returns the block=32 seed, `32 % 24 == 8`).
-    /// Neither path panics for a non-pow2 `align` — this is
-    /// deliberately a `debug_assert!`, not a hard `assert!`, since the
-    /// failure mode is a suboptimal/wrong CLASS CHOICE for a contract
-    /// violation, not memory unsafety or table corruption (contrast task
-    /// #701's geometric-overflow finding, which promoted to a release-
-    /// active `assert!` because a masked wrong TABLE is a worse failure
-    /// mode than a masked wrong class choice here). Most callers derive
-    /// `align` from `core::alloc::Layout`, which already guarantees
-    /// power-of-two by construction -- but NOT all: task #755's closing
-    /// review found `tests/medium_classes_correctness.rs` (in this crate's
-    /// consuming workspace) calling this function directly with a non-pow2
-    /// `align` (a test bug, since fixed there), which is exactly the shape
-    /// of caller this precondition exists to catch. The `debug_assert!`
-    /// fires on any such violation at zero cost in release.
+    /// `align` **must be a power of two** — the same `Layout` contract the
+    /// standard allocator API requires. An `align` taken from
+    /// [`core::alloc::Layout`] satisfies this by construction; one computed
+    /// by hand may not.
+    ///
+    /// A violation trips a `debug_assert!` and is otherwise silent: it can
+    /// only produce a wrong CLASS CHOICE, never memory unsafety or a
+    /// corrupt table, so it is not worth a release-active check on this hot
+    /// path. Concretely, all three of the fit predicate's failure modes
+    /// become reachable for a non-pow2 `align`:
+    ///
+    /// - the fast path (`align <= min_block`) returns its seed without
+    ///   checking divisibility at all;
+    /// - the slow path's bitmask round-up computes the wrong "next multiple
+    ///   of `align`", so it can overshoot a class that would have fit, or
+    ///   return `None` when one exists;
+    /// - the slow path's `block & (align - 1) == 0` test is not a
+    ///   divisibility test for a non-pow2 `align`, so it can ACCEPT a class
+    ///   that does not fit — e.g. `class_for(20, 24)` returning a 32-byte
+    ///   block, where `32 % 24 == 8`.
     #[must_use]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
         debug_assert!(
@@ -755,25 +641,20 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         let mut i = seed;
         while i < N {
             let block = self.table[i];
-            // review-2 P-1: `align` is contractually a power of two here
-            // (debug-asserted above; fast path already handles non-slow
-            // aligns), so mask == is_multiple_of but skips a division;
-            // matches `next_mult`'s idiom below. Measured ~24-45% faster on
-            // the two affected bench rows, see task #1426 commit.
+            // `align` is contractually a power of two here (debug-asserted
+            // above), so the mask is equivalent to `is_multiple_of` but skips
+            // a division — measured ~24-45% faster on the slow-path benches,
+            // and it matches `next_mult`'s idiom just below.
             if block & (align - 1) == 0 {
                 return Some(i);
             }
             // Smallest multiple of `align` strictly greater than `block` (align
             // is a power of two, so `(block | (align - 1)) + 1` rounds up).
             //
-            // size-classes publication audit run 1 (Sol-codex, P2-1): the
-            // trailing `+ 1` was a bare add -- if `block | (align - 1)` is
-            // already `usize::MAX` (no representable next multiple exists),
-            // it wrapped to `0` in release instead of correctly falling
-            // through to `None` below. `checked_add` makes "no next
-            // multiple fits in usize" resolve to exactly that `None`, the
-            // same outcome the `next_mult > self.small_max` clamp already
-            // produces for every other out-of-range case on this path.
+            // `checked_add` because `block | (align - 1)` can already be
+            // `usize::MAX`, meaning no next multiple exists -- which is
+            // exactly the `None` the `> small_max` clamp below yields for
+            // every other out-of-range case. Unchecked, it wrapped to `0`.
             let next_mult = match (block | (align - 1)).checked_add(1) {
                 Some(v) => v,
                 None => return None,

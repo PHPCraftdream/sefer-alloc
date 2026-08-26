@@ -841,3 +841,26 @@ fn extras_interleaving_the_geometric_run_is_accepted_and_preserved() {
         "a size in the gap the extra fills must resolve TO that extra"
     );
 }
+
+#[test]
+fn readme_example_compiles_and_derives_its_generics() {
+    // The README's example is a ```text fence (this crate has no doctests by
+    // policy), so nothing compiles it there. Mirrored here verbatim so it
+    // cannot silently rot -- in particular the L-derivation, which used to be
+    // a hand-pinned magic 258_752 (Sol-run2 P4-1).
+    const MIN_BLOCK: usize = 16;
+    const GEO_COUNT: usize = 40;
+    const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];
+    const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20);
+
+    const N: usize = GEO_COUNT + EXTRAS.len();
+    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+    const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
+
+    const SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+
+    assert_eq!(SC.count(), N);
+    assert_eq!(SC.small_max(), TABLE[N - 1]);
+    let idx = SC.class_for(100, 8).expect("100 B resolves");
+    assert!(SC.block_size(idx) >= 100);
+}
