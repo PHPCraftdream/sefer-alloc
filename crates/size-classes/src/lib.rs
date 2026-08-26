@@ -672,7 +672,9 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// classes.
     ///
     /// `size` is expected `>= min_block` (the caller's contract); it is also
-    /// well-defined for `size >= 1`, since `(size - 1) >> shift` stays in range.
+    /// well-defined for `size >= 1`, since `(size - 1) >> shift` stays in range
+    /// -- more precisely, what must hold is `need = max(size, align) >= 1`, so
+    /// `size == 0` alone is fine whenever `align >= 1`.
     ///
     /// # Preconditions
     ///
@@ -680,6 +682,21 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// standard allocator API requires. An `align` taken from
     /// [`core::alloc::Layout`] satisfies this by construction; one computed
     /// by hand may not.
+    ///
+    /// `class_for(0, 0)` is the one input that violates BOTH documented
+    /// preconditions (`size >= 1` and `align` a power of two, `0` being
+    /// neither `>= 1` nor a power of two) at once: `need = max(0, 0) == 0`,
+    /// so `need - 1` underflows. Unlike the non-pow2-`align` cases above,
+    /// this is unchecked even in debug (the underflow itself panics there,
+    /// loudly); in release it wraps to `usize::MAX`, and for a scheme whose
+    /// `small_max` sits within `2 * min_block` of `usize::MAX` (this crate's
+    /// own `extreme64_overflow` test fixture is one), the wrapped index
+    /// lands IN-BOUNDS and silently returns `Some(sentinel-class)` instead
+    /// of panicking or returning `None`. Still only a wrong CLASS CHOICE,
+    /// never memory unsafety (pure arithmetic over sizes) -- consistent
+    /// with the non-pow2-`align` stance above -- so not worth a hot-path
+    /// check for an input that already violates two documented
+    /// preconditions simultaneously.
     ///
     /// A violation trips a `debug_assert!` and is otherwise silent: it can
     /// only produce a wrong CLASS CHOICE, never memory unsafety or a
