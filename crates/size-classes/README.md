@@ -36,7 +36,7 @@ literal.
 
 ## Example
 
-```text
+```rust
 use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
 const MIN_BLOCK: usize = 16;

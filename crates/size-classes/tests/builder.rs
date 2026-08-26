@@ -1048,10 +1048,11 @@ fn extras_interleaving_the_geometric_run_is_accepted_and_preserved() {
 
 #[test]
 fn readme_example_compiles_and_derives_its_generics() {
-    // The README's example is a ```text fence (this crate has no doctests by
-    // policy), so nothing compiles it there. Mirrored here verbatim so it
-    // cannot silently rot -- in particular the L-derivation, which used to be
-    // a hand-pinned magic 258_752 (Sol-run2 P4-1).
+    // README.md is never pulled into rustdoc via `#[doc = include_str!(..)]`,
+    // so its example fence (```rust, for GitHub/crates.io highlighting) is
+    // never compiled by `cargo test --doc` either. Mirrored here verbatim so
+    // it cannot silently rot -- in particular the L-derivation, which used to
+    // be a hand-pinned magic 258_752 (Sol-run2 P4-1).
     const MIN_BLOCK: usize = 16;
     const GEO_COUNT: usize = 40;
     const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];
