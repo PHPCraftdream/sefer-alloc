@@ -185,8 +185,15 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// Panics in `const` evaluation if `N != geo_count + extras.len()`, if
 /// `min_block` is not a power of two, if `geo_count == 0`, if
 /// `params.growth.1` (the growth denominator) is `0`, if any `extras`
-/// entry is not a multiple of `min_block`, or if `extras` is not strictly
-/// increasing.
+/// entry is not a multiple of `min_block`, if any `extras` entry is less
+/// than `min_block` (the scheme's minimum block size), if `extras` is not
+/// strictly increasing, if the geometric progression's advance step
+/// overflows `usize` (only reachable with an extreme `min_block`/`growth`
+/// combination), or if the merged table (geometric run + `extras`) is not
+/// itself strictly increasing — the per-entry `extras` checks above catch
+/// misshapen `extras`, but not an `extras` entry that ties or interleaves
+/// with a value the geometric run also produces, which only the merged
+/// table reveals.
 #[must_use]
 pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -230,6 +237,22 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
             assert!(
                 extras[i] & mask == 0,
                 "Params::extras: every entry must be a multiple of min_block"
+            );
+            // size-classes publication audit run 1 (Sol-codex, P2-2): `0` is
+            // "a multiple of min_block" (the check above alone accepts it),
+            // but `min_block` is documented as the scheme's minimum block
+            // size (see `Params::min_block`) -- an `extras` entry of `0`
+            // would sort before the geometric run's own first class
+            // (`min_block`) and land in the table/`size2class`/`block_size`
+            // surface as a zero-sized class no `Layout` (`align >= 1`) can
+            // ever resolve to. Rejected outright rather than silently
+            // admitted: a caller who genuinely wants a below-`min_block`
+            // tier should lower `min_block` itself, not smuggle it in via
+            // `extras`.
+            assert!(
+                extras[i] >= min_block,
+                "Params::extras: every entry must be >= min_block (min_block is the \
+                 scheme's minimum block size)"
             );
             if i > 0 {
                 assert!(
@@ -321,6 +344,39 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
         }
         oi += 1;
     }
+
+    // size-classes publication audit run 1 (Sol-codex, P2-2): this rustdoc
+    // promises the merged table is strictly increasing, but until this
+    // check existed HERE, the only monotonicity check anywhere in the
+    // crate lived downstream in `build_size2class` -- so a standalone
+    // caller of `build_table` (a sanctioned use: the crate-level docs
+    // describe `build_table`/`build_size2class` as independent building
+    // blocks) could get back a table with a silent duplicate whenever an
+    // `extras` entry ties or interleaves with the geometric run at a value
+    // the per-entry checks above cannot see (each `extras` entry is only
+    // checked against `min_block`-alignment and the OTHER `extras` entries,
+    // never against the geometric run it is about to be merged with). The
+    // exact reproduction: `min_block = 16`, `extras = [16, 32]` -- both
+    // pass every check above (aligned, strictly increasing among
+    // themselves) yet duplicate the geometric run's own first two classes.
+    // Checking the merged `out` directly closes the contract at its own
+    // function, not one layer downstream; `build_size2class`'s own
+    // monotonicity check stays in place as defense-in-depth for tables a
+    // caller assembles by hand rather than through `build_table`.
+    {
+        let mut i = 1;
+        while i < N {
+            assert!(
+                out[i] > out[i - 1],
+                "build_table: merged table must be strictly increasing -- an \
+                 extras entry overlaps or interleaves with the geometric run \
+                 (each extras entry is only checked against min_block-alignment \
+                 and the other extras entries before merging)"
+            );
+            i += 1;
+        }
+    }
+
     out
 }
 

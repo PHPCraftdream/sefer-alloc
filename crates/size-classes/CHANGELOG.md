@@ -14,23 +14,30 @@ before it.
 - **`build_table(params) -> [usize; N]`** — a `const fn` that builds a
   mimalloc-style size-class table: a geometric progression
   (`round_up(prev * num / den, min_block)`, minimum step `min_block`, starting
-  at `min_block`) sorted-merged with an explicit `extras` list. Both `extras`
-  preconditions — every entry a multiple of `min_block`, the list strictly
-  increasing — plus `min_block` being a power of two, `geo_count > 0`, a
-  non-zero growth denominator, and `N == geo_count + extras.len()` are
-  **machine-checked**: a violation is a `const`-evaluation panic, i.e. a
-  compile error at the consumer's table definition, never a silently accepted
-  bad table (task #731 tightened several of these from bare division panics
-  to named asserts).
+  at `min_block`) sorted-merged with an explicit `extras` list. `extras`
+  preconditions — every entry a multiple of `min_block` AND `>= min_block`,
+  the list strictly increasing — plus `min_block` being a power of two,
+  `geo_count > 0`, a non-zero growth denominator, `N == geo_count +
+  extras.len()`, and the FINAL MERGED table being strictly increasing (an
+  `extras` entry that ties or interleaves with the geometric run is rejected
+  at this function's own chokepoint, not left for a caller of
+  `build_size2class` to discover downstream) are **machine-checked**: a
+  violation is a `const`-evaluation panic, i.e. a compile error at the
+  consumer's table definition, never a silently accepted bad table (task
+  #731 tightened several of these from bare division panics to named
+  asserts; the publication audit's P2-1/P2-2 findings closed the two
+  remaining gaps — a release-profile overflow in the length arithmetic, and
+  the merged-table monotonicity check itself).
 - **`build_size2class(table) -> [u8; L]`** — derives the O(1) `size → class`
   lookup from a table at compile time using the monotone-pointer technique
   (`O(buckets + classes)` const-eval), with a compile-time pin that the class
   count fits a `u8`, and a machine-checked global-monotonicity/disjointness
-  pass over the merged table.
+  pass over the merged table — this stays in place as defense-in-depth for a
+  table a caller assembles by hand rather than through `build_table`.
 - **`size2class_len(max_class, min_block)`** — the `const fn` a consumer uses
   to pin the lookup length `L` (`max_class / min_block + 1`) as a `const`
   expression; asserts `min_block` is a power of two like its siblings
-  (task #731).
+  (task #731), and that the `+ 1` itself does not overflow `usize`.
 - **`Params<'a>`** — the scheme's parameter set (`min_block`, `growth` as
   `(num, den)` — `(5, 4)` is the classic mimalloc 1.25× spacing — `geo_count`,
   `extras`, `huge_threshold`), all plain data so the whole scheme is usable in

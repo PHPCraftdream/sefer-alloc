@@ -181,54 +181,77 @@ fn extras_not_multiple_of_min_block_panics() {
     let _ = build_table::<N>(&params);
 }
 
+// size-classes publication audit run 1 (Sol-codex, P2-2): this used to be a
+// SINGLE test, `extras_overlapping_geometric_run_panics`, whose comments
+// explicitly documented that `build_table` ALONE accepted this input and the
+// violation only became visible once merged into `build_size2class` via
+// `SizeClasses::build` -- i.e. the test's own stated purpose was to pin a
+// standalone-`build_table` contract violation, exactly the P2-2 finding.
+// Once `build_table` grew its OWN merged-table monotonicity check (this same
+// commit), the input below panics one line into that old test's setup
+// (`build_table::<N>(&params)`) instead of at the `SizeClasses::build` call
+// the test's assertions and comments were actually about -- `#[should_panic]`
+// still matched (both panic messages happen to contain "must be strictly
+// increasing"), but for a different reason than the test claimed to check,
+// silently defeating its own stated chokepoint. Split into two tests with
+// distinct SUTs and distinct, non-overlapping expected substrings, so a
+// panic from the wrong site cannot coincidentally satisfy either one (the
+// same class of bug task #730 already fixed once for the single-test
+// version).
+
 #[test]
-#[should_panic(expected = "table must be strictly increasing")]
-fn extras_overlapping_geometric_run_panics() {
+#[should_panic(expected = "build_table: merged table must be strictly increasing")]
+fn extras_overlapping_geometric_run_panics_in_build_table() {
     // min_block=16, extras=[16, 32], geo_count=8 — the exact §5.1(b)
     // reproduction: both extras already appear in the geometric run
     // (pre-fix: table = [16, 16, 32, 32, 48, 64, 80, 112, 144, 192], indices
-    // 1 and 3 permanently unreachable, no diagnostic). The overlap collapses
-    // adjacent slots to equal values, so it surfaces as a strict-increase
-    // violation in `build_size2class` (the monotonicity chokepoint), which
-    // is what `SizeClasses::build` reaches on a non-const call.
-    //
-    // task #730 (rust-intel audit §D1, MEDIUM): the expected substring was
-    // previously the bare "strictly increasing", which ALSO matches
-    // `build_table`'s OWN "Params::extras: must be strictly increasing"
-    // message (a different check, on the `extras` list itself, reached in
-    // this test's SETUP before the actual SUT call below) -- a spurious
-    // panic from that setup path would have coincidentally satisfied the
-    // expectation, silently defeating the chokepoint this test exists to
-    // pin. Narrowed to "table must be strictly increasing", the
-    // `build_size2class`-specific prefix `build_table`'s extras check
-    // cannot produce.
+    // 1 and 3 permanently unreachable, no diagnostic). `extras` here IS
+    // strictly increasing and IS min_block-aligned among itself, so only the
+    // MERGED-table check (not the per-`extras`-entry checks) can catch this.
     const MIN_BLOCK: usize = 16;
     const EXTRAS: &[usize] = &[16, 32];
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
     let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
-    // `extras` here IS strictly increasing and IS min_block-aligned, so
-    // `build_table` alone accepts it (case (b) is purely an overlap with the
-    // geometric run, not an `extras`-internal-shape defect) — the violation
-    // only becomes visible once merged into the full table.
-    let table = build_table::<N>(&params);
-    let max_class = table[N - 1];
-    let l = size2class_len(max_class, MIN_BLOCK);
-    // The table's real max is 192 (the geometric run 16,32,48,64,80,112,144,192
-    // merged with extras=[16,32], per the comment above). `size2class_len(200,
-    // MIN_BLOCK)` is used here only because `size2class_len` floor-divides
-    // identically for both inputs (192/16+1 == 200/16+1 == 13) — this asserts
-    // the equivalence, not that 200 is the table's actual maximum.
-    assert_eq!(
-        l,
-        size2class_len(192, MIN_BLOCK),
-        "sanity: expected max 192 (floor-division-equivalent to size2class_len(200, ..))"
-    );
-    // Route through `SizeClasses::build` (the real chokepoint,
-    // `build_size2class` internally) rather than calling `build_size2class`
-    // directly, since `L` must be a const generic matching `l` above.
-    const L: usize = size2class_len(200, MIN_BLOCK);
-    let _ = SizeClasses::<N, L>::build(params);
+    let _ = build_table::<N>(&params);
+}
+
+#[test]
+#[should_panic(expected = "table must be strictly increasing (check Params::extras for overlap")]
+fn hand_built_overlapping_table_panics_in_build_size2class() {
+    // Defense-in-depth: `build_size2class`'s own monotonicity check (kept
+    // deliberately, not removed, once `build_table` grew its own) is the
+    // ONLY guard for a table a caller assembles BY HAND rather than through
+    // `build_table` -- e.g. a `const` array literal, or a table built by
+    // some other means entirely. Bypasses `build_table` on purpose: this
+    // duplicate `[16, 16, 32, ...]` shape is never produced by
+    // `build_table` (it now rejects the same shape at its own chokepoint,
+    // per the test above), so this is the one remaining path that reaches
+    // `build_size2class`'s check.
+    const MIN_BLOCK: usize = 16;
+    const N: usize = 3;
+    const TABLE: [usize; N] = [16, 16, 32];
+    const L: usize = size2class_len(32, MIN_BLOCK);
+    let _ = build_size2class::<N, L>(&TABLE, MIN_BLOCK);
+}
+
+#[test]
+#[should_panic(expected = "every entry must be >= min_block")]
+fn extras_zero_class_panics() {
+    // size-classes publication audit run 1 (Sol-codex, P2-2), the
+    // "соседний непроверенный случай": `extras = [0]` passed both the
+    // multiple-of-min_block check (0 is a multiple of everything) and the
+    // strictly-increasing-among-itself check (only one entry), so it
+    // reached the table as a zero-sized class before `min_block`'s own
+    // documented minimum-block-size meaning -- unreachable for any real
+    // `Layout` (`align >= 1`) yet present in `count`/`table`/`block_size(0)`.
+    // Rejected outright rather than given a documented meaning.
+    const MIN_BLOCK: usize = 16;
+    const EXTRAS: &[usize] = &[0];
+    const GEO_COUNT: usize = 8;
+    const N: usize = GEO_COUNT + EXTRAS.len();
+    let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
+    let _ = build_table::<N>(&params);
 }
 
 // task #730 (rust-intel audit §D1a/§F1, INFO): `reference_table`'s
