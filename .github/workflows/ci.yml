@@ -1831,11 +1831,10 @@ jobs:
       # --release -p racy-ptr-cell --test loom_racy_ptr_cell` (elsewhere in
       # this workflow), which excludes `tests/cell_unit.rs` twice over -- by
       # `--test` target selection and by the file's own `#![cfg(not(loom))]`
-      # gate. `cell_unit.rs`'s 7 tests, including 4 added by the
-      # racy-ptr-cell rust-intel remediation round (task #700/#706-710) --
+      # gate. `cell_unit.rs`'s tests, including
       # `panicking_init_rolls_back_and_subsequent_call_succeeds`,
       # `init_returning_the_sentinel_address_panics`,
-      # `align_of_one_payload_panics_at_construction`,
+      # `align_of_one_payload_panics_at_construction`, and
       # `dbg_rollback_reenterable_happy_path_and_not_applicable_arm` -- had
       # never run in CI. The exact same gap class as the two
       # `tagged-index-stack` steps above (task #639/#772 F4-F5). The

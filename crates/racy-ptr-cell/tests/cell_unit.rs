@@ -1,7 +1,10 @@
-//! Native (non-loom) single-threaded unit tests for [`RacyPtrCell`]:
-//! sequential correctness of the fast path, init-once, OOM rollback + retry,
-//! and the sentinel/null non-leak — the properties that do not need loom's
-//! interleaving explorer.
+//! Native (non-loom) tests for [`RacyPtrCell`]: sequential correctness of the
+//! fast path, init-once, OOM rollback + retry, and the sentinel/null
+//! non-leak, plus a handful of concurrency/rollback regression tests (a
+//! real background thread racing a panicking `init`) that need a genuine
+//! `std::thread` handshake rather than loom's interleaving explorer —
+//! `catch_unwind` does not compose with loom's model checker, so these
+//! properties live here instead of in the loom suite.
 
 #![cfg(not(loom))]
 
