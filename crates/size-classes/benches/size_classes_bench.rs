@@ -66,25 +66,53 @@ fn main() {
         black_box(result);
     });
 
-    // ── class_for/near_huge_threshold ────────────────────────────────────────
-    // Test cost near the huge_threshold boundary (4 MiB for SEFER_PARAMS).
-    // This exercises the large-size rejection path near the policy threshold.
+    // ── class_for/near_small_max (the boundary class_for actually checks) ────
+    // size-classes publication audit run 1 (Sol-codex, P3-1): the three rows
+    // this section replaces were all named/commented as measuring
+    // `huge_threshold` (4 MiB for SEFER_PARAMS), but `class_for` never reads
+    // `huge_threshold` at all -- only `is_huge` does (see the section below).
+    // `class_for`'s own early-rejection boundary is `small_max`
+    // (`SEFER_MAX`, well under 4 MiB for this scheme), so all three old rows
+    // fell through the SAME `need > small_max` branch regardless of the
+    // "below/at/above" label and measured nothing distinguishable. These
+    // three rows exercise the boundary `class_for` genuinely checks.
 
-    // Just below the threshold (4 MiB - 1)
-    h.bench("class_for/near_huge_threshold_below", || {
-        let result = black_box(SEFER_SC.class_for(black_box(4 * 1024 * 1024 - 1), black_box(1)));
+    // Just below small_max -- the last size that still resolves to a class.
+    h.bench("class_for/near_small_max_below", || {
+        let result = black_box(SEFER_SC.class_for(black_box(SEFER_MAX - 1), black_box(1)));
         black_box(result);
     });
 
-    // Exactly at the threshold (4 MiB)
-    h.bench("class_for/near_huge_threshold_at", || {
-        let result = black_box(SEFER_SC.class_for(black_box(4 * 1024 * 1024), black_box(1)));
+    // Exactly at small_max -- the largest resolvable size.
+    h.bench("class_for/near_small_max_at", || {
+        let result = black_box(SEFER_SC.class_for(black_box(SEFER_MAX), black_box(1)));
         black_box(result);
     });
 
-    // Just above the threshold (4 MiB + 1)
-    h.bench("class_for/near_huge_threshold_above", || {
-        let result = black_box(SEFER_SC.class_for(black_box(4 * 1024 * 1024 + 1), black_box(1)));
+    // One past small_max -- the early-rejection path (`need > small_max`),
+    // returning `None` before ever touching the lookup table.
+    h.bench("class_for/above_small_max_rejection", || {
+        let result = black_box(SEFER_SC.class_for(black_box(SEFER_MAX + 1), black_box(1)));
+        black_box(result);
+    });
+
+    // ── is_huge/near_huge_threshold (the policy check that DOES read it) ─────
+    // `is_huge` is the one method whose cost the `huge_threshold` boundary
+    // actually governs -- a plain `size >= self.huge_threshold` comparison,
+    // measured directly here rather than indirectly through `class_for`.
+
+    h.bench("is_huge/near_huge_threshold_below", || {
+        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024 - 1)));
+        black_box(result);
+    });
+
+    h.bench("is_huge/near_huge_threshold_at", || {
+        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024)));
+        black_box(result);
+    });
+
+    h.bench("is_huge/near_huge_threshold_above", || {
+        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024 + 1)));
         black_box(result);
     });
 
