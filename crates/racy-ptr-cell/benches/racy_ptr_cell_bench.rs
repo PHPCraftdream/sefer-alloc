@@ -4,39 +4,59 @@
 //! paths (lazy CAS-published pointer cell, used inside `#[global_allocator]`
 //! bootstrapping), so its hot-path latency is worth tracking.
 //!
-//! **What these numbers are, and are not.** Every row measures the CELL
-//! PROTOCOL — CAS, `Release` publish, `Acquire` load, loser spin — and
-//! nothing else. In particular no row allocates inside its timed region:
-//! the payload every `init` closure publishes is leaked ONCE, before any
-//! measurement, and the same `NonNull` is republished into each fresh cell
-//! (legal precisely because the cell does not own its pointee — it only
-//! stores and hands back the pointer). An earlier version of this file
-//! called `Box::new` inside the timed closure, which made the "cold" number
-//! mostly a measurement of the system allocator plus monotonic heap growth,
-//! not of this crate.
+//! **What these numbers are, and are not.** This file has WORKING rows
+//! (`get_or_try_init/cold`, `get/hot`, `get_or_try_init/warm_already_ready`,
+//! `contention/one_cell`) and their matching harness `baseline/*` rows. The
+//! working rows exercise the cell protocol — CAS, `Release` publish,
+//! `Acquire` load, loser spin; the `baseline/*` rows run the identical
+//! surrounding harness with the cell call itself removed, so a working row
+//! and its baseline can be read side by side to see roughly how much of the
+//! working row's time the cell call itself accounts for. In particular no
+//! row allocates inside its timed region: the payload every `init` closure
+//! publishes is leaked ONCE, before any measurement, and the same
+//! `NonNull` is republished into each fresh cell (legal precisely because
+//! the cell does not own its pointee — it only stores and hands back the
+//! pointer). An earlier version of this file called `Box::new` inside the
+//! timed closure, which made the "cold" number mostly a measurement of the
+//! system allocator plus monotonic heap growth, not of this crate.
 //!
-//! The `baseline/*` rows measure the harness scaffolding WITHOUT the cell
-//! CALL, so the cell protocol's own cost is the difference. Read them
-//! before quoting any absolute figure. There are two of them for the
-//! contention scenario specifically, at two different scaffolding depths:
-//! `baseline/scaffolding_only` matches `contention/one_cell` EXACTLY on
-//! BOTH sides of the round — the three CONTENDER threads pay the identical
-//! mutex-lock-then-`Arc`-clone cost in both rows (`Contention::round`'s
-//! shared `take_round_cell` helper), and the benchmark thread's own timed
-//! routine mirrors holding a pre-fetched `cell` without re-locking, exactly
-//! as `contention/one_cell`'s benchmark-thread routine does — with only the
-//! `get_or_try_init` call itself removed, so
-//! `contention/one_cell - baseline/scaffolding_only` isolates the cell
-//! protocol's own contended cost. `baseline/barrier_floor` strips the
-//! mutex/clone too, isolating just the two-barrier-crossing cost on its
-//! own — useful context, but NOT the right thing to subtract from
-//! `contention/one_cell` (it would also charge the protocol for mutex and
-//! `Arc` overhead that has nothing to do with it). An earlier version of
-//! this file had only one baseline row, shaped like `barrier_floor`, and
-//! its own doc comment claimed it isolated the protocol cost — it did not:
-//! the difference against it also included three mutex acquisitions and
-//! three `Arc` refcount operations per round that the contention row pays
-//! and the old baseline did not.
+//! Read every `baseline/*` row before quoting an absolute figure. There
+//! are two of them for the contention scenario specifically, at two
+//! different scaffolding depths: `baseline/scaffolding_only` matches
+//! `contention/one_cell` on BOTH sides of the round's SOURCE CODE SHAPE —
+//! the three CONTENDER threads run the identical mutex-lock-then-`Arc`-clone
+//! path in both rows (`Contention::round`'s shared `take_round_cell`
+//! helper), and the benchmark thread's own timed routine mirrors holding a
+//! pre-fetched `cell` without re-locking, exactly as `contention/one_cell`'s
+//! benchmark-thread routine does — with only the `get_or_try_init` call
+//! itself removed. **What `contention/one_cell - baseline/scaffolding_only`
+//! is, and is not:** each row's timed value is a ROUND MAKESPAN — the
+//! wall-clock span of a `start`-to-`done` barrier round across all
+//! `CONTENDERS` threads, not a sum of independent per-operation costs. The
+//! contention round's makespan is shaped by four threads' CAS/closure/
+//! publish/spin work OVERLAPPING in time (including the timed
+//! `get_or_try_init` call's own `init_body`, 64 `spin_loop` iterations
+//! that are a benchmark-authored parameter, not part of `RacyPtrCell`
+//! itself); the scaffolding-only round has none of that overlap, so its
+//! critical path is shaped differently, not merely shorter by a fixed
+//! amount. Subtracting the two makespans is a DIFFERENTIAL ESTIMATE under
+//! this exact harness on this exact machine — a reasonable answer to "how
+//! much slower is a full contended round than a matched control round
+//! here" — not an algebraic decomposition that isolates the protocol's
+//! intrinsic per-operation cost the way subtracting two SEQUENTIAL,
+//! non-overlapping measurements would. For a regression signal across
+//! revisions, compare `contention/one_cell` to itself with `CONTENDERS`/
+//! `INIT_SPIN_ITERS`/setup held fixed; use the baseline rows to catch
+//! harness/machine drift, not as a subtrahend to report as pure protocol
+//! cost. `baseline/barrier_floor` strips the mutex/clone too, down to just
+//! the two-barrier-crossing shape — useful context for how much of
+//! `scaffolding_only`'s own makespan is barriers versus mutex/`Arc`, and
+//! even less a candidate for exact subtraction than `scaffolding_only` is.
+//! An earlier version of this file had only one baseline row, shaped like
+//! `barrier_floor`, whose own contender threads still unconditionally
+//! called `get_or_try_init` regardless of which row was being timed, AND
+//! whose doc comment claimed the resulting difference was pure protocol
+//! cost — neither the contamination nor the exact-isolation claim held up.
 //!
 //! Run:
 //! ```text
@@ -213,25 +233,34 @@ fn main() {
     // ── contention/one_cell and its two baselines ───────────────────────────
     // The crate's most expensive documented scenario — the loser spin-wait.
     //
-    // `baseline/scaffolding_only` is the row that actually isolates the
-    // protocol: same untimed setup (a fresh cell published to `slot`) as
-    // `contention/one_cell`; the three CONTENDER threads pay the identical
-    // mutex-lock-then-clone cost in both modes via `Contention::round`'s
-    // shared `take_round_cell` helper; the benchmark thread's own timed
-    // routine holds the pre-fetched `cell` without re-locking, exactly as
-    // `contention/one_cell`'s benchmark-thread routine does. Only the
-    // `get_or_try_init` call itself is skipped.
-    // `contention/one_cell - baseline/scaffolding_only` is therefore
-    // genuinely the cell protocol's own contended cost, not contaminated by
-    // mutex/`Arc` overhead the protocol itself has nothing to do with.
+    // `baseline/scaffolding_only` matches `contention/one_cell` in SOURCE
+    // SHAPE: same untimed setup (a fresh cell published to `slot`); the
+    // three CONTENDER threads run the identical mutex-lock-then-clone path
+    // in both modes via `Contention::round`'s shared `take_round_cell`
+    // helper; the benchmark thread's own timed routine holds the
+    // pre-fetched `cell` without re-locking, exactly as `contention/one_cell`'s
+    // benchmark-thread routine does. Only the `get_or_try_init` call itself
+    // is skipped. Read `contention/one_cell - baseline/scaffolding_only` as
+    // a DIFFERENTIAL ESTIMATE, not an exact isolation of the protocol's
+    // intrinsic cost: each row's timed value is a round MAKESPAN across
+    // `CONTENDERS` overlapping threads, and the two rows' critical paths are
+    // shaped differently (the contention round overlaps CAS/closure/publish/
+    // spin across threads; the scaffolding round has none of that), so the
+    // subtraction does not algebraically decompose into "the cost of just
+    // the missing call" the way subtracting two sequential, non-overlapping
+    // measurements would. See the module doc's opening section for the full
+    // argument and what to use instead for a cross-revision regression
+    // signal.
     //
     // `baseline/barrier_floor` additionally strips the mutex/clone, down to
     // just the two barrier crossings — context for how much of
-    // `scaffolding_only` is barriers versus mutex/`Arc`, but NOT the row to
-    // subtract from `contention/one_cell` for a protocol-cost claim (an
-    // earlier version of this file did exactly that under the name
-    // `baseline/barriers_only`, and its own doc comment overclaimed the
-    // resulting difference as pure protocol cost).
+    // `scaffolding_only`'s own makespan is barriers versus mutex/`Arc`, and
+    // an even less exact subtrahend than `scaffolding_only` is (an earlier
+    // version of this file did exactly that under the name
+    // `baseline/barriers_only`, and its own doc comment overclaimed BOTH
+    // the isolation itself — before its contender threads even matched the
+    // contention row's source shape — and the resulting difference as pure
+    // protocol cost).
     //
     // The contender threads are spawned once and live until explicitly shut
     // down after `h.run()` returns (see below) — not left to be reaped at
@@ -297,13 +326,13 @@ fn main() {
                 // EXACTLY, down to not re-locking the mutex here either --
                 // that row's bench thread already holds `cell` from its own
                 // setup and never re-fetches it, so this one must not
-                // either, or it would charge scaffolding_only for a mutex
-                // lock contention/one_cell's bench thread never pays,
-                // under-crediting the isolated protocol cost. The
-                // contender THREADS still pay the mutex/clone cost on both
-                // rows identically, via `Contention::round`'s shared
-                // `take_round_cell` -- that is where the scaffolding
-                // actually needs to match, and does.
+                // either, or the two rows' bench-thread source shapes would
+                // no longer match (see the module doc for why matching
+                // SHAPE, not a claim of exact cost subtraction, is what this
+                // row is actually for). The contender THREADS still run the
+                // identical mutex/clone path on both rows via
+                // `Contention::round`'s shared `take_round_cell` -- that is
+                // where the scaffolding needs to match, and does.
                 black_box(&cell);
                 ctl.done.wait();
             },
