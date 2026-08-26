@@ -15,9 +15,28 @@
 //! mostly a measurement of the system allocator plus monotonic heap growth,
 //! not of this crate.
 //!
-//! The `baseline/*` rows measure the harness scaffolding WITHOUT the cell,
-//! so the cell's own cost is the difference. Read them before quoting any
-//! absolute figure.
+//! The `baseline/*` rows measure the harness scaffolding WITHOUT the cell
+//! CALL, so the cell protocol's own cost is the difference. Read them
+//! before quoting any absolute figure. There are two of them for the
+//! contention scenario specifically, at two different scaffolding depths:
+//! `baseline/scaffolding_only` matches `contention/one_cell` EXACTLY on
+//! BOTH sides of the round — the three CONTENDER threads pay the identical
+//! mutex-lock-then-`Arc`-clone cost in both rows (`Contention::round`'s
+//! shared `take_round_cell` helper), and the benchmark thread's own timed
+//! routine mirrors holding a pre-fetched `cell` without re-locking, exactly
+//! as `contention/one_cell`'s benchmark-thread routine does — with only the
+//! `get_or_try_init` call itself removed, so
+//! `contention/one_cell - baseline/scaffolding_only` isolates the cell
+//! protocol's own contended cost. `baseline/barrier_floor` strips the
+//! mutex/clone too, isolating just the two-barrier-crossing cost on its
+//! own — useful context, but NOT the right thing to subtract from
+//! `contention/one_cell` (it would also charge the protocol for mutex and
+//! `Arc` overhead that has nothing to do with it). An earlier version of
+//! this file had only one baseline row, shaped like `barrier_floor`, and
+//! its own doc comment claimed it isolated the protocol cost — it did not:
+//! the difference against it also included three mutex acquisitions and
+//! three `Arc` refcount operations per round that the contention row pays
+//! and the old baseline did not.
 //!
 //! Run:
 //! ```text
@@ -43,7 +62,7 @@ struct Payload {
 
 /// Number of threads racing on ONE cell in the contention rows, INCLUDING
 /// the benchmark thread itself. Tune here rather than at a call site so
-/// every contention row and its baseline stay in lockstep.
+/// every contention row and its baselines stay in lockstep.
 const CONTENDERS: usize = 4;
 
 /// How long the winner's `init` closure stays inside the critical section,
@@ -77,14 +96,16 @@ fn init_body(p: NonNull<Payload>) -> Option<NonNull<Payload>> {
 /// work always matches whichever row is currently being timed regardless of
 /// row execution order — a contender never has to guess.
 const MODE_CONTEND: u8 = 0;
-const MODE_BARRIERS_ONLY: u8 = 1;
-const MODE_SHUTDOWN: u8 = 2;
+/// Same scaffolding as `MODE_CONTEND` (mutex lock, `Arc` clone) with only
+/// the `get_or_try_init` call itself skipped.
+const MODE_SCAFFOLDING_ONLY: u8 = 1;
+/// Neither the mutex nor the cell — the two barrier crossings alone.
+const MODE_BARRIER_FLOOR: u8 = 2;
+const MODE_SHUTDOWN: u8 = 3;
 
 /// One round of the contention workload: a fresh cell is placed in `slot`,
 /// all `CONTENDERS` threads meet at `start`, then behave according to
-/// `mode` — either every one of them calls `get_or_try_init` on the round's
-/// cell (exactly one wins and runs `init`; the rest take the loser spin),
-/// or none of them touch the cell at all — and they meet again at `done`.
+/// `mode`, and meet again at `done`.
 struct Contention {
     slot: Mutex<Option<Arc<RacyPtrCell<Payload>>>>,
     start: Barrier,
@@ -109,21 +130,32 @@ impl Contention {
         self.start.wait();
         match self.mode.load(Ordering::Acquire) {
             MODE_SHUTDOWN => return false,
-            MODE_BARRIERS_ONLY => {
+            MODE_BARRIER_FLOOR => {
+                self.done.wait();
+            }
+            MODE_SCAFFOLDING_ONLY => {
+                let cell = self.take_round_cell();
+                black_box(&cell);
                 self.done.wait();
             }
             _ => {
-                let cell = self
-                    .slot
-                    .lock()
-                    .expect("contention slot mutex poisoned")
-                    .clone()
-                    .expect("the benchmark thread publishes a cell before each round");
+                let cell = self.take_round_cell();
                 black_box(cell.get_or_try_init(|| init_body(payload)));
                 self.done.wait();
             }
         }
         true
+    }
+
+    /// Lock `slot`, clone the round's published cell out of it. Shared by
+    /// `MODE_CONTEND` and `MODE_SCAFFOLDING_ONLY` so the two modes pay
+    /// IDENTICAL mutex/`Arc` cost — only the call after this differs.
+    fn take_round_cell(&self) -> Arc<RacyPtrCell<Payload>> {
+        self.slot
+            .lock()
+            .expect("contention slot mutex poisoned")
+            .clone()
+            .expect("the benchmark thread publishes a cell before each round")
     }
 }
 
@@ -178,23 +210,28 @@ fn main() {
         });
     }
 
-    // ── contention/one_cell and its baseline ────────────────────────────────
-    // The crate's most expensive documented scenario — the loser spin-wait —
-    // and, until now, the only one with no baseline at all.
+    // ── contention/one_cell and its two baselines ───────────────────────────
+    // The crate's most expensive documented scenario — the loser spin-wait.
     //
-    // Honest description of what the number contains: one timed round is a
-    // full `start` barrier + every contender's `get_or_try_init` on the same
-    // fresh cell + a `done` barrier. Two barrier crossings are therefore
-    // INSIDE the measurement; `baseline/barriers_only` runs the identical
-    // barrier pair with contenders explicitly in `MODE_BARRIERS_ONLY`, which
-    // makes them skip the mutex lock, the `Arc` clone, and the cell call
-    // entirely — an earlier version of this row left contenders running an
-    // unconditional loop that always did the cell call regardless of which
-    // row the benchmark thread was timing, so the "baseline" secretly still
-    // paid for warm `get_or_try_init` calls on three threads. With the mode
-    // gate, the protocol's own contended cost is genuinely the DIFFERENCE
-    // between the two rows. Do not quote the absolute number as "the cost
-    // of a contended init".
+    // `baseline/scaffolding_only` is the row that actually isolates the
+    // protocol: same untimed setup (a fresh cell published to `slot`) as
+    // `contention/one_cell`; the three CONTENDER threads pay the identical
+    // mutex-lock-then-clone cost in both modes via `Contention::round`'s
+    // shared `take_round_cell` helper; the benchmark thread's own timed
+    // routine holds the pre-fetched `cell` without re-locking, exactly as
+    // `contention/one_cell`'s benchmark-thread routine does. Only the
+    // `get_or_try_init` call itself is skipped.
+    // `contention/one_cell - baseline/scaffolding_only` is therefore
+    // genuinely the cell protocol's own contended cost, not contaminated by
+    // mutex/`Arc` overhead the protocol itself has nothing to do with.
+    //
+    // `baseline/barrier_floor` additionally strips the mutex/clone, down to
+    // just the two barrier crossings — context for how much of
+    // `scaffolding_only` is barriers versus mutex/`Arc`, but NOT the row to
+    // subtract from `contention/one_cell` for a protocol-cost claim (an
+    // earlier version of this file did exactly that under the name
+    // `baseline/barriers_only`, and its own doc comment overclaimed the
+    // resulting difference as pure protocol cost).
     //
     // The contender threads are spawned once and live until explicitly shut
     // down after `h.run()` returns (see below) — not left to be reaped at
@@ -221,19 +258,22 @@ fn main() {
             }));
         }
 
+        // UNTIMED setup shared by both `contention/one_cell` and
+        // `baseline/scaffolding_only`: publish a fresh cell to `slot` for
+        // the round. Identical in both rows on purpose — only the routine
+        // (and the `mode` it sets first) differs.
+        let publish_round_cell = |ctl: &Arc<Contention>| -> Arc<RacyPtrCell<Payload>> {
+            let cell = Arc::new(RacyPtrCell::<Payload>::new());
+            *ctl.slot.lock().expect("contention slot mutex poisoned") = Some(Arc::clone(&cell));
+            cell
+        };
+
         let bench_ctl = Arc::clone(&ctl);
         h.bench_batched(
             "contention/one_cell",
             move || {
-                // UNTIMED: publish the fresh cell the whole cohort will race
-                // on this round.
                 bench_ctl.mode.store(MODE_CONTEND, Ordering::Release);
-                let cell = Arc::new(RacyPtrCell::<Payload>::new());
-                *bench_ctl
-                    .slot
-                    .lock()
-                    .expect("contention slot mutex poisoned") = Some(Arc::clone(&cell));
-                (Arc::clone(&bench_ctl), cell)
+                (Arc::clone(&bench_ctl), publish_round_cell(&bench_ctl))
             },
             move |(ctl, cell)| {
                 ctl.start.wait();
@@ -242,14 +282,39 @@ fn main() {
             },
         );
 
-        // Baseline: the same two barrier crossings, contenders in
-        // MODE_BARRIERS_ONLY so they genuinely touch no cell this round.
-        let base_ctl = Arc::clone(&ctl);
+        let scaffold_ctl = Arc::clone(&ctl);
         h.bench_batched(
-            "baseline/barriers_only",
+            "baseline/scaffolding_only",
             move || {
-                base_ctl.mode.store(MODE_BARRIERS_ONLY, Ordering::Release);
-                Arc::clone(&base_ctl)
+                scaffold_ctl
+                    .mode
+                    .store(MODE_SCAFFOLDING_ONLY, Ordering::Release);
+                (Arc::clone(&scaffold_ctl), publish_round_cell(&scaffold_ctl))
+            },
+            |(ctl, cell)| {
+                ctl.start.wait();
+                // Mirrors `contention/one_cell`'s bench-thread routine
+                // EXACTLY, down to not re-locking the mutex here either --
+                // that row's bench thread already holds `cell` from its own
+                // setup and never re-fetches it, so this one must not
+                // either, or it would charge scaffolding_only for a mutex
+                // lock contention/one_cell's bench thread never pays,
+                // under-crediting the isolated protocol cost. The
+                // contender THREADS still pay the mutex/clone cost on both
+                // rows identically, via `Contention::round`'s shared
+                // `take_round_cell` -- that is where the scaffolding
+                // actually needs to match, and does.
+                black_box(&cell);
+                ctl.done.wait();
+            },
+        );
+
+        let floor_ctl = Arc::clone(&ctl);
+        h.bench_batched(
+            "baseline/barrier_floor",
+            move || {
+                floor_ctl.mode.store(MODE_BARRIER_FLOOR, Ordering::Release);
+                Arc::clone(&floor_ctl)
             },
             |ctl| {
                 ctl.start.wait();
