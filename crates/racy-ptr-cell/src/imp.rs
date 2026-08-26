@@ -79,6 +79,14 @@ pub enum RollbackProbe {
 ///
 /// The cell never drops, frees, or reads through the pointee — it only
 /// publishes and hands back the `*mut T` the init closure produced.
+///
+/// `#[repr(transparent)]`: the "one `AtomicPtr`"/"one word" claims made
+/// throughout this crate's docs are a LAYOUT GUARANTEE, not an
+/// implementation detail that happens to be true on the current compiler.
+/// `PhantomData<*mut T>` is the only other field; it is always zero-sized
+/// with alignment 1, which is exactly what `repr(transparent)` requires of
+/// every field beyond the one real one.
+#[repr(transparent)]
 pub struct RacyPtrCell<T> {
     /// The one word driving the state machine: `null` = `UNINIT`,
     /// [`SENTINEL_INITIALIZING`] = `INITIALIZING`, any other value = `READY`

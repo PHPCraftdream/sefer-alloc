@@ -260,6 +260,11 @@ mod loom_shim {
 
     const SENTINEL_INITIALIZING: usize = 1;
 
+    // repr(transparent): mirrors the real crate's own layout guarantee
+    // (racy-ptr-cell's publication readiness review, run 5, finding F1) --
+    // this shim is a test-only stand-in for the real type, so its layout
+    // should not silently diverge from what the real crate now promises.
+    #[repr(transparent)]
     pub(crate) struct RacyPtrCell<T> {
         ptr: AtomicPtr<T>,
         _marker: PhantomData<*mut T>,

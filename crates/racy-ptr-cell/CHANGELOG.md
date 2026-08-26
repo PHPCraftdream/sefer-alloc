@@ -13,8 +13,10 @@ before it.
 
 - **`RacyPtrCell<T>`** — a lazy, CAS-published pointer cell implementing the
   three-state machine `UNINIT(null) → INITIALIZING(sentinel) → READY(real
-  pointer)` over a **single** `AtomicPtr<T>`. `no_std`, allocation-free (the
-  cell is one word and never touches the heap), and usable inside a
+  pointer)` over a **single** `AtomicPtr<T>`. `#[repr(transparent)]`: the
+  cell's layout is guaranteed identical to `AtomicPtr<T>`, not merely
+  observed to be one word on the current compiler. `no_std`,
+  allocation-free (never touches the heap), and usable inside a
   `#[global_allocator]`: the cell's own non-panicking operations use no `std`
   sync primitive — no `Mutex`, no parking, no `OnceLock` — so the cell itself
   cannot re-enter the allocator it is bootstrapping, and can publish a

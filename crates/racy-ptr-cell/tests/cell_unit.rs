@@ -235,3 +235,29 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     // leak.
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }
+
+/// This does not test `#[repr(transparent)]` itself -- the compiler already
+/// rejects a `PhantomData` field that would violate it, so a wrong
+/// `repr(transparent)` is a compile error, not a silent bug. What this DOES
+/// guard is a later, unrelated edit that widens the struct (a new field, a
+/// changed field type) while somehow keeping it compiling -- e.g. a second
+/// non-ZST field would break `repr(transparent)`'s own requirement and fail
+/// to build, but a change to a still-single-field-but-differently-sized
+/// representation would not. Pinning the size/align equality here turns
+/// that class of drift into a test failure instead of a silent layout
+/// change a downstream consumer would only discover by measuring it
+/// themselves.
+#[test]
+fn layout_matches_a_single_atomic_ptr() {
+    assert_eq!(
+        core::mem::size_of::<RacyPtrCell<Payload>>(),
+        core::mem::size_of::<core::sync::atomic::AtomicPtr<Payload>>(),
+        "RacyPtrCell<T> must be exactly one word, matching its documented \
+         layout guarantee"
+    );
+    assert_eq!(
+        core::mem::align_of::<RacyPtrCell<Payload>>(),
+        core::mem::align_of::<core::sync::atomic::AtomicPtr<Payload>>(),
+        "RacyPtrCell<T> must have the same alignment as the AtomicPtr<T> it wraps"
+    );
+}

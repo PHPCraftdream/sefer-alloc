@@ -262,6 +262,17 @@
 //! unresolved `AtomicPtr` import on `msp430-none-elf` (which has no atomics
 //! for `core` to define it from), with one sentence naming the real
 //! requirement.
+//!
+//! ## Layout — `#[repr(transparent)]`
+//!
+//! `RacyPtrCell<T>` carries `#[repr(transparent)]`: its layout is guaranteed
+//! identical to `AtomicPtr<T>` — same size, same alignment. This is a real
+//! contract, not merely an observation about the current compiler: the
+//! "one `AtomicPtr`"/"one word" language throughout this crate's docs would
+//! otherwise describe an unstated detail of plain `repr(Rust)` layout
+//! (field order, padding, and single-field size equivalence are not
+//! guaranteed there), which is not something to leave implicit for a type
+//! meant to sit in allocator metadata or an array of cells.
 
 // This crate is a two-file seam crate: `lib.rs` is a documentation +
 // portability-guard facade with no code of its own, and ALL `unsafe` is
