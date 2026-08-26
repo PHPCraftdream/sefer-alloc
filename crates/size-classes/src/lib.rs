@@ -276,18 +276,25 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 // Widened to u128 so only the ACTUAL next class has to fit
                 // `usize`: guarding `cur * num` instead would reject schemes
                 // whose product overflows but whose quotient does not (e.g.
-                // min_block = 2^62, growth = (3, 3) at cur = 2^63). The
-                // widened math cannot itself overflow, since
-                // `cur * num <= (2^64 - 1)^2 < 2^128`.
+                // min_block = 2^62, growth = (3, 3) at cur = 2^63).
                 //
                 // Checked at all because `cur` accumulates geometrically and
                 // this is a library: an unchecked wrap would be masked by the
                 // min-step fallback below into a valid-looking but silently
                 // wrong table, in release builds and release-profile const
-                // evaluation alike.
-                let scaled = (cur as u128 * num as u128).div_ceil(den as u128);
+                // evaluation alike. `checked_mul`/`checked_add` (rather than a
+                // hand-proved "cannot overflow" comment) so the bound holds
+                // regardless of `usize` width instead of only for `usize <=
+                // 64`.
+                let scaled = match (cur as u128).checked_mul(num as u128) {
+                    Some(p) => p.div_ceil(den as u128),
+                    None => panic!("geometric progression: cur * num overflows u128"),
+                };
                 // Round up to a multiple of min_block, still in u128.
-                let rounded = (scaled + mask as u128) & !(mask as u128);
+                let rounded = match scaled.checked_add(mask as u128) {
+                    Some(v) => v & !(mask as u128),
+                    None => panic!("geometric progression: scaled + mask overflows u128"),
+                };
                 assert!(
                     rounded <= usize::MAX as u128,
                     "geometric progression overflows usize -- reduce geo_count/growth"
