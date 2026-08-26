@@ -683,6 +683,31 @@ jobs:
       - run: cargo miri test -p aligned-vmem
       - run: cargo miri test -p aligned-vmem --all-features
 
+  racy-ptr-cell-gates:
+    # Publication readiness review, run 5 (Sol-codex), F7, task #1396: every
+    # other standalone crate with its own package-gates job (sefer-region,
+    # aligned-vmem) has one that actually packages/publish-dry-runs the
+    # crate on every PR; racy-ptr-cell did not, so a tarball-content,
+    # manifest-normalization, or packaged-dependency-resolution regression
+    # would surface for the first time at tag/release time instead of here.
+    # This crate's clippy/rustdoc/test rows already live in the big
+    # test-workspace job below — not duplicated here, same convention the
+    # sefer-region job's own header comment states. No
+    # `cargo semver-checks check-release` step: unlike sefer-region and
+    # aligned-vmem, racy-ptr-cell has never been published, so there is no
+    # baseline on crates.io to diff against yet — add that step once the
+    # first `cargo publish -p racy-ptr-cell` has actually landed.
+    name: racy-ptr-cell package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # Packaging verification only, per the finding: confirms the crate
+      # packages and the packaged tarball's own isolated build succeeds
+      # against the published manifest (no reliance on workspace-inherited
+      # lints/deps that would not exist for a real crates.io consumer).
+      - run: cargo publish --dry-run -p racy-ptr-cell
+
   racy-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
     # crate's central soundness argument is a provenance one (a sentinel built
