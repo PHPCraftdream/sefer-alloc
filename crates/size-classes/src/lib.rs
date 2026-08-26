@@ -208,9 +208,10 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// scheme; the crate itself has no defaults), `geo_count = 177` already
 /// overflows), or if the merged table (geometric run + `extras`) is not
 /// itself strictly increasing — the per-entry `extras` checks above catch
-/// misshapen `extras`, but not an `extras` entry that ties or interleaves
-/// with a value the geometric run also produces, which only the merged
-/// table reveals.
+/// misshapen `extras`, but not an `extras` entry that DUPLICATES a value
+/// the geometric run also produces, which only the merged table reveals.
+/// An `extras` entry landing strictly BETWEEN two geometric values is
+/// fine, and is one of the main reasons `extras` exists.
 #[must_use]
 pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -393,8 +394,8 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     // caller of `build_table` (a sanctioned use: the crate-level docs
     // describe `build_table`/`build_size2class` as independent building
     // blocks) could get back a table with a silent duplicate whenever an
-    // `extras` entry ties or interleaves with the geometric run at a value
-    // the per-entry checks above cannot see (each `extras` entry is only
+    // `extras` entry duplicates a geometric value the per-entry checks
+    // above cannot see (each `extras` entry is only
     // checked against `min_block`-alignment and the OTHER `extras` entries,
     // never against the geometric run it is about to be merged with). The
     // exact reproduction: `min_block = 16`, `extras = [16, 32]` -- both
@@ -410,9 +411,11 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
             assert!(
                 out[i] > out[i - 1],
                 "build_table: merged table must be strictly increasing -- an \
-                 extras entry overlaps or interleaves with the geometric run \
-                 (each extras entry is only checked against min_block-alignment \
-                 and the other extras entries before merging)"
+                 extras entry duplicates a value the geometric run also \
+                 produces (each extras entry is only checked against \
+                 min_block-alignment and the other extras entries before \
+                 merging; an extra landing strictly BETWEEN two geometric \
+                 values is fine)"
             );
             i += 1;
         }

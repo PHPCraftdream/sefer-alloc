@@ -798,3 +798,46 @@ fn a_genuinely_unrepresentable_next_class_still_panics() {
     const PARAMS: Params = Params::new(MIN_BLOCK, (2, 1), N, &[], 1 << 20);
     let _ = build_table::<N>(&PARAMS);
 }
+
+#[test]
+fn extras_interleaving_the_geometric_run_is_accepted_and_preserved() {
+    // size-classes publication audit run 2 (Sol-codex, P3-3): the docs used
+    // to say an extra that "interleaves" with the geometric run is rejected.
+    // It is not, and must not be -- placing an exact class the progression
+    // skips is the main reason `extras` exists. Only a DUPLICATE is rejected
+    // (see extras_overlapping_geometric_run_panics_in_build_table above).
+    //
+    // The production scheme itself depends on this: all nine SEFER extras
+    // land strictly between two geometric neighbours (256 between 240 and
+    // 304, and so on). Pinned here on a small scheme so the property is
+    // stated directly rather than implied by the big table.
+    const MIN_BLOCK: usize = 16;
+    const GEO_COUNT: usize = 6;
+    // The bare geometric run for these params is 16, 32, 48, 64, 80, 112.
+    // 96 is 16-aligned and falls strictly between 80 and 112 -- a gap the
+    // progression skips entirely.
+    const EXTRAS: &[usize] = &[96];
+    const N: usize = GEO_COUNT + EXTRAS.len();
+    const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
+    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+
+    assert_eq!(TABLE, [16, 32, 48, 64, 80, 96, 112]);
+    assert!(
+        TABLE.contains(&96),
+        "an interleaving extra must survive the merge, not be dropped"
+    );
+    for w in TABLE.windows(2) {
+        assert!(w[0] < w[1], "merged table must stay strictly increasing");
+    }
+
+    // And it is genuinely reachable through the derived lookup -- not a
+    // monotonicity-valid but unindexable slot.
+    const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
+    const SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+    let idx = SC.class_for(81, 1).expect("81 B resolves");
+    assert_eq!(
+        SC.block_size(idx),
+        96,
+        "a size in the gap the extra fills must resolve TO that extra"
+    );
+}

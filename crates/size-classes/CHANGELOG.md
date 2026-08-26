@@ -19,9 +19,10 @@ before it.
   the list strictly increasing — plus `min_block` being a power of two,
   `geo_count > 0`, a non-zero growth denominator, `N == geo_count +
   extras.len()`, and the FINAL MERGED table being strictly increasing (an
-  `extras` entry that ties or interleaves with the geometric run is rejected
-  at this function's own chokepoint, not left for a caller of
-  `build_size2class` to discover downstream) are **machine-checked**: a
+  `extras` entry that DUPLICATES a geometric value is rejected at this
+  function's own chokepoint, not left for a caller of `build_size2class` to
+  discover downstream; an extra landing strictly between two geometric
+  values is valid and expected) are **machine-checked**: a
   violation panics identically in `const` evaluation (a compile error at
   the consumer's table definition) and at runtime, never a silently
   accepted bad table (task #731 tightened several of these from bare
