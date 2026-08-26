@@ -16,7 +16,10 @@ use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
 /// Sefer's concrete parameterization (49 classes; the default in-tree
 /// scheme) -- the realistic production-like configuration the actual
-/// allocator uses.
+/// allocator uses. A snapshot, not a live link: this crate cannot depend on
+/// the root crate, so nothing here re-syncs automatically if the root's
+/// `EXTRAS`/`GEO_COUNT`/`MIN_BLOCK`/growth ever change (fh publication audit
+/// P4-5).
 pub(crate) const SEFER_MIN_BLOCK: usize = 16;
 pub(crate) const SEFER_EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
 pub(crate) const SEFER_GEO: usize = 40;

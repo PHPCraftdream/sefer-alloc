@@ -164,6 +164,18 @@ pub(crate) const HUGE_THRESHOLD: usize = super::os::SEGMENT;
 /// instantiation of the crate's `const`-generic builder.
 const PARAMS: Params = Params::new(MIN_BLOCK, GROWTH, GEO_COUNT, EXTRAS, HUGE_THRESHOLD);
 
+/// Compile-time drift guard: [`SMALL_ALIGN_MAX`] is defined independently as
+/// `MIN_BLOCK` above, not read off the built scheme (a `const` item cannot
+/// reference the `SC` `static`, E0013 -- so this re-runs `build` fresh
+/// instead). Today the crate's own `build` hardcodes `small_align_max =
+/// params.min_block`, so the two cannot actually drift; if the crate ever
+/// grows the `small_align_max` knob its own README already anticipates, this
+/// fails to compile instead of the constant silently going stale (fh
+/// publication audit P4-5).
+const _: () = assert!(
+    SMALL_ALIGN_MAX == SizeClassesImpl::<TABLE_LEN, S2C_LEN>::build(PARAMS).small_align_max()
+);
+
 /// The table of fine small size classes, in strictly increasing order — built
 /// at compile time by the crate's `build_table` from [`PARAMS`]. The **single
 /// source of truth** for the small-class geometry; [`SIZE2CLASS`] is derived
