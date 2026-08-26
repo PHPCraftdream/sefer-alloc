@@ -81,7 +81,7 @@ const SEFER_PARAMS: Params = Params::new(
 const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
 const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
 const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
-const SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
+static SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
 
 #[test]
 fn sefer_table_matches_reference_and_is_strictly_increasing() {

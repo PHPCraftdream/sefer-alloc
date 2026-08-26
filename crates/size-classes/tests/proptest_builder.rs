@@ -69,7 +69,7 @@ const A_P: Params = Params::new(A_MB, (5, 4), 32, A_EX, 1 << 20);
 const A_T: [usize; A_N] = build_table::<A_N>(&A_P);
 const A_MAX: usize = A_T[A_N - 1];
 const A_L: usize = size2class_len(A_MAX, A_MB);
-const A_SC: SizeClasses<A_N, A_L> = SizeClasses::build(A_P);
+static A_SC: SizeClasses<A_N, A_L> = SizeClasses::build(A_P);
 static A_S2C: [u8; A_L] = build_size2class::<A_N, A_L>(&A_T, A_MB);
 
 // Scheme B: min_block 8, steeper 1.5× growth, no extras.
@@ -80,7 +80,7 @@ const B_P: Params = Params::new(B_MB, (3, 2), 24, B_EX, 1 << 20);
 const B_T: [usize; B_N] = build_table::<B_N>(&B_P);
 const B_MAX: usize = B_T[B_N - 1];
 const B_L: usize = size2class_len(B_MAX, B_MB);
-const B_SC: SizeClasses<B_N, B_L> = SizeClasses::build(B_P);
+static B_SC: SizeClasses<B_N, B_L> = SizeClasses::build(B_P);
 static B_S2C: [u8; B_L] = build_size2class::<B_N, B_L>(&B_T, B_MB);
 
 // Scheme C: min_block 64 (large fundamental alignment), gentle 1.125× growth,
@@ -92,7 +92,7 @@ const C_P: Params = Params::new(C_MB, (9, 8), 30, C_EX, 1 << 20);
 const C_T: [usize; C_N] = build_table::<C_N>(&C_P);
 const C_MAX: usize = C_T[C_N - 1];
 const C_L: usize = size2class_len(C_MAX, C_MB);
-const C_SC: SizeClasses<C_N, C_L> = SizeClasses::build(C_P);
+static C_SC: SizeClasses<C_N, C_L> = SizeClasses::build(C_P);
 static C_S2C: [u8; C_L] = build_size2class::<C_N, C_L>(&C_T, C_MB);
 
 fn pow2_up_to(max: usize) -> impl Strategy<Value = usize> {

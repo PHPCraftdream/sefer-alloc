@@ -48,7 +48,9 @@ before it.
   literals no longer compile.
 - **`SizeClasses<N, L>`** — the built scheme, generic over table length `N`
   and lookup length `L`, both pure functions of `Params`:
-  - `const fn build(params)` — bake the whole scheme into a `const`/`static`;
+  - `const fn build(params)` — construct the whole scheme at compile time;
+    intended placement is a `static` (a `const` this size re-materializes at
+    every use site -- see the `SizeClasses` doc);
   - accessors `table()`, `size2class()`, `min_block()`, `min_block_shift()`,
     `small_align_max()`, `small_max()`, `count()`, `block_size(idx)`,
     `is_huge(size)`;
