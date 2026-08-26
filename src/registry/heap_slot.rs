@@ -86,7 +86,7 @@ use super::heap_overflow::HeapOverflow;
 #[cfg(feature = "class-aware-dirty")]
 use crate::alloc_core::dirty_by_class::PerClassDirty;
 #[cfg(feature = "class-aware-dirty")]
-use racy_ptr_cell::RacyPtrCell;
+use once_ptr_cell::OncePtrCell;
 
 /// Slot state: `FREE` (available for claim) or `LIVE` (owned by a thread).
 /// Stored as a `u8` so the `FREE → LIVE` / `LIVE → FREE` transitions are
@@ -254,7 +254,7 @@ pub(crate) struct HeapSlotRemote {
     /// this feature, so it remains the fallback/ground-truth signal even
     /// when this sidecar is in use.
     #[cfg(feature = "class-aware-dirty")]
-    pub(crate) dirty_by_class: RacyPtrCell<PerClassDirty>,
+    pub(crate) dirty_by_class: OncePtrCell<PerClassDirty>,
 
     /// R13-1 (task #271, P0 fix): the coarse-only latch — set PERMANENTLY,
     /// once, the first time [`ensure_per_class_dirty`](crate::alloc_core::dirty_by_class::ensure_per_class_dirty)

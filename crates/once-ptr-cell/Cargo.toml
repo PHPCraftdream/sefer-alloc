@@ -1,14 +1,14 @@
 [package]
-name = "racy-ptr-cell"
+name = "once-ptr-cell"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "Allocation-free, no_std lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY over one AtomicPtr) with fallible init: OOM rolls the sentinel back and losers RE-RACE the CAS, busy-spinning with no OS synchronization primitive, where OnceLock's losers may block. The cell's own operations use no std sync and no heap, for use inside a #[global_allocator]; the caller's init closure must not allocate, block, or unwind (see docs). Ships executable loom proofs run against the real type, with #[should_panic] counterfactuals."
+description = "Allocation-free, no_std lazy CAS-published pointer cell for use inside a #[global_allocator]: fallible init with OOM rollback, and losers re-race the CAS instead of blocking (unlike OnceLock). See the crate docs for the full state-machine/safety contract."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
-homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/racy-ptr-cell"
-documentation = "https://docs.rs/racy-ptr-cell"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/once-ptr-cell"
+documentation = "https://docs.rs/once-ptr-cell"
 keywords = ["oncelock", "spin", "allocator", "cas", "no-std"]
 categories = ["memory-management", "concurrency", "no-std::no-alloc"]
 
@@ -20,7 +20,7 @@ workspace = true
 [dependencies]
 # Zero non-std deps in a NORMAL build. Under `--cfg loom` ONLY, the cell aliases
 # its atomics to `loom::sync::atomic` so the shipped loom tests exercise the
-# REAL `RacyPtrCell` type — so `loom` is a `cfg(loom)`-gated LIBRARY dependency
+# REAL `OncePtrCell` type — so `loom` is a `cfg(loom)`-gated LIBRARY dependency
 # (not merely a dev-dependency): the cell's own `src/lib.rs` references it. A
 # normal `cargo build` (no `--cfg loom`) pulls in zero non-std deps.
 
@@ -29,11 +29,11 @@ loom = { workspace = true }
 
 [dev-dependencies]
 # Fixed-iteration bench harness (dev-only — never reaches published
-# consumers). See benches/racy_ptr_cell_bench.rs.
+# consumers). See benches/once_ptr_cell_bench.rs.
 bench-scale-tool = "0.1"
 
 [[bench]]
-name = "racy_ptr_cell_bench"
+name = "once_ptr_cell_bench"
 harness = false
 # Stated explicitly rather than left to cargo's default: `cargo test` must
 # not treat this bench as a test target. ci.yml's clippy row relies on that

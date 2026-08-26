@@ -55,15 +55,15 @@
 //! `aligned_vmem::leak_zeroed_pages` M5-clean direct-VM-reservation pattern
 //! `segment_directory`'s owner-only sidecar and `registry::heap_overflow`'s
 //! `HeapOverflowSidecar` both use, but published through
-//! [`racy_ptr_cell::RacyPtrCell`] (the extracted, independently
+//! [`once_ptr_cell::OncePtrCell`] (the extracted, independently
 //! loom-verified `UNINIT -> INITIALIZING -> READY` CAS-publish state machine
-//! — see `crates/racy-ptr-cell`) rather than a hand-rolled sentinel protocol,
+//! — see `crates/once-ptr-cell`) rather than a hand-rolled sentinel protocol,
 //! because — unlike `SegmentDirectory` (owner-only, single-writer, no
 //! atomics needed) — this sidecar is written by ANY cross-thread producer
 //! (the same reason `HeapOverflowSidecar` needs CAS-publish). Reusing
-//! `RacyPtrCell` means the pointer-materialisation race itself is already
+//! `OncePtrCell` means the pointer-materialisation race itself is already
 //! loom-proven by that crate's own suite
-//! (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`); this task's NEW loom
+//! (`crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`); this task's NEW loom
 //! coverage (`tests/loom_class_aware_dirty.rs`) therefore models only the
 //! genuinely new protocol surface — the per-(segment,class) bit-set/scan race
 //! — not the pointer-publish race, which would be redundant re-verification
@@ -72,17 +72,17 @@
 //! ## Placement
 //!
 //! Lives in `alloc_core` (not `registry`) even though the CELL it is stored
-//! behind (`RacyPtrCell<PerClassDirty>`) is a field of
+//! behind (`OncePtrCell<PerClassDirty>`) is a field of
 //! `registry::heap_slot::HeapSlotRemote` — mirroring `segment_directory`'s
 //! own placement (also `alloc_core`, also referenced from `registry` for its
 //! `WORDS_PER_CLASS` constant): `alloc_core` never depends on `registry`
 //! (the dependency is one-directional, `registry -> alloc_core`), but
 //! `AllocCore` (in `alloc_core`) needs to hold a `&'static
-//! RacyPtrCell<PerClassDirty>` handle (bound at claim time, same discipline
+//! OncePtrCell<PerClassDirty>` handle (bound at claim time, same discipline
 //! as `AllocCore::dirty_segments`), so the TYPE must live somewhere
 //! `alloc_core` can name without a reverse-direction `use crate::registry`.
 //!
-//! One `RacyPtrCell` per slot (`MAX_HEAPS = 4096` slots) rather than an eager
+//! One `OncePtrCell` per slot (`MAX_HEAPS = 4096` slots) rather than an eager
 //! inline array: an eager `[AtomicU64; SMALL_CLASS_COUNT * WORDS_PER_CLASS]`
 //! in EVERY slot would add ~24.5 KiB * 4096 = ~98 MiB to the registry's fixed
 //! address-space layout (committed RSS only for touched pages, per this
@@ -99,8 +99,8 @@
 // This file is a named `unsafe` seam (mirrors `alloc_core::os`'s directory-
 // sidecar reservation functions and `registry::bootstrap`'s overflow-sidecar
 // reservation): the SINGLE documented reason to hold `unsafe` here is
-// dereferencing the `RacyPtrCell`-published `*mut PerClassDirty` as
-// `&'static PerClassDirty` — sound because `RacyPtrCell::get_or_try_init`
+// dereferencing the `OncePtrCell`-published `*mut PerClassDirty` as
+// `&'static PerClassDirty` — sound because `OncePtrCell::get_or_try_init`
 // only ever returns a pointer this module itself produced via
 // `aligned_vmem::leak_zeroed_pages` (non-null, valid for
 // `size_of::<PerClassDirty>()` bytes, OS-zeroed, leaked for the process
@@ -118,7 +118,7 @@
 // must be `unsafe fn` (the aliasing discipline has to be re-justified at
 // every call site). `PerClassDirty` is NEVER dereferenced as `&mut` anywhere
 // in this crate (`grep -rn "PerClassDirty" src/` shows only `&'static
-// PerClassDirty`/`&RacyPtrCell<PerClassDirty>` — its sole field is `[AtomicU64;
+// PerClassDirty`/`&OncePtrCell<PerClassDirty>` — its sole field is `[AtomicU64;
 // _]`, and every mutation goes through `fetch_or`/`swap` on the atomics, never
 // through a `&mut PerClassDirty`). Arbitrarily many `&PerClassDirty` may
 // therefore safely coexist and be read/written concurrently through their
@@ -130,7 +130,7 @@
 
 use core::sync::atomic::AtomicU64;
 
-use racy_ptr_cell::RacyPtrCell;
+use once_ptr_cell::OncePtrCell;
 
 use super::segment_directory::WORDS_PER_CLASS;
 use super::size_classes::SMALL_CLASS_COUNT;
@@ -147,7 +147,7 @@ pub(crate) const PER_CLASS_DIRTY_WORDS: usize = SMALL_CLASS_COUNT * WORDS_PER_CL
 /// class's word (`Release`), the owner's drain `swap(0, Acquire)`s a class's
 /// `WORDS_PER_CLASS`-word slice exactly as it already does for the shared
 /// per-segment `dirty_segments` bitmap. `align_of::<PerClassDirty>() == 8 >=
-/// 2`, satisfying `RacyPtrCell<T>`'s alignment precondition.
+/// 2`, satisfying `OncePtrCell<T>`'s alignment precondition.
 pub(crate) struct PerClassDirty {
     pub(crate) words: [AtomicU64; PER_CLASS_DIRTY_WORDS],
 }
@@ -171,13 +171,13 @@ const PER_CLASS_DIRTY_SIZE: usize = {
 /// must fall back to the existing per-segment bitmap; see the call site in
 /// `registry::heap_core_xthread::set_dirty_bit_for_segment`).
 ///
-/// Thin wrapper over `RacyPtrCell::get_or_try_init`, whose `UNINIT ->
+/// Thin wrapper over `OncePtrCell::get_or_try_init`, whose `UNINIT ->
 /// INITIALIZING -> READY` protocol (CAS-publish, OOM rollback, loser re-race)
-/// is independently loom-verified by `crates/racy-ptr-cell`'s own suite — see
+/// is independently loom-verified by `crates/once-ptr-cell`'s own suite — see
 /// the module doc's "Sizing and lazy materialisation" section.
 #[inline]
 pub(crate) fn ensure_per_class_dirty(
-    cell: &RacyPtrCell<PerClassDirty>,
+    cell: &OncePtrCell<PerClassDirty>,
 ) -> Option<&'static PerClassDirty> {
     let ptr = cell.get_or_try_init(|| {
         let base = aligned_vmem::leak_zeroed_pages(PER_CLASS_DIRTY_SIZE)?;
@@ -205,7 +205,7 @@ pub(crate) fn ensure_per_class_dirty(
 /// caller's own `#[cfg]` branch).
 #[inline]
 pub(crate) fn get_per_class_dirty(
-    cell: &RacyPtrCell<PerClassDirty>,
+    cell: &OncePtrCell<PerClassDirty>,
 ) -> Option<&'static PerClassDirty> {
     let ptr = cell.get()?;
     // SAFETY: identical proof to `ensure_per_class_dirty` above — `get()`

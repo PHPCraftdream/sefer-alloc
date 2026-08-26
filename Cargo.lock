@@ -708,6 +708,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "once-ptr-cell"
+version = "0.1.0"
+dependencies = [
+ "bench-scale-tool",
+ "loom",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -862,14 +870,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "racy-ptr-cell"
-version = "0.1.0"
-dependencies = [
- "bench-scale-tool",
- "loom",
-]
 
 [[package]]
 name = "rand"
@@ -1068,10 +1068,10 @@ dependencies = [
  "malloc-bench-rs",
  "mimalloc",
  "numa-shim",
+ "once-ptr-cell",
  "proc-memstat",
  "proc-probe",
  "proptest",
- "racy-ptr-cell",
  "sefer-region",
  "size-classes",
  "slotmap",

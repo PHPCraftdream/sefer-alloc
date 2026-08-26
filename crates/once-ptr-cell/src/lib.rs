@@ -1,7 +1,7 @@
-//! `racy-ptr-cell` — a lazy, CAS-published pointer cell with fallible init,
+//! `once-ptr-cell` — a lazy, CAS-published pointer cell with fallible init,
 //! OOM rollback, and loser re-race.
 //!
-//! [`RacyPtrCell<T>`] is a three-state machine over a **single** `AtomicPtr<T>`:
+//! [`OncePtrCell<T>`] is a three-state machine over a **single** `AtomicPtr<T>`:
 //!
 //! ```text
 //! UNINIT(null) --CAS--> INITIALIZING(sentinel=1) --Release store--> READY(real *mut T)
@@ -88,7 +88,7 @@
 //!   re-entry restriction is transitive, and several cells form a lock-order
 //!   graph. An allocator bootstrap is exactly the shape that produces this
 //!   (many per-chunk cells plus a sidecar path); see
-//!   [`RacyPtrCell::get_or_try_init`]'s own docs for the two-cell deadlock.
+//!   [`OncePtrCell::get_or_try_init`]'s own docs for the two-cell deadlock.
 //! - **`init` must not panic, and no panic may unwind through a `GlobalAlloc`
 //!   method** — [unwinding out of a global allocator is undefined
 //!   behaviour][ga]. This crate's rollback guard keeps the CELL consistent
@@ -97,7 +97,7 @@
 //!   `GlobalAlloc::alloc`.
 //! - **An `init` that returns the sentinel address is a caller bug, not a
 //!   recoverable error.** The release-active `assert!` documented under
-//!   [`RacyPtrCell::get_or_try_init`]'s `# Panics` exists to make that bug
+//!   [`OncePtrCell::get_or_try_init`]'s `# Panics` exists to make that bug
 //!   loud — it is a violated precondition, not a condition an allocator is
 //!   expected to survive.
 //!
@@ -232,7 +232,7 @@
 //! *misaligned or synthesised* pointer at address `1` IS reachable from safe
 //! code (an `init` closure can construct and return one). That case is
 //! rejected by a release-active `assert!` in
-//! [`RacyPtrCell::get_or_try_init`] — see its `# Panics`.
+//! [`OncePtrCell::get_or_try_init`] — see its `# Panics`.
 //!
 //! ## What the caller owns
 //!
@@ -241,8 +241,8 @@
 //! valid for the lifetime the caller treats the cell's output as living (for the
 //! bootstrap use case: a leaked, process-`'static` allocation). Reading the
 //! payload behind the pointer is `unsafe` and left to the caller, who knows the
-//! pointee's real lifetime — see [`RacyPtrCell::get`] and
-//! [`RacyPtrCell::get_or_try_init`].
+//! pointee's real lifetime — see [`OncePtrCell::get`] and
+//! [`OncePtrCell::get_or_try_init`].
 //!
 //! ## Portability limit — requires pointer-width atomic CAS
 //!
@@ -265,7 +265,7 @@
 //!
 //! ## Layout — `#[repr(transparent)]`
 //!
-//! `RacyPtrCell<T>` carries `#[repr(transparent)]`: its layout is guaranteed
+//! `OncePtrCell<T>` carries `#[repr(transparent)]`: its layout is guaranteed
 //! identical to `AtomicPtr<T>` — same size, same alignment. This is a real
 //! contract, not merely an observation about the current compiler: the
 //! "one `AtomicPtr`"/"one word" language throughout this crate's docs would
@@ -309,7 +309,7 @@
 // (msp430) cascade from code that could never have compiled there.
 #[cfg(not(target_has_atomic = "ptr"))]
 compile_error!(
-    "racy-ptr-cell requires a target with pointer-width atomic \
+    "once-ptr-cell requires a target with pointer-width atomic \
      compare-and-swap (target_has_atomic = \"ptr\"): the whole cell is one \
      AtomicPtr driven by compare_exchange. thumbv6m-none-eabi \
      (Cortex-M0/M0+) and riscv32imc-unknown-none-elf (no `A` extension) have \
@@ -327,4 +327,4 @@ compile_error!(
 mod imp;
 
 #[cfg(target_has_atomic = "ptr")]
-pub use imp::{RacyPtrCell, RollbackProbe};
+pub use imp::{OncePtrCell, RollbackProbe};

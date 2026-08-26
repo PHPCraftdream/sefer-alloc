@@ -18,15 +18,15 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 // `#![cfg(...)]` gate requires — identical to what CI runs.
 // CRATE-P3: the four in-tree shadow-model harnesses (loom_bootstrap_cas,
 // loom_chunk_cas, loom_overflow_sidecar_cas, loom_fallback_init) collapsed into
-// ONE suite that model-checks the REAL `racy_ptr_cell::RacyPtrCell` type (the
+// ONE suite that model-checks the REAL `once_ptr_cell::OncePtrCell` type (the
 // crate aliases its atomics to `loom` under `--cfg loom`). It lives in the
-// `racy-ptr-cell` crate, not sefer's `tests/`, so it is run with `-p
-// racy-ptr-cell` and no sefer features — flagged by the `crate:` prefix on its
+// `once-ptr-cell` crate, not sefer's `tests/`, so it is run with `-p
+// once-ptr-cell` and no sefer features — flagged by the `crate:` prefix on its
 // feature-map value, handled specially in the run loop below.
 const CRATE_PREFIX = 'crate:';
 
 const FEATURES = {
-  loom_racy_ptr_cell: `${CRATE_PREFIX}racy-ptr-cell`,
+  loom_once_ptr_cell: `${CRATE_PREFIX}once-ptr-cell`,
   // CRATE-P7: the extracted `tagged-index-stack` crate ships a real-type loom
   // suite for the ABA-tagged Treiber free-index stack (the crate aliases its
   // atomics to `loom` under `--cfg loom`), run with `-p tagged-index-stack` and

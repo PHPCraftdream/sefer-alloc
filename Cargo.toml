@@ -42,7 +42,7 @@ features = ["production"]
 #                                             #![allow(unsafe_code)], single-purpose, audit-friendly
 #   - malloc-bench-rs (crates/malloc-bench-rs) — portable GlobalAlloc benchmark harness
 #                                             standalone, not in sefer-alloc runtime dep tree
-#   - racy-ptr-cell   (crates/racy-ptr-cell)— lazy CAS-published pointer cell
+#   - once-ptr-cell   (crates/once-ptr-cell)— lazy CAS-published pointer cell
 #                                             #![allow(unsafe_code)], single-purpose, real-type loom
 #   - globalalloc-model (crates/globalalloc-model) — differential op-stream harness:
 #                                             GlobalAlloc-vs-model M1-M4 oracles +
@@ -75,12 +75,12 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/racy-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
+members = ["crates/aligned-vmem", "crates/numa-shim", "crates/malloc-bench-rs", "crates/sefer-region", "crates/once-ptr-cell", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
 resolver = "2"
 
-# Task #711 (racy-ptr-cell round-closing review, §C10 drift hazard): `loom`
+# Task #711 (once-ptr-cell round-closing review, §C10 drift hazard): `loom`
 # was pinned independently at "0.7" in three manifests (this root package's
-# own `[target.'cfg(loom)'.dev-dependencies]`, `crates/racy-ptr-cell/Cargo.toml`,
+# own `[target.'cfg(loom)'.dev-dependencies]`, `crates/once-ptr-cell/Cargo.toml`,
 # `crates/tagged-index-stack/Cargo.toml`) with nothing keeping them in sync —
 # a future minor-version bump to one would silently NOT propagate to the
 # other two, and a divergent version across crates in the same workspace
@@ -91,7 +91,7 @@ resolver = "2"
 loom = "0.7"
 
 # Workspace-shared lint table — every loom-aware member (this root package +
-# racy-ptr-cell + tagged-index-stack) inherits it via
+# once-ptr-cell + tagged-index-stack) inherits it via
 # `[lints] workspace = true`, so the `loom` / `kani` build-time cfgs are declared
 # once for the whole tree. `kani` is root-only; a member that never sets it just
 # has a harmless unused check-cfg entry.
@@ -157,7 +157,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std", "dep:aligned-vmem", "dep:racy-ptr-cell", "dep:size-classes"]
+alloc-core = ["std", "dep:aligned-vmem", "dep:once-ptr-cell", "dep:size-classes"]
 # Cross-thread free support. Adds per-segment `RemoteFreeRing`s (lock-free
 # SPSC rings) for cross-thread `dealloc`, the `dealloc_any_thread` entry point,
 # owner stamping on segment headers, and the whole-slot-reuse teardown model
@@ -908,8 +908,8 @@ aligned-vmem = { path = "crates/aligned-vmem", version = "0.2", optional = true 
 # `#[global_allocator]`-safe (no std sync, no reentrancy) — the exact niche the
 # registry bootstrap needs. Pulled in ONLY by `alloc-core` (and every feature
 # that depends on it), since the state machine lives on the allocator bootstrap
-# path. See `crates/racy-ptr-cell/src/lib.rs`.
-racy-ptr-cell = { path = "crates/racy-ptr-cell", version = "0.1", optional = true }
+# path. See `crates/once-ptr-cell/src/lib.rs`.
+once-ptr-cell = { path = "crates/once-ptr-cell", version = "0.1", optional = true }
 # CRATE-P5: const-built size-class table + compile-time-derived O(1) size->class
 # lookup + alignment-divisibility classifier, extracted from
 # `src/alloc_core/size_classes.rs` (pure safe const arithmetic — no unsafe, no

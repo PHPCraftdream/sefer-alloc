@@ -41,7 +41,7 @@ pub(crate) mod directory_stats;
 /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): the lazily-materialised
 /// per-(segment, class) dirty-bit sidecar (`PerClassDirty`) — see the module
 /// doc for the full design. A named `unsafe` seam (single documented reason:
-/// dereferencing the `RacyPtrCell`-published sidecar pointer).
+/// dereferencing the `OncePtrCell`-published sidecar pointer).
 #[cfg(feature = "class-aware-dirty")]
 pub(crate) mod dirty_by_class;
 #[cfg(feature = "alloc-decommit")]
@@ -51,7 +51,7 @@ pub mod large_cache_config;
 /// fixed 8 base slots. See the module doc for the full design. A named
 /// `unsafe` seam (single documented reason: dereferencing the
 /// `leak_zeroed_pages`-published sidecar pointer, owner-only, no
-/// `RacyPtrCell` needed).
+/// `OncePtrCell` needed).
 #[cfg(feature = "large-cache-extended")]
 pub(crate) mod large_cache_extended;
 #[cfg(feature = "alloc-decommit")]
@@ -139,7 +139,7 @@ pub(crate) mod segment_table;
 /// reservation. A named `unsafe` seam (two documented reasons: typed
 /// `ptr::write` init, and the `&'static [mut] T` deref boundary). See the
 /// module doc for why `PerClassDirty` (cross-thread-published via
-/// `RacyPtrCell`) is NOT migrated onto this type.
+/// `OncePtrCell`) is NOT migrated onto this type.
 pub(crate) mod sidecar;
 pub(crate) mod size_classes;
 #[cfg(feature = "alloc-decommit")]

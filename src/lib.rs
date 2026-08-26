@@ -100,7 +100,7 @@
 //   sefer-region       (crates/sefer-region)             — typed handle store (this re-export; runtime, no feature gate)
 //   aligned-vmem       (crates/aligned-vmem)               — OS virtual-memory aperture          (feature: alloc-core)
 //   numa-shim          (crates/numa-shim)               — NUMA detection + binding            (feature: numa-aware)
-//   racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
+//   once-ptr-cell      (crates/once-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
 //   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
 //   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack         (feature: alloc-global)
 //   malloc-bench-rs    (crates/malloc-bench-rs)       — portable GlobalAlloc bench harness  (dev-only)
@@ -139,7 +139,7 @@
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
 //     Callers must supply a stateless-facade `A` (see `run`'s contract doc).
 //
-//   racy-ptr-cell (crates/racy-ptr-cell/src/lib.rs, applying to src/imp.rs) — #![allow(unsafe_code)]
+//   once-ptr-cell (crates/once-ptr-cell/src/lib.rs, applying to src/imp.rs) — #![allow(unsafe_code)]
 //     Single documented reason: `unsafe impl Send/Sync` for the AtomicPtr-backed
 //     cell + `NonNull::new_unchecked`. Lazy CAS-published pointer cell; every
 //     site has `# Safety` / `// SAFETY:`. Pulled in under `alloc-core`.
@@ -220,14 +220,14 @@
 //    `bind_range`). (under `numa-aware`)
 //
 //    Optional `class-aware-dirty` path (R12-7 stage 2, EXPERIMENTAL):
-//      * `alloc_core::dirty_by_class` — dereferences the `RacyPtrCell`-
+//      * `alloc_core::dirty_by_class` — dereferences the `OncePtrCell`-
 //                             published per-(segment, class) dirty-bit
 //                             sidecar pointer. (under `class-aware-dirty`)
 //
 //    Optional `large-cache-extended` path (R13-6):
 //      * `alloc_core::large_cache_extended` — the lazily-materialised
 //                             large-cache extension sidecar (owner-only, no
-//                             `RacyPtrCell`); reserves via `sidecar::reserve`,
+//                             `OncePtrCell`); reserves via `sidecar::reserve`,
 //                             dereferences via `sidecar::deref[_mut]`.
 //                             (under `large-cache-extended`)
 //

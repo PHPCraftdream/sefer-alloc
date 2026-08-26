@@ -1,4 +1,4 @@
-# racy-ptr-cell
+# once-ptr-cell
 
 A lazy, CAS-published pointer cell — `UNINIT → INITIALIZING → READY` over a
 single `AtomicPtr<T>` — with **fallible init, OOM rollback, and loser re-race**.
@@ -22,7 +22,7 @@ It fills the niche `std::sync::OnceLock` cannot:
   documented contract; the mechanism `std` uses is an implementation detail).
 
 ```text
-static CHUNK: RacyPtrCell<Chunk> = RacyPtrCell::new();
+static CHUNK: OncePtrCell<Chunk> = OncePtrCell::new();
 
 let chunk: Option<NonNull<Chunk>> = CHUNK.get_or_try_init(|| {
     // OS reservation etc.; return None on OOM to roll back and let losers re-race.
@@ -179,7 +179,7 @@ define it from), with one sentence naming the real requirement.
 
 ## Layout — `#[repr(transparent)]`
 
-`RacyPtrCell<T>` carries `#[repr(transparent)]`: its layout is guaranteed
+`OncePtrCell<T>` carries `#[repr(transparent)]`: its layout is guaranteed
 identical to `AtomicPtr<T>` — same size, same alignment. This is a real
 contract, not merely an observation about the current compiler: the "one
 `AtomicPtr`"/"one word" language throughout this crate's docs would
@@ -200,26 +200,26 @@ allocator metadata or an array of cells.
    observe the rollback and re-race.
 
 Both rules are pinned by **executable loom proofs that run against the real
-`RacyPtrCell` type** (the crate aliases its atomics to `loom::sync::atomic`
+`OncePtrCell` type** (the crate aliases its atomics to `loom::sync::atomic`
 under `--cfg loom`) — `real_exactly_once_two_threads`/`real_exactly_once_three_threads`
 for rule 1, `real_survives_oom_rollback_two_threads` for rule 2. The
 `#[should_panic]` counterfactuals in the same test module are a separate,
 complementary check: they run against small shadow models of the same two
-rules (an `AtomicPtr`/`AtomicU8` standing in for `RacyPtrCell`'s own
+rules (an `AtomicPtr`/`AtomicU8` standing in for `OncePtrCell`'s own
 internals, since loom cannot rebuild this crate with a deliberately-broken
 ordering baked in), proving the loom harness itself is sensitive to each
 protocol violation rather than passing vacuously:
 
 ```sh
-RUSTFLAGS="--cfg loom" cargo test -p racy-ptr-cell --release --test loom_racy_ptr_cell
+RUSTFLAGS="--cfg loom" cargo test -p once-ptr-cell --release --test loom_once_ptr_cell
 ```
 
 **`--cfg loom` is a global `RUSTFLAGS` cfg — it applies to every crate in the
 build, not only this one.** Under it, this crate's atomics become
-`loom::sync::atomic`, so `RacyPtrCell::new` is **not** `const`, and a
-`static CELL: RacyPtrCell<T> = RacyPtrCell::new();` — this README's own
+`loom::sync::atomic`, so `OncePtrCell::new` is **not** `const`, and a
+`static CELL: OncePtrCell<T> = OncePtrCell::new();` — this README's own
 usage example — fails to compile anywhere in that build. Always scope the
-flag to this crate (`-p racy-ptr-cell`, as above), or supply a `#[cfg(loom)]`
+flag to this crate (`-p once-ptr-cell`, as above), or supply a `#[cfg(loom)]`
 const-capable stand-in in your own crate if you need to set the flag
 workspace-wide — see [`sefer-alloc`'s own
 `loom_shim`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/src/registry/bootstrap.rs)
@@ -227,7 +227,7 @@ for a worked example.
 
 ## Test-probe API stability
 
-`RacyPtrCell` exposes two `dbg_`-prefixed methods — `dbg_is_ready` and
+`OncePtrCell` exposes two `dbg_`-prefixed methods — `dbg_is_ready` and
 `dbg_rollback_reenterable` — that are NOT hidden from `rustdoc`. This is a
 deliberate posture decision, not an oversight:
 

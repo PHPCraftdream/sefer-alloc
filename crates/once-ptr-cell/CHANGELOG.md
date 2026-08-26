@@ -4,14 +4,22 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-08-26
 
 First release. Everything below is new in this version; nothing has shipped
 before it.
 
+**Renamed before this first publish**: this crate was developed and reviewed
+under the name `racy-ptr-cell` (the name visible in all pre-publish review
+history and commit messages up to this release) and renamed to
+`once-ptr-cell` immediately before publishing — the original name read as
+"has data races," the opposite of the guarantee the crate actually provides
+(a lock-free, exactly-once, race-safe cell). The public type is `OncePtrCell<T>`
+(formerly `RacyPtrCell<T>`); no other behavior changed.
+
 ### Added
 
-- **`RacyPtrCell<T>`** — a lazy, CAS-published pointer cell implementing the
+- **`OncePtrCell<T>`** — a lazy, CAS-published pointer cell implementing the
   three-state machine `UNINIT(null) → INITIALIZING(sentinel) → READY(real
   pointer)` over a **single** `AtomicPtr<T>`. `#[repr(transparent)]`: the
   cell's layout is guaranteed identical to `AtomicPtr<T>`, not merely
@@ -26,7 +34,7 @@ before it.
   a `GlobalAlloc` method is undefined behaviour. See the crate docs'
   "Using this inside a `#[global_allocator]`" section for the full caller
   contract.
-- **`RacyPtrCell::get_or_try_init(init: impl FnOnce() -> Option<NonNull<T>>)`**
+- **`OncePtrCell::get_or_try_init(init: impl FnOnce() -> Option<NonNull<T>>)`**
   — `#[must_use]`, fallible initialisation with OOM rollback and loser
   re-race. The thread that wins the `null → sentinel` CAS runs the caller's
   init closure exactly once and publishes the resulting pointer with
@@ -45,10 +53,10 @@ before it.
   rollback and fall out to re-race. Losers busy-wait with
   `core::hint::spin_loop` — no OS park/unpark, by the same no-`std`-sync
   design constraint.
-- **`RacyPtrCell::get()`** — a pure `Acquire` load returning the published
+- **`OncePtrCell::get()`** — a pure `Acquire` load returning the published
   pointer as `Option<NonNull<T>>` (no CAS, no init, no spin); `None` means
   `UNINIT` or `INITIALIZING` right now.
-- **`RacyPtrCell::new()`** — `const fn` on normal builds (so the cell can
+- **`OncePtrCell::new()`** — `const fn` on normal builds (so the cell can
   live in a `static`; under `--cfg loom` it is non-`const` because loom's
   atomics have no const constructor), plus a `Default` impl. Panics — at
   compile time in the documented `static` usage — if `align_of::<T>() < 2`:
@@ -64,11 +72,11 @@ before it.
   the null/sentinel address — a safe closure can construct that address, and
   publishing it would make every reader misclassify the cell as
   still-initialising forever.
-- **Unconditional `Send + Sync`** for `RacyPtrCell<T>`, exactly like the
+- **Unconditional `Send + Sync`** for `OncePtrCell<T>`, exactly like the
   `AtomicPtr<T>` it wraps: the cell only stores and hands back a raw
   `*mut T` / `NonNull<T>` and never dereferences it — whether the pointee is
   safe to access across threads is the caller's `unsafe` contract.
-- **`Debug` impl for `RacyPtrCell<T>`**: prints a diagnostic three-state
+- **`Debug` impl for `OncePtrCell<T>`**: prints a diagnostic three-state
   classification (`Uninit` / `Initializing` / `Ready(<address>)`) with no
   `T: Debug` bound and no dereference of the pointee, so a downstream struct
   embedding the cell (e.g. as allocator metadata) can `#[derive(Debug)]` too.
@@ -84,7 +92,7 @@ before it.
   for downstream consumers' own test suites.
 - **Executable loom proofs against the real type**: under `--cfg loom` the
   cell's atomics alias to `loom::sync::atomic`, so the shipped loom suite
-  (`tests/loom_racy_ptr_cell.rs`) model-checks the actual `RacyPtrCell` —
+  (`tests/loom_once_ptr_cell.rs`) model-checks the actual `OncePtrCell` —
   exactly-once init under two and three threads, OOM-rollback survival — with
   `#[should_panic]` counterfactuals proving the harness is non-vacuous.
   `loom` is a `cfg(loom)`-gated library dependency only; a normal build pulls

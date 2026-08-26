@@ -683,21 +683,21 @@ jobs:
       - run: cargo miri test -p aligned-vmem
       - run: cargo miri test -p aligned-vmem --all-features
 
-  racy-ptr-cell-gates:
+  once-ptr-cell-gates:
     # Publication readiness review, run 5 (Sol-codex), F7, task #1396: every
     # other standalone crate with its own package-gates job (sefer-region,
     # aligned-vmem) has one that actually packages/publish-dry-runs the
-    # crate on every PR; racy-ptr-cell did not, so a tarball-content,
+    # crate on every PR; once-ptr-cell did not, so a tarball-content,
     # manifest-normalization, or packaged-dependency-resolution regression
     # would surface for the first time at tag/release time instead of here.
     # This crate's clippy/rustdoc/test rows already live in the big
     # test-workspace job below — not duplicated here, same convention the
     # sefer-region job's own header comment states. No
     # `cargo semver-checks check-release` step: unlike sefer-region and
-    # aligned-vmem, racy-ptr-cell has never been published, so there is no
+    # aligned-vmem, once-ptr-cell has never been published, so there is no
     # baseline on crates.io to diff against yet — add that step once the
-    # first `cargo publish -p racy-ptr-cell` has actually landed.
-    name: racy-ptr-cell package gates
+    # first `cargo publish -p once-ptr-cell` has actually landed.
+    name: once-ptr-cell package gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -706,9 +706,9 @@ jobs:
       # packages and the packaged tarball's own isolated build succeeds
       # against the published manifest (no reliance on workspace-inherited
       # lints/deps that would not exist for a real crates.io consumer).
-      - run: cargo publish --dry-run -p racy-ptr-cell
+      - run: cargo publish --dry-run -p once-ptr-cell
 
-  racy-ptr-cell-miri:
+  once-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
     # crate's central soundness argument is a provenance one (a sentinel built
     # via without_provenance_mut, never dereferenced; three
@@ -719,15 +719,15 @@ jobs:
     # affordable on every PR; no leak/isolation flags needed (the crate leaks
     # its published pointer by design, but tests reclaim via
     # Box::from_raw, not core::mem::forget).
-    name: racy-ptr-cell under miri (interpreter, strict-provenance included)
+    name: once-ptr-cell under miri (interpreter, strict-provenance included)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo miri test -p racy-ptr-cell
-      - run: cargo miri test -p racy-ptr-cell
+      - run: cargo miri test -p once-ptr-cell
+      - run: cargo miri test -p once-ptr-cell
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 
@@ -1685,11 +1685,11 @@ jobs:
     #   3. `aligned-vmem` — `--all-features` (deliberately NOT default-only:
     #      exercises `huge-pages`/`lazy-commit`/`fault-injection`/`bench-internals`
     #      together on the REAL backend; mock has its own RUSTFLAGS row below).
-    #   4-5. `size-classes` / `racy-ptr-cell` — `--no-default-features` cross-
+    #   4-5. `size-classes` / `once-ptr-cell` — `--no-default-features` cross-
     #      built for `thumbv7em-none-eabi` (bare-metal no_std proof for their
     #      published `no-std::no-alloc` category claim).
     #   6-9. `size-classes` (debug + release, task #755 F1-F3) and
-    #      `racy-ptr-cell` (debug + release, task #773 F1) — `cargo test`
+    #      `once-ptr-cell` (debug + release, task #773 F1) — `cargo test`
     #      proper, since steps 4-5's cross-builds compile no test target.
     name: test workspace members
     runs-on: ubuntu-latest
@@ -1795,7 +1795,7 @@ jobs:
       # Publish-readiness task #639 (P5, gaps 3+4 of 4): CI's `no_std` job
       # (below) only ever built the ROOT crate's default-features-off
       # configuration as its no_std signal — `size-classes` (root-gated
-      # behind `alloc-core`) and `racy-ptr-cell` both advertise `no_std` as a
+      # behind `alloc-core`) and `once-ptr-cell` both advertise `no_std` as a
       # headline claim in their published descriptions/categories
       # (`no-std::no-alloc`) but were never built standalone in CI. Neither
       # crate declares a `std` Cargo feature to disable (`--no-default-
@@ -1809,11 +1809,11 @@ jobs:
       # 2026-08-09): the `cargo build` step above compiles no test target at
       # all -- `size-classes` had ZERO `cargo test` coverage anywhere in CI,
       # the identical gap class as the `tagged-index-stack` (task #772
-      # F4-F5) and `racy-ptr-cell` (task #773 F1) steps in this same job.
+      # F4-F5) and `once-ptr-cell` (task #773 F1) steps in this same job.
       # All 14 of the crate's tests, including the 3 regression tests this
       # round's fix commits added (#701, #729, #730), had never run in CI.
       # The `--release` row specifically matters here, mirroring the
-      # `racy-ptr-cell` release-row rationale immediately below: task #729's
+      # `once-ptr-cell` release-row rationale immediately below: task #729's
       # `class_for` precondition is enforced by a `debug_assert!`
       # (deliberately not promoted to a release-active `assert!`, see its
       # own doc comment), so a debug-only `cargo test` run would stay green
@@ -1824,11 +1824,11 @@ jobs:
       # than expected to pass in both profiles.
       - run: cargo test -p size-classes --all-features --no-fail-fast
       - run: cargo test -p size-classes --all-features --release --no-fail-fast
-      - run: cargo build -p racy-ptr-cell --no-default-features --target thumbv7em-none-eabi
+      - run: cargo build -p once-ptr-cell --no-default-features --target thumbv7em-none-eabi
       # rust-intel round-closing review (task #773, finding F1, 2026-08-09):
-      # the two `racy-ptr-cell` invocations above are `cargo build`, which
+      # the two `once-ptr-cell` invocations above are `cargo build`, which
       # compiles no test target at all, and `loom-alloc-global`'s `cargo test
-      # --release -p racy-ptr-cell --test loom_racy_ptr_cell` (elsewhere in
+      # --release -p once-ptr-cell --test loom_once_ptr_cell` (elsewhere in
       # this workflow), which excludes `tests/cell_unit.rs` twice over -- by
       # `--test` target selection and by the file's own `#![cfg(not(loom))]`
       # gate. `cell_unit.rs`'s tests, including
@@ -1843,29 +1843,29 @@ jobs:
       # promoted from `debug_assert!` (task #707) -- a debug-only `cargo
       # test` run would stay green even if that promotion were silently
       # reverted, since `debug_assert!` still fires in a debug build.
-      - run: cargo test -p racy-ptr-cell --no-fail-fast
-      - run: cargo test -p racy-ptr-cell --release --no-fail-fast
+      - run: cargo test -p once-ptr-cell --no-fail-fast
+      - run: cargo test -p once-ptr-cell --release --no-fail-fast
       # publication readiness review cycle 2 (claude/oh, F3, task #1367):
-      # `benches/racy_ptr_cell_bench.rs` ships in the published tarball but
+      # `benches/once_ptr_cell_bench.rs` ships in the published tarball but
       # neither `cargo test` step above compiles it -- the crate's
       # `[[bench]]` section sets `harness = false` AND, since task #1395,
       # `test = false` explicitly (the comment here previously cited a
       # `test = false` key the manifest had never actually contained; the
       # key was added rather than the claim dropped, so the intent is now
       # stated in the manifest instead of resting on a cargo default). No
-      # `cargo clippy -p racy-ptr-cell` row existed anywhere in this file
+      # `cargo clippy -p once-ptr-cell` row existed anywhere in this file
       # either -- `--all-targets` below covers both test files and the bench
       # in one step.
-      - run: cargo clippy -p racy-ptr-cell --all-targets -- -D warnings
+      - run: cargo clippy -p once-ptr-cell --all-targets -- -D warnings
       # publication readiness review cycle 4 (claude/oh, F2, task #1379): no
-      # `cargo doc -p racy-ptr-cell` row existed anywhere in this file, and
+      # `cargo doc -p once-ptr-cell` row existed anywhere in this file, and
       # the root `docs` job below is `--no-deps` (never reaches a dependency
       # crate) and deliberately drops `RUSTDOCFLAGS: "-D warnings"` -- not
       # hypothetical, task #1376's own commit caught two broken intra-doc
       # links in this crate by a manual local run two commits ago. No
       # `--all-features` needed: the crate declares no Cargo features and no
       # `[package.metadata.docs.rs]`, so this row is docs.rs's exact build.
-      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p racy-ptr-cell --no-deps
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p once-ptr-cell --no-deps
       # rust-intel round-closing review (task #772, finding F5, 2026-08-09):
       # tagged-index-stack advertises `categories = [..., "no-std::no-alloc"]`
       # but was never cross-built for ANY bare-metal target -- it can't use
@@ -1901,7 +1901,7 @@ jobs:
       # produce ~200-5800 `core`-vs-`std` prelude errors from those
       # transitive std-only deps, not from this crate's own code. This is
       # exactly why every OTHER `--target thumbv7em-none-eabi` line in this
-      # workflow (sefer-region, size-classes, racy-ptr-cell) uses plain
+      # workflow (sefer-region, size-classes, once-ptr-cell) uses plain
       # `cargo build` (library only, no `--tests`) rather than `--tests` --
       # an established convention this finding did not previously explain.
       # The layout assertions themselves remain verified empirically (see
@@ -1999,19 +1999,19 @@ jobs:
       - run: cargo test -p numa-shim --no-run
         env:
           RUSTFLAGS: "--cfg numa_shim_mock"
-      # racy-ptr-cell-specific MSRV checks (item 135/task #1410, the same
+      # once-ptr-cell-specific MSRV checks (item 135/task #1410, the same
       # parity gap item 88/task #1173 and item 102/task #1282 already closed
       # for aligned-vmem/numa-shim above): the workspace-root `--all-features`
       # steps at the top of this job run without `-p`/`--workspace` in this
       # NON-virtual workspace (root package = `sefer-alloc`), so they act on
-      # the root package only — `racy-ptr-cell` reaches them merely as a
+      # the root package only — `once-ptr-cell` reaches them merely as a
       # path-dependency LIBRARY (via the `alloc-core` feature), never as its
       # own tested workspace member. Its `tests/cell_unit.rs` and the
       # dev-dependency `bench-scale-tool` were never compiled on the pinned
       # 1.88 toolchain by anything in this job before this row. No
       # `--all-features` here: the crate declares no `[features]` table.
-      - run: cargo check -p racy-ptr-cell
-      - run: cargo test -p racy-ptr-cell --no-run
+      - run: cargo check -p once-ptr-cell
+      - run: cargo test -p once-ptr-cell --no-run
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -2306,10 +2306,10 @@ jobs:
       # (loom_bootstrap_cas, loom_chunk_cas, loom_overflow_sidecar_cas,
       # loom_fallback_init) that each transcribed the `UNINIT -> INITIALIZING
       # -> READY` CAS-publish/OOM-rollback protocol were collapsed into ONE
-      # suite that model-checks the REAL `racy_ptr_cell::RacyPtrCell` type (the
+      # suite that model-checks the REAL `once_ptr_cell::OncePtrCell` type (the
       # extracted crate aliases its atomics to `loom` under `--cfg loom`). It
-      # runs against the crate directly (`-p racy-ptr-cell`, no sefer
-      # features) — see the `loom_racy_ptr_cell` step below.
+      # runs against the crate directly (`-p once-ptr-cell`, no sefer
+      # features) — see the `loom_once_ptr_cell` step below.
       # CRATE-P7: real-type `TaggedIndexStack` loom suite (replaces the in-tree
       # `loom_free_slots_aba` shadow model). The Registry `free_slots` Treiber
       # stack + `TaggedPtr` ABA-tag model was extracted to the
@@ -2337,12 +2337,12 @@ jobs:
           cargo test --release -p tagged-index-stack --test loom_aba 2>&1 | tee "$RUNNER_TEMP/loom-aba.log"
           grep -F "test pop_empty_transition_preserves_tag ... ok" "$RUNNER_TEMP/loom-aba.log"
         shell: bash
-      # CRATE-P3: real-type `RacyPtrCell` loom suite (replaces the 4 shadow
+      # CRATE-P3: real-type `OncePtrCell` loom suite (replaces the 4 shadow
       # models above). Includes the Relaxed-publish and spin-on-READY-livelock
       # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
       - run: |
-          cargo test --release -p racy-ptr-cell --test loom_racy_ptr_cell 2>&1 | tee "$RUNNER_TEMP/loom-racy-ptr-cell.log"
-          grep -F "test real_probe_rollback_does_not_clobber_concurrent_winner ... ok" "$RUNNER_TEMP/loom-racy-ptr-cell.log"
+          cargo test --release -p once-ptr-cell --test loom_once_ptr_cell 2>&1 | tee "$RUNNER_TEMP/loom-once-ptr-cell.log"
+          grep -F "test real_probe_rollback_does_not_clobber_concurrent_winner ... ok" "$RUNNER_TEMP/loom-once-ptr-cell.log"
         shell: bash
 
   loom-xthread:
@@ -2362,7 +2362,7 @@ jobs:
       # file after task #204's original miss. The file's own `#![cfg(loom)]`
       # gate carries no Cargo-feature predicate (it re-models the
       # `class-aware-dirty` protocol on its own hand-rolled `loom::sync`
-      # atomics, not the real `PerClassDirty`/`RacyPtrCell` types — see its
+      # atomics, not the real `PerClassDirty`/`OncePtrCell` types — see its
       # module doc), so it compiles and runs under this job's EXISTING
       # `alloc-core alloc-xthread` feature string with no change needed to
       # that string. Verified locally (both debug and this job's real

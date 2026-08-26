@@ -36,13 +36,13 @@
 //!
 //! `PerClassDirty` (`alloc_core::dirty_by_class`) is published CROSS-THREAD
 //! (any thread's remote free can be the first to materialise it), so it needs
-//! a CAS-publish state machine (`racy_ptr_cell::RacyPtrCell`) — a genuinely
+//! a CAS-publish state machine (`once_ptr_cell::OncePtrCell`) — a genuinely
 //! different concern (concurrent race over WHO materialises) from this
 //! module's (a single owning thread's typed init + deref discipline once the
-//! pointer already exists). `RacyPtrCell` is itself an independently
-//! loom-verified seam crate (`crates/racy-ptr-cell`); folding its CAS
+//! pointer already exists). `OncePtrCell` is itself an independently
+//! loom-verified seam crate (`crates/once-ptr-cell`); folding its CAS
 //! protocol into this primitive would either weaken that verification
-//! surface or duplicate it. `PerClassDirty` keeps `RacyPtrCell` for
+//! surface or duplicate it. `PerClassDirty` keeps `OncePtrCell` for
 //! publication and is NOT migrated onto this module's `reserve`/`deref`/
 //! `deref_mut` at all — two independent reasons:
 //!

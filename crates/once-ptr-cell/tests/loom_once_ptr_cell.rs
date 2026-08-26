@@ -1,4 +1,4 @@
-//! Unified loom model-check of [`racy_ptr_cell::RacyPtrCell`] — run against the
+//! Unified loom model-check of [`once_ptr_cell::OncePtrCell`] — run against the
 //! **real** type (the crate aliases its atomics to `loom::sync::atomic` under
 //! `--cfg loom`, so this harness exercises the shipped implementation, not a
 //! hand-copied shadow model).
@@ -10,7 +10,7 @@
 //! (a) exactly-once CAS-published init with Release/Acquire happens-before, and
 //! (b) OOM-rollback liveness (losers re-race, no forever-spin) — over the
 //! `UNINIT -> INITIALIZING -> READY` state machine. Both properties are proved
-//! here directly on `RacyPtrCell`.
+//! here directly on `OncePtrCell`.
 //!
 //! # Real-type properties proved (over every interleaving)
 //!
@@ -47,18 +47,18 @@
 //! flipped:
 //!
 //! - `counterfactual_relaxed_publish_loses_happens_before` — models the SAME
-//!   `AtomicPtr`-with-sentinel shape `RacyPtrCell` implements, but publishes
+//!   `AtomicPtr`-with-sentinel shape `OncePtrCell` implements, but publishes
 //!   the real pointer with `Relaxed` instead of `Release`; loom finds the
 //!   interleaving where a loser reads the pointer without observing the
 //!   pointee write.
 //! - `counterfactual_spin_on_ready_livelocks_on_oom_rollback` — models the
 //!   SAME three-state `UNINIT -> INITIALIZING -> READY` protocol, but over a
 //!   simpler `AtomicU8` 3-state encoding rather than the packed
-//!   `AtomicPtr`-with-sentinel `RacyPtrCell` actually uses (this
+//!   `AtomicPtr`-with-sentinel `OncePtrCell` actually uses (this
 //!   simplification is deliberate — the livelock property under test depends
 //!   only on the state machine's transitions, not on how a state is encoded
 //!   into bits — but it means this ONE counterfactual is not literally
-//!   `RacyPtrCell`'s exact bit-level shape, unlike the other one above). A
+//!   `OncePtrCell`'s exact bit-level shape, unlike the other one above). A
 //!   loser spins `while != READY` instead of `while == INITIALIZING`; after
 //!   the winner's OOM rollback the loser spins past a bound → the livelock
 //!   this crate's `== INITIALIZING` rule exists to prevent.
@@ -68,14 +68,14 @@
 //! # How to run
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg loom" cargo test -p racy-ptr-cell --release \
-//!     --test loom_racy_ptr_cell
+//! RUSTFLAGS="--cfg loom" cargo test -p once-ptr-cell --release \
+//!     --test loom_once_ptr_cell
 //! ```
 //!
-//! Keep the `-p racy-ptr-cell`: `--cfg loom` is a global `RUSTFLAGS` cfg that
-//! reaches every crate in the build, and under it `RacyPtrCell::new` is not
-//! `const` — so an unscoped run can break any `static CELL: RacyPtrCell<T> =
-//! RacyPtrCell::new();` elsewhere in the workspace. The README says the same
+//! Keep the `-p once-ptr-cell`: `--cfg loom` is a global `RUSTFLAGS` cfg that
+//! reaches every crate in the build, and under it `OncePtrCell::new` is not
+//! `const` — so an unscoped run can break any `static CELL: OncePtrCell<T> =
+//! OncePtrCell::new();` elsewhere in the workspace. The README says the same
 //! thing under "The two rules people get wrong"; this command must not drift
 //! from it.
 
@@ -85,7 +85,7 @@ use loom::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
-use racy_ptr_cell::RacyPtrCell;
+use once_ptr_cell::OncePtrCell;
 
 const SENTINEL: usize = 1;
 
@@ -124,7 +124,7 @@ unsafe fn reclaim_payload(p: core::ptr::NonNull<Payload>) {
 // Real-type property 1-4: exactly-once, same pointer, no leak, happens-before.
 // ============================================================================
 
-/// 2-thread race on the REAL `RacyPtrCell`: both call `get_or_try_init` with an
+/// 2-thread race on the REAL `OncePtrCell`: both call `get_or_try_init` with an
 /// init that counts its own invocations. Asserts exactly-once init, same
 /// pointer, non-null/non-sentinel, and that the loser sees `init_marker`.
 #[test]
@@ -132,10 +132,10 @@ fn real_exactly_once_two_threads() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let init_count = Arc::new(AtomicU32::new(0));
 
-        let run = |cell: Arc<RacyPtrCell<Payload>>, ic: Arc<AtomicU32>| {
+        let run = |cell: Arc<OncePtrCell<Payload>>, ic: Arc<AtomicU32>| {
             let ptr = cell
                 .get_or_try_init(|| {
                     ic.fetch_add(1, Ordering::Relaxed);
@@ -202,10 +202,10 @@ fn real_exactly_once_three_threads() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(1);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let init_count = Arc::new(AtomicU32::new(0));
 
-        let run = |cell: Arc<RacyPtrCell<Payload>>, ic: Arc<AtomicU32>| {
+        let run = |cell: Arc<OncePtrCell<Payload>>, ic: Arc<AtomicU32>| {
             let ptr = cell
                 .get_or_try_init(|| {
                     ic.fetch_add(1, Ordering::Relaxed);
@@ -275,7 +275,7 @@ fn real_fast_path_reentry_same_pointer() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let init_count = Arc::new(AtomicU32::new(0));
 
         let (c1, i1) = (Arc::clone(&cell), Arc::clone(&init_count));
@@ -332,11 +332,11 @@ fn real_survives_oom_rollback_two_threads() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let oom_used = Arc::new(AtomicBool::new(false));
         let success_count = Arc::new(AtomicU32::new(0));
 
-        let run = |cell: Arc<RacyPtrCell<Payload>>, oom: Arc<AtomicBool>, sc: Arc<AtomicU32>| {
+        let run = |cell: Arc<OncePtrCell<Payload>>, oom: Arc<AtomicBool>, sc: Arc<AtomicU32>| {
             cell.get_or_try_init(|| {
                 // Inject OOM exactly once, on the first winner.
                 if oom
@@ -400,7 +400,7 @@ fn real_survives_oom_rollback_two_threads() {
 // Real-type property 7: `get()` never reports a cell held at INITIALIZING.
 // ============================================================================
 
-/// Pins [`RacyPtrCell::get`]'s own published contract directly, rather than
+/// Pins [`OncePtrCell::get`]'s own published contract directly, rather than
 /// inferring it from the exactly-once oracles: while a winner thread really
 /// holds the `INITIALIZING` sentinel, a concurrent reader's `get()` must
 /// return `None` — and once the winner has published, `get()` must return
@@ -424,7 +424,7 @@ fn real_get_returns_none_while_a_winner_holds_the_sentinel() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(2);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let in_init = Arc::new(AtomicBool::new(false));
         let reader_done = Arc::new(AtomicBool::new(false));
 
@@ -533,7 +533,7 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(1);
     builder.check(|| {
-        let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
+        let cell: Arc<OncePtrCell<Payload>> = Arc::new(OncePtrCell::new());
         let init_count = Arc::new(AtomicU32::new(0));
         let published: Arc<loom::sync::Mutex<Vec<usize>>> =
             Arc::new(loom::sync::Mutex::new(Vec::new()));
@@ -652,7 +652,7 @@ fn real_probe_rollback_does_not_clobber_concurrent_winner() {
 // Counterfactual A — Relaxed publish loses the happens-before.
 // ============================================================================
 
-/// The BROKEN cell: identical to `RacyPtrCell` EXCEPT it publishes the real
+/// The BROKEN cell: identical to `OncePtrCell` EXCEPT it publishes the real
 /// pointer with `Relaxed` instead of `Release`. A loser's `Acquire` load of the
 /// pointer no longer synchronises with the winner's `init_marker` write, so loom
 /// finds an interleaving where the loser observes `init_marker == 0`
@@ -724,7 +724,7 @@ fn ensure_relaxed_publish_broken_and_check(
 /// the racing access before our own `assert_eq!` on the stale value can even
 /// run — a strictly stronger detection.) The `should_panic` matches loom's
 /// message; the crucial property is that this counterfactual DOES panic, proving
-/// the Release ordering in `RacyPtrCell` is load-bearing.
+/// the Release ordering in `OncePtrCell` is load-bearing.
 #[test]
 #[should_panic(expected = "Causality violation")]
 fn counterfactual_relaxed_publish_loses_happens_before() {
@@ -765,7 +765,7 @@ const STATE_READY: u8 = 2;
 // The broken protocol's retry loop always return/panics on the FIRST iteration
 // in this model (winner returns, loser panics on the livelock) — that early exit
 // IS the shape under test; the outer `loop` faithfully mirrors
-// `RacyPtrCell::get_or_try_init`'s own retry loop structure (task #710: this
+// `OncePtrCell::get_or_try_init`'s own retry loop structure (task #710: this
 // comment previously named `heap_ptr`, a stale identifier from the parent
 // repo this crate was extracted from — this crate has no `heap_ptr`).
 #[allow(clippy::never_loop)]

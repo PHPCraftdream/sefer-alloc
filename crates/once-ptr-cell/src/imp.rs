@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-// The atomics are aliased so loom can shadow the REAL `RacyPtrCell` type: under
+// The atomics are aliased so loom can shadow the REAL `OncePtrCell` type: under
 // `--cfg loom` the cell is built on `loom::sync::atomic`, so the shipped loom
 // tests (in `tests/`) model-check the actual implementation, not a hand-copied
 // transcription. Under normal builds it is `core::sync::atomic`, keeping the
@@ -9,8 +9,8 @@ use core::ptr::NonNull;
 //
 // CONSUMER HAZARD: `--cfg loom` is a global `RUSTFLAGS` cfg — it applies to
 // every crate in the build, not only the one whose loom suite you meant to
-// run. Under it `RacyPtrCell::new` is NOT `const` (see its doc), so a
-// `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` anywhere in the build
+// run. Under it `OncePtrCell::new` is NOT `const` (see its doc), so a
+// `static CELL: OncePtrCell<T> = OncePtrCell::new();` anywhere in the build
 // fails to compile. Scope the flag (`cargo test -p <crate> ...`), or supply a
 // `#[cfg(loom)]` const-capable stand-in in your own crate — see
 // `src/registry/bootstrap.rs`'s `loom_shim` in the `sefer-alloc` repository
@@ -45,10 +45,10 @@ fn spin_hint() {
 /// (`align_of::<T>() >= 2` is asserted at construction); a *misaligned or
 /// synthesised* pointer at this address is reachable from safe code and is
 /// rejected by a release-active `assert!` in
-/// [`RacyPtrCell::get_or_try_init`], not by this constant alone.
+/// [`OncePtrCell::get_or_try_init`], not by this constant alone.
 const SENTINEL_INITIALIZING: usize = 1;
 
-/// The outcome of [`RacyPtrCell::dbg_rollback_reenterable`] — exactly the two
+/// The outcome of [`OncePtrCell::dbg_rollback_reenterable`] — exactly the two
 /// answers that probe can give, and no third one it could never produce.
 ///
 /// In particular there is no "rollback is broken" variant: the probe cannot
@@ -91,12 +91,12 @@ pub enum RollbackProbe {
 /// with alignment 1, which is exactly what `repr(transparent)` requires of
 /// every field beyond the one real one.
 #[repr(transparent)]
-pub struct RacyPtrCell<T> {
+pub struct OncePtrCell<T> {
     /// The one word driving the state machine: `null` = `UNINIT`,
     /// [`SENTINEL_INITIALIZING`] = `INITIALIZING`, any other value = `READY`
     /// (a real published pointer).
     ptr: AtomicPtr<T>,
-    /// `RacyPtrCell<T>` behaves like it holds a `*mut T` it hands out; the
+    /// `OncePtrCell<T>` behaves like it holds a `*mut T` it hands out; the
     /// marker documents the relationship without owning a `T`.
     _marker: PhantomData<*mut T>,
 }
@@ -118,9 +118,9 @@ pub struct RacyPtrCell<T> {
 // is a raw `*mut T`, which is `Send`/`Sync`-neutral (raw pointers carry no
 // sharing obligation — the obligation is on the caller's later deref). Identical
 // to `AtomicPtr<T>`'s own unconditional `Send + Sync`.
-unsafe impl<T> Send for RacyPtrCell<T> {}
+unsafe impl<T> Send for OncePtrCell<T> {}
 // SAFETY: see the `Send` impl above.
-unsafe impl<T> Sync for RacyPtrCell<T> {}
+unsafe impl<T> Sync for OncePtrCell<T> {}
 
 /// RAII rollback guard held across the init closure: if `init`
 /// unwinds instead of returning, the winner thread's stack unwinds through
@@ -198,17 +198,17 @@ impl<T> Drop for RollbackGuard<'_, T> {
     }
 }
 
-impl<T> RacyPtrCell<T> {
+impl<T> OncePtrCell<T> {
     /// Construct a fresh `UNINIT` cell (null pointer).
     ///
     /// **Not `const` under `--cfg loom`** (loom's atomics have no const
     /// constructor); on normal builds it is `const` so the cell can live in a
     /// `static`. Because `--cfg loom` is a global `RUSTFLAGS` cfg, this
     /// applies to every crate in a build that sets it, not only crates that
-    /// mean to run loom against `RacyPtrCell` itself — a
-    /// `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` anywhere in such a
+    /// mean to run loom against `OncePtrCell` itself — a
+    /// `static CELL: OncePtrCell<T> = OncePtrCell::new();` anywhere in such a
     /// build fails to compile. Scope the flag to this crate
-    /// (`cargo test -p racy-ptr-cell ...`), or supply your own
+    /// (`cargo test -p once-ptr-cell ...`), or supply your own
     /// `#[cfg(loom)]` const-capable stand-in if you need the flag
     /// workspace-wide.
     ///
@@ -218,10 +218,10 @@ impl<T> RacyPtrCell<T> {
     /// as the address `1` (see the crate-level "Sentinel encoding" docs); that
     /// encoding needs a spare low bit, which requires every valid aligned
     /// address of `T` to be even — i.e. `align_of::<T>() >= 2`. In the
-    /// documented `static CELL: RacyPtrCell<T> = RacyPtrCell::new();` usage
+    /// documented `static CELL: OncePtrCell<T> = OncePtrCell::new();` usage
     /// this `assert!` is evaluated at compile time (a const-eval failure, not
     /// a runtime panic); called from a non-const context (e.g. inside a
-    /// function, or via `RacyPtrCell::<T>::default()`) with a `T` whose
+    /// function, or via `OncePtrCell::<T>::default()`) with a `T` whose
     /// alignment is 1, it panics at runtime instead.
     #[cfg(not(loom))]
     #[must_use]
@@ -231,10 +231,10 @@ impl<T> RacyPtrCell<T> {
         // Every `T` used behind this cell must have alignment >= 2.
         assert!(
             core::mem::align_of::<T>() >= 2,
-            "RacyPtrCell<T> requires align_of::<T>() >= 2 so the INITIALIZING \
+            "OncePtrCell<T> requires align_of::<T>() >= 2 so the INITIALIZING \
              sentinel (address 1) can never collide with a real published pointer"
         );
-        RacyPtrCell {
+        OncePtrCell {
             ptr: AtomicPtr::new(core::ptr::null_mut()),
             _marker: PhantomData,
         }
@@ -244,7 +244,7 @@ impl<T> RacyPtrCell<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `align_of::<T>() == 1` — see the non-loom [`RacyPtrCell::new`]
+    /// Panics if `align_of::<T>() == 1` — see the non-loom [`OncePtrCell::new`]
     /// doc above for why (identical condition; this build cannot be `const` so
     /// the check always runs at runtime here).
     #[cfg(loom)]
@@ -252,9 +252,9 @@ impl<T> RacyPtrCell<T> {
     pub fn new() -> Self {
         assert!(
             core::mem::align_of::<T>() >= 2,
-            "RacyPtrCell<T> requires align_of::<T>() >= 2"
+            "OncePtrCell<T> requires align_of::<T>() >= 2"
         );
-        RacyPtrCell {
+        OncePtrCell {
             ptr: AtomicPtr::new(core::ptr::null_mut()),
             _marker: PhantomData,
         }
@@ -395,7 +395,7 @@ impl<T> RacyPtrCell<T> {
 
     /// The full `UNINIT -> INITIALIZING -> READY` protocol: claim CAS, init
     /// closure, publish/rollback, loser spin, re-race. Split out of
-    /// [`RacyPtrCell::get_or_try_init`] so the already-READY fast path stays
+    /// [`OncePtrCell::get_or_try_init`] so the already-READY fast path stays
     /// small enough to inline on its own; correctness is unchanged, and the
     /// re-checked fast path at the top of the loop below is still needed
     /// here (a re-racing loser re-enters it after a rollback).
@@ -484,7 +484,7 @@ impl<T> RacyPtrCell<T> {
                             // guard above unwinds it cleanly.
                             assert!(
                                 Self::is_ready(raw),
-                                "RacyPtrCell: init returned the null/sentinel address"
+                                "OncePtrCell: init returned the null/sentinel address"
                             );
                             // Publish with `Release` so every subsequent
                             // `Acquire` load (fast path here, plus every loser's
@@ -552,7 +552,7 @@ impl<T> RacyPtrCell<T> {
 
     /// Test-probe introspection: `true` iff the cell is currently `READY`
     /// (holds a real, non-null, non-sentinel pointer). Says nothing about
-    /// the published *value* itself (that is [`RacyPtrCell::get`]'s
+    /// the published *value* itself (that is [`OncePtrCell::get`]'s
     /// contract).
     ///
     /// This is functionally identical to `get().is_some()` — same single
@@ -574,7 +574,7 @@ impl<T> RacyPtrCell<T> {
     /// detail. It carries the crate's normal semver guarantee like any
     /// other public item; a `#[doc(hidden)]` posture was rejected precisely
     /// because it would advertise this function to downstream consumers'
-    /// tests (see [`RacyPtrCell::dbg_rollback_reenterable`]'s own doc) while
+    /// tests (see [`OncePtrCell::dbg_rollback_reenterable`]'s own doc) while
     /// hiding it from the rustdoc those consumers would need to discover it
     /// — see the crate README's "Test-probe API stability" section for the
     /// full rationale.
@@ -618,7 +618,7 @@ impl<T> RacyPtrCell<T> {
     /// probe: if the cell is not observed `UNINIT` at that instant, the probe
     /// returns [`RollbackProbe::NotApplicable`] and touches nothing, but a
     /// concurrent
-    /// [`RacyPtrCell::get_or_try_init`] racing in AFTER the entry CAS (during
+    /// [`OncePtrCell::get_or_try_init`] racing in AFTER the entry CAS (during
     /// the probe's own rollback-then-reCAS window) is not excluded by it — the
     /// probe's final restore step accounts for that by only touching the cell
     /// when its own postcondition CAS actually re-won ownership (see the
@@ -689,13 +689,13 @@ impl<T> RacyPtrCell<T> {
     }
 }
 
-impl<T> Default for RacyPtrCell<T> {
+impl<T> Default for OncePtrCell<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> core::fmt::Debug for RacyPtrCell<T> {
+impl<T> core::fmt::Debug for OncePtrCell<T> {
     /// Diagnostic-only classification of the cell's current state — never
     /// dereferences the pointee, so no `T: Debug` bound is needed (`T` never
     /// appears in the output). `Relaxed` is enough here: unlike `get`, this
@@ -705,7 +705,7 @@ impl<T> core::fmt::Debug for RacyPtrCell<T> {
     /// the instant after this call returns.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let p = self.ptr.load(Ordering::Relaxed);
-        f.write_str("RacyPtrCell(")?;
+        f.write_str("OncePtrCell(")?;
         match p.addr() {
             0 => f.write_str("Uninit")?,
             SENTINEL_INITIALIZING => f.write_str("Initializing")?,

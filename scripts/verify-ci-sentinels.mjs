@@ -183,7 +183,7 @@ const CRATE_TEST_DIRS = {
   'numa-shim': 'crates/numa-shim/tests',
   'malloc-bench-rs': 'crates/malloc-bench-rs/tests',
   'sefer-region': 'crates/sefer-region/tests',
-  'racy-ptr-cell': 'crates/racy-ptr-cell/tests',
+  'once-ptr-cell': 'crates/once-ptr-cell/tests',
   'size-classes': 'crates/size-classes/tests',
   'globalalloc-model': 'crates/globalalloc-model/tests',
   'tagged-index-stack': 'crates/tagged-index-stack/tests',

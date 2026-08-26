@@ -1,4 +1,4 @@
-//! `bench-scale-tool` fixed-iteration benches for `RacyPtrCell<T>`.
+//! `bench-scale-tool` fixed-iteration benches for `OncePtrCell<T>`.
 //!
 //! This crate is the hottest primitive in the sefer-alloc allocator's init
 //! paths (lazy CAS-published pointer cell, used inside `#[global_allocator]`
@@ -36,7 +36,7 @@
 //! contention round's makespan is shaped by four threads' CAS/closure/
 //! publish/spin work OVERLAPPING in time (including the timed
 //! `get_or_try_init` call's own `init_body`, 64 `spin_loop` iterations
-//! that are a benchmark-authored parameter, not part of `RacyPtrCell`
+//! that are a benchmark-authored parameter, not part of `OncePtrCell`
 //! itself); the scaffolding-only round has none of that overlap, so its
 //! critical path is shaped differently, not merely shorter by a fixed
 //! amount. Subtracting the two makespans is a DIFFERENTIAL ESTIMATE under
@@ -60,8 +60,8 @@
 //!
 //! Run:
 //! ```text
-//! cargo bench -p racy-ptr-cell --bench racy_ptr_cell_bench -- --calibrate 1
-//! cargo bench -p racy-ptr-cell --bench racy_ptr_cell_bench
+//! cargo bench -p once-ptr-cell --bench once_ptr_cell_bench -- --calibrate 1
+//! cargo bench -p once-ptr-cell --bench once_ptr_cell_bench
 //! ```
 
 use std::hint::black_box;
@@ -70,7 +70,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 
 use bench_scale_tool::Harness;
-use racy_ptr_cell::RacyPtrCell;
+use once_ptr_cell::OncePtrCell;
 
 // Same Payload shape as the tests — align(4) is sufficient (the cell needs
 // align >= 2) and realistic for the allocator use case.
@@ -94,7 +94,7 @@ const CONTENDERS: usize = 4;
 const INIT_SPIN_ITERS: u32 = 64;
 
 /// A process-lifetime payload, leaked once. Republished into every cell
-/// under test — sound because `RacyPtrCell` never drops, frees, or reads
+/// under test — sound because `OncePtrCell` never drops, frees, or reads
 /// through its pointee, so the same pointer may back any number of cells.
 /// Returned by value (`NonNull` is `Copy`).
 fn shared_payload() -> NonNull<Payload> {
@@ -127,7 +127,7 @@ const MODE_SHUTDOWN: u8 = 3;
 /// all `CONTENDERS` threads meet at `start`, then behave according to
 /// `mode`, and meet again at `done`.
 struct Contention {
-    slot: Mutex<Option<Arc<RacyPtrCell<Payload>>>>,
+    slot: Mutex<Option<Arc<OncePtrCell<Payload>>>>,
     start: Barrier,
     done: Barrier,
     mode: AtomicU8,
@@ -170,7 +170,7 @@ impl Contention {
     /// Lock `slot`, clone the round's published cell out of it. Shared by
     /// `MODE_CONTEND` and `MODE_SCAFFOLDING_ONLY` so the two modes pay
     /// IDENTICAL mutex/`Arc` cost — only the call after this differs.
-    fn take_round_cell(&self) -> Arc<RacyPtrCell<Payload>> {
+    fn take_round_cell(&self) -> Arc<OncePtrCell<Payload>> {
         self.slot
             .lock()
             .expect("contention slot mutex poisoned")
@@ -181,7 +181,7 @@ impl Contention {
 
 fn main() {
     let payload = shared_payload();
-    let mut h = Harness::new("racy_ptr_cell_bench", env!("CARGO_MANIFEST_DIR"));
+    let mut h = Harness::new("once_ptr_cell_bench", env!("CARGO_MANIFEST_DIR"));
 
     // ── get_or_try_init/cold ────────────────────────────────────────────────
     // Cold path: every iteration gets a fresh UNINIT cell (built in the
@@ -190,7 +190,7 @@ fn main() {
     // region; `init` returns the pre-leaked shared payload.
     h.bench_batched(
         "get_or_try_init/cold",
-        RacyPtrCell::<Payload>::new,
+        OncePtrCell::<Payload>::new,
         move |cell| {
             black_box(cell.get_or_try_init(|| Some(payload)));
         },
@@ -202,7 +202,7 @@ fn main() {
     // from it rather than guessed at.
     h.bench_batched(
         "baseline/cold_setup_only",
-        RacyPtrCell::<Payload>::new,
+        OncePtrCell::<Payload>::new,
         move |cell| {
             black_box(&cell);
             black_box(payload);
@@ -212,7 +212,7 @@ fn main() {
     // ── get/hot ─────────────────────────────────────────────────────────────
     // Hot path: cell is already READY; measures the single `Acquire` load.
     {
-        let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+        let cell: OncePtrCell<Payload> = OncePtrCell::new();
         cell.get_or_try_init(|| Some(payload)).unwrap();
         h.bench("get/hot", move || {
             black_box(cell.get());
@@ -223,7 +223,7 @@ fn main() {
     // Warm path through `get_or_try_init`: the cell is already READY, so the
     // fast path's first `Acquire` load returns early without running init.
     {
-        let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+        let cell: OncePtrCell<Payload> = OncePtrCell::new();
         cell.get_or_try_init(|| Some(payload)).unwrap();
         h.bench("get_or_try_init/warm_already_ready", move || {
             black_box(cell.get_or_try_init(|| Some(payload)));
@@ -291,8 +291,8 @@ fn main() {
         // `baseline/scaffolding_only`: publish a fresh cell to `slot` for
         // the round. Identical in both rows on purpose — only the routine
         // (and the `mode` it sets first) differs.
-        let publish_round_cell = |ctl: &Arc<Contention>| -> Arc<RacyPtrCell<Payload>> {
-            let cell = Arc::new(RacyPtrCell::<Payload>::new());
+        let publish_round_cell = |ctl: &Arc<Contention>| -> Arc<OncePtrCell<Payload>> {
+            let cell = Arc::new(OncePtrCell::<Payload>::new());
             *ctl.slot.lock().expect("contention slot mutex poisoned") = Some(Arc::clone(&cell));
             cell
         };

@@ -792,7 +792,7 @@ pub struct AllocCore {
     /// 8 slots", exactly the pre-existing behaviour). Owner-only (plain
     /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, not
     /// `dirty_by_class`; see `large_cache_extended`'s module doc for why no
-    /// `RacyPtrCell` is needed here). Dereferenced via
+    /// `OncePtrCell` is needed here). Dereferenced via
     /// `large_cache_extended::deref_large_cache_extension[_mut]`.
     #[cfg(feature = "large-cache-extended")]
     pub(super) large_cache_extension: *mut super::large_cache_extended::LargeCacheExtension,
@@ -1047,7 +1047,7 @@ pub struct AllocCore {
     /// comment).
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) dirty_by_class:
-        Option<&'static racy_ptr_cell::RacyPtrCell<super::dirty_by_class::PerClassDirty>>,
+        Option<&'static once_ptr_cell::OncePtrCell<super::dirty_by_class::PerClassDirty>>,
 
     /// R13-1 (task #271, P0 fix): reference to the owning HeapSlot's
     /// coarse-only latch (planted by `HeapCore` at bind time, same

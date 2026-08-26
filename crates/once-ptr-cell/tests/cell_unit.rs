@@ -1,4 +1,4 @@
-//! Native (non-loom) tests for [`RacyPtrCell`]: sequential correctness of the
+//! Native (non-loom) tests for [`OncePtrCell`]: sequential correctness of the
 //! fast path, init-once, OOM rollback + retry, and the sentinel/null
 //! non-leak, plus a handful of concurrency/rollback regression tests (a
 //! real background thread racing a panicking `init`) that need a genuine
@@ -11,7 +11,7 @@
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use racy_ptr_cell::{RacyPtrCell, RollbackProbe};
+use once_ptr_cell::{OncePtrCell, RollbackProbe};
 
 #[repr(align(4))]
 struct Payload {
@@ -24,14 +24,14 @@ fn leak(marker: u32) -> NonNull<Payload> {
 
 #[test]
 fn get_is_none_until_initialised() {
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
     assert!(cell.get().is_none());
     assert!(!cell.dbg_is_ready());
 }
 
 #[test]
 fn init_runs_once_then_fast_path() {
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
     let calls = AtomicU32::new(0);
 
     let p1 = cell
@@ -70,7 +70,7 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
     // every subsequent caller (this same cell, any thread) spins forever on
     // the loser path, since nothing else will ever move the cell out of
     // INITIALIZING.
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
 
     // First attempt: init PANICS. Catch the unwind.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -169,7 +169,7 @@ fn concurrent_get_or_try_init_started_before_unwind_completes_still_succeeds() {
     // adding test-only production surface without a stronger reason. This
     // test is renamed and reworded to state exactly the (still real, still
     // useful) property it demonstrates instead.
-    let cell = std::sync::Arc::new(RacyPtrCell::<Payload>::new());
+    let cell = std::sync::Arc::new(OncePtrCell::<Payload>::new());
     let in_init = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let loser_about_to_call = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -257,14 +257,14 @@ fn init_returning_the_sentinel_address_panics() {
     // vacuously) -- verified via a counterfactual: temporarily reverting to
     // `debug_assert!` and re-running under `--release` makes this test fail
     // (no panic occurs), confirming the check is genuinely load-bearing.
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
     let sentinel = NonNull::new(core::ptr::without_provenance_mut::<Payload>(1)).unwrap();
     let _ = cell.get_or_try_init(|| Some(sentinel));
 }
 
 #[test]
 fn oom_rolls_back_and_retry_succeeds() {
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
 
     // First attempt: init returns None (OOM) → rollback → None returned.
     let first = cell.get_or_try_init(|| None);
@@ -285,20 +285,20 @@ fn oom_rolls_back_and_retry_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "RacyPtrCell<T> requires align_of::<T>() >= 2")]
+#[should_panic(expected = "OncePtrCell<T> requires align_of::<T>() >= 2")]
 fn align_of_one_payload_panics_at_construction() {
     // The align_of::<T>() >= 2 guard in `new`/`default` is
     // soundness/liveness-load-bearing -- an align-1 T could publish a real
     // pointer at address 1, which every reader would misread as the
     // INITIALIZING sentinel and spin on forever. This was documented (`#
-    // Panics` on RacyPtrCell::new) but never tested: deleting the assert
+    // Panics` on OncePtrCell::new) but never tested: deleting the assert
     // previously left the whole suite green. `default()` is the doc's own
     // named runtime-panic route (the `new()` route is `const fn`, so a
     // `static` usage with an align-1 T fails to COMPILE via const-eval,
     // which is untestable here without a `compile_fail` doctest --
     // This repository bans doctests; `default()`'s runtime arm checks the exact
     // same predicate).
-    let _ = RacyPtrCell::<u8>::default();
+    let _ = OncePtrCell::<u8>::default();
 }
 
 #[test]
@@ -306,12 +306,12 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     // `dbg_rollback_reenterable`'s happy-path contract (Proven + the
     // restore postcondition) used to be asserted only in the PARENT repo's
     // own integration test, which does not ship with the standalone
-    // published crate. Within crates/racy-ptr-cell itself the only call site
+    // published crate. Within crates/once-ptr-cell itself the only call site
     // discarded the result -- stubbing the probe to unconditionally return
     // the not-applicable arm left the whole suite green.
 
     // Happy-path arm: a fresh (UNINIT) cell.
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
     assert_eq!(
         cell.dbg_rollback_reenterable(),
         RollbackProbe::Proven,
@@ -349,8 +349,8 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
 fn debug_reports_the_three_states_without_a_t_debug_bound() {
     // Payload deliberately does not implement Debug -- this compiling at all
     // is part of what the test proves (no `T: Debug` bound leaks through).
-    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
-    assert_eq!(format!("{cell:?}"), "RacyPtrCell(Uninit)");
+    let cell: OncePtrCell<Payload> = OncePtrCell::new();
+    assert_eq!(format!("{cell:?}"), "OncePtrCell(Uninit)");
 
     // `fmt` takes `&self`, so the init closure can format the SAME cell
     // while it still holds the sentinel -- the only single-threaded way to
@@ -359,11 +359,11 @@ fn debug_reports_the_three_states_without_a_t_debug_bound() {
     // (collapsing the output to `Ready(0x1)`) would leave the suite green.
     let p = cell
         .get_or_try_init(|| {
-            assert_eq!(format!("{cell:?}"), "RacyPtrCell(Initializing)");
+            assert_eq!(format!("{cell:?}"), "OncePtrCell(Initializing)");
             Some(leak(0xBEEF))
         })
         .unwrap();
-    assert_eq!(format!("{cell:?}"), format!("RacyPtrCell(Ready({p:p}))"));
+    assert_eq!(format!("{cell:?}"), format!("OncePtrCell(Ready({p:p}))"));
 
     // SAFETY: p was leaked exactly once by leak()'s Box::leak and never
     // freed since; reclaiming it here (once, at test end) pairs with that
@@ -385,14 +385,14 @@ fn debug_reports_the_three_states_without_a_t_debug_bound() {
 #[test]
 fn layout_matches_a_single_atomic_ptr() {
     assert_eq!(
-        core::mem::size_of::<RacyPtrCell<Payload>>(),
+        core::mem::size_of::<OncePtrCell<Payload>>(),
         core::mem::size_of::<core::sync::atomic::AtomicPtr<Payload>>(),
-        "RacyPtrCell<T> must be exactly one word, matching its documented \
+        "OncePtrCell<T> must be exactly one word, matching its documented \
          layout guarantee"
     );
     assert_eq!(
-        core::mem::align_of::<RacyPtrCell<Payload>>(),
+        core::mem::align_of::<OncePtrCell<Payload>>(),
         core::mem::align_of::<core::sync::atomic::AtomicPtr<Payload>>(),
-        "RacyPtrCell<T> must have the same alignment as the AtomicPtr<T> it wraps"
+        "OncePtrCell<T> must have the same alignment as the AtomicPtr<T> it wraps"
     );
 }

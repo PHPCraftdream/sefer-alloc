@@ -24,8 +24,8 @@
 //! The concurrent race (two producers racing to be the first to materialise a
 //! ring's sidecar) — the shared `UNINIT -> INITIALIZING -> READY` CAS-publish
 //! protocol this single-threaded file does not attempt to model — is covered by
-//! the `racy-ptr-cell` crate's real-type loom suite
-//! (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`, CRATE-P3), which
+//! the `once-ptr-cell` crate's real-type loom suite
+//! (`crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, CRATE-P3), which
 //! replaced the four in-tree shadow models including the former
 //! `tests/loom_overflow_sidecar_cas.rs`.
 

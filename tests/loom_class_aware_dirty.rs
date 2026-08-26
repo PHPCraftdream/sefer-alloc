@@ -13,13 +13,13 @@
 //!
 //! **What is deliberately NOT re-modelled here:** the pointer-materialisation
 //! race for the lazily-published `PerClassDirty` sidecar itself
-//! (`RacyPtrCell<PerClassDirty>`'s `UNINIT -> INITIALIZING -> READY` CAS
-//! protocol) — that primitive is `racy-ptr-cell`'s own crate, with its own
-//! independent loom suite (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`).
+//! (`OncePtrCell<PerClassDirty>`'s `UNINIT -> INITIALIZING -> READY` CAS
+//! protocol) — that primitive is `once-ptr-cell`'s own crate, with its own
+//! independent loom suite (`crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`).
 //! Re-verifying it here would be redundant re-verification of an
 //! already-proven primitive (see `alloc_core::dirty_by_class`'s module doc,
 //! "Sizing and lazy materialisation"). This harness assumes the sidecar is
-//! already materialised (a plain `AtomicU64` array, no `RacyPtrCell`) and
+//! already materialised (a plain `AtomicU64` array, no `OncePtrCell`) and
 //! focuses purely on the NEW bit-set/scan semantics layered on top: TWO
 //! bitmaps set by ONE producer push (the existing per-segment bit, now
 //! ADDITIONALLY a per-class bit), and a consumer whose VISIT decision reads

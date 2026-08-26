@@ -269,7 +269,7 @@ fn main() {
 
     println!();
     println!(
-        "NOTE: the sidecar itself (`RacyPtrCell<PerClassDirty>` -> \
+        "NOTE: the sidecar itself (`OncePtrCell<PerClassDirty>` -> \
          `leak_zeroed_pages`) is never freed once materialised (process-lifetime \
          leak by design, same discipline as `segment_directory`'s and \
          `HeapOverflow`'s sidecars) -- so RSS deltas across successive N arms in \

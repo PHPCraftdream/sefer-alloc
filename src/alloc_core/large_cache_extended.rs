@@ -45,10 +45,10 @@
 //!   pattern means zero-overhead-when-off is automatic (same argument those
 //!   two modules' docs already make) and reviewers already know the shape.
 //!
-//! ## Owner-only — plain `*mut`, NOT `RacyPtrCell`
+//! ## Owner-only — plain `*mut`, NOT `OncePtrCell`
 //!
 //! Unlike `dirty_by_class`'s `PerClassDirty` (written by ANY cross-thread
-//! producer via a remote free, hence `RacyPtrCell`'s CAS-publish protocol),
+//! producer via a remote free, hence `OncePtrCell`'s CAS-publish protocol),
 //! the large-cache is exactly like `directory_sidecar`/`SegmentDirectory`:
 //! touched ONLY by this `AllocCore`'s owning thread (`alloc_large`/`dealloc`/
 //! `reclaim_large_segment` all run on the single owning thread). `AllocCore`

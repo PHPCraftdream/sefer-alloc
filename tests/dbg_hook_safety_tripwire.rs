@@ -165,7 +165,7 @@ fn rel_id(abs: &Path) -> String {
 const PURE_OBSERVERS: &[&str] = &[
     "crates/numa-shim/src/lib.rs::dbg_current_node_for_cpu",
     "crates/numa-shim/src/lib.rs::dbg_node_resolution_for_cpu",
-    "crates/racy-ptr-cell/src/imp.rs::dbg_is_ready",
+    "crates/once-ptr-cell/src/imp.rs::dbg_is_ready",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_foreign_or_unroutable_frees",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_reserved_total",
     "src/alloc_core/alloc_core_core_diag.rs::dbg_segments_released_total",
@@ -283,7 +283,7 @@ const PURE_OBSERVERS: &[&str] = &[
 /// re-derive that distinction from scratch.
 const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
-        "crates/racy-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
+        "crates/once-ptr-cell/src/imp.rs::dbg_rollback_reenterable",
         "entry CAS is a point-in-time UNINIT check, not mutual exclusion across the whole probe; the final restore is gated on the probe's own postcondition CAS re-winning the cell, so a concurrent get_or_try_init racing in mid-probe is never clobbered",
     ),
     (

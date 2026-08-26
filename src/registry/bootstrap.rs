@@ -157,7 +157,7 @@
 //! ## Provenance model (task #140)
 //!
 //! The chunk-pointer sentinel handling now lives inside
-//! [`racy_ptr_cell::RacyPtrCell`] (CRATE-P3 extraction), which uses the SAME
+//! [`once_ptr_cell::OncePtrCell`] (CRATE-P3 extraction), which uses the SAME
 //! `without_provenance_mut` idiom the old whole-registry `ensure_slow` used (a
 //! bare marker address, never dereferenced — only compared), so it stays
 //! strict-provenance-clean under `-Zmiri-strict-provenance`. This file's own
@@ -172,7 +172,7 @@
 // This file uses `unsafe` for these operations. The CAS-reserve / sentinel /
 // Release-publish / spin-while-INITIALIZING / OOM-rollback STATE MACHINE that
 // drove the per-chunk pointer transition inline used to live here; CRATE-P3
-// extracted it into `racy_ptr_cell::RacyPtrCell` (aliasing its atomics to
+// extracted it into `once_ptr_cell::OncePtrCell` (aliasing its atomics to
 // `loom` so the shipped loom suite exercises the real type). What remains here:
 //  1. Casting the leaked `aligned_vmem::leak_zeroed_pages` reservation to
 //     `*mut RegistryChunk` and dereferencing the pointer the cell publishes
@@ -182,14 +182,14 @@
 //     `RegistryChunk`).
 //  2. The `alloc-xthread` overflow-sidecar path (still an inline instance of
 //     the same protocol — see the CRATE-P3 note in `ensure_chunk_slow` for why
-//     that one did NOT migrate onto `RacyPtrCell`): its own CAS/reserve/publish/
+//     that one did NOT migrate onto `OncePtrCell`): its own CAS/reserve/publish/
 //     spin and `unsafe { &*p }` deref, each with its own `// SAFETY:` proof.
 // Every `unsafe` block carries a `// SAFETY:` proof below.
 #![allow(unsafe_code)]
 
 // `spin_loop` and `AtomicPtr` are used ONLY by the `alloc-xthread`
 // overflow-sidecar module below (the chunk path now goes through
-// `RacyPtrCell`, which owns its own spin + atomic internally), so gate their
+// `OncePtrCell`, which owns its own spin + atomic internally), so gate their
 // imports on that feature to stay warning-clean on the non-xthread builds.
 #[cfg(feature = "alloc-xthread")]
 use core::hint::spin_loop;
@@ -205,44 +205,44 @@ use core::sync::atomic::AtomicBool;
 // file is compiled to link sefer's OWN shadow-model loom harnesses (e.g.
 // `loom_xthread_protocol`) — which model UNRELATED protocols and never touch the
 // chunk cells; but `RUSTFLAGS=--cfg loom` is global, so the real crate would
-// then be built in its loom-aliased mode, where `RacyPtrCell::new` is NOT
+// then be built in its loom-aliased mode, where `OncePtrCell::new` is NOT
 // `const` (loom's `AtomicPtr::new` has no const constructor) and sefer's
 // `static REGISTRY: Registry = Registry::new()` would fail to const-evaluate.
 // Sefer already keeps its OWN production atomics on `core::sync::atomic` under
 // loom (see the imports above) for exactly this reason. So under loom we swap in
 // a const-capable, core-atomic shim with the identical API surface `bootstrap`
-// uses. This is sound: the real-type loom VERIFICATION of `RacyPtrCell` lives in
-// the crate's OWN suite (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`, run
-// via `-p racy-ptr-cell`), which is the whole point of the extraction; sefer's
+// uses. This is sound: the real-type loom VERIFICATION of `OncePtrCell` lives in
+// the crate's OWN suite (`crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, run
+// via `-p once-ptr-cell`), which is the whole point of the extraction; sefer's
 // loom harnesses never exercise these chunk cells, so the shim is never on any
 // modeled interleaving — it exists only to keep the const static compiling.
 #[cfg(loom)]
-use loom_shim::RacyPtrCell;
+use loom_shim::OncePtrCell;
 #[cfg(not(loom))]
-use racy_ptr_cell::RacyPtrCell;
+use once_ptr_cell::OncePtrCell;
 
 /// Re-exported so a consumer of [`dbg_rollback_chunk_sentinel_reenterable`]
-/// can match on its result without depending on `racy-ptr-cell` directly
+/// can match on its result without depending on `once-ptr-cell` directly
 /// (it is an OPTIONAL dependency of this crate). The probe's result type is
 /// pure data with no atomics, so it is loom-agnostic and the same enum
 /// serves both the real cell and the `#[cfg(loom)]` shim.
-pub use racy_ptr_cell::RollbackProbe;
+pub use once_ptr_cell::RollbackProbe;
 
 #[cfg(loom)]
 mod loom_shim {
     //! Const-capable, `core::sync::atomic`-backed stand-in for
-    //! `racy_ptr_cell::RacyPtrCell`, used ONLY under `--cfg loom` so sefer's own
+    //! `once_ptr_cell::OncePtrCell`, used ONLY under `--cfg loom` so sefer's own
     //! (unrelated) shadow-model loom harnesses can link the crate with its const
     //! `REGISTRY` static intact — see the import-site comment above. Mirrors the
     //! real cell's CAS/Release-publish/spin/rollback protocol AND its panic
     //! safety, alignment guard, and `dbg_rollback_reenterable` clobber
-    //! protection (task #1359, first racy-ptr-cell publication audit finding
+    //! protection (task #1359, first once-ptr-cell publication audit finding
     //! F2 — an earlier version of this shim was missing all four and its doc
     //! comment overclaimed "behaviourally faithful" anyway). Built on `core`
-    //! atomics so `new` stays `const` (`racy_ptr_cell::RacyPtrCell::new` is
+    //! atomics so `new` stays `const` (`once_ptr_cell::OncePtrCell::new` is
     //! non-`const` under the crate's OWN `--cfg loom`, since loom atomics have
     //! no const constructor — this shim exists so the ROOT crate's `--cfg
-    //! loom` builds, which force racy-ptr-cell to compile under its `loom`
+    //! loom` builds, which force once-ptr-cell to compile under its `loom`
     //! branch too via the shared RUSTFLAGS cfg, still get a workable `static
     //! REGISTRY` initializer). It is NEVER on a loom-modeled interleaving
     //! (sefer's loom tests do not touch chunk cells), so it needs no loom
@@ -256,27 +256,27 @@ mod loom_shim {
     // loom-agnostic and the shim reuses the real crate's enum rather than
     // duplicating it -- same reasoning as the `TaggedIndex` packing reused by
     // the CRATE-P7 shim below.
-    pub(crate) use racy_ptr_cell::RollbackProbe;
+    pub(crate) use once_ptr_cell::RollbackProbe;
 
     const SENTINEL_INITIALIZING: usize = 1;
 
     // repr(transparent): mirrors the real crate's own layout guarantee
-    // (racy-ptr-cell's publication readiness review, run 5, finding F1) --
+    // (once-ptr-cell's publication readiness review, run 5, finding F1) --
     // this shim is a test-only stand-in for the real type, so its layout
     // should not silently diverge from what the real crate now promises.
     #[repr(transparent)]
-    pub(crate) struct RacyPtrCell<T> {
+    pub(crate) struct OncePtrCell<T> {
         ptr: AtomicPtr<T>,
         _marker: PhantomData<*mut T>,
     }
 
     // SAFETY: mirrors the real cell — only a raw `*mut T` ever crosses threads.
-    unsafe impl<T> Send for RacyPtrCell<T> {}
+    unsafe impl<T> Send for OncePtrCell<T> {}
     // SAFETY: see the `Send` impl.
-    unsafe impl<T> Sync for RacyPtrCell<T> {}
+    unsafe impl<T> Sync for OncePtrCell<T> {}
 
     /// Rolls the sentinel back to `null` on `Drop` unless [`defuse`](Self::defuse)
-    /// was called first — mirrors `racy_ptr_cell`'s own `RollbackGuard`
+    /// was called first — mirrors `once_ptr_cell`'s own `RollbackGuard`
     /// (task #706's fix), so a panicking `init` closure here also leaves the
     /// cell `UNINIT` instead of wedged in `INITIALIZING` forever.
     struct RollbackGuard<'a, T> {
@@ -308,20 +308,20 @@ mod loom_shim {
         }
     }
 
-    impl<T> RacyPtrCell<T> {
+    impl<T> OncePtrCell<T> {
         /// # Panics
         ///
         /// Panics (as a const-eval failure in the `static` usage this shim
         /// exists for) if `align_of::<T>() < 2` — mirrors
-        /// `racy_ptr_cell::RacyPtrCell::new`'s own guard: the `INITIALIZING`
+        /// `once_ptr_cell::OncePtrCell::new`'s own guard: the `INITIALIZING`
         /// sentinel is the address `1`, which needs a spare low bit.
         pub(crate) const fn new() -> Self {
             assert!(
                 core::mem::align_of::<T>() >= 2,
-                "RacyPtrCell<T> requires align_of::<T>() >= 2 so the INITIALIZING \
+                "OncePtrCell<T> requires align_of::<T>() >= 2 so the INITIALIZING \
                  sentinel (address 1) can never collide with a real published pointer"
             );
-            RacyPtrCell {
+            OncePtrCell {
                 ptr: AtomicPtr::new(core::ptr::null_mut()),
                 _marker: PhantomData,
             }
@@ -376,7 +376,7 @@ mod loom_shim {
                                 // as if `READY` and wedge every reader.
                                 assert!(
                                     Self::is_ready(raw),
-                                    "RacyPtrCell (loom_shim): init returned the null/sentinel address"
+                                    "OncePtrCell (loom_shim): init returned the null/sentinel address"
                                 );
                                 self.ptr.store(raw, Ordering::Release);
                                 guard.defuse();
@@ -412,7 +412,7 @@ mod loom_shim {
             Self::is_ready(self.ptr.load(Ordering::Acquire))
         }
 
-        /// Mirrors `racy_ptr_cell::RacyPtrCell::dbg_rollback_reenterable`'s
+        /// Mirrors `once_ptr_cell::OncePtrCell::dbg_rollback_reenterable`'s
         /// own conditional-restore contract (task #1359-class fix): the
         /// final restore-to-null only fires if this probe's own
         /// postcondition CAS actually re-won the cell. If a concurrent
@@ -553,7 +553,7 @@ use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
 // aliases its atomics to `loom`, so `TaggedIndexStack::new` is NOT `const`
 // (loom's `AtomicU64::new` has no const ctor) and `static REGISTRY: Registry =
 // Registry::new()` would fail to const-evaluate — the SAME const-static hazard
-// the `RacyPtrCell` shim above solves. So under loom we swap in a const-capable,
+// the `OncePtrCell` shim above solves. So under loom we swap in a const-capable,
 // `core`-atomic shim with the identical `new`/`push`/`pop` API `bootstrap` and
 // `heap_registry` use (over the REAL `tagged_index_stack::Links` trait — only
 // the `AtomicU64` head must be `core`, not `loom`, for const-ness). This is
@@ -590,15 +590,15 @@ pub const MAX_HEAPS: usize = 4096;
 /// `static REGISTRY: Registry = Registry::new()`. See [`ensure`].
 pub struct Registry {
     /// One lazy CAS-published pointer cell per chunk of the slot space
-    /// ([`racy_ptr_cell::RacyPtrCell`], the extracted `UNINIT -> INITIALIZING
+    /// ([`once_ptr_cell::OncePtrCell`], the extracted `UNINIT -> INITIALIZING
     /// -> READY` state machine — see [`Registry::ensure_chunk`] /
-    /// [`ensure_chunk_slow`]). `RacyPtrCell` internally drives the same
+    /// [`ensure_chunk_slow`]). `OncePtrCell` internally drives the same
     /// `null -> sentinel(1) -> real *mut RegistryChunk` transition this field
     /// used to spell out inline, with the identical Release-publish +
     /// spin-`Acquire`-while-INITIALIZING + OOM-rollback-then-re-race discipline;
     /// the seam here only reserves the OS pages and dereferences the published
     /// pointer.
-    chunks: [RacyPtrCell<RegistryChunk>; NUM_CHUNKS],
+    chunks: [OncePtrCell<RegistryChunk>; NUM_CHUNKS],
     /// High-water mark of allocated slots (the next unused slot index). A
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
@@ -632,7 +632,7 @@ impl Registry {
     /// unnecessary here since the inline-const form is directly available).
     const fn new() -> Self {
         Registry {
-            chunks: [const { RacyPtrCell::new() }; NUM_CHUNKS],
+            chunks: [const { OncePtrCell::new() }; NUM_CHUNKS],
             count: AtomicU32::new(0),
             free_slots: TaggedIndexStack::new(),
         }
@@ -714,7 +714,7 @@ impl Registry {
     }
 
     /// Ensure chunk `chunk_idx` is materialised, then return a `&'static
-    /// RegistryChunk` reference to it. Fast path: [`RacyPtrCell::get`] (one
+    /// RegistryChunk` reference to it. Fast path: [`OncePtrCell::get`] (one
     /// `Acquire` load + non-null/non-sentinel check, inside the cell). Slow
     /// path (first touch or race): [`ensure_chunk_slow`], which drives the
     /// cell's `get_or_try_init` (CAS-reserve, OS reservation, Release-publish,
@@ -730,7 +730,7 @@ impl Registry {
     #[inline]
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
         if let Some(p) = self.chunks[chunk_idx].get() {
-            // SAFETY: `RacyPtrCell::get` returned `Some` only after observing
+            // SAFETY: `OncePtrCell::get` returned `Some` only after observing
             // a real (non-null, non-sentinel) pointer under `Acquire`. The
             // initialising thread published it with `Release` AFTER the OS
             // reservation's pages were fully valid (OS-zeroed pages already
@@ -894,7 +894,7 @@ pub fn ensure() -> &'static Registry {
 }
 
 /// Slow path for [`Registry::ensure_chunk`] / [`Registry::try_ensure_chunk`]:
-/// drive the chunk's [`racy_ptr_cell::RacyPtrCell`] through its
+/// drive the chunk's [`once_ptr_cell::OncePtrCell`] through its
 /// `get_or_try_init` — the CAS-reserve / OS-reserve / Release-publish /
 /// spin-while-INITIALIZING-loser / OOM-rollback protocol now lives INSIDE the
 /// cell (the extracted `UNINIT -> INITIALIZING -> READY` state machine). This
@@ -915,7 +915,7 @@ pub fn ensure() -> &'static Registry {
 ///
 /// ## CRATE-P3 — why the overflow-sidecar path below did NOT also migrate
 ///
-/// The chunk site maps cleanly onto `RacyPtrCell<RegistryChunk>`: it wants a
+/// The chunk site maps cleanly onto `OncePtrCell<RegistryChunk>`: it wants a
 /// `&'static RegistryChunk`, and `RegistryChunk` is never a ZST.
 /// The `alloc-xthread` overflow-sidecar path (`ensure_overflow_sidecar` below)
 /// deliberately stays spelled out inline because it does NOT fit the generic
@@ -927,13 +927,13 @@ pub fn ensure() -> &'static Registry {
 /// the rollback returns `false` immediately rather than re-racing within the
 /// same call, the opposite of the cell's re-race-now liveness; and (c) under
 /// miri `SIDECAR_CAP == 0` makes `HeapOverflowSidecar` a ZST (align 1), which
-/// would trip `RacyPtrCell`'s `align_of >= 2` sentinel-collision guard at
+/// would trip `OncePtrCell`'s `align_of >= 2` sentinel-collision guard at
 /// `const` construction. Forcing it would risk the M5-critical wedge-hazard
 /// ordering for no real dedup gain, so it is left as an honest inline second
 /// instance — the shared protocol it relies on is still proved by the crate's
 /// real-type loom suite.
 #[cold]
-fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static RegistryChunk> {
+fn ensure_chunk_slow(chunk_cell: &OncePtrCell<RegistryChunk>) -> Option<&'static RegistryChunk> {
     let published = chunk_cell.get_or_try_init(|| {
         // ── Winner init closure ───────────────────────────────────────────
         // We hold the cell's INITIALIZING sentinel; we are the SOLE
@@ -978,7 +978,7 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
     });
 
     published.map(|p| {
-        // SAFETY: `RacyPtrCell::get_or_try_init` returned `Some` only after
+        // SAFETY: `OncePtrCell::get_or_try_init` returned `Some` only after
         // the winner published a real (non-null, non-sentinel) pointer with
         // `Release` and every other racer observed it under `Acquire`. The
         // pointee is the fully-zeroed `RegistryChunk` reserved above (a
@@ -990,7 +990,7 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
 
 /// Test-only hook (R6-OPT-P0-2 round 1, generalising the pre-chunking
 /// `dbg_rollback_sentinel_reenterable`): proves the anti-livelock rollback in
-/// `RacyPtrCell`'s OOM path actually clears the sentinel for a SPECIFIC
+/// `OncePtrCell`'s OOM path actually clears the sentinel for a SPECIFIC
 /// chunk of the LIVE process-global registry, without invoking
 /// `std::process::abort` (which would kill the test harness).
 ///
@@ -1054,12 +1054,12 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static
 /// `NotApplicable` as "could not test", never as failure.
 #[doc(hidden)]
 pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> RollbackProbe {
-    // Forward to `RacyPtrCell::dbg_rollback_reenterable`, which drives the
+    // Forward to `OncePtrCell::dbg_rollback_reenterable`, which drives the
     // chunk's REAL cell through the EXACT `null -> sentinel -> rollback ->
     // re-CAS` sequence the internal OOM-bailout runs and proves the
     // anti-livelock postcondition (after rollback, a fresh CAS(null -> sentinel)
     // succeeds — no future materialisation winner or spinning loser is wedged).
-    // The rollback logic now lives inside `RacyPtrCell` (the extracted state
+    // The rollback logic now lives inside `OncePtrCell` (the extracted state
     // machine), so this hook exercises the shipped code path, not a copy — and
     // on the LIVE process-global registry chunk, exactly as before the
     // extraction. The cell's own entry CAS is the "only touch it if UNINIT"
