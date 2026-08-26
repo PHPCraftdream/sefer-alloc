@@ -694,3 +694,23 @@ impl<T> Default for RacyPtrCell<T> {
         Self::new()
     }
 }
+
+impl<T> core::fmt::Debug for RacyPtrCell<T> {
+    /// Diagnostic-only classification of the cell's current state — never
+    /// dereferences the pointee, so no `T: Debug` bound is needed (`T` never
+    /// appears in the output). `Relaxed` is enough here: unlike `get`, this
+    /// never hands the pointer back to the caller to dereference, so there is
+    /// no happens-before edge to establish. Like any concurrent type's
+    /// `Debug` impl (`OnceLock`'s included), the state printed can be stale
+    /// the instant after this call returns.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let p = self.ptr.load(Ordering::Relaxed);
+        f.write_str("RacyPtrCell(")?;
+        match p.addr() {
+            0 => f.write_str("Uninit")?,
+            SENTINEL_INITIALIZING => f.write_str("Initializing")?,
+            _ => write!(f, "Ready({p:p})")?,
+        }
+        f.write_str(")")
+    }
+}

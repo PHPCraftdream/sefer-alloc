@@ -345,6 +345,22 @@ fn dbg_rollback_reenterable_happy_path_and_not_applicable_arm() {
     unsafe { drop(Box::from_raw(p.as_ptr())) };
 }
 
+#[test]
+fn debug_reports_the_three_states_without_a_t_debug_bound() {
+    // Payload deliberately does not implement Debug -- this compiling at all
+    // is part of what the test proves (no `T: Debug` bound leaks through).
+    let cell: RacyPtrCell<Payload> = RacyPtrCell::new();
+    assert_eq!(format!("{cell:?}"), "RacyPtrCell(Uninit)");
+
+    let p = cell.get_or_try_init(|| Some(leak(0xBEEF))).unwrap();
+    assert_eq!(format!("{cell:?}"), format!("RacyPtrCell(Ready({p:p}))"));
+
+    // SAFETY: p was leaked exactly once by leak()'s Box::leak and never
+    // freed since; reclaiming it here (once, at test end) pairs with that
+    // leak.
+    unsafe { drop(Box::from_raw(p.as_ptr())) };
+}
+
 /// This does not test `#[repr(transparent)]` itself -- the compiler already
 /// rejects a `PhantomData` field that would violate it, so a wrong
 /// `repr(transparent)` is a compile error, not a silent bug. What this DOES

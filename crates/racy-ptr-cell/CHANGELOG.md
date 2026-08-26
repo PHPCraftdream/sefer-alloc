@@ -68,6 +68,10 @@ before it.
   `AtomicPtr<T>` it wraps: the cell only stores and hands back a raw
   `*mut T` / `NonNull<T>` and never dereferences it — whether the pointee is
   safe to access across threads is the caller's `unsafe` contract.
+- **`Debug` impl for `RacyPtrCell<T>`**: prints a diagnostic three-state
+  classification (`Uninit` / `Initializing` / `Ready(<address>)`) with no
+  `T: Debug` bound and no dereference of the pointee, so a downstream struct
+  embedding the cell (e.g. as allocator metadata) can `#[derive(Debug)]` too.
 - **Stable test-probe API**: `dbg_is_ready()` (single-`Acquire`-load
   readiness probe) and `dbg_rollback_reenterable() -> RollbackProbe`
   (drives a live cell through the exact `null → sentinel → rollback →
