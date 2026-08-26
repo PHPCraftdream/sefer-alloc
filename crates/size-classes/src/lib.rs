@@ -363,10 +363,13 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// increasing array. Note, though, that [`build_table`]'s own output always
 /// has every entry a multiple of `min_block`; a hand-built `table` that
 /// violates that (while still passing every check below) can produce an
-/// entry `class_for`'s bucket rounding never selects -- e.g. `min_block =
+/// entry the documented bucket lookup never selects -- e.g. `min_block =
 /// 16`, `table = [16, 24, 32]`: bucket `(16, 32]` resolves straight to `32`,
 /// leaving `24` monotonicity-valid but permanently unreachable through the
-/// public lookup path.
+/// public lookup path. (There is no public constructor that feeds a
+/// hand-built `table` into [`SizeClasses::class_for`] -- [`SizeClasses::build`]
+/// always derives its table from [`build_table`] -- so this is a property of
+/// the derived LUT itself, not of `class_for`.)
 ///
 /// # Panics
 ///
