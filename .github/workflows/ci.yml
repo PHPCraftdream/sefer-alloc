@@ -1835,7 +1835,7 @@ jobs:
       # all -- `size-classes` had ZERO `cargo test` coverage anywhere in CI,
       # the identical gap class as the `tagged-index-stack` (task #772
       # F4-F5) and `once-ptr-cell` (task #773 F1) steps in this same job.
-      # All 14 of the crate's tests, including the 3 regression tests this
+      # All of the crate's tests, including the 3 regression tests this
       # round's fix commits added (#701, #729, #730), had never run in CI.
       # The `--release` row specifically matters here, mirroring the
       # `once-ptr-cell` release-row rationale immediately below: task #729's
