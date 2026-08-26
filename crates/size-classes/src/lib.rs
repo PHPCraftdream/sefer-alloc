@@ -84,11 +84,12 @@ pub struct Params<'a> {
     /// are **machine-checked**: a non-`min_block`-multiple entry, an entry
     /// below `min_block` (rejects the degenerate `0` "class"), or a
     /// non-strictly-increasing entry panics identically in `const` evaluation
-    /// (compile error) and at runtime in [`build_table`], and disjointness
-    /// from the geometric run — together with global table monotonicity — is
-    /// separately machine-checked in [`build_size2class`]. Typical uses:
-    /// page-aligned classes, an exact size the geometric run skips, a
-    /// feature-gated medium tier.
+    /// (compile error) and at runtime in [`build_table`], which also checks
+    /// disjointness from the geometric run at its own chokepoint (the merged
+    /// table must itself be strictly increasing); [`build_size2class`] keeps
+    /// the same check as defense-in-depth for a hand-built table that
+    /// bypasses [`build_table`] entirely. Typical uses: page-aligned classes,
+    /// an exact size the geometric run skips, a feature-gated medium tier.
     ///
     /// task #728 (rust-intel audit §B1b, INFO): `Params`'s borrowed
     /// lifetime `'a` was reviewed and is justified, not a defect — this is
