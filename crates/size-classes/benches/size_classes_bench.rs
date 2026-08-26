@@ -34,7 +34,10 @@ const SEFER_PARAMS: Params = Params::new(
 const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
 const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
 const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
-const SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
+// `static`, not `const`: matches the crate's own recommendation (a `const`
+// this size re-materializes at every use site) and the production shim's
+// `static SC` (src/alloc_core/size_classes.rs).
+static SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
 
 // Slow-path (size, align) pairs. Keep in sync with tests/builder.rs.
 const JUMP_A: (usize, usize) = (1025, 256);

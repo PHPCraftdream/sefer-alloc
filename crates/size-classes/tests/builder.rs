@@ -857,7 +857,7 @@ fn readme_example_compiles_and_derives_its_generics() {
     const TABLE: [usize; N] = build_table::<N>(&PARAMS);
     const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 
-    const SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+    static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 
     assert_eq!(SC.count(), N);
     assert_eq!(SC.small_max(), TABLE[N - 1]);

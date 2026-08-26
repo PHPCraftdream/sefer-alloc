@@ -49,7 +49,9 @@ const N: usize = GEO_COUNT + EXTRAS.len();
 const TABLE: [usize; N] = build_table::<N>(&PARAMS);
 const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 
-const SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+// `static`, not `const`: a `const` this size re-materializes its embedded
+// tables at every use site; `static` keeps one fixed-address copy.
+static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 
 // SC.class_for(size, align) -> Option<usize>
 // SC.block_size(idx) -> usize;  SC.count() -> usize;  SC.small_max() -> usize;

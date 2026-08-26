@@ -474,8 +474,10 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// Deliberately NOT `Copy`: an instance embeds both tables, so a realistic
 /// scheme is ~16 KiB, and `Copy` would give that a `let a = b;`-cheap
 /// syntax. `Clone` keeps explicit duplication available while forcing the
-/// call site to say so. Intended use is a `const`/`static` referenced in
-/// place; no method needs ownership.
+/// call site to say so. Intended use is a `static` referenced in place (a
+/// `const` this size re-materializes at every use site, duplicating the
+/// embedded tables -- see `clippy::large_const_arrays`); no method needs
+/// ownership.
 #[derive(Debug, Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
