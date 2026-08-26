@@ -135,29 +135,37 @@ fn panicking_init_rolls_back_and_subsequent_call_succeeds() {
 }
 
 #[test]
-fn unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins() {
-    // The property the test above does NOT cover, and this crate's own
-    // RollbackGuard doc names as a coverage gap explicitly: a loser thread
-    // that is ALREADY spinning inside get_or_try_init, observing the
-    // sentinel, at the exact moment the winner's init unwinds. The current
-    // unconditional Release rollback makes this correct today -- this is
-    // not a known bug -- but a future change that skipped the rollback
-    // conditionally (e.g. "only roll back if no loser is observed waiting")
-    // could pass the OTHER panic test above (which never has a loser
-    // waiting at all) while reintroducing exactly this livelock.
+fn concurrent_get_or_try_init_started_before_unwind_completes_still_succeeds() {
+    // What this test proves, precisely -- and what it does NOT: the loser
+    // thread's call to `get_or_try_init` is issued no later than the point
+    // where it observes the winner already holds the sentinel (`in_init`),
+    // and the winner cannot even BEGIN its unwind until it observes the
+    // loser's own "about to call" signal in return -- both of those orderings
+    // are real, `Release`/`Acquire`-backed guarantees, not timing. What is
+    // NOT guaranteed is which of the loser's two possible races actually
+    // happens after that: the scheduler could still run the winner's entire
+    // panic-unwind-rollback to completion BEFORE the loser's own
+    // `get_or_try_init` call reaches its first `compare_exchange` -- in which
+    // case the loser observes an already-rolled-back `null` and wins the CAS
+    // itself directly, never entering the loser/spin branch at all. Either
+    // way the loser must succeed within the timeout below, but only ONE of
+    // the two interleavings actually exercises the spin-and-wake path this
+    // test was originally written to pin down.
     //
-    // Deterministic ordering, not a timing guess: the winner announces
-    // `in_init` only after it already holds the sentinel (the CAS already
-    // succeeded by then); the loser waits for that flag before calling
-    // get_or_try_init at all, so its first CAS attempt is guaranteed to
-    // observe the sentinel (nothing else can have rolled it back yet --
-    // the winner is deliberately blocked below, waiting on the loser's own
-    // "about to call" signal, and cannot unwind before that). The only
-    // non-guaranteed part is exactly how many spin iterations the loser
-    // completes before the winner's unwind machinery finishes running the
-    // RollbackGuard's Drop -- a panic-driven stack unwind is orders of
-    // magnitude slower than a spin_loop iteration, so in practice the loser
-    // is spinning, not merely "about to call", well before rollback fires.
+    // An earlier version of this test and its name claimed the stronger,
+    // undemonstrated property ("a loser thread that is ALREADY spinning...
+    // at the exact moment the winner's init unwinds") on the strength of "a
+    // panic-driven unwind is orders of magnitude slower than a spin_loop
+    // iteration" -- true on average, but a probabilistic argument about
+    // relative speeds is not the same thing as a proof, and does not belong
+    // stated as one. Closing that gap for real needs a hook inside the
+    // loser's own CAS/spin path (a non-default verification feature, an
+    // internal unit target, or a loom-friendly abstraction) that this crate
+    // does not have and should not grow solely to make one integration test
+    // airtight -- see this crate's own repeated stance elsewhere against
+    // adding test-only production surface without a stronger reason. This
+    // test is renamed and reworded to state exactly the (still real, still
+    // useful) property it demonstrates instead.
     let cell = std::sync::Arc::new(RacyPtrCell::<Payload>::new());
     let in_init = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let loser_about_to_call = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -174,7 +182,7 @@ fn unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins() {
                 while !lw.load(Ordering::Acquire) {
                     std::thread::yield_now();
                 }
-                panic!("simulated init panic while a loser is already spinning");
+                panic!("simulated init panic with a concurrent caller in flight");
             })
         }));
         assert!(
@@ -203,13 +211,15 @@ fn unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins() {
     // timeout rather than a wedged test run -- the exact pattern the
     // existing panic-rollback test above already establishes.
     let loser_succeeded = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
-        "the loser did not return within 5s -- a loser already spinning \
+        "the loser did not return within 5s -- a concurrent caller in flight \
          when the winner's init unwound was not woken (the INITIALIZING \
          sentinel is stuck)",
     );
     assert!(
         loser_succeeded,
-        "the loser must successfully re-race and win the CAS after the winner's rollback"
+        "the concurrent caller must succeed after the winner's rollback -- either by \
+         re-racing and winning the CAS itself, or by observing the live sentinel and \
+         spinning until the winner's rollback wakes it"
     );
 
     // Green path only: both threads are known to have finished by now.

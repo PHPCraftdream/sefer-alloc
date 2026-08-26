@@ -142,21 +142,25 @@ unsafe impl<T> Sync for RacyPtrCell<T> {}
 /// `panicking_init_rolls_back_and_subsequent_call_succeeds` proves a
 /// strictly weaker property than the one described above — that a
 /// SUBSEQUENT call on an already-quiescent cell succeeds after a panicking
-/// init unwound and rolled back. The property that matters most — a loser
-/// thread ALREADY spinning inside `get_or_try_init` at the moment the
-/// winner's `init` unwinds — is proven by the same file's
-/// `unwind_while_a_loser_is_already_spinning_wakes_it_and_it_wins`: a
-/// deterministic handshake (the loser only calls `get_or_try_init` after
-/// observing the winner already holds the sentinel, and the winner only
-/// unwinds after observing the loser is about to call) makes the loser's
-/// first CAS attempt provably see the live sentinel, so a future change
-/// that made the rollback conditional (e.g. skipping it when no loser is
-/// observed waiting) would reintroduce the spin and this test would time
-/// out, not merely fail an assertion. Not closed by a loom test: loom's
-/// deterministic scheduling model and `std::panic::catch_unwind` do not
-/// compose cleanly (loom needs to replay every interleaving of an unwind
-/// path, which its own docs do not treat as a first-class supported
-/// pattern).
+/// init unwound and rolled back. The same file's
+/// `concurrent_get_or_try_init_started_before_unwind_completes_still_succeeds`
+/// goes further: a real concurrent caller, whose own `get_or_try_init` call
+/// is issued no later than the point where it observes the winner already
+/// holds the sentinel, is never lost — either it observes the live sentinel
+/// and spins until the rollback wakes it, or it observes the already-rolled-
+/// back cell and wins the CAS itself directly. Both interleavings are
+/// possible depending on scheduling, and the test only guarantees success
+/// across whichever one actually happens; it does NOT deterministically
+/// force the spin-and-wake path specifically (that would need a hook inside
+/// the CAS/spin loop itself, which this crate does not have). A future
+/// change that made the rollback conditional (e.g. skipping it when no
+/// loser is observed waiting) would still very likely reintroduce a
+/// livelock this test would time out on, just not with airtight certainty
+/// that the spin branch itself was exercised on every run. Not closed by a
+/// loom test: loom's deterministic scheduling model and
+/// `std::panic::catch_unwind` do not compose cleanly (loom needs to replay
+/// every interleaving of an unwind path, which its own docs do not treat as
+/// a first-class supported pattern).
 struct RollbackGuard<'a, T> {
     ptr: &'a AtomicPtr<T>,
     defused: bool,
