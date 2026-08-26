@@ -51,11 +51,23 @@
 //! - **M4 (alignment & size fidelity):** the chosen class's `block_size` is
 //!   always `>= max(requested_size, requested_align)` AND a multiple of
 //!   `MIN_BLOCK` (a power of two) -- a STRIDE guarantee (see the crate's own
-//!   `SizeClasses::class_for` doc). It yields an aligned block ADDRESS
-//!   because small segments are additionally reserved with a base aligned to
-//!   `SEGMENT` (`super::os::SEGMENT`, 4 MiB -- see `os.rs`), which divides
-//!   every power-of-two `align` this scheme ever serves; the crate itself
-//!   has no notion of that base and cannot check it.
+//!   `SizeClasses::class_for` doc); the crate itself has no notion of an
+//!   address and cannot check the base-alignment precondition its own doc
+//!   requires. Sefer satisfies it via two facts together, not the segment
+//!   reservation alone: every small segment's base is `SEGMENT`-aligned
+//!   (`super::os::SEGMENT`, 4 MiB -- see `os.rs`), AND `carve_block` places
+//!   every block at that base plus an ABSOLUTE multiple of `block_size`
+//!   (`align_up(bump, block_size)` in segment-relative coordinates --
+//!   `alloc_core_small.rs`), not merely somewhere past the metadata prefix.
+//!   Every `align` this scheme ever serves divides both `block_size` (the
+//!   crate's own stride guarantee) and `SEGMENT` (16 KiB / 1 MiB largest
+//!   served class both divide 4 MiB) -- so `block_addr = base +
+//!   m*block_size` is `align`-aligned. The segment base's own alignment
+//!   would NOT be sufficient by itself: the metadata prefix before it is
+//!   only `PAGE`-aligned (`segment_header_layout.rs`), so relying on the
+//!   base alone -- without `carve_block`'s own alignment to `block_size` --
+//!   would silently misalign every `align = 8192/16384` request in a
+//!   default build.
 //! - The smallest class is `>= NODE_SIZE` (asserted in `segment_header.rs`).
 
 use size_classes::{size2class_len, Params, SizeClasses as SizeClassesImpl};
