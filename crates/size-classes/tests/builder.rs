@@ -396,9 +396,11 @@ fn min_step_fallback_overflow_panics_instead_of_silently_wrapping() {
 // wrapped to `0` instead of panicking -- the exact class of release-silent,
 // profile-dependent bug the `checked_mul`/`checked_add` fixes above already
 // exist to prevent for the geometric advance. These are runtime (not
-// `const`) calls specifically because `const` evaluation already traps on
-// overflow regardless of profile -- the bug these tests pin only existed at
-// runtime, in `release`, before the fix.
+// `const`) calls to keep the reproduction simple (no extra `const`
+// binding); the bug these tests pin is release-profile-specific either
+// way, `const` or runtime -- const-eval overflow checks follow the
+// `overflow-checks` profile for a `const fn`'s body (task #1423/#1431,
+// empirically verified), not a blanket "always traps" rule.
 
 #[test]
 #[should_panic(expected = "size2class_len: max_class / min_block + 1 overflows usize")]

@@ -213,9 +213,11 @@ impl SizeClasses {
     /// `SizeClasses::class_for` for the fast/slow (#114/B1 divisibility-jump)
     /// path detail.
     ///
-    /// `size` here is already clamped to `>= MIN_BLOCK` by every caller (see
-    /// e.g. `AllocCore::alloc`/realloc, the registry heap-core entry points,
-    /// and the `SegmentLayout::class_for` re-export).
+    /// `size` here is already clamped to `>= MIN_BLOCK` by every allocator
+    /// entry point that calls this (`AllocCore::alloc`/realloc, the registry
+    /// heap-core entry points). The `SegmentLayout::class_for` re-export
+    /// forwards `size` unclamped -- clamping there is its OWN caller's
+    /// documented contract, not this function's.
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
         SC.class_for(size, align)

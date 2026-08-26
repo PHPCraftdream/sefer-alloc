@@ -320,11 +320,12 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 // increasing, just silently wrong. `checked_mul`/
                 // `checked_add` turn a release-silent wrong-table bug into
                 // an always-panicking one, with a diagnostic naming the
-                // actual overflow; in `const` context this was ALREADY a
-                // hard compile error either way (const-eval traps on
-                // overflow regardless of profile), so this fix's real
-                // effect is entirely on the previously-unguarded runtime
-                // call sites.
+                // actual overflow -- in BOTH `const` and runtime contexts:
+                // const-eval overflow checks follow the `overflow-checks`
+                // profile for a `const fn`'s body (task #1423/#1431,
+                // empirically verified), so a `release`-profile `const`
+                // consumer of this fix was silently wrong before it too,
+                // not just runtime call sites.
                 let mut next = cur
                     .checked_mul(num)
                     .expect("geometric progression overflows usize -- reduce geo_count/growth")
