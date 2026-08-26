@@ -187,6 +187,12 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// `const fn` cannot call `slice::sort`), keeping the combined table strictly
 /// increasing and every entry a multiple of `min_block`.
 ///
+/// `growth = (0, den)` is a deliberately valid scheme, not a contract
+/// violation: a zero numerator makes the geometric term always `<= prev`, so
+/// every class falls back to the `min_block`-step minimum, degrading the
+/// whole run to a flat `min_block`, `2 * min_block`, `3 * min_block`, …
+/// sequence.
+///
 /// # Panics
 ///
 /// Panics -- identically in `const` evaluation and at runtime, since this is
