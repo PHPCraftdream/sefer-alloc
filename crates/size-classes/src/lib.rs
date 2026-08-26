@@ -553,20 +553,30 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `size2class()[(size - 1) >> min_block_shift()]`, which has TWO
     /// preconditions this array does not enforce:
     ///
-    /// - **`size >= 1`** — `size - 1` underflows for `size == 0`.
-    /// - **`size <= small_max()`** for a genuine classification — beyond
-    ///   that boundary the raw index is NOT uniformly clamped:
-    ///   - a size still landing in the last bucket (index `L - 1`, i.e.
-    ///     `small_max() < size <= L * min_block()`) IS in-bounds and returns
-    ///     the clamped sentinel — the LAST class index, a false "fits"
-    ///     instead of the `None` [`class_for`](Self::class_for) would give;
-    ///   - a larger size computes an index `>= L`, which is genuinely
-    ///     OUT-OF-BOUNDS array indexing and panics, not a sentinel.
+    /// - **`size >= 1`** — `size - 1` underflows for `size == 0`; guard it
+    ///   with `size.checked_sub(1)` if `size` may be `0`.
+    /// - **`size <= small_max()`** for a genuine classification. Do NOT
+    ///   derive this bound as a byte size (`L * min_block()` is NOT
+    ///   guaranteed to fit `usize`, even for a fully valid scheme — e.g.
+    ///   `min_block = 1 << 62`, `L = 4` gives `L * min_block() == 2^64`,
+    ///   already exercised by this crate's own `extreme64_overflow` test
+    ///   fixture). Compare `size` to [`small_max`](Self::small_max)
+    ///   directly, or reason about the INDEX instead — beyond
+    ///   `small_max()` the raw index is NOT uniformly clamped:
+    ///   - `idx == L - 1` IS in-bounds and returns the clamped sentinel —
+    ///     the LAST class index, a false "fits" instead of the `None`
+    ///     [`class_for`](Self::class_for) would give;
+    ///   - `idx >= L` is genuinely OUT-OF-BOUNDS array indexing and panics,
+    ///     not a sentinel.
     ///
-    /// [`class_for`](Self::class_for) applies both guards (and the `align`
-    /// predicate this raw LUT ignores entirely) before ever indexing —
-    /// prefer it unless you specifically need the raw LUT and are prepared
-    /// to enforce both preconditions yourself.
+    /// [`class_for`](Self::class_for) avoids both pitfalls: it indexes by
+    /// `need = max(size, align)`, which is always `>= 1` given `align`'s
+    /// own power-of-two contract (so the `size - 1` underflow above never
+    /// applies to it — `size` itself is never validated, `need` just
+    /// happens to always be in range), and it rejects `need > small_max`
+    /// before ever indexing — plus applies the `align` predicate this raw
+    /// LUT ignores entirely. Prefer it unless you specifically need the
+    /// raw LUT and are prepared to enforce both preconditions yourself.
     #[must_use]
     pub const fn size2class(&self) -> &[u8; L] {
         &self.size2class
