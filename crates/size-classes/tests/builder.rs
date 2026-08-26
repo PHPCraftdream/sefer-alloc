@@ -334,7 +334,7 @@ fn hand_built_overlapping_table_panics_in_build_size2class() {
 #[should_panic(expected = "every entry must be >= min_block")]
 fn extras_zero_class_panics() {
     // size-classes publication audit run 1 (Sol-codex, P2-2), the
-    // "соседний непроверенный случай": `extras = [0]` passed both the
+    // adjacent unverified case: `extras = [0]` passed both the
     // multiple-of-min_block check (0 is a multiple of everything) and the
     // strictly-increasing-among-itself check (only one entry), so it
     // reached the table as a zero-sized class before `min_block`'s own
@@ -565,7 +565,7 @@ fn size2class_len_overflow_panics_instead_of_silently_wrapping() {
 #[test]
 #[should_panic(expected = "size2class_len: max_class / min_block + 1 overflows usize")]
 fn build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l() {
-    // The report's own contrpример: N = 1, table = [usize::MAX],
+    // The report's own counterexample: N = 1, table = [usize::MAX],
     // min_block = 1 -> the mathematically correct L is `size2class_len`'s
     // own overflow panic, since `usize::MAX / 1 + 1` does not fit in
     // `usize`. Pre-fix, `build_size2class`'s inline `small_max / min_block +
