@@ -352,6 +352,98 @@ fn extras_zero_class_panics() {
     let _ = build_table::<N>(&params);
 }
 
+// rush-tests review (T2/task #1477): eight documented `# Panics`
+// conditions (plus `block_size`'s out-of-range panic) had zero test
+// coverage anywhere in the crate -- grep-verified against every
+// production assert's exact message string before writing these. Each
+// pins one precondition at its own call site, so a deleted/reworded
+// guard fails here instead of only in a future audit's static reading.
+
+#[test]
+#[should_panic(expected = "size2class_len: min_block must be a power of two")]
+fn size2class_len_rejects_non_pow2_min_block() {
+    let _ = size2class_len(64, 12);
+}
+
+#[test]
+#[should_panic(expected = "min_block must be a power of two")]
+fn build_table_rejects_non_pow2_min_block() {
+    let params = Params::new(12, (5, 4), 1, &[], 1 << 20);
+    let _ = build_table::<1>(&params);
+}
+
+#[test]
+#[should_panic(expected = "min_block must be a power of two")]
+fn build_size2class_rejects_non_pow2_min_block() {
+    const TABLE: [usize; 3] = [16, 32, 48];
+    let _ = build_size2class::<3, 4>(&TABLE, 12);
+}
+
+#[test]
+#[should_panic(expected = "geo_count must be > 0")]
+fn build_table_rejects_zero_geo_count() {
+    let params = Params::new(16, (5, 4), 0, &[16, 32], 1 << 20);
+    let _ = build_table::<2>(&params);
+}
+
+#[test]
+#[should_panic(expected = "growth denominator must be > 0")]
+fn build_table_rejects_zero_growth_denominator() {
+    // The guard exists specifically to replace a bare "attempt to divide
+    // by zero" with a named diagnostic -- pin the named message, not just
+    // that SOME panic occurs.
+    let params = Params::new(16, (1, 0), 1, &[], 1 << 20);
+    let _ = build_table::<1>(&params);
+}
+
+#[test]
+#[should_panic(expected = "N must equal geo_count + extras.len()")]
+fn build_table_rejects_n_mismatch() {
+    // geo_count=3 + extras.len()=1 == 4, but N is declared as 5 -- the
+    // single likeliest real-user error when hand-deriving the const
+    // generic.
+    let params = Params::new(16, (5, 4), 3, &[64], 1 << 20);
+    let _ = build_table::<5>(&params);
+}
+
+#[test]
+#[should_panic(expected = "Params::extras: must be strictly increasing")]
+fn build_table_rejects_non_increasing_extras_among_themselves() {
+    // Distinct from `extras_overlapping_geometric_run_panics_in_build_table`
+    // above: [64, 32] is not increasing WITHIN `extras` itself, never mind
+    // the geometric run -- the per-entry check this test pins fires before
+    // the merged-table check ever runs.
+    let params = Params::new(16, (5, 4), 4, &[64, 32], 1 << 20);
+    let _ = build_table::<6>(&params);
+}
+
+#[test]
+#[should_panic(expected = "table must be non-empty")]
+fn build_size2class_rejects_empty_table() {
+    const TABLE: [usize; 0] = [];
+    let _ = build_size2class::<0, 1>(&TABLE, 16);
+}
+
+#[test]
+#[should_panic(expected = "L must equal size2class_len(max_class, min_block)")]
+fn build_size2class_rejects_wrong_l() {
+    // Correct L for table=[16,32,48], min_block=16 is size2class_len(48,16)
+    // == 4; 5 is deliberately wrong. Distinct from the OVERFLOW variant
+    // (`build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l`
+    // below) -- this is the plain non-overflowing mismatch.
+    const TABLE: [usize; 3] = [16, 32, 48];
+    let _ = build_size2class::<3, 5>(&TABLE, 16);
+}
+
+#[test]
+#[should_panic(expected = "index out of bounds")]
+fn block_size_rejects_out_of_range_index() {
+    // Documented `# Panics` on `SizeClasses::block_size`: "if idx >= N".
+    // Every production call site only ever passes an index `class_for`
+    // returned, so this path is otherwise never exercised.
+    let _ = DOMAIN_SC.block_size(DOMAIN_N);
+}
+
 // task #730 (rust-intel audit §D1a/§F1, INFO): `reference_table`'s
 // rounding/spacing core (`let mut next = (cur * num).div_ceil(den); next =
 // (next + mask) & !mask;`, near the top of this file) is BYTE-IDENTICAL to
