@@ -395,19 +395,22 @@ fn real_survives_oom_rollback_two_threads() {
 /// Pins [`RacyPtrCell::get`]'s own published contract directly, rather than
 /// inferring it from the exactly-once oracles: while a winner thread really
 /// holds the `INITIALIZING` sentinel, a concurrent reader's `get()` must
-/// return `None` — never `Some(sentinel)`, never `Some(null)` — and once the
-/// winner has published, `get()` must return that exact pointer.
+/// return `None` — and once the winner has published, `get()` must return
+/// that exact pointer.
 ///
-/// The exactly-once tests above catch an `is_ready` regression only
-/// indirectly (a caller handed address `1` would fail on the `init_marker`
-/// dereference). This one states the reader-side contract as its own
-/// property: the reader calls `get()` and asserts, for every observation at
-/// every interleaving, that the value is either `None` or the real published
-/// pointer.
-///
-/// The winner deliberately does an observable store inside `init`, so the
-/// sentinel is genuinely held across a scheduling point loom can interleave
-/// the reader into.
+/// A genuine two-sided handshake, not a one-shot announcement: the winner
+/// stores `in_init = true` and then WAITS (spinning, `loom`-fair) for the
+/// reader's go-ahead before publishing. The reader waits for `in_init`,
+/// then calls `get()` — at that point the winner is PROVABLY still holding
+/// the sentinel, not merely scheduled to maybe be holding it, so the
+/// assertion is `assert_eq!(reader's get(), None)`, not a `match` that
+/// accepts either answer. Only after that strict assertion does the reader
+/// signal the winner to continue and publish. An earlier version of this
+/// test recorded `in_init` into a variable it never read from — it could
+/// pass on a build where the reader ran entirely before the winner even
+/// started, which proves the weaker "get() never reports null/sentinel as
+/// Some" property (already covered by the exactly-once tests' pointer
+/// checks) but not the temporal claim in this test's own name.
 #[test]
 fn real_get_returns_none_while_a_winner_holds_the_sentinel() {
     let mut builder = loom::model::Builder::new();
@@ -415,52 +418,44 @@ fn real_get_returns_none_while_a_winner_holds_the_sentinel() {
     builder.check(|| {
         let cell: Arc<RacyPtrCell<Payload>> = Arc::new(RacyPtrCell::new());
         let in_init = Arc::new(AtomicBool::new(false));
+        let reader_done = Arc::new(AtomicBool::new(false));
 
-        // Winner: holds the sentinel across an observable step inside init.
-        let (cw, iw) = (Arc::clone(&cell), Arc::clone(&in_init));
+        // Winner: announces it holds the sentinel, then blocks until the
+        // reader has taken its (strict) observation, before publishing.
+        let (cw, iw, dw) = (
+            Arc::clone(&cell),
+            Arc::clone(&in_init),
+            Arc::clone(&reader_done),
+        );
         let w = thread::spawn(move || {
             cw.get_or_try_init(|| {
-                // Announce that the sentinel is now held, giving the reader
-                // below a scheduling point to be interleaved into rather
-                // than landing entirely before the claim CAS.
                 iw.store(true, Ordering::Release);
+                while !dw.load(Ordering::Acquire) {
+                    loom::thread::yield_now();
+                }
                 Some(make_payload())
             })
             .expect("init must succeed (no OOM in this model)")
         });
 
-        // Reader: only ever calls the public `get()`, never `get_or_try_init`.
-        let (cr, ir) = (Arc::clone(&cell), Arc::clone(&in_init));
+        // Reader: waits for the winner to provably hold the sentinel, then
+        // calls the public `get()` and requires exactly `None` — not
+        // "either answer" — before releasing the winner to publish.
+        let (cr, ir, dr) = (
+            Arc::clone(&cell),
+            Arc::clone(&in_init),
+            Arc::clone(&reader_done),
+        );
         let r = thread::spawn(move || {
-            // Two observations are enough — loom explores the scheduling,
-            // not the iteration count.
-            for _ in 0..2 {
-                let _init_started = ir.load(Ordering::Acquire);
-                match cr.get() {
-                    None => {
-                        // UNINIT or INITIALIZING — both correct for `get()`.
-                    }
-                    Some(p) => {
-                        let addr = p.as_ptr().addr();
-                        assert_ne!(addr, 0, "get() must never report null as Some");
-                        assert_ne!(
-                            addr, SENTINEL,
-                            "get() must never report the INITIALIZING sentinel as Some \
-                             — a reader would treat a mid-init cell as published"
-                        );
-                        // SAFETY: `get()` returned `Some`, so per its own
-                        // contract the winner's `Release` publish
-                        // happened-before this `Acquire` load and the pointee
-                        // is fully written.
-                        let marker = unsafe { (*p.as_ptr()).init_marker.load(Ordering::Relaxed) };
-                        assert_eq!(
-                            marker, 0xDEAD_BEEF,
-                            "a pointer handed out by get() must point at a fully \
-                             constructed pointee"
-                        );
-                    }
-                }
+            while !ir.load(Ordering::Acquire) {
+                loom::thread::yield_now();
             }
+            assert_eq!(
+                cr.get(),
+                None,
+                "get() must return None while the winner provably holds the sentinel"
+            );
+            dr.store(true, Ordering::Release);
         });
 
         let winner = w.join().unwrap();
@@ -472,6 +467,21 @@ fn real_get_returns_none_while_a_winner_holds_the_sentinel() {
             cell.get(),
             Some(winner),
             "once the winner has published, get() must return that exact pointer"
+        );
+        let addr = winner.as_ptr().addr();
+        assert_ne!(addr, 0, "get() must never report null as Some");
+        assert_ne!(
+            addr, SENTINEL,
+            "get() must never report the INITIALIZING sentinel as Some \
+             — a reader would treat a mid-init cell as published"
+        );
+        // SAFETY: the cell is READY (checked above), so per `get`'s own
+        // contract the winner's `Release` publish happened-before this
+        // `Acquire`-backed read and the pointee is fully written.
+        let marker = unsafe { (*winner.as_ptr()).init_marker.load(Ordering::Relaxed) };
+        assert_eq!(
+            marker, 0xDEAD_BEEF,
+            "the published pointer must point at a fully constructed pointee"
         );
 
         // SAFETY: `winner` is the single published pointer from
