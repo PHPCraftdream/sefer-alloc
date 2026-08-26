@@ -75,8 +75,12 @@ impl SegmentLayout {
     pub const SIZE2CLASS: &'static [u8] = &super::size_classes::SIZE2CLASS;
 
     /// Resolve `(size, align)` to a small-class index, or `None` for the large
-    /// path. `size` must be `>= MIN_BLOCK` (the caller's contract; the public
-    /// allocator entry points clamp it). This is the O(1) lookup
+    /// path. The crate's own well-defined domain is `size >= 1` given
+    /// `align >= 1` (`need = max(size, align) >= 1`); `size >= MIN_BLOCK` is
+    /// the public allocator entry points' own clamping CONVENTION, not a
+    /// requirement `class_for` itself imposes -- a test driving this forwarder
+    /// directly with `size < MIN_BLOCK` (e.g. to force a specific slow-path
+    /// seed) is in-contract. This is the O(1) lookup
     /// (`SIZE2CLASS[(size-1) >> MIN_BLOCK_SHIFT]`) — exposed so tests can drive
     /// it directly and compare against an independent linear-scan reference.
     ///
