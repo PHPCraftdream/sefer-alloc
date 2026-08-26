@@ -27,6 +27,7 @@
 
 use std::hint::black_box;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 
 use bench_scale_tool::Harness;
@@ -71,29 +72,58 @@ fn init_body(p: NonNull<Payload>) -> Option<NonNull<Payload>> {
     Some(p)
 }
 
+/// What a contender does after the `start` barrier this round. Set by the
+/// benchmark thread before ITS OWN barrier crossing, so a round's actual
+/// work always matches whichever row is currently being timed regardless of
+/// row execution order — a contender never has to guess.
+const MODE_CONTEND: u8 = 0;
+const MODE_BARRIERS_ONLY: u8 = 1;
+const MODE_SHUTDOWN: u8 = 2;
+
 /// One round of the contention workload: a fresh cell is placed in `slot`,
-/// all `CONTENDERS` threads meet at `start`, every one of them calls
-/// `get_or_try_init` on it (exactly one wins and runs `init`; the rest take
-/// the loser spin), and they meet again at `done`.
+/// all `CONTENDERS` threads meet at `start`, then behave according to
+/// `mode` — either every one of them calls `get_or_try_init` on the round's
+/// cell (exactly one wins and runs `init`; the rest take the loser spin),
+/// or none of them touch the cell at all — and they meet again at `done`.
 struct Contention {
     slot: Mutex<Option<Arc<RacyPtrCell<Payload>>>>,
     start: Barrier,
     done: Barrier,
+    mode: AtomicU8,
 }
 
 impl Contention {
-    /// The per-round work a contender performs: meet at `start`, race for
-    /// the round's cell, meet at `done`.
-    fn round(&self, payload: NonNull<Payload>) {
+    /// The per-round work a contender performs: meet at `start`, act
+    /// according to `mode`, meet at `done` (skipped on shutdown). Returns
+    /// `false` once shutdown is observed, so the caller's loop can end and
+    /// the thread becomes joinable.
+    ///
+    /// Ordering: the benchmark thread's `mode.store` always happens, in
+    /// real time, strictly before any contender's `start.wait()` can
+    /// return — a `Barrier` only releases waiters once every participant,
+    /// including the benchmark thread, has arrived, and the benchmark
+    /// thread performs its store before its own arrival. `Release`/`Acquire`
+    /// here make that ordering explicit in the code rather than resting on
+    /// an unstated argument about `Barrier`'s internals.
+    fn round(&self, payload: NonNull<Payload>) -> bool {
         self.start.wait();
-        let cell = self
-            .slot
-            .lock()
-            .expect("contention slot mutex poisoned")
-            .clone()
-            .expect("the benchmark thread publishes a cell before each round");
-        black_box(cell.get_or_try_init(|| init_body(payload)));
-        self.done.wait();
+        match self.mode.load(Ordering::Acquire) {
+            MODE_SHUTDOWN => return false,
+            MODE_BARRIERS_ONLY => {
+                self.done.wait();
+            }
+            _ => {
+                let cell = self
+                    .slot
+                    .lock()
+                    .expect("contention slot mutex poisoned")
+                    .clone()
+                    .expect("the benchmark thread publishes a cell before each round");
+                black_box(cell.get_or_try_init(|| init_body(payload)));
+                self.done.wait();
+            }
+        }
+        true
     }
 }
 
@@ -156,27 +186,30 @@ fn main() {
     // full `start` barrier + every contender's `get_or_try_init` on the same
     // fresh cell + a `done` barrier. Two barrier crossings are therefore
     // INSIDE the measurement; `baseline/barriers_only` runs the identical
-    // barrier pair with no cell at all, so the protocol's own contended cost
-    // is the DIFFERENCE between the two rows, not the contention row's
-    // absolute value. Do not quote the absolute number as "the cost of a
-    // contended init".
+    // barrier pair with contenders explicitly in `MODE_BARRIERS_ONLY`, which
+    // makes them skip the mutex lock, the `Arc` clone, and the cell call
+    // entirely — an earlier version of this row left contenders running an
+    // unconditional loop that always did the cell call regardless of which
+    // row the benchmark thread was timing, so the "baseline" secretly still
+    // paid for warm `get_or_try_init` calls on three threads. With the mode
+    // gate, the protocol's own contended cost is genuinely the DIFFERENCE
+    // between the two rows. Do not quote the absolute number as "the cost
+    // of a contended init".
     //
-    // The contender threads are spawned once, live for the whole run, and
-    // are never joined. Once the harness moves past the contention rows they
-    // simply block forever on a `start` barrier that will never again reach
-    // its participant count, and the process exit reaps them. That is
-    // deliberate: the harness offers no post-run hook to join them, and a
-    // shutdown flag would be unreachable for exactly the same reason the
-    // barrier is — the benchmark thread has already stopped participating.
+    // The contender threads are spawned once and live until explicitly shut
+    // down after `h.run()` returns (see below) — not left to be reaped at
+    // process exit.
+    let mut worker_handles = Vec::with_capacity(CONTENDERS - 1);
     {
         let ctl = Arc::new(Contention {
             slot: Mutex::new(None),
             start: Barrier::new(CONTENDERS),
             done: Barrier::new(CONTENDERS),
+            mode: AtomicU8::new(MODE_CONTEND),
         });
         for _ in 1..CONTENDERS {
             let c = Arc::clone(&ctl);
-            std::thread::spawn(move || {
+            worker_handles.push(std::thread::spawn(move || {
                 // `NonNull<Payload>` is `!Send`, so each contender leaks its
                 // OWN process-lifetime payload here rather than receiving
                 // the benchmark thread's. Which one ends up published
@@ -184,10 +217,8 @@ fn main() {
                 // cell only stores the pointer, and all of them are equally
                 // valid, equally leaked, and identical in shape.
                 let mine = shared_payload();
-                loop {
-                    c.round(mine);
-                }
-            });
+                while c.round(mine) {}
+            }));
         }
 
         let bench_ctl = Arc::clone(&ctl);
@@ -196,6 +227,7 @@ fn main() {
             move || {
                 // UNTIMED: publish the fresh cell the whole cohort will race
                 // on this round.
+                bench_ctl.mode.store(MODE_CONTEND, Ordering::Release);
                 let cell = Arc::new(RacyPtrCell::<Payload>::new());
                 *bench_ctl
                     .slot
@@ -210,17 +242,31 @@ fn main() {
             },
         );
 
-        // Baseline: the same two barrier crossings, no cell.
+        // Baseline: the same two barrier crossings, contenders in
+        // MODE_BARRIERS_ONLY so they genuinely touch no cell this round.
         let base_ctl = Arc::clone(&ctl);
         h.bench_batched(
             "baseline/barriers_only",
-            move || Arc::clone(&base_ctl),
+            move || {
+                base_ctl.mode.store(MODE_BARRIERS_ONLY, Ordering::Release);
+                Arc::clone(&base_ctl)
+            },
             |ctl| {
                 ctl.start.wait();
                 ctl.done.wait();
             },
         );
-    }
 
-    h.run();
+        h.run();
+
+        // Shutdown: one more `start` crossing with MODE_SHUTDOWN releases
+        // every contender out of its loop (each returns `false` from
+        // `round` without touching `done`), then they are joined for real —
+        // no thread is left to be reaped at process exit.
+        ctl.mode.store(MODE_SHUTDOWN, Ordering::Release);
+        ctl.start.wait();
+    }
+    for handle in worker_handles {
+        handle.join().expect("contender thread must not panic");
+    }
 }
