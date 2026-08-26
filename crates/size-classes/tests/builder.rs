@@ -612,6 +612,31 @@ mod extreme64_overflow {
     }
 
     #[test]
+    fn raw_index_via_shift_avoids_the_overflowing_l_times_min_block_bound() {
+        // The size2class() doc (Sol-run6 P2-1/task #1467) warns against
+        // deriving the false-sentinel window as `size <= L * min_block()` --
+        // for THIS scheme `L * min_block == 4 * (1<<62) == 2^64`, which does
+        // not fit `usize`. Pins the doc's actual overflow-free alternative:
+        // derive the raw index via `checked_sub` + shift and compare it to
+        // `L - 1` directly, never via that overflowing byte-size bound.
+        let shift = EXTREME64_SC.min_block_shift();
+
+        for size in [EXTREME64_SMALL_MAX + 1, usize::MAX] {
+            let idx = size.checked_sub(1).expect("size > 0 here") >> shift;
+            assert_eq!(
+                idx,
+                EXTREME64_L - 1,
+                "size={size} must land on the sentinel bucket without computing L * min_block"
+            );
+            assert_eq!(
+                EXTREME64_SC.size2class()[idx] as usize,
+                EXTREME64_N - 1,
+                "size={size} sentinel must resolve to the last class"
+            );
+        }
+    }
+
+    #[test]
     fn class_for_next_multiple_overflow_returns_none() {
         let sc = extreme64_scheme_runtime();
         // Companion sanity: the slow path resolves normally on this scheme when
