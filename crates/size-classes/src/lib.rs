@@ -28,11 +28,9 @@
 //!   caller's classifier happens to handle silently falls through to the
 //!   caller's whole-segment path — a real bug class in hand-rolled allocators
 //!   (`sefer-alloc`'s own motivating case, the allocator this crate was
-//!   extracted from: `align >= 512`). The classifier picks an
-//!   align-*divisible* stride; align-aligned block *addresses* additionally
-//!   require the caller's carve base to be `align`-aligned — a documented
-//!   precondition of `class_for`, which this crate (sizes only, no
-//!   addresses) cannot check.
+//!   extracted from: `align >= 512`). The classifier picks an align-
+//!   *divisible* stride; see [`SizeClasses::class_for`]'s `# Preconditions`
+//!   for the separate base-address requirement this crate cannot check.
 //!
 //! ## The `huge` threshold is a policy parameter
 //!
@@ -64,11 +62,9 @@
 #[non_exhaustive]
 pub struct Params<'a> {
     /// The minimum block size and the fundamental small-class alignment. Must
-    /// be a power of two. Every generated class SIZE is a multiple of it, so
-    /// every stride PRESERVES whatever `min_block`-alignment the caller's
-    /// carve base already has -- it does not by itself make block ADDRESSES
-    /// `min_block`-aligned (see [`SizeClasses::class_for`]'s base-alignment
-    /// precondition).
+    /// be a power of two. Every generated class is a multiple of it -- see
+    /// [`SizeClasses::class_for`]'s `# Preconditions` for what that does and
+    /// does not guarantee about block addresses.
     pub min_block: usize,
     /// The geometric growth ratio as `(num, den)` — each class after the first
     /// is `round_up(prev * num / den, min_block)`, with a minimum step of
@@ -542,11 +538,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// (compile error) and at runtime.
     ///
     /// `small_align_max` — the alignment ceiling of the O(1) fast path — is set
-    /// to `min_block`: every class SIZE is a multiple of `min_block`, so the
+    /// to `min_block`: every class size is a multiple of `min_block`, so the
     /// stride trivially satisfies divisibility for any `align <= min_block`
-    /// (block ADDRESSES are aligned only if the caller's carve base is --
-    /// see [`class_for`](Self::class_for)'s base-alignment precondition).
-    /// Larger alignments take the divisibility-jump slow path in
+    /// (see [`class_for`](Self::class_for)'s `# Preconditions` for the
+    /// separate base-address requirement). Larger alignments take the
+    /// divisibility-jump slow path in
     /// [`class_for`](Self::class_for).
     #[must_use]
     pub const fn build(params: Params) -> Self {
@@ -668,18 +664,13 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `block_size % align == 0`. Returns the index of the smallest such class.
     ///
     /// The divisibility conjunct is a STRIDE property, not an address
-    /// guarantee. For blocks carved at `base + k * block_size`, `block_size %
-    /// align == 0` gives `address(k) % align == base % align` for every `k`:
-    /// the stride PRESERVES whatever alignment the carve base already has (so
-    /// no per-block padding is ever needed) — it cannot CREATE alignment the
-    /// base lacks. Block addresses are `align`-aligned iff the carve base is
-    /// — see the base-alignment precondition below.
+    /// guarantee — see `# Preconditions` below for what it does and does not
+    /// establish about block addresses.
     ///
     /// **Fast path (`align <= min_block`):** every class SIZE is a multiple of
     /// `min_block`, so the stride divisibility check is trivially satisfied —
-    /// one O(1) lookup. (Block ADDRESSES are `min_block`-aligned only if the
-    /// carve base is — same base-alignment precondition as the slow path,
-    /// below.)
+    /// one O(1) lookup (same base-alignment precondition as the slow path,
+    /// below).
     ///
     /// **Slow path (`align > min_block`, a power of two):** seed at the lookup
     /// entry covering `max(size, align)`, then jump forward over non-divisible
@@ -718,9 +709,13 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///   that does not fit — e.g. `class_for(20, 24)` returning a 32-byte
     ///   block, where `32 % 24 == 8`.
     ///
-    /// **The carve base must also be `align`-aligned.** This crate computes
-    /// over sizes only and never sees an address, so it CANNOT check this —
-    /// unlike the power-of-two contract above, it is not even
+    /// **The carve base must also be `align`-aligned.** For blocks carved at
+    /// `base + k * block_size`, `block_size % align == 0` gives `address(k) %
+    /// align == base % align` for every `k`: the stride PRESERVES whatever
+    /// alignment the carve base already has (so no per-block padding is ever
+    /// needed) — it cannot CREATE alignment the base lacks. This crate
+    /// computes over sizes only and never sees an address, so it CANNOT
+    /// check this — unlike the power-of-two contract above, it is not even
     /// `debug_assert`-able here. The caller must place block `0` of the run
     /// serving a returned class at an address `base` with `base % align ==
     /// 0` for every `align` it resolves through this scheme (the address

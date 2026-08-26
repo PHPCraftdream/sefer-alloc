@@ -59,8 +59,8 @@ before it.
     smallest class whose block is `>= max(size, align)` **and** a multiple of
     `align` (`None` routes to the caller's large path). O(1) fast path for
     `align <= min_block` (every class size is a multiple of `min_block`, so
-    the stride trivially satisfies divisibility; block ADDRESSES are
-    `min_block`-aligned only if the caller's carve base is); for larger
+    the stride trivially satisfies divisibility -- see below for the
+    separate base-address requirement); for larger
     power-of-two alignments, a provably
     equivalent **jump** slow path rounds the block up to the next multiple of
     `align` and re-seeds through the lookup, skipping whole runs of

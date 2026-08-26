@@ -22,11 +22,10 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   silently falls through to the caller's whole-segment path — a real bug
   class in hand-rolled allocators (`sefer-alloc`'s own motivating case, the
   allocator this crate was extracted from: `align >= 512`). The classifier
-  chooses an align-**divisible** stride; block
-  **addresses** are align-aligned iff the base you carve from is
-  (`address(k) = base + k * block_size` — stride divisibility preserves the
-  base's alignment, it cannot create it). This is the caller's documented
-  precondition, not a crate check — the crate never sees an address.
+  chooses an align-**divisible** stride; block **addresses** are
+  align-aligned only if the base you carve from is too — a caller-owned
+  precondition the crate cannot check itself (see `SizeClasses::class_for`'s
+  `# Preconditions` in the crate docs for the exact requirement).
 
 The "huge" threshold is a **policy parameter** (`Params::huge_threshold`); the
 crate has no notion of an OS segment size.
