@@ -703,7 +703,12 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         let mut i = seed;
         while i < N {
             let block = self.table[i];
-            if block.is_multiple_of(align) {
+            // review-2 P-1: `align` is contractually a power of two here
+            // (debug-asserted above; fast path already handles non-slow
+            // aligns), so mask == is_multiple_of but skips a division;
+            // matches `next_mult`'s idiom below. Measured ~24-45% faster on
+            // the two affected bench rows, see task #1426 commit.
+            if block & (align - 1) == 0 {
                 return Some(i);
             }
             // Smallest multiple of `align` strictly greater than `block` (align
