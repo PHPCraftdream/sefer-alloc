@@ -379,6 +379,191 @@ fn build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l() {
 }
 
 // ---------------------------------------------------------------------------
+// task #1417, P2-1 items 3 and 4: the two checked_* sites cc94a46 fixed but
+// its own regression tests did not pin -- `build_size2class`'s per-bucket
+// `need` clamp and `class_for`'s slow-path round-up. Both are exercised
+// through one shared, entirely `Params`-assemblable 64-bit scheme:
+//
+//   min_block = 1 << 62, geo_count = 1, extras = [2 << 62, 3 << 62]
+//     -> table = [1 << 62, 2 << 62, 3 << 62], small_max = 3 << 62,
+//        L = size2class_len(3 << 62, 1 << 62) = 4.
+//
+// geo_count = 1 never reaches the geometric advance (that only runs after
+// the FIRST push, guarded by `gi < geo_count`), so the scheme is legal for
+// any growth pair; (5, 4) matches the rest of this file.
+//
+// docs/reviews/2026-08-26-102907-size-classes-publication-audit-run-1-Sol-codex.md
+// (P2-1), fixed in cc94a46.
+
+const EXTREME64_MIN_BLOCK: usize = 1usize << 62;
+const EXTREME64_GEO_COUNT: usize = 1;
+const EXTREME64_EXTRAS: &[usize] = &[2 << 62, 3 << 62];
+const EXTREME64_N: usize = EXTREME64_GEO_COUNT + EXTREME64_EXTRAS.len();
+const EXTREME64_SMALL_MAX: usize = 3 << 62;
+const EXTREME64_L: usize = size2class_len(EXTREME64_SMALL_MAX, EXTREME64_MIN_BLOCK);
+const EXTREME64_PARAMS: Params = Params::new(
+    EXTREME64_MIN_BLOCK,
+    (5, 4),
+    EXTREME64_GEO_COUNT,
+    EXTREME64_EXTRAS,
+    1 << 20,
+);
+// The const-built scheme. With the clamp fix reverted, THIS const is a
+// hard E0080 compile error in every CHECKED context (a debug-profile build
+// of this test target) -- one of the two failure modes the first test below
+// uses to detect a reverted fix; see that test's comment for why NOTHING
+// can detect it under `--release`.
+const EXTREME64_SC: SizeClasses<EXTREME64_N, EXTREME64_L> = SizeClasses::build(EXTREME64_PARAMS);
+
+/// The same scheme built at runtime -- a plain call of the `const fn`, so
+/// overflow follows the RUNTIME profile (release wraps, debug traps), unlike
+/// `EXTREME64_SC`, which const-evaluates once at compile time.
+fn extreme64_scheme_runtime() -> SizeClasses<EXTREME64_N, EXTREME64_L> {
+    SizeClasses::build(EXTREME64_PARAMS)
+}
+
+#[test]
+fn build_size2class_bucket_need_overflow_clamps_to_last_class() {
+    // The top bucket k = L-1 = 3 computes (k + 1) * min_block = 4 * (1<<62)
+    // = 2^64, which does not fit in `usize`. cc94a46's `checked_mul` folds
+    // that into the existing `_ => small_max` clamp; the bare multiply it
+    // replaced wrapped to 0 in release.
+    //
+    // What the fix observably changed, and what this test therefore pins:
+    // pre-fix the scheme above was UNBUILDABLE in every CHECKED context --
+    // const evaluation was a hard E0080 compile error, and a runtime call
+    // panicked ("attempt to multiply with overflow"). Both halves are
+    // exercised here (`EXTREME64_SC` for the const path,
+    // `extreme64_scheme_runtime()` for the runtime path), so a reverted fix
+    // fails this test twice over in a debug build.
+    //
+    // Under `--release` the reverted fix is, by contrast, observationally
+    // EQUIVALENT -- no test can fail against it there, which is worth
+    // stating because the wrap itself is real: the top bucket is the only
+    // one that can overflow, and it wraps to exactly 0 (for every scheme
+    // whose top bucket overflows, L * min_block = small_max + min_block =
+    // 2^64); a wrapped `need = 0` can only make the monotone pointer
+    // advance LESS, and by bucket L-2 (whose need is exactly `small_max`)
+    // the pointer already sits on the last class -- so the wrapped and
+    // clamped tables coincide. Release const-eval wraps too (const-eval
+    // overflow checks follow the profile for const-fn bodies, unlike
+    // literal expressions such as `const X: u8 = 255 + 1`, which error in
+    // every profile). What remains release-pinned here is the table itself:
+    // the correct `[0, 1, 2, 2]`, verified against an overflow-safe
+    // reference below.
+    let rt = extreme64_scheme_runtime();
+
+    // Both evaluation contexts agree, and the scheme has the promised shape.
+    assert_eq!(EXTREME64_SC.table(), &[1usize << 62, 2 << 62, 3 << 62]);
+    assert_eq!(rt.table(), EXTREME64_SC.table());
+    assert_eq!(rt.size2class(), EXTREME64_SC.size2class());
+
+    // The clamp itself: the overflowing top bucket must resolve to the LAST
+    // class (the `small_max` sentinel), in both evaluation contexts.
+    assert_eq!(
+        rt.size2class()[EXTREME64_L - 1],
+        (EXTREME64_N - 1) as u8,
+        "top bucket must clamp to the last class"
+    );
+    assert_eq!(
+        EXTREME64_SC.size2class()[EXTREME64_L - 1],
+        (EXTREME64_N - 1) as u8
+    );
+
+    // Full-bucket scan, in the style of sefer_size2class_matches_scan_for_every_bucket.
+    // The reference `need` clamps the MULTIPLIER first: the true mathematical
+    // (k+1)*min_block exceeds small_max exactly when k+1 exceeds
+    // small_max/min_block, so the reference itself cannot overflow -- unlike
+    // the crate formula under test, which must survive (k+1)*min_block
+    // overflowing at k = L-1 and still land on the same answer.
+    let max_multiplier = EXTREME64_SMALL_MAX / EXTREME64_MIN_BLOCK; // 3
+    for (k, &class_idx) in rt.size2class().iter().enumerate() {
+        let need = (k + 1).min(max_multiplier) * EXTREME64_MIN_BLOCK;
+        let want = rt.table().iter().position(|&b| b >= need).unwrap();
+        assert_eq!(
+            class_idx as usize, want,
+            "SIZE2CLASS[{k}] drift (need={need})"
+        );
+    }
+}
+
+#[test]
+fn class_for_next_multiple_overflow_returns_none() {
+    let sc = extreme64_scheme_runtime();
+    // Companion sanity: the slow path resolves normally on this scheme when
+    // a representable multiple EXISTS -- 2<<62 is itself a multiple of
+    // 1<<63, so the very first probe returns before any round-up.
+    assert_eq!(sc.class_for(2 << 62, 1 << 63), Some(1));
+    // The pinned case: 3<<62 seeds the last class, which is NOT a multiple
+    // of 1<<63; the next multiple of 1<<63 above it is 2^64, unrepresentable
+    // in usize. `(3<<62) | ((1<<63)-1)` is usize::MAX, so `checked_add(1)`
+    // yields None and `class_for` must return None -- the same outcome the
+    // `next_mult > small_max` clamp already produces for every other
+    // out-of-range case on this path. Pre-fix (bare `+ 1`), release wrapped
+    // usize::MAX + 1 to 0, and the subsequent `(next_mult - 1)` index then
+    // wrapped back around to the same seed class -- an infinite loop that
+    // never returns; debug trapped on the add itself instead.
+    assert_eq!(sc.class_for(3 << 62, 1 << 63), None);
+}
+
+#[test]
+fn build_size2class_bucket_need_overflow_flips_the_release_answer_for_a_hand_built_table() {
+    // Follow-up to `build_size2class_bucket_need_overflow_clamps_to_last_class`
+    // above: that test's own comment explains why the clamp fix is
+    // observationally inert under `--release` for ANY `Params`-assembled
+    // scheme -- `build_table` forces every table entry (geometric AND
+    // extras) to be a multiple of `min_block`, which forces an overflowing
+    // top bucket to satisfy `L * min_block == small_max + min_block ==
+    // 2^64`, wrapping to exactly 0; a `need = 0` cannot move the pointer
+    // backward, and the pointer is already parked on the last class by the
+    // PRECEDING bucket in that specific case.
+    //
+    // `build_size2class` is a standalone public entry point though (its own
+    // doc: "Build the O(1) size→class lookup FROM A TABLE"), and review-2's
+    // F9 finding is exactly that its defense-in-depth path never checks
+    // `small_max % min_block == 0` for a hand-built table -- so a caller
+    // bypassing `build_table` can supply one where that identity does NOT
+    // hold. This table does that: `small_max = (3 << 62) + 5` is 5 past a
+    // multiple of `min_block`, which makes the PRE-overflow bucket's need
+    // (`3 << 62`) strictly less than `small_max`, so the pointer stops at
+    // class_idx = 2 (table[2] = (3 << 62) + 2) one slot short of the last
+    // class -- BEFORE the overflowing final bucket ever runs. A wrapped
+    // `need = 0` there then leaves the pointer parked at 2 instead of
+    // advancing to 3: a WRONG top-bucket answer under `--release`, with no
+    // panic at all -- the exact release-silent, profile-dependent
+    // misclassification P2-1 originally flagged. Verified independently via
+    // exact-width (u128) arithmetic before writing this test: fixed table =
+    // `[0, 1, 2, 3]`, pre-fix (bare multiply) table = `[0, 1, 2, 2]`.
+    const MIN_BLOCK: usize = 1usize << 62;
+    const N: usize = 4;
+    const TABLE: [usize; N] = [1 << 62, 2 << 62, (3 << 62) + 2, (3 << 62) + 5];
+    const SMALL_MAX: usize = TABLE[N - 1];
+    const L: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
+
+    let s2c = build_size2class::<N, L>(&TABLE, MIN_BLOCK);
+
+    assert_eq!(
+        s2c[L - 1],
+        (N - 1) as u8,
+        "top bucket must resolve to the last class, not the pointer's pre-overflow position"
+    );
+
+    // Full-bucket scan against a u128 reference, which cannot overflow at
+    // any k (unlike a usize replay of the crate's own `(k + 1) * min_block`,
+    // which would hit exactly the same overflow this test exists to catch).
+    for (k, &class_idx) in s2c.iter().enumerate() {
+        let need_u128 = (k as u128 + 1) * MIN_BLOCK as u128;
+        let want_need = if need_u128 < SMALL_MAX as u128 {
+            need_u128 as usize
+        } else {
+            SMALL_MAX
+        };
+        let want = TABLE.iter().position(|&b| b >= want_need).unwrap();
+        assert_eq!(class_idx as usize, want, "size2class[{k}] drift");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // task #729 (rust-intel audit §F2/§B26, MEDIUM): `class_for`'s documented fit
 // predicate ("`block_size % align == 0`") was silently violated by BOTH
 // paths for a non-power-of-two `align` -- the fast path never checked
