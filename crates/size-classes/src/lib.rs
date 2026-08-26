@@ -3,7 +3,8 @@
 //!
 //! Every slab / pool / arena allocator reinvents the same trio: a table of
 //! block sizes, an O(1) map from a requested byte size to the smallest class
-//! that fits it, and a classifier that also honours alignment. This crate
+//! that fits it, and a classifier that also honours alignment via stride
+//! divisibility. This crate
 //! packages that trio as a `const`-evaluated, `no_std`, zero-dependency,
 //! `#![forbid(unsafe_code)]` unit — the table shape is a parameter, so a
 //! consumer can bake its own scheme and still get the derived lookup and the
@@ -23,9 +24,14 @@
 //!   and a provably-equivalent *jump* slow path for larger alignments: round
 //!   `block` up to the next multiple of `align` via a bitmask, re-seed through
 //!   the lookup, and so skip whole runs of non-divisible classes instead of
-//!   stepping by one. Without it, every `align >= 512` request silently falls
-//!   through to the caller's whole-segment path (a real bug class in
-//!   hand-rolled allocators).
+//!   stepping by one. Without it, a request whose `align` exceeds what the
+//!   caller's classifier happens to handle silently falls through to the
+//!   caller's whole-segment path — a real bug class in hand-rolled allocators
+//!   (SEFER's own motivating case: `align >= 512`). The classifier picks an
+//!   align-*divisible* stride; align-aligned block *addresses* additionally
+//!   require the caller's carve base to be `align`-aligned — a documented
+//!   precondition of `class_for`, which this crate (sizes only, no
+//!   addresses) cannot check.
 //!
 //! ## The `huge` threshold is a policy parameter
 //!
@@ -576,9 +582,15 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// large path.
     ///
     /// A class fits iff its `block_size >= max(size, align)` AND
-    /// `block_size % align == 0` (so the natural offset within a
-    /// `max_class`-aligned span lands on an `align`-aligned address without any
-    /// per-block padding). Returns the index of the smallest such class.
+    /// `block_size % align == 0`. Returns the index of the smallest such class.
+    ///
+    /// The divisibility conjunct is a STRIDE property, not an address
+    /// guarantee. For blocks carved at `base + k * block_size`, `block_size %
+    /// align == 0` gives `address(k) % align == base % align` for every `k`:
+    /// the stride PRESERVES whatever alignment the carve base already has (so
+    /// no per-block padding is ever needed) — it cannot CREATE alignment the
+    /// base lacks. Block addresses are `align`-aligned iff the carve base is
+    /// — see the base-alignment precondition below.
     ///
     /// **Fast path (`align <= min_block`):** every block is `min_block`-aligned,
     /// so the divisibility check is trivially satisfied — one O(1) lookup.
@@ -617,6 +629,20 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///   divisibility test for a non-pow2 `align`, so it can ACCEPT a class
     ///   that does not fit — e.g. `class_for(20, 24)` returning a 32-byte
     ///   block, where `32 % 24 == 8`.
+    ///
+    /// **The carve base must also be `align`-aligned.** This crate computes
+    /// over sizes only and never sees an address, so it CANNOT check this —
+    /// unlike the power-of-two contract above, it is not even
+    /// `debug_assert`-able here. The caller must place block `0` of the run
+    /// serving a returned class at an address `base` with `base % align ==
+    /// 0` for every `align` it resolves through this scheme (the address
+    /// that matters is block `0`'s, not the span's OS reservation base, if
+    /// the two differ). Carving every run from a base whose power-of-two
+    /// alignment is `>=` the largest `align` the scheme will ever serve
+    /// satisfies this for every smaller `align` too. A violation cannot
+    /// corrupt the scheme or cause unsafety (this crate is pure arithmetic
+    /// over sizes) — it yields blocks whose SIZE is `align`-divisible but
+    /// whose ADDRESSES are all congruent to the same `base % align != 0`.
     #[must_use]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
         debug_assert!(

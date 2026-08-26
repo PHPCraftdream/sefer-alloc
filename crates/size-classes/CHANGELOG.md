@@ -60,11 +60,17 @@ before it.
     equivalent **jump** slow path rounds the block up to the next multiple of
     `align` and re-seeds through the lookup, skipping whole runs of
     non-divisible classes instead of stepping one class at a time. Without
-    that classifier, every `align >= 512` request silently falls through to
-    the caller's whole-segment path — the real bug class in hand-rolled
-    allocators this crate exists to remove. `align` must be a power of two
-    (the `Layout` contract), enforced by a `debug_assert!` (task #729) — a
-    violation yields a suboptimal/wrong class choice, not memory unsafety.
+    that classifier, a request whose `align` exceeds what the caller's
+    classifier happens to handle silently falls through to the caller's
+    whole-segment path — the real bug class in hand-rolled allocators this
+    crate exists to remove (SEFER's own motivating case: `align >= 512`).
+    `align` must be a power of two (the `Layout` contract), enforced by a
+    `debug_assert!` (task #729) — a violation yields a suboptimal/wrong class
+    choice, not memory unsafety. The divisibility check is a STRIDE property,
+    not an address guarantee: it preserves whatever alignment the caller's
+    carve base already has, it does not create it -- `base % align == 0` for
+    every served `align` is the caller's own documented precondition, which
+    this crate (pure size arithmetic, no addresses) cannot check.
 - `is_huge` compares against the caller-supplied `huge_threshold` policy
   parameter — the crate has no notion of an OS segment size; the consumer
   decides where "large" ends and "huge" begins for its own segment policy.

@@ -17,9 +17,15 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
 - `SizeClasses::class_for(size, align)` — O(1) fast path for `align <=
   min_block`, and a provably-equivalent **jump** slow path for larger
   alignments: round up to the next multiple of `align` and re-seed through the
-  lookup, skipping whole runs of non-divisible classes. Without it every
-  `align >= 512` request silently falls through to the caller's whole-segment
-  path — a real bug class in hand-rolled allocators.
+  lookup, skipping whole runs of non-divisible classes. Without it a request
+  whose `align` exceeds what the caller's classifier happens to handle
+  silently falls through to the caller's whole-segment path — a real bug
+  class in hand-rolled allocators (SEFER's own motivating case: `align >=
+  512`). The classifier chooses an align-**divisible** stride; block
+  **addresses** are align-aligned iff the base you carve from is
+  (`address(k) = base + k * block_size` — stride divisibility preserves the
+  base's alignment, it cannot create it). This is the caller's documented
+  precondition, not a crate check — the crate never sees an address.
 
 The "huge" threshold is a **policy parameter** (`Params::huge_threshold`); the
 crate has no notion of an OS segment size.
