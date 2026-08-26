@@ -288,9 +288,13 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
                 // min-step fallback below into a valid-looking but silently
                 // wrong table, in release builds and release-profile const
                 // evaluation alike. `checked_mul`/`checked_add` (rather than a
-                // hand-proved "cannot overflow" comment) so the bound holds
-                // regardless of `usize` width instead of only for `usize <=
-                // 64`.
+                // hand-proved "cannot overflow" comment) so the bound is
+                // enforced, not just argued -- for every `usize <= 64` target
+                // this crate supports today. A hypothetical 128-bit `usize`
+                // would need a genuinely overflow-free multiply/divide here
+                // (`cur * num` can then overflow `u128` even when the true
+                // quotient still fits `usize`); `checked_mul` alone would
+                // reproduce the same class of bug one width higher.
                 let scaled = match (cur as u128).checked_mul(num as u128) {
                     Some(p) => p.div_ceil(den as u128),
                     None => panic!("geometric progression: cur * num overflows u128"),
