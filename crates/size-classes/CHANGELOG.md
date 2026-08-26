@@ -55,8 +55,10 @@ before it.
   - **`class_for(size, align) -> Option<usize>`** — resolve a request to the
     smallest class whose block is `>= max(size, align)` **and** a multiple of
     `align` (`None` routes to the caller's large path). O(1) fast path for
-    `align <= min_block` (every block is `min_block`-aligned, so divisibility
-    is trivially satisfied); for larger power-of-two alignments, a provably
+    `align <= min_block` (every class size is a multiple of `min_block`, so
+    the stride trivially satisfies divisibility; block ADDRESSES are
+    `min_block`-aligned only if the caller's carve base is); for larger
+    power-of-two alignments, a provably
     equivalent **jump** slow path rounds the block up to the next multiple of
     `align` and re-seeds through the lookup, skipping whole runs of
     non-divisible classes instead of stepping one class at a time. Without

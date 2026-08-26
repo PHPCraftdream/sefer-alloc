@@ -63,8 +63,11 @@
 #[non_exhaustive]
 pub struct Params<'a> {
     /// The minimum block size and the fundamental small-class alignment. Must
-    /// be a power of two. Every generated class is a multiple of it, so every
-    /// block is naturally `min_block`-aligned.
+    /// be a power of two. Every generated class SIZE is a multiple of it, so
+    /// every stride PRESERVES whatever `min_block`-alignment the caller's
+    /// carve base already has -- it does not by itself make block ADDRESSES
+    /// `min_block`-aligned (see [`SizeClasses::class_for`]'s base-alignment
+    /// precondition).
     pub min_block: usize,
     /// The geometric growth ratio as `(num, den)` — each class after the first
     /// is `round_up(prev * num / den, min_block)`, with a minimum step of
@@ -212,8 +215,10 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     let mask = min_block - 1;
 
     // `extras` preconditions (documented on `Params::extras`): each entry a
-    // multiple of `min_block` (so the fast path in `SizeClasses::class_for`,
-    // which skips the divisibility check entirely, stays sound), and the
+    // multiple of `min_block` (so the fast path's stride-divisibility
+    // predicate, implicit for `align <= min_block`, stays valid -- whether
+    // the resulting ADDRESS is aligned is a separate, caller-owned
+    // precondition; see `SizeClasses::class_for`'s doc), and the
     // list strictly increasing (so the sorted-merge below actually produces
     // a sorted table instead of silently reordering). Checked here — not
     // just at the merged-table monotonicity checks below (this function's
@@ -506,9 +511,12 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// (compile error) and at runtime.
     ///
     /// `small_align_max` — the alignment ceiling of the O(1) fast path — is set
-    /// to `min_block`: every block is `min_block`-aligned by construction, so
-    /// any `align <= min_block` is trivially honoured. Larger alignments take
-    /// the divisibility-jump slow path in [`class_for`](Self::class_for).
+    /// to `min_block`: every class SIZE is a multiple of `min_block`, so the
+    /// stride trivially satisfies divisibility for any `align <= min_block`
+    /// (block ADDRESSES are aligned only if the caller's carve base is --
+    /// see [`class_for`](Self::class_for)'s base-alignment precondition).
+    /// Larger alignments take the divisibility-jump slow path in
+    /// [`class_for`](Self::class_for).
     #[must_use]
     pub const fn build(params: Params) -> Self {
         let table = build_table::<N>(&params);
@@ -604,8 +612,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// base lacks. Block addresses are `align`-aligned iff the carve base is
     /// — see the base-alignment precondition below.
     ///
-    /// **Fast path (`align <= min_block`):** every block is `min_block`-aligned,
-    /// so the divisibility check is trivially satisfied — one O(1) lookup.
+    /// **Fast path (`align <= min_block`):** every class SIZE is a multiple of
+    /// `min_block`, so the stride divisibility check is trivially satisfied —
+    /// one O(1) lookup. (Block ADDRESSES are `min_block`-aligned only if the
+    /// carve base is — same base-alignment precondition as the slow path,
+    /// below.)
     ///
     /// **Slow path (`align > min_block`, a power of two):** seed at the lookup
     /// entry covering `max(size, align)`, then jump forward over non-divisible
@@ -651,10 +662,16 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// that matters is block `0`'s, not the span's OS reservation base, if
     /// the two differ). Carving every run from a base whose power-of-two
     /// alignment is `>=` the largest `align` the scheme will ever serve
-    /// satisfies this for every smaller `align` too. A violation cannot
-    /// corrupt the scheme or cause unsafety (this crate is pure arithmetic
-    /// over sizes) — it yields blocks whose SIZE is `align`-divisible but
-    /// whose ADDRESSES are all congruent to the same `base % align != 0`.
+    /// satisfies this for every smaller `align` too.
+    ///
+    /// A violation cannot corrupt this crate's own scheme or cause UB INSIDE
+    /// IT (pure arithmetic over sizes, no addresses touched) — it yields
+    /// blocks whose SIZE is `align`-divisible but whose ADDRESSES are all
+    /// congruent to the same `base % align != 0`. But an allocator built on
+    /// top of this crate that returns such a misaligned pointer for a
+    /// request with that `align` violates ITS OWN `Layout` contract with its
+    /// caller — the downstream consequence is safety-critical even though
+    /// this crate cannot detect or cause it directly.
     #[must_use]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
         debug_assert!(

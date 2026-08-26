@@ -50,8 +50,12 @@
 //!
 //! - **M4 (alignment & size fidelity):** the chosen class's `block_size` is
 //!   always `>= max(requested_size, requested_align)` AND a multiple of
-//!   `MIN_BLOCK` (a power of two), so a `block_size >= requested_align` block is
-//!   naturally aligned.
+//!   `MIN_BLOCK` (a power of two) -- a STRIDE guarantee (see the crate's own
+//!   `SizeClasses::class_for` doc). It yields an aligned block ADDRESS
+//!   because small segments are additionally reserved with a base aligned to
+//!   `SEGMENT` (`super::os::SEGMENT`, 4 MiB -- see `os.rs`), which divides
+//!   every power-of-two `align` this scheme ever serves; the crate itself
+//!   has no notion of that base and cannot check it.
 //! - The smallest class is `>= NODE_SIZE` (asserted in `segment_header.rs`).
 
 use size_classes::{size2class_len, Params, SizeClasses as SizeClassesImpl};
