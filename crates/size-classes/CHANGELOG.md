@@ -63,7 +63,7 @@ before it.
     the caller's whole-segment path — the real bug class in hand-rolled
     allocators this crate exists to remove. `align` must be a power of two
     (the `Layout` contract), enforced by a `debug_assert!` (task #729) — a
-    violation yields a suboptimal class choice, not memory unsafety.
+    violation yields a suboptimal/wrong class choice, not memory unsafety.
 - `is_huge` compares against the caller-supplied `huge_threshold` policy
   parameter — the crate has no notion of an OS segment size; the consumer
   decides where "large" ends and "huge" begins for its own segment policy.

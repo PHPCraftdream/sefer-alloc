@@ -252,7 +252,7 @@ fn extras_overlapping_geometric_run_panics_in_build_table() {
 }
 
 #[test]
-#[should_panic(expected = "table must be strictly increasing (check Params::extras for overlap")]
+#[should_panic(expected = "table must be strictly increasing (hand-built tables must satisfy")]
 fn hand_built_overlapping_table_panics_in_build_size2class() {
     // Defense-in-depth: `build_size2class`'s own monotonicity check (kept
     // deliberately, not removed, once `build_table` grew its own) is the

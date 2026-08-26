@@ -246,11 +246,12 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     // which skips the divisibility check entirely, stays sound), and the
     // list strictly increasing (so the sorted-merge below actually produces
     // a sorted table instead of silently reordering). Checked here — not
-    // just at the merged-table level in `build_size2class` — because a
-    // non-multiple-of-`min_block` extra can still land in strictly
-    // increasing position relative to the geometric run (misalignment alone
-    // does not always break monotonicity), so global monotonicity is not
-    // sufficient to catch it.
+    // just at the merged-table monotonicity checks below (this function's
+    // own, or `build_size2class`'s downstream defense-in-depth one) —
+    // because a non-multiple-of-`min_block` extra can still land in
+    // strictly increasing position relative to the geometric run
+    // (misalignment alone does not always break monotonicity), so global
+    // monotonicity is not sufficient to catch it.
     {
         let mut i = 0;
         while i < extras.len() {
@@ -450,20 +451,23 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         N < 256,
         "size2class entries are u8; the class count must stay below 256"
     );
-    // Global monotonicity of `table` — the natural chokepoint for this check:
-    // the monotone-pointer algorithm below *depends* on it, and it is also
-    // exactly what catches `Params::extras` entries that overlap (or are
-    // otherwise misplaced relative to) the geometric run — an overlap
-    // collapses two table slots to equal values, which is a duplicate, not a
-    // strict increase, and would otherwise leave the colliding slot silently
-    // unreachable.
+    // Global monotonicity of `table` — the monotone-pointer algorithm below
+    // *depends* on it. `build_table` already rejects a `Params::extras`
+    // overlap with the geometric run at its own chokepoint, so a table
+    // reaching this check via `SizeClasses::build` is already known-good;
+    // this stays as defense-in-depth for a hand-built table that bypasses
+    // `build_table` entirely (e.g. a `const` array literal) — an overlap
+    // there collapses two table slots to equal values, which is a
+    // duplicate, not a strict increase, and would otherwise leave the
+    // colliding slot silently unreachable.
     {
         let mut i = 1;
         while i < N {
             assert!(
                 table[i] > table[i - 1],
-                "table must be strictly increasing (check Params::extras for overlap \
-                 with the geometric run)"
+                "table must be strictly increasing (hand-built tables must \
+                 satisfy this directly -- Params-driven tables already do, \
+                 via build_table's own check)"
             );
             i += 1;
         }
