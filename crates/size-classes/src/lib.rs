@@ -78,14 +78,16 @@ pub struct Params<'a> {
     /// `min_block`).
     pub geo_count: usize,
     /// Explicit extra classes to merge into the geometric run — a **strictly
-    /// increasing** list, each entry a multiple of `min_block` (the builder
-    /// sorted-merges them). Both preconditions are **machine-checked**: a
-    /// non-`min_block`-multiple entry, or a non-strictly-increasing entry, is
-    /// a `const`-evaluation panic (compile error) in [`build_table`], and
-    /// disjointness from the geometric run — together with global table
-    /// monotonicity — is separately machine-checked in
-    /// [`build_size2class`]. Typical uses: page-aligned classes, an exact
-    /// size the geometric run skips, a feature-gated medium tier.
+    /// increasing** list, each entry a multiple of `min_block` and `>=
+    /// min_block` (the builder sorted-merges them). All three preconditions
+    /// are **machine-checked**: a non-`min_block`-multiple entry, an entry
+    /// below `min_block` (rejects the degenerate `0` "class"), or a
+    /// non-strictly-increasing entry, is a `const`-evaluation panic (compile
+    /// error) in [`build_table`], and disjointness from the geometric run —
+    /// together with global table monotonicity — is separately
+    /// machine-checked in [`build_size2class`]. Typical uses: page-aligned
+    /// classes, an exact size the geometric run skips, a feature-gated
+    /// medium tier.
     ///
     /// task #728 (rust-intel audit §B1b, INFO): `Params`'s borrowed
     /// lifetime `'a` was reviewed and is justified, not a defect — this is
@@ -135,9 +137,10 @@ impl<'a> Params<'a> {
 ///
 /// # Panics
 ///
-/// Panics in `const` evaluation if `min_block` is not a power of two, or if
-/// `max_class / min_block + 1` overflows `usize` (only reachable with
-/// `max_class` within `min_block` of `usize::MAX`).
+/// Panics -- identically in `const` evaluation and at runtime, since this is
+/// a `pub const fn` callable either way -- if `min_block` is not a power of
+/// two, or if `max_class / min_block + 1` overflows `usize` (only reachable
+/// with `max_class` within `min_block` of `usize::MAX`).
 ///
 /// task #731 (rust-intel audit §B26, INFO): this is this crate's ONE `pub`
 /// function that previously had zero parameter validation -- `max_class /
@@ -182,8 +185,9 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 ///
 /// # Panics
 ///
-/// Panics in `const` evaluation if `N != geo_count + extras.len()`, if
-/// `min_block` is not a power of two, if `geo_count == 0`, if
+/// Panics -- identically in `const` evaluation and at runtime, since this is
+/// a `pub const fn` callable either way -- if `N != geo_count + extras.len()`,
+/// if `min_block` is not a power of two, if `geo_count == 0`, if
 /// `params.growth.1` (the growth denominator) is `0`, if any `extras`
 /// entry is not a multiple of `min_block`, if any `extras` entry is less
 /// than `min_block` (the scheme's minimum block size), if `extras` is not
@@ -214,10 +218,22 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
     assert!(params.growth.1 > 0, "growth denominator must be > 0");
     let geo_count = params.geo_count;
     let extras = params.extras;
-    assert!(
-        N == geo_count + extras.len(),
-        "N must equal geo_count + extras.len()"
-    );
+    // size-classes publication audit run 2 (Claude, review-2 F3): a bare `+`
+    // here shares the exact overflow hazard this crate has twice already
+    // named and fixed elsewhere (task #731's `den == 0`; run 1's P2-1). An
+    // absurd `geo_count` (e.g. `usize::MAX` with non-empty `extras`) wraps
+    // this sum in release, and the wrapped value COULD pass the check --
+    // but never produces a silently-wrong table: the merge loop below still
+    // runs the true (non-wrapped) `geo_count + extras.len()` iterations and
+    // is guaranteed to panic on `out[oi]` with a bare "index out of bounds"
+    // once `oi` exceeds `N`. `checked_add` turns that into the same named,
+    // parameter-identifying diagnostic every sibling precondition here
+    // already gives.
+    let n_matches = match geo_count.checked_add(extras.len()) {
+        Some(sum) => sum == N,
+        None => false,
+    };
+    assert!(n_matches, "N must equal geo_count + extras.len()");
 
     let mask = min_block - 1;
 
@@ -384,15 +400,32 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// lookup and the table cannot drift. The caller indexes it as
 /// `size2class[(size - 1) >> log2(min_block)]`, so bucket `k` covers every size
 /// in `(k * min_block, (k + 1) * min_block]`; `size2class[k]` is the smallest
-/// class whose `block_size >= (k + 1) * min_block`.
+/// class whose `block_size >= (k + 1) * min_block` -- EXCEPT the top bucket
+/// `L - 1`, whose ideal `need` (`L * min_block`) exceeds `table[N - 1]` (the
+/// largest class), so no such class exists; that bucket is clamped to
+/// `table[N - 1]` itself instead. This is harmless: [`SizeClasses::class_for`]
+/// never queries bucket `L - 1` for any in-range `size` (its own `need >
+/// small_max` early rejection catches every size that would land there), so
+/// the clamped entry is an unreachable sentinel, not an observable answer.
 ///
 /// `L` must equal [`size2class_len`]`(max_class, min_block)`, where `max_class`
 /// is `table[N - 1]`.
 ///
+/// `table` need not come from [`build_table`] -- this function is a
+/// standalone building block, callable with any hand-built strictly
+/// increasing array. Note, though, that [`build_table`]'s own output always
+/// has every entry a multiple of `min_block`; a hand-built `table` that
+/// violates that (while still passing every check below) can produce an
+/// entry `class_for`'s bucket rounding never selects -- e.g. `min_block =
+/// 16`, `table = [16, 24, 32]`: bucket `(16, 32]` resolves straight to `32`,
+/// leaving `24` monotonicity-valid but permanently unreachable through the
+/// public lookup path.
+///
 /// # Panics
 ///
-/// Panics in `const` evaluation if the table is empty, if `L` is wrong
-/// (including if computing the expected `L` via
+/// Panics -- identically in `const` evaluation and at runtime, since this is
+/// a `pub const fn` callable either way -- if the table is empty, if `L` is
+/// wrong (including if computing the expected `L` via
 /// [`size2class_len`]`(table[N - 1], min_block)` itself overflows `usize`),
 /// if `min_block` is not a power of two, if `table.len() >= 256` (the entry
 /// type is `u8`; a table beyond 255 classes would silently truncate), or if
@@ -430,7 +463,6 @@ pub const fn build_size2class<const N: usize, const L: usize>(
             i += 1;
         }
     }
-    let shift = min_block.trailing_zeros();
     let small_max = table[N - 1];
     // size-classes publication audit run 1 (Sol-codex, P2-1): reuse
     // `size2class_len` rather than re-deriving `small_max / min_block + 1`
@@ -442,8 +474,6 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         L == size2class_len(small_max, min_block),
         "L must equal size2class_len(max_class, min_block)"
     );
-    let _ = shift; // the caller applies the shift; recorded here for clarity.
-
     let mut out = [0u8; L];
     let mut k = 0;
     // `class_idx` persists across `k` (monotone-pointer): both `need` and the

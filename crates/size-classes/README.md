@@ -7,12 +7,12 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
 
 - `build_table` — a `const fn` sorted-merge of a geometric progression
   (`round_up(prev * num / den, min_block)`) with a strictly increasing list of
-  `min_block`-multiple explicit extra classes (page-aligned classes, an exact
-  size the geometric run skips, a medium tier …) — both preconditions are
-  machine-checked, so violations are compile errors, not accepted input; task
-  #731 corrected this line, which previously said "an arbitrary sorted list,"
-  understating the `Params::extras` contract already stated correctly on that
-  field's own rustdoc.
+  `min_block`-multiple, `>= min_block` explicit extra classes (page-aligned
+  classes, an exact size the geometric run skips, a medium tier …) — all three
+  preconditions are machine-checked, so violations are compile errors, not
+  accepted input; task #731 corrected this line, which previously said "an
+  arbitrary sorted list," understating the `Params::extras` contract already
+  stated correctly on that field's own rustdoc.
 - `build_size2class` — derives the O(1) `size→class` lookup from a table at
   compile time (monotone-pointer, `O(buckets + classes)`), with a compile-time
   `u8` pin on the class count.
