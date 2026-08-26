@@ -42,7 +42,7 @@ fn main() {
     //
     // size-classes publication audit run 2 (Claude, review-2 F2): these two
     // rows used to call `class_for(256, 256)` / `class_for(1024, 1024)`.
-    // Since 256 and 1024 are themselves table entries (`SEFER_EXTRAS`),
+    // Since 256 and 1024 are themselves table entries (`common::SEFER_EXTRAS`),
     // `need = max(size, align) = align` seeds the lookup EXACTLY on an
     // align-divisible class, so the jump loop's round-up-and-reseek body
     // (the actual "slow path" cost) never ran once -- both rows silently

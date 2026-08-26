@@ -13,7 +13,7 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   `const` evaluation and at runtime, never silently accepted input.
 - `build_size2class` — derives the O(1) `size→class` lookup from a table at
   compile time (monotone-pointer, `O(buckets + classes)`), with a compile-time
-  `u8` pin on the class count.
+  `u8` pin on the class indices (up to 256 classes).
 - `SizeClasses::class_for(size, align)` — O(1) fast path for `align <=
   min_block`, and a provably-equivalent **jump** slow path for larger
   alignments: round up to the next multiple of `align` and re-seed through the

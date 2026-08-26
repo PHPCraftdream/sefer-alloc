@@ -1,6 +1,6 @@
 //! Correctness of the `const`-generic builder itself — table shape, the derived
 //! O(1) lookup, and the alignment-jump classifier — against sefer's own
-//! concrete parameterization (`SEFER_PARAMS` below), via hand-written unit
+//! concrete parameterization (`SEFER_PARAMS` in `common/mod.rs`), via hand-written unit
 //! tests (an independent, from-scratch reference builder/classifier, an
 //! exhaustive small-size×alignment sweep, and the `Params::extras`
 //! precondition `#[should_panic]`s). This file has no proptest of its own —
@@ -349,11 +349,11 @@ fn extras_zero_class_panics() {
     let _ = build_table::<N>(&params);
 }
 
-// rush-tests review (T2/task #1477): eight documented `# Panics`
-// conditions (plus `block_size`'s out-of-range panic) had zero test
-// coverage anywhere in the crate -- grep-verified against every
-// production assert's exact message string before writing these. Each
-// pins one precondition at its own call site, so a deleted/reworded
+// rush-tests review (T2/task #1477): nine documented `# Panics`
+// conditions (plus `block_size`'s out-of-range panic, ten tests total)
+// had zero test coverage anywhere in the crate -- grep-verified against
+// every production assert's exact message string before writing these.
+// Each pins one precondition at its own call site, so a deleted/reworded
 // guard fails here instead of only in a future audit's static reading.
 
 #[test]
