@@ -13,7 +13,7 @@ before it.
 
 - **`build_table(params) -> [usize; N]`** — a `const fn` that builds a
   mimalloc-style size-class table: a geometric progression
-  (`round_up(prev * num / den, min_block)`, minimum step `min_block`, starting
+  (`round_up(ceil(prev * num / den), min_block)`, minimum step `min_block`, starting
   at `min_block`) sorted-merged with an explicit `extras` list. `extras`
   preconditions — every entry a multiple of `min_block` AND `>= min_block`,
   the list strictly increasing — plus `min_block` being a power of two,

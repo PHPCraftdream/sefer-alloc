@@ -6,7 +6,7 @@ trio every slab / pool / arena allocator reinvents, packaged as a `no_std`,
 zero-dependency, `#![forbid(unsafe_code)]` unit.
 
 - `build_table` — a `const fn` sorted-merge of a geometric progression
-  (`round_up(prev * num / den, min_block)`) with a strictly increasing list of
+  (`round_up(ceil(prev * num / den), min_block)`) with a strictly increasing list of
   `min_block`-multiple, `>= min_block` explicit extra classes (page-aligned
   classes, an exact size the geometric run skips, a medium tier …) — all three
   preconditions are machine-checked, so violations panic identically in

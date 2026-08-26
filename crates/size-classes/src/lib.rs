@@ -13,7 +13,8 @@
 //! ## The three pieces
 //!
 //! - [`build_table`] — a `const fn` sorted-merge of a geometric progression
-//!   (`geo_count` classes, each `round_up(prev * num / den, min_block)`) with
+//!   (`geo_count` classes, each `round_up(ceil(prev * num / den), min_block)`)
+//!   with
 //!   a strictly increasing, `min_block`-multiple, `>= min_block` list of
 //!   explicit `extras` (page-aligned classes, an exact size the geometric
 //!   run skips, a feature-gated medium tier, …).
@@ -81,8 +82,8 @@ pub struct Params<'a> {
     /// does not guarantee about block addresses.
     pub min_block: usize,
     /// The geometric growth ratio as `(num, den)` — each class after the first
-    /// is `round_up(prev * num / den, min_block)`, with a minimum step of
-    /// `min_block` so two adjacent classes never collide. `(5, 4)` is the
+    /// is `round_up(ceil(prev * num / den), min_block)`, with a minimum step
+    /// of `min_block` so two adjacent classes never collide. `(5, 4)` is the
     /// classic mimalloc 1.25× small spacing.
     pub growth: (usize, usize),
     /// How many classes the geometric progression contributes (starting at
@@ -168,7 +169,7 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// must equal `params.geo_count + params.extras.len()`.
 ///
 /// Spacing: start at `min_block`, then each next class is
-/// `round_up(prev * num / den, min_block)`, with a minimum step of
+/// `round_up(ceil(prev * num / den), min_block)`, with a minimum step of
 /// `min_block`. The `extras` are merged in sorted order (a plain sorted-merge —
 /// `const fn` cannot call `slice::sort`), keeping the combined table strictly
 /// increasing and every entry a multiple of `min_block`.
