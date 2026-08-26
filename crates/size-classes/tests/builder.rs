@@ -705,3 +705,57 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
          by Params::huge_threshold, not hardcoded"
     );
 }
+
+// ---------------------------------------------------------------------------
+// size-classes publication audit run 2 (Sol-codex, P2-1): the `u8` capacity
+// bound was `N < 256`, off by one -- entries are class INDICES (`0..=N-1`),
+// not the count, so 256 classes fit exactly. These three pin the corrected
+// boundary from both sides.
+
+/// A 256-class linear scheme: `min_block = 1`, `growth = (0, 1)` (the
+/// docs-blessed min-step degradation), so the table is exactly `1..=256`.
+const MAX_N: usize = 256;
+const MAX_PARAMS: Params = Params::new(1, (0, 1), MAX_N, &[], 1 << 20);
+const MAX_TABLE: [usize; MAX_N] = build_table::<MAX_N>(&MAX_PARAMS);
+const MAX_L: usize = size2class_len(MAX_TABLE[MAX_N - 1], 1);
+
+#[test]
+fn exactly_256_classes_build_and_index_up_to_255() {
+    // 256 classes -> indices 0..=255, all representable in u8.
+    assert_eq!(MAX_TABLE[0], 1);
+    assert_eq!(MAX_TABLE[MAX_N - 1], 256);
+    assert_eq!(MAX_L, 257);
+
+    let s2c = build_size2class::<MAX_N, MAX_L>(&MAX_TABLE, 1);
+
+    // The largest index actually produced is 255 -- exactly u8::MAX, not a
+    // truncation of 256.
+    assert_eq!(
+        s2c[MAX_L - 2],
+        u8::MAX,
+        "bucket for the largest in-range size must resolve to class 255"
+    );
+    assert_eq!(
+        s2c[MAX_L - 1],
+        u8::MAX,
+        "top bucket clamps to the last class"
+    );
+
+    // Full scan against an independent reference: every bucket's answer is
+    // the smallest class >= (k+1)*min_block, clamped at small_max.
+    for (k, &class_idx) in s2c.iter().enumerate() {
+        let need = (k + 1).min(MAX_TABLE[MAX_N - 1]);
+        let want = MAX_TABLE.iter().position(|&b| b >= need).unwrap();
+        assert_eq!(class_idx as usize, want, "size2class[{k}] drift");
+    }
+}
+
+#[test]
+#[should_panic(expected = "the class count must not exceed 256")]
+fn exactly_257_classes_are_rejected() {
+    // One past the boundary: index 256 is NOT representable in u8.
+    const N: usize = 257;
+    const PARAMS: Params = Params::new(1, (0, 1), N, &[], 1 << 20);
+    let table = build_table::<N>(&PARAMS);
+    let _ = build_size2class::<N, 258>(&table, 1);
+}

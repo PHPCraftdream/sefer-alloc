@@ -447,9 +447,10 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// a `pub const fn` callable either way -- if the table is empty, if `L` is
 /// wrong (including if computing the expected `L` via
 /// [`size2class_len`]`(table[N - 1], min_block)` itself overflows `usize`),
-/// if `min_block` is not a power of two, if `table.len() >= 256` (the entry
-/// type is `u8`; a table beyond 255 classes would silently truncate), or if
-/// `table` is not strictly increasing.
+/// if `min_block` is not a power of two, if `table.len() > 256` (entries are
+/// `u8` CLASS INDICES, so the largest representable table has 256 classes,
+/// indices `0..=255`; a 257th class would silently truncate), or if `table`
+/// is not strictly increasing.
 #[must_use]
 pub const fn build_size2class<const N: usize, const L: usize>(
     table: &[usize; N],
@@ -460,10 +461,14 @@ pub const fn build_size2class<const N: usize, const L: usize>(
         min_block.is_power_of_two(),
         "min_block must be a power of two"
     );
-    // The `u8` entry type is sound only while the class count < 256.
+    // Entries are `u8` class INDICES, so the bound is on the largest index
+    // (`N - 1`), not on the count: `N == 256` yields indices `0..=255`, all
+    // representable. `class_idx` never reaches `N` (the `need` clamp below
+    // guarantees `table[N - 1] >= need`, so the inner scan always breaks),
+    // so 256 classes cannot truncate; 257 would.
     assert!(
-        N < 256,
-        "size2class entries are u8; the class count must stay below 256"
+        N <= u8::MAX as usize + 1,
+        "size2class entries are u8 class indices; the class count must not exceed 256"
     );
     // Global monotonicity of `table` — the monotone-pointer algorithm below
     // *depends* on it. `build_table` already rejects a `Params::extras`
