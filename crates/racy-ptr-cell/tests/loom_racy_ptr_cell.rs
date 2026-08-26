@@ -31,6 +31,13 @@
 //!    `init` execution or two different published pointers, even though the
 //!    probe's entry CAS only proves `UNINIT` at one instant, not for its
 //!    whole duration.
+//! 7. **`get()` never reports a cell held at INITIALIZING** — a concurrent
+//!    reader's `get()` returns `None` for the whole window a winner holds the
+//!    sentinel, never a torn or sentinel-derived value.
+//!
+//! Numbered by content, not by physical position below: property 7's section
+//! sits between 5 and 6 in the file so it stays next to the other
+//! winner/loser-interleaving tests; do not infer file order from the number.
 //!
 //! # The two counterfactuals (non-vacuousness proofs)
 //!
@@ -69,7 +76,8 @@
 //! reaches every crate in the build, and under it `RacyPtrCell::new` is not
 //! `const` — so an unscoped run can break any `static CELL: RacyPtrCell<T> =
 //! RacyPtrCell::new();` elsewhere in the workspace. The README says the same
-//! thing under "Running the loom suite"; this command must not drift from it.
+//! thing under "The two rules people get wrong"; this command must not drift
+//! from it.
 
 #![cfg(loom)]
 
