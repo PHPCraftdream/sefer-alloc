@@ -518,7 +518,8 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// ownership.
 ///
 /// `Debug` is hand-written, not derived: a derive would print both raw
-/// tables (~16 KiB + ~16 KiB of numbers for a realistic scheme) on any
+/// tables (~16 KiB total for a realistic scheme, almost all of it the
+/// `size2class` LUT -- `table` itself is a few hundred bytes) on any
 /// accidental `{:?}`/`dbg!`, burying the useful line. This prints the
 /// summary a developer actually wants; use [`table`](Self::table) /
 /// [`size2class`](Self::size2class) to inspect the raw arrays directly.

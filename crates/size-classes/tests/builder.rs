@@ -190,7 +190,8 @@ fn size2class_raw_domain_valid_and_false_sentinel_zones() {
 #[test]
 fn debug_impl_prints_a_summary_not_the_raw_tables() {
     // rush2-holistic F5/task #1489: Debug is hand-written specifically to
-    // avoid dumping both raw tables (~16 KiB each for a realistic scheme).
+    // avoid dumping both raw tables (~16 KiB total for a realistic scheme,
+    // almost all of it the size2class LUT).
     // Pins that on a regression back to `#[derive(Debug)]`: DOMAIN_T has
     // 3 entries and DOMAIN_L is 5, so a derive would print every element of
     // `table: [16, 32, 64]` and `size2class: [0, 1, 2, 2, 2]` -- this
