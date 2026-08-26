@@ -2058,12 +2058,20 @@ jobs:
       # `--all-features` steps at the top of this job reach size-classes
       # only as a path-dependency LIBRARY (via `alloc-core`), never as its
       # own tested workspace member, so its `tests/builder.rs`/
-      # `tests/proptest_builder.rs` and the `proptest`/`bench-scale-tool`
-      # dev-dependencies were never compiled on the pinned 1.88 toolchain
-      # by anything in this job before this row. No `--all-features` here:
-      # the crate declares no `[features]` table.
+      # `tests/proptest_builder.rs` and the `proptest` dev-dependency were
+      # never compiled on the pinned 1.88 toolchain by anything in this job
+      # before this row. No `--all-features` here: the crate declares no
+      # `[features]` table.
       - run: cargo check -p size-classes
       - run: cargo test -p size-classes --no-run
+      # `cargo test --no-run` does NOT compile a `harness = false` bench
+      # target (verified empirically, the same fact task #1395 established
+      # for once-ptr-cell's identical bench shape) -- it only compiles
+      # `bench-scale-tool` itself as a library dependency, never the bench
+      # FILE that calls its API. This row is the only thing in any job that
+      # type-checks `benches/size_classes_bench.rs` on the pinned 1.88
+      # toolchain (rush-tests review finding T1).
+      - run: cargo bench -p size-classes --no-run
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
