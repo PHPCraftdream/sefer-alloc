@@ -180,8 +180,12 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// overflows `usize` (reachable not just with an extreme `min_block`/`growth`
 /// combination but also with a large enough `geo_count` alone -- e.g. with
 /// `min_block = 16`, `growth = (5, 4)` (this crate's own tests' example
-/// scheme; the crate itself has no defaults), `geo_count = 177` already
-/// overflows), or if the merged table (geometric run + `extras`) is not
+/// scheme; the crate itself has no defaults), `geo_count = 183` already
+/// overflows on a 64-bit `usize` (84 on a 32-bit one -- the boundary scales
+/// with `usize::BITS`; `geo_count` up to `182` is exactly the widened-
+/// arithmetic case this crate's `CHANGELOG.md` describes: the next class
+/// fits even though the intermediate `cur * num` product does not fit
+/// `usize`)), or if the merged table (geometric run + `extras`) is not
 /// itself strictly increasing — the per-entry `extras` checks above catch
 /// misshapen `extras`, but not an `extras` entry that DUPLICATES a value
 /// the geometric run also produces, which only the merged table reveals.
