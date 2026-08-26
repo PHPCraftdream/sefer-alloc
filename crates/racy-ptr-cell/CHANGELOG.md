@@ -26,16 +26,18 @@ before it.
   a `GlobalAlloc` method is undefined behaviour. See the crate docs'
   "Using this inside a `#[global_allocator]`" section for the full caller
   contract.
-- **`RacyPtrCell::get_or_try_init(init)`** — fallible initialisation with OOM
-  rollback and loser re-race. The thread that wins the `null → sentinel` CAS
-  runs the caller's init closure exactly once and publishes the resulting
-  pointer with `Release`. When init reports failure (`None`, e.g. OOM), the
-  sentinel is rolled back to `null` and concurrent losers **re-race the CAS** —
-  a later attempt can succeed. This is the deliberate contrast with
-  `std::sync::OnceLock`, whose `get_or_init` cannot fail at all, whose
-  `get_or_try_init` is still unstable (`once_cell_try`), and which parks the
-  losing threads for the duration of the winner's init instead of letting them
-  re-race.
+- **`RacyPtrCell::get_or_try_init(init: impl FnOnce() -> Option<NonNull<T>>)`**
+  — `#[must_use]`, fallible initialisation with OOM rollback and loser
+  re-race. The thread that wins the `null → sentinel` CAS runs the caller's
+  init closure exactly once and publishes the resulting pointer with
+  `Release`; `FnOnce` (not `FnMut`) states that at-most-once bound directly
+  and admits consuming closures. When init reports failure (`None`, e.g.
+  OOM), the sentinel is rolled back to `null` and concurrent losers
+  **re-race the CAS** — a later attempt can succeed. This is the deliberate
+  contrast with `std::sync::OnceLock`, whose `get_or_init` cannot fail at
+  all, whose `get_or_try_init` is still unstable (`once_cell_try`), and
+  which may block the losing threads for the duration of the winner's init
+  (the documented `std` contract) instead of letting them re-race.
 - **The anti-livelock loser-spin rule** — losers spin with `Acquire` loads
   only *while the state is `INITIALIZING`*, never `while != READY`. Spinning
   on `!= READY` deadlocks against the rollback path (a rolled-back cell never
@@ -56,22 +58,25 @@ before it.
 - **Panic-safe init**: an init closure that *unwinds* rolls the sentinel back
   through an RAII guard (`Drop` stores `null` with `Release`), so a panicking
   init leaves the cell in `UNINIT` and retryable rather than wedged in
-  `INITIALIZING` with every loser spinning forever (task #706).
+  `INITIALIZING` with every loser spinning forever.
 - **Release-active sentinel-collision guard**: `get_or_try_init` asserts (in
   every profile, not `debug_assert!`) that a successful init did not return
   the null/sentinel address — a safe closure can construct that address, and
   publishing it would make every reader misclassify the cell as
-  still-initialising forever (task #707).
+  still-initialising forever.
 - **Unconditional `Send + Sync`** for `RacyPtrCell<T>`, exactly like the
   `AtomicPtr<T>` it wraps: the cell only stores and hands back a raw
   `*mut T` / `NonNull<T>` and never dereferences it — whether the pointee is
   safe to access across threads is the caller's `unsafe` contract.
-- **Stable test-probe API** (task #710): `dbg_is_ready()` (single-`Acquire`
-  -load readiness probe) and `dbg_rollback_reenterable()` (drives a live cell
-  through the exact `null → sentinel → rollback → re-CAS` sequence and proves
-  the postcondition, without a process-terminating OOM; restores observed
-  state and never clobbers a concurrent real winner). Documented, semver-stable
-  public surface intended for downstream consumers' own test suites.
+- **Stable test-probe API**: `dbg_is_ready()` (single-`Acquire`-load
+  readiness probe) and `dbg_rollback_reenterable() -> RollbackProbe`
+  (drives a live cell through the exact `null → sentinel → rollback →
+  re-CAS` sequence and proves the postcondition, without a
+  process-terminating OOM; restores observed state and never clobbers a
+  concurrent real winner). `RollbackProbe` is a closed two-variant enum
+  (`Proven` / `NotApplicable`) — the probe has exactly two possible answers,
+  and the type says so. Documented, semver-stable public surface intended
+  for downstream consumers' own test suites.
 - **Executable loom proofs against the real type**: under `--cfg loom` the
   cell's atomics alias to `loom::sync::atomic`, so the shipped loom suite
   (`tests/loom_racy_ptr_cell.rs`) model-checks the actual `RacyPtrCell` —
