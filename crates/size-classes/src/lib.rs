@@ -363,7 +363,11 @@ pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
 /// `size2class[(size - 1) >> log2(min_block)]`, so bucket `k` covers every size
 /// in `(k * min_block, (k + 1) * min_block]`; `size2class[k]` is the smallest
 /// class whose `block_size >= (k + 1) * min_block` -- EXCEPT the top bucket
-/// `L - 1`, whose ideal `need` (`L * min_block`) exceeds `table[N - 1]` (the
+/// `L - 1`, whose ideal `need` (`L * min_block` mathematically -- NOT
+/// guaranteed to fit `usize` even for a valid scheme, e.g. `min_block =
+/// 1 << 62, L = 4`; the builder computes it as `(k + 1).checked_mul(min_block)`
+/// and folds that same overflow into the clamp below, never evaluating the
+/// unrepresentable product) exceeds `table[N - 1]` (the
 /// largest class), so no such class exists; that bucket is clamped to
 /// `table[N - 1]` itself instead. For [`SizeClasses::class_for`] specifically
 /// this is harmless: it never queries bucket `L - 1` for any in-range `size`
