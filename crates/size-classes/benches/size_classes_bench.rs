@@ -23,17 +23,22 @@ const SEFER_MIN_BLOCK: usize = 16;
 const SEFER_EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
 const SEFER_GEO: usize = 40;
 const SEFER_N: usize = SEFER_GEO + SEFER_EXTRAS.len();
+const HUGE_THRESHOLD: usize = 4 * 1024 * 1024;
 const SEFER_PARAMS: Params = Params::new(
     SEFER_MIN_BLOCK,
     (5, 4),
     SEFER_GEO,
     SEFER_EXTRAS,
-    4 * 1024 * 1024,
+    HUGE_THRESHOLD,
 );
 const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
 const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
 const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
 const SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
+
+// Slow-path (size, align) pairs. Keep in sync with tests/builder.rs.
+const JUMP_A: (usize, usize) = (1025, 256);
+const JUMP_B: (usize, usize) = (2049, 1024);
 
 fn main() {
     let mut h = Harness::new("size_classes_bench", env!("CARGO_MANIFEST_DIR"));
@@ -70,14 +75,14 @@ fn main() {
     // size=1025, align=256: seed is the 1200 B class (not 256-divisible);
     // the jump lands on the 2048 B class.
     h.bench("class_for/large_align_slow_path", || {
-        let result = black_box(SEFER_SC.class_for(black_box(1025), black_box(256)));
+        let result = black_box(SEFER_SC.class_for(black_box(JUMP_A.0), black_box(JUMP_A.1)));
         black_box(result);
     });
 
     // size=2049, align=1024: seed is the 2368 B class (not 1024-divisible);
     // the jump lands on the 4096 B class.
     h.bench("class_for/large_align_slow_path_1024", || {
-        let result = black_box(SEFER_SC.class_for(black_box(2049), black_box(1024)));
+        let result = black_box(SEFER_SC.class_for(black_box(JUMP_B.0), black_box(JUMP_B.1)));
         black_box(result);
     });
 
@@ -117,17 +122,17 @@ fn main() {
     // measured directly here rather than indirectly through `class_for`.
 
     h.bench("is_huge/near_huge_threshold_below", || {
-        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024 - 1)));
+        let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD - 1)));
         black_box(result);
     });
 
     h.bench("is_huge/near_huge_threshold_at", || {
-        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024)));
+        let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD)));
         black_box(result);
     });
 
     h.bench("is_huge/near_huge_threshold_above", || {
-        let result = black_box(SEFER_SC.is_huge(black_box(4 * 1024 * 1024 + 1)));
+        let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD + 1)));
         black_box(result);
     });
 

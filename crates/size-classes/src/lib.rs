@@ -527,6 +527,10 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// type (`idx >= N` panics there) -- qualified here rather than removing
 /// `block_size`'s panic doc, since that panic is the correct behavior for
 /// an out-of-contract `idx`.
+///
+/// Deliberately `Copy` (plain const data, no interior mutability, meant
+/// for `const`/`static` use; removing it post-release would be breaking)
+/// — the default SEFER instance is ~16 KiB, so pass it by reference.
 #[derive(Debug, Clone, Copy)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
@@ -665,7 +669,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// correct "next multiple of `align`" computation for a power-of-two
     /// `align` and can overshoot for a non-pow2 one, skipping a class that
     /// would actually have fit or returning `None` where a fitting class
-    /// exists. Neither path panics for a non-pow2 `align` — this is
+    /// exists. Third mode (task #1429, review-3 F2): false-ACCEPT — the
+    /// slow path's P-1 mask test `block & (align - 1) == 0` is not a
+    /// divisibility test for a non-pow2 `align` (on the SEFER scheme,
+    /// `class_for(20, 24)` returns the block=32 seed, `32 % 24 == 8`).
+    /// Neither path panics for a non-pow2 `align` — this is
     /// deliberately a `debug_assert!`, not a hard `assert!`, since the
     /// failure mode is a suboptimal/wrong CLASS CHOICE for a contract
     /// violation, not memory unsafety or table corruption (contrast task

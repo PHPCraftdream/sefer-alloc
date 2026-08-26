@@ -22,12 +22,12 @@ before it.
   `extras` entry that ties or interleaves with the geometric run is rejected
   at this function's own chokepoint, not left for a caller of
   `build_size2class` to discover downstream) are **machine-checked**: a
-  violation is a `const`-evaluation panic, i.e. a compile error at the
-  consumer's table definition, never a silently accepted bad table (task
-  #731 tightened several of these from bare division panics to named
-  asserts; the publication audit's P2-1/P2-2 findings closed the two
-  remaining gaps — a release-profile overflow in the length arithmetic, and
-  the merged-table monotonicity check itself).
+  violation panics identically in `const` evaluation (a compile error at
+  the consumer's table definition) and at runtime, never a silently
+  accepted bad table (task #731 tightened several of these from bare
+  division panics to named asserts; the publication audit's P2-1/P2-2
+  findings closed the two remaining gaps — a release-profile overflow in
+  the length arithmetic, and the merged-table monotonicity check itself).
 - **`build_size2class(table) -> [u8; L]`** — derives the O(1) `size → class`
   lookup from a table at compile time using the monotone-pointer technique
   (`O(buckets + classes)` const-eval), with a compile-time pin that the class

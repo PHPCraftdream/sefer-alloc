@@ -168,7 +168,10 @@ fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
     // benchmark now uses -- pinning that the seed is genuinely NOT
     // align-divisible for both, so a future table change can't silently make
     // the bench inert again without this test catching it.
-    for &(size, align) in &[(1025usize, 256usize), (2049usize, 1024usize)] {
+    // Keep in sync with benches/size_classes_bench.rs (JUMP_A/JUMP_B).
+    const JUMP_A: (usize, usize) = (1025, 256);
+    const JUMP_B: (usize, usize) = (2049, 1024);
+    for &(size, align) in &[JUMP_A, JUMP_B] {
         let need = size.max(align);
         let seed = SEFER_SC.size2class()[(need - 1) >> SEFER_MIN_BLOCK.trailing_zeros()] as usize;
         assert!(
