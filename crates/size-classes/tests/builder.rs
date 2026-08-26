@@ -10,6 +10,12 @@
 
 use size_classes::{build_size2class, build_table, size2class_len, Params, SizeClasses};
 
+mod common;
+use common::{
+    JUMP_A, JUMP_B, SEFER_EXTRAS, SEFER_GEO, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N, SEFER_SC,
+    SEFER_TABLE,
+};
+
 /// A faithful, from-scratch reference table builder (a plain `Vec` version of
 /// the crate's `const fn build_table`) so tests do not trust the crate's own
 /// output. Geometric run merged with sorted `extras`.
@@ -62,26 +68,6 @@ fn reference_class_for(table: &[usize], size: usize, align: usize) -> Option<usi
         .iter()
         .position(|&b| b >= need && b.is_multiple_of(align))
 }
-
-// ---------------------------------------------------------------------------
-// Sefer's concrete parameterization (49 classes; the default in-tree scheme).
-// ---------------------------------------------------------------------------
-
-const SEFER_MIN_BLOCK: usize = 16;
-const SEFER_EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
-const SEFER_GEO: usize = 40;
-const SEFER_N: usize = SEFER_GEO + SEFER_EXTRAS.len();
-const SEFER_PARAMS: Params = Params::new(
-    SEFER_MIN_BLOCK,
-    (5, 4),
-    SEFER_GEO,
-    SEFER_EXTRAS,
-    4 * 1024 * 1024,
-);
-const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
-const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
-const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
-static SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
 
 #[test]
 fn sefer_table_matches_reference_and_is_strictly_increasing() {
@@ -242,9 +228,9 @@ fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
     // benchmark now uses -- pinning that the seed is genuinely NOT
     // align-divisible for both, so a future table change can't silently make
     // the bench inert again without this test catching it.
-    // Keep in sync with benches/size_classes_bench.rs (JUMP_A/JUMP_B).
-    const JUMP_A: (usize, usize) = (1025, 256);
-    const JUMP_B: (usize, usize) = (2049, 1024);
+    // JUMP_A/JUMP_B now come from `common` -- mechanically shared with
+    // benches/size_classes_bench.rs (rush-tests review T4/task #1479),
+    // replacing the former comment-only "keep in sync" convention.
     for &(size, align) in &[JUMP_A, JUMP_B] {
         let need = size.max(align);
         let seed = SEFER_SC.size2class()[(need - 1) >> SEFER_MIN_BLOCK.trailing_zeros()] as usize;

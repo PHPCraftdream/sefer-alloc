@@ -11,37 +11,15 @@
 use std::hint::black_box;
 
 use bench_scale_tool::Harness;
-use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
-// ---------------------------------------------------------------------------
-// Sefer's concrete parameterization (49 classes; the default in-tree scheme).
-// Copied from tests/builder.rs — this is the realistic production-like
-// configuration the actual allocator uses.
-// ---------------------------------------------------------------------------
-
-const SEFER_MIN_BLOCK: usize = 16;
-const SEFER_EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
-const SEFER_GEO: usize = 40;
-const SEFER_N: usize = SEFER_GEO + SEFER_EXTRAS.len();
-const HUGE_THRESHOLD: usize = 4 * 1024 * 1024;
-const SEFER_PARAMS: Params = Params::new(
-    SEFER_MIN_BLOCK,
-    (5, 4),
-    SEFER_GEO,
-    SEFER_EXTRAS,
-    HUGE_THRESHOLD,
-);
-const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
-const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
-const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
-// `static`, not `const`: matches the crate's own recommendation (a `const`
-// this size re-materializes at every use site) and the production shim's
-// `static SC` (src/alloc_core/size_classes.rs).
-static SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(SEFER_PARAMS);
-
-// Slow-path (size, align) pairs. Keep in sync with tests/builder.rs.
-const JUMP_A: (usize, usize) = (1025, 256);
-const JUMP_B: (usize, usize) = (2049, 1024);
+// Sefer's concrete parameterization (49 classes; the default in-tree
+// scheme) and the JUMP_A/JUMP_B slow-path pairs are mechanically shared
+// with tests/builder.rs via this module (rush-tests review T4/task
+// #1479), replacing the former comment-only "keep in sync" convention --
+// a single-sided edit can no longer desync the bench from the test.
+#[path = "../tests/common/mod.rs"]
+mod common;
+use common::{HUGE_THRESHOLD, JUMP_A, JUMP_B, SEFER_MAX, SEFER_SC};
 
 fn main() {
     let mut h = Harness::new("size_classes_bench", env!("CARGO_MANIFEST_DIR"));
