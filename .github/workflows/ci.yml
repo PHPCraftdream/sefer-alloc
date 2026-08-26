@@ -1999,6 +1999,19 @@ jobs:
       - run: cargo test -p numa-shim --no-run
         env:
           RUSTFLAGS: "--cfg numa_shim_mock"
+      # racy-ptr-cell-specific MSRV checks (item 135/task #1410, the same
+      # parity gap item 88/task #1173 and item 102/task #1282 already closed
+      # for aligned-vmem/numa-shim above): the workspace-root `--all-features`
+      # steps at the top of this job run without `-p`/`--workspace` in this
+      # NON-virtual workspace (root package = `sefer-alloc`), so they act on
+      # the root package only — `racy-ptr-cell` reaches them merely as a
+      # path-dependency LIBRARY (via the `alloc-core` feature), never as its
+      # own tested workspace member. Its `tests/cell_unit.rs` and the
+      # dev-dependency `bench-scale-tool` were never compiled on the pinned
+      # 1.88 toolchain by anything in this job before this row. No
+      # `--all-features` here: the crate declares no `[features]` table.
+      - run: cargo check -p racy-ptr-cell
+      - run: cargo test -p racy-ptr-cell --no-run
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
