@@ -19,6 +19,13 @@
 **/.rush/
 /.idea
 /tmp
+# task #660 push-prep cleanup: ad-hoc `.check-<n>-{release,wave,retry}.log`
+# stdout captures from manual `npm run check` invocations -- 13 files, 8.5 MiB,
+# never committed before (zero git history), same scratch-by-default policy as
+# docs/perf/_raw_*.log above. Bare ignore, no exception clause: unlike a
+# perf-gate report citing specific _raw_*.log filenames as evidence, nothing
+# in this repo cites a specific .check-*.log by name.
+/.check-*.log
 # R6-OPT-A6: per-run raw provenance dumps from scripts/paired-ab-runner.mjs --
 # generated output, accumulates one timestamped JSON per invocation, not source.
 # SAME scratch-by-default / `git add -f`-when-cited policy as `_raw_*.log`
