@@ -53,8 +53,8 @@ before it.
     intended placement is a `static` (a `const` this size re-materializes at
     every use site -- see the `SizeClasses` doc);
   - accessors `table()`, `size2class()`, `min_block()`, `min_block_shift()`,
-    `small_align_max()`, `small_max()`, `count()`, `block_size(idx)`,
-    `is_huge(size)`;
+    `small_align_max()`, `small_max()`, `huge_threshold()`, `count()`,
+    `block_size(idx)`, `is_huge(size)`;
   - **`class_for(size, align) -> Option<usize>`** — resolve a request to the
     smallest class whose block is `>= max(size, align)` **and** a multiple of
     `align` (`None` routes to the caller's large path). O(1) fast path for
@@ -77,6 +77,19 @@ before it.
     carve base already has, it does not create it -- `base % align == 0` for
     every served `align` is the caller's own documented precondition, which
     this crate (pure size arithmetic, no addresses) cannot check.
+  - **`try_class_for(size, align) -> Result<Option<usize>, InvalidAlign>`** —
+    the checked twin of `class_for`: validates `align` instead of assuming
+    it (`Err(InvalidAlign(align))` for a non-power-of-two `align`, including
+    `0`, before any arithmetic runs), then delegates. Never panics, for any
+    `(size, align)` pair — the substantive reason to prefer it over
+    `class_for` whenever `align` is not already known-valid by construction
+    (e.g. taken directly from a `core::alloc::Layout`). Mirrors
+    `Layout::from_size_align` (checked) next to
+    `Layout::from_size_align_unchecked` (trusted) in `core::alloc`; adds
+    zero cost to `class_for`'s own hot path. `InvalidAlign` implements
+    `Display` and `core::error::Error`, and is a plain `pub` tuple struct
+    (not `#[non_exhaustive]`) — a deliberate pre-0.1.0 decision, since it
+    has exactly one reason to exist and no foreseeable second field.
 - `is_huge` compares against the caller-supplied `huge_threshold` policy
   parameter — the crate has no notion of an OS segment size; the consumer
   decides where "large" ends and "huge" begins for its own segment policy.

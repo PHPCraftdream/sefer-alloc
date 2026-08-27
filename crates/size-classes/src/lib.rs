@@ -32,6 +32,9 @@
 //!   extracted from: `align >= 512`). The classifier picks an align-
 //!   *divisible* stride; see [`SizeClasses::class_for`]'s `# Preconditions`
 //!   for the separate base-address requirement this crate cannot check.
+//!   [`SizeClasses::try_class_for`] is the checked twin -- validates `align`
+//!   instead of assuming it, at zero cost to `class_for`'s own hot path; use
+//!   it unless `align` is already known-valid by construction.
 //!
 //! ## The `huge` threshold is a policy parameter
 //!

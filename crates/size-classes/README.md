@@ -26,6 +26,13 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   align-aligned only if the base you carve from is too — a caller-owned
   precondition the crate cannot check itself (see `SizeClasses::class_for`'s
   `# Preconditions` in the crate docs for the exact requirement).
+- `SizeClasses::try_class_for(size, align)` — the checked twin of
+  `class_for`: rejects a non-power-of-two `align` (including `0`) with
+  `Err(InvalidAlign(align))` before any arithmetic runs, instead of assuming
+  a valid `align` and risking the wrong answer. Never panics, for any
+  `(size, align)`. Use this one unless `align` is already known-valid by
+  construction (e.g. taken from a `core::alloc::Layout`) — `class_for`
+  stays the zero-validation hot-path variant for that case.
 
 The "huge" threshold is a **policy parameter** (`Params::huge_threshold`); the
 crate has no notion of an OS segment size.
