@@ -96,7 +96,7 @@ fn reference_class_for(table: &[usize], size: usize, align: usize) -> Option<usi
 
 // MS prepublish review, task #1503 (P2-2): the exact geo_count where
 // production succeeds (182 on 64-bit, per sefer_growth_geo_count_182_is_
-// the_last_that_fits_on_64_bit above) but where `reference_table`'s
+// the_last_that_fits_on_64_bit below) but where `reference_table`'s
 // PRE-fix unconditional last-iteration advance would additionally compute
 // one more, unused step -- the same step that overflows at geo_count=183.
 // Pins that `reference_table` agrees with production at the boundary

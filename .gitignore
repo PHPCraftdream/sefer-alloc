@@ -9,6 +9,14 @@
 # this once captrack is added as a dev-dependency there too.
 **/target/
 /.crush
+# oxx prepublish review, task #1513: crates/size-classes/.rush/ existed,
+# untracked-but-unprotected (an earlier session's `cd crates/size-classes`
+# left a stray `.rush/stdin/` there via `rush`'s own tooling). The repo-root
+# `.rush/` stays untracked only because Crush auto-generates its OWN nested
+# `.rush/.gitignore` (itself self-ignored by its `*` pattern, so it is never
+# committed and offers no durable protection if deleted) -- a per-crate `.rush/`
+# has no such guarantee. Depth-generic so it also covers any future crate.
+**/.rush/
 /.idea
 /tmp
 # R6-OPT-A6: per-run raw provenance dumps from scripts/paired-ab-runner.mjs --
