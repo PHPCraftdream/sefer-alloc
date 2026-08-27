@@ -413,6 +413,37 @@ const GRANDFATHERED = new Map([
       'reason (clippy::large_const_arrays, already fixed locally, never ' +
       'pushed). Durable record: item 78, sub-card 8 (task #1505).',
   ],
+  [
+    'abf2061',
+    'NOT a genuine mis-slot -- a fourth FALSE-POSITIVE exemption (task ' +
+      '#1514), same class as eaa3310/e25ec74: docs(size-classes): prefix ' +
+      'on a task-#1514 commit (itself fixing oxx P4-3) whose ENTIRE diff ' +
+      'is one line, crates/size-classes/Cargo.toml\'s `description = "..."` ' +
+      'value, shortened for crates.io search-result truncation. Same ' +
+      'reasoning as eaa3310\'s entry applies verbatim. UNPUSHED. Durable ' +
+      'record: item 78, sub-card 9 (task #1514).',
+  ],
+  [
+    '66f47d2',
+    'A GENUINE mis-slot, same defect class as 09f4d16/fb7dac8 (sub-cards ' +
+      '1/5) -- NOT a heuristic false positive like every other entry in ' +
+      'this list. The commit\'s one non-comment src/ line is a real ' +
+      'Display::fmt format-string change on InvalidAlign (task #1509): ' +
+      '"class_for: align ..." -> "try_class_for: align ...". docs(...) ' +
+      'requires "no code changed at all"; the honest prefix would have ' +
+      'been a plain fix(size-classes):. UNLIKE 09f4d16/fb7dac8 this is ' +
+      'UNPUSHED, so a rebase to reword it was available -- deliberately ' +
+      'not taken: rewriting local history for one string-literal wording ' +
+      'fix is exactly the kind of git-history action this repo\'s own ' +
+      'conventions reserve for explicit owner request, and InvalidAlign ' +
+      'has zero real consumers (size-classes has never been published, ' +
+      'task #660), so the "real Display change" risk 09f4d16\'s entry ' +
+      'warns about does not apply here the way it did for an already-' +
+      'shipped VmemError. First entry in this list that is a genuine ' +
+      'mis-slot rather than a guard heuristic gap -- recorded as such, ' +
+      'not relabeled as a false positive to fit the pattern. Durable ' +
+      'record: item 78, sub-card 10 (task #1514).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
@@ -446,7 +477,19 @@ const MEASUREMENT_ONLY_PREFIXES = [
 // touched exactly one of these three). Exact basename match, not a prefix.
 // Also includes any CHANGELOG.md file anywhere in the repo (e.g. in crate
 // subdirectories) as these are always documentation.
-const MEASUREMENT_ONLY_ROOT_FILES = new Set(['CHANGELOG.md', 'README.md', 'CLAUDE.md']);
+//
+// `.gitignore` (task #1514, oxx prepublish review of size-classes, found
+// via the very FAILURE this addition prevents): a different category from
+// the other three -- not documentation, but the same underlying property
+// that earns the exemption (a file whose content can, BY DEFINITION, never
+// be shipping/behavioral code -- its only possible content is git
+// ignore-glob patterns). Unlike the deliberately-NOT-taught Cargo.toml
+// `description` case (see the eaa3310/e25ec74 grandfather entries' own
+// reasoning), a WHOLE-FILE basename exemption here carries none of that
+// guard-cleverness risk: there is no other field/section of `.gitignore`
+// that could hide real behavior change, the way `dependencies`/`version`
+// coexist with `description` in Cargo.toml.
+const MEASUREMENT_ONLY_ROOT_FILES = new Set(['CHANGELOG.md', 'README.md', 'CLAUDE.md', '.gitignore']);
 
 function git(args) {
   // Task #1218: three -c overrides, all pinning the OUTPUT SHAPE this
