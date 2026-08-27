@@ -49,11 +49,8 @@ usually a few hundred bytes). `L` isn't chosen directly — it falls out of
 own `SEFER`-fixture default (`min_block = 16`, 49 classes) gives `L =
 16173`, ~16.18 KiB total; a 24-class scheme with `min_block = 8` reaches `L
 = 18207`, a larger object despite having half the classes. See
-[`size2class_len`]'s rustdoc for the full worked comparison.
-
-`Params` is `#[non_exhaustive]` (field growth is plausible, e.g. a future
-`small_align_max` knob) — construct it via `Params::new(..)`, not a struct
-literal.
+[`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
+for the full worked comparison.
 
 `Params` is `#[non_exhaustive]` (field growth is plausible, e.g. a future
 `small_align_max` knob) — construct it via `Params::new(..)`, not a struct
