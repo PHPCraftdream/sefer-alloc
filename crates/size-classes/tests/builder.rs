@@ -1355,3 +1355,33 @@ fn readme_example_compiles_and_derives_its_generics() {
     let idx = SC.class_for(100, 8).expect("100 B resolves");
     assert!(SC.block_size(idx) >= 100);
 }
+
+/// A mechanical drift guard for the test above: size-classes round-4
+/// prepublish review P3-2 pointed out that "mirrored here verbatim" (the
+/// comment on the test above) was an aspiration, not an enforced fact --
+/// nothing checked the two copies actually stayed equal. This asserts every
+/// declaration line of the mirrored example appears verbatim (whitespace and
+/// all) in README.md's own raw text, so editing one copy without the other
+/// fails THIS test, not just silently rots the published example.
+#[test]
+fn readme_example_lines_appear_verbatim_in_readme_md() {
+    let readme = include_str!("../README.md");
+    let declaration_lines = [
+        "const MIN_BLOCK: usize = 16;",
+        "const GEO_COUNT: usize = 40;",
+        "const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];",
+        "const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20);",
+        "const N: usize = GEO_COUNT + EXTRAS.len();",
+        "const TABLE: [usize; N] = build_table::<N>(&PARAMS);",
+        "const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);",
+        "static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);",
+    ];
+    for line in declaration_lines {
+        assert!(
+            readme.contains(line),
+            "README.md's example no longer contains the line `{line}` -- \
+             it has drifted from the mirrored copy in \
+             readme_example_compiles_and_derives_its_generics above"
+        );
+    }
+}
