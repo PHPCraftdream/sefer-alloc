@@ -70,7 +70,7 @@
 //!   default build.
 //! - The smallest class is `>= NODE_SIZE` (asserted in `segment_header.rs`).
 
-use size_classes::{size2class_len, Params, SizeClasses as SizeClassesImpl};
+use size_classes::{size2class_len, InvalidAlign, Params, SizeClasses as SizeClassesImpl};
 
 /// The minimum block size and the fundamental small-class alignment. Must be a
 /// power of two `>=` [`super::node::NODE_SIZE`] (the free-list node word — the
@@ -274,6 +274,18 @@ impl SizeClasses {
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
         SC.class_for(size, align)
+    }
+
+    /// The checked twin of [`class_for`](Self::class_for): rejects a
+    /// non-power-of-two `align` (including `0`) with `Err(InvalidAlign)`
+    /// instead of trusting it. No in-tree allocator call site needs this --
+    /// every internal caller's alignment already comes from a `Layout` -- it
+    /// exists solely so [`SegmentLayout::try_class_for`](super::SegmentLayout::try_class_for),
+    /// a genuinely public API, has a checked forwarder to expose (size-classes
+    /// round-4 prepublish review, P2-1).
+    #[must_use]
+    pub(crate) const fn try_class_for(size: usize, align: usize) -> Result<Option<usize>, InvalidAlign> {
+        SC.try_class_for(size, align)
     }
 
     /// The block size of class `idx`. Panics (all profiles) if out of range

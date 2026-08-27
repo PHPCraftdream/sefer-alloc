@@ -93,6 +93,31 @@ impl SegmentLayout {
         super::size_classes::SizeClasses::class_for(size, align)
     }
 
+    /// The checked twin of [`class_for`](Self::class_for): rejects a
+    /// non-power-of-two `align` (including `0`) with
+    /// `Err(size_classes::InvalidAlign(align))` before any arithmetic runs,
+    /// instead of assuming `align` is valid. Never panics, for any `(size,
+    /// align)` pair.
+    ///
+    /// Every in-tree allocator call site uses [`class_for`](Self::class_for)
+    /// directly, because their alignments already come from a `Layout` and so
+    /// are trusted by construction. This exists for `SegmentLayout`'s OTHER
+    /// audience: `SegmentLayout` is re-exported from the crate root
+    /// (`sefer_alloc::SegmentLayout`) as a public introspection surface, and
+    /// an external caller of `class_for` can pass an arbitrary `usize` --
+    /// size-classes round-4 prepublish review P2-1 flagged that the crate's
+    /// most discoverable public forwarder had no equivalent to the
+    /// `size-classes` crate's own recommended-by-default `try_class_for`
+    /// (see that crate's `SizeClasses::try_class_for` doc). Use this one
+    /// unless `align` is already known-valid by construction.
+    #[must_use]
+    pub const fn try_class_for(
+        size: usize,
+        align: usize,
+    ) -> Result<Option<usize>, size_classes::InvalidAlign> {
+        super::size_classes::SizeClasses::try_class_for(size, align)
+    }
+
     /// The end of the small-segment metadata region (page-aligned past the
     /// last metadata structure). Payload carving begins at this offset.
     /// Exposed so tests can reason about the metadata/payload boundary without

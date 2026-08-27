@@ -409,6 +409,12 @@ pub use alloc_core::SmallPoolPolicy;
 pub use alloc_core::SmallSegmentPoolConfig;
 #[cfg(feature = "alloc-core")]
 pub use alloc_core::{AllocCore, SegmentLayout};
+// Re-exported so a caller of `SegmentLayout::try_class_for` (size-classes
+// round-4 prepublish review P2-1) can name/match the error type without
+// adding `size-classes` as their own direct dependency -- the first
+// `size-classes`-crate type to appear in this crate's own public API.
+#[cfg(feature = "alloc-core")]
+pub use size_classes::InvalidAlign;
 
 #[cfg(feature = "alloc-global")]
 pub use global::{AllocStats, SeferAlloc};

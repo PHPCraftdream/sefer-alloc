@@ -293,3 +293,56 @@ fn counterfactual_naive_shift_without_minus_one_would_be_wrong() {
     assert_ne!(correct, naive, "counterfactual no longer distinguishes");
     assert_eq!(correct, 0);
 }
+
+// ---------------------------------------------------------------------------
+// 6. try_class_for: parity with class_for on valid input, rejection on
+//    invalid `align` (size-classes round-4 prepublish review P2-1 -- the
+//    public `SegmentLayout::class_for` forwarder had no checked twin, unlike
+//    the `size-classes` crate itself which recommends `try_class_for` by
+//    default).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn try_class_for_matches_class_for_on_every_valid_small_input() {
+    let small_aligns = [1usize, 2, 4, 8, 16, 32, 64, 128, 256];
+    for align in small_aligns {
+        for size in (1..=SegmentLayout::SMALL_MAX).step_by(37) {
+            let checked = SegmentLayout::try_class_for(size, align);
+            let unchecked = SegmentLayout::class_for(size, align);
+            assert_eq!(
+                checked,
+                Ok(unchecked),
+                "try_class_for/class_for drift at size={size} align={align}"
+            );
+        }
+    }
+    // Exhaustive at the boundaries, where off-by-ones live.
+    let smax = SegmentLayout::SMALL_MAX;
+    for size in [1, 2, SegmentLayout::MIN_BLOCK, smax - 1, smax, smax + 1] {
+        for align in small_aligns {
+            assert_eq!(
+                SegmentLayout::try_class_for(size, align),
+                Ok(SegmentLayout::class_for(size, align))
+            );
+        }
+    }
+}
+
+#[test]
+fn try_class_for_rejects_zero_align_without_panicking() {
+    // class_for(32, 0) would panic ((need - 1) underflowing then failing the
+    // unconditional LUT bounds check) -- try_class_for must reject it first.
+    let err = SegmentLayout::try_class_for(32, 0)
+        .expect_err("align=0 is not a power of two, must be rejected");
+    assert_eq!(err, sefer_alloc::InvalidAlign(0));
+}
+
+#[test]
+fn try_class_for_rejects_non_power_of_two_align() {
+    for &bad_align in &[3usize, 5, 6, 7, 9, 100] {
+        match SegmentLayout::try_class_for(64, bad_align) {
+            Err(sefer_alloc::InvalidAlign(a)) => assert_eq!(a, bad_align),
+            Ok(class) => panic!("align={bad_align} is not a power of two, got Ok({class:?})"),
+        }
+    }
+}
