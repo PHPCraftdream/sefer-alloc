@@ -489,7 +489,17 @@ const MEASUREMENT_ONLY_PREFIXES = [
 // guard-cleverness risk: there is no other field/section of `.gitignore`
 // that could hide real behavior change, the way `dependencies`/`version`
 // coexist with `description` in Cargo.toml.
-const MEASUREMENT_ONLY_ROOT_FILES = new Set(['CHANGELOG.md', 'README.md', 'CLAUDE.md', '.gitignore']);
+// `bench-iters.txt` (task #1531 follow-up): the root-level calibration
+// manifest `bench-scale-tool` writes JIT-calibrated iteration counts to --
+// generated data FROM running a benchmark harness, never hand-authored
+// shipping/behavioral code, same category as CHANGELOG.md/.gitignore above.
+const MEASUREMENT_ONLY_ROOT_FILES = new Set([
+  'CHANGELOG.md',
+  'README.md',
+  'CLAUDE.md',
+  '.gitignore',
+  'bench-iters.txt',
+]);
 
 function git(args) {
   // Task #1218: three -c overrides, all pinning the OUTPUT SHAPE this

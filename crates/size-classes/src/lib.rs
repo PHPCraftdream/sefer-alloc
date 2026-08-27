@@ -33,8 +33,14 @@
 //!   *divisible* stride; see [`SizeClasses::class_for`]'s `# Preconditions`
 //!   for the separate base-address requirement this crate cannot check.
 //!   [`SizeClasses::try_class_for`] is the checked twin -- validates `align`
-//!   instead of assuming it, at zero cost to `class_for`'s own hot path; use
-//!   it unless `align` is already known-valid by construction.
+//!   instead of assuming it. It is a separate function, not a wrapper around
+//!   `class_for`, so choosing to call it costs `class_for` itself nothing --
+//!   that is the "zero cost" claim: `class_for`'s own codegen is unaffected
+//!   by `try_class_for` existing, not that `try_class_for` is as cheap as
+//!   `class_for` to call (it does strictly more work: an added power-of-two
+//!   check before delegating -- see `benches/size_classes_bench.rs`'s
+//!   `try_class_for/*` rows for the measured difference). Use
+//!   `try_class_for` unless `align` is already known-valid by construction.
 //!
 //! ## The `huge` threshold is a policy parameter
 //!
@@ -170,8 +176,15 @@ impl<'a> Params<'a> {
 ///
 /// Both are checked, not merely documented: an unchecked `+ 1` here would
 /// wrap to `0` in a release build — including a release-profile `const`
-/// evaluation, since const-eval overflow checks follow the `overflow-checks`
-/// profile for a `const fn`'s body — silently yielding an empty lookup.
+/// evaluation reached through a `const fn` CALL (not a bare literal
+/// expression), since const-eval overflow checks for such a call follow the
+/// `overflow-checks` profile the crate's MIR was built with — silently
+/// yielding an empty lookup. This is a real, tracked rustc characteristic,
+/// not a misreading of the Rust Reference's more general "overflow is a
+/// compile-time error in const contexts" wording: see
+/// <https://github.com/rust-lang/rust/issues/74823> ("Const functions
+/// sometimes don't do overflow checks in release mode"), independently
+/// reproduced against this crate's own MSRV and current stable toolchains.
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
     assert!(
@@ -826,10 +839,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             let block = self.table[i];
             // `align` is contractually a power of two here (debug-asserted
             // above), so the mask is equivalent to `is_multiple_of` but skips
-            // an integer division, measured faster on the slow-path benches
-            // (`benches/size_classes_bench.rs`, reproducible via `cargo
-            // bench -p size-classes`) -- and it matches `next_mult`'s idiom
-            // just below.
+            // an integer division -- and it matches `next_mult`'s idiom just
+            // below. `benches/size_classes_bench.rs`'s `jump_vs_walk` rows
+            // measure this jump algorithm (which uses this mask) against a
+            // naive one-class-at-a-time walk (which uses `is_multiple_of`)
+            // and find the jump faster on SEFER's own table, but that
+            // measures the two algorithms as a whole, not this mask in
+            // isolation from the jump-ahead itself; MS round-3 prepublish
+            // review P2-4.
             if block & (align - 1) == 0 {
                 return Some(i);
             }

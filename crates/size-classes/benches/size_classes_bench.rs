@@ -94,6 +94,30 @@ fn main() {
         black_box(result);
     });
 
+    // ── try_class_for/small_hit (same input as class_for/small_hit above) ────
+    // MS round-3 prepublish review P2-1: the crate's own docs claim
+    // `try_class_for` "adds zero cost to `class_for`'s own hot path" --
+    // structurally true (it is a separate function, not a wrapper), but no
+    // benchmark had ever exercised `try_class_for` at all, so its OWN cost
+    // (the added power-of-two validation before delegating) had no measured
+    // number next to `class_for`'s. Same (size, align) as
+    // `class_for/small_hit` so the only variable between the two rows is
+    // the validation branch.
+    h.bench("try_class_for/small_hit", || {
+        let result = black_box(SEFER_SC.try_class_for(black_box(32), black_box(1)));
+        let _ = black_box(result);
+    });
+
+    // ── try_class_for/invalid_align_reject (early Err, no arithmetic runs) ───
+    // The other half of `try_class_for`'s contract: a non-power-of-two (here
+    // zero) `align` is rejected before `need`/the LUT are ever touched --
+    // this is the case `class_for` cannot handle at all (it would panic on
+    // `(0, 0)`, see `class_for`'s own `# Preconditions`).
+    h.bench("try_class_for/invalid_align_reject", || {
+        let result = black_box(SEFER_SC.try_class_for(black_box(32), black_box(0)));
+        let _ = black_box(result);
+    });
+
     // ── class_for/large_align_slow_path (divisibility-jump) ──────────────────
     // Slow path: align > min_block, so we need to check divisibility and
     // potentially jump over non-divisible classes. This is a different

@@ -71,8 +71,11 @@ before it.
     crate exists to remove (`sefer-alloc`'s own motivating case, the
     allocator this crate was extracted from: `align >= 512`).
     `align` must be a power of two (the `Layout` contract), enforced by a
-    `debug_assert!` (task #729) — a violation yields a suboptimal/wrong class
-    choice, not memory unsafety. The divisibility check is a STRIDE property,
+    `debug_assert!` (task #729) — in release, the violation is unspecified:
+    it can return a wrong `Some`/`None`, or panic for the `(size, align) ==
+    (0, 0)` corner (never memory unsafety). `try_class_for` below closes this
+    for callers that don't already know `align` is valid. The divisibility
+    check is a STRIDE property,
     not an address guarantee: it preserves whatever alignment the caller's
     carve base already has, it does not create it -- `base % align == 0` for
     every served `align` is the caller's own documented precondition, which
@@ -85,8 +88,10 @@ before it.
     `class_for` whenever `align` is not already known-valid by construction
     (e.g. taken directly from a `core::alloc::Layout`). Mirrors
     `Layout::from_size_align` (checked) next to
-    `Layout::from_size_align_unchecked` (trusted) in `core::alloc`; adds
-    zero cost to `class_for`'s own hot path. `InvalidAlign` implements
+    `Layout::from_size_align_unchecked` (trusted) in `core::alloc`; being a
+    separate function, it adds zero cost to `class_for`'s own hot path --
+    `try_class_for` itself does strictly more work than `class_for` (an
+    added power-of-two check before delegating). `InvalidAlign` implements
     `Display` and `core::error::Error`, and is a plain `pub` tuple struct
     (not `#[non_exhaustive]`) — a deliberate pre-0.1.0 decision, since it
     has exactly one reason to exist and no foreseeable second field.

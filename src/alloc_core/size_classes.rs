@@ -229,9 +229,19 @@ static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 /// distinct from the copy inside `SC` — whether the compiler additionally
 /// dedupes the two `.rodata` byte sequences (identical content, different
 /// symbols) is an optimizer/linker decision this change does not control or
-/// guarantee. Not measured to change binary size (see the gate task's size
-/// comparison); do not cite this comment as a `.rodata`-savings claim beyond
-/// "one fewer redundant `build_size2class` call at compile time."
+/// guarantee. Measured (task #1518): `examples/global_allocator` built
+/// `--release --features "production internals alloc-global"` before and
+/// after this change produced byte-identical executables (217088 bytes both
+/// times, via `git stash`/`git stash pop` on this file) -- the MSVC linker
+/// already folds the two identical `.rodata` sequences, so this crate's own
+/// storage duplication happens to cost nothing extra on this toolchain
+/// today. A different linker could behave differently; do not cite this
+/// comment as a portable `.rodata`-savings guarantee beyond "one fewer
+/// redundant `build_size2class` call at compile time." (size-classes
+/// round-3 prepublish review P3-4 asked whether `SIZE2CLASS` could instead
+/// be a `&'static` reference into `SC`'s own table rather than a copy --
+/// given the measured zero current impact, that type change was not made;
+/// revisit if a future toolchain/linker measurement shows a real cost.)
 pub(crate) static SIZE2CLASS: [u8; S2C_LEN] = *SC.size2class();
 
 /// A classifier over [`SIZE_CLASS_TABLE`]. A zero-sized forwarder to the crate
