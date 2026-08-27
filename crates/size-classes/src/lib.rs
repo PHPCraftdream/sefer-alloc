@@ -505,10 +505,12 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 ///
 /// Construct one at compile time with [`SizeClasses::build`]. All query methods
 /// are `const` pure arithmetic — no allocation, and no panics on the lookup
-/// path FOR IN-CONTRACT INPUTS (`size >= 1`, a power-of-two `align`, and an
-/// `idx` obtained from [`class_for`](Self::class_for) rather than picked
-/// independently — an out-of-range `idx` does panic, see
-/// [`block_size`](Self::block_size)).
+/// path FOR IN-CONTRACT INPUTS: `need = max(size, align) >= 1` (so `size ==
+/// 0` alone is fine whenever `align >= 1` -- see
+/// [`class_for`](Self::class_for)'s own doc for the precise domain), a
+/// power-of-two `align`, and an `idx` obtained from
+/// [`class_for`](Self::class_for) rather than picked independently — an
+/// out-of-range `idx` does panic, see [`block_size`](Self::block_size).
 ///
 /// Deliberately NOT `Copy`: an instance embeds both tables, so a realistic
 /// scheme is ~16 KiB, and `Copy` would give that a `let a = b;`-cheap
