@@ -284,7 +284,10 @@ impl SizeClasses {
     /// a genuinely public API, has a checked forwarder to expose (size-classes
     /// round-4 prepublish review, P2-1).
     #[must_use]
-    pub(crate) const fn try_class_for(size: usize, align: usize) -> Result<Option<usize>, InvalidAlign> {
+    pub(crate) const fn try_class_for(
+        size: usize,
+        align: usize,
+    ) -> Result<Option<usize>, InvalidAlign> {
         SC.try_class_for(size, align)
     }
 
