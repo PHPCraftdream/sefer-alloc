@@ -31,14 +31,37 @@ fn reference_table(
     let mask = min_block - 1;
     let mut geo = Vec::with_capacity(geo_count);
     let mut cur = min_block;
-    for _ in 0..geo_count {
+    for i in 0..geo_count {
         geo.push(cur);
-        let mut next = (cur * num).div_ceil(den);
-        next = (next + mask) & !mask;
-        if next <= cur {
-            next = cur + min_block;
+        // MS prepublish review, task #1503 (P2-2): two independent fixes to
+        // this loop, both needed -- verified by fault injection (each one
+        // alone still panicked at the geo_count=182 boundary production
+        // itself accepts):
+        // 1. Only advance when a next class is actually needed (mirrors
+        //    production's `if gi < geo_count` guard, lib.rs) -- computing an
+        //    extra, unused advance past the last requested class overflows
+        //    at exactly the geo_count where production stops one step
+        //    earlier and never attempts it.
+        // 2. Widen the multiply to `u128` before rounding (mirrors
+        //    production's own `cur as u128` widening) -- a plain `usize`
+        //    multiply overflows at a SMALLER `cur` than production tolerates
+        //    even for a legitimately-needed step, since production's
+        //    widening lets the quotient fit `usize` while the intermediate
+        //    product does not (e.g. `min_block = 2^62, growth = (3, 3)` at
+        //    `cur = 2^63`, documented on `build_table`'s own doc comment).
+        if i + 1 < geo_count {
+            let scaled = (cur as u128 * num as u128).div_ceil(den as u128);
+            let rounded = (scaled + mask as u128) & !(mask as u128);
+            let rounded: usize = rounded
+                .try_into()
+                .expect("reference_table: geometric progression overflows usize");
+            cur = if rounded > cur {
+                rounded
+            } else {
+                cur.checked_add(min_block)
+                    .expect("reference_table: geometric progression overflows usize")
+            };
         }
-        cur = next;
     }
     // Sorted merge of geo and extras.
     let mut out = Vec::with_capacity(geo_count + extras.len());
@@ -69,6 +92,24 @@ fn reference_class_for(table: &[usize], size: usize, align: usize) -> Option<usi
     table
         .iter()
         .position(|&b| b >= need && b.is_multiple_of(align))
+}
+
+// MS prepublish review, task #1503 (P2-2): the exact geo_count where
+// production succeeds (182 on 64-bit, per sefer_growth_geo_count_182_is_
+// the_last_that_fits_on_64_bit above) but where `reference_table`'s
+// PRE-fix unconditional last-iteration advance would additionally compute
+// one more, unused step -- the same step that overflows at geo_count=183.
+// Pins that `reference_table` agrees with production at the boundary
+// instead of spuriously panicking on work production never does.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn reference_table_does_not_overcompute_at_the_geo_count_182_boundary() {
+    const GEO_COUNT: usize = 182;
+    const N: usize = GEO_COUNT;
+    let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
+    let want = reference_table(16, (5, 4), GEO_COUNT, &[]);
+    let got = build_table::<N>(&params);
+    assert_eq!(&got[..], &want[..]);
 }
 
 #[test]
