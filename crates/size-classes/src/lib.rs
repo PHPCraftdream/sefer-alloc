@@ -159,7 +159,7 @@ impl<'a> Params<'a> {
 /// with just 24 classes (`growth = (3, 2)`, no `extras`) reaches `max_class =
 /// 145648` and `L = 18207`, a LARGER object than the 49-class default.
 /// Numbers independently re-derived from this formula, not read off the
-/// crate's own output (oxx prepublish review P2-2).
+/// crate's own output.
 ///
 /// # Panics
 ///
@@ -567,9 +567,8 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 /// foreseeable second field, so the future-proofing `#[non_exhaustive]` +
 /// accessor shape would only cost every caller's `Err(InvalidAlign(n))`
 /// pattern match for a flexibility this type has no concrete use for.
-/// Settled before 0.1.0 (oxx prepublish review P2-3), same
-/// decide-now-not-in-six-months discipline as `SizeClasses`'s own `Copy`
-/// removal.
+/// Settled before 0.1.0, same decide-now-not-in-six-months discipline as
+/// `SizeClasses`'s own `Copy` removal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAlign(pub usize);
 
@@ -705,9 +704,9 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     }
 
     /// The caller's [`Params::huge_threshold`] policy value, as built. The
-    /// only `Params` field with no other read-back accessor before this one
-    /// (oxx prepublish review P1-3) -- a caller that needs to report or log
-    /// the threshold no longer has to keep its own separate copy of it.
+    /// only `Params` field with a dedicated read-back accessor here -- a
+    /// caller that needs to report or log the threshold no longer has to
+    /// keep its own separate copy of it.
     #[must_use]
     pub const fn huge_threshold(&self) -> usize {
         self.huge_threshold
