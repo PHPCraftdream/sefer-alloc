@@ -756,11 +756,17 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// [`core::alloc::Layout`] satisfies this by construction; one computed
     /// by hand may not.
     ///
-    /// A violation trips a `debug_assert!` and is otherwise silent: it can
-    /// only produce a wrong CLASS CHOICE, never memory unsafety or a
-    /// corrupt table, so it is not worth a release-active check on this hot
-    /// path. Concretely, all three of the fit predicate's failure modes
-    /// become reachable for a non-pow2 `align`:
+    /// A violation trips a `debug_assert!`; in release, the behavior is
+    /// UNSPECIFIED, not merely "a wrong class choice" -- it can return an
+    /// incorrect `Some`/`None` (see the three failure modes below), OR panic
+    /// (never memory unsafety or a corrupt table: `align == 0, size == 0` is
+    /// the concrete panicking case, `need - 1` underflowing to `usize::MAX`
+    /// and then failing the unconditional `size2class` bounds check -- see
+    /// [`try_class_for`](Self::try_class_for), which rejects `align == 0`
+    /// before that arithmetic ever runs). Not worth a release-active check
+    /// on this hot path regardless, since neither outcome is memory-unsafe.
+    /// Concretely, all three of the fit predicate's WRONG-ANSWER failure
+    /// modes become reachable for a non-pow2 `align`:
     ///
     /// - the fast path (`align <= min_block`) returns its seed without
     ///   checking divisibility at all;
