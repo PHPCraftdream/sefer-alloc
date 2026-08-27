@@ -144,6 +144,23 @@ impl<'a> Params<'a> {
 /// including `max_class`. A consumer uses this in a `const` expression to pin
 /// the `L` generic of [`SizeClasses`].
 ///
+/// # Memory cost
+///
+/// `L` (`max_class / min_block + 1`) is the byte size of the `size2class`
+/// LUT `SizeClasses` embeds, and it is NOT something a consumer picks
+/// directly -- it falls out of `min_block`, `growth`, `geo_count`, and
+/// `extras` together. It scales with `max_class / min_block`, not with the
+/// number of classes `N`, so a scheme with FEWER classes can still produce a
+/// LARGER LUT than one with more: the crate's own `SEFER`-fixture default
+/// (`min_block = 16`, 49 classes, `max_class = 258752`) gives `L = 16173`
+/// (`table` itself is only `N * size_of::<usize>()` = 392 bytes; the LUT
+/// dominates the whole object's size, ~16.18 KiB total) — but a smaller
+/// `min_block` can outweigh a smaller class count entirely: `min_block = 8`
+/// with just 24 classes (`growth = (3, 2)`, no `extras`) reaches `max_class =
+/// 145648` and `L = 18207`, a LARGER object than the 49-class default.
+/// Numbers independently re-derived from this formula, not read off the
+/// crate's own output (oxx prepublish review P2-2).
+///
 /// # Panics
 ///
 /// Panics -- identically in `const` evaluation and at runtime, since this is
