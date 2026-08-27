@@ -8,7 +8,9 @@
 //! property-generated, across three additional hand-picked schemes distinct
 //! from `SEFER_PARAMS`.
 
-use size_classes::{build_size2class, build_table, size2class_len, Params, SizeClasses};
+use size_classes::{
+    build_size2class, build_table, size2class_len, InvalidAlign, Params, SizeClasses,
+};
 
 mod common;
 use common::{
@@ -915,6 +917,45 @@ fn class_for_non_pow2_align_violates_debug_assert() {
     // align = 6 is not a power of two -- exactly the out-of-contract shape
     // §F2/§B26 describe (neither 1, 2, 4, 8, ... nor a Layout-derived value).
     let _ = SC.class_for(32, 6);
+}
+
+// MS prepublish review, task #1500 (P1-1, fh's recommended fix B): a checked
+// twin of `class_for` for callers whose `align` is not already known-valid
+// by construction. Runs in BOTH profiles (no `#[cfg(debug_assertions)]`
+// gate) -- the validation is the function's own explicit job, not a
+// debug-only guard.
+#[test]
+fn try_class_for_matches_class_for_on_every_valid_input() {
+    for &(size, align) in &[(1usize, 1usize), (200, 16), (1025, 256), (2049, 1024)] {
+        assert_eq!(
+            SEFER_SC.try_class_for(size, align),
+            Ok(SEFER_SC.class_for(size, align)),
+            "size={size}, align={align}"
+        );
+    }
+}
+
+#[test]
+fn try_class_for_rejects_non_pow2_align() {
+    assert_eq!(SEFER_SC.try_class_for(32, 6), Err(InvalidAlign(6)));
+}
+
+// The exact corner `class_for` cannot handle safely even in release: `align
+// == 0, size == 0` underflows `need - 1` to `usize::MAX`, which then panics
+// on the out-of-bounds `size2class` index (an unconditional bounds check,
+// not a compiled-away debug_assert -- see class_for_non_pow2_align_violates
+// _debug_assert's own doc comment on why THAT guard is debug-only; indexing
+// panics are not). `try_class_for` must reject align=0 before any of that
+// arithmetic runs, in every profile.
+#[test]
+fn try_class_for_rejects_zero_align_without_panicking() {
+    assert_eq!(SEFER_SC.try_class_for(0, 0), Err(InvalidAlign(0)));
+}
+
+#[test]
+fn invalid_align_display_names_the_offending_value() {
+    let msg = InvalidAlign(6).to_string();
+    assert!(msg.contains('6'), "got: {msg}");
 }
 
 #[test]

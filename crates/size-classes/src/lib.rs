@@ -535,6 +535,13 @@ pub struct SizeClasses<const N: usize, const L: usize> {
     huge_threshold: usize,
 }
 
+/// The error [`SizeClasses::try_class_for`] returns when `align` is not a
+/// power of two (the [`core::alloc::Layout`] contract
+/// [`SizeClasses::class_for`] assumes but -- on its own hot path -- only
+/// `debug_assert!`s). Carries the offending value for diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidAlign(pub usize);
+
 impl<const N: usize, const L: usize> core::fmt::Debug for SizeClasses<N, L> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SizeClasses")
@@ -797,4 +804,42 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         }
         None
     }
+
+    /// The checked twin of [`class_for`](Self::class_for): validates `align`
+    /// instead of assuming it (`Err(`[`InvalidAlign`]`)` for a non-power-of-two
+    /// `align`, including `0`), then delegates. Same result on every
+    /// already-valid input; the only behavior difference is on the inputs
+    /// `class_for`'s own `# Preconditions` already document as
+    /// contract-violating.
+    ///
+    /// Use this one unless `align` is already known-valid by construction
+    /// (e.g. taken directly from a [`core::alloc::Layout`]) -- `class_for`
+    /// stays the zero-validation hot-path variant for that case, matching
+    /// [`Layout::from_size_align`](core::alloc::Layout::from_size_align)
+    /// (checked) versus
+    /// [`Layout::from_size_align_unchecked`](core::alloc::Layout::from_size_align_unchecked)
+    /// (trusted) in `core::alloc`.
+    #[must_use = "this returns a Result, not just a class index -- the Err case must be handled"]
+    pub const fn try_class_for(
+        &self,
+        size: usize,
+        align: usize,
+    ) -> Result<Option<usize>, InvalidAlign> {
+        if !align.is_power_of_two() {
+            return Err(InvalidAlign(align));
+        }
+        Ok(self.class_for(size, align))
+    }
 }
+
+impl core::fmt::Display for InvalidAlign {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "class_for: align ({}) must be a power of two (the Layout contract)",
+            self.0
+        )
+    }
+}
+
+impl core::error::Error for InvalidAlign {}
