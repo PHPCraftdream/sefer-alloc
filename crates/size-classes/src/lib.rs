@@ -539,6 +539,15 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 /// power of two (the [`core::alloc::Layout`] contract
 /// [`SizeClasses::class_for`] assumes but -- on its own hot path -- only
 /// `debug_assert!`s). Carries the offending value for diagnostics.
+///
+/// Deliberately a plain tuple struct, not `#[non_exhaustive]`: it has
+/// exactly one reason to exist (a non-power-of-two `align`) and no
+/// foreseeable second field, so the future-proofing `#[non_exhaustive]` +
+/// accessor shape would only cost every caller's `Err(InvalidAlign(n))`
+/// pattern match for a flexibility this type has no concrete use for.
+/// Settled before 0.1.0 (oxx prepublish review P2-3), same
+/// decide-now-not-in-six-months discipline as `SizeClasses`'s own `Copy`
+/// removal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAlign(pub usize);
 
@@ -840,7 +849,7 @@ impl core::fmt::Display for InvalidAlign {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "class_for: align ({}) must be a power of two (the Layout contract)",
+            "try_class_for: align ({}) must be a power of two (the Layout contract)",
             self.0
         )
     }
