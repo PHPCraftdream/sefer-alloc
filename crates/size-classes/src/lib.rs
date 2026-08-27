@@ -682,6 +682,15 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         self.table[idx]
     }
 
+    /// The caller's [`Params::huge_threshold`] policy value, as built. The
+    /// only `Params` field with no other read-back accessor before this one
+    /// (oxx prepublish review P1-3) -- a caller that needs to report or log
+    /// the threshold no longer has to keep its own separate copy of it.
+    #[must_use]
+    pub const fn huge_threshold(&self) -> usize {
+        self.huge_threshold
+    }
+
     /// Whether a `size` request is "huge" per the caller's
     /// [`Params::huge_threshold`] policy.
     #[must_use]

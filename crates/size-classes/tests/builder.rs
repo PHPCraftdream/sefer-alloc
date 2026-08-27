@@ -14,8 +14,8 @@ use size_classes::{
 
 mod common;
 use common::{
-    JUMP_A, JUMP_B, SEFER_EXTRAS, SEFER_GEO, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N, SEFER_SC,
-    SEFER_TABLE,
+    HUGE_THRESHOLD, JUMP_A, JUMP_B, SEFER_EXTRAS, SEFER_GEO, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N,
+    SEFER_SC, SEFER_TABLE,
 };
 
 /// A faithful, from-scratch reference table builder (a plain `Vec` version of
@@ -118,11 +118,13 @@ fn sefer_table_matches_reference_and_is_strictly_increasing() {
     assert_eq!(&SEFER_TABLE[..], &want[..]);
     // Derive-not-hardcode: the count is whatever the params produce.
     assert_eq!(SEFER_SC.count(), SEFER_N);
-    // rush-tests review T3/task #1478: these two accessors had zero call
-    // sites anywhere in the suite -- an accessor returning the wrong FIELD
-    // (e.g. min_block() returning huge_threshold) would pass everything else.
+    // rush-tests review T3/task #1478: these accessors had zero call sites
+    // anywhere in the suite -- an accessor returning the wrong FIELD (e.g.
+    // min_block() returning huge_threshold) would pass everything else.
+    // huge_threshold() (oxx prepublish review P1-3) added to the same pin.
     assert_eq!(SEFER_SC.min_block(), SEFER_MIN_BLOCK);
     assert_eq!(SEFER_SC.small_align_max(), SEFER_MIN_BLOCK); // documented == min_block
+    assert_eq!(SEFER_SC.huge_threshold(), HUGE_THRESHOLD);
     for w in SEFER_TABLE.windows(2) {
         assert!(w[0] < w[1], "table must be strictly increasing: {w:?}");
     }
