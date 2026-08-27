@@ -395,6 +395,24 @@ const GRANDFATHERED = new Map([
       'by rebase — this exemption records that decision point, it does not ' +
       'foreclose it. Durable record: item 78, sub-card 7 (task #1335).',
   ],
+  [
+    'eaa3310',
+    'NOT a genuine mis-slot — a third FALSE-POSITIVE exemption (task ' +
+      '#1505), same class as e25ec74: docs(size-classes): prefix on a ' +
+      'task-#1473 commit whose ENTIRE diff is one line, ' +
+      'crates/size-classes/Cargo.toml\'s `description = "..."` key-value ' +
+      'string, reworded from a changelog-fragment-shaped parenthetical to ' +
+      'a self-contained sentence. Crates.io-facing PACKAGE METADATA PROSE, ' +
+      'not shipping/opt-in code; `version` untouched. No honest alternative ' +
+      'prefix fits better. Not taught to the guard as a new exception path ' +
+      '(same guard-cleverness risk e25ec74\'s entry already warns against). ' +
+      'UNPUSHED: the owner may still reword it by rebase — this exemption ' +
+      'records that decision point, it does not foreclose it. Found by an ' +
+      'independent oxx prepublish review of size-classes, which also found ' +
+      'the current origin/main landing SHA is CI-red for an unrelated ' +
+      'reason (clippy::large_const_arrays, already fixed locally, never ' +
+      'pushed). Durable record: item 78, sub-card 8 (task #1505).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
