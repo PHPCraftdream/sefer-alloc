@@ -164,6 +164,13 @@ fn sefer_class_for_matches_reference_over_full_small_sweep() {
                 assert!(block >= size.max(align));
                 assert!(block.is_multiple_of(align));
             }
+            // oxx prepublish review P2-4: every `align` in this sweep is
+            // already a valid power of two, so `try_class_for` must agree
+            // with `class_for` (never `Err`) on every one of these ~4.9M
+            // pairs -- broader evidence for the "never panics" doc claim
+            // than the 4 hand-picked pairs in
+            // try_class_for_matches_class_for_on_every_valid_input alone.
+            assert_eq!(SEFER_SC.try_class_for(size, align), Ok(got));
         }
     }
 }

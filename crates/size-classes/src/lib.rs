@@ -825,6 +825,16 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `class_for`'s own `# Preconditions` already document as
     /// contract-violating.
     ///
+    /// **Never panics, for any `(size, align)` pair** — this is the
+    /// substantive reason to prefer it over `class_for` for an `align` that
+    /// is not already known-valid: a non-power-of-two `align` (including
+    /// `0`) is rejected before any arithmetic runs, so `need = max(size,
+    /// align)` is always `>= 1` past that point, every LUT index computed
+    /// from it stays in bounds (`need <= small_max` is checked before
+    /// indexing; `(need - 1) >> min_block_shift <= size2class().len() - 1`
+    /// otherwise), and the slow-path jump loop is bounded exactly as
+    /// `class_for`'s own doc proves.
+    ///
     /// Use this one unless `align` is already known-valid by construction
     /// (e.g. taken directly from a [`core::alloc::Layout`]) -- `class_for`
     /// stays the zero-validation hot-path variant for that case, matching
