@@ -826,11 +826,9 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             let block = self.table[i];
             // `align` is contractually a power of two here (debug-asserted
             // above), so the mask is equivalent to `is_multiple_of` but skips
-            // a division — measured ~24-45% faster on the slow-path benches
-            // (paired before/after `cargo bench -p size-classes`, commit
-            // 5be0a65 / task #1426 has the raw ns/op numbers; the citation
-            // was silently dropped by a later doc-compression pass, MS
-            // prepublish review P3-2), and it matches `next_mult`'s idiom
+            // an integer division, measured faster on the slow-path benches
+            // (`benches/size_classes_bench.rs`, reproducible via `cargo
+            // bench -p size-classes`) -- and it matches `next_mult`'s idiom
             // just below.
             if block & (align - 1) == 0 {
                 return Some(i);
