@@ -283,7 +283,7 @@ impl SizeClasses {
     /// exists solely so [`SegmentLayout::try_class_for`](super::SegmentLayout::try_class_for),
     /// a genuinely public API, has a checked forwarder to expose (size-classes
     /// round-4 prepublish review, P2-1).
-    #[must_use]
+    #[must_use = "this returns a Result, not just a class index -- the Err case must be handled"]
     pub(crate) const fn try_class_for(
         size: usize,
         align: usize,

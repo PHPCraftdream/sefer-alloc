@@ -110,7 +110,7 @@ impl SegmentLayout {
     /// `size-classes` crate's own recommended-by-default `try_class_for`
     /// (see that crate's `SizeClasses::try_class_for` doc). Use this one
     /// unless `align` is already known-valid by construction.
-    #[must_use]
+    #[must_use = "this returns a Result, not just a class index -- the Err case must be handled"]
     pub const fn try_class_for(
         size: usize,
         align: usize,
