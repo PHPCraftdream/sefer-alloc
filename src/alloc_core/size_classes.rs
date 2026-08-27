@@ -194,32 +194,45 @@ pub(crate) const SMALL_MAX: usize = SIZE_CLASS_TABLE[TABLE_LEN - 1];
 /// including `SMALL_MAX`.
 const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
 
-/// The O(1) size→class lookup table, **derived at compile time from
-/// [`SIZE_CLASS_TABLE`]** by the crate's `build_size2class`. `SIZE2CLASS[k]` is
-/// the index of the smallest class whose `block_size >= (k + 1) * MIN_BLOCK`
-/// -- except the last entry, a harmless sentinel `class_for` never actually
-/// queries (see the crate's `build_size2class` doc for why).
-///
-/// `static`, not `const`: a single fixed-address item shared by every
-/// reference, avoiding the `.rodata` duplication `clippy::large_const_arrays`
-/// flags at the `medium-classes` ~64 KiB size.
-///
-/// Deliberate trade-off: [`SC`] embeds its own identical copy of this table
-/// (both const-derive from the same `PARAMS`, so drift is impossible) — the
-/// price is one extra table-sized `.rodata` copy (~16 KiB default).
-pub(crate) static SIZE2CLASS: [u8; S2C_LEN] =
-    size_classes::build_size2class::<TABLE_LEN, S2C_LEN>(&SIZE_CLASS_TABLE, MIN_BLOCK);
-
 /// Sefer's concrete size-class scheme — one const instantiation of the crate's
 /// `const`-generic [`SizeClassesImpl`]. Drives every classification query.
 ///
-/// `static`, not `const`, for the same reason as [`SIZE2CLASS`] above:
+/// `static`, not `const`, for the same reason as [`SIZE2CLASS`] below:
 /// `SizeClassesImpl` embeds its own copy of the size2class table, so at the
 /// `medium-classes` size it trips the identical `clippy::large_const_arrays`
 /// `.rodata`-duplication lint. `SizeClassesImpl<N, L>` implements
 /// `Debug, Clone` — plain data, no interior mutability — so `static` is
 /// sound.
 static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
+
+/// The O(1) size→class lookup table, **derived at compile time from
+/// [`SIZE_CLASS_TABLE`]** by the crate's `build_size2class`. `SIZE2CLASS[k]`
+/// is the index of the smallest class whose `block_size >= (k + 1) *
+/// MIN_BLOCK` -- except the last entry, a harmless sentinel `class_for`
+/// never actually queries (see the crate's `build_size2class` doc for why).
+///
+/// `static`, not `const`: a single fixed-address item shared by every
+/// reference, avoiding the `.rodata` duplication `clippy::large_const_arrays`
+/// flags at the `medium-classes` ~64 KiB size.
+///
+/// Task #1518: this used to be built by its OWN separate call to
+/// `size_classes::build_size2class`, re-running the exact same derivation
+/// [`SC`] already performs internally to populate its private `size2class`
+/// field — two independent const-evaluations of the same table. This now
+/// copies `SC`'s own table (`*SC.size2class()`, a `[u8; S2C_LEN]` dereference
+/// of `SizeClasses::size2class`'s `&[u8; L]` accessor — sound because
+/// `[u8; S2C_LEN]: Copy`) instead of rebuilding it, so there is only one
+/// const-evaluation of `build_size2class` in this file now.
+///
+/// This removes the redundant *computation*, not necessarily the redundant
+/// *storage*: `SIZE2CLASS` is still its own `static` with its own address,
+/// distinct from the copy inside `SC` — whether the compiler additionally
+/// dedupes the two `.rodata` byte sequences (identical content, different
+/// symbols) is an optimizer/linker decision this change does not control or
+/// guarantee. Not measured to change binary size (see the gate task's size
+/// comparison); do not cite this comment as a `.rodata`-savings claim beyond
+/// "one fewer redundant `build_size2class` call at compile time."
+pub(crate) static SIZE2CLASS: [u8; S2C_LEN] = *SC.size2class();
 
 /// A classifier over [`SIZE_CLASS_TABLE`]. A zero-sized forwarder to the crate
 /// scheme [`SC`] — kept so the in-tree `SizeClasses::class_for(..)` /
