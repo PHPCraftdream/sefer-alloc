@@ -632,6 +632,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         let table = build_table::<N>(params);
         let size2class = build_size2class::<N, L>(&table, params.min_block);
         let small_max = table[N - 1];
+        // `build_table` already guarantees every table entry is a multiple
+        // of `min_block` -- this cannot fail through the public API. Kept as
+        // a cheap internal sanity check because `class_for`'s index-space
+        // guard (see its own comment) depends on this equality holding.
+        debug_assert!(
+            small_max.is_multiple_of(params.min_block),
+            "SizeClasses::build: small_max must be a multiple of min_block"
+        );
         Self {
             table,
             size2class,
@@ -813,15 +821,18 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// [`core::alloc::Layout`] satisfies this by construction; one computed
     /// by hand may not.
     ///
-    /// A violation trips a `debug_assert!`; in release, the behavior is
-    /// UNSPECIFIED, not merely "a wrong class choice" -- it can return an
-    /// incorrect `Some`/`None` (see the three failure modes below), OR panic
-    /// (never memory unsafety or a corrupt table: `align == 0, size == 0` is
-    /// the concrete panicking case, `need - 1` underflowing to `usize::MAX`
-    /// and then failing the unconditional `size2class` bounds check -- see
-    /// [`try_class_for`](Self::try_class_for), which rejects `align == 0`
-    /// before that arithmetic ever runs). Not worth a release-active check
-    /// on this hot path regardless, since neither outcome is memory-unsafe.
+    /// A violation trips a `debug_assert!`; in release, the behavior for a
+    /// non-zero non-power-of-two `align` is UNSPECIFIED, not merely "a wrong
+    /// class choice" -- it can return an incorrect `Some`/`None` (see the
+    /// three failure modes below), never memory unsafety or a corrupt table.
+    /// The `align == 0, size == 0` corner does NOT panic: `need - 1`
+    /// underflows to `usize::MAX`, but the resulting index is always `>= L -
+    /// 1` (see `class_for`'s own index-space guard comment for the proof),
+    /// so it takes the same early `None` return as any other out-of-range
+    /// request. Prefer [`try_class_for`](Self::try_class_for), which rejects
+    /// `align == 0` before any of this arithmetic runs, over relying on this
+    /// fallback behavior.
+    ///
     /// Concretely, all three of the fit predicate's WRONG-ANSWER failure
     /// modes become reachable for a non-pow2 `align`:
     ///
@@ -866,10 +877,20 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             "class_for: align must be a power of two (the Layout contract)"
         );
         let need = if size > align { size } else { align };
-        if need > self.small_max {
+        // Index-space guard, not `need > self.small_max` (claude publication
+        // review P3-1): `small_max` is always `(L - 1) * min_block` (every
+        // `build_table` entry is a `min_block` multiple -- see `build`'s own
+        // invariant assert below), so `seed_idx >= L - 1 <=> need >
+        // small_max` exactly, and `L - 1` is a compile-time constant where
+        // `small_max` is a runtime field. This lets the compiler prove
+        // `seed_idx < L` and drop the bounds check `self.size2class[seed_idx]`
+        // would otherwise need, instead of paying that check on top of the
+        // one just performed here.
+        let seed_idx = (need - 1) >> self.min_block_shift;
+        if seed_idx >= L - 1 {
             return None;
         }
-        let seed = self.size2class[(need - 1) >> self.min_block_shift] as usize;
+        let seed = self.size2class[seed_idx] as usize;
         if align <= (1usize << self.min_block_shift) {
             return Some(seed);
         }
@@ -906,10 +927,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
                 Some(v) => v,
                 None => return None,
             };
-            if next_mult > self.small_max {
+            // Same index-space guard as the seed above; `next_mult >= 1`
+            // always (from `checked_add(1)`), so `next_mult - 1` never
+            // underflows here.
+            let next_idx = (next_mult - 1) >> self.min_block_shift;
+            if next_idx >= L - 1 {
                 return None;
             }
-            i = self.size2class[(next_mult - 1) >> self.min_block_shift] as usize;
+            i = self.size2class[next_idx] as usize;
         }
         None
     }

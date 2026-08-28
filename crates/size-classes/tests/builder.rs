@@ -15,7 +15,7 @@ use size_classes::{
 mod common;
 use common::{
     HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_EXTRAS, SEFER_GEO,
-    SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N, SEFER_SC, SEFER_TABLE,
+    SEFER_L, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N, SEFER_SC, SEFER_TABLE,
 };
 
 /// A faithful, from-scratch reference table builder (a plain `Vec` version of
@@ -323,6 +323,55 @@ fn sefer_jump_skips_non_divisible_run_for_align_128() {
     // The seed itself is NOT 128-divisible (else the jump would be a no-op).
     let seed = SEFER_SC.size2class()[(128 - 1) >> SEFER_MIN_BLOCK.trailing_zeros()] as usize;
     assert!(!SEFER_TABLE[seed].is_multiple_of(128));
+}
+
+#[test]
+fn sefer_need_zero_underflow_index_lands_past_the_seed_range() {
+    // Same property as `extreme64_overflow::
+    // need_zero_underflow_index_never_lands_inside_the_seed_range`, checked
+    // against SEFER's own realistic scheme (min_block = 16, a much smaller
+    // shift than EXTREME64's 62 -- so the margin here is enormous, not a
+    // tight boundary; the extreme64 test is the one that actually stresses
+    // the invariant).
+    let shift = SEFER_SC.min_block_shift();
+    let idx = 0usize.wrapping_sub(1) >> shift;
+    assert!(idx >= SEFER_L - 1);
+}
+
+#[test]
+fn class_for_slow_path_rejects_next_mult_landing_exactly_on_the_l_minus_1_boundary() {
+    // claude publication review P3-1: `class_for`'s slow-path guard
+    // (`if next_idx >= L - 1 { return None }`) must reject a `next_mult`
+    // that lands EXACTLY on bucket `L - 1`, not just one that overshoots by
+    // a wide margin -- none of SEFER's own JUMP_* fixtures happen to
+    // exercise that tight a margin (confirmed by fault-injecting the
+    // off-by-one `next_idx >= L` and finding the full suite still green
+    // against them). This hand-built 3-class table is chosen so `next_mult`
+    // overshoots `small_max` by exactly one `min_block` unit. Severity if
+    // this regresses: not just a wrong answer -- a fault-injected `>= L`
+    // against THIS fixture INFINITE-LOOPS (`i` keeps resolving back to the
+    // sentinel class, which is never `align`-divisible, forever); verified
+    // by hand-tracing before writing this test, not run to completion.
+    const MIN_BLOCK: usize = 16;
+    const EXTRAS: &[usize] = &[32, 48];
+    const N: usize = 3;
+    const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), 1, EXTRAS, 1 << 20);
+    const TABLE: [usize; N] = build_table::<N>(PARAMS);
+    const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
+    static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
+
+    assert_eq!(
+        TABLE,
+        [16, 32, 48],
+        "precondition: this test needs this exact table"
+    );
+    assert_eq!(L, 4, "precondition: this test needs this exact L");
+
+    // need = max(48, 32) = 48 -> class 2 (block 48), NOT 32-divisible
+    // (48 % 32 == 16) -> next_mult = 64, 64 - 48(small_max) == 16 ==
+    // MIN_BLOCK: exactly one bucket past small_max, landing next_idx on
+    // L - 1 (== 3) precisely.
+    assert_eq!(SC.class_for(48, 32), None);
 }
 
 /// Independent re-derivation of `class_for`'s slow-path jump loop -- not a
@@ -1013,6 +1062,40 @@ mod extreme64_overflow {
             let want = TABLE.iter().position(|&b| b >= want_need).unwrap();
             assert_eq!(class_idx as usize, want, "size2class[{k}] drift");
         }
+    }
+
+    #[test]
+    fn need_zero_underflow_index_never_lands_inside_the_seed_range() {
+        // claude publication review P3-1: `class_for`'s index-space guard
+        // (`if seed_idx >= L - 1 { return None }`) replaced `if need >
+        // self.small_max { return None }` -- the two are equivalent because
+        // `small_max` is always `(L - 1) * min_block`. The one input this
+        // must still hold for is `class_for(0, 0)`, where `need = 0` and
+        // `need - 1` underflows to `usize::MAX` (in a release build, where
+        // the `align.is_power_of_two()` debug_assert! that would otherwise
+        // catch `align == 0` is compiled out). That underflowed index must
+        // land `>= L - 1` (returning `None`, per `class_for`'s own
+        // `# Preconditions`), not inside `[0, L - 2]` (which would read a
+        // WRONG class as if it were a real answer).
+        //
+        // Cannot be exercised by calling `class_for(0, 0)` directly -- the
+        // debug_assert fires first in any checked (test) build -- so this
+        // proves the underlying arithmetic invariant directly, against
+        // EXTREME64_SC (`min_block = 1 << 62`), the tightest shift this
+        // suite builds: `usize::MAX >> 62 == 3`, and `L - 1 == 3` here too,
+        // the exact equality boundary rather than a comfortable margin.
+        let shift = EXTREME64_SC.min_block_shift();
+        let idx = 0usize.wrapping_sub(1) >> shift;
+        assert_eq!(
+            shift, 62,
+            "precondition: this test needs the tightest shift"
+        );
+        assert_eq!(
+            idx,
+            EXTREME64_L - 1,
+            "need=0 underflow index must land exactly on the L-1 boundary for this scheme"
+        );
+        assert!(idx >= EXTREME64_L - 1);
     }
 }
 

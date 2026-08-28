@@ -69,11 +69,11 @@ before it.
     crate exists to remove (`sefer-alloc`'s own motivating case, the
     allocator this crate was extracted from: `align >= 512`).
     `align` must be a power of two (the `Layout` contract), enforced by a
-    `debug_assert!` — in release, the violation is unspecified:
-    it can return a wrong `Some`/`None`, or panic for the `(size, align) ==
-    (0, 0)` corner (never memory unsafety). `try_class_for` below closes this
-    for callers that don't already know `align` is valid. The divisibility
-    check is a STRIDE property,
+    `debug_assert!` — in release, a non-zero non-power-of-two `align` is
+    unspecified: it can return a wrong `Some`/`None`. The `(size, align) ==
+    (0, 0)` corner does not panic (never memory unsafety either way).
+    `try_class_for` below closes this for callers that don't already know
+    `align` is valid. The divisibility check is a STRIDE property,
     not an address guarantee: it preserves whatever alignment the caller's
     carve base already has, it does not create it -- `base % align == 0` for
     every served `align` is the caller's own documented precondition, which
