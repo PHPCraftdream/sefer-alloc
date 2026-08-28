@@ -629,6 +629,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// The class table (strictly increasing, each entry a multiple of
     /// `min_block`). The single source of truth for the scheme's geometry.
     #[must_use]
+    #[inline]
     pub const fn table(&self) -> &[usize; N] {
         &self.table
     }
@@ -667,12 +668,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// LUT ignores entirely. Prefer it unless you specifically need the
     /// raw LUT and are prepared to enforce both preconditions yourself.
     #[must_use]
+    #[inline]
     pub const fn size2class(&self) -> &[u8; L] {
         &self.size2class
     }
 
     /// The minimum block size / fundamental alignment (`min_block`).
     #[must_use]
+    #[inline]
     pub const fn min_block(&self) -> usize {
         self.min_block
     }
@@ -680,6 +683,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `log2(min_block)` — the shift turning a byte size into a
     /// `min_block`-unit index.
     #[must_use]
+    #[inline]
     pub const fn min_block_shift(&self) -> u32 {
         self.min_block_shift
     }
@@ -688,6 +692,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// the ceiling on alignments the small path can serve — see
     /// [`class_for`](Self::class_for)'s slow path.
     #[must_use]
+    #[inline]
     pub const fn small_align_max(&self) -> usize {
         self.small_align_max
     }
@@ -695,12 +700,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// The largest class (`table[N - 1]`). A request larger than this — or with
     /// an alignment larger than this — takes the caller's large path.
     #[must_use]
+    #[inline]
     pub const fn small_max(&self) -> usize {
         self.small_max
     }
 
     /// The number of classes (`N`).
     #[must_use]
+    #[inline]
     pub const fn count(&self) -> usize {
         N
     }
@@ -712,6 +719,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// Panics if `idx >= N` — the caller only ever passes indices returned by
     /// [`class_for`](Self::class_for).
     #[must_use]
+    #[inline]
     pub const fn block_size(&self, idx: usize) -> usize {
         self.table[idx]
     }
@@ -721,6 +729,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// caller that needs to report or log the threshold no longer has to
     /// keep its own separate copy of it.
     #[must_use]
+    #[inline]
     pub const fn huge_threshold(&self) -> usize {
         self.huge_threshold
     }
@@ -728,6 +737,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// Whether a `size` request is "huge" per the caller's
     /// [`Params::huge_threshold`] policy.
     #[must_use]
+    #[inline]
     pub const fn is_huge(&self, size: usize) -> bool {
         size >= self.huge_threshold
     }
@@ -814,6 +824,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// caller — the downstream consequence is safety-critical even though
     /// this crate cannot detect or cause it directly.
     #[must_use]
+    #[inline]
     pub const fn class_for(&self, size: usize, align: usize) -> Option<usize> {
         debug_assert!(
             align.is_power_of_two(),
@@ -894,6 +905,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// [`Layout::from_size_align_unchecked`](core::alloc::Layout::from_size_align_unchecked)
     /// (trusted) in `core::alloc`.
     #[must_use = "this returns a Result, not just a class index -- the Err case must be handled"]
+    #[inline]
     pub const fn try_class_for(
         &self,
         size: usize,
