@@ -181,7 +181,7 @@ const _: () = assert!(
 /// source of truth** for the small-class geometry; [`SIZE2CLASS`] is derived
 /// from it.
 pub(crate) const SIZE_CLASS_TABLE: [usize; TABLE_LEN] =
-    size_classes::build_table::<TABLE_LEN>(&PARAMS);
+    size_classes::build_table::<TABLE_LEN>(PARAMS);
 
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
