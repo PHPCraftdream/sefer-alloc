@@ -155,8 +155,9 @@ impl<'a> Params<'a> {
 /// `growth = (5, 4)`, `geo_count = 40`, nine extras up to 16 KiB — the
 /// crate's own tests' `SEFER` fixture; the crate itself has no defaults)
 /// with 49 classes and `max_class = 258752` gives `L = 16173` (`table`
-/// itself is only `N * size_of::<usize>()` = 392 bytes; the LUT dominates
-/// the whole object's size, ~16.18 KiB total) — but a smaller `min_block`
+/// itself is only `N * size_of::<usize>()` = 392 bytes on a 64-bit target;
+/// the LUT dominates the whole object's size, ~16.18 KiB total on a 64-bit
+/// target) — but a smaller `min_block`
 /// can outweigh a smaller class count entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
 /// `L = 18207`, a LARGER object than the 49-class example above.
@@ -571,7 +572,6 @@ pub struct SizeClasses<const N: usize, const L: usize> {
     // removes two provably-redundant hot-path field loads;
     // `min_block()`/`small_align_max()` re-derive it.
     min_block_shift: u32,
-    small_max: usize,
     huge_threshold: usize,
 }
 
@@ -606,7 +606,7 @@ impl<const N: usize, const L: usize> core::fmt::Debug for SizeClasses<N, L> {
             .field("N", &N)
             .field("L", &L)
             .field("min_block", &self.min_block())
-            .field("small_max", &self.small_max)
+            .field("small_max", &self.small_max())
             .field("huge_threshold", &self.huge_threshold)
             .finish_non_exhaustive()
     }
@@ -642,7 +642,6 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             table,
             size2class,
             min_block_shift: params.min_block.trailing_zeros(),
-            small_max,
             huge_threshold: params.huge_threshold,
         }
     }
@@ -744,7 +743,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     #[must_use]
     #[inline]
     pub const fn small_max(&self) -> usize {
-        self.small_max
+        self.table[N - 1]
     }
 
     /// The number of classes (`N`).
@@ -809,7 +808,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///
     /// The useful domain is `size >= 1`; more precisely, what must hold is
     /// `need = max(size, align) >= 1`, so `size == 0` alone is fine whenever
-    /// `align >= 1` -- `(size - 1) >> shift` never underflows in that case.
+    /// `align >= 1` -- `(need - 1) >> shift` never underflows in that case.
     /// Consumers commonly clamp `size` up to `min_block` before calling (the
     /// classifier has no smaller class to offer below it anyway); this
     /// function does not require that clamp.
@@ -882,15 +881,15 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             "class_for: align must be a power of two (the Layout contract)"
         );
         let need = if size > align { size } else { align };
-        // Index-space guard, not `need > self.small_max`: `small_max` is
+        // Index-space guard, not `need > self.small_max()`: `small_max()` is
         // always `(L - 1) * min_block` (every
         // `build_table` entry is a `min_block` multiple -- see `build`'s own
-        // invariant assert below), so `seed_idx >= L - 1 <=> need >
-        // small_max` exactly, and `L - 1` is a compile-time constant where
-        // `small_max` is a runtime field. This lets the compiler prove
-        // `seed_idx < L` and drop the bounds check `self.size2class[seed_idx]`
-        // would otherwise need, instead of paying that check on top of the
-        // one just performed here.
+        // invariant assert above), so `seed_idx >= L - 1 <=> need >
+        // small_max()` exactly, and `L - 1` is a compile-time constant where
+        // `small_max()` reads `self.table[N - 1]` at runtime. This lets the
+        // compiler prove `seed_idx < L` and drop the bounds check
+        // `self.size2class[seed_idx]` would otherwise need, instead of
+        // paying that check on top of the one just performed here.
         let seed_idx = (need - 1) >> self.min_block_shift;
         if seed_idx >= L - 1 {
             return None;

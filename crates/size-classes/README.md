@@ -42,14 +42,14 @@ crate has no notion of an OS segment size.
 
 `SizeClasses` embeds a `size2class` LUT of length `L = max_class / min_block
 + 1` (one `u8` per bucket) plus the `table` itself (`N * size_of::<usize>()`,
-usually a few hundred bytes). `L` isn't chosen directly — it falls out of
-`min_block`/`growth`/`geo_count`/`extras` together, and it scales with
-`max_class / min_block`, **not** with the class count `N`: a scheme with
-*fewer* classes can produce a *larger* LUT than one with more. A realistic
-scheme (`min_block = 16`, 49 classes — the crate's own tests' `SEFER`
-fixture; the crate itself has no defaults) gives `L = 16173`, ~16.18 KiB
-total; a 24-class scheme with `min_block = 8` reaches `L = 18207`, a larger
-object despite having half the classes. See
+usually a few hundred bytes on a 64-bit target). `L` isn't chosen directly —
+it falls out of `min_block`/`growth`/`geo_count`/`extras` together, and it
+scales with `max_class / min_block`, **not** with the class count `N`: a
+scheme with *fewer* classes can produce a *larger* LUT than one with more. A
+realistic scheme (`min_block = 16`, 49 classes — the crate's own tests'
+`SEFER` fixture; the crate itself has no defaults) gives `L = 16173`, ~16.18
+KiB total on a 64-bit target; a 24-class scheme with `min_block = 8` reaches
+`L = 18207`, a larger object despite having half the classes. See
 [`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
 for the full worked comparison.
 

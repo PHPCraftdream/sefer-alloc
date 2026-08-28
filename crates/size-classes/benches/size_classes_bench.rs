@@ -13,7 +13,7 @@ use std::hint::black_box;
 use bench_scale_tool::Harness;
 
 // Sefer's concrete parameterization (49 classes; the default in-tree
-// scheme) and the JUMP_A/JUMP_B slow-path pairs are mechanically shared
+// scheme) and the JUMP_* slow-path pairs are mechanically shared
 // with tests/builder.rs via this module (rush-tests review T4/task
 // #1479), replacing the former comment-only "keep in sync" convention --
 // a single-sided edit can no longer desync the bench from the test.
@@ -194,8 +194,9 @@ fn main() {
         black_box(result);
     });
 
-    // One past small_max -- the early-rejection path (`need > small_max`),
-    // returning `None` before ever touching the lookup table.
+    // One past small_max -- the early-rejection path (`need` past
+    // `small_max`, i.e. the `seed_idx >= L - 1` guard), returning `None`
+    // before ever touching the lookup table.
     h.bench("class_for/above_small_max_rejection", || {
         let result = black_box(SEFER_SC.class_for(black_box(SEFER_MAX + 1), black_box(1)));
         black_box(result);

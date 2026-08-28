@@ -142,8 +142,10 @@ fn sefer_table_matches_reference_and_is_strictly_increasing() {
 
 #[test]
 fn sefer_class_for_matches_reference_over_full_small_sweep() {
-    // Every alignment the slow path can carry (powers of two up to SMALL_MAX),
-    // and every size 1..=SMALL_MAX+1, against the independent reference.
+    // Every power-of-two alignment up to SEFER_MAX, plus the first one above
+    // it; sizes step-by-1 up to SMALL_STEP_CEIL and step-by-MIN_BLOCK above
+    // it, with every table entry and every align value explicitly included
+    // as a boundary point.
     let mut aligns = vec![1usize, 2, 4, 8, 16];
     let mut a = 32;
     while a <= SEFER_MAX {
