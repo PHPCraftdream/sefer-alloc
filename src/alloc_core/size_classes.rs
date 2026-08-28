@@ -220,8 +220,12 @@ static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 /// field — two independent const-evaluations of the same table. This now
 /// copies `SC`'s own table (`*SC.size2class()`, a `[u8; S2C_LEN]` dereference
 /// of `SizeClasses::size2class`'s `&[u8; L]` accessor — sound because
-/// `[u8; S2C_LEN]: Copy`) instead of rebuilding it, so there is only one
-/// const-evaluation of `build_size2class` in this file now.
+/// `[u8; S2C_LEN]: Copy`) instead of rebuilding it, removing that particular
+/// duplication. The `SMALL_ALIGN_MAX` drift guard above performs its own,
+/// separate `build_size2class` const-evaluation (via its own
+/// `SizeClassesImpl::build(PARAMS)` call, not reusing [`SC`]) purely to read
+/// one `small_align_max()` field back out -- compile-time cost only, not
+/// eliminated by this change.
 ///
 /// This removes the redundant *computation*, not necessarily the redundant
 /// *storage*: `SIZE2CLASS` is still its own `static` with its own address,
