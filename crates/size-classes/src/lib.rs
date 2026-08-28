@@ -157,15 +157,17 @@ impl<'a> Params<'a> {
 /// directly -- it falls out of `min_block`, `growth`, `geo_count`, and
 /// `extras` together. It scales with `max_class / min_block`, not with the
 /// number of classes `N`, so a scheme with FEWER classes can still produce a
-/// LARGER LUT than one with more: the crate's own `SEFER`-fixture default
-/// (`min_block = 16`, 49 classes, `max_class = 258752`) gives `L = 16173`
-/// (`table` itself is only `N * size_of::<usize>()` = 392 bytes; the LUT
-/// dominates the whole object's size, ~16.18 KiB total) — but a smaller
-/// `min_block` can outweigh a smaller class count entirely: `min_block = 8`
-/// with just 24 classes (`growth = (3, 2)`, no `extras`) reaches `max_class =
-/// 145648` and `L = 18207`, a LARGER object than the 49-class default.
-/// Numbers independently re-derived from this formula, not read off the
-/// crate's own output.
+/// LARGER LUT than one with more: a realistic scheme (`min_block = 16`,
+/// `growth = (5, 4)`, `geo_count = 40`, nine extras up to 16 KiB — the
+/// crate's own tests' `SEFER` fixture; the crate itself has no defaults)
+/// with 49 classes and `max_class = 258752` gives `L = 16173` (`table`
+/// itself is only `N * size_of::<usize>()` = 392 bytes; the LUT dominates
+/// the whole object's size, ~16.18 KiB total) — but a smaller `min_block`
+/// can outweigh a smaller class count entirely: `min_block = 8` with just 24
+/// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
+/// `L = 18207`, a LARGER object than the 49-class example above. Numbers
+/// independently re-derived from this formula, not read off the crate's own
+/// output.
 ///
 /// # Panics
 ///

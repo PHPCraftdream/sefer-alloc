@@ -45,10 +45,11 @@ crate has no notion of an OS segment size.
 usually a few hundred bytes). `L` isn't chosen directly — it falls out of
 `min_block`/`growth`/`geo_count`/`extras` together, and it scales with
 `max_class / min_block`, **not** with the class count `N`: a scheme with
-*fewer* classes can produce a *larger* LUT than one with more. The crate's
-own `SEFER`-fixture default (`min_block = 16`, 49 classes) gives `L =
-16173`, ~16.18 KiB total; a 24-class scheme with `min_block = 8` reaches `L
-= 18207`, a larger object despite having half the classes. See
+*fewer* classes can produce a *larger* LUT than one with more. A realistic
+scheme (`min_block = 16`, 49 classes — the crate's own tests' `SEFER`
+fixture; the crate itself has no defaults) gives `L = 16173`, ~16.18 KiB
+total; a 24-class scheme with `min_block = 8` reaches `L = 18207`, a larger
+object despite having half the classes. See
 [`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
 for the full worked comparison.
 
