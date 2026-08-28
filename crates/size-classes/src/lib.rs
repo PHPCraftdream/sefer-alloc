@@ -682,6 +682,20 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// before ever indexing — plus applies the `align` predicate this raw
     /// LUT ignores entirely. Prefer it unless you specifically need the
     /// raw LUT and are prepared to enforce both preconditions yourself.
+    ///
+    /// **This shape is a deliberate, but not permanently promised, choice.**
+    /// The LUT is today one flat `u8` per `min_block`-sized bucket over the
+    /// *whole* size range (see [`size2class_len`]'s `# Memory cost`) — the
+    /// only shape that stays O(1) for arbitrary `extras`, which is this
+    /// crate's whole reason to exist, but a memory-hungry one for a scheme
+    /// with a large `max_class`. `L` being a public const generic means a
+    /// change to this layout (e.g. a hybrid: an exact small-size LUT below
+    /// some threshold, a computed answer above it) would very likely require
+    /// a breaking release regardless — this note does not promise otherwise.
+    /// It exists so a caller doesn't read "flat LUT" as an unstated
+    /// permanent guarantee: use [`class_for`](Self::class_for)/
+    /// [`try_class_for`](Self::try_class_for), not the raw array shape,
+    /// wherever possible.
     #[must_use]
     #[inline]
     pub const fn size2class(&self) -> &[u8; L] {
