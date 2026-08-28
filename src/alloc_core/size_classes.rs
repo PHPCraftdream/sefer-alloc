@@ -157,7 +157,6 @@ pub(crate) const TABLE_LEN: usize = GEO_COUNT + EXTRAS.len();
 /// so future phases can apply distinct policy. Passed to the crate as the
 /// scheme's [`Params::huge_threshold`]. `super::os::SEGMENT` — anything needing
 /// a whole segment or more is "huge".
-#[allow(dead_code)] // Phase 10 (M6 decommit policy) consumes this; kept for that.
 pub(crate) const HUGE_THRESHOLD: usize = super::os::SEGMENT;
 
 /// The [`Params`] describing sefer's concrete size-class scheme — the single
