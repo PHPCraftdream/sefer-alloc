@@ -69,7 +69,7 @@ const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20
 
 // Both generics are pure functions of PARAMS — derive them, don't pin them.
 const N: usize = GEO_COUNT + EXTRAS.len();
-const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+const TABLE: [usize; N] = build_table::<N>(PARAMS);
 const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 
 // `static`, not `const`: a `const` this size re-materializes its embedded

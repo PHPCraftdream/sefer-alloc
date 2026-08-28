@@ -108,7 +108,7 @@ fn reference_table_does_not_overcompute_at_the_geo_count_182_boundary() {
     const N: usize = GEO_COUNT;
     let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
     let want = reference_table(16, (5, 4), GEO_COUNT, &[]);
-    let got = build_table::<N>(&params);
+    let got = build_table::<N>(params);
     assert_eq!(&got[..], &want[..]);
 }
 
@@ -229,7 +229,7 @@ fn sefer_size2class_matches_scan_for_every_bucket() {
 const DOMAIN_MB: usize = 16;
 const DOMAIN_N: usize = 3;
 const DOMAIN_P: Params = Params::new(DOMAIN_MB, (2, 1), DOMAIN_N, &[], 1 << 20);
-const DOMAIN_T: [usize; DOMAIN_N] = build_table::<DOMAIN_N>(&DOMAIN_P);
+const DOMAIN_T: [usize; DOMAIN_N] = build_table::<DOMAIN_N>(DOMAIN_P);
 const DOMAIN_L: usize = size2class_len(DOMAIN_T[DOMAIN_N - 1], DOMAIN_MB);
 static DOMAIN_SC: SizeClasses<DOMAIN_N, DOMAIN_L> = SizeClasses::build(DOMAIN_P);
 
@@ -439,7 +439,7 @@ fn extras_not_multiple_of_min_block_panics() {
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
     let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 // size-classes publication audit run 1 (Sol-codex, P2-2): this used to be a
@@ -450,7 +450,7 @@ fn extras_not_multiple_of_min_block_panics() {
 // standalone-`build_table` contract violation, exactly the P2-2 finding.
 // Once `build_table` grew its OWN merged-table monotonicity check (this same
 // commit), the input below panics one line into that old test's setup
-// (`build_table::<N>(&params)`) instead of at the `SizeClasses::build` call
+// (`build_table::<N>(params)`) instead of at the `SizeClasses::build` call
 // the test's assertions and comments were actually about -- `#[should_panic]`
 // still matched (both panic messages happen to contain "must be strictly
 // increasing"), but for a different reason than the test claimed to check,
@@ -474,7 +474,7 @@ fn extras_overlapping_geometric_run_panics_in_build_table() {
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
     let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn extras_zero_class_panics() {
     const GEO_COUNT: usize = 8;
     const N: usize = GEO_COUNT + EXTRAS.len();
     let params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 // rush-tests review (T2/task #1477): nine documented `# Panics`
@@ -532,7 +532,7 @@ fn size2class_len_rejects_non_pow2_min_block() {
 #[should_panic(expected = "min_block must be a power of two")]
 fn build_table_rejects_non_pow2_min_block() {
     let params = Params::new(12, (5, 4), 1, &[], 1 << 20);
-    let _ = build_table::<1>(&params);
+    let _ = build_table::<1>(params);
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn build_size2class_rejects_non_pow2_min_block() {
 #[should_panic(expected = "geo_count must be > 0")]
 fn build_table_rejects_zero_geo_count() {
     let params = Params::new(16, (5, 4), 0, &[16, 32], 1 << 20);
-    let _ = build_table::<2>(&params);
+    let _ = build_table::<2>(params);
 }
 
 #[test]
@@ -556,7 +556,7 @@ fn build_table_rejects_zero_growth_denominator() {
     // by zero" with a named diagnostic -- pin the named message, not just
     // that SOME panic occurs.
     let params = Params::new(16, (1, 0), 1, &[], 1 << 20);
-    let _ = build_table::<1>(&params);
+    let _ = build_table::<1>(params);
 }
 
 #[test]
@@ -566,7 +566,7 @@ fn build_table_rejects_n_mismatch() {
     // single likeliest real-user error when hand-deriving the const
     // generic.
     let params = Params::new(16, (5, 4), 3, &[64], 1 << 20);
-    let _ = build_table::<5>(&params);
+    let _ = build_table::<5>(params);
 }
 
 #[test]
@@ -577,7 +577,7 @@ fn build_table_rejects_non_increasing_extras_among_themselves() {
     // the geometric run -- the per-entry check this test pins fires before
     // the merged-table check ever runs.
     let params = Params::new(16, (5, 4), 4, &[64, 32], 1 << 20);
-    let _ = build_table::<6>(&params);
+    let _ = build_table::<6>(params);
 }
 
 #[test]
@@ -636,7 +636,7 @@ fn geometric_run_matches_hand_derived_golden_values() {
     const MIN_BLOCK: usize = 16;
     const GEO_COUNT: usize = 8;
     const P: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, &[], 1 << 20);
-    const T: [usize; GEO_COUNT] = build_table::<GEO_COUNT>(&P);
+    const T: [usize; GEO_COUNT] = build_table::<GEO_COUNT>(P);
     assert_eq!(
         T, GOLDEN,
         "geometric run drifted from the hand-derived golden values"
@@ -677,7 +677,7 @@ fn geometric_advance_overflow_panics_instead_of_silently_wrapping() {
     const GEO_COUNT: usize = 2;
     const N: usize = GEO_COUNT;
     let params = Params::new(MIN_BLOCK, (2, 1), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 // fh publication audit P4-2: `build_table`'s own `# Panics` doc (lib.rs)
@@ -696,7 +696,7 @@ fn sefer_growth_geo_count_182_is_the_last_that_fits_on_64_bit() {
     const GEO_COUNT: usize = 182;
     const N: usize = GEO_COUNT;
     let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -706,7 +706,7 @@ fn sefer_growth_geo_count_183_overflows_on_64_bit() {
     const GEO_COUNT: usize = 183;
     const N: usize = GEO_COUNT;
     let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -715,7 +715,7 @@ fn sefer_growth_geo_count_83_is_the_last_that_fits_on_32_bit() {
     const GEO_COUNT: usize = 83;
     const N: usize = GEO_COUNT;
     let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -725,7 +725,7 @@ fn sefer_growth_geo_count_84_overflows_on_32_bit() {
     const GEO_COUNT: usize = 84;
     const N: usize = GEO_COUNT;
     let params = Params::new(16, (5, 4), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 // task #755's closing review (F4, MEDIUM): the min-step fallback (`next =
@@ -752,7 +752,7 @@ fn min_step_fallback_overflow_panics_instead_of_silently_wrapping() {
     // growth.0 == 0 forces every advance through the min-step fallback
     // (the geometric term is always 0, which never exceeds `cur`).
     let params = Params::new(MIN_BLOCK, (0, 1), GEO_COUNT, &[], 1 << 20);
-    let _ = build_table::<N>(&params);
+    let _ = build_table::<N>(params);
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,7 +1048,7 @@ fn class_for_non_pow2_align_violates_debug_assert() {
     const MIN_BLOCK: usize = 16;
     const N: usize = 4;
     const P: Params = Params::new(MIN_BLOCK, (5, 4), N, &[], 1 << 20);
-    const T: [usize; N] = build_table::<N>(&P);
+    const T: [usize; N] = build_table::<N>(P);
     const L: usize = size2class_len(T[N - 1], MIN_BLOCK);
     const SC: SizeClasses<N, L> = SizeClasses::build(P);
     // align = 6 is not a power of two -- exactly the out-of-contract shape
@@ -1112,7 +1112,7 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     // the comment above promises.
     const P_SMALL: Params = Params::new(16, (5, 4), 4, &[], 1024);
     const N: usize = 4;
-    const T: [usize; N] = build_table::<N>(&P_SMALL);
+    const T: [usize; N] = build_table::<N>(P_SMALL);
     const L: usize = size2class_len(T[N - 1], 16);
     const SC: SizeClasses<N, L> = SizeClasses::build(P_SMALL);
     assert!(SC.is_huge(1024));
@@ -1120,7 +1120,7 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
     assert!(!SC.is_huge(1023));
 
     const P_LARGE_THRESHOLD: Params = Params::new(16, (5, 4), 4, &[], 4096);
-    const T2: [usize; N] = build_table::<N>(&P_LARGE_THRESHOLD);
+    const T2: [usize; N] = build_table::<N>(P_LARGE_THRESHOLD);
     const L2: usize = size2class_len(T2[N - 1], 16);
     const SC2: SizeClasses<N, L2> = SizeClasses::build(P_LARGE_THRESHOLD);
     const PROBE: usize = 2048;
@@ -1146,7 +1146,7 @@ fn is_huge_uses_the_policy_threshold_not_an_os_constant() {
 /// docs-blessed min-step degradation), so the table is exactly `1..=256`.
 const MAX_N: usize = 256;
 const MAX_PARAMS: Params = Params::new(1, (0, 1), MAX_N, &[], 1 << 20);
-const MAX_TABLE: [usize; MAX_N] = build_table::<MAX_N>(&MAX_PARAMS);
+const MAX_TABLE: [usize; MAX_N] = build_table::<MAX_N>(MAX_PARAMS);
 const MAX_L: usize = size2class_len(MAX_TABLE[MAX_N - 1], 1);
 
 #[test]
@@ -1186,7 +1186,7 @@ fn exactly_257_classes_are_rejected() {
     // One past the boundary: index 256 is NOT representable in u8.
     const N: usize = 257;
     const PARAMS: Params = Params::new(1, (0, 1), N, &[], 1 << 20);
-    let table = build_table::<N>(&PARAMS);
+    let table = build_table::<N>(PARAMS);
     let _ = build_size2class::<N, 258>(&table, 1);
 }
 
@@ -1207,7 +1207,7 @@ fn representable_next_class_survives_an_unrepresentable_intermediate_product() {
     const MIN_BLOCK: usize = 1usize << 62;
     const N: usize = 3;
     const PARAMS: Params = Params::new(MIN_BLOCK, (3, 3), N, &[], 1 << 20);
-    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+    const TABLE: [usize; N] = build_table::<N>(PARAMS);
 
     assert_eq!(TABLE, [1usize << 62, 1usize << 63, 3usize << 62]);
     // Every class still fits and the table is still strictly increasing.
@@ -1226,7 +1226,7 @@ fn a_genuinely_unrepresentable_next_class_still_panics() {
     const MIN_BLOCK: usize = 1usize << 63;
     const N: usize = 2;
     const PARAMS: Params = Params::new(MIN_BLOCK, (2, 1), N, &[], 1 << 20);
-    let _ = build_table::<N>(&PARAMS);
+    let _ = build_table::<N>(PARAMS);
 }
 
 #[test]
@@ -1249,7 +1249,7 @@ fn extras_interleaving_the_geometric_run_is_accepted_and_preserved() {
     const EXTRAS: &[usize] = &[96];
     const N: usize = GEO_COUNT + EXTRAS.len();
     const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 1 << 20);
-    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+    const TABLE: [usize; N] = build_table::<N>(PARAMS);
 
     assert_eq!(TABLE, [16, 32, 48, 64, 80, 96, 112]);
     assert!(
@@ -1285,7 +1285,7 @@ fn readme_example_compiles_and_derives_its_generics() {
     const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20);
 
     const N: usize = GEO_COUNT + EXTRAS.len();
-    const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+    const TABLE: [usize; N] = build_table::<N>(PARAMS);
     const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 
     static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
@@ -1312,7 +1312,7 @@ fn readme_example_lines_appear_verbatim_in_readme_md() {
         "const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];",
         "const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, 4 << 20);",
         "const N: usize = GEO_COUNT + EXTRAS.len();",
-        "const TABLE: [usize; N] = build_table::<N>(&PARAMS);",
+        "const TABLE: [usize; N] = build_table::<N>(PARAMS);",
         "const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);",
         "static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);",
     ];

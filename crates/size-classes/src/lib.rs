@@ -62,7 +62,7 @@
 //! ```text
 //! const PARAMS: Params = Params::new(MIN_BLOCK, (5, 4), GEO_COUNT, EXTRAS, HUGE_THRESHOLD);
 //! const N: usize = GEO_COUNT + EXTRAS.len();
-//! const TABLE: [usize; N] = build_table::<N>(&PARAMS);
+//! const TABLE: [usize; N] = build_table::<N>(PARAMS);
 //! const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 //! static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 //! ```
@@ -240,7 +240,7 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// An `extras` entry landing strictly BETWEEN two geometric values is
 /// fine, and is one of the main reasons `extras` exists.
 #[must_use]
-pub const fn build_table<const N: usize>(params: &Params) -> [usize; N] {
+pub const fn build_table<const N: usize>(params: Params) -> [usize; N] {
     let min_block = params.min_block;
     assert!(
         min_block.is_power_of_two(),
@@ -629,7 +629,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// [`class_for`](Self::class_for).
     #[must_use]
     pub const fn build(params: Params) -> Self {
-        let table = build_table::<N>(&params);
+        let table = build_table::<N>(params);
         let size2class = build_size2class::<N, L>(&table, params.min_block);
         let small_max = table[N - 1];
         Self {

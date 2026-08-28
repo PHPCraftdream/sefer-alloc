@@ -40,7 +40,7 @@ pub(crate) const SEFER_PARAMS: Params = Params::new(
     SEFER_EXTRAS,
     HUGE_THRESHOLD,
 );
-pub(crate) const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(&SEFER_PARAMS);
+pub(crate) const SEFER_TABLE: [usize; SEFER_N] = build_table::<SEFER_N>(SEFER_PARAMS);
 pub(crate) const SEFER_MAX: usize = SEFER_TABLE[SEFER_N - 1];
 pub(crate) const SEFER_L: usize = size2class_len(SEFER_MAX, SEFER_MIN_BLOCK);
 // `static`, not `const`: a `const` this size re-materializes at every use
