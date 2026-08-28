@@ -914,21 +914,18 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             if block & (align - 1) == 0 {
                 return Some(i);
             }
-            // Smallest multiple of `align` strictly greater than `block` (align
-            // is a power of two, so `(block | (align - 1)) + 1` rounds up).
-            //
-            // `checked_add` because `block | (align - 1)` can already be
-            // `usize::MAX`, meaning no next multiple exists -- which is
-            // exactly the `None` the `> small_max` clamp below yields for
-            // every other out-of-range case. Unchecked, it wrapped to `0`.
-            let next_mult = match (block | (align - 1)).checked_add(1) {
-                Some(v) => v,
-                None => return None,
-            };
-            // Same index-space guard as the seed above; `next_mult >= 1`
-            // always (from `checked_add(1)`), so `next_mult - 1` never
-            // underflows here.
-            let next_idx = (next_mult - 1) >> self.min_block_shift;
+            // `block | (align - 1)` is one below the smallest multiple of
+            // `align` strictly greater than `block` (align is a power of
+            // two, so that's what `+ 1` would round up to) -- exactly the
+            // value the bucket index below wants, so there is no reason to
+            // add 1 and then immediately subtract it again. Same
+            // index-space guard as the seed above; if no next multiple
+            // exists (`block | (align - 1) == usize::MAX`), the shifted
+            // index is `usize::MAX >> shift >= small_max >> shift == L - 1`
+            // (the same identity the seed guard relies on), so the guard
+            // below returns `None` on its own -- no separate overflow check
+            // needed.
+            let next_idx = (block | (align - 1)) >> self.min_block_shift;
             if next_idx >= L - 1 {
                 return None;
             }

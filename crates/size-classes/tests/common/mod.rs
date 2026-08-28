@@ -55,11 +55,13 @@ pub(crate) const JUMP_A: (usize, usize) = (1025, 256);
 /// Seed class 22 (block 2368), 3 jump-loop iterations to `Some(25)` (block 4096).
 pub(crate) const JUMP_B: (usize, usize) = (2049, 1024);
 
-/// A denser multi-iteration slow-path case than `JUMP_A`/`JUMP_B`: seed class
-/// 14 (block 608, not 512-divisible), 2 jump-loop iterations to `Some(17)`
-/// (block 1024). Single source shared by `tests/builder.rs` and
-/// `benches/size_classes_bench.rs` (claude publication review P2-2: the two
-/// files previously held independent copies of this constant under a comment
+/// A slow-path case seeded from a lower, denser region of the table than
+/// `JUMP_A`/`JUMP_B` (not a deeper one -- at 2 jump-loop iterations it is
+/// the SHALLOWEST of the three, not a "multi-iteration" case relative to
+/// them): seed class 14 (block 608, not 512-divisible), 2 jump-loop
+/// iterations to `Some(17)` (block 1024). Single source shared by
+/// `tests/builder.rs` and `benches/size_classes_bench.rs` (the two files
+/// previously held independent copies of this constant under a comment
 /// claiming a test-based drift guard that could not actually see the other
 /// copy -- moved here so the guarantee is structural, matching `JUMP_A`/`JUMP_B`).
 pub(crate) const JUMP_MULTI: (usize, usize) = (513, 512);
