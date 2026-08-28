@@ -590,6 +590,18 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAlign(pub usize);
 
+impl core::fmt::Display for InvalidAlign {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "try_class_for: align ({}) must be a power of two (the Layout contract)",
+            self.0
+        )
+    }
+}
+
+impl core::error::Error for InvalidAlign {}
+
 impl<const N: usize, const L: usize> core::fmt::Debug for SizeClasses<N, L> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SizeClasses")
@@ -926,15 +938,3 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         Ok(self.class_for(size, align))
     }
 }
-
-impl core::fmt::Display for InvalidAlign {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "try_class_for: align ({}) must be a power of two (the Layout contract)",
-            self.0
-        )
-    }
-}
-
-impl core::error::Error for InvalidAlign {}
