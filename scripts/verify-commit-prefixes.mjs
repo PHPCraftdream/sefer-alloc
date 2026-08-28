@@ -444,6 +444,24 @@ const GRANDFATHERED = new Map([
       'not relabeled as a false positive to fit the pattern. Durable ' +
       'record: item 78, sub-card 10 (task #1514).',
   ],
+  [
+    '4c332ab',
+    'A GENUINE mis-slot, same defect class as 09f4d16/fb7dac8/66f47d2 ' +
+      '(sub-cards 1/5/10) -- NOT a heuristic false positive. docs(size-classes) ' +
+      'prefix on a size-classes round-3 review commit whose src/lib.rs delta ' +
+      'bundles three genuine comment-only fixes with one real internal-' +
+      'implementation change: the round-3 review\'s P3-5 finding removed the ' +
+      'now-redundant `small_max` struct field (its only two readers, ' +
+      '`small_max()` and `Debug`, now read `self.table[N - 1]` directly). ' +
+      'Behavior-preserving (small_max() returns the same value; Debug\'s ' +
+      'printed output unchanged, confirmed by the pre-existing ' +
+      'debug_impl_prints_a_summary_not_the_raw_tables test staying green) and ' +
+      'no speedup measured or claimed, so the honest prefix would have been ' +
+      'fix(perf), matching the 5df56d3 PerClass repr(C) precedent CLAUDE.md ' +
+      'itself cites for that slot. PUSHED, like sub-cards 1/5 -- un-amendable ' +
+      'per R30-12\'s non-retroactive posture. Durable record: item 78, ' +
+      'sub-card 11 (task #1584).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
