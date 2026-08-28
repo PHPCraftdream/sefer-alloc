@@ -64,8 +64,10 @@ pub(crate) const JUMP_B: (usize, usize) = (2049, 1024);
 /// copy -- moved here so the guarantee is structural, matching `JUMP_A`/`JUMP_B`).
 pub(crate) const JUMP_MULTI: (usize, usize) = (513, 512);
 /// A slow-path case that exhausts the table and returns `None`: seed class 36
-/// (block 17760, not 16384-divisible), 10 jump-loop iterations walking every
-/// remaining table entry (none 16384-divisible) before the table ends.
+/// (block 17760, not 16384-divisible), 10 jump-loop iterations before the
+/// table ends -- visiting 10 of the 13 remaining classes (indices 37, 38 and
+/// 40 are skipped by the round-up; skipping is what the jump algorithm is
+/// for), none of the visited ones 16384-divisible.
 pub(crate) const JUMP_NONE: (usize, usize) = (16385, 16384);
 /// A denser align than `JUMP_A` (128 divides ~31% of `SEFER_TABLE`'s entries
 /// vs 256's ~20%): seed class 6 (block 144, not 128-divisible), 2 jump-loop

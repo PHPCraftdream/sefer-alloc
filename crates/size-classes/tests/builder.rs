@@ -1160,13 +1160,12 @@ fn try_class_for_rejects_non_pow2_align() {
     assert_eq!(SEFER_SC.try_class_for(32, 6), Err(InvalidAlign(6)));
 }
 
-// The exact corner `class_for` cannot handle safely even in release: `align
-// == 0, size == 0` underflows `need - 1` to `usize::MAX`, which then panics
-// on the out-of-bounds `size2class` index (an unconditional bounds check,
-// not a compiled-away debug_assert -- see class_for_non_pow2_align_violates
-// _debug_assert's own doc comment on why THAT guard is debug-only; indexing
-// panics are not). `try_class_for` must reject align=0 before any of that
-// arithmetic runs, in every profile.
+// `class_for`'s own handling of `align == 0, size == 0` now depends on the
+// build profile (see class_for's `# Preconditions`: it can panic on a
+// debug_assert, panic on overflow-checked subtraction, or return `None`,
+// depending on which of debug-assertions/overflow-checks are on). Whichever
+// profile a caller ships in, `try_class_for` rejects `align == 0` before any
+// of that arithmetic runs -- the one behavior that holds in every profile.
 #[test]
 fn try_class_for_rejects_zero_align_without_panicking() {
     assert_eq!(SEFER_SC.try_class_for(0, 0), Err(InvalidAlign(0)));

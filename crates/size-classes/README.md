@@ -30,7 +30,7 @@ zero-dependency, `#![forbid(unsafe_code)]` unit.
   `class_for`: rejects a non-power-of-two `align` (including `0`) with
   `Err(InvalidAlign(align))` before any arithmetic runs, instead of assuming
   a valid `align` and risking unspecified behavior (a wrong class choice, or
-  a panic for the `align == 0` corner). Never panics, for any `(size,
+  a panic in a debug build). Never panics, for any `(size,
   align)`. Use this one unless `align` is already known-valid by
   construction (e.g. taken from a `core::alloc::Layout`) — `class_for`
   stays the zero-validation hot-path variant for that case.

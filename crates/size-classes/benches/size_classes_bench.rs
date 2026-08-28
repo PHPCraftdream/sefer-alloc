@@ -54,9 +54,9 @@ fn main() {
 
     // ── try_class_for/invalid_align_reject (early Err, no arithmetic runs) ───
     // The other half of `try_class_for`'s contract: a non-power-of-two (here
-    // zero) `align` is rejected before `need`/the LUT are ever touched --
-    // this is the case `class_for` cannot handle at all (it would panic on
-    // `(0, 0)`, see `class_for`'s own `# Preconditions`).
+    // zero) `align` is rejected before `need`/the LUT are ever touched -- in
+    // EVERY profile, unlike `class_for`, whose own handling of `align == 0`
+    // depends on the build profile (see `class_for`'s own `# Preconditions`).
     h.bench("try_class_for/invalid_align_reject", || {
         let result = black_box(SEFER_SC.try_class_for(black_box(32), black_box(0)));
         let _ = black_box(result);
@@ -137,25 +137,25 @@ fn main() {
     });
 
     // ── class_for/slow_path_none (jump walks the table, still returns None) ─
-    // size-classes publication audit run 7 (oxx, P3-2): `above_small_max_
-    // rejection` below returns `None` via the EARLY `need > small_max` check,
+    // `above_small_max_rejection` below returns `None` via the EARLY guard,
     // never touching the jump loop at all. This row instead genuinely enters
-    // the slow path (need=16385 <= small_max=258752) and walks 10 real
-    // iterations -- every remaining table entry from the seed to the table's
-    // last class, none of them divisible by 16384 -- before exhausting the
-    // table and returning `None`. Pinned alongside `multi_jump` above.
+    // the slow path (need=16385 <= small_max=258752) and takes 10 real
+    // iterations -- visiting 10 of the 13 remaining classes (indices 37, 38,
+    // 40 skipped by the round-up), none of the visited ones divisible by
+    // 16384 -- before exhausting the table and returning `None`. Pinned
+    // alongside `multi_jump` above.
     h.bench("class_for/slow_path_none", || {
         let result = black_box(SEFER_SC.class_for(black_box(JUMP_NONE.0), black_box(JUMP_NONE.1)));
         black_box(result);
     });
 
     // ── class_for/dense_align_slow_path (a different table "density") ────────
-    // size-classes publication audit run 7 (oxx, P3-2): JUMP_A/JUMP_B/
-    // JUMP_MULTI/JUMP_NONE all use progressively larger, sparser aligns
-    // (256/1024/512/16384). This row uses align=128, under which ~31% of
-    // SEFER_TABLE's classes are already divisible (vs ~20% for align=256) --
-    // a denser slow-path point, still genuinely exercising the jump (seed
-    // class 6, block 192, is NOT 128-divisible; 2 iterations to `Some(9)`).
+    // JUMP_A/JUMP_B/JUMP_MULTI/JUMP_NONE use aligns 256/1024/512/16384; this
+    // row uses align=128, under which ~31% of SEFER_TABLE's classes are
+    // already divisible (vs ~20% for align=256) -- a denser slow-path point,
+    // still genuinely exercising the jump (seed class 6, block 144, is NOT
+    // 128-divisible; 2 iterations to `Some(9)` -- see common::JUMP_DENSE's
+    // own doc for the derivation).
     h.bench("class_for/dense_align_slow_path", || {
         let result =
             black_box(SEFER_SC.class_for(black_box(JUMP_DENSE.0), black_box(JUMP_DENSE.1)));

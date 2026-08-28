@@ -159,9 +159,7 @@ impl<'a> Params<'a> {
 /// the whole object's size, ~16.18 KiB total) — but a smaller `min_block`
 /// can outweigh a smaller class count entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
-/// `L = 18207`, a LARGER object than the 49-class example above. Numbers
-/// independently re-derived from this formula, not read off the crate's own
-/// output.
+/// `L = 18207`, a LARGER object than the 49-class example above.
 ///
 /// # Panics
 ///
@@ -421,8 +419,8 @@ pub const fn build_table<const N: usize>(params: Params) -> [usize; N] {
 /// largest class), so no such class exists; that bucket is clamped to
 /// `table[N - 1]` itself instead. For [`SizeClasses::class_for`] specifically
 /// this is harmless: it never queries bucket `L - 1` for any in-range `size`
-/// (its own `need > small_max` early rejection catches every size that would
-/// land there), so THERE the clamped entry is an unreachable sentinel, not
+/// (its own early-rejection guard catches every size that would land there),
+/// so THERE the clamped entry is an unreachable sentinel, not
 /// an observable answer. A caller driving this array directly (bypassing
 /// `class_for`) can still observe it -- and for a hand-built `table` whose
 /// `small_max` is not a multiple of `min_block`, bucket `L - 1` need not even
@@ -570,8 +568,8 @@ pub struct SizeClasses<const N: usize, const L: usize> {
     size2class: [u8; L],
     // `min_block`, `small_align_max`, and `1 << min_block_shift` are the same
     // value by construction (see `build` below) -- storing only the shift
-    // (claude publication review P4-3) removes two provably-redundant
-    // hot-path field loads; `min_block()`/`small_align_max()` re-derive it.
+    // removes two provably-redundant hot-path field loads;
+    // `min_block()`/`small_align_max()` re-derive it.
     min_block_shift: u32,
     small_max: usize,
     huge_threshold: usize,
@@ -686,10 +684,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `need = max(size, align)`, which is always `>= 1` given `align`'s
     /// own power-of-two contract (so the `size - 1` underflow above never
     /// applies to it — `size` itself is never validated, `need` just
-    /// happens to always be in range), and it rejects `need > small_max`
-    /// before ever indexing — plus applies the `align` predicate this raw
-    /// LUT ignores entirely. Prefer it unless you specifically need the
-    /// raw LUT and are prepared to enforce both preconditions yourself.
+    /// happens to always avoid THAT particular failure mode), and it
+    /// separately rejects a too-large `need` before ever indexing — plus
+    /// applies the `align` predicate this raw LUT ignores entirely. Prefer
+    /// it unless you specifically need the raw LUT and are prepared to
+    /// enforce both preconditions yourself.
     ///
     /// **This shape is a deliberate, but not permanently promised, choice.**
     /// The LUT is today one flat `u8` per `min_block`-sized bucket over the
@@ -806,13 +805,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// that could be a multiple of `align` is the one covering the smallest
     /// multiple of `align` strictly greater than `b` (a bitmask round-up plus
     /// one lookup). Provably equivalent to a step-by-1 walk, never more
-    /// iterations, fewer whenever the seed lands in a run of non-divisible
-    /// classes.
+    /// iterations, fewer whenever the jump skips at least one class.
     ///
-    /// `size` is expected `>= min_block` (the caller's contract); it is also
-    /// well-defined for `size >= 1`, since `(size - 1) >> shift` stays in range
-    /// -- more precisely, what must hold is `need = max(size, align) >= 1`, so
-    /// `size == 0` alone is fine whenever `align >= 1`.
+    /// The useful domain is `size >= 1`; more precisely, what must hold is
+    /// `need = max(size, align) >= 1`, so `size == 0` alone is fine whenever
+    /// `align >= 1` -- `(size - 1) >> shift` never underflows in that case.
+    /// Consumers commonly clamp `size` up to `min_block` before calling (the
+    /// classifier has no smaller class to offer below it anyway); this
+    /// function does not require that clamp.
     ///
     /// # Preconditions
     ///
@@ -821,17 +821,22 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// [`core::alloc::Layout`] satisfies this by construction; one computed
     /// by hand may not.
     ///
-    /// A violation trips a `debug_assert!`; in release, the behavior for a
-    /// non-zero non-power-of-two `align` is UNSPECIFIED, not merely "a wrong
-    /// class choice" -- it can return an incorrect `Some`/`None` (see the
-    /// three failure modes below), never memory unsafety or a corrupt table.
-    /// The `align == 0, size == 0` corner does NOT panic: `need - 1`
-    /// underflows to `usize::MAX`, but the resulting index is always `>= L -
-    /// 1` (see `class_for`'s own index-space guard comment for the proof),
-    /// so it takes the same early `None` return as any other out-of-range
-    /// request. Prefer [`try_class_for`](Self::try_class_for), which rejects
-    /// `align == 0` before any of this arithmetic runs, over relying on this
-    /// fallback behavior.
+    /// A violation trips a `debug_assert!` whenever `cfg(debug_assertions)` is
+    /// on; with `debug_assertions` off, the behavior for a non-zero
+    /// non-power-of-two `align` is UNSPECIFIED, not merely "a wrong class
+    /// choice" -- it can return an incorrect `Some`/`None` (see the three
+    /// failure modes below), never memory unsafety or a corrupt table. The
+    /// `align == 0, size == 0` corner does NOT panic, but only with
+    /// `overflow-checks` ALSO off (the default release profile, but a
+    /// separate Cargo knob from `debug_assertions` -- a consumer can turn it
+    /// on in release): `need - 1` underflows to `usize::MAX`, and the
+    /// resulting index is always `>= L - 1` (see `class_for`'s own
+    /// index-space guard comment for the proof), so it takes the same early
+    /// `None` return as any other out-of-range request. With
+    /// `overflow-checks` on, that same subtraction panics instead. Prefer
+    /// [`try_class_for`](Self::try_class_for), which rejects `align == 0`
+    /// before any of this arithmetic runs in every profile, over relying on
+    /// this fallback behavior.
     ///
     /// Concretely, all three of the fit predicate's WRONG-ANSWER failure
     /// modes become reachable for a non-pow2 `align`:
@@ -877,8 +882,8 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             "class_for: align must be a power of two (the Layout contract)"
         );
         let need = if size > align { size } else { align };
-        // Index-space guard, not `need > self.small_max` (claude publication
-        // review P3-1): `small_max` is always `(L - 1) * min_block` (every
+        // Index-space guard, not `need > self.small_max`: `small_max` is
+        // always `(L - 1) * min_block` (every
         // `build_table` entry is a `min_block` multiple -- see `build`'s own
         // invariant assert below), so `seed_idx >= L - 1 <=> need >
         // small_max` exactly, and `L - 1` is a compile-time constant where
@@ -904,15 +909,8 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         let mut i = seed;
         while i < N {
             let block = self.table[i];
-            // `align` is contractually a power of two here (debug-asserted
-            // above), so the mask is equivalent to `is_multiple_of` but skips
-            // an integer division -- and it matches `next_mult`'s idiom just
-            // below. `benches/size_classes_bench.rs`'s `jump_vs_walk` rows
-            // measure this jump algorithm (which uses this mask) against a
-            // naive one-class-at-a-time walk (which uses `is_multiple_of`)
-            // and find the jump faster on SEFER's own table, but that
-            // measures the two algorithms as a whole, not this mask in
-            // isolation from the jump-ahead itself.
+            // `align` is a power of two here, so the mask is a
+            // division-free `is_multiple_of`.
             if block & (align - 1) == 0 {
                 return Some(i);
             }
