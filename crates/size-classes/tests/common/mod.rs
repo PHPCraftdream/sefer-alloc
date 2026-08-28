@@ -11,6 +11,14 @@
 //! module of its OWN crate root, so `pub` here never actually widens the
 //! published crate's semver surface -- `pub(crate)` says so explicitly
 //! instead of relying on that fact being obvious from context.
+//!
+//! `#![allow(dead_code)]`: each of the three consumers (`tests/builder.rs`,
+//! `tests/proptest_builder.rs`, the bench) uses a different subset of these
+//! items -- e.g. `proptest_builder.rs` uses only [`walk_class_for`] -- so
+//! `dead_code` (a per-compilation-unit lint) fires on whatever a given
+//! consumer doesn't happen to import, even though every item here is used by
+//! at least one of the three.
+#![allow(dead_code)]
 
 use size_classes::{build_table, size2class_len, Params, SizeClasses};
 
@@ -63,3 +71,41 @@ pub(crate) const JUMP_NONE: (usize, usize) = (16385, 16384);
 /// vs 256's ~20%): seed class 6 (block 144, not 128-divisible), 2 jump-loop
 /// iterations to `Some(9)` (block 256).
 pub(crate) const JUMP_DENSE: (usize, usize) = (129, 128);
+
+/// The PRE-jump reference algorithm `SizeClasses::class_for`'s
+/// divisibility-jump slow path must be equivalent to: seed at the lookup,
+/// then step ONE class at a time until the first whose block is a multiple
+/// of `align`. Generic over `table`/`min_block` so every "reference walk"
+/// consumer (the bench, the multi-scheme proptests) shares one
+/// implementation (claude publication review P3-4: this used to be
+/// duplicated independently in `benches/size_classes_bench.rs` and
+/// `tests/proptest_builder.rs`, the former under a rationale -- "bench files
+/// cannot import from `tests/`" -- that the same file's own `#[path]` import
+/// of this module thirty lines above already disproved).
+pub(crate) fn walk_class_for(
+    table: &[usize],
+    s2c: &[u8],
+    min_block: usize,
+    size: usize,
+    align: usize,
+) -> Option<usize> {
+    let shift = min_block.trailing_zeros();
+    let small_align_max = min_block;
+    let small_max = *table.last().unwrap();
+    let need = size.max(align);
+    if need > small_max {
+        return None;
+    }
+    let seed = s2c[(need - 1) >> shift] as usize;
+    if align <= small_align_max {
+        return Some(seed);
+    }
+    let mut i = seed;
+    while i < table.len() {
+        if table[i].is_multiple_of(align) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}

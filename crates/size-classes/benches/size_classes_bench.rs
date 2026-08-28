@@ -20,40 +20,9 @@ use bench_scale_tool::Harness;
 #[path = "../tests/common/mod.rs"]
 mod common;
 use common::{
-    HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_MAX, SEFER_MIN_BLOCK,
-    SEFER_SC, SEFER_TABLE,
+    walk_class_for, HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_MAX,
+    SEFER_MIN_BLOCK, SEFER_SC, SEFER_TABLE,
 };
-
-/// The PRE-jump reference: seed at the lookup, then step ONE class at a time
-/// until the first whose block is a multiple of `align`. Independent
-/// linear-walk twin of `tests/proptest_builder.rs`'s `walk_class_for` (bench
-/// files cannot import from `tests/`, so this is a copy, not a re-export) --
-/// used to compare jump's wall-clock cost against the naive walk it replaces
-/// (size-classes publication audit run 7, oxx P3-1: the crate's own doc/
-/// README/CHANGELOG claim jump is a real optimization over a linear walk, but
-/// nothing measured that against SEFER's own 49-class/392-byte table, which
-/// is small enough that the claim was not obviously true by wall-clock).
-fn walk_class_for(size: usize, align: usize) -> Option<usize> {
-    let shift = SEFER_MIN_BLOCK.trailing_zeros();
-    let small_align_max = SEFER_MIN_BLOCK;
-    let small_max = *SEFER_TABLE.last().unwrap();
-    let need = size.max(align);
-    if need > small_max {
-        return None;
-    }
-    let seed = SEFER_SC.size2class()[(need - 1) >> shift] as usize;
-    if align <= small_align_max {
-        return Some(seed);
-    }
-    let mut i = seed;
-    while i < SEFER_TABLE.len() {
-        if SEFER_TABLE[i].is_multiple_of(align) {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
-}
 
 fn main() {
     let mut h = Harness::new("size_classes_bench", env!("CARGO_MANIFEST_DIR"));
@@ -140,7 +109,13 @@ fn main() {
     });
 
     h.bench("class_for/jump_vs_walk_a_walk", || {
-        let result = black_box(walk_class_for(black_box(JUMP_A.0), black_box(JUMP_A.1)));
+        let result = black_box(walk_class_for(
+            &SEFER_TABLE,
+            SEFER_SC.size2class(),
+            SEFER_MIN_BLOCK,
+            black_box(JUMP_A.0),
+            black_box(JUMP_A.1),
+        ));
         black_box(result);
     });
 
