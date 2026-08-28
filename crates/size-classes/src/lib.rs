@@ -33,14 +33,8 @@
 //!   *divisible* stride; see [`SizeClasses::class_for`]'s `# Preconditions`
 //!   for the separate base-address requirement this crate cannot check.
 //!   [`SizeClasses::try_class_for`] is the checked twin -- validates `align`
-//!   instead of assuming it. It is a separate function, not a wrapper around
-//!   `class_for`, so choosing to call it costs `class_for` itself nothing --
-//!   that is the "zero cost" claim: `class_for`'s own codegen is unaffected
-//!   by `try_class_for` existing, not that `try_class_for` is as cheap as
-//!   `class_for` to call (it does strictly more work: an added power-of-two
-//!   check before delegating -- see `benches/size_classes_bench.rs`'s
-//!   `try_class_for/*` rows for the measured difference). Use
-//!   `try_class_for` unless `align` is already known-valid by construction.
+//!   instead of assuming it. Use it unless `align` is already known-valid by
+//!   construction (e.g. taken from a [`core::alloc::Layout`]).
 //!
 //! ## The `huge` threshold is a policy parameter
 //!
@@ -219,26 +213,34 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// # Panics
 ///
 /// Panics -- identically in `const` evaluation and at runtime, since this is
-/// a `pub const fn` callable either way -- if `N != geo_count + extras.len()`,
-/// if `min_block` is not a power of two, if `geo_count == 0`, if
-/// `params.growth.1` (the growth denominator) is `0`, if any `extras`
-/// entry is not a multiple of `min_block`, if any `extras` entry is less
-/// than `min_block` (the scheme's minimum block size), if `extras` is not
-/// strictly increasing, if the geometric progression's advance step
-/// overflows `usize` (reachable not just with an extreme `min_block`/`growth`
-/// combination but also with a large enough `geo_count` alone -- e.g. with
-/// `min_block = 16`, `growth = (5, 4)` (this crate's own tests' example
-/// scheme; the crate itself has no defaults), `geo_count = 183` already
-/// overflows on a 64-bit `usize` (84 on a 32-bit one -- the boundary scales
-/// with `usize::BITS`; `geo_count` up to `182` is exactly the widened-
-/// arithmetic case this crate's `CHANGELOG.md` describes: the next class
-/// fits even though the intermediate `cur * num` product does not fit
-/// `usize`)), or if the merged table (geometric run + `extras`) is not
-/// itself strictly increasing — the per-entry `extras` checks above catch
-/// misshapen `extras`, but not an `extras` entry that DUPLICATES a value
-/// the geometric run also produces, which only the merged table reveals.
-/// An `extras` entry landing strictly BETWEEN two geometric values is
-/// fine, and is one of the main reasons `extras` exists.
+/// a `pub const fn` callable either way -- if any of:
+///
+/// - `N != geo_count + extras.len()`;
+/// - `min_block` is not a power of two;
+/// - `geo_count == 0`;
+/// - `params.growth.1` (the growth denominator) is `0`;
+/// - any `extras` entry is not a multiple of `min_block`;
+/// - any `extras` entry is less than `min_block` (the scheme's minimum
+///   block size);
+/// - `extras` is not strictly increasing;
+/// - the geometric progression's advance step overflows `usize` (see the
+///   worked example below);
+/// - the merged table (geometric run + `extras`) is not itself strictly
+///   increasing -- the per-entry `extras` checks above catch misshapen
+///   `extras`, but not an `extras` entry that DUPLICATES a value the
+///   geometric run also produces, which only the merged table reveals. An
+///   `extras` entry landing strictly BETWEEN two geometric values is fine,
+///   and is one of the main reasons `extras` exists.
+///
+/// The advance-step overflow is reachable not just with an extreme
+/// `min_block`/`growth` combination but with a large enough `geo_count`
+/// alone: with `min_block = 16`, `growth = (5, 4)` (this crate's own tests'
+/// example scheme; the crate itself has no defaults), `geo_count = 183`
+/// already overflows on a 64-bit `usize` (`84` on a 32-bit one -- the
+/// boundary scales with `usize::BITS`). `geo_count` up to `182` is exactly
+/// the widened-arithmetic case this crate's `CHANGELOG.md` describes: the
+/// next class fits even though the intermediate `cur * num` product does
+/// not fit `usize`.
 #[must_use]
 pub const fn build_table<const N: usize>(params: Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -548,20 +550,20 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// [`class_for`](Self::class_for) rather than picked independently — an
 /// out-of-range `idx` does panic, see [`block_size`](Self::block_size).
 ///
-/// Deliberately NOT `Copy`: an instance embeds both tables, so a realistic
-/// scheme is ~16 KiB, and `Copy` would give that a `let a = b;`-cheap
-/// syntax. `Clone` keeps explicit duplication available while forcing the
-/// call site to say so. Intended use is a `static` referenced in place (a
-/// `const` this size re-materializes at every use site, duplicating the
+/// Deliberately NOT `Copy`: an instance embeds both tables (a realistic
+/// scheme is ~16 KiB -- see [`size2class_len`]'s `# Memory cost` for the
+/// breakdown), and `Copy` would give a full-object duplicate a `let a = b;`
+/// -cheap syntax. `Clone` keeps explicit duplication available while forcing
+/// the call site to say so. Intended use is a `static` referenced in place
+/// (a `const` this size re-materializes at every use site, duplicating the
 /// embedded tables -- see `clippy::large_const_arrays`); no method needs
 /// ownership.
 ///
 /// `Debug` is hand-written, not derived: a derive would print both raw
-/// tables (~16 KiB total for a realistic scheme, almost all of it the
-/// `size2class` LUT -- `table` itself is a few hundred bytes) on any
-/// accidental `{:?}`/`dbg!`, burying the useful line. This prints the
-/// summary a developer actually wants; use [`table`](Self::table) /
-/// [`size2class`](Self::size2class) to inspect the raw arrays directly.
+/// tables (same size as above) on any accidental `{:?}`/`dbg!`, burying the
+/// useful line. This prints the summary a developer actually wants; use
+/// [`table`](Self::table) / [`size2class`](Self::size2class) to inspect the
+/// raw arrays directly.
 #[derive(Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
@@ -585,8 +587,6 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 /// foreseeable second field, so the future-proofing `#[non_exhaustive]` +
 /// accessor shape would only cost every caller's `Err(InvalidAlign(n))`
 /// pattern match for a flexibility this type has no concrete use for.
-/// Settled before 0.1.0, same decide-now-not-in-six-months discipline as
-/// `SizeClasses`'s own `Copy` removal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAlign(pub usize);
 
@@ -891,8 +891,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             // naive one-class-at-a-time walk (which uses `is_multiple_of`)
             // and find the jump faster on SEFER's own table, but that
             // measures the two algorithms as a whole, not this mask in
-            // isolation from the jump-ahead itself; MS round-3 prepublish
-            // review P2-4.
+            // isolation from the jump-ahead itself.
             if block & (align - 1) == 0 {
                 return Some(i);
             }
@@ -920,7 +919,12 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `align`, including `0`), then delegates. Same result on every
     /// already-valid input; the only behavior difference is on the inputs
     /// `class_for`'s own `# Preconditions` already document as
-    /// contract-violating.
+    /// contract-violating. A separate function, not a wrapper `class_for`
+    /// calls into -- so `class_for`'s own codegen is unaffected by whether a
+    /// caller uses this one, at the cost of `try_class_for` itself doing
+    /// strictly more work (the added power-of-two check; see
+    /// `benches/size_classes_bench.rs`'s `try_class_for/*` rows for the
+    /// measured difference).
     ///
     /// **Never panics, for any `(size, align)` pair** — this is the
     /// substantive reason to prefer it over `class_for` for an `align` that
