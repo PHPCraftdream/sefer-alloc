@@ -4,18 +4,16 @@
 //! Every slab / pool / arena allocator reinvents the same trio: a table of
 //! block sizes, an O(1) map from a requested byte size to the smallest class
 //! that fits it, and a classifier that also honours alignment via stride
-//! divisibility. This crate
-//! packages that trio as a `const`-evaluated, `no_std`, zero-dependency,
-//! `#![forbid(unsafe_code)]` unit — the table shape is a parameter, so a
-//! consumer can bake its own scheme and still get the derived lookup and the
-//! alignment-aware classifier for free.
+//! divisibility. This crate packages that trio as a `const`-evaluated,
+//! `no_std`, zero-dependency, `#![forbid(unsafe_code)]` unit — the table
+//! shape is a parameter, so a consumer can bake its own scheme and still
+//! get the derived lookup and the alignment-aware classifier for free.
 //!
 //! ## The three pieces
 //!
 //! - [`build_table`] — a `const fn` sorted-merge of a geometric progression
 //!   (`geo_count` classes, each `round_up(ceil(prev * num / den), min_block)`)
-//!   with
-//!   a strictly increasing, `min_block`-multiple, `>= min_block` list of
+//!   with a strictly increasing, `min_block`-multiple, `>= min_block` list of
 //!   explicit `extras` (page-aligned classes, an exact size the geometric
 //!   run skips, a feature-gated medium tier, …).
 //! - [`build_size2class`] — derives the O(1) `size→class` lookup from a table
@@ -29,9 +27,10 @@
 //!   caller's classifier happens to handle silently falls through to the
 //!   caller's whole-segment path — a real bug class in hand-rolled allocators
 //!   (`sefer-alloc`'s own motivating case, the allocator this crate was
-//!   extracted from: `align >= 512`). The classifier picks an align-
-//!   *divisible* stride; see [`SizeClasses::class_for`]'s `# Preconditions`
-//!   for the separate base-address requirement this crate cannot check.
+//!   extracted from: `align >= 512`). The classifier picks an
+//!   `align`-*divisible* stride; see [`SizeClasses::class_for`]'s
+//!   `# Preconditions` for the separate base-address requirement this crate
+//!   cannot check.
 //!   [`SizeClasses::try_class_for`] is the checked twin -- validates `align`
 //!   instead of assuming it. Use it unless `align` is already known-valid by
 //!   construction (e.g. taken from a [`core::alloc::Layout`]).
@@ -157,8 +156,8 @@ impl<'a> Params<'a> {
 /// with 49 classes and `max_class = 258752` gives `L = 16173` (`table`
 /// itself is only `N * size_of::<usize>()` = 392 bytes on a 64-bit target;
 /// the LUT dominates the whole object's size, ~16.18 KiB total on a 64-bit
-/// target) — but a smaller `min_block`
-/// can outweigh a smaller class count entirely: `min_block = 8` with just 24
+/// target) — but a smaller `min_block` can outweigh a smaller class count
+/// entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
 /// `L = 18207`, a LARGER object than the 49-class example above.
 ///
@@ -175,12 +174,9 @@ impl<'a> Params<'a> {
 /// evaluation reached through a `const fn` CALL (not a bare literal
 /// expression), since const-eval overflow checks for such a call follow the
 /// `overflow-checks` profile the crate's MIR was built with — silently
-/// yielding an empty lookup. This is a real, tracked rustc characteristic,
-/// not a misreading of the Rust Reference's more general "overflow is a
-/// compile-time error in const contexts" wording: see
+/// yielding an empty lookup. See
 /// <https://github.com/rust-lang/rust/issues/74823> ("Const functions
-/// sometimes don't do overflow checks in release mode"), independently
-/// reproduced against this crate's own MSRV and current stable toolchains.
+/// sometimes don't do overflow checks in release mode").
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
     assert!(
@@ -236,10 +232,12 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// alone: with `min_block = 16`, `growth = (5, 4)` (this crate's own tests'
 /// example scheme; the crate itself has no defaults), `geo_count = 183`
 /// already overflows on a 64-bit `usize` (`84` on a 32-bit one -- the
-/// boundary scales with `usize::BITS`). `geo_count` up to `182` is exactly
-/// the widened-arithmetic case this crate's `CHANGELOG.md` describes: the
-/// next class fits even though the intermediate `cur * num` product does
-/// not fit `usize`.
+/// boundary scales with `usize::BITS`). At the top of that range (roughly
+/// the last half-dozen steps -- the intermediate `cur * num` product first
+/// exceeds `usize` only once `cur > usize::MAX / num`) is exactly the
+/// widened-arithmetic case this crate's `CHANGELOG.md` describes: the next
+/// class fits even though the intermediate `cur * num` product does not fit
+/// `usize`.
 #[must_use]
 pub const fn build_table<const N: usize>(params: Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -555,8 +553,7 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// -cheap syntax. `Clone` keeps explicit duplication available while forcing
 /// the call site to say so. Intended use is a `static` referenced in place
 /// (a `const` this size re-materializes at every use site, duplicating the
-/// embedded tables -- see `clippy::large_const_arrays`); no method needs
-/// ownership.
+/// embedded tables); no method needs ownership.
 ///
 /// `Debug` is hand-written, not derived: a derive would print both raw
 /// tables (same size as above) on any accidental `{:?}`/`dbg!`, burying the
@@ -580,11 +577,8 @@ pub struct SizeClasses<const N: usize, const L: usize> {
 /// [`SizeClasses::class_for`] assumes but -- on its own hot path -- only
 /// `debug_assert!`s). Carries the offending value for diagnostics.
 ///
-/// Deliberately a plain tuple struct, not `#[non_exhaustive]`: it has
-/// exactly one reason to exist (a non-power-of-two `align`) and no
-/// foreseeable second field, so the future-proofing `#[non_exhaustive]` +
-/// accessor shape would only cost every caller's `Err(InvalidAlign(n))`
-/// pattern match for a flexibility this type has no concrete use for.
+/// A plain tuple struct, not `#[non_exhaustive]`: match the offending value
+/// directly as `Err(InvalidAlign(n))`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAlign(pub usize);
 
@@ -695,12 +689,10 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// only shape that stays O(1) for arbitrary `extras`, which is this
     /// crate's whole reason to exist, but a memory-hungry one for a scheme
     /// with a large `max_class`. `L` being a public const generic means a
-    /// change to this layout (e.g. a hybrid: an exact small-size LUT below
+    /// future layout change (e.g. a hybrid: an exact small-size LUT below
     /// some threshold, a computed answer above it) would very likely require
-    /// a breaking release regardless — this note does not promise otherwise.
-    /// It exists so a caller doesn't read "flat LUT" as an unstated
-    /// permanent guarantee: use [`class_for`](Self::class_for)/
-    /// [`try_class_for`](Self::try_class_for), not the raw array shape,
+    /// a breaking release regardless. Prefer [`class_for`](Self::class_for)/
+    /// [`try_class_for`](Self::try_class_for) over the raw array shape
     /// wherever possible.
     #[must_use]
     #[inline]
@@ -938,12 +930,10 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// `align`, including `0`), then delegates. Same result on every
     /// already-valid input; the only behavior difference is on the inputs
     /// `class_for`'s own `# Preconditions` already document as
-    /// contract-violating. A separate function, not a wrapper `class_for`
-    /// calls into -- so `class_for`'s own codegen is unaffected by whether a
-    /// caller uses this one, at the cost of `try_class_for` itself doing
-    /// strictly more work (the added power-of-two check; see
-    /// `benches/size_classes_bench.rs`'s `try_class_for/*` rows for the
-    /// measured difference).
+    /// contract-violating. Does strictly more work than `class_for` (the
+    /// added power-of-two check) -- see the `try_class_for/*` rows in
+    /// `benches/size_classes_bench.rs` if you want to measure the difference
+    /// on your own target.
     ///
     /// **Never panics, for any `(size, align)` pair** — this is the
     /// substantive reason to prefer it over `class_for` for an `align` that
@@ -958,10 +948,8 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// Use this one unless `align` is already known-valid by construction
     /// (e.g. taken directly from a [`core::alloc::Layout`]) -- `class_for`
     /// stays the zero-validation hot-path variant for that case, matching
-    /// [`Layout::from_size_align`](core::alloc::Layout::from_size_align)
-    /// (checked) versus
-    /// [`Layout::from_size_align_unchecked`](core::alloc::Layout::from_size_align_unchecked)
-    /// (trusted) in `core::alloc`.
+    /// [`Layout::from_size_align`](core::alloc::Layout::from_size_align) (checked) versus
+    /// [`Layout::from_size_align_unchecked`](core::alloc::Layout::from_size_align_unchecked) (trusted) in `core::alloc`.
     #[must_use = "this returns a Result, not just a class index -- the Err case must be handled"]
     #[inline]
     pub const fn try_class_for(

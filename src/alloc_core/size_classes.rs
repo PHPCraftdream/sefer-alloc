@@ -60,9 +60,10 @@
 //!   (`align_up(bump, block_size)` in segment-relative coordinates --
 //!   `alloc_core_small.rs`), not merely somewhere past the metadata prefix.
 //!   Every `align` this scheme ever serves divides both `block_size` (the
-//!   crate's own stride guarantee) and `SEGMENT` (16 KiB / 1 MiB largest
-//!   served class both divide 4 MiB) -- so `block_addr = base +
-//!   m*block_size` is `align`-aligned. The segment base's own alignment
+//!   crate's own stride guarantee) and `SEGMENT`: `align > SMALL_MAX` is
+//!   rejected (the crate's own large-path fallback), and every power of two
+//!   `<= SMALL_MAX < SEGMENT` (4 MiB) trivially divides `SEGMENT` -- so
+//!   `block_addr = base + m*block_size` is `align`-aligned. The segment base's own alignment
 //!   would NOT be sufficient by itself: the metadata prefix before it is
 //!   only `PAGE`-aligned (`segment_header_layout.rs`), so relying on the
 //!   base alone -- without `carve_block`'s own alignment to `block_size` --
@@ -165,15 +166,28 @@ const PARAMS: Params = Params::new(MIN_BLOCK, GROWTH, GEO_COUNT, EXTRAS, HUGE_TH
 
 /// Compile-time drift guard: [`SMALL_ALIGN_MAX`] is defined independently as
 /// `MIN_BLOCK` above, not read off the built scheme (a `const` item cannot
-/// reference the `SC` `static`, E0013 -- so this re-runs `build` fresh
-/// instead). Today the crate's own `build` hardcodes `small_align_max =
+/// read through a reference to the `SC` `static` -- so this re-runs `build`
+/// fresh instead). Today the crate's own `build` hardcodes `small_align_max =
 /// params.min_block`, so the two cannot actually drift; if the crate ever
 /// grows the `small_align_max` knob its own README already anticipates, this
 /// fails to compile instead of the constant silently going stale (fh
 /// publication audit P4-5).
-const _: () = assert!(
-    SMALL_ALIGN_MAX == SizeClassesImpl::<TABLE_LEN, S2C_LEN>::build(PARAMS).small_align_max()
-);
+///
+/// Uses a minimal 2-class probe scheme (`MIN_BLOCK`/`GROWTH`, no `extras`)
+/// rather than sefer's full `PARAMS`/`TABLE_LEN`/`S2C_LEN` -- the invariant
+/// this proves is a property of the crate's `build` (`small_align_max` is
+/// always `params.min_block`), not of sefer's specific table, so a 2-class
+/// probe proves the identical thing at ~3 const-eval buckets instead of
+/// const-evaluating the real `S2C_LEN`-bucket LUT (16173/65537/114689
+/// depending on feature) a second time just to read one `u32` back out.
+const _: () = {
+    const PROBE: Params = Params::new(MIN_BLOCK, GROWTH, 2, &[], HUGE_THRESHOLD);
+    assert!(
+        SMALL_ALIGN_MAX
+            == SizeClassesImpl::<2, { size2class_len(MIN_BLOCK * 2, MIN_BLOCK) }>::build(PROBE)
+                .small_align_max()
+    );
+};
 
 /// The table of fine small size classes, in strictly increasing order — built
 /// at compile time by the crate's `build_table` from [`PARAMS`]. The **single
@@ -197,11 +211,10 @@ const S2C_LEN: usize = size2class_len(SMALL_MAX, MIN_BLOCK);
 /// `const`-generic [`SizeClassesImpl`]. Drives every classification query.
 ///
 /// `static`, not `const`, for the same reason as [`SIZE2CLASS`] below:
-/// `SizeClassesImpl` embeds its own copy of the size2class table, so at the
-/// `medium-classes` size it trips the identical `clippy::large_const_arrays`
-/// `.rodata`-duplication lint. `SizeClassesImpl<N, L>` implements
-/// `Debug, Clone` — plain data, no interior mutability — so `static` is
-/// sound.
+/// `SizeClassesImpl` embeds its own copy of the size2class table, and a
+/// `const` this size re-materializes at every use site instead of living at
+/// one fixed address. `SizeClassesImpl<N, L>` implements `Debug, Clone` —
+/// plain data, no interior mutability — so `static` is sound.
 static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 
 /// The O(1) size→class lookup table, **derived at compile time from
@@ -211,8 +224,8 @@ static SC: SizeClassesImpl<TABLE_LEN, S2C_LEN> = SizeClassesImpl::build(PARAMS);
 /// never actually queries (see the crate's `build_size2class` doc for why).
 ///
 /// `static`, not `const`: a single fixed-address item shared by every
-/// reference, avoiding the `.rodata` duplication `clippy::large_const_arrays`
-/// flags at the `medium-classes` ~64 KiB size.
+/// reference, avoiding the `.rodata` duplication a `const` this size would
+/// cause at the `medium-classes` ~64 KiB size.
 ///
 /// Task #1518: this used to be built by its OWN separate call to
 /// `size_classes::build_size2class`, re-running the exact same derivation

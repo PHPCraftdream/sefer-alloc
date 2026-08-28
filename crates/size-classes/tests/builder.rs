@@ -548,6 +548,22 @@ fn hand_built_overlapping_table_panics_in_build_size2class() {
 }
 
 #[test]
+fn hand_built_table_with_a_non_min_block_multiple_entry_leaves_it_unreachable() {
+    // Pins build_size2class's own rustdoc worked example: a hand-built table
+    // (bypassing build_table's min_block-multiple guarantee) can contain an
+    // entry the bucket lookup never selects. `table = [16, 24, 32]`,
+    // `min_block = 16`: bucket 0 (`(0, 16]`) resolves to class 0 (block 16);
+    // bucket 1 (`(16, 32]`) resolves straight to class 2 (block 32), skipping
+    // class 1 (block 24) entirely; bucket 2 is the top clamped sentinel.
+    const MIN_BLOCK: usize = 16;
+    const N: usize = 3;
+    const TABLE: [usize; N] = [16, 24, 32];
+    const L: usize = size2class_len(32, MIN_BLOCK);
+    let s2c = build_size2class::<N, L>(&TABLE, MIN_BLOCK);
+    assert_eq!(s2c, [0, 2, 2]);
+}
+
+#[test]
 #[should_panic(expected = "every entry must be >= min_block")]
 fn extras_zero_class_panics() {
     // size-classes publication audit run 1 (Sol-codex, P2-2), the
@@ -1391,6 +1407,7 @@ fn readme_example_compiles_and_derives_its_generics() {
 fn readme_example_lines_appear_verbatim_in_readme_md() {
     let readme = include_str!("../README.md");
     let declaration_lines = [
+        "use size_classes::{build_table, size2class_len, Params, SizeClasses};",
         "const MIN_BLOCK: usize = 16;",
         "const GEO_COUNT: usize = 40;",
         "const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];",

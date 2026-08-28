@@ -82,6 +82,10 @@ static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 
 Runnable forms live in `tests/`.
 
+## MSRV
+
+Rust 1.88.
+
 ## License
 
 MIT OR Apache-2.0.

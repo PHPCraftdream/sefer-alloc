@@ -84,10 +84,17 @@ impl SegmentLayout {
     /// (`SIZE2CLASS[(size-1) >> MIN_BLOCK_SHIFT]`) — exposed so tests can drive
     /// it directly and compare against an independent linear-scan reference.
     ///
-    /// `align` must be a power of two (else the underlying `debug_assert!`
-    /// panics, debug builds only); the parenthetical formula is the fast path
-    /// only — `align > min_block` takes the divisibility-jump slow path
-    /// (see the crate's `SizeClasses::class_for`).
+    /// `align` must be a power of two: the underlying `debug_assert!` panics
+    /// whenever `cfg(debug_assertions)` is on; with `debug_assertions` off
+    /// AND `overflow-checks` off (the default release profile) the result
+    /// for a violation is unspecified, not a panic; but with
+    /// `debug_assertions` off and `overflow-checks` ON (a separate Cargo
+    /// knob a caller can enable in release), `size == align == 0` panics on
+    /// the underlying `need - 1` subtraction -- see the crate's own
+    /// `SizeClasses::class_for` doc for the full three-profile breakdown.
+    /// The parenthetical formula above is the fast path only — `align >
+    /// min_block` takes the divisibility-jump slow path (see the crate's
+    /// `SizeClasses::class_for`).
     #[must_use]
     pub const fn class_for(size: usize, align: usize) -> Option<usize> {
         super::size_classes::SizeClasses::class_for(size, align)
@@ -135,8 +142,8 @@ impl SegmentLayout {
     /// metadata, so this is `>=` [`SMALL_META_END`](Self::SMALL_META_END).
     ///
     /// R8-6 (task #219): like [`SMALL_META_END`](Self::SMALL_META_END), this is
-    /// the **TIGHT** metadata boundary (4 KiB aligned); the decommit/recommit-
-    /// safe boundary is
+    /// the **TIGHT** metadata boundary (4 KiB aligned); the
+    /// decommit/recommit-safe boundary is
     /// [`primordial_decommit_start`](Self::primordial_decommit_start).
     pub const PRIMORDIAL_META_END: usize = super::segment_header::Layout::primordial_meta_end();
 
