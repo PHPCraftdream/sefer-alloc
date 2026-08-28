@@ -25,10 +25,8 @@ before it.
   values is valid and expected) are **machine-checked**: a
   violation panics identically in `const` evaluation (a compile error at
   the consumer's table definition) and at runtime, never a silently
-  accepted bad table (task #731 tightened several of these from bare
-  division panics to named asserts; the publication audit's P2-1/P2-2
-  findings closed the two remaining gaps — a release-profile overflow in
-  the length arithmetic, and the merged-table monotonicity check itself).
+  accepted bad table — every precondition is a named assert, not a bare
+  division/index panic.
 - **`build_size2class(table, min_block) -> [u8; L]`** — derives the O(1)
   `size → class` lookup from a table at compile time using the
   monotone-pointer technique (`O(buckets + classes)` const-eval), with a
@@ -38,15 +36,15 @@ before it.
   table a caller assembles by hand rather than through `build_table`.
 - **`size2class_len(max_class, min_block)`** — the `const fn` a consumer uses
   to pin the lookup length `L` (`max_class / min_block + 1`) as a `const`
-  expression; asserts `min_block` is a power of two like its siblings
-  (task #731), and that the `+ 1` itself does not overflow `usize`.
+  expression; asserts `min_block` is a power of two like its siblings, and
+  that the `+ 1` itself does not overflow `usize`.
 - **`Params<'a>`** — the scheme's parameter set (`min_block`, `growth` as
   `(num, den)` — `(5, 4)` is the classic mimalloc 1.25× spacing — `geo_count`,
   `extras`, `huge_threshold`), all plain data so the whole scheme is usable in
-  `const` context. `#[non_exhaustive]` **with** a `const fn new` constructor
-  (task #728): future field additions are semver-MINOR, and the const
-  constructor keeps the type constructible in `const` context where struct
-  literals no longer compile.
+  `const` context. `#[non_exhaustive]` **with** a `const fn new` constructor:
+  future field additions are semver-MINOR, and the const constructor keeps
+  the type constructible in `const` context where struct literals no longer
+  compile.
 - **`SizeClasses<N, L>`** — the built scheme, generic over table length `N`
   and lookup length `L`, both pure functions of `Params`:
   - `const fn build(params)` — construct the whole scheme at compile time;
@@ -71,7 +69,7 @@ before it.
     crate exists to remove (`sefer-alloc`'s own motivating case, the
     allocator this crate was extracted from: `align >= 512`).
     `align` must be a power of two (the `Layout` contract), enforced by a
-    `debug_assert!` (task #729) — in release, the violation is unspecified:
+    `debug_assert!` — in release, the violation is unspecified:
     it can return a wrong `Some`/`None`, or panic for the `(size, align) ==
     (0, 0)` corner (never memory unsafety). `try_class_for` below closes this
     for callers that don't already know `align` is valid. The divisibility
@@ -107,3 +105,7 @@ before it.
   embeds both tables (~16 KiB for a realistic scheme), so `Copy` would make
   a full-object duplicate look as cheap as a move. Settled before the first
   release, since removing `Copy` afterwards would be a breaking change.
+
+### MSRV
+
+- Rust 1.88.
