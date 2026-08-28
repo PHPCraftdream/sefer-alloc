@@ -173,8 +173,9 @@ impl<'a> Params<'a> {
 ///
 /// Panics -- identically in `const` evaluation and at runtime, since this is
 /// a `pub const fn` callable either way -- if `min_block` is not a power of
-/// two, or if `max_class / min_block + 1` overflows `usize` (only reachable
-/// with `max_class` within `min_block` of `usize::MAX`).
+/// two, or if `max_class / min_block + 1` overflows `usize` (reachable only
+/// for `min_block == 1` and `max_class == usize::MAX`; for any `min_block >=
+/// 2` the quotient cannot reach `usize::MAX`).
 ///
 /// Both are checked, not merely documented: an unchecked `+ 1` here would
 /// wrap to `0` in a release build — including a release-profile `const`
@@ -565,9 +566,11 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 pub struct SizeClasses<const N: usize, const L: usize> {
     table: [usize; N],
     size2class: [u8; L],
-    min_block: usize,
+    // `min_block`, `small_align_max`, and `1 << min_block_shift` are the same
+    // value by construction (see `build` below) -- storing only the shift
+    // (claude publication review P4-3) removes two provably-redundant
+    // hot-path field loads; `min_block()`/`small_align_max()` re-derive it.
     min_block_shift: u32,
-    small_align_max: usize,
     small_max: usize,
     huge_threshold: usize,
 }
@@ -592,7 +595,7 @@ impl<const N: usize, const L: usize> core::fmt::Debug for SizeClasses<N, L> {
         f.debug_struct("SizeClasses")
             .field("N", &N)
             .field("L", &L)
-            .field("min_block", &self.min_block)
+            .field("min_block", &self.min_block())
             .field("small_max", &self.small_max)
             .field("huge_threshold", &self.huge_threshold)
             .finish_non_exhaustive()
@@ -620,9 +623,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         Self {
             table,
             size2class,
-            min_block: params.min_block,
             min_block_shift: params.min_block.trailing_zeros(),
-            small_align_max: params.min_block,
             small_max,
             huge_threshold: params.huge_threshold,
         }
@@ -676,10 +677,13 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     }
 
     /// The minimum block size / fundamental alignment (`min_block`).
+    /// Derived from [`min_block_shift`](Self::min_block_shift) (`1 <<
+    /// min_block_shift`) rather than stored separately -- the two are equal
+    /// by construction (see [`build`](Self::build)).
     #[must_use]
     #[inline]
     pub const fn min_block(&self) -> usize {
-        self.min_block
+        1usize << self.min_block_shift
     }
 
     /// `log2(min_block)` — the shift turning a byte size into a
@@ -692,11 +696,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
 
     /// The alignment ceiling of the O(1) fast path (equal to `min_block`). Not
     /// the ceiling on alignments the small path can serve — see
-    /// [`class_for`](Self::class_for)'s slow path.
+    /// [`class_for`](Self::class_for)'s slow path. Same derivation as
+    /// [`min_block`](Self::min_block) -- kept as a distinct accessor NAME
+    /// because it anticipates becoming a genuinely independent `Params`
+    /// field later, not because it is a distinct value today.
     #[must_use]
     #[inline]
     pub const fn small_align_max(&self) -> usize {
-        self.small_align_max
+        1usize << self.min_block_shift
     }
 
     /// The largest class (`table[N - 1]`). A request larger than this — or with
@@ -837,7 +844,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             return None;
         }
         let seed = self.size2class[(need - 1) >> self.min_block_shift] as usize;
-        if align <= self.small_align_max {
+        if align <= (1usize << self.min_block_shift) {
             return Some(seed);
         }
         // Slow path: `align > small_align_max` is a power of two (the `Layout`
