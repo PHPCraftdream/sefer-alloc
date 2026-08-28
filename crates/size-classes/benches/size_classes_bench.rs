@@ -95,13 +95,22 @@ fn main() {
     });
 
     // ── class_for/jump_vs_walk (wall-clock: divisibility-jump vs naive walk) ─
-    // size-classes publication audit run 7 (oxx, P3-1): the crate claims the
-    // slow path's jump is a real optimization over stepping one class at a
-    // time, but SEFER's own table is only 49 classes / 392 bytes -- small
-    // enough to always be cache-hot, so the win was proven by ITERATION COUNT
-    // (fewer loop passes) but never measured by WALL-CLOCK against the linear
-    // walk it replaces. Both rows use JUMP_A so the only variable is the
-    // algorithm, not the (size, align) input.
+    // The crate claims the slow path's jump is a real optimization over
+    // stepping one class at a time, but SEFER's own table is only 49 classes
+    // / 392 bytes -- small enough to always be cache-hot, so the win was
+    // proven by ITERATION COUNT (fewer loop passes) but never measured by
+    // WALL-CLOCK against the linear walk it replaces. Both rows use JUMP_A,
+    // so the (size, align) input is held constant -- but the two arms are
+    // NOT otherwise apples-to-apples: `walk_class_for` also uses a real
+    // (runtime-divisor) division for its divisibility test where `class_for`
+    // uses a bitmask, indexes a `&[usize]` slice (runtime bounds checks)
+    // where `class_for` indexes a fixed-size array field, and recomputes
+    // `min_block.trailing_zeros()` per call. For JUMP_A specifically the
+    // jump takes 4 iterations and a naive walk ALSO takes 4 (18->19->20->21
+    // is a contiguous run -- the jump skips nothing here), so this pair
+    // mostly measures those primitive differences, not the jump-ahead
+    // itself; treat it as a rough upper bound on the jump's advantage, not
+    // an isolated measurement of it.
 
     h.bench("class_for/jump_vs_walk_a_jump", || {
         let result = black_box(SEFER_SC.class_for(black_box(JUMP_A.0), black_box(JUMP_A.1)));
