@@ -41,6 +41,25 @@ pub(crate) static SEFER_SC: SizeClasses<SEFER_N, SEFER_L> = SizeClasses::build(S
 
 /// Slow-path (size, align) pairs, genuinely exercising the divisibility-jump
 /// mechanism (pinned by `sefer_bench_jump_rows_genuinely_exercise_the_slow_path`
-/// in `tests/builder.rs`).
+/// in `tests/builder.rs`). Seed class 18 (block 1200), 4 jump-loop iterations
+/// to `Some(21)` (block 2048).
 pub(crate) const JUMP_A: (usize, usize) = (1025, 256);
+/// Seed class 22 (block 2368), 3 jump-loop iterations to `Some(25)` (block 4096).
 pub(crate) const JUMP_B: (usize, usize) = (2049, 1024);
+
+/// A denser multi-iteration slow-path case than `JUMP_A`/`JUMP_B`: seed class
+/// 14 (block 608, not 512-divisible), 2 jump-loop iterations to `Some(17)`
+/// (block 1024). Single source shared by `tests/builder.rs` and
+/// `benches/size_classes_bench.rs` (claude publication review P2-2: the two
+/// files previously held independent copies of this constant under a comment
+/// claiming a test-based drift guard that could not actually see the other
+/// copy -- moved here so the guarantee is structural, matching `JUMP_A`/`JUMP_B`).
+pub(crate) const JUMP_MULTI: (usize, usize) = (513, 512);
+/// A slow-path case that exhausts the table and returns `None`: seed class 36
+/// (block 17760, not 16384-divisible), 10 jump-loop iterations walking every
+/// remaining table entry (none 16384-divisible) before the table ends.
+pub(crate) const JUMP_NONE: (usize, usize) = (16385, 16384);
+/// A denser align than `JUMP_A` (128 divides ~31% of `SEFER_TABLE`'s entries
+/// vs 256's ~20%): seed class 6 (block 144, not 128-divisible), 2 jump-loop
+/// iterations to `Some(9)` (block 256).
+pub(crate) const JUMP_DENSE: (usize, usize) = (129, 128);

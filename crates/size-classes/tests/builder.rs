@@ -14,8 +14,8 @@ use size_classes::{
 
 mod common;
 use common::{
-    HUGE_THRESHOLD, JUMP_A, JUMP_B, SEFER_EXTRAS, SEFER_GEO, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N,
-    SEFER_SC, SEFER_TABLE,
+    HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_EXTRAS, SEFER_GEO,
+    SEFER_MAX, SEFER_MIN_BLOCK, SEFER_N, SEFER_SC, SEFER_TABLE,
 };
 
 /// A faithful, from-scratch reference table builder (a plain `Vec` version of
@@ -325,25 +325,66 @@ fn sefer_jump_skips_non_divisible_run_for_align_128() {
     assert!(!SEFER_TABLE[seed].is_multiple_of(128));
 }
 
+/// Independent re-derivation of `class_for`'s slow-path jump loop -- not a
+/// call into `class_for` itself -- returning the iteration count alongside
+/// the result. Shared by the oracle below so the loop body exists exactly
+/// once (claude publication review P3-5: it used to be duplicated
+/// byte-for-byte for the `JUMP_NONE` case).
+fn simulate_jump_loop(seed: usize, align: usize) -> (usize, Option<usize>) {
+    let shift = SEFER_MIN_BLOCK.trailing_zeros();
+    let small_max = *SEFER_TABLE.last().unwrap();
+    let mut i = seed;
+    let mut iters = 0usize;
+    while i < SEFER_TABLE.len() {
+        iters += 1;
+        let block = SEFER_TABLE[i];
+        if block.is_multiple_of(align) {
+            return (iters, Some(i));
+        }
+        let next_mult = (block | (align - 1)) + 1;
+        if next_mult > small_max {
+            return (iters, None);
+        }
+        i = SEFER_SC.size2class()[(next_mult - 1) >> shift] as usize;
+    }
+    (iters, None)
+}
+
 #[test]
 fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
-    // task #1424 (review-2 F2): `benches/size_classes_bench.rs`'s
-    // `large_align_slow_path`/`large_align_slow_path_1024` rows used to call
-    // `class_for(256, 256)`/`class_for(1024, 1024)` -- since 256 and 1024 are
-    // themselves table entries, `need == align` lands the seed EXACTLY on an
-    // align-divisible class, so `class_for`'s jump-loop body (round up,
-    // re-seek) never ran; both rows silently measured the same fast-path-ish
-    // single check the `small_hit` row already covers, not the slow path
-    // their names claimed. This is a path-activation oracle (this repo's own
-    // R30-8 convention) for the replacement (size, align) pairs the fixed
-    // benchmark now uses -- pinning that the seed is genuinely NOT
-    // align-divisible for both, so a future table change can't silently make
-    // the bench inert again without this test catching it.
-    // JUMP_A/JUMP_B now come from `common` -- mechanically shared with
-    // benches/size_classes_bench.rs (rush-tests review T4/task #1479),
-    // replacing the former comment-only "keep in sync" convention.
-    for &(size, align) in &[JUMP_A, JUMP_B] {
+    // task #1424 (review-2 F2): `benches/size_classes_bench.rs`'s slow-path
+    // rows used to seed exactly on an align-divisible class, so the jump
+    // loop's round-up-and-reseek body never ran. This is a path-activation
+    // oracle (this repo's own R30-8 convention) for every (size, align) pair
+    // the bench now uses -- pinning the seed's non-divisibility AND the
+    // EXACT jump-loop iteration count, not just "at least one" or "at least
+    // two": claude publication review P2-1 found a bench comment claiming
+    // JUMP_A/JUMP_B each took exactly one iteration while JUMP_MULTI took a
+    // second one, which a bare `iters >= 2` check could never catch -- the
+    // true counts are 4/3/2, so JUMP_MULTI was actually the SHALLOWEST of
+    // the three. A future table change (params, extras, growth) that
+    // silently shifts any of these counts now fails this test loudly instead
+    // of a bench row quietly measuring a different shape than its comment
+    // claims.
+    //
+    // JUMP_A/JUMP_B/JUMP_MULTI/JUMP_DENSE/JUMP_NONE all come from `common`
+    // -- mechanically shared with `benches/size_classes_bench.rs` (single
+    // source; claude publication review P2-2 moved JUMP_MULTI/JUMP_NONE/
+    // JUMP_DENSE here too, closing a comment that claimed a test-based
+    // drift guard between two copies neither test actually compared).
+    for &(size, align, want_iters, want) in &[
+        (JUMP_A.0, JUMP_A.1, 4usize, Some(21usize)),
+        (JUMP_B.0, JUMP_B.1, 3, Some(25)),
+        (JUMP_MULTI.0, JUMP_MULTI.1, 2, Some(17)),
+        (JUMP_DENSE.0, JUMP_DENSE.1, 2, Some(9)),
+        (JUMP_NONE.0, JUMP_NONE.1, 10, None),
+    ] {
         let need = size.max(align);
+        let small_max = *SEFER_TABLE.last().unwrap();
+        assert!(
+            need <= small_max,
+            "size={size} align={align}: must not be early-rejected"
+        );
         let seed = SEFER_SC.size2class()[(need - 1) >> SEFER_MIN_BLOCK.trailing_zeros()] as usize;
         assert!(
             !SEFER_TABLE[seed].is_multiple_of(align),
@@ -352,78 +393,11 @@ fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
             seed,
             SEFER_TABLE[seed]
         );
-        let got = SEFER_SC
-            .class_for(size, align)
-            .unwrap_or_else(|| panic!("({size}, {align}) must resolve"));
-        assert!(SEFER_TABLE[got].is_multiple_of(align));
-        assert!(SEFER_TABLE[got] >= need);
-    }
-}
-
-// size-classes publication audit run 7 (oxx, P3-2): bench-local twins of
-// JUMP_MULTI/JUMP_NONE/JUMP_DENSE from benches/size_classes_bench.rs. These
-// are NOT shared via `common` (the bench-coverage task this test belongs to
-// is scoped to editing only the bench file + this one path-activation-oracle
-// exception), so the constants are duplicated here deliberately -- this test
-// is the guard against the two copies silently drifting apart, exactly as
-// `sefer_bench_jump_rows_genuinely_exercise_the_slow_path` above guards
-// JUMP_A/JUMP_B.
-const JUMP_MULTI: (usize, usize) = (513, 512);
-const JUMP_NONE: (usize, usize) = (16385, 16384);
-const JUMP_DENSE: (usize, usize) = (129, 128);
-
-#[test]
-fn sefer_bench_new_jump_rows_genuinely_exercise_the_slow_path() {
-    // JUMP_MULTI and JUMP_DENSE must each take a genuine multi-iteration
-    // slow path (>= 2 jump-loop passes) before resolving `Some`; JUMP_NONE
-    // must take a genuine multi-iteration slow path (>= 2 passes) that walks
-    // the table via the jump loop (not the early `need > small_max`
-    // rejection) before exhausting it and returning `None`. A future table
-    // change (params, extras, growth) could silently collapse any of these
-    // back to a 0- or 1-iteration case -- this test fails loudly if so,
-    // instead of the bench row quietly measuring the wrong thing again.
-    let shift = SEFER_MIN_BLOCK.trailing_zeros();
-    let small_max = *SEFER_TABLE.last().unwrap();
-
-    for &(size, align, want) in &[
-        (JUMP_MULTI.0, JUMP_MULTI.1, Some(17usize)),
-        (JUMP_DENSE.0, JUMP_DENSE.1, Some(9usize)),
-    ] {
-        let need = size.max(align);
-        assert!(
-            need <= small_max,
-            "size={size} align={align}: must not be early-rejected"
-        );
-        let seed = SEFER_SC.size2class()[(need - 1) >> shift] as usize;
-        assert!(
-            !SEFER_TABLE[seed].is_multiple_of(align),
-            "size={size} align={align}: seed class {seed} (block {}) is already \
-             align-divisible -- the jump loop would take 0 iterations",
-            SEFER_TABLE[seed]
-        );
-        // Simulate the jump loop independently to count iterations (an
-        // independent re-derivation, not a call into `class_for` itself,
-        // matching this file's existing reference-implementation style).
-        let mut i = seed;
-        let mut iters = 0usize;
-        let mut result = None;
-        while i < SEFER_TABLE.len() {
-            iters += 1;
-            let block = SEFER_TABLE[i];
-            if block.is_multiple_of(align) {
-                result = Some(i);
-                break;
-            }
-            let next_mult = (block | (align - 1)) + 1;
-            if next_mult > small_max {
-                break;
-            }
-            i = SEFER_SC.size2class()[(next_mult - 1) >> shift] as usize;
-        }
-        assert!(
-            iters >= 2,
-            "size={size} align={align}: only {iters} jump-loop iteration(s) -- \
-             not a genuine multi-jump case"
+        let (iters, result) = simulate_jump_loop(seed, align);
+        assert_eq!(
+            iters, want_iters,
+            "size={size} align={align}: jump loop took {iters} iteration(s), \
+             expected {want_iters}"
         );
         assert_eq!(
             result, want,
@@ -434,45 +408,11 @@ fn sefer_bench_new_jump_rows_genuinely_exercise_the_slow_path() {
             want,
             "size={size} align={align}: class_for disagrees with the simulation"
         );
-    }
-
-    // JUMP_NONE: same shape, but must end in `None` after >= 2 iterations,
-    // not via the early `need > small_max` rejection.
-    let (size, align) = JUMP_NONE;
-    let need = size.max(align);
-    assert!(need <= small_max, "JUMP_NONE must not be early-rejected");
-    let seed = SEFER_SC.size2class()[(need - 1) >> shift] as usize;
-    assert!(
-        !SEFER_TABLE[seed].is_multiple_of(align),
-        "JUMP_NONE seed class {seed} (block {}) is already align-divisible",
-        SEFER_TABLE[seed]
-    );
-    let mut i = seed;
-    let mut iters = 0usize;
-    let mut result = None;
-    while i < SEFER_TABLE.len() {
-        iters += 1;
-        let block = SEFER_TABLE[i];
-        if block.is_multiple_of(align) {
-            result = Some(i);
-            break;
+        if let Some(got) = result {
+            assert!(SEFER_TABLE[got].is_multiple_of(align));
+            assert!(SEFER_TABLE[got] >= need);
         }
-        let next_mult = (block | (align - 1)) + 1;
-        if next_mult > small_max {
-            break;
-        }
-        i = SEFER_SC.size2class()[(next_mult - 1) >> shift] as usize;
     }
-    assert!(
-        iters >= 2,
-        "JUMP_NONE: only {iters} jump-loop iteration(s) -- not a genuine multi-jump case"
-    );
-    assert_eq!(result, None, "JUMP_NONE: simulation must end in None");
-    assert_eq!(
-        SEFER_SC.class_for(size, align),
-        None,
-        "JUMP_NONE: class_for disagrees with the simulation"
-    );
 }
 
 // ---------------------------------------------------------------------------

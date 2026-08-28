@@ -19,35 +19,10 @@ use bench_scale_tool::Harness;
 // a single-sided edit can no longer desync the bench from the test.
 #[path = "../tests/common/mod.rs"]
 mod common;
-use common::{HUGE_THRESHOLD, JUMP_A, JUMP_B, SEFER_MAX, SEFER_MIN_BLOCK, SEFER_SC, SEFER_TABLE};
-
-// size-classes publication audit run 7 (oxx, P3-1/P3-2): bench-local slow-path
-// (size, align) fixtures beyond JUMP_A/JUMP_B. Kept local to this file (not
-// added to tests/common/mod.rs) because this pass is scoped to the bench file
-// only; each constant's path-activation oracle lives in tests/builder.rs as a
-// local twin (`sefer_bench_new_jump_rows_genuinely_exercise_the_slow_path`),
-// mirroring the existing JUMP_A/JUMP_B oracle pattern one file down.
-//
-// JUMP_MULTI: seed class 14 (block 608, NOT 512-divisible) -> round up to
-// 1024 -> class 17 (block 1024, 512-divisible). Two jump-loop iterations
-// before resolving `Some(17)` (verified by manual simulation of the jump
-// loop against SEFER_TABLE; seed=14, iters=2, result=Some(17)).
-const JUMP_MULTI: (usize, usize) = (513, 512);
-// JUMP_NONE: seed class 36 (block 17760, NOT 16384-divisible). The jump loop
-// then walks class 39 (34704) -> 41 (54240) -> 42 (67808) -> 43 (84768) -> 44
-// (105968) -> 45 (132464) -> 46 (165584) -> 47 (206992) -> 48/last (258752,
-// the table's own last, still NOT 16384-divisible) -- 10 iterations total,
-// none of them divisible by 16384, exhausting the table and returning `None`
-// only after genuinely walking it (not the early `need > small_max`
-// rejection: need=16385 <= small_max=258752).
-const JUMP_NONE: (usize, usize) = (16385, 16384);
-// JUMP_DENSE: a smaller, denser align (128 divides 15/49 = ~31% of table
-// entries, vs 256's 10/49 = ~20% and 1024's sparser tail) for a different
-// density point on the slow path than JUMP_A(256)/JUMP_B(1024)/JUMP_MULTI(512)
-// /JUMP_NONE(16384) all cover. Seed class 6 (block 192, NOT 128-divisible) ->
-// round up to 256 -> class 9 (block 256, 128-divisible): 2 iterations,
-// `Some(9)`.
-const JUMP_DENSE: (usize, usize) = (129, 128);
+use common::{
+    HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_MAX, SEFER_MIN_BLOCK,
+    SEFER_SC, SEFER_TABLE,
+};
 
 /// The PRE-jump reference: seed at the lookup, then step ONE class at a time
 /// until the first whose block is a multiple of `align`. Independent
@@ -169,13 +144,17 @@ fn main() {
         black_box(result);
     });
 
-    // ── class_for/multi_jump (>= 2 slow-path iterations before resolving) ────
-    // size-classes publication audit run 7 (oxx, P3-2): JUMP_A/JUMP_B above
-    // each take exactly ONE jump-loop iteration before resolving -- this row
-    // exercises a seed that needs a SECOND round-up-and-reseek before landing
-    // on an align-divisible class. Pinned by
-    // `sefer_bench_new_jump_rows_genuinely_exercise_the_slow_path` in
-    // tests/builder.rs (iters=2, verified by manual simulation).
+    // ── class_for/multi_jump (a different table region than JUMP_A/JUMP_B) ───
+    // claude publication review P2-1: this row's comment used to claim
+    // JUMP_A/JUMP_B "each take exactly ONE jump-loop iteration" and that this
+    // row adds a second -- false (JUMP_A takes 4, JUMP_B takes 3; this row's
+    // JUMP_MULTI takes only 2, making it the SHALLOWEST of the three, not the
+    // deepest). Kept as a distinct row because it seeds from a different table
+    // region/density, not because of iteration depth. Exact per-fixture
+    // iteration counts (JUMP_A=4, JUMP_B=3, JUMP_MULTI=2, JUMP_DENSE=2,
+    // JUMP_NONE=10) are pinned by
+    // `sefer_bench_jump_rows_genuinely_exercise_the_slow_path` in
+    // tests/builder.rs.
     h.bench("class_for/multi_jump", || {
         let result =
             black_box(SEFER_SC.class_for(black_box(JUMP_MULTI.0), black_box(JUMP_MULTI.1)));
