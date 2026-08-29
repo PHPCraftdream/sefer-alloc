@@ -178,13 +178,19 @@ fn main() {
     // `huge_threshold` at all -- only `is_huge` does (see the section below).
     // `class_for`'s own early-rejection boundary is `small_max`
     // (`SEFER_MAX`, well under 4 MiB for this scheme), so all three old rows
-    // fell through the SAME `need > small_max` branch regardless of the
-    // "below/at/above" label and measured nothing distinguishable. These
+    // fell through the same early-rejection branch (then spelled
+    // `need > small_max`; today the `seed_idx >= L - 1` guard) regardless of
+    // the "below/at/above" label and measured nothing distinguishable. These
     // three rows exercise the boundary `class_for` genuinely checks.
 
-    // Just below small_max -- the last size that still resolves to a class.
+    // A size one MIN_BLOCK bucket below small_max -- `SEFER_MAX - 1` would
+    // seed the SAME bucket (index 16171) as `_at` below, since `SEFER_MAX`
+    // is itself a MIN_BLOCK multiple; `- SEFER_MIN_BLOCK` lands one bucket
+    // over (16170), making this a genuinely distinct measurement (size-classes
+    // round-5 prepublish review P3-2).
     h.bench("class_for/near_small_max_below", || {
-        let result = black_box(SEFER_SC.class_for(black_box(SEFER_MAX - 1), black_box(1)));
+        let result =
+            black_box(SEFER_SC.class_for(black_box(SEFER_MAX - SEFER_MIN_BLOCK), black_box(1)));
         black_box(result);
     });
 
@@ -205,20 +211,14 @@ fn main() {
     // ── is_huge/near_huge_threshold (the policy check that DOES read it) ─────
     // `is_huge` is the one method whose cost the `huge_threshold` boundary
     // actually governs -- a plain `size >= self.huge_threshold` comparison,
-    // measured directly here rather than indirectly through `class_for`.
-
-    h.bench("is_huge/near_huge_threshold_below", || {
-        let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD - 1)));
-        black_box(result);
-    });
-
-    h.bench("is_huge/near_huge_threshold_at", || {
+    // measured directly here rather than indirectly through `class_for`. One
+    // row, not a below/at/above triple: unlike `class_for`'s LUT lookup (whose
+    // cost can vary by which bucket/class a size lands in), this is a single
+    // branch-free compare whose cost cannot differ by operand value -- three
+    // rows would measure the same thing three times (size-classes round-5
+    // prepublish review P3-2).
+    h.bench("is_huge/near_huge_threshold", || {
         let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD)));
-        black_box(result);
-    });
-
-    h.bench("is_huge/near_huge_threshold_above", || {
-        let result = black_box(SEFER_SC.is_huge(black_box(HUGE_THRESHOLD + 1)));
         black_box(result);
     });
 

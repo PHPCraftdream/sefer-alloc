@@ -863,8 +863,11 @@ fn build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l() {
 // ---------------------------------------------------------------------------
 // task #1417, P2-1 items 3 and 4: the two checked_* sites cc94a46 fixed but
 // its own regression tests did not pin -- `build_size2class`'s per-bucket
-// `need` clamp and `class_for`'s slow-path round-up. Both are exercised
-// through one shared, entirely `Params`-assemblable 64-bit scheme:
+// `need` clamp and `class_for`'s slow-path round-up (the latter's
+// `checked_add` was itself later removed by commit `10fe946`, once the
+// index-space guard below was proven to subsume the overflow case --
+// see `class_for`'s own doc). Both are exercised through one shared,
+// entirely `Params`-assemblable 64-bit scheme:
 //
 //   min_block = 1 << 62, geo_count = 1, extras = [2 << 62, 3 << 62]
 //     -> table = [1 << 62, 2 << 62, 3 << 62], small_max = 3 << 62,
@@ -1015,13 +1018,14 @@ mod extreme64_overflow {
         assert_eq!(sc.class_for(2 << 62, 1 << 63), Some(1));
         // The pinned case: 3<<62 seeds the last class, which is NOT a multiple
         // of 1<<63; the next multiple of 1<<63 above it is 2^64, unrepresentable
-        // in usize. `(3<<62) | ((1<<63)-1)` is usize::MAX, so `checked_add(1)`
-        // yields None and `class_for` must return None -- the same outcome the
-        // `next_mult > small_max` clamp already produces for every other
-        // out-of-range case on this path. Pre-fix (bare `+ 1`), release wrapped
-        // usize::MAX + 1 to 0, and the subsequent `(next_mult - 1)` index then
-        // wrapped back around to the same seed class -- an infinite loop that
-        // never returns; debug trapped on the add itself instead.
+        // in usize. `(3<<62) | ((1<<63)-1)` is usize::MAX, so
+        // `usize::MAX >> shift == 3 == EXTREME64_L - 1` -- the same index-space
+        // guard (`next_idx >= L - 1`) that rejects every other out-of-range
+        // case on this path catches it too, with no separate overflow check
+        // needed. Pre-fix (bare `+ 1`), release wrapped usize::MAX + 1 to 0,
+        // and the subsequent `(next_mult - 1)` index then wrapped back around
+        // to the same seed class -- an infinite loop that never returns;
+        // debug trapped on the add itself instead.
         assert_eq!(sc.class_for(3 << 62, 1 << 63), None);
     }
 
@@ -1396,13 +1400,14 @@ fn readme_example_compiles_and_derives_its_generics() {
     assert!(SC.block_size(idx) >= 100);
 }
 
-/// A mechanical drift guard for the test above: size-classes round-4
-/// prepublish review P3-2 pointed out that "mirrored here verbatim" (the
-/// comment on the test above) was an aspiration, not an enforced fact --
-/// nothing checked the two copies actually stayed equal. This asserts every
-/// declaration line of the mirrored example appears verbatim (whitespace and
-/// all) in README.md's own raw text, so editing one copy without the other
-/// fails THIS test, not just silently rots the published example.
+/// A one-directional drift guard: asserts every declaration line below
+/// (a hardcoded copy, not read from the test above) appears verbatim
+/// (whitespace and all) in README.md's own raw text, so editing README
+/// without updating this list fails THIS test. It does NOT catch the other
+/// direction -- editing `readme_example_compiles_and_derives_its_generics`
+/// above without also updating `declaration_lines` here leaves both this
+/// test and README passing, since the two are independent copies
+/// (size-classes round-5 prepublish review P3-3).
 #[test]
 fn readme_example_lines_appear_verbatim_in_readme_md() {
     let readme = include_str!("../README.md");

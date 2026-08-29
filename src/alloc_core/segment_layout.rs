@@ -39,8 +39,11 @@ impl SegmentLayout {
     /// alignments the small path can serve: an alignment above this value
     /// (and up to [`SMALL_MAX`](Self::SMALL_MAX)) still resolves to a small
     /// class via a bounded divisibility-walk slow path (see
-    /// [`class_for`](Self::class_for), #114/B1) — only an alignment greater
-    /// than `SMALL_MAX` falls through to the dedicated-segment large path.
+    /// [`class_for`](Self::class_for), #114/B1) — whenever some class's
+    /// block size is a multiple of that alignment. When none is (or when
+    /// `size` pushes `max(size, align)` past the last such class), the
+    /// request falls through to the dedicated-segment large path — as does
+    /// any alignment greater than `SMALL_MAX`.
     pub const SMALL_ALIGN_MAX: usize = super::size_classes::SMALL_ALIGN_MAX;
 
     /// The largest small size class. Allocations larger than this go through
@@ -104,7 +107,9 @@ impl SegmentLayout {
     /// non-power-of-two `align` (including `0`) with
     /// `Err(size_classes::InvalidAlign(align))` before any arithmetic runs,
     /// instead of assuming `align` is valid. Never panics, for any `(size,
-    /// align)` pair.
+    /// align)` pair. The crate root re-exports this error type as
+    /// `sefer_alloc::InvalidAlign`, so a caller need not add `size-classes`
+    /// as their own direct dependency just to name/match it.
     ///
     /// Every in-tree allocator call site uses [`class_for`](Self::class_for)
     /// directly, because their alignments already come from a `Layout` and so

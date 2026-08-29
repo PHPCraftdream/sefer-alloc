@@ -21,8 +21,10 @@
 //! - **Small classes (index `0..SMALL_CLASS_COUNT`):** 49 fine classes from
 //!   `MIN_BLOCK` (16 B) up to `SMALL_MAX` (~253 KiB). 40 of the 49 classes form
 //!   the geometric spacing (start at `MIN_BLOCK`, grow ~1.25×, rounded to a
-//!   multiple of `MIN_BLOCK`); eight more (task B1) are explicit page-aligned
-//!   classes — 512 … 16384 — and one more (task #145) is the exact 256 B class.
+//!   multiple of `MIN_BLOCK`); eight more (task B1) are explicit device-block-
+//!   and page-friendly classes — 512, 1024, 2048 (sector/sub-page sizes),
+//!   4096, 8192, 12288, 16384 (exact page multiples), plus 6144 (density
+//!   fill, 1.5 pages) — and one more (task #145) is the exact 256 B class.
 //!   All are merged into the sorted [`SIZE_CLASS_TABLE`] by the crate's
 //!   `build_table`, so typical page-aligned requests (direct I/O buffers,
 //!   `io_uring`, `#[repr(align(4096))]`) in the 512 B – 16 KiB range resolve to
@@ -86,8 +88,11 @@ pub(crate) const MIN_BLOCK_SHIFT: u32 = MIN_BLOCK.trailing_zeros();
 /// **fast** O(1) path. Equal to `MIN_BLOCK`. This is *not* the ceiling on
 /// alignments the small path can serve: `align > SMALL_ALIGN_MAX` (up to
 /// `SMALL_MAX`) still resolves to a small class via the crate's bounded
-/// divisibility-jump slow path (#114/B1); only `align > SMALL_MAX` falls
-/// through to the dedicated-segment large/huge path.
+/// divisibility-jump slow path (#114/B1) whenever some class's block size is
+/// a multiple of that alignment. When none is (or when `size` pushes
+/// `max(size, align)` past the last such class), the request falls through
+/// to the dedicated-segment large/huge path — as does any `align >
+/// SMALL_MAX`.
 pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 
 /// The geometric growth ratio (mimalloc's 1.25× small spacing): each class
@@ -180,12 +185,18 @@ const PARAMS: Params = Params::new(MIN_BLOCK, GROWTH, GEO_COUNT, EXTRAS, HUGE_TH
 /// probe proves the identical thing at ~3 const-eval buckets instead of
 /// const-evaluating the real `S2C_LEN`-bucket LUT (16173/65537/114689
 /// depending on feature) a second time just to read one `u32` back out.
+/// `PROBE_L` is derived from the probe's own built table rather than
+/// hardcoded as `MIN_BLOCK * 2` -- that shortcut only holds for
+/// `GROWTH == (5, 4)` (`round_up(ceil(16*5/4), 16) == 32 == 2 * MIN_BLOCK`);
+/// deriving it keeps the guard correct if `GROWTH` ever changes, instead of
+/// panicking with a message that names neither `SMALL_ALIGN_MAX` nor this
+/// guard (size-classes round-5 prepublish review P4-2).
 const _: () = {
     const PROBE: Params = Params::new(MIN_BLOCK, GROWTH, 2, &[], HUGE_THRESHOLD);
+    const PROBE_TABLE: [usize; 2] = size_classes::build_table::<2>(PROBE);
+    const PROBE_L: usize = size2class_len(PROBE_TABLE[1], MIN_BLOCK);
     assert!(
-        SMALL_ALIGN_MAX
-            == SizeClassesImpl::<2, { size2class_len(MIN_BLOCK * 2, MIN_BLOCK) }>::build(PROBE)
-                .small_align_max()
+        SMALL_ALIGN_MAX == SizeClassesImpl::<2, PROBE_L>::build(PROBE).small_align_max()
     );
 };
 

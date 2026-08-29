@@ -159,7 +159,12 @@ impl<'a> Params<'a> {
 /// target) — but a smaller `min_block` can outweigh a smaller class count
 /// entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
-/// `L = 18207`, a LARGER object than the 49-class example above.
+/// `L = 18207`, a LARGER object than the 49-class example above. Concretely,
+/// for that same 49-class example the sparsity this scaling implies is
+/// large: buckets `888..=16172` — 15285 of the 16173 total, 94.5% — all
+/// resolve to just the 14 largest classes (indices `35..=48`), because
+/// above `~14 KiB` the geometric spacing widens to `~1.25×` while the LUT's
+/// own resolution stays a flat `min_block`.
 ///
 /// # Panics
 ///
@@ -813,7 +818,12 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// by hand may not.
     ///
     /// A violation trips a `debug_assert!` whenever `cfg(debug_assertions)` is
-    /// on; with `debug_assertions` off, the behavior for a non-zero
+    /// on -- both this and the `overflow-checks` knob below are lowered
+    /// against the profile `size-classes` itself is compiled with, which
+    /// normally tracks the consumer's own profile (that is the ordinary
+    /// `cargo build`/`cargo build --release` case); a per-package profile
+    /// override (`[profile.*.package.size-classes]`) can desync the two.
+    /// With `debug_assertions` off, the behavior for a non-zero
     /// non-power-of-two `align` is UNSPECIFIED, not merely "a wrong class
     /// choice" -- it can return an incorrect `Some`/`None` (see the three
     /// failure modes below), never memory unsafety or a corrupt table. The
@@ -922,6 +932,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
             }
             i = self.size2class[next_idx] as usize;
         }
+        // Unreachable in practice: `self.size2class[..] <= N - 1` always (see
+        // `build_size2class`'s own invariant), so the loop always returns
+        // from inside the body at `i == N - 1` at the latest. Still needed
+        // as the type-level fallthrough -- and `while i < N` is what lets
+        // the compiler elide the `self.table[i]` bounds check above.
         None
     }
 
