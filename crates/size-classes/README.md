@@ -80,9 +80,13 @@ static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 // `try_class_for` is the recommended default -- rejects a non-power-of-two
 // `align` instead of assuming it. Use `class_for` only when `align` is
 // already known-valid (e.g. taken from a `core::alloc::Layout`).
-// SC.try_class_for(size, align) -> Result<Option<usize>, InvalidAlign>
-// SC.class_for(size, align) -> Option<usize>
-// SC.block_size(idx) -> usize;  SC.count() -> usize;  SC.small_max() -> usize;
+fn demo() {
+    let class = SC.try_class_for(100, 8).unwrap().unwrap();
+    assert!(SC.block_size(class) >= 100);
+
+    // A non-power-of-two `align` is rejected instead of guessed at.
+    assert!(matches!(SC.try_class_for(100, 3), Err(InvalidAlign(3))));
+}
 ```
 
 Runnable forms live in `tests/`.

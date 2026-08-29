@@ -1396,8 +1396,13 @@ fn readme_example_compiles_and_derives_its_generics() {
 
     assert_eq!(SC.count(), N);
     assert_eq!(SC.small_max(), TABLE[N - 1]);
-    let idx = SC.class_for(100, 8).expect("100 B resolves");
-    assert!(SC.block_size(idx) >= 100);
+
+    // Mirrors README.md's `fn demo()` verbatim (size-classes round-6
+    // prepublish review P3-5: the README example previously only described
+    // try_class_for in comments, never actually calling it).
+    let class = SC.try_class_for(100, 8).unwrap().unwrap();
+    assert!(SC.block_size(class) >= 100);
+    assert!(matches!(SC.try_class_for(100, 3), Err(InvalidAlign(3))));
 }
 
 /// A one-directional drift guard: asserts every declaration line below
@@ -1421,6 +1426,11 @@ fn readme_example_lines_appear_verbatim_in_readme_md() {
         "const TABLE: [usize; N] = build_table::<N>(PARAMS);",
         "const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);",
         "static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);",
+        "fn demo() {",
+        "    let class = SC.try_class_for(100, 8).unwrap().unwrap();",
+        "    assert!(SC.block_size(class) >= 100);",
+        "    assert!(matches!(SC.try_class_for(100, 3), Err(InvalidAlign(3))));",
+        "}",
     ];
     for line in declaration_lines {
         assert!(
