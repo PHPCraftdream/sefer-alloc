@@ -330,8 +330,13 @@ fn try_class_for_matches_class_for_on_every_valid_small_input() {
 
 #[test]
 fn try_class_for_rejects_zero_align_without_panicking() {
-    // class_for(32, 0) would panic ((need - 1) underflowing then failing the
-    // unconditional LUT bounds check) -- try_class_for must reject it first.
+    // class_for(32, 0) would trip the underlying debug_assert! (align=0 is
+    // not a power of two) in a debug build; in release it takes the fast
+    // path with an UNSPECIFIED but not underflowing result, since
+    // need = max(32, 0) = 32 -- no arithmetic underflow occurs here (the
+    // true underflow corner is size == align == 0, where need itself is 0).
+    // try_class_for must reject align=0 before any of this runs, in every
+    // profile.
     let err = SegmentLayout::try_class_for(32, 0)
         .expect_err("align=0 is not a power of two, must be rejected");
     assert_eq!(err, sefer_alloc::InvalidAlign(0));

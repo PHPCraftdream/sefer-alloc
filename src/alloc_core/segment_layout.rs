@@ -38,7 +38,7 @@ impl SegmentLayout {
     /// the **fast** O(1) small-class lookup. This is *not* the ceiling on
     /// alignments the small path can serve: an alignment above this value
     /// (and up to [`SMALL_MAX`](Self::SMALL_MAX)) still resolves to a small
-    /// class via a bounded divisibility-walk slow path (see
+    /// class via a bounded divisibility-jump slow path (see
     /// [`class_for`](Self::class_for), #114/B1) — whenever some class's
     /// block size is a multiple of that alignment. When none is (or when
     /// `size` pushes `max(size, align)` past the last such class), the

@@ -76,6 +76,10 @@ const L: usize = size2class_len(TABLE[N - 1], MIN_BLOCK);
 // tables at every use site; `static` keeps one fixed-address copy.
 static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 
+// `try_class_for` is the recommended default -- rejects a non-power-of-two
+// `align` instead of assuming it. Use `class_for` only when `align` is
+// already known-valid (e.g. taken from a `core::alloc::Layout`).
+// SC.try_class_for(size, align) -> Result<Option<usize>, InvalidAlign>
 // SC.class_for(size, align) -> Option<usize>
 // SC.block_size(idx) -> usize;  SC.count() -> usize;  SC.small_max() -> usize;
 ```
