@@ -62,6 +62,24 @@ fn main() {
         let _ = black_box(result);
     });
 
+    // ── class_for/fast_slow_boundary (align == 16 vs align == 32) ────────────
+    // size-classes round-6 prepublish review P4-7: every other row sits far
+    // from the fast/slow split (align=1 for fast, align>=128 for slow) --
+    // nothing brackets the branch the split exists for. `align = 16 =
+    // MIN_BLOCK` is the last align the fast path serves; `align = 32` is the
+    // first that takes the slow path, and (since class index 1, block 32,
+    // is itself 32-divisible) the cheapest possible slow-path case: one
+    // divisibility check, zero jump iterations.
+    h.bench("class_for/at_min_block_align_fast", || {
+        let result = black_box(SEFER_SC.class_for(black_box(32), black_box(16)));
+        black_box(result);
+    });
+
+    h.bench("class_for/one_past_min_block_align_slow", || {
+        let result = black_box(SEFER_SC.class_for(black_box(32), black_box(32)));
+        black_box(result);
+    });
+
     // ── class_for/large_align_slow_path (divisibility-jump) ──────────────────
     // Slow path: align > min_block, so we need to check divisibility and
     // potentially jump over non-divisible classes. This is a different
@@ -151,8 +169,10 @@ fn main() {
     // the slow path (need=16385 <= small_max=258752) and takes 10 real
     // iterations -- visiting 10 of the 13 remaining classes (indices 37, 38,
     // 40 skipped by the round-up), none of the visited ones divisible by
-    // 16384 -- before exhausting the table and returning `None`. Pinned
-    // alongside `multi_jump` above.
+    // 16384 -- before the `next_idx >= L - 1` index-space guard fires from
+    // inside the loop body on the 10th iteration (at the last class, index
+    // 48, still `< N`) and returns `None`; the table is never actually run
+    // off the end of. Pinned alongside `multi_jump` above.
     h.bench("class_for/slow_path_none", || {
         let result = black_box(SEFER_SC.class_for(black_box(JUMP_NONE.0), black_box(JUMP_NONE.1)));
         black_box(result);

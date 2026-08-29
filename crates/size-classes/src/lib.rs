@@ -151,13 +151,14 @@ impl<'a> Params<'a> {
 /// `extras` together. It scales with `max_class / min_block`, not with the
 /// number of classes `N`, so a scheme with FEWER classes can still produce a
 /// LARGER LUT than one with more: a realistic scheme (`min_block = 16`,
-/// `growth = (5, 4)`, `geo_count = 40`, nine extras up to 16 KiB — the
-/// crate's own tests' `SEFER` fixture; the crate itself has no defaults)
-/// with 49 classes and `max_class = 258752` gives `L = 16173` (`table`
-/// itself is only `N * size_of::<usize>()` = 392 bytes on a 64-bit target;
-/// the LUT dominates the whole object's size, ~16.18 KiB total on a 64-bit
-/// target) — but a smaller `min_block` can outweigh a smaller class count
-/// entirely: `min_block = 8` with just 24
+/// `growth = (5, 4)`, `geo_count = 40`, nine extras up to 16 KiB; the crate
+/// itself has no defaults) with 49 classes and `max_class = 258752` gives
+/// `L = 16173` (`table` itself is only `N * size_of::<usize>()` = 392 bytes
+/// on a 64-bit target; the LUT dominates -- `table` + `size2class` together
+/// are ~16.18 KiB, and `size_of::<SizeClasses<49, 16173>>()` itself is
+/// ~16.20 KiB on a 64-bit target, the difference being the struct's two
+/// scalar fields plus alignment padding) — but a smaller `min_block` can
+/// outweigh a smaller class count entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
 /// `L = 18207`, a LARGER object than the 49-class example above. Concretely,
 /// for that same 49-class example the sparsity this scaling implies is
@@ -591,7 +592,7 @@ impl core::fmt::Display for InvalidAlign {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "try_class_for: align ({}) must be a power of two (the Layout contract)",
+            "align ({}) must be a power of two (the Layout contract)",
             self.0
         )
     }
@@ -668,8 +669,8 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///   derive this bound as a byte size (`L * min_block()` is NOT
     ///   guaranteed to fit `usize`, even for a fully valid scheme — e.g.
     ///   `min_block = 1 << 62`, `L = 4` gives `L * min_block() == 2^64`,
-    ///   already exercised by this crate's own `extreme64_overflow` test
-    ///   fixture). Compare `size` to [`small_max`](Self::small_max)
+    ///   overflowing `usize`; this crate's own test suite exercises exactly
+    ///   this scheme). Compare `size` to [`small_max`](Self::small_max)
     ///   directly, or reason about the INDEX instead — beyond
     ///   `small_max()` the raw index is NOT uniformly clamped:
     ///   - `idx == L - 1` IS in-bounds and returns the clamped sentinel —
@@ -946,19 +947,20 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// already-valid input; the only behavior difference is on the inputs
     /// `class_for`'s own `# Preconditions` already document as
     /// contract-violating. Does strictly more work than `class_for` (the
-    /// added power-of-two check) -- see the `try_class_for/*` rows in
-    /// `benches/size_classes_bench.rs` if you want to measure the difference
+    /// added power-of-two check) -- the crate's own benchmark suite has a
+    /// `try_class_for/*` row for this if you want to measure the difference
     /// on your own target.
     ///
     /// **Never panics, for any `(size, align)` pair** — this is the
     /// substantive reason to prefer it over `class_for` for an `align` that
     /// is not already known-valid: a non-power-of-two `align` (including
     /// `0`) is rejected before any arithmetic runs, so `need = max(size,
-    /// align)` is always `>= 1` past that point, every LUT index computed
-    /// from it stays in bounds (`need <= small_max` is checked before
-    /// indexing; `(need - 1) >> min_block_shift <= size2class().len() - 1`
-    /// otherwise), and the slow-path jump loop is bounded exactly as
-    /// `class_for`'s own doc proves.
+    /// align)` is always `>= 1` past that point; the seed index
+    /// `(need - 1) >> min_block_shift` is compared against the compile-time
+    /// bound `L - 1` **before** any indexing, so both the seed and every
+    /// slow-path re-seed stay strictly inside `size2class()`, and the
+    /// slow-path jump loop is bounded exactly as `class_for`'s own doc
+    /// proves.
     ///
     /// Use this one unless `align` is already known-valid by construction
     /// (e.g. taken directly from a [`core::alloc::Layout`]) -- `class_for`

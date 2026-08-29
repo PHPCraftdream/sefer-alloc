@@ -107,6 +107,11 @@ before it.
   embeds both tables (~16 KiB for a realistic scheme), so `Copy` would make
   a full-object duplicate look as cheap as a move. Settled before the first
   release, since removing `Copy` afterwards would be a breaking change.
+- `SizeClasses` also implements `Debug`, hand-written rather than derived:
+  a derive would print both raw tables on any accidental `{:?}`/`dbg!`,
+  so the impl instead prints a short summary (`N`, `L`, `min_block`,
+  `small_max`, `huge_threshold`) and marks the rest `..` via
+  `finish_non_exhaustive`.
 
 ### MSRV
 

@@ -1412,7 +1412,7 @@ fn readme_example_compiles_and_derives_its_generics() {
 fn readme_example_lines_appear_verbatim_in_readme_md() {
     let readme = include_str!("../README.md");
     let declaration_lines = [
-        "use size_classes::{build_table, size2class_len, Params, SizeClasses};",
+        "use size_classes::{build_table, size2class_len, InvalidAlign, Params, SizeClasses};",
         "const MIN_BLOCK: usize = 16;",
         "const GEO_COUNT: usize = 40;",
         "const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096];",

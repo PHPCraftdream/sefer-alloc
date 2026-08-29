@@ -65,11 +65,15 @@ pub(crate) const JUMP_B: (usize, usize) = (2049, 1024);
 /// claiming a test-based drift guard that could not actually see the other
 /// copy -- moved here so the guarantee is structural, matching `JUMP_A`/`JUMP_B`).
 pub(crate) const JUMP_MULTI: (usize, usize) = (513, 512);
-/// A slow-path case that exhausts the table and returns `None`: seed class 36
-/// (block 17760, not 16384-divisible), 10 jump-loop iterations before the
-/// table ends -- visiting 10 of the 13 remaining classes (indices 37, 38 and
-/// 40 are skipped by the round-up; skipping is what the jump algorithm is
-/// for), none of the visited ones 16384-divisible.
+/// A slow-path case that returns `None`: seed class 36 (block 17760, not
+/// 16384-divisible), 10 jump-loop iterations -- visiting 10 of the 13
+/// remaining classes (indices 37, 38 and 40 are skipped by the round-up;
+/// skipping is what the jump algorithm is for), none of the visited ones
+/// 16384-divisible. The `None` comes from the `next_idx >= L - 1`
+/// index-space guard firing from inside the loop body on the 10th
+/// iteration (at the last class, index 48, still `< N`) -- NOT from
+/// running off the end of the table (`class_for`'s own doc proves that
+/// path is unreachable).
 pub(crate) const JUMP_NONE: (usize, usize) = (16385, 16384);
 /// A denser align than `JUMP_A` (128 divides ~31% of `SEFER_TABLE`'s entries
 /// vs 256's ~20%): seed class 6 (block 144, not 128-divisible), 2 jump-loop

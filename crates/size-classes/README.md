@@ -46,10 +46,11 @@ usually a few hundred bytes on a 64-bit target). `L` isn't chosen directly —
 it falls out of `min_block`/`growth`/`geo_count`/`extras` together, and it
 scales with `max_class / min_block`, **not** with the class count `N`: a
 scheme with *fewer* classes can produce a *larger* LUT than one with more. A
-realistic scheme (`min_block = 16`, 49 classes — the crate's own tests'
-`SEFER` fixture; the crate itself has no defaults) gives `L = 16173`, ~16.18
-KiB total on a 64-bit target; a 24-class scheme with `min_block = 8` reaches
-`L = 18207`, a larger object despite having half the classes. See
+realistic scheme (`min_block = 16`, 49 classes; the crate itself has no
+defaults) gives `L = 16173` -- `table` + `size2class` together are ~16.18
+KiB, the object itself ~16.20 KiB on a 64-bit target; a 24-class scheme
+with `min_block = 8` reaches `L = 18207`, a larger object despite having
+half the classes. See
 [`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
 for the full worked comparison.
 
@@ -60,7 +61,7 @@ literal.
 ## Example
 
 ```rust
-use size_classes::{build_table, size2class_len, Params, SizeClasses};
+use size_classes::{build_table, size2class_len, InvalidAlign, Params, SizeClasses};
 
 const MIN_BLOCK: usize = 16;
 const GEO_COUNT: usize = 40;
