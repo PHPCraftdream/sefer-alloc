@@ -195,9 +195,7 @@ const _: () = {
     const PROBE: Params = Params::new(MIN_BLOCK, GROWTH, 2, &[], HUGE_THRESHOLD);
     const PROBE_TABLE: [usize; 2] = size_classes::build_table::<2>(PROBE);
     const PROBE_L: usize = size2class_len(PROBE_TABLE[1], MIN_BLOCK);
-    assert!(
-        SMALL_ALIGN_MAX == SizeClassesImpl::<2, PROBE_L>::build(PROBE).small_align_max()
-    );
+    assert!(SMALL_ALIGN_MAX == SizeClassesImpl::<2, PROBE_L>::build(PROBE).small_align_max());
 };
 
 /// The table of fine small size classes, in strictly increasing order — built
