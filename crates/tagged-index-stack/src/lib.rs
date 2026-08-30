@@ -395,6 +395,21 @@ impl<const N: usize> Links for ArrayLinks<N> {
 /// caller-supplied [`Links`] storage passed to [`push`](Self::push) /
 /// [`pop`](Self::pop). A fresh stack is EMPTY (lazy links, RAD-1) — the caller
 /// pushes indices as they become free.
+///
+/// # Layout note — no cache-line isolation
+///
+/// This type is a bare `AtomicU64` with no cache-line padding or alignment
+/// attribute of its own: it inherits the cache line of whatever struct embeds
+/// it. If it lands adjacent to another frequently-modified atomic — say, a
+/// slot counter bumped on every allocation — the two fields false-share:
+/// each write invalidates the other core's copy of the line, and contending
+/// cores ping-pong the line even though the two atomics are logically
+/// independent. That costs throughput, never correctness, and only matters
+/// when the line is genuinely hot. Fix it at the embedding site when a
+/// profile shows it — wrap this stack in a `#[repr(align(64))]` newtype or
+/// interpose padding — rather than paying for blanket alignment inside the
+/// crate, which would waste most of a cache line for every embedder that
+/// does not need the isolation.
 #[derive(Debug)]
 pub struct TaggedIndexStack<const INDEX_BITS: u32> {
     /// INVARIANT (release sequence): every modification of `head` MUST be a

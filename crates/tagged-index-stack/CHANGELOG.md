@@ -59,11 +59,13 @@ before it.
   **empty** — deliberately no "start with `0..N` pushed" constructor, which
   would require exactly the eager chaining pass this discipline forbids.
 - **Correct CAS orderings** — push's success ordering and pop's retry
-  ordering were both chosen so a popper can never read a link through a stale
-  head (pop's CAS-failure load is `Acquire`; a `Relaxed` retry was the
-  regression the shipped counterfactual pins, task #698). Push's
-  index-validity and sentinel guards are release-active `assert!`s, not
-  `debug_assert!`s (task #703).
+  ordering are both chosen so a popper can never read a link through a stale
+  head: pop's CAS-failure load is `Acquire` — a `Relaxed` retry could read a
+  stale link, and the shipped loom counterfactual
+  `counterfactual_relaxed_cas_failure_corrupts_free_list` plants exactly that
+  bug and watches the free-list corrupt. Push's index-validity and sentinel
+  guards are release-active `assert!`s, not `debug_assert!`s, so the bounds
+  are enforced in release builds too.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `riscv32imc-…`, `armv5te-…`) rather
@@ -77,5 +79,5 @@ before it.
   Relaxed-CAS-failure-ordering regression) proving the harness is
   non-vacuous. `loom` is a `cfg(loom)`-gated library dependency only; a
   normal build pulls in zero non-`std` dependencies.
-- **`raw_head()`** — `#[doc(hidden)]` test-probe accessor for the packed head
-  word, its API posture settled before first publish (task #704).
+- **`raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the packed
+  head word; deliberately excluded from the stable, documented API.
