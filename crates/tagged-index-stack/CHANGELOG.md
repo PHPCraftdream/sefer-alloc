@@ -39,8 +39,11 @@ before it.
   48 bits, and `INDEX_MASK` below the `TAIL` link sentinel (`u32::MAX`) at
   every legal width (the historical `INDEX_MASK == TAIL` coincidence at the
   former width-32 cap is now structurally impossible); helpers
-  `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn`. The index
-  half's all-ones value is the reserved "stack empty" sentinel.
+  `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn` (`empty`
+  alone is additionally `#[doc(hidden)]` — callable but carrying no semver
+  stability guarantee, like `raw_head()` below; the other four are ordinary
+  documented API). The index half's all-ones value is the reserved "stack
+  empty" sentinel.
 - **`TaggedIndex::try_pack(index, tag)`** — the checked twin of `pack`:
   `Some(word)` — with `word` exactly what `pack` returns — for an in-range
   `(index, tag)` pair, `None` instead of a silently truncated word when
@@ -96,12 +99,14 @@ before it.
   head: pop's CAS-failure load is `Acquire` — a `Relaxed` retry could read a
   stale link, and the shipped loom counterfactual
   `counterfactual_relaxed_cas_failure_corrupts_free_list` plants exactly that
-  bug and watches the free-list corrupt. Push's index-validity and sentinel
-  guards are release-active `assert!`s, not `debug_assert!`s, so the bounds
-  are enforced in release builds too.
+  bug and watches the free-list corrupt. Push's index-validity and
+  sentinel-reservation check is a single release-active `assert!` — one guard
+  covers both conditions — not a `debug_assert!`, so the bound is enforced in
+  release builds too.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
-  64-bit atomics (`thumbv6m-none-eabi`, `riscv32imc-…`, `armv5te-…`) rather
+  64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
+  `armv5te-…`) rather
   than a cryptic unresolved-import error. `no_std`-compatible, but `no_std`
   alone does not imply `AtomicU64`.
 - **Exhaustive loom model-check against the real type**: under `--cfg loom`

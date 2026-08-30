@@ -36,7 +36,7 @@ links **slot-resident** (an `AtomicU32` field inside a slot it already owns)
 rather than paying for a second array. For standalone use, `ArrayLinks<N>`
 provides an owned `[AtomicU32; N]` backing.
 
-## Three hard-won subtleties (people get these wrong)
+## The two hard-won subtleties (people get these wrong)
 
 - **H-2 empty-transition tag preservation.** When a pop drains the LAST element,
   the head goes "empty". Packing the empty sentinel with **tag 0** reopens the
@@ -50,6 +50,9 @@ provides an owned `[AtomicU32; N]` backing.
   first-touches those pages merely to set up the free-list; they commit lazily,
   on first push of each index. (In the allocator this crate was extracted from,
   this saved a ~16 MiB bootstrap first-touch.) A fresh stack is therefore EMPTY.
+
+### The rule that is NOT one of the two: no double-push (caller-enforced)
+
 - **No double-push (caller-enforced).** An index that is still reachable from
   the stack must never be pushed again: `push` overwrites the pushed index's
   link with the current head, so re-pushing a live index closes a cycle in the
@@ -150,6 +153,8 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loo
 ## Notes
 
 `TaggedIndexStack::raw_head` is a `#[doc(hidden)]` test-only probe: the attribute only hides it from rustdoc's rendered navigation, and the function remains publicly callable — it carries no semver stability guarantee and exists only for this crate's own `tests/`, so do not depend on it.
+
+`TaggedIndex::empty()` is the crate's other `#[doc(hidden)]` `pub` item, and the same rules apply — publicly callable, no semver stability guarantee, do not treat it as stable public API. It is not test-only: it is used internally by this crate's bootstrap path (`TaggedIndexStack::new`) and by known in-workspace consumers for the same purpose (a const-capable bootstrap-empty head word), so it is not freely removable — but do not depend on it.
 
 ## Example
 

@@ -320,6 +320,19 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// is pack's truncation boundary (where the silent masking kicks in),
     /// while `push`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`) is
     /// stricter because it also excludes the reserved empty sentinel.
+    ///
+    /// The tag half truncates the same silent way, and that truncation is
+    /// deliberate, relied-upon behaviour rather than an oversight: `tag <<
+    /// INDEX_BITS` on the fixed-width `u64` drops every bit at or above
+    /// `2^TAG_BITS`, so an out-of-range tag loses its high bits instead of
+    /// corrupting the (separately masked) index half. The stack depends on
+    /// exactly this at the ABA wrap boundary —
+    /// [`push`](TaggedIndexStack::push)'s `tag.wrapping_add(1)` may produce
+    /// `2^TAG_BITS`, whose shifted-out high bit `pack` drops, restarting the
+    /// tag at 0 (pinned by `tag_wraps_at_2_pow_48` in `tests/stack_unit.rs`).
+    /// As with the index half, a caller that has not already validated its
+    /// arguments should use [`try_pack`](Self::try_pack), the checked twin
+    /// that returns `None` rather than a silently truncated word.
     #[must_use]
     pub const fn pack(index: u64, tag: u64) -> u64 {
         // Force the compile-time bounds check to be evaluated.
@@ -375,9 +388,20 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// hides it from rustdoc's rendered navigation ONLY — it is still a fully
     /// callable `pub` item from any downstream crate; nothing in the language
     /// or this crate enforces non-callability. It carries no semver stability
-    /// guarantee and is `pub` for the `tests/` reason above alone, not as an
-    /// invitation for other external use. Its only correct in-crate caller is
-    /// [`TaggedIndexStack::new`]'s bootstrap path; anywhere else the
+    /// guarantee and is not `pub` as an invitation for other external use:
+    /// beyond the `tests/` reason above it has exactly two real callers. One
+    /// is [`TaggedIndexStack::new`]'s bootstrap path — the only correct
+    /// in-crate caller. The other is a non-`tests/` caller this workspace
+    /// itself contains, so any "tests-only" description of this item would be
+    /// false: the `sefer-alloc` root crate's `#[cfg(loom)] mod loom_shim` (in
+    /// `src/registry/bootstrap.rs`) defines a const-capable `TaggedIndexStack`
+    /// stand-in whose `new` calls `empty()` for the identical reason this
+    /// crate's `new` does — constructing a `const`-capable bootstrap-empty
+    /// head word (loom's atomics have no `const` constructor, so the shim
+    /// re-implements the head on `core` atomics while reusing the real
+    /// packing). Because of that in-workspace consumer, `empty` is NOT freely
+    /// removable in a future 0.2 release without checking that caller first.
+    /// Anywhere else the
     /// unconditional tag-0 reset reopens the H-2 ABA window documented above —
     /// a runtime drain must instead use [`empty_index`](Self::empty_index) with
     /// the tag it just observed. See this project's established
@@ -743,10 +767,8 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // `1..=16` cap on INDEX_BITS (`TaggedIndex::_CHECK_BITS`) keeps
             // `INDEX_MASK <= 0xFFFF`, so the historical INDEX_BITS == 32
             // coincidence is structurally impossible. We still spell the
-            // empty→TAIL mapping out explicitly (and keep `is_empty` a
-            // dedicated check on the raw word rather than deriving emptiness
-            // from the unpacked index) so the invariant never rests on any
-            // numeric coincidence.
+            // empty→TAIL mapping out explicitly so the invariant never rests
+            // on any numeric coincidence.
             let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                 TAIL
             } else {
