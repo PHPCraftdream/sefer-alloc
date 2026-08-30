@@ -680,7 +680,20 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     ///    [`ArrayLinks`] "coincidentally" returns `0` for every index, and
     ///    if that happens to equal the live head's own index,
     ///    [`pop`](Self::pop)'s compare-exchange `current -> current`
-    ///    succeeds trivially.
+    ///    succeeds trivially. An out-of-range return is a second, distinct
+    ///    hazard — and a silent one, because [`pop`](Self::pop) packs the
+    ///    value it read with [`TaggedIndex::pack`], which never rejects an
+    ///    over-wide value: it masks it to its low `INDEX_BITS` bits. That
+    ///    truncation corrupts in one of two ways. Masked to a live index:
+    ///    `next = 0x1_0000` at `INDEX_BITS = 16` packs as index `0`, which
+    ///    may still be owned elsewhere in the free-list — the same
+    ///    double-issue as the zero-init collision above, reached by a
+    ///    different route. Masked to the empty sentinel: a `next` whose low
+    ///    `INDEX_BITS` bits are all ones (e.g. `0xFFFF` at width 16) packs
+    ///    into a word [`is_empty`](TaggedIndex::is_empty) reads as EMPTY,
+    ///    so the stack silently reports itself drained and every remaining
+    ///    index in the chain is leaked at once — no panic, no `None`
+    ///    anomaly, just a free-list that quietly shrinks to zero.
     /// 5. **Backing lifetime.** The backing and its cells must remain alive
     ///    and keep their identity for as long as the stack's head can
     ///    reference them — in practice, for the stack's own lifetime.
@@ -713,11 +726,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// access in the links layer ([`ArrayLinks::store_next`] panics on
     /// `index >= N`) is a second panic source the guard above does not
     /// cover.
+    #[track_caller]
     pub fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
-        assert!(
-            (index as u64) < TaggedIndex::<INDEX_BITS>::INDEX_MASK,
-            "index must be < INDEX_MASK (the empty sentinel is reserved)"
-        );
+        let mask = TaggedIndex::<INDEX_BITS>::INDEX_MASK;
+        if (index as u64) >= mask {
+            Self::push_index_out_of_range(index, mask);
+        }
         let mut head = self.head.load(Ordering::Acquire);
         loop {
             // Unpack the current head ONCE: the index half chains this push to
@@ -745,8 +759,22 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // Advance the tag (the ABA fix) and CAS the head to this index.
             let new_tag = tag.wrapping_add(1);
             let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
-            // Release on success so a pop's Acquire sees the link we wrote;
-            // Relaxed on failure (retry).
+            // Release on success so a pop's Acquire sees the link we wrote.
+            // Relaxed on failure is sound HERE, and the asymmetry with pop is
+            // deliberate: a failed CAS sends push around the loop with the
+            // value it read used ONLY as a value — the (cur_idx, tag)
+            // recomputed for the next attempt's own store_next and CAS — so
+            // push never follows (dereferences) a link through that read, and
+            // the read carries no ordering burden. pop is NOT symmetric: its
+            // retry's re-read names the index whose link load_next will
+            // consult next, so pop's failure ordering MUST stay Acquire (the
+            // loom counterfactual
+            // `counterfactual_relaxed_cas_failure_corrupts_free_list` proves
+            // Relaxed there corrupts the free-list). The happens-before edge a
+            // popper needs from THIS push is carried entirely by the Release
+            // success CAS's own release sequence — which every later head RMW
+            // extends (see the `head` field's INVARIANT) — never by anything
+            // push's failed-CAS reads observe.
             match self
                 .head
                 .compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed)
@@ -755,6 +783,24 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                 Err(actual) => head = actual,
             }
         }
+    }
+
+    /// Cold panic path for [`push`](Self::push)'s `index < INDEX_MASK`
+    /// caller-contract guard, split out of `push` itself so the panic and its
+    /// message formatting can never land in the hot loop's body (`#[cold]` +
+    /// `#[inline(never)]`). `#[track_caller]` here — combined with
+    /// `#[track_caller]` on `push`, which is what makes the location name the
+    /// caller's call site rather than this crate's source line — forwards
+    /// `push`'s received caller location down: a consumer pushing from many
+    /// call sites learns WHICH one violated the contract.
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn push_index_out_of_range(index: u32, mask: u64) -> ! {
+        panic!(
+            "index must be < INDEX_MASK (the empty sentinel is reserved), \
+             got {index} (INDEX_MASK = {mask:#x})"
+        );
     }
 
     /// Pop the top index off the stack (classic Treiber pop), or `None` if
@@ -801,6 +847,25 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // Release; our Acquire observation of head — whether from the
             // initial load OR from a retry CAS failure — synchronizes with it).
             let next = links.load_next(index);
+            // Debug-only guard for rule 4 of push's `# Caller contract`: a
+            // backing returning anything but TAIL or a currently-valid index
+            // is SILENTLY TRUNCATED by the pack() below — to a wrong (possibly
+            // still-live) index, double-issuing it, or to the empty sentinel,
+            // leaking the whole remaining chain at once. Turns that silent
+            // corruption into a loud failure in debug/test builds; release
+            // builds pay nothing.
+            debug_assert!(
+                next == TAIL || (next as u64) < TaggedIndex::<INDEX_BITS>::INDEX_MASK,
+                "Links::load_next({index}) returned {next:#x}, neither TAIL \
+                 nor a valid index: pop's pack() will silently truncate it {}",
+                if (next as u64 & TaggedIndex::<INDEX_BITS>::INDEX_MASK)
+                    == TaggedIndex::<INDEX_BITS>::INDEX_MASK
+                {
+                    "to the EMPTY SENTINEL, leaking the whole remaining chain"
+                } else {
+                    "to a wrong index, possibly a live one — double-issuing it"
+                }
+            );
             let new_head = if next == TAIL {
                 // H-2: preserve the RUNNING tag across the empty transition.
                 TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
