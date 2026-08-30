@@ -53,6 +53,12 @@ before it.
   - accessors `table()`, `size2class()`, `min_block()`, `min_block_shift()`,
     `small_align_max()`, `small_max()`, `huge_threshold()`, `count()`,
     `block_size(idx)`, `is_huge(size)`;
+  - NB: `min_block()` and `small_align_max()` return the SAME value today —
+    both are `1 << min_block_shift()` — but that equality is a convenience of
+    the current design, not a stability promise: the two accessors stay
+    separate so a future `Params` field could decouple them (giving
+    `small_align_max` its own policy), so a consumer caching one result must
+    not assume it stays in sync with the other across releases.
   - **`class_for(size, align) -> Option<usize>`** — resolve a request to the
     smallest class whose block is `>= max(size, align)` **and** a multiple of
     `align` (`None` routes to the caller's large path). O(1) fast path for

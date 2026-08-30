@@ -570,6 +570,15 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// raw arrays directly.
 #[derive(Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
+    // LAYOUT NOTE (default `repr(Rust)`): `class_for`'s fast path hot-loads
+    // `min_block_shift` and the LOW end of `size2class` (small sizes index the
+    // first buckets), and the default field-reordering heuristic
+    // (largest-align-first) happens to place the align-4 `min_block_shift`
+    // immediately before the align-1 `size2class`, so both loads share a cache
+    // line. That adjacency follows from the heuristic, NOT from the declaration
+    // order below; if `#[repr(C)]` is ever added here, declaration order becomes
+    // memory order, so the fields would have to be reordered to
+    // `min_block_shift, size2class, table, huge_threshold` to preserve it.
     table: [usize; N],
     size2class: [u8; L],
     // `min_block`, `small_align_max`, and `1 << min_block_shift` are the same
