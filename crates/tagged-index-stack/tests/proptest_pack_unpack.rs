@@ -36,6 +36,7 @@ proptest! {
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word), "a valid index (< INDEX_MASK) must not read empty");
+        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -49,6 +50,7 @@ proptest! {
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
+        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -62,6 +64,7 @@ proptest! {
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
+        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -75,5 +78,33 @@ proptest! {
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
+        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
+}
+
+/// `try_pack`'s bounds check shifts `1u64 << Self::TAG_BITS`; at width 1,
+/// `TAG_BITS` is 63 — the closest this crate gets to `u64` shift overflow
+/// (`1u64 << 63` is the last representable shift amount, `1u64 << 64` would
+/// panic/UB). The properties above sample `try_pack` randomly at width 1 but
+/// are not guaranteed to land exactly on this boundary, so it gets its own
+/// focused assertion: the last valid tag (`2^63 - 1`) still packs, and the
+/// first invalid tag (`2^63`, the shift boundary itself) is rejected.
+#[test]
+fn try_pack_width_1_tag_boundary_at_shift_63() {
+    type T = TaggedIndex<1>;
+    assert_eq!(T::TAG_BITS, 63);
+
+    let max_valid_tag = (1u64 << 63) - 1;
+    assert_eq!(
+        T::try_pack(0, max_valid_tag),
+        Some(T::pack(0, max_valid_tag)),
+        "the last valid tag at the width-1 shift boundary must still pack"
+    );
+
+    let first_invalid_tag = 1u64 << 63;
+    assert_eq!(
+        T::try_pack(0, first_invalid_tag),
+        None,
+        "the first invalid tag, exactly at the shift boundary, must be rejected"
+    );
 }
