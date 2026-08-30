@@ -1938,6 +1938,42 @@ jobs:
       # `--no-default-features` flag is needed. Verified locally: compiles
       # clean.
       - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
+      # tagged-index-stack publication readiness review (Sol-codex, run 2,
+      # P2-4): no `cargo clippy -p tagged-index-stack` or `cargo doc -p
+      # tagged-index-stack` row existed anywhere in this file -- the
+      # root-scoped clippy/docs jobs don't substitute, for the same two
+      # reasons the `size-classes` (P3-3) and `once-ptr-cell` (task
+      # #1367/#1379) comments above already spell out: root clippy never
+      # lints this crate's OWN `tests/`/`benches/` targets as ITS crate
+      # root (the crate is only an OPTIONAL root dependency, so it never
+      # even appears in the root builds unless `alloc-global` is on --
+      # and dependencies are built, not linted), and the root `docs` job
+      # further down is `--no-deps` (never reaches a dependency crate)
+      # and drops `RUSTDOCFLAGS: "-D warnings"`. `--all-targets` covers
+      # all four `tests/` files (`stack_unit.rs`,
+      # `regression_counter_wrap.rs`, `proptest_pack_unpack.rs`, and
+      # `loom_aba.rs`, which compiles to zero tests here by its own
+      # `#![cfg(loom)]` gate -- its real coverage stays the
+      # `loom-alloc-global` job) plus
+      # `benches/tagged_index_stack_bench.rs` in one step. No
+      # `--all-features` needed for either row: verified via
+      # `cargo metadata --no-deps --format-version 1 | jq -r
+      # '.packages[] | select(.name=="tagged-index-stack") | .features'`
+      # -- the feature map is empty (`{}`), the same fact the bare-metal
+      # build row above already cites.
+      #
+      # One sub-claim of the same review is REFUTED and recorded here so
+      # the bench is never later "silenced" for a warning this gate does
+      # not emit: it predicted the two `black_box(stack.pop(&links));`
+      # discards in the bench would trip `unused_must_use` under this
+      # exact gate. They don't -- `pop` IS `#[must_use]`, but its result
+      # is consumed in argument position by `black_box` (itself not
+      # `#[must_use]`, and whose instantiated return type `Option`
+      # carries no type-level `#[must_use]` in std), so `cargo clippy -p
+      # tagged-index-stack --all-targets -- -D warnings` is clean on the
+      # unmodified bench.
+      - run: cargo clippy -p tagged-index-stack --all-targets -- -D warnings
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps
       # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
       # of gap, but UNLIKE the two crates above, sefer-region genuinely
       # declares a `std` Cargo feature to disable (`default = ["std"]`,
