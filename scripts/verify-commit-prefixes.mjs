@@ -462,6 +462,31 @@ const GRANDFATHERED = new Map([
       'per R30-12\'s non-retroactive posture. Durable record: item 78, ' +
       'sub-card 11 (task #1584).',
   ],
+  [
+    '08d8260',
+    'NOT a genuine mis-slot -- the SAME recurring Cargo.toml `description` ' +
+      'false-positive class as eaa3310/e25ec74/abf2061 (sub-cards 7/8/9), ' +
+      'this time on tagged-index-stack rather than size-classes (task ' +
+      'r1-T9, part of the tagged-index-stack round-1 review-fix wave). ' +
+      'crates/tagged-index-stack/Cargo.toml\'s `description = "..."` value ' +
+      'shrunk from 556 to 134 chars (crates.io search-result truncation, ' +
+      'same motivation as abf2061); `version`/`dependencies` untouched. ' +
+      'Unlike those three prior entries this commit\'s diff is not a ' +
+      'single line -- it also adds a comment-only "# Layout note" doc ' +
+      'section to crates/tagged-index-stack/src/lib.rs (zero behavior ' +
+      'change, no non-comment src/ line) and edits ' +
+      'crates/tagged-index-stack/CHANGELOG.md (already exempt by ' +
+      'MEASUREMENT_ONLY_ROOT_FILES\' basename match). The guard flags both ' +
+      'Cargo.toml and lib.rs together because they are combined under one ' +
+      'FAILURE verdict once ANY non-comment line outside the exempt dirs ' +
+      'exists in the commit -- the lib.rs portion is not itself the ' +
+      'violation. No honest alternative prefix fits better. Not taught to ' +
+      'the guard as a new exception path (same guard-cleverness risk ' +
+      'e25ec74\'s entry already warns against). UNPUSHED: the owner may ' +
+      'still reword it by rebase -- this exemption records that decision ' +
+      'point, it does not foreclose it. Durable record: item 78, ' +
+      'sub-card 12 (task #1678).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
