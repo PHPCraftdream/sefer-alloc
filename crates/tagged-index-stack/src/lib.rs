@@ -173,7 +173,7 @@
 //! "cannot find function/no `AtomicU64` in `core::sync::atomic`" error a bare
 //! unresolved import would otherwise produce.
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
