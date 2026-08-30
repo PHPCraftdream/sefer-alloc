@@ -189,7 +189,10 @@ fn main() {
     });
 
     h.bench("class_for/jump_vs_walk_none_walk", || {
-        let result = black_box(step_by_step_walk(black_box(JUMP_NONE.0), black_box(JUMP_NONE.1)));
+        let result = black_box(step_by_step_walk(
+            black_box(JUMP_NONE.0),
+            black_box(JUMP_NONE.1),
+        ));
         black_box(result);
     });
 
