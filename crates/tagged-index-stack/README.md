@@ -37,7 +37,7 @@ provides an owned `[AtomicU32; N]` backing.
   observed, so the tag keeps climbing. The shipped loom counterfactual
   `counterfactual_empty_transition_tag_reset_lets_aba_recur` proves this is
   load-bearing.
-- **Lazy link discipline (RAD-1).** Links are NEVER eagerly written — only a push
+- **Lazy link discipline (internally: RAD-1).** Links are NEVER eagerly written — only a push
   writes a link. A caller whose link backing is OS-zeroed memory never
   first-touches those pages merely to set up the free-list; they commit lazily,
   on first push of each index. (In the allocator this crate was extracted from,

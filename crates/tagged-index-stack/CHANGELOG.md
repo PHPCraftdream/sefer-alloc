@@ -51,7 +51,7 @@ before it.
   `AtomicU32` inside a slot it already owns) instead of paying for a second
   array. **`ArrayLinks<N>`** provides an owned `[AtomicU32; N]` backing for
   standalone use.
-- **Lazy link discipline (RAD-1)** — links are never eagerly initialised:
+- **Lazy link discipline (internally: RAD-1)** — links are never eagerly initialised:
   only a `push` writes a link, immediately before publishing that index as
   head. A caller whose link backing is OS-zeroed memory (a fresh `mmap`, a
   zeroed slot array) never first-touches pages merely to set up the free-list;

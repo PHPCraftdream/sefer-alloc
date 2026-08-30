@@ -7,7 +7,7 @@
 //! allocators, object pools, entity-component stores, and connection tables all
 //! reinvent — and routinely reinvent *wrong*. The two subtleties people get
 //! wrong (documented below) are the **H-2 empty-transition tag preservation**
-//! and the **lazy link discipline (RAD-1)**; both are structurally enforced
+//! and the **lazy link discipline** (internally: RAD-1); both are structurally enforced
 //! here.
 //!
 //! # The packed word — [`TaggedIndex`]

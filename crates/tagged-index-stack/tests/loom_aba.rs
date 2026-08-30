@@ -583,15 +583,18 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     });
 }
 
-/// Test the CAS retry path: thread A loads head, reads link; thread B pushes
-/// (changing head with a fresh tag); A's CAS fails; A retries — the retry's
-/// head observation AND its subsequent link read must both synchronize with
-/// B's push.
-#[test]
-fn cas_retry_path_must_acquire_with_concurrent_push() {
+/// Shared harness for the two `(e)` tests below: thread A hand-expands TWO
+/// iterations of `pop`'s loop so loom must explore the retry path (the first
+/// CAS fails because B interposes; the retry must then succeed with fresh
+/// data), thread B pushes concurrently, and a free-list conservation oracle
+/// runs at the end. `failure_ordering` is the failure ordering passed to BOTH
+/// `cas_head_for_test` calls — `Ordering::Acquire` (the shipped behaviour)
+/// must keep the free-list intact; `Ordering::Relaxed` (the counterfactual)
+/// must let the retry read a stale link and corrupt it.
+fn run_cas_retry(failure_ordering: Ordering) {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(4);
-    builder.check(|| {
+    builder.check(move || {
         // Start with slot 1 only on stack (not slot 0).
         let links = Arc::new(ArrayLinks::<N>::new());
         let stack = Arc::new(TaggedIndexStack::<16>::new());
@@ -623,10 +626,10 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
                 head,
                 new_head,
                 Ordering::Acquire,
-                Ordering::Acquire, // failure ordering must be Acquire — see the counterfactual below
+                failure_ordering, // the knob under test — see the counterfactual below
             );
             if result.is_ok() {
-                // No race — return early, nothing to test.
+                // No race — B didn't interpose, nothing to test.
                 return Ok(idx);
             }
 
@@ -637,12 +640,12 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
             let next2 = links_a.load_next(idx2);
             // NOTE: unlike the real `pop` (which preserves the observed
             // `_tag2`), this exposition harness hardcodes tag 0 on the
-            // SUCCEEDING second CAS too — it is not a faithful `pop`
+            // succeeding retry CAS too — it is not a faithful `pop`
             // transcription on this point. Harmless here: nothing pushes
-            // after this test's assertions run, and none of them depend on
-            // the resulting tag value. The real end-to-end regression guard
-            // at `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
-            // (below) calls the actual `pop`, which does preserve it.
+            // after the assertions run, and none of them depend on the
+            // resulting tag value. The real end-to-end regression guard at
+            // `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
+            // (above) calls the actual `pop`, which does preserve it.
             let new_head2 = if next2 == TAIL {
                 Tag::pack(Tag::empty_index(), 0)
             } else {
@@ -651,7 +654,7 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
 
             // Second CAS must succeed.
             stack_a
-                .cas_head_for_test(head, new_head2, Ordering::Acquire, Ordering::Acquire)
+                .cas_head_for_test(head, new_head2, Ordering::Acquire, failure_ordering)
                 .map(|_| idx2)
         });
 
@@ -680,88 +683,20 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
     });
 }
 
+/// Test the CAS retry path: thread A loads head, reads link; thread B pushes
+/// (changing head with a fresh tag); A's CAS fails; A retries — the retry's
+/// head observation AND its subsequent link read must both synchronize with
+/// B's push.
+#[test]
+fn cas_retry_path_must_acquire_with_concurrent_push() {
+    run_cas_retry(Ordering::Acquire);
+}
+
 /// Counterfactual: using Relaxed on CAS failure lets the retry read stale
 /// link data, corrupting the free-list. This test demonstrates that the
 /// Acquire ordering is load-bearing.
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(4);
-    builder.check(|| {
-        // Start with slot 1 only on stack.
-        let links = Arc::new(ArrayLinks::<N>::new());
-        let stack = Arc::new(TaggedIndexStack::<16>::new());
-        stack.push(&*links, 1);
-
-        let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
-        let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
-
-        let ta = thread::spawn(move || {
-            let mut head = stack_a.raw_head();
-            let (idx_v, _tag) = Tag::unpack(head);
-            let idx = idx_v as u32;
-            let next = links_a.load_next(idx);
-            let new_head = if next == TAIL {
-                Tag::pack(Tag::empty_index(), 0)
-            } else {
-                Tag::pack(next as u64, 0)
-            };
-
-            // BUG: Relaxed failure ordering — no happens-before with B's push.
-            let result = stack_a.cas_head_for_test(
-                head,
-                new_head,
-                Ordering::Acquire,
-                Ordering::Relaxed, // BUGGY: this is what we're testing against
-            );
-
-            if result.is_ok() {
-                // CAS succeeded — B didn't race, no corruption to exercise.
-                return Ok(idx);
-            }
-
-            // CAS failed — retry path with Relaxed head observation.
-            head = result.unwrap_err();
-            let (idx_v2, _tag2) = Tag::unpack(head);
-            let idx2 = idx_v2 as u32;
-            let next2 = links_a.load_next(idx2);
-            // NOTE: hardcodes tag 0 on the retry CAS instead of preserving
-            // `_tag2`, same as `cas_retry_path_must_acquire_with_concurrent_push`
-            // above — not a faithful `pop` transcription on this point, but
-            // harmless (nothing pushes afterward, no assertion depends on it).
-            let new_head2 = if next2 == TAIL {
-                Tag::pack(Tag::empty_index(), 0)
-            } else {
-                Tag::pack(next2 as u64, 0)
-            };
-
-            stack_a
-                .cas_head_for_test(head, new_head2, Ordering::Acquire, Ordering::Relaxed)
-                .map(|_| idx2)
-        });
-
-        let tb = thread::spawn(move || {
-            stack_b.push(&*links_b, 0);
-        });
-
-        let a_result = ta.join().unwrap();
-        tb.join().unwrap();
-
-        let mut popped: Vec<u32> = Vec::new();
-        if let Ok(idx) = a_result {
-            popped.push(idx);
-        }
-        while let Some(idx) = stack.pop(&*links) {
-            popped.push(idx);
-        }
-        popped.sort_unstable();
-        assert_eq!(
-            popped,
-            vec![0, 1],
-            "free-list corrupted (loss or duplication) after CAS retry: got {popped:?}"
-        );
-    });
+    run_cas_retry(Ordering::Relaxed);
 }
