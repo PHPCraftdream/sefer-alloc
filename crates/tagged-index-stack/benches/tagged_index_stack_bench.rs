@@ -1,7 +1,7 @@
-//! `bench-scale-tool` fixed-iteration benches for `TaggedIndexStack` (task #762).
-//! This crate previously had zero benches of its own — it is a lock-free
-//! Treiber stack whose entire value is concurrent throughput, yet no benchmark
-//! coverage existed.
+//! `bench-scale-tool` fixed-iteration benches for `TaggedIndexStack`:
+//! single-threaded push/pop paths plus multi-threaded contention workloads —
+//! this is a lock-free Treiber stack whose value is concurrent throughput, so
+//! contention coverage matters alongside the single-threaded rows.
 //!
 //! Run:
 //! ```text
@@ -36,15 +36,11 @@ fn main() {
     // branch, which preserves the running ABA tag across the transition --
     // the H-2 path documented in the crate docs).
     //
-    // This row absorbed the former `push/empty_stack` row (2026-08-30
-    // external review, P2-3). That row only pushed: iteration 1 measured
-    // the real empty transition, but every later iteration re-pushed
-    // index 1 while it was still the live head -- a violation of
-    // push()'s documented caller contract ("index must NOT already be
-    // reachable from the stack") that also wrote a self-referential link
-    // (link[1] = 1). Fixing that row in place (push, then pop back to
-    // empty, inside the closure) would have measured exactly what this row
-    // measures, so the duplicate was deleted rather than kept.
+    // The push-onto-empty shape is load-bearing: pushing without first
+    // popping would re-push index 1 while it is still the live head -- a
+    // violation of push()'s documented caller contract ("index must NOT
+    // already be reachable from the stack") that also writes a
+    // self-referential link (link[1] = 1).
     {
         let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
@@ -64,13 +60,10 @@ fn main() {
     // before timing), so the timed region is purely the empty fast path:
     // the stack drains during warm-up and stays empty from then on.
     //
-    // Formerly mislabeled `pop/nonempty` ("guaranteed success (no None
-    // case)") -- only the first iteration was ever a real pop, and every
-    // iteration after it measured this empty early return (2026-08-30
-    // external review, P2-2). The row is relabeled to match what the code
-    // measures rather than made self-restoring: with a single seeded
-    // index, a pop-then-repush closure would be exactly the `churn` row
-    // below.
+    // The row is deliberately left non-self-restoring -- with a single
+    // seeded index, a pop-then-repush closure would be exactly the `churn`
+    // row below -- so the name documents what is actually timed: the empty
+    // early return, not a successful pop.
     {
         let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
@@ -131,23 +124,24 @@ fn main() {
     // its own index or one "stolen" from another thread racing on the same
     // shared head) and immediately pushes that exact value back.
     //
-    // Correctness note: an earlier draft of this workload had each thread
-    // cycle through a fixed local counter of indices regardless of what
-    // pop() actually returned. That is unsound under real contention: since
-    // pop() can return ANY thread's live index (not necessarily the one this
-    // thread just pushed), a thread could cycle back to and re-push an index
-    // that is STILL live somewhere else in the shared stack -- a double-push
-    // of a not-yet-retrieved index, which silently corrupts the free-list's
+    // Correctness note: each thread must re-push exactly the value pop()
+    // returned -- never a value from a fixed local counter of indices,
+    // regardless of what pop() actually returned. That shape is unsound
+    // under real contention: pop() can return ANY thread's live index (not
+    // necessarily the one this thread just pushed), so a thread cycling a
+    // fixed local counter could re-push an index that is STILL live
+    // somewhere else in the shared stack -- a double-push of a
+    // not-yet-retrieved index, which silently corrupts the free-list's
     // link structure (documented as an explicit caller contract in push()'s
     // "# Caller contract" section in the crate docs, which also notes the
     // only bound push() itself checks is INDEX_MASK -- not "is this index
     // already live", since a liveness check would cost an O(n) chain walk
-    // per push). Always re-pushing
-    // exactly the value pop() returned (the same pattern contention/churn
-    // below already uses) sidesteps this entirely: every value that is ever
-    // live in the stack was placed there by exactly one push, and every
-    // subsequent operation on it is pop-then-immediate-repush of that same
-    // value, so no index is ever pushed while still reachable elsewhere.
+    // per push). Always re-pushing exactly the value pop() returned (the
+    // same pattern contention/churn below already uses) sidesteps this
+    // entirely: every value that is ever live in the stack was placed there
+    // by exactly one push, and every subsequent operation on it is
+    // pop-then-immediate-repush of that same value, so no index is ever
+    // pushed while still reachable elsewhere.
     let start = Instant::now();
     let mut ops_per_thread = Vec::with_capacity(num_threads);
 
@@ -233,8 +227,9 @@ fn main() {
                 // tracks whether THIS thread's fallback push is still live
                 // in the stack -- pushing it a second time while the first
                 // push hasn't been retrieved yet would double-push a still-
-                // live index (the same free-list-corrupting hazard fixed in
-                // contention/push_pop above), so the fallback only fires
+                // live index (the same free-list-corrupting hazard the
+                // contention/push_pop correctness note above warns about),
+                // so the fallback only fires
                 // once per outstanding push, not unconditionally every time
                 // pop() happens to return None.
                 // Fallback indices live in prefill_count..LINKS_SIZE --

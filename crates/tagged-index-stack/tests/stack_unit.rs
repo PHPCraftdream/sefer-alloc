@@ -34,15 +34,13 @@ fn pack_unpack_round_trip_16() {
 
 #[test]
 fn pack_truncates_an_over_wide_index_never_collides_with_the_tag() {
-    // rust-intel round-closing review (task #772, finding F10): pack()'s
-    // doc says an over-wide index is TRUNCATED (masked with INDEX_MASK
-    // before OR-ing with the tag), not that it "collides" with the tag
-    // bits. No existing test exercised the mask at all — the proptest
-    // properties all draw `index` strictly below INDEX_MASK. This pins
-    // the sharpest case: at width 16, an over-wide index whose low 16
-    // bits equal INDEX_MASK itself truncates to the EMPTY SENTINEL, not
-    // merely "a wrong index" — is_empty() then reads true for a packed
-    // word whose caller-supplied index was never the empty sentinel.
+    // pack()'s doc says an over-wide index is TRUNCATED (masked with
+    // INDEX_MASK before OR-ing with the tag), not that it "collides" with
+    // the tag bits. This pins the sharpest case: at width 16, an
+    // over-wide index whose low 16 bits equal INDEX_MASK itself truncates
+    // to the EMPTY SENTINEL, not merely "a wrong index" — is_empty() then
+    // reads true for a packed word whose caller-supplied index was never
+    // the empty sentinel.
     type T = TaggedIndex<16>;
     let tag = 42u64;
 
@@ -130,23 +128,20 @@ fn width_20_partitions() {
     assert_ne!(T::empty_index() as u32, TAIL);
 }
 
-/// Regression for the F1 finding (2026-08-06 publish-readiness review): at the
-/// maximum allowed width `INDEX_BITS = 32`, `INDEX_MASK` numerically equals
-/// `TAIL` (`u32::MAX`), so the empty sentinel and `TAIL` coincide — and
-/// `push`'s `index < INDEX_MASK` runtime guard therefore already rejects
-/// `index == TAIL` (formerly, before `_CHECK_BITS` was narrowed to `1..=32`,
-/// this same coincidence did NOT hold for `INDEX_BITS` in `33..=63`, where
-/// `INDEX_MASK` exceeds `u32::MAX` and `index == TAIL` silently passed the
-/// guard, corrupting a chain — see the crate's F1 write-up). This test pins
-/// the width-32 boundary behaves correctly now that it is the crate's hard
-/// maximum, not an arbitrary midpoint.
+/// Pins the width-32 boundary: at the maximum allowed width
+/// `INDEX_BITS = 32`, `INDEX_MASK` numerically equals `TAIL` (`u32::MAX`),
+/// so the empty sentinel and `TAIL` coincide — and `push`'s
+/// `index < INDEX_MASK` runtime guard therefore already rejects
+/// `index == TAIL`. That coincidence is only guaranteed because
+/// `_CHECK_BITS` caps `INDEX_BITS` at 32: at a hypothetical width above
+/// 32, `INDEX_MASK` would exceed `u32::MAX` and `index == TAIL` would
+/// silently pass the guard, corrupting a chain.
 ///
 /// The panic assertion pins the guard's own message substring (not just
-/// `is_err()`): the rust-intel audit (§D1, 2026-08-07) found that an
-/// unrelated out-of-bounds panic from `ArrayLinks::store_next` (reached if
-/// the guard were ever deleted or weakened) would ALSO satisfy a bare
-/// `is_err()` check, making the test pass whether or not the guard the F1
-/// regression exists to pin is even present.
+/// `is_err()`): an unrelated out-of-bounds panic from
+/// `ArrayLinks::store_next` (reached if the guard were ever deleted or
+/// weakened) would ALSO satisfy a bare `is_err()` check, making the test
+/// pass whether or not the guard this test exists to pin is even present.
 #[test]
 fn width_32_index_mask_equals_tail_and_is_rejected() {
     type T = TaggedIndex<32>;
@@ -165,8 +160,8 @@ fn width_32_index_mask_equals_tail_and_is_rejected() {
 
     // `index == TAIL` (== INDEX_MASK at this width) must panic — it is
     // indistinguishable from the empty sentinel/end-of-chain otherwise. The
-    // guard is now a full `assert!` (promoted from `debug_assert!`), so this
-    // holds identically in both debug and release builds.
+    // guard is a full `assert!`, not a `debug_assert!`, so this holds
+    // identically in both debug and release builds.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         stack.push(&links, TAIL);
     }));
@@ -181,17 +176,17 @@ fn width_32_index_mask_equals_tail_and_is_rejected() {
         "panic message did not name the push guard's own contract (got: {message:?}) — \
          an unrelated panic (e.g. an ArrayLinks out-of-bounds index) must NOT satisfy \
          this test, since that would mean the guard itself could be deleted without \
-         this test noticing — this is the F1 regression"
+         this test noticing"
     );
 }
 
-// Compile-fail coverage note (F1, `_CHECK_BITS` narrowed to `1..=32`): this
-// crate has no trybuild (or similar compile-fail) test infrastructure wired up,
-// so `INDEX_BITS > 32` failing to compile is NOT pinned by an automated test.
-// Manually verified instead: instantiating `TaggedIndex::<33>` (or any
-// `TaggedIndexStack<N>` with `N > 32`) fails `cargo build` with the
-// `_CHECK_BITS` assertion message ("INDEX_BITS must be in 1..=32 ..."). This is
-// a known, honestly-recorded coverage gap, not a silent omission.
+// Compile-fail coverage note: this crate has no trybuild (or similar
+// compile-fail) test infrastructure wired up, so `INDEX_BITS > 32` failing to
+// compile is NOT pinned by an automated test. Manually verified instead:
+// instantiating `TaggedIndex::<33>` (or any `TaggedIndexStack<N>` with
+// `N > 32`) fails `cargo build` with the `_CHECK_BITS` assertion message
+// ("INDEX_BITS must be in 1..=32 ..."). This is a known coverage gap, not a
+// silent omission.
 
 // ---------------------------------------------------------------------------
 // TaggedIndexStack over ArrayLinks — LIFO order + H-2 single-threaded.

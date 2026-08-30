@@ -1,10 +1,8 @@
 //! loom model-check of the REAL [`TaggedIndexStack`] / [`TaggedIndex`] types.
 //!
-//! Unlike the in-tree shadow model this replaced (`tests/loom_free_slots_aba.rs`
-//! in the extracting allocator, which TRANSCRIBED the protocol into a local copy
-//! because it could not import the real registry code), this suite runs against
-//! the ACTUAL crate code: under `--cfg loom` the crate aliases its atomics to
-//! `loom::sync::atomic`, so `stack.push` / `stack.pop` and the `TaggedIndex`
+//! This suite runs against the ACTUAL crate code, not a transcription of the
+//! protocol into a local copy: under `--cfg loom` the crate aliases its atomics
+//! to `loom::sync::atomic`, so `stack.push` / `stack.pop` and the `TaggedIndex`
 //! packing that loom explores here ARE the code that ships.
 //!
 //! # What loom covers
@@ -21,9 +19,10 @@
 //! (a) In the classic "B pops X then re-pushes X inside A's read→CAS window",
 //!     A's single-shot CAS attempt races against B's repush and may
 //!     legitimately SUCCEED or FAIL depending on scheduling — there is no
-//!     property requiring a specific outcome (a prior version of this list
-//!     claimed A's CAS is unconditionally "FORCED to fail", which is only
-//!     true of the separate, rendezvous-pinned H-2 scenario (d) below).
+//!     property requiring a specific outcome. (A specific outcome is only
+//!     assertable in a rendezvous-pinned scenario such as (d) below, which
+//!     guarantees B's full pop+push completes between A's load and A's CAS,
+//!     so the tag bump always defeats A's stale CAS.)
 //! (b) Regardless of which way (a)'s race resolves, the free-list stays
 //!     loss/duplication-free — the actual property
 //!     `aba_repush_keeps_free_list_conservation` asserts.
@@ -69,8 +68,7 @@ const N: usize = 2;
 /// top, chained to slot 1, chained to TAIL" — i.e. both slots free. Because the
 /// crate's stack is lazy (a fresh stack is empty), we materialise this state by
 /// pushing 1 then 0 through the REAL `push` (which sets links + tag exactly as
-/// production does), leaving a running tag of 2. This is the real-type analogue
-/// of the shadow model's hand-built `new_both_free`.
+/// production does), leaving a running tag of 2.
 fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
     let links = Arc::new(ArrayLinks::<N>::new());
     let stack = Arc::new(TaggedIndexStack::<16>::new());
@@ -245,12 +243,13 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
         // be missing (loss). This mirrors
         // tagged_stack_survives_the_same_resurrection_pattern's oracle above,
         // which the tag defeats under the identical B-does-two-pops-then-one-
-        // push scenario. A prior version of this oracle asserted
-        // `!popped.contains(&1)` directly, which is scheduling-DEPENDENT: it
-        // fires on ANY schedule where A completes cleanly before B's second
-        // pop can race it (a benign, non-corrupting interleaving that loom
-        // visits first), so the genuine ABA interleaving was never reached
-        // before loom aborted model-checking at that first, spurious panic.
+        // push scenario. The oracle is conservation-based rather than
+        // `assert!(!popped.contains(&1))` because the latter is
+        // scheduling-DEPENDENT: it fires on any schedule where A completes
+        // cleanly before B's second pop can race it — a benign,
+        // non-corrupting interleaving loom visits first — so the genuine ABA
+        // interleaving is never reached before loom aborts model-checking at
+        // that spurious panic.
         let mut accounted: Vec<u32> = Vec::new();
         if let Ok(idx) = a_result {
             accounted.push(idx);
@@ -377,10 +376,11 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 // ============================================================================
 // (d) H-2 empty-transition. The FIXED side runs the REAL `stack.pop` (which
 // preserves the running tag on drain). The BUGGY side inlines a pop whose drain
-// branch packs `TaggedIndex::empty()` (tag 0) — the exact pre-fix behaviour —
-// using the crate's own packing primitives. A two-flag rendezvous guarantees
-// B's full pop+push is sandwiched between A's load and A's CAS (see the shadow
-// model's rationale: a free race admits degenerate orderings that false-positive).
+// branch packs `TaggedIndex::empty()` (tag 0) — the exact buggy behaviour this
+// counterfactual exists to expose — using the crate's own packing primitives.
+// A two-flag rendezvous guarantees B's full pop+push is sandwiched between
+// A's load and A's CAS: a free race would admit benign orderings (A completing
+// entirely before B) that false-positive the "stale CAS must fail" assertion.
 // ============================================================================
 
 /// A single-slot stack (slot 0 resting on it) whose running tag is exactly
@@ -623,7 +623,7 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
                 head,
                 new_head,
                 Ordering::Acquire,
-                Ordering::Acquire, // FIXED: was Relaxed, now Acquire
+                Ordering::Acquire, // failure ordering must be Acquire — see the counterfactual below
             );
             if result.is_ok() {
                 // No race — return early, nothing to test.

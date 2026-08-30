@@ -69,8 +69,8 @@
 //! at construction. A caller whose link backing is OS-zeroed memory (a fresh
 //! mmap, a zeroed slot array) therefore never first-touches those pages merely
 //! to set up the free-list — the pages are committed lazily, on first push of
-//! each index. In the extracting allocator this saved a ~16 MiB
-//! bootstrap-commit first-touch. [`ArrayLinks::new`] likewise starts every link
+//! each index, so the avoided cost is a first-touch commit proportional to the
+//! pool size. [`ArrayLinks::new`] likewise starts every link
 //! at `0` (the zero value), matching OS-zeroed backing, rather than eagerly
 //! chaining a full free-list.
 //!
@@ -78,9 +78,9 @@
 //! pushes indices in as they become free. This crate does NOT offer a "start
 //! with `0..N` all pushed" constructor precisely because that would require an
 //! eager link-chaining pass, defeating RAD-1. (A caller that genuinely wants
-//! every index free from the start pushes `0..N` itself, or — as the extracting
-//! allocator does — mints fresh indices via a separate monotonic counter and
-//! only ever pushes RECYCLED ones onto this stack.)
+//! every index free from the start pushes `0..N` itself, or mints fresh
+//! indices via a separate monotonic counter and only ever pushes RECYCLED
+//! ones onto this stack.)
 //!
 //! # Tag-width budget — why 48 bits is a structural non-hazard
 //!

@@ -1,13 +1,11 @@
 //! 48-bit tag WRAP-boundary regression tests for [`TaggedIndex`], pinning the
 //! `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag wrap at `2^48`.
 //!
-//! These are the crate-side successors to the extracting allocator's in-tree
-//! `tests/regression_counter_wrap.rs` (1): they drive the tag to its maximum
-//! (`2^48 - 1`), bump it once so it WRAPS to 0, and assert the packed index
-//! round-trips intact across the wrap and that the empty sentinel is never
-//! confused with a live index. Non-vacuous: on a narrower tag (e.g. a 32-bit
-//! revert) the `2^48 - 1` maximum is unrepresentable, so these values cannot
-//! even be expressed pre-widening.
+//! They drive the tag to its maximum (`2^48 - 1`), bump it once so it WRAPS
+//! to 0, and assert the packed index round-trips intact across the wrap and
+//! that the empty sentinel is never confused with a live index. Non-vacuous:
+//! on a narrower tag (e.g. a 32-bit revert) the `2^48 - 1` maximum is
+//! unrepresentable, so these values cannot even be expressed pre-widening.
 
 #![cfg(not(loom))]
 
