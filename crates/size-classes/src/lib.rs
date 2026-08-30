@@ -104,9 +104,9 @@ pub struct Params<'a> {
     /// are **machine-checked**: a non-`min_block`-multiple entry, an entry
     /// below `min_block` (rejects the degenerate `0` "class"), or a
     /// non-strictly-increasing entry panics identically in `const` evaluation
-    /// (compile error) and at runtime in [`build_table`], which also checks
+    /// (compile error) and at runtime in [`build_table`]. It also checks
     /// disjointness from the geometric run at its own chokepoint (the merged
-    /// table must itself be strictly increasing); [`build_size2class`] keeps
+    /// table must itself be strictly increasing). [`build_size2class`] keeps
     /// the same check as defense-in-depth for a hand-built table that
     /// bypasses [`build_table`] entirely. Typical uses: page-aligned classes,
     /// an exact size the geometric run skips, a feature-gated medium tier.
@@ -160,11 +160,11 @@ impl<'a> Params<'a> {
 /// LARGER LUT than one with more: a realistic scheme (`min_block = 16`,
 /// `growth = (5, 4)`, `geo_count = 40`, nine extras up to 16 KiB; the crate
 /// itself has no defaults) with 49 classes and `max_class = 258752` gives
-/// `L = 16173` (`table` itself is only `N * size_of::<usize>()` = 392 bytes
+/// `L = 16173`. `table` itself is only `N * size_of::<usize>()` = 392 bytes
 /// on a 64-bit target; the LUT dominates -- `table` + `size2class` together
 /// are ~16.18 KiB, and `size_of::<SizeClasses<49, 16173>>()` itself is
 /// ~16.20 KiB on a 64-bit target, the difference being the struct's two
-/// scalar fields plus alignment padding) — but a smaller `min_block` can
+/// scalar fields plus alignment padding. But a smaller `min_block` can
 /// outweigh a smaller class count entirely: `min_block = 8` with just 24
 /// classes (`growth = (3, 2)`, no `extras`) reaches `max_class = 145648` and
 /// `L = 18207`, a LARGER object than the 49-class example above. Concretely,
@@ -555,19 +555,13 @@ pub const fn build_size2class<const N: usize, const L: usize>(
 /// [`class_for`](Self::class_for) rather than picked independently — an
 /// out-of-range `idx` does panic, see [`block_size`](Self::block_size).
 ///
-/// Deliberately NOT `Copy`: an instance embeds both tables (a realistic
-/// scheme is ~16 KiB -- see [`size2class_len`]'s `# Memory cost` for the
-/// breakdown), and `Copy` would give a full-object duplicate a `let a = b;`
-/// -cheap syntax. `Clone` keeps explicit duplication available while forcing
-/// the call site to say so. Intended use is a `static` referenced in place
-/// (a `const` this size re-materializes at every use site, duplicating the
-/// embedded tables); no method needs ownership.
+/// Deliberately not `Copy`: duplicating a realistic scheme is ~16 KiB (see
+/// [`size2class_len`]'s `# Memory cost` for the breakdown), so call
+/// `.clone()` explicitly. Intended use is a `static` referenced in place;
+/// no method needs ownership. (Design rationale: the CHANGELOG.)
 ///
-/// `Debug` is hand-written, not derived: a derive would print both raw
-/// tables (same size as above) on any accidental `{:?}`/`dbg!`, burying the
-/// useful line. This prints the summary a developer actually wants; use
-/// [`table`](Self::table) / [`size2class`](Self::size2class) to inspect the
-/// raw arrays directly.
+/// `Debug` prints a short summary, not the raw tables -- inspect those with
+/// [`table`](Self::table) / [`size2class`](Self::size2class).
 #[derive(Clone)]
 pub struct SizeClasses<const N: usize, const L: usize> {
     // LAYOUT NOTE (default `repr(Rust)`): `class_for`'s fast path hot-loads
@@ -631,11 +625,14 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// obligations); a mismatch panics identically in `const` evaluation
     /// (compile error) and at runtime.
     ///
-    /// Intended for a `static` (or `const`) initializer, where this is
-    /// const-evaluated and free. Nothing stops calling it at *runtime*
-    /// instead: doing so materializes the whole return value -- at least `L`
-    /// bytes, several KiB for a realistic scheme -- by value on the caller's
-    /// stack, which matters on a small-stack `no_std` target.
+    /// Intended placement is a `static`, not a `const`: both const-evaluate
+    /// this for free, but a `const` item re-materializes its value at every
+    /// use site, duplicating the embedded tables, while a `static` is one
+    /// fixed-address copy referenced in place. Nothing stops calling it at
+    /// *runtime* instead of either: doing so materializes the whole return
+    /// value -- at least `L` bytes, several KiB for a realistic scheme -- by
+    /// value on the caller's stack, which matters on a small-stack `no_std`
+    /// target.
     ///
     /// `small_align_max` — the alignment ceiling of the O(1) fast path — is set
     /// to `min_block`: every class size is a multiple of `min_block`, so the

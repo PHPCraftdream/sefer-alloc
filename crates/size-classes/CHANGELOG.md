@@ -109,7 +109,9 @@ before it.
   rejected merely because an intermediate product does not.
 - `SizeClasses` is `Clone` but deliberately **not** `Copy`: an instance
   embeds both tables (~16 KiB for a realistic scheme), so `Copy` would make
-  a full-object duplicate look as cheap as a move. Settled before the first
+  a full-object duplicate look as cheap as a move; omitting it keeps
+  explicit duplication available while forcing the call site to say so
+  (`.clone()`), and no method needs ownership. Settled before the first
   release, since removing `Copy` afterwards would be a breaking change.
 - `SizeClasses` also implements `Debug`, hand-written rather than derived:
   a derive would print both raw tables on any accidental `{:?}`/`dbg!`,
