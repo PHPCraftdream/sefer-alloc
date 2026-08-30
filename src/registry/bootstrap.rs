@@ -534,7 +534,7 @@ mod loom_shim {
                     head,
                     new_head,
                     Ordering::Acquire,
-                    Ordering::Relaxed,
+                    Ordering::Acquire,
                 ) {
                     Ok(_) => return Some(index),
                     Err(actual) => head = actual,
