@@ -18,9 +18,52 @@ use bench_scale_tool::Harness;
 #[path = "../tests/common/mod.rs"]
 mod common;
 use common::{
-    walk_class_for, HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_MAX,
-    SEFER_MIN_BLOCK, SEFER_SC, SEFER_TABLE,
+    HUGE_THRESHOLD, JUMP_A, JUMP_B, JUMP_DENSE, JUMP_MULTI, JUMP_NONE, SEFER_L, SEFER_MAX,
+    SEFER_MIN_BLOCK, SEFER_N, SEFER_SC,
 };
+
+/// Step-by-1 walk over `SEFER_SC` built from the SAME primitives as
+/// `SizeClasses::class_for`'s slow path, for the `jump_vs_walk` bench pair in
+/// `main` (docs/reviews/2026-08-30-094857-size-classes-claude.md P2-2): the
+/// prologue mirrors `class_for`'s line for line (same `need`, same
+/// `(need - 1) >> SHIFT` seed index, same `seed_idx >= L - 1` guard, same
+/// fast-path exit), and the loop body tests divisibility with the same
+/// bitmask (`block & (align - 1) == 0` -- NOT `common::walk_class_for`'s
+/// runtime-divisor `is_multiple_of`), reads through the same fixed-size
+/// arrays (`SEFER_SC.table()`'s `&[usize; N]` / `SEFER_SC.size2class()`'s
+/// `&[u8; L]`, NOT a `&[usize]` slice with runtime bounds checks), and uses
+/// the shift precomputed as a `const` (NOT `trailing_zeros` re-derived per
+/// call). The single structural difference from `class_for` is the loop's
+/// advance -- `i += 1` here vs `class_for`'s round-up-and-reseed jump -- so
+/// the pair isolates jump-ahead vs step-by-1 rather than primitive
+/// differences. (`common::walk_class_for` is deliberately left with its real
+/// division: it is the independent proptest oracle. Same precondition as
+/// `class_for`: `align` must be a power of two.)
+#[inline]
+fn step_by_step_walk(size: usize, align: usize) -> Option<usize> {
+    // `class_for` reads this from its precomputed `min_block_shift` field;
+    // `SEFER_MIN_BLOCK` is a power of two, so `trailing_zeros` const-folds.
+    const SHIFT: u32 = SEFER_MIN_BLOCK.trailing_zeros();
+    let need = if size > align { size } else { align };
+    let seed_idx = (need - 1) >> SHIFT;
+    if seed_idx >= SEFER_L - 1 {
+        return None;
+    }
+    let seed = SEFER_SC.size2class()[seed_idx] as usize;
+    if align <= (1usize << SHIFT) {
+        return Some(seed);
+    }
+    let table = SEFER_SC.table();
+    let mut i = seed;
+    while i < SEFER_N {
+        let block = table[i];
+        if block & (align - 1) == 0 {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
 
 fn main() {
     let mut h = Harness::new("size_classes_bench", env!("CARGO_MANIFEST_DIR"));
@@ -110,37 +153,43 @@ fn main() {
         black_box(result);
     });
 
-    // ── class_for/jump_vs_walk (wall-clock: divisibility-jump vs naive walk) ─
+    // ── class_for/jump_vs_walk (wall-clock: divisibility-jump vs step-by-1) ─
     // The crate claims the slow path's jump is a real optimization over
     // stepping one class at a time, but SEFER's own table is only 49 classes
     // / 392 bytes -- small enough to always be cache-hot, so the win was
     // proven by ITERATION COUNT (fewer loop passes) but never measured by
-    // WALL-CLOCK against the linear walk it replaces. Both rows use JUMP_A,
-    // so the (size, align) input is held constant -- but the two arms are
-    // NOT otherwise apples-to-apples: `walk_class_for` also uses a real
-    // (runtime-divisor) division for its divisibility test where `class_for`
-    // uses a bitmask, indexes a `&[usize]` slice (runtime bounds checks)
-    // where `class_for` indexes a fixed-size array field, and recomputes
-    // `min_block.trailing_zeros()` per call. For JUMP_A specifically the
-    // jump takes 4 iterations and a naive walk ALSO takes 4 (18->19->20->21
-    // is a contiguous run -- the jump skips nothing here), so this pair
-    // mostly measures those primitive differences, not the jump-ahead
-    // itself; treat it as a rough upper bound on the jump's advantage, not
-    // an isolated measurement of it.
+    // WALL-CLOCK against the linear walk it replaces.
+    //
+    // Fixture: JUMP_NONE, the deepest slow-path case (seed class 36, block
+    // 17760): the jump visits 10 of the 13 remaining classes -- indices 37,
+    // 38 and 40 are skipped by the round-up, and that skipping IS the
+    // mechanism under test -- while a step-by-1 walk from the same seed must
+    // visit all 13 (none of the 13 table entries from 17760 up to 258752 is
+    // 16384-divisible); both arms return None. claude publication review
+    // P2-2: this pair originally used JUMP_A, on which the jump and the walk
+    // visit the IDENTICAL set 18 -> 21 (the jump skips nothing there), so
+    // the measured delta reflected only the two functions' incidental
+    // primitive differences -- a runtime-divisor `is_multiple_of`,
+    // `&[usize]` slice bounds checks, per-call `trailing_zeros` -- not the
+    // jump-ahead itself.
+    //
+    // Both halves are fixed here: the fixture moved to JUMP_NONE (where the
+    // jump genuinely skips), and the walk arm moved off
+    // `common::walk_class_for` onto the local `step_by_step_walk` above,
+    // which is built from `class_for`'s own primitives so primitive
+    // differences cannot account for any of the remaining delta.
+    // `common::walk_class_for` itself is untouched -- its real division is
+    // deliberate independence for the proptest oracle. (The `_jump` arm
+    // measures the same call as `slow_path_none` below; it is repeated here
+    // so the pair keeps two arms differing in exactly one thing.)
 
-    h.bench("class_for/jump_vs_walk_a_jump", || {
-        let result = black_box(SEFER_SC.class_for(black_box(JUMP_A.0), black_box(JUMP_A.1)));
+    h.bench("class_for/jump_vs_walk_none_jump", || {
+        let result = black_box(SEFER_SC.class_for(black_box(JUMP_NONE.0), black_box(JUMP_NONE.1)));
         black_box(result);
     });
 
-    h.bench("class_for/jump_vs_walk_a_walk", || {
-        let result = black_box(walk_class_for(
-            &SEFER_TABLE,
-            SEFER_SC.size2class(),
-            SEFER_MIN_BLOCK,
-            black_box(JUMP_A.0),
-            black_box(JUMP_A.1),
-        ));
+    h.bench("class_for/jump_vs_walk_none_walk", || {
+        let result = black_box(step_by_step_walk(black_box(JUMP_NONE.0), black_box(JUMP_NONE.1)));
         black_box(result);
     });
 
