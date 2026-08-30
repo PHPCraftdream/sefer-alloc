@@ -376,6 +376,20 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// considered defence-in-depth for an openly-implementable trait, not
 /// naivety.
 ///
+/// This ordering contract speaks to ONE backing used consistently — it is
+/// what makes a [`load_next`](Self::load_next) observe the
+/// [`store_next`](Self::store_next) the stack performed, *given* that every
+/// call reaches the same backing. It cannot say anything about a
+/// [`TaggedIndexStack`] being handed a DIFFERENT backing instance (even of
+/// the identical type) between calls: nothing binds the stack's head to the
+/// backing a push wrote, so a fresh/different backing was never the target
+/// of any [`store_next`](Self::store_next) the stack performed at all, and
+/// coherence across the swap is broken trivially. That swap is a
+/// caller-contract violation this crate cannot detect — see
+/// [`push`](TaggedIndexStack::push)'s `# Caller contract` section ("ONE
+/// `Links` backing for the whole life of a non-empty stack") for the full
+/// rule and its concrete failure mode.
+///
 /// # Stability
 ///
 /// This trait is intentionally OPEN to external implementation — slot-resident
@@ -567,6 +581,55 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// two different callers, which in the parent allocator means two owners
     /// of one slot.
     ///
+    /// ## Second rule, same contract: ONE `Links` backing for the whole life
+    /// of a non-empty stack
+    ///
+    /// [`push`](Self::push) and [`pop`](Self::pop) are independently generic
+    /// over `&L` on every call — nothing in the signatures binds the head to
+    /// the specific backing a push wrote. The caller must therefore uphold
+    /// what the type system cannot express: the SAME logical [`Links`]
+    /// backing must serve every push and pop across a [`TaggedIndexStack`]
+    /// instance's entire non-empty lifetime.
+    ///
+    /// 1. **One backing for the whole life of a non-empty stack.** Swapping
+    ///    to a DIFFERENT backing instance (even of the identical type and
+    ///    width) while the stack holds live indices is undefined WITHIN
+    ///    this crate's safe-Rust guarantees: memory-safe (no unsafe code
+    ///    runs), but logically corrupting.
+    /// 2. **Stable one-to-one index↔cell mapping.** Every valid index must
+    ///    map to the SAME link cell for the backing's whole lifetime.
+    /// 3. **Coherence of `store_next`/`load_next`.** A
+    ///    [`load_next`](Links::load_next) of index `i` must observe the
+    ///    most recent [`store_next`](Links::store_next) of `(i, _)` this
+    ///    crate itself performed. The [`Links`] trait's Acquire/Release
+    ///    ordering contract (documented on the trait) already guarantees
+    ///    THIS for a single, stable backing — but says nothing about using
+    ///    two DIFFERENT backings, which breaks it trivially, since a
+    ///    fresh/different backing was never the target of any `store_next`
+    ///    this crate performed at all.
+    /// 4. **`load_next` must return only [`TAIL`] or a currently-valid
+    ///    index** for the backing in use. A backing that returns an
+    ///    arbitrary, stale, or foreign value can corrupt the free-list
+    ///    with no adversarial intent at all: a fresh zero-initialized
+    ///    [`ArrayLinks`] "coincidentally" returns `0` for every index, and
+    ///    if that happens to equal the live head's own index,
+    ///    [`pop`](Self::pop)'s compare-exchange `current -> current`
+    ///    succeeds trivially.
+    /// 5. **Backing lifetime.** The backing and its cells must remain alive
+    ///    and keep their identity for as long as the stack's head can
+    ///    reference them — in practice, for the stack's own lifetime.
+    ///
+    /// Violating this contract is memory-safe (no unsafe code runs) but
+    /// logically catastrophic: `pop` against an unrelated backing can read a
+    /// value that happens to equal the current head's own index, so its CAS
+    /// succeeds as a no-op (`current -> current`) and returns the SAME index
+    /// again and again — an infinite double-issue of one index — which in
+    /// the parent allocator means handing the same slot to two different
+    /// owners. The crate cannot detect a backing swap. This rule is caller
+    /// discipline, unenforceable at compile time AND at runtime — unlike the
+    /// `index < INDEX_MASK` bound this very method's `assert!` DOES enforce
+    /// on every call (see `# Panics`).
+    ///
     /// # Panics
     ///
     /// Panics if `index >= INDEX_MASK` (the empty sentinel is reserved), in
@@ -653,6 +716,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// source [`push`](Self::push)'s `# Panics` section describes; nothing
     /// here re-validates the index beyond what `push` guaranteed when the
     /// index was admitted.
+    ///
+    /// The `&L` passed here is subject to the same caller contract as
+    /// [`push`](Self::push)'s — and `pop` is equally exposed to a backing
+    /// swap (the corrupting call in that failure mode is typically a `pop`
+    /// itself): see [`push`](Self::push)'s `# Caller contract` section,
+    /// "ONE `Links` backing for the whole life of a non-empty stack".
     #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
         let mut head = self.head.load(Ordering::Acquire);
