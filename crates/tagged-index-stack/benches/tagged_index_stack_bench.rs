@@ -28,8 +28,23 @@ fn main() {
 
     // ── Single-threaded workloads ──────────────────────────────────────────────
 
-    // push_pop/single_thread: push then pop on the same index.
-    // Measures the CAS cost without real contention.
+    // push_pop/single_thread: push onto an EMPTY stack, then pop back to
+    // empty. Each iteration measures both tagged-CAS transitions: the
+    // empty→non-empty push (the CAS installs the index over the empty
+    // sentinel, taking push's `next_link = TAIL` branch) and the
+    // drain-to-empty pop (taking pop's last-element `next == TAIL`
+    // branch, which preserves the running ABA tag across the transition --
+    // the H-2 path documented in the crate docs).
+    //
+    // This row absorbed the former `push/empty_stack` row (2026-08-30
+    // external review, P2-3). That row only pushed: iteration 1 measured
+    // the real empty transition, but every later iteration re-pushed
+    // index 1 while it was still the live head -- a violation of
+    // push()'s documented caller contract ("index must NOT already be
+    // reachable from the stack") that also wrote a self-referential link
+    // (link[1] = 1). Fixing that row in place (push, then pop back to
+    // empty, inside the closure) would have measured exactly what this row
+    // measures, so the duplicate was deleted rather than kept.
     {
         let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
@@ -41,25 +56,27 @@ fn main() {
         });
     }
 
-    // push/empty_stack: push onto an empty stack.
-    // Measures the full push path including the empty→non-empty transition.
-    {
-        let links = ArrayLinks::<LINKS_SIZE>::new();
-        let stack = Stack::new();
-
-        h.bench("push/empty_stack", move || {
-            stack.push(&links, black_box(1u32));
-        });
-    }
-
-    // pop/nonempty: pop from a nonempty stack.
-    // Measures the pop path with guaranteed success (no None case).
+    // pop/empty_fast_path: pop() on a drained stack -- the empty early
+    // return: one Acquire load of the head word plus the is_empty mask
+    // check; no link read, no CAS. The single pre-seeded index is popped
+    // by the very first closure call, which the harness always runs inside
+    // its untimed warm-up (both calibrate and fixed-run modes warm up
+    // before timing), so the timed region is purely the empty fast path:
+    // the stack drains during warm-up and stays empty from then on.
+    //
+    // Formerly mislabeled `pop/nonempty` ("guaranteed success (no None
+    // case)") -- only the first iteration was ever a real pop, and every
+    // iteration after it measured this empty early return (2026-08-30
+    // external review, P2-2). The row is relabeled to match what the code
+    // measures rather than made self-restoring: with a single seeded
+    // index, a pop-then-repush closure would be exactly the `churn` row
+    // below.
     {
         let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
         stack.push(&links, 1u32);
 
-        h.bench("pop/nonempty", move || {
+        h.bench("pop/empty_fast_path", move || {
             black_box(stack.pop(&links));
         });
     }
