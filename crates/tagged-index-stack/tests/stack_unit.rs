@@ -275,7 +275,18 @@ fn width_16_push_rejects_index_mask_itself() {
 // instantiating `TaggedIndex::<17>` (or any `TaggedIndexStack<N>` with
 // `N > 16`) fails `cargo build` with the `_CHECK_BITS` assertion message
 // ("INDEX_BITS must be in 1..=16 ..."). This is a known coverage gap, not a
-// silent omission.
+// silent omission -- and a deliberate choice, not an oversight (Sol-codex
+// review run 2, P3-5, evaluated adding `trybuild` for exactly this):
+// `compile_fail` doctests are unavailable in this repo (banned outright, see
+// CLAUDE.md's "No doctests" rule), and `trybuild` itself is a new dev-only
+// dependency this workspace has already declined twice for the identical
+// single-assertion tradeoff -- `crates/sefer-region/tests/handle_static_asserts.rs`
+// and `crates/aligned-vmem/tests/smoke.rs` both cite the same "would need a
+// `compile_fail` doctest or a `trybuild` dependency" reasoning and leave
+// their own const-assertion coverage manual too. Revisit if `_CHECK_BITS`'s
+// const-evaluation routing is ever refactored, per the review's own
+// suggestion -- a real risk of silent breakage would tip the cost/benefit
+// differently than it does today.
 
 // ---------------------------------------------------------------------------
 // TaggedIndexStack over ArrayLinks — LIFO order + H-2 single-threaded.
