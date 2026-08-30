@@ -1,7 +1,16 @@
 //! `tagged-index-stack` — a lock-free LIFO free-list of small **indices** (a
 //! *slot recycler*) whose head is a single atomic word packing an
-//! `(index | tag)` pair, where a monotonic **tag** in the high bits defeats the
-//! ABA problem. Allocation-free, `no_std`, `#![forbid(unsafe_code)]`.
+//! `(index | tag)` pair, where a wrapping generation **tag** in the high bits
+//! structurally defeats the ABA problem for every permitted `INDEX_BITS`.
+//! That is a derived claim, not a slogan: the enforced `1..=16` cap on
+//! `INDEX_BITS` guarantees every legal configuration a tag of at least 48
+//! bits, and the "Tag-width budget" section below derives, from
+//! cache-coherence throughput on the single head cache line, that such a tag
+//! cannot repeat within any physically plausible observation window. (The
+//! tag is not strictly monotonic — a strictly monotonic counter never
+//! repeats a value, and this one wraps — it just never repeats on a
+//! timescale the coherence protocol can deliver.) Allocation-free, `no_std`,
+//! `#![forbid(unsafe_code)]`.
 //!
 //! This is the canonical "recycle a small integer id" primitive that slab
 //! allocators, object pools, entity-component stores, and connection tables all
@@ -14,7 +23,7 @@
 //!
 //! The stack head is one `AtomicU64` holding a [`TaggedIndex`]`<INDEX_BITS>`:
 //! the low `INDEX_BITS` bits carry a slot index, the high `64 - INDEX_BITS` bits
-//! carry a monotonic **tag** bumped on every successful PUSH. The index half's
+//! carry a wrapping generation **tag** bumped on every successful PUSH. The
 //! all-ones value (`(1 << INDEX_BITS) - 1`, the [`empty_index`](TaggedIndex::empty_index))
 //! is reserved as the "stack empty" sentinel, so the usable index range is
 //! `0 .. (1 << INDEX_BITS) - 1`.
@@ -82,20 +91,48 @@
 //! indices via a separate monotonic counter and only ever pushes RECYCLED
 //! ones onto this stack.)
 //!
-//! # Tag-width budget — why 48 bits is a structural non-hazard
+//! # Tag-width budget — the wrap-time bound behind the ABA guarantee
 //!
-//! With `INDEX_BITS = 16` (holds 65535 indices, ample for a 4096-slot pool with
-//! the empty sentinel `0xFFFF` reserved above the cap), the tag gets the other
-//! **48 bits**, wrapping at `2^48 ≈ 2.8 × 10^14`. The only way a tag wrap
-//! reopens ABA is if a victim thread is parked across an ENTIRE wrap's worth of
-//! pushes on a SINGLE slot. At a sustained (already unrealistic) 100k pushes/sec
-//! on one slot with the victim frozen the whole time, a wrap-around ABA would
-//! take `2^48 / 100_000 / (3600 · 24 · 365) ≈ 89 years` — effectively
-//! unreachable in any process lifetime. (A 32-bit tag, by contrast, gives only
-//! `2^32 / 100_000 / 3600 ≈ 12 hours` of frozen-victim churn at the SAME
-//! 100k pushes/sec rate — a probabilistic hazard, not a structural
-//! non-hazard.) Widening the index half shrinks this budget; a caller
-//! choosing `INDEX_BITS` trades index range against tag headroom.
+//! A tag defends against ABA only while it does not recur: a stale CAS can
+//! succeed again only if the head word returns to the exact `(index, tag)`
+//! pair the victim is holding, which takes a FULL tag wrap — `2^TAG_BITS`
+//! successful pushes anywhere in the stack, the last of them re-pushing the
+//! victim's own index. The time a wrap takes is
+//!
+//! ```text
+//! wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
+//! ```
+//!
+//! and the rate term is bounded by HARDWARE, not by the workload. The tag is
+//! GLOBAL to the whole stack, not per-slot: every successful push — of any
+//! index, from any thread — is a compare-exchange (a locked RMW) on the ONE
+//! `AtomicU64` head word, so the rate in the formula is the stack's AGGREGATE
+//! successful-push rate across ALL slots, and every one of those pushes
+//! serializes on a single cache line whose exclusive ownership must transfer
+//! between cores. That transfer cost caps the aggregate rate at roughly
+//! `10^8` to `10^9` RMWs/sec no matter how many threads contend — more
+//! contention only makes the line's ownership transfers slower, never
+//! faster. (This crate's own benchmarks peak around `10^6` to `10^7` ops/sec,
+//! far under that ceiling.)
+//!
+//! Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling:
+//! at `INDEX_BITS = 16` — the widest permitted index half, 65535 usable
+//! indices with the `0xFFFF` empty sentinel reserved above them — the tag
+//! gets the other **48 bits**, wrapping at `2^48 ≈ 2.8 × 10^14`, and a wrap
+//! takes `2^48 / (2 × 10^8) ≈ 16` days; even at the optimistic top of the
+//! hardware range it is still `2^48 / 10^9 ≈ 3.3` days. And a wrap is only
+//! the PRECONDITION for a collision: cashing one in further requires that
+//! the head line stay saturated at the coherence ceiling continuously for
+//! the entire span AND that one specific victim thread sit parked,
+//! motionless, holding its stale snapshot the whole time. This bound is why
+//! `INDEX_BITS > 16` is REJECTED at compile time
+//! (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged: at
+//! `INDEX_BITS = 24` the tag would be 40 bits, `2^40 / (2 × 10^8) ≈ 92`
+//! minutes at the same ceiling — a long debugger pause or OS scheduling
+//! delay defeats that — and the pre-cap `INDEX_BITS = 32` maximum gave only
+//! `2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling
+//! jitter. Within the permitted range a caller still trades index range
+//! against tag headroom, but never below the 48-bit floor.
 //!
 //! # loom — the tests run against THIS type
 //!
@@ -166,8 +203,8 @@ pub const TAIL: u32 = u32::MAX;
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
 ///
-/// The low `INDEX_BITS` bits carry a slot index; the high `64 - INDEX_BITS` bits
-/// carry a monotonic ABA tag. The all-ones index value
+/// The low `INDEX_BITS` bits carry a slot index; the high `64 - INDEX_BITS`
+/// bits carry a wrapping generation ABA tag. The all-ones index value
 /// ([`empty_index`](Self::empty_index)) is reserved as the empty-stack sentinel,
 /// so valid indices are `0 .. (1 << INDEX_BITS) - 1`.
 ///
@@ -186,7 +223,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Widths above 16 are rejected rather than merely discouraged: the 16 cap
     /// guarantees every legal configuration at least a 48-bit ABA tag, the
     /// cache-line-throughput-derived floor below which a tag wrap stops being
-    /// structurally implausible (see the crate docs' "Tag-width budget"
+    /// physically implausible (see the crate docs' "Tag-width budget"
     /// section for the full derivation). The `u32` bound is respected a
     /// fortiori: `push` takes a `u32` index, so `INDEX_BITS > 32` could never
     /// buy reachable index range anyway — it only shrinks the tag budget — and
@@ -416,8 +453,10 @@ impl<const N: usize> Links for ArrayLinks<N> {
     }
 }
 
-/// A lock-free LIFO free-list of indices with an ABA-defeating tag packed into
-/// the head word. Const-generic over the index width `INDEX_BITS`.
+/// A lock-free LIFO free-list of indices with a wrapping generation tag packed
+/// into the head word, structurally defeating ABA at every permitted
+/// `INDEX_BITS` (the crate-root docs' "Tag-width budget" section carries the
+/// wrap-time derivation). Const-generic over the index width `INDEX_BITS`.
 ///
 /// The stack owns ONLY the head (`AtomicU64`); the per-index next links live in
 /// caller-supplied [`Links`] storage passed to [`push`](Self::push) /
@@ -594,9 +633,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     ///
     /// Loads the tagged head, reads its next link, then CASes the head to that
     /// link with the SAME tag (a pop never bumps the tag). The tag in the high
-    /// bits defeats ABA: if a concurrent thread pops-then-repushes the SAME
-    /// index between our load and our CAS, the tag advances and our CAS fails,
-    /// forcing a retry.
+    /// bits is the ABA defence: if a concurrent thread pops-then-repushes the
+    /// SAME index between our load and our CAS, the tag advances and our CAS
+    /// fails, forcing a retry. (The only residual hazard is a full tag wrap
+    /// inside that window, which the wrap-time bound in the crate docs'
+    /// "Tag-width budget" section places outside any physically plausible
+    /// observation window at every permitted width.)
     ///
     /// **H-2 empty transition:** when the popped element is the last one
     /// (`next == TAIL`), the new head packs the empty sentinel's index with the
