@@ -28,14 +28,19 @@ before it.
   make the answer stale the instant it returns, in either direction, so it
   is for diagnostics/monitoring, not correctness decisions.
 - **`TaggedIndex<INDEX_BITS>`** — the packed head word: low `INDEX_BITS` bits
-  carry a slot index, the high `64 - INDEX_BITS` bits a monotonic **tag**
-  bumped on every successful push, which is what defeats the ABA problem (a
-  pop-then-re-push of the same index bumps the tag, so a parked CAS on the
-  stale `(index, tag)` pair fails and retries). `INDEX_BITS` is a const
-  generic (capped at 32 so the packed index can never collide with the `TAIL`
-  link sentinel); helpers `pack`/`unpack`/`empty`/`empty_index`/`is_empty`,
-  all `const fn`. The index half's all-ones value is the reserved
-  "stack empty" sentinel.
+  carry a slot index, the high `64 - INDEX_BITS` bits a wrapping generation
+  **tag** bumped on every successful push, which is what structurally defeats
+  the ABA problem for every permitted width (a pop-then-re-push of the same
+  index bumps the tag, so a parked CAS on the stale `(index, tag)` pair fails
+  and retries). `INDEX_BITS` is a const generic capped at `1..=16` at compile
+  time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged — the cap
+  keeps both halves non-empty, every valid index inside the `u32` that `push`
+  actually takes, every legal configuration guaranteed a tag of at least
+  48 bits, and `INDEX_MASK` below the `TAIL` link sentinel (`u32::MAX`) at
+  every legal width (the historical `INDEX_MASK == TAIL` coincidence at the
+  former width-32 cap is now structurally impossible); helpers
+  `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn`. The index
+  half's all-ones value is the reserved "stack empty" sentinel.
 - **ABA-defeating empty transition (the H-2 rule)** — when a `pop` drains the
   last element, the empty sentinel is packed with the **running tag** the
   draining pop observed, not reset to `0`: a tag reset would reopen the ABA
@@ -43,12 +48,27 @@ before it.
   counterfactual `counterfactual_empty_transition_tag_reset_lets_aba_recur`
   proves this is load-bearing — with the tag reset restored, loom finds the
   collision.
-- **Tag-width budget analysis** — with `INDEX_BITS = 16` the tag gets 48 bits,
-  so a wrap that could reopen ABA requires a victim parked across ~2^48
-  pushes on a single slot: at a sustained 100k pushes/sec that is ~89 years, a
-  structural non-hazard (a 32-bit tag gives only ~12 hours under the same
-  assumptions). Documented so a consumer choosing `INDEX_BITS` knows the
-  trade.
+- **Tag-width budget analysis** — the enforced `INDEX_BITS = 1..=16` cap
+  guarantees every legal configuration a tag of at least 48 bits. The tag is
+  GLOBAL to the whole stack, not per-slot: every successful push — of any
+  index, from any thread — is a compare-exchange (a locked RMW) on the ONE
+  `AtomicU64` head word, serializing on a single cache line whose exclusive
+  ownership must transfer between cores, so a wrap takes
+  `wrap_time = 2^TAG_BITS / aggregate_successful_push_rate` with the rate
+  term bounded by hardware, not workload: cache-coherence transfer cost caps
+  the aggregate rate at roughly `10^8` to `10^9` RMWs/sec no matter how many
+  threads contend. At a generous `2 × 10^8` successful pushes/sec ceiling, a
+  48-bit tag wraps at `2^48 ≈ 2.8 × 10^14` — a wrap every `~16` days
+  (`~3.3` days even at `10^9`/sec) — and a wrap is only the PRECONDITION for
+  a collision, which further requires the head line saturated at that
+  ceiling continuously for the entire span AND one specific victim thread
+  parked motionless, holding its stale snapshot, the whole time. Widths
+  above 16 are rejected at compile time (`TaggedIndex::_CHECK_BITS`) rather
+  than merely discouraged: at `INDEX_BITS = 24` the tag would be 40 bits
+  (`2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling) and the pre-cap
+  `INDEX_BITS = 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21` seconds,
+  within reach of ordinary scheduling jitter. Documented so a consumer
+  choosing `INDEX_BITS` knows the trade.
 - **Caller-owned links — `Links` trait** — the stack stores only the HEAD;
   each index's `next` link lives in caller storage (`load_next` /
   `store_next`), so a production allocator keeps links **slot-resident** (an

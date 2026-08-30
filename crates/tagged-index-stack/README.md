@@ -1,8 +1,16 @@
 # tagged-index-stack
 
 A lock-free LIFO free-list of small **indices** — a *slot recycler* — whose head
-is a single atomic word packing an `(index | tag)` pair, where a monotonic
-**tag** in the high bits defeats the ABA problem. Allocation-free, `no_std`,
+is a single atomic word packing an `(index | tag)` pair, where a wrapping
+generation **tag** in the high bits structurally defeats the ABA problem for
+every permitted `INDEX_BITS`. That is a derived claim, not a slogan: the
+enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
+tag of at least 48 bits, and the "Tag-width budget" section below derives,
+from cache-coherence throughput on the single head cache line, that such a tag
+cannot repeat within any physically plausible observation window. (The tag is
+not strictly monotonic — a strictly monotonic counter never repeats a value,
+and this one wraps — it just never repeats on a timescale the coherence
+protocol can deliver.) Allocation-free, `no_std`,
 `#![forbid(unsafe_code)]`.
 
 This is the canonical "recycle a small integer id" primitive that slab
@@ -15,10 +23,10 @@ loom proofs run against the real type**.
 
 The stack head is one `AtomicU64` holding a `TaggedIndex<INDEX_BITS>`: the low
 `INDEX_BITS` bits carry a slot index, the high `64 - INDEX_BITS` bits carry a
-monotonic tag bumped on every successful push. The index half's all-ones value
-is the reserved "stack empty" sentinel. The classic ABA scenario (A reads
-`head = X`; B pops X then re-pushes X) is defeated because B's re-push bumps the
-tag, so A's CAS on `(X, old_tag)` fails and retries.
+wrapping generation tag bumped on every successful push. The index half's
+all-ones value is the reserved "stack empty" sentinel. The classic ABA scenario
+(A reads `head = X`; B pops X then re-pushes X) is defeated because B's re-push
+bumps the tag, so A's CAS on `(X, old_tag)` fails and retries.
 
 ## Slot-resident OR owned links
 
@@ -53,12 +61,57 @@ provides an owned `[AtomicU32; N]` backing.
 
 ## Tag-width budget
 
-With `INDEX_BITS = 16` the tag gets 48 bits, wrapping at `2^48 ≈ 2.8 × 10^14`. A
-wrap only reopens ABA if a victim is parked across an entire wrap's worth of
-pushes on one slot: at an unrealistic 100k pushes/sec that is **~89 years** —
-a structural non-hazard. A 32-bit tag, by contrast, gives only **~12 hours**
-of frozen-victim churn at the SAME 100k pushes/sec rate (probabilistic).
-Wider indices shrink this budget.
+A tag defends against ABA only while it does not recur: a stale CAS can succeed
+again only if the head word returns to the exact `(index, tag)` pair the victim
+is holding, which takes a FULL tag wrap — `2^TAG_BITS` successful pushes
+anywhere in the stack, the last of them re-pushing the victim's own index. The
+time a wrap takes is
+
+```text
+wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
+```
+
+and the rate term is bounded by HARDWARE, not by the workload. The tag is
+GLOBAL to the whole stack, not per-slot: every successful push — of any index,
+from any thread — is a compare-exchange (a locked RMW) on the ONE `AtomicU64`
+head word, so the rate in the formula is the stack's AGGREGATE successful-push
+rate across ALL slots, and every one of those pushes serializes on a single
+cache line whose exclusive ownership must transfer between cores. That
+transfer cost caps the aggregate rate at roughly `10^8` to `10^9` RMWs/sec no
+matter how many threads contend — more contention only makes the line's
+ownership transfers slower, never faster. (This crate's own benchmarks peak
+around `10^6` to `10^7` ops/sec, far under that ceiling.)
+
+Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling: the
+enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
+tag of at least **48 bits** — at the widest permitted `INDEX_BITS = 16`
+(65535 usable indices with the `0xFFFF` empty sentinel reserved above them),
+the tag wraps at `2^48 ≈ 2.8 × 10^14` and a wrap takes
+`2^48 / (2 × 10^8) ≈ 16` days; even at the optimistic top of the hardware
+range it is still `2^48 / 10^9 ≈ 3.3` days. And a wrap is only the
+PRECONDITION for a collision: cashing one in further requires that the head
+line stay saturated at the coherence ceiling continuously for the entire span
+AND that one specific victim thread sit parked, motionless, holding its stale
+snapshot the whole time. This bound is why `INDEX_BITS > 16` is REJECTED at
+compile time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged: at
+`INDEX_BITS = 24` the tag would be 40 bits, `2^40 / (2 × 10^8) ≈ 92` minutes
+at the same ceiling — a long debugger pause or OS scheduling delay defeats
+that — and the pre-cap `INDEX_BITS = 32` maximum gave only
+`2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling jitter.
+Within the permitted range a caller still trades index range against tag
+headroom, but never below the 48-bit floor.
+
+### Why the default is not a wider packed word (128-bit CAS)
+
+A wider packed word — a 128-bit CAS, e.g. via `portable-atomic` or a nightly
+intrinsic — was considered and explicitly rejected for this crate's default
+primitive. It would drop loom's coverage of the real type (`loom` has no
+`AtomicU128`), add an unsafe dependency to a crate that is currently
+`#![forbid(unsafe_code)]`, and likely turn `pop`'s currently read-only head
+observation into an RMW on targets without a guaranteed native 128-bit CAS
+(`cmpxchg16b` is not in the x86-64 baseline). A genuine future need for more
+than 65535 indices in one pool would be better served by a separate, explicitly
+opt-in type gated behind a feature flag — not by changing this default.
 
 ## Portability limit — requires 64-bit atomics
 
