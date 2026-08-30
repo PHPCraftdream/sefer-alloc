@@ -60,7 +60,7 @@
 //! static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 //! ```
 //!
-//! (Runnable form with concrete values in the crate's `README.md`.)
+//! (Runnable form with concrete values in `crates/size-classes/README.md`.)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -73,7 +73,15 @@
 ///
 /// `#[non_exhaustive]`, so a future policy field is a semver-minor addition
 /// rather than a breaking one. Construct with [`Params::new`] — a `const fn`,
-/// since `const` context has no functional-record-update escape hatch.
+/// since downstream `#[non_exhaustive]` rejects struct-literal construction
+/// (functional-record-update included), leaving `new` as the only
+/// construction path, and `const` context needs that path callable. The
+/// non-breaking half rests on the fields being `pub`, not on `new`'s
+/// parameter list: a future `pub` field would extend the struct but not
+/// `new`'s positional signature, so existing `Params::new(..)` call sites
+/// keep compiling and a consumer opts in with `let mut p = Params::new(..);
+/// p.new_field = value;` — post-construction assignment to a `pub` field,
+/// which works outside this crate and in `const` context too.
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct Params<'a> {
@@ -163,8 +171,8 @@ impl<'a> Params<'a> {
 /// for that same 49-class example the sparsity this scaling implies is
 /// large: buckets `888..=16172` — 15285 of the 16173 total, 94.5% — all
 /// resolve to just the 14 largest classes (indices `35..=48`), because
-/// above `~14 KiB` the geometric spacing widens to `~1.25×` while the LUT's
-/// own resolution stays a flat `min_block`.
+/// class sizes grow geometrically while the LUT's own resolution stays a
+/// flat `min_block`.
 ///
 /// # Panics
 ///
@@ -236,9 +244,8 @@ pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
 /// boundary scales with `usize::BITS`). At the top of that range (roughly
 /// the last half-dozen steps -- the intermediate `cur * num` product first
 /// exceeds `usize` only once `cur > usize::MAX / num`) is exactly the
-/// widened-arithmetic case this crate's `CHANGELOG.md` describes: the next
-/// class fits even though the intermediate `cur * num` product does not fit
-/// `usize`.
+/// widened-arithmetic case: the next class fits even though the
+/// intermediate `cur * num` product does not fit `usize`.
 #[must_use]
 pub const fn build_table<const N: usize>(params: Params) -> [usize; N] {
     let min_block = params.min_block;
@@ -881,9 +888,10 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         // contract). Walk forward, JUMPING over non-divisible classes via the
         // lookup rather than stepping one class at a time.
         //
-        // Termination: `next_mult > block` ⟹ the looked-up class index is
-        // strictly greater than `i` (the table is strictly increasing), so `i`
-        // advances every iteration.
+        // Termination: the smallest multiple of `align` strictly greater
+        // than `block` is itself `> block`, so the looked-up class index is
+        // strictly greater than `i` (the table is strictly increasing), so
+        // `i` advances every iteration.
         let mut i = seed;
         while i < N {
             let block = self.table[i];

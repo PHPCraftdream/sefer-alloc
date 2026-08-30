@@ -32,8 +32,8 @@ before it.
   monotone-pointer technique (`O(buckets + classes)` const-eval), with a
   compile-time pin that every class INDEX fits a `u8` (up to 256 classes,
   indices `0..=255`), and a machine-checked global-monotonicity/disjointness
-  pass over the merged table — this stays in place as defense-in-depth for a
-  table a caller assembles by hand rather than through `build_table`.
+  pass over the supplied `table` — this stays in place as defense-in-depth
+  for a table a caller assembles by hand rather than through `build_table`.
 - **`size2class_len(max_class, min_block)`** — the `const fn` a consumer uses
   to pin the lookup length `L` (`max_class / min_block + 1`) as a `const`
   expression; asserts `min_block` is a power of two like its siblings, and
