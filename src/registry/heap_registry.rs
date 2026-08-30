@@ -560,8 +560,9 @@ impl Drop for ConflictRollback {
 ///
 /// The crate's `TAIL` sentinel (`u32::MAX`) is numerically identical to
 /// [`NEXT_FREE_TAIL`], so a slot link written by `push` reads back as the
-/// familiar tail sentinel; the `debug_assert` below pins that equivalence so a
-/// future divergence fails loudly rather than silently corrupting a chain.
+/// familiar tail sentinel; the compile-time `const` assert below pins that
+/// equivalence so a future divergence fails loudly at compile time (in every
+/// build profile) rather than silently corrupting a chain.
 struct RegistryLinks<'a> {
     reg: &'a Registry,
 }

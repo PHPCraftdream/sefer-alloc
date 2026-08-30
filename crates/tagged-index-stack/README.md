@@ -79,22 +79,17 @@ model-checks the REAL `TaggedIndexStack` / `TaggedIndex` code, with
 and a Relaxed-CAS-failure-ordering regression) proving the harness is
 non-vacuous:
 
-```text
+```sh
 RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba
 ```
 
-## Test-only diagnostic surface
+## Notes
 
-`TaggedIndexStack::raw_head` is `pub` (so this crate's own `tests/` — an
-external crate from the library's own perspective — can reach it) but
-`#[doc(hidden)]`: it is NOT a stable, documented part of the public API,
-carries no semver guarantee, and is not exercised by any production caller.
-It exists solely so this crate's own loom/unit tests can inspect the raw
-packed head word. Do not depend on it from outside this crate.
+`TaggedIndexStack::raw_head` is a `#[doc(hidden)]` test-only probe, not part of the stable public API — do not depend on it.
 
 ## Example
 
-```text
+```rust
 use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
 
 let links = ArrayLinks::<1024>::new();

@@ -1,8 +1,9 @@
 //! Property-based round-trip tests for `TaggedIndex::pack`/`unpack`, covering
 //! several widths (including the degenerate `INDEX_BITS = 1`) with randomly
 //! generated `(index, tag)` pairs — complementing `stack_unit.rs`'s
-//! `pack_unpack_round_trip_16` test, which only exercises hand-picked literals
-//! at widths 16/20/32.
+//! hand-picked-literal tests: `pack_unpack_round_trip_16` (width 16 only),
+//! `width_20_partitions` (width 20), and
+//! `width_32_index_mask_equals_tail_and_is_rejected` (width 32).
 //!
 //! Per this repo's fast-proptest convention (CLAUDE.md: "modest number of
 //! cases by default (around 64) — this is a smoke-check for conformance, not

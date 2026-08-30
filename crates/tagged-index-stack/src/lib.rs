@@ -205,7 +205,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
          widths above 32 buy no reachable index range and are rejected)"
     );
 
-    /// Bit-mask for the low [`INDEX_BITS`](Self) (the index half), e.g. `0xFFFF`
+    /// Bit-mask for the low `INDEX_BITS` (the index half), e.g. `0xFFFF`
     /// for `INDEX_BITS = 16`. Also the [`empty_index`](Self::empty_index) value.
     ///
     /// Forces `_CHECK_BITS` to evaluate here too (not just
@@ -235,10 +235,16 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// The sharpest case of this: if the truncated low bits happen to equal
     /// `INDEX_MASK` itself, the result reads as the EMPTY sentinel via
     /// [`is_empty`](Self::is_empty), not merely as some other live index.
-    /// The caller — the stack — guarantees the `< 2^INDEX_BITS` precondition by
-    /// construction, since indices come from
-    /// [`push`](TaggedIndexStack::push)'s `< INDEX_MASK` contract, which this
-    /// truncation can never be reached through.
+    /// Through the stack's own API this truncation is unreachable by
+    /// construction: indices only ever enter via
+    /// [`push`](TaggedIndexStack::push), whose stricter `< INDEX_MASK` bound
+    /// lies below this truncation boundary, so no index the stack packs is
+    /// ever truncated. External callers of `pack` get no such protection and
+    /// must uphold the `< 2^INDEX_BITS` precondition themselves. Note the two
+    /// bounds are deliberately different ranges, not a typo: `< 2^INDEX_BITS`
+    /// is pack's truncation boundary (where the silent masking kicks in),
+    /// while `push`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`) is
+    /// stricter because it also excludes the reserved empty sentinel.
     #[must_use]
     pub const fn pack(index: u64, tag: u64) -> u64 {
         // Force the compile-time bounds check to be evaluated.
