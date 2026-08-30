@@ -1,9 +1,13 @@
 //! loom model-check of the REAL [`TaggedIndexStack`] / [`TaggedIndex`] types.
 //!
-//! This suite runs against the ACTUAL crate code, not a transcription of the
-//! protocol into a local copy: under `--cfg loom` the crate aliases its atomics
-//! to `loom::sync::atomic`, so `stack.push` / `stack.pop` and the `TaggedIndex`
-//! packing that loom explores here ARE the code that ships.
+//! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
+//! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
+//! code that ships. How much of each model calls the shipped `push`/`pop`
+//! directly varies and is stated per model below: one model is end-to-end
+//! through both, most hand-inline one side of an interaction through
+//! `cas_head_for_test` (real head atomic, real packing) to pin an
+//! interleaving, and two models drive locally-defined buggy stand-ins to
+//! prove the harness non-vacuous.
 //!
 //! # What loom covers
 //!
@@ -50,6 +54,13 @@
 //! ```text
 //! RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba
 //! ```
+//!
+//! No model sets loom's `preemption_bound`: every run is exhaustive over the
+//! interleavings these small models admit, so a green positive model is a
+//! complete result for its scenario, not a bounded sample — and the
+//! whole suite still runs in a fraction of a second, so completeness costs
+//! nothing here. (Loom's separate per-execution branch cap, 1000 by default,
+//! stays armed as a LOUD panic valve, not a silent truncation.)
 
 #![cfg(loom)]
 
@@ -83,8 +94,7 @@ fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
 
 #[test]
 fn aba_repush_keeps_free_list_conservation() {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(3);
+    let builder = loom::model::Builder::new();
     builder.check(|| {
         let (stack, links) = both_free();
 
@@ -197,8 +207,7 @@ impl UntaggedStack {
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(4);
+    let builder = loom::model::Builder::new();
     builder.check(|| {
         // Initial state: head=0, next[0]=1, next[1]=TAIL. Both slots 0 and 1 are free.
         let reg = UntaggedStack::aba_setup();
@@ -288,8 +297,7 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 
 #[test]
 fn tagged_stack_survives_the_same_resurrection_pattern() {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(4);
+    let builder = loom::model::Builder::new();
     builder.check(|| {
         let (stack, links) = both_free();
 
@@ -383,46 +391,19 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 // entirely before B) that false-positive the "stale CAS must fail" assertion.
 // ============================================================================
 
-/// A single-slot stack (slot 0 resting on it) whose running tag is exactly
-/// `target_tag` — the realistic steady state for the H-2 scenario, not a
-/// bootstrap artifact. Built by driving the REAL `push`/`pop`: each push
-/// bumps the tag by 1 and each pop preserves it, so `target_tag - 1`
-/// push/pop round-trips followed by one final push leave the running tag
-/// exactly at `target_tag` (asserted at the end of this function).
-///
-/// Precondition: `target_tag >= 1`. Getting slot 0 onto the stack takes one
-/// push, and that push already leaves the running tag at 1, so a populated
-/// single-slot stack can never sit at tag 0; asserted loudly here rather
-/// than surfacing later as a confusing seeded-tag mismatch.
-fn single_slot_seeded(target_tag: u64) -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<1>>) {
-    assert!(
-        target_tag >= 1,
-        "single_slot_seeded: target_tag must be >= 1 (a single push already \
-         leaves the running tag at 1, so a populated single-slot stack can \
-         never sit at tag 0); got {target_tag}"
-    );
-    let links = Arc::new(ArrayLinks::<1>::new());
-    let stack = Arc::new(TaggedIndexStack::<16>::new());
-    // Each push bumps the tag by 1; a pop preserves it. Push once => tag 1.
-    // To reach `target_tag` with slot 0 resting on the stack, push/pop
-    // (target_tag - 1) times then push once more, leaving exactly `target_tag`.
-    for _ in 0..target_tag.saturating_sub(1) {
-        stack.push(&*links, 0);
-        let _ = stack.pop(&*links);
-    }
-    stack.push(&*links, 0); // final push -> running tag == target_tag
-    let (_v, tag) = Tag::unpack(stack.raw_head());
-    assert_eq!(tag, target_tag, "seeded running tag");
-    (stack, links)
-}
-
 fn run_h2(preserve_tag_on_drain: bool) {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(3);
+    let builder = loom::model::Builder::new();
     builder.check(move || {
-        // Seed at tag 1: B's buggy drain resets to 0, refill computes 0+1=1,
-        // colliding with A's captured tag-1 snapshot.
-        let (stack, links) = single_slot_seeded(1);
+        // Seed: ONE real `push` puts slot 0 on a fresh (lazy, empty) stack
+        // and leaves the running tag at exactly 1. Tag 1 is not merely
+        // sufficient but the ONLY seed that can exercise this counterfactual:
+        // B's buggy drain resets the tag to 0 and its refill computes 0 + 1
+        // = 1, so a collision requires A's stale snapshot to carry exactly
+        // that tag 1 — no higher seeded tag can ever recur through this
+        // drain.
+        let links = Arc::new(ArrayLinks::<1>::new());
+        let stack = Arc::new(TaggedIndexStack::<16>::new());
+        stack.push(&*links, 0);
         let a_loaded = Arc::new(AtomicU32::new(0));
         let b_done = Arc::new(AtomicU32::new(0));
 
@@ -541,14 +522,27 @@ fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
 /// (which pins one specific interleaving for exposition, using
 /// `cas_head_for_test` with hardcoded orderings rather than calling `pop`
 /// itself), this one fails if `pop`'s own `compare_exchange` failure ordering
-/// ever regresses. Verified: with `pop`'s failure ordering temporarily
-/// reverted to `Ordering::Relaxed`, this test FAILS (`left: [0, 0, 1], right:
-/// [0, 1]` — index 0 duplicated, a real double-allocated free-list slot),
-/// then passes again once reverted back to `Ordering::Acquire`.
+/// ever regresses.
+///
+/// That last claim used to rest on a one-off manual experiment ("revert
+/// `pop`'s failure ordering to `Relaxed` and this test fails with
+/// `left: [0, 0, 1]`, `right: [0, 1]` — index 0 duplicated, a real
+/// double-allocated free-list slot, then passes again once reverted") — a
+/// receipt about a mutated working tree that no longer exists and cannot be
+/// re-run. It is SUPERSEDED by the live activation oracle asserted on every
+/// run below: the process-global `pop_retry_count_for_test` counter
+/// (incremented in `pop`'s own retry arm) must ADVANCE across this model's
+/// explored schedules, so a green run proves the retry branch actually
+/// executed — not merely that its absence went unnoticed.
 #[test]
 fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(4);
+    // Activation oracle: snapshot the process-global retry counter BEFORE the
+    // exploration and assert below that it advanced. A DELTA, not the raw
+    // count: other tests in this binary also drive the real `pop` (whose
+    // retry arm increments the same counter), so only the increment this
+    // test's own `check()` run produces is this test's own.
+    let retries_before = tagged_index_stack::pop_retry_count_for_test();
+    let builder = loom::model::Builder::new();
     builder.check(|| {
         let links = Arc::new(ArrayLinks::<N>::new());
         let stack = Arc::new(TaggedIndexStack::<16>::new());
@@ -581,6 +575,15 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
             "free-list corrupted (loss or duplication) via the real pop/push: got {popped:?}"
         );
     });
+
+    let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
+    assert!(
+        retried > 0,
+        "activation oracle: `pop`'s CAS-retry branch was never reached in \
+         any explored schedule — this test is vacuously green, since its \
+         free-list conservation assertion cannot catch a stale-retry \
+         corruption if no retry ever executes"
+    );
 }
 
 /// Shared harness for the two `(e)` tests below: thread A hand-expands TWO
@@ -592,8 +595,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
 /// must keep the free-list intact; `Ordering::Relaxed` (the counterfactual)
 /// must let the retry read a stale link and corrupt it.
 fn run_cas_retry(failure_ordering: Ordering) {
-    let mut builder = loom::model::Builder::new();
-    builder.preemption_bound = Some(4);
+    let builder = loom::model::Builder::new();
     builder.check(move || {
         // Start with slot 1 only on stack (not slot 0).
         let links = Arc::new(ArrayLinks::<N>::new());

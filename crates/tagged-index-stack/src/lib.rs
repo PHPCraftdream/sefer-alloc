@@ -137,11 +137,15 @@
 //! # loom — the tests run against THIS type
 //!
 //! Under `--cfg loom` the stack's atomics alias to `loom::sync::atomic`, so the
-//! shipped loom suite (`tests/loom_aba.rs`) model-checks the REAL
-//! [`TaggedIndexStack`] / [`TaggedIndex`] code, not a transcription — with
-//! `#[should_panic]` counterfactuals (untagged corruption, the H-2
-//! empty-transition tag-reset ABA, and a Relaxed-CAS-failure-ordering
-//! regression) proving the harness is non-vacuous.
+//! shipped loom suite (`tests/loom_aba.rs`) model-checks the real
+//! [`TaggedIndexStack`] / [`TaggedIndex`] code exhaustively — no
+//! `preemption_bound`, so loom explores every interleaving these small models
+//! admit. One model runs end-to-end through the shipped
+//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop); the rest
+//! drive the real head atomic and the real packing through `cas_head_for_test`
+//! so an interleaving can be pinned. `#[should_panic]` counterfactuals
+//! (untagged corruption, the H-2 empty-transition tag-reset ABA, and a
+//! Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous.
 //!
 //! # Portability limit — requires 64-bit atomics
 //!
@@ -805,7 +809,20 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                 .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire)
             {
                 Ok(_) => return Some(index),
-                Err(actual) => head = actual,
+                Err(actual) => {
+                    #[cfg(loom)]
+                    {
+                        // Activation oracle for the loom suite (see
+                        // `POP_RETRY_COUNT` below): deliberately a REAL
+                        // core atomic, NOT loom's, so the count survives
+                        // loom's many re-runs of the test closure and
+                        // accumulates across the explored schedules.
+                        // `Relaxed`: the counter promises no ordering, it
+                        // only counts.
+                        POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
+                    head = actual;
+                }
             }
         }
     }
@@ -869,4 +886,45 @@ impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// **loom-test-only** activation counter for [`pop`](TaggedIndexStack::pop)'s
+/// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
+/// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
+/// `loom::sync::atomic`: loom re-runs the closure passed to
+/// `Builder::check` across many schedules within one process, and a real
+/// static survives those re-runs, so the accumulated count is an exact
+/// "how often was the retry branch actually reached" oracle over an entire
+/// exploration. `Relaxed` access: the counter promises no ordering, it only
+/// counts.
+///
+/// Compiled only under `--cfg loom`; never reset by this crate (snapshot and
+/// diff is the caller's job — see [`pop_retry_count_for_test`]).
+#[cfg(loom)]
+static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// **loom-test-only** activation oracle: reads `POP_RETRY_COUNT` — the
+/// number of times `pop`'s CAS-retry branch has executed in this process. The
+/// loom suite asserts this counter ADVANCES across an exploration so a model
+/// whose schedules never actually reach `pop`'s retry path fails loudly
+/// instead of passing vacuously (see the assertion in
+/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
+///
+/// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
+/// from this crate's own perspective — can reach it). The attribute hides
+/// it from rustdoc's rendered navigation ONLY; nothing prevents any
+/// downstream crate from calling it. It is not exercised by any production
+/// caller and carries no semver stability guarantee. See this project's
+/// established `#[doc(hidden)]` test-only-forwarder convention (cf.
+/// `raw_head`).
+///
+/// Never reset by this crate: snapshot before and diff after. The count is
+/// process-global and cumulative — across loom's internal re-runs of a
+/// test closure, across a test file's models, and (under the default
+/// multi-threaded test harness) across concurrently running test functions.
+#[cfg(loom)]
+#[doc(hidden)]
+#[must_use]
+pub fn pop_retry_count_for_test() -> usize {
+    POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }

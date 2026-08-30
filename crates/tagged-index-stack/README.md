@@ -16,8 +16,8 @@ protocol can deliver.) Allocation-free, `no_std`,
 This is the canonical "recycle a small integer id" primitive that slab
 allocators, object pools, entity-component stores, id allocators, and connection
 tables all reinvent — and routinely reinvent *wrong*. Crates like `sharded-slab`
-embed one privately; this ships it as a standalone primitive **with executable
-loom proofs run against the real type**.
+embed one privately; this ships it as a standalone primitive **with an
+exhaustive loom model-check run against the real type**.
 
 ## The packed word
 
@@ -124,13 +124,15 @@ target without native 64-bit atomic support — notably `thumbv6m-none-eabi`,
 targets are `no_std` yet lack `AtomicU64` entirely. An unsupported-target
 build fails fast with an explicit `compile_error!` naming the requirement.
 
-## loom — real-type proofs
+## loom — real-type model-check
 
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite
-model-checks the REAL `TaggedIndexStack` / `TaggedIndex` code, with
-`#[should_panic]` counterfactuals (untagged corruption, the H-2 tag-reset ABA,
-and a Relaxed-CAS-failure-ordering regression) proving the harness is
-non-vacuous:
+model-checks the real `TaggedIndexStack` / `TaggedIndex` code exhaustively (no
+`preemption_bound`). One model runs end-to-end through the shipped
+`push`/`pop`; the rest drive the real head atomic and the real packing through
+`cas_head_for_test` so an interleaving can be pinned. `#[should_panic]`
+counterfactuals (untagged corruption, the H-2 tag-reset ABA, and a
+Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous:
 
 ```sh
 RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loom --test loom_aba

@@ -104,13 +104,17 @@ before it.
   64-bit atomics (`thumbv6m-none-eabi`, `riscv32imc-…`, `armv5te-…`) rather
   than a cryptic unresolved-import error. `no_std`-compatible, but `no_std`
   alone does not imply `AtomicU64`.
-- **Executable loom proofs against the real type**: under `--cfg loom` the
-  stack's atomics alias to `loom::sync::atomic`, so the shipped loom suite
+- **Exhaustive loom model-check against the real type**: under `--cfg loom`
+  the stack's atomics alias to `loom::sync::atomic`, so the shipped loom suite
   (`tests/loom_aba.rs`) model-checks the actual `TaggedIndexStack` /
-  `TaggedIndex` code, with `#[should_panic]` counterfactuals (untagged
-  corruption, the H-2 empty-transition tag-reset ABA, and the
-  Relaxed-CAS-failure-ordering regression) proving the harness is
-  non-vacuous. `loom` is an OPTIONAL `cfg(loom)`-gated dependency (feature
+  `TaggedIndex` code with NO `preemption_bound` — loom explores every
+  interleaving these small models admit — with `#[should_panic]`
+  counterfactuals (untagged corruption, the H-2 empty-transition tag-reset
+  ABA, and the Relaxed-CAS-failure-ordering regression) proving the harness
+  is non-vacuous. One model runs end-to-end through the shipped
+  `push`/`pop`; the rest drive the real head atomic and the real packing
+  through `cas_head_for_test` so an interleaving can be pinned. `loom` is an
+  OPTIONAL `cfg(loom)`-gated dependency (feature
   `loom`): a normal build (default features, no `--cfg loom`) has zero
   non-`std` entries in `Cargo.lock` — not merely zero compiled code, which is
   the weaker guarantee a non-optional `cfg(loom)` dependency gives (Cargo's
