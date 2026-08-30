@@ -190,14 +190,14 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Capping at compile time closes that class of bug structurally instead of
     /// requiring every caller to separately exclude `TAIL` at runtime.
     ///
-    /// This `const` is forced to evaluate from BOTH [`pack`](Self::pack) (via a
-    /// `let () = Self::_CHECK_BITS;` reference) AND `INDEX_MASK`'s
-    /// own initializer — since [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
-    /// and [`is_empty`](Self::is_empty) all reference `INDEX_MASK` directly, every
-    /// mask-touching associated item of `TaggedIndex<INDEX_BITS>` forces this
-    /// guard, not just `pack`. [`TAG_BITS`](Self::TAG_BITS) is the one associated
-    /// item that does NOT touch `INDEX_MASK` and so remains reachable, unguarded,
-    /// at any out-of-range width.
+    /// This `const` is forced to evaluate from EVERY public associated item of
+    /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) references it via a
+    /// `let () = Self::_CHECK_BITS;` statement, `INDEX_MASK` and
+    /// [`TAG_BITS`](Self::TAG_BITS) evaluate it in their own initializers, and
+    /// [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
+    /// [`is_empty`](Self::is_empty), and [`empty`](Self::empty) all route through
+    /// `INDEX_MASK` or `pack` — so an out-of-range `INDEX_BITS` cannot reach
+    /// any associated item without tripping this guard.
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 32,
         "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \
@@ -221,7 +221,11 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 
     /// Number of bits carrying the tag (`64 - INDEX_BITS`). The tag wraps at
     /// `2^TAG_BITS`.
-    pub const TAG_BITS: u32 = 64 - INDEX_BITS;
+    pub const TAG_BITS: u32 = {
+        // Force the compile-time bounds check to be evaluated.
+        let () = Self::_CHECK_BITS;
+        64 - INDEX_BITS
+    };
 
     /// Pack `(index, tag)` into one `u64`. `index` MUST be `< 2^INDEX_BITS`; a
     /// wider value is silently TRUNCATED to its low `INDEX_BITS` bits (the
