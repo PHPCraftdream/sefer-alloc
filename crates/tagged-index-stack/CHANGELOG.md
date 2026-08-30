@@ -110,8 +110,13 @@ before it.
   `TaggedIndex` code, with `#[should_panic]` counterfactuals (untagged
   corruption, the H-2 empty-transition tag-reset ABA, and the
   Relaxed-CAS-failure-ordering regression) proving the harness is
-  non-vacuous. `loom` is a `cfg(loom)`-gated library dependency only; a
-  normal build pulls in zero non-`std` dependencies.
+  non-vacuous. `loom` is an OPTIONAL `cfg(loom)`-gated dependency (feature
+  `loom`): a normal build (default features, no `--cfg loom`) has zero
+  non-`std` entries in `Cargo.lock` — not merely zero compiled code, which is
+  the weaker guarantee a non-optional `cfg(loom)` dependency gives (Cargo's
+  resolver locks normal target-cfg dependencies regardless of their cfg).
+  Running the loom suite requires BOTH `RUSTFLAGS="--cfg loom"` and
+  `--features loom`.
 - **`raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the packed
   head word; the attribute only excludes it from rustdoc's rendered
   navigation (it remains publicly callable), it carries no semver stability

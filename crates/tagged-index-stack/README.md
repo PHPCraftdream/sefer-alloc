@@ -133,7 +133,7 @@ and a Relaxed-CAS-failure-ordering regression) proving the harness is
 non-vacuous:
 
 ```sh
-RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba
+RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loom --test loom_aba
 ```
 
 ## Notes

@@ -1933,10 +1933,16 @@ jobs:
       # is presumably why it was skipped when the two builds above were
       # added. `x86_64-unknown-none` has 64-bit atomics and no std in its
       # sysroot, so it is a genuine bare-metal proof for this crate
-      # specifically. No `std` feature to disable (verified via `cargo
-      # metadata`: this crate declares no Cargo features at all), so no
-      # `--no-default-features` flag is needed. Verified locally: compiles
-      # clean.
+      # specifically. No `std` feature to disable: the crate declares exactly
+      # ONE Cargo feature, `loom` — the implicit feature Cargo auto-creates
+      # for its optional `cfg(loom)` dependency (round-3 review P1-1 made
+      # `loom` optional; verified via `cargo metadata --no-deps
+      # --format-version 1 | jq -r '.packages[] |
+      # select(.name=="tagged-index-stack") | .features'`) — and it is not a
+      # `std` toggle, so no `--no-default-features` flag is needed. This row
+      # passes neither `--all-features` nor `RUSTFLAGS: "--cfg loom"`, so the
+      # feature and the cfg-gated loom sources are invisible to this plain
+      # build regardless. Verified locally: compiles clean.
       - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
       # tagged-index-stack publication readiness review (Sol-codex, run 2,
       # P2-4): no `cargo clippy -p tagged-index-stack` or `cargo doc -p
@@ -1959,8 +1965,13 @@ jobs:
       # `--all-features` needed for either row: verified via
       # `cargo metadata --no-deps --format-version 1 | jq -r
       # '.packages[] | select(.name=="tagged-index-stack") | .features'`
-      # -- the feature map is empty (`{}`), the same fact the bare-metal
-      # build row above already cites.
+      # -- the crate declares exactly ONE feature, `loom` (the implicit
+      # feature for its optional `cfg(loom)` dependency; round-3 review P1-1
+      # made that dependency optional, which is what un-emptied the feature
+      # map), and neither row passes `--all-features` nor sets
+      # `RUSTFLAGS: "--cfg loom"`, so the feature and the cfg-gated loom
+      # sources are invisible to both steps regardless — the same fact the
+      # bare-metal build row above already cites.
       #
       # One sub-claim of the same review is REFUTED and recorded here so
       # the bench is never later "silenced" for a warning this gate does
@@ -2448,8 +2459,15 @@ jobs:
       # default `-eo pipefail` fails the step if cargo fails through the tee
       # pipe; grep -F then fails it unless the named test actually RAN and
       # passed.
+      # Round-3 review P1-1: `loom` is now an OPTIONAL dependency of this
+      # crate, so the invocation below additionally passes `--features loom`
+      # (the implicit feature the optional dependency creates) — the
+      # job-level `RUSTFLAGS: "--cfg loom"` alone no longer resolves it. The
+      # crate's own `compile_error!` guard fails the cfg-without-feature
+      # mismatch with a named reason. The tee + grep postconditions below are
+      # unchanged.
       - run: |
-          cargo test --release -p tagged-index-stack --test loom_aba 2>&1 | tee "$RUNNER_TEMP/loom-aba.log"
+          cargo test --release -p tagged-index-stack --features loom --test loom_aba 2>&1 | tee "$RUNNER_TEMP/loom-aba.log"
           grep -F "test pop_empty_transition_preserves_tag ... ok" "$RUNNER_TEMP/loom-aba.log"
         shell: bash
       # CRATE-P3: real-type `OncePtrCell` loom suite (replaces the 4 shadow

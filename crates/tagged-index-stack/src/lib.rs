@@ -180,6 +180,18 @@ compile_error!(
      limit\" section."
 );
 
+// Loom is an OPTIONAL `cfg(loom)`-gated dependency (feature `loom`): setting
+// `--cfg loom` compiles the `#[cfg(loom)]` atomic aliasing below, which
+// references the loom crate — but Cargo only resolves and links that
+// dependency when the implicit `loom` feature is enabled as well. Fail fast
+// with a named reason instead of the cryptic "unresolved import `loom`"
+// error a cfg-without-feature build would otherwise produce.
+#[cfg(all(loom, not(feature = "loom")))]
+compile_error!(
+    "building with --cfg loom requires --features loom (loom is now an \
+     optional dependency)"
+);
+
 // The atomics are aliased so loom can shadow the REAL stack type: under
 // `--cfg loom` they are built on `loom::sync::atomic`, so the shipped loom tests
 // exercise the actual `TaggedIndexStack`/`TaggedIndex` code rather than a

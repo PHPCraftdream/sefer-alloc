@@ -18,14 +18,32 @@ categories = ["concurrency", "data-structures", "no-std::no-alloc"]
 workspace = true
 
 [dependencies]
-# Zero non-std deps in a NORMAL build. Under `--cfg loom` ONLY, the stack aliases
-# its atomics to `loom::sync::atomic` so the shipped loom tests exercise the REAL
-# type — so `loom` is a `cfg(loom)`-gated LIBRARY dependency (not merely a
-# dev-dependency): the crate's own `src/lib.rs` references it. A normal
-# `cargo build` (no `--cfg loom`) pulls in zero non-std deps.
+# Zero non-std deps in a NORMAL build — enforced by Cargo's RESOLVER, not just
+# by rustc's cfg evaluation. `loom` below is `optional = true`, which gives it
+# an implicit `loom` feature; because Cargo's resolver is cfg-agnostic when
+# producing `Cargo.lock`, a NON-optional `cfg(loom)` target dependency would
+# still be resolved, locked, vendored and audited into every consumer's
+# lockfile even though its cfg never holds in their build (measured in the
+# round-3 review: 31 locked packages downstream of a crate whose only
+# dependency is this one; 2 once optional). Marking it optional means a normal
+# build (no `--features loom`) has ZERO loom-related entries in `Cargo.lock`
+# — not merely zero compiled code.
+#
+# Running the loom suite therefore requires BOTH:
+#   1. `--cfg loom` in RUSTFLAGS, so the `#[cfg(loom)]` source lines compile —
+#      the stack aliases its atomics to `loom::sync::atomic` ONLY under that
+#      cfg (see `src/lib.rs`), so the shipped loom tests exercise the REAL
+#      type, which is why `loom` is a `cfg(loom)`-gated LIBRARY dependency
+#      (not merely a dev-dependency): the crate's own `src/lib.rs` references
+#      it; AND
+#   2. `--features loom`, so Cargo actually resolves and links the loom
+#      dependency those lines reference.
+# `--cfg loom` without the feature fails fast with a named `compile_error!`
+# (adjacent to the `target_has_atomic` guard in `src/lib.rs`) instead of the
+# cryptic unresolved-import error.
 
 [target.'cfg(loom)'.dependencies]
-loom = { workspace = true }
+loom = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
@@ -36,3 +54,8 @@ bench-scale-tool = "0.1"
 [[bench]]
 name = "tagged_index_stack_bench"
 harness = false
+# Stated explicitly rather than left to cargo's default: `cargo test` must
+# not treat this bench as a test target. ci.yml's clippy row relies on that
+# (it is why `--all-targets` is the step that covers the bench at all), and
+# an implicit default is not something a workflow comment should be citing.
+test = false
