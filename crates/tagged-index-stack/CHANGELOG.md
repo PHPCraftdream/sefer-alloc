@@ -23,6 +23,10 @@ before it.
   check liveness cheaply (it would cost an O(n) chain walk per push), so it
   enforces only the `index < INDEX_MASK` range bound; liveness is the
   caller's obligation.
+- **`TaggedIndexStack::is_empty()`** — an advisory emptiness check: a
+  `Relaxed` peek at the head word's index half. Concurrent pushes/pops can
+  make the answer stale the instant it returns, in either direction, so it
+  is for diagnostics/monitoring, not correctness decisions.
 - **`TaggedIndex<INDEX_BITS>`** — the packed head word: low `INDEX_BITS` bits
   carry a slot index, the high `64 - INDEX_BITS` bits a monotonic **tag**
   bumped on every successful push, which is what defeats the ABA problem (a

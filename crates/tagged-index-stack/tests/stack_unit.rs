@@ -10,7 +10,26 @@
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::{ArrayLinks, TaggedIndex, TaggedIndexStack, TAIL};
+use tagged_index_stack::{ArrayLinks, Links, TaggedIndex, TaggedIndexStack, TAIL};
+
+// Compile-time pin (P4-12c): both public types must stay auto-`Send + Sync`.
+// Every field of both types is an atomic today, so they derive the traits for
+// free — but their entire purpose is lock-free CROSS-THREAD sharing, and a
+// future non-auto field (a `Cell`, a raw pointer, ...) would silently drop
+// one or both traits with no compile error anywhere obvious. This const
+// makes that a hard compile error the moment it happens. Widths 16 and 4 are
+// this file's conventional choices (see the existing push/pop tests below).
+// Both fns are `const fn` and `_check()` is actually CALLED in the const
+// initializer: that both forces the trait bounds to be checked and keeps the
+// dead-code lint from firing on a helper that is never otherwise used.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    const fn _check() {
+        assert_send_sync::<TaggedIndexStack<16>>();
+        assert_send_sync::<ArrayLinks<4>>();
+    }
+    _check();
+};
 
 // ---------------------------------------------------------------------------
 // TaggedIndex packing.
@@ -180,6 +199,45 @@ fn width_32_index_mask_equals_tail_and_is_rejected() {
     );
 }
 
+/// push's `index < INDEX_MASK` guard at a NON-degenerate width, where the two
+/// things the guard exists to reject are DIFFERENT values: at
+/// `INDEX_BITS = 16`, `INDEX_MASK` is `0xFFFF` (the reserved empty sentinel)
+/// while `TAIL` is `u32::MAX`. The width-32 test above pins only the special
+/// case where `INDEX_MASK == TAIL` numerically and the guard's two purposes
+/// (reject-out-of-range AND reject-`TAIL`) coincide; this pins the guard's
+/// ordinary, out-of-range purpose in its own right.
+#[test]
+fn width_16_push_rejects_index_mask_itself() {
+    type T = TaggedIndex<16>;
+    assert_ne!(
+        T::INDEX_MASK,
+        TAIL as u64,
+        "at width 16 INDEX_MASK (0xFFFF) and TAIL (u32::MAX) must differ — \
+         this test covers the guard's ordinary case, not the width-32 coincidence"
+    );
+
+    let links = ArrayLinks::<4>::new();
+    let stack = TaggedIndexStack::<16>::new();
+    // 0xFFFF == INDEX_MASK at this width: an in-range-looking u32 that the
+    // guard must reject because it is the reserved empty sentinel. Same full
+    // panic assertion as the width-32 test: the message must name the guard's
+    // own contract, so an unrelated out-of-bounds panic (e.g. from
+    // `ArrayLinks`) cannot satisfy this test.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        stack.push(&links, T::INDEX_MASK as u32);
+    }));
+    let err = result.expect_err("pushing index == INDEX_MASK must panic");
+    let message = err
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .expect("panic payload should be a string message");
+    assert!(
+        message.contains("index must be < INDEX_MASK"),
+        "panic message did not name the push guard's own contract (got: {message:?})"
+    );
+}
+
 // Compile-fail coverage note: this crate has no trybuild (or similar
 // compile-fail) test infrastructure wired up, so `INDEX_BITS > 32` failing to
 // compile is NOT pinned by an automated test. Manually verified instead:
@@ -216,6 +274,25 @@ fn push_pop_is_lifo() {
     }
     assert_eq!(got, vec![4, 3, 2, 1, 0], "LIFO order");
     assert_eq!(stack.pop(&links), None);
+}
+
+/// The degenerate `INDEX_BITS = 1` width through the REAL push/pop API: the
+/// reserved empty sentinel is `INDEX_MASK == 1`, so `0` is the only valid
+/// index and the stack's entire capacity is a single slot. (Only
+/// `TaggedIndex`'s raw packing is otherwise exercised at this width — in
+/// `proptest_pack_unpack.rs` — never the stack's push/pop path.) Also the
+/// only test driving the public `is_empty()` around a full push/drain cycle.
+#[test]
+fn width_1_stack_push_pop_round_trips_its_sole_index() {
+    assert_eq!(TaggedIndex::<1>::INDEX_MASK, 1);
+    let links = ArrayLinks::<1>::new();
+    let stack = TaggedIndexStack::<1>::new();
+    assert!(stack.is_empty(), "a fresh (lazy-link) stack is empty");
+    stack.push(&links, 0);
+    assert!(!stack.is_empty(), "the sole index is on the stack");
+    assert_eq!(stack.pop(&links), Some(0));
+    assert!(stack.is_empty(), "drained back to empty");
+    assert_eq!(stack.pop(&links), None, "empty stays empty");
 }
 
 /// Drain to empty then refill the SAME index: the tag must have advanced across
@@ -269,4 +346,47 @@ fn links_are_lazy() {
     stack.push(&links, 3);
     assert_eq!(stack.pop(&links), Some(3));
     assert_eq!(stack.pop(&links), None);
+}
+
+/// Neither `Default` impl was previously exercised by any test.
+/// `ArrayLinks::<N>::default()` must behave exactly like `new()`: every link
+/// at the zero value (RAD-1 — no eager chaining), readable through the same
+/// [`Links`] trait, and usable as push/pop backing without further setup.
+#[test]
+fn default_array_links_behaves_like_new() {
+    let default_links = ArrayLinks::<4>::default();
+    let new_links = ArrayLinks::<4>::new();
+    for i in 0..4u32 {
+        assert_eq!(
+            default_links.load_next(i),
+            new_links.load_next(i),
+            "link {i}: Default and New backings read identically through Links"
+        );
+        assert_eq!(
+            default_links.load_next(i),
+            0,
+            "link {i}: a fresh backing's links are the zero value (RAD-1)"
+        );
+    }
+    let stack = TaggedIndexStack::<16>::new();
+    stack.push(&default_links, 2);
+    assert_eq!(stack.pop(&default_links), Some(2));
+}
+
+/// `TaggedIndexStack::<INDEX_BITS>::default()` must behave exactly like
+/// `new()`: a fresh, EMPTY stack (RAD-1 lazy links) that pushes and pops
+/// normally.
+#[test]
+fn default_stack_behaves_like_new() {
+    let links = ArrayLinks::<8>::default();
+    let stack = TaggedIndexStack::<16>::default();
+    assert!(stack.is_empty(), "a freshly-defaulted stack is empty");
+    assert_eq!(
+        stack.pop(&links),
+        None,
+        "Default == new: the lazy-link stack starts empty"
+    );
+    stack.push(&links, 7);
+    assert!(!stack.is_empty());
+    assert_eq!(stack.pop(&links), Some(7));
 }

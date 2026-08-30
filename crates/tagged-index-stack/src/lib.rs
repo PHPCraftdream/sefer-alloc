@@ -385,10 +385,23 @@ impl<const N: usize> Default for ArrayLinks<N> {
 }
 
 impl<const N: usize> Links for ArrayLinks<N> {
+    /// # Panics
+    ///
+    /// Panics if `index >= N`. `N` (this backing's capacity) and the
+    /// stack's `INDEX_BITS` are independent const parameters with nothing
+    /// relating them, so a [`TaggedIndexStack`] can accept an index this
+    /// backing cannot hold — see [`TaggedIndexStack::push`]'s note on the
+    /// two bounds.
     fn load_next(&self, index: u32) -> u32 {
         self.next[index as usize].load(Ordering::Acquire)
     }
 
+    /// # Panics
+    ///
+    /// Panics if `index >= N` — the same bound as
+    /// [`load_next`](Links::load_next); likewise independent of the stack's
+    /// `INDEX_BITS` (see [`TaggedIndexStack::push`]'s note on the two
+    /// bounds).
     fn store_next(&self, index: u32, next: u32) {
         self.next[index as usize].store(next, Ordering::Release);
     }
@@ -513,6 +526,16 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// checked unconditionally, not a `debug_assert!`, because the failure
     /// mode is silent free-list corruption rather than a merely-suboptimal
     /// fallback.
+    ///
+    /// That guard is the only bound this method itself checks, and it
+    /// depends on `INDEX_BITS` alone. The supplied [`Links`] implementation
+    /// may impose its own, separate bound: `N` in [`ArrayLinks`]`<N>` and
+    /// `INDEX_BITS` are independent const parameters with nothing relating
+    /// them — a `TaggedIndexStack<16>` accepts indices up to 65534 even over
+    /// an `ArrayLinks<256>` that holds only `0..=255` — so out-of-range
+    /// access in the links layer ([`ArrayLinks::store_next`] panics on
+    /// `index >= N`) is a second panic source the guard above does not
+    /// cover.
     pub fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
         assert!(
             (index as u64) < TaggedIndex::<INDEX_BITS>::INDEX_MASK,
@@ -568,6 +591,14 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// RUNNING tag we just observed — NOT tag 0 — so the ABA tag keeps counting
     /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
     /// the crate docs' H-2 section).
+    ///
+    /// Pop reaches link storage only through the supplied [`Links`]
+    /// implementation ([`load_next`](Links::load_next)), which may panic on
+    /// an out-of-range index under its OWN, narrower bound (e.g.
+    /// [`ArrayLinks::load_next`]'s `index >= N`) — the links-layer panic
+    /// source [`push`](Self::push)'s `# Panics` section describes; nothing
+    /// here re-validates the index beyond what `push` guaranteed when the
+    /// index was admitted.
     #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
         let mut head = self.head.load(Ordering::Acquire);
@@ -601,6 +632,21 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                 Err(actual) => head = actual,
             }
         }
+    }
+
+    /// Whether the stack is currently empty. Advisory only — a concurrent
+    /// push or pop can make the answer stale the instant this returns, in
+    /// either direction — so use it for diagnostics/monitoring, not for
+    /// correctness decisions ([`pop`](Self::pop)'s `None` is the
+    /// authoritative empty check).
+    ///
+    /// A `Relaxed` load is sufficient here because the result is explicitly
+    /// racy: no ordering is being promised, and a plain load touches nothing,
+    /// so the release-sequence invariant documented on the private `head`
+    /// field is untouched.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        TaggedIndex::<INDEX_BITS>::is_empty(self.head.load(Ordering::Relaxed))
     }
 
     /// The raw packed head word (`Acquire`) — for this crate's own diagnostics
