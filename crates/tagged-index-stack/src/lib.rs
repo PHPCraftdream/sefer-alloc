@@ -357,9 +357,14 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 ///
 /// Implementations MUST use `Acquire` on [`load_next`](Self::load_next) and
 /// `Release` on [`store_next`](Self::store_next): the stack relies on this
-/// pairing so a pop that observes a slot as the head (via its `Acquire` CAS
-/// success) also sees the link a pusher wrote (via its `Release` store) before
-/// publishing that slot as head.
+/// pairing so a pop that observes a slot as the head also sees the link a
+/// pusher wrote (via its `Release` store) before publishing that slot as
+/// head. The load-bearing `Acquire` is the head observation itself — the
+/// initial `Acquire` load of the head, or (on a retry) the PREVIOUS
+/// iteration's `Acquire`-ordered CAS-failure read — which happens BEFORE the
+/// [`load_next`](Self::load_next) call. The CAS is attempted only AFTER
+/// [`load_next`](Self::load_next) has run, so its success ordering plays no
+/// part in making that link visible.
 ///
 /// This requirement is deliberately STRONGER than the stack's own internal
 /// minimum. Each [`store_next`](Self::store_next) is sequenced-before the
