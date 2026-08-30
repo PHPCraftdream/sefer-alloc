@@ -611,13 +611,13 @@ fn run_cas_retry(failure_ordering: Ordering) {
         let ta = thread::spawn(move || {
             // Iteration 1: load head, read link, compute candidate.
             let mut head = stack_a.raw_head();
-            let (idx_v, _tag) = Tag::unpack(head);
+            let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
             let next = links_a.load_next(idx);
             let new_head = if next == TAIL {
-                Tag::pack(Tag::empty_index(), 0) // tag value doesn't matter for failure path
+                Tag::pack(Tag::empty_index(), tag)
             } else {
-                Tag::pack(next as u64, 0)
+                Tag::pack(next as u64, tag)
             };
 
             // CAS fails (B pushed in between). The CAS may succeed if B
@@ -635,21 +635,21 @@ fn run_cas_retry(failure_ordering: Ordering) {
 
             // Iteration 2: RETRY with the actual head from the failure.
             head = result.unwrap_err();
-            let (idx_v2, _tag2) = Tag::unpack(head);
+            let (idx_v2, tag2) = Tag::unpack(head);
             let idx2 = idx_v2 as u32;
             let next2 = links_a.load_next(idx2);
-            // NOTE: unlike the real `pop` (which preserves the observed
-            // `_tag2`), this exposition harness hardcodes tag 0 on the
-            // succeeding retry CAS too — it is not a faithful `pop`
-            // transcription on this point. Harmless here: nothing pushes
-            // after the assertions run, and none of them depend on the
-            // resulting tag value. The real end-to-end regression guard at
+            // Both candidate heads pack the tag actually observed off the
+            // head (`tag` / `tag2`), mirroring the real `pop`'s H-2
+            // tag-preservation rule exactly — the running tag is kept
+            // across the empty transition and the non-empty transition
+            // alike, with no hardcoded placeholder. (The end-to-end
+            // regression guard at
             // `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
-            // (above) calls the actual `pop`, which does preserve it.
+            // above additionally drives the real `pop`'s own retry loop.)
             let new_head2 = if next2 == TAIL {
-                Tag::pack(Tag::empty_index(), 0)
+                Tag::pack(Tag::empty_index(), tag2)
             } else {
-                Tag::pack(next2 as u64, 0)
+                Tag::pack(next2 as u64, tag2)
             };
 
             // Second CAS must succeed.
