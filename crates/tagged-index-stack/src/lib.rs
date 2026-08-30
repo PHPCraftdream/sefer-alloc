@@ -260,6 +260,16 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// preserve the running tag — see [`empty_index`](Self::empty_index) and the
     /// H-2 note in the crate docs. Resetting the tag to 0 on a runtime drain
     /// reopens the ABA window.
+    ///
+    /// `#[doc(hidden)]`: this is a `pub const fn` (so `tests/` — an external
+    /// crate from this crate's own perspective — can reach it) but NOT a
+    /// stable, documented part of the public API. Its only correct in-crate
+    /// caller is [`TaggedIndexStack::new`]'s bootstrap path; anywhere else the
+    /// unconditional tag-0 reset reopens the H-2 ABA window documented above —
+    /// a runtime drain must instead use [`empty_index`](Self::empty_index) with
+    /// the tag it just observed. See this project's established
+    /// `#[doc(hidden)]` rationale convention (cf. `raw_head`).
+    #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
         Self::pack(Self::INDEX_MASK, 0)
@@ -534,6 +544,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// RUNNING tag we just observed — NOT tag 0 — so the ABA tag keeps counting
     /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
     /// the crate docs' H-2 section).
+    #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
         let mut head = self.head.load(Ordering::Acquire);
         loop {

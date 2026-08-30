@@ -394,7 +394,7 @@ fn single_slot_seeded(target_tag: u64) -> (Arc<TaggedIndexStack<16>>, Arc<ArrayL
     // (target_tag - 1) times then push once more, leaving exactly `target_tag`.
     for _ in 0..target_tag.saturating_sub(1) {
         stack.push(&*links, 0);
-        stack.pop(&*links);
+        let _ = stack.pop(&*links);
     }
     stack.push(&*links, 0); // final push -> running tag == target_tag
     let (_v, tag) = Tag::unpack(stack.raw_head());
