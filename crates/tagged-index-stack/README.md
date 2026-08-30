@@ -28,7 +28,7 @@ links **slot-resident** (an `AtomicU32` field inside a slot it already owns)
 rather than paying for a second array. For standalone use, `ArrayLinks<N>`
 provides an owned `[AtomicU32; N]` backing.
 
-## Two hard-won subtleties (people get these wrong)
+## Three hard-won subtleties (people get these wrong)
 
 - **H-2 empty-transition tag preservation.** When a pop drains the LAST element,
   the head goes "empty". Packing the empty sentinel with **tag 0** reopens the
@@ -42,6 +42,14 @@ provides an owned `[AtomicU32; N]` backing.
   first-touches those pages merely to set up the free-list; they commit lazily,
   on first push of each index. (In the allocator this crate was extracted from,
   this saved a ~16 MiB bootstrap first-touch.) A fresh stack is therefore EMPTY.
+- **No double-push (caller-enforced).** An index that is still reachable from
+  the stack must never be pushed again: `push` overwrites the pushed index's
+  link with the current head, so re-pushing a live index closes a cycle in the
+  link chain — `pop` stops returning `None` and hands the same index to two
+  callers. Checking liveness would cost an O(n) chain walk on every push, so
+  the crate cannot enforce this (unlike H-2 and RAD-1); `push` checks only the
+  `index < INDEX_MASK` bound. Every live index comes from exactly one `push`
+  and is re-pushed only after the matching `pop`.
 
 ## Tag-width budget
 

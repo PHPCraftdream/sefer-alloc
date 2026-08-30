@@ -408,6 +408,30 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// representable width — the two conditions coincide instead of needing to
     /// be asserted separately.
     ///
+    /// # Caller contract
+    ///
+    /// `index` must NOT already be reachable from the stack: every index on
+    /// the stack must have been placed there by exactly one `push` and not
+    /// yet popped. Re-pushing an index that is still live is a
+    /// caller-contract violation this method cannot catch — and cannot even
+    /// check cheaply, because liveness is a property of the whole link chain
+    /// and verifying it would cost an O(n) walk of that chain on every push.
+    /// (Unlike the two subtleties the crate root documents — H-2 and RAD-1 —
+    /// this one is enforced by caller discipline, not structurally.)
+    ///
+    /// What `push` DOES check, unconditionally on every call, is the separate
+    /// `index < INDEX_MASK` range bound (see `# Panics` below); that observes
+    /// only the index's numeric width, never whether it is already live.
+    ///
+    /// Violating the liveness rule corrupts the free-list silently: `push`
+    /// overwrites `index`'s link with the current head, so if `index` was
+    /// still chained into the stack, the chain closes a cycle — following it
+    /// from the head reaches `index` again, and `index` now links back to
+    /// the very head it was reached from. `pop` then stops returning `None`
+    /// (the chain never reaches [`TAIL`] again) and hands the same index to
+    /// two different callers, which in the parent allocator means two owners
+    /// of one slot.
+    ///
     /// # Panics
     ///
     /// Panics if `index >= INDEX_MASK` (the empty sentinel is reserved), in

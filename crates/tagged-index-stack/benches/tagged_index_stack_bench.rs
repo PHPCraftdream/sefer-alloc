@@ -121,9 +121,11 @@ fn main() {
     // thread just pushed), a thread could cycle back to and re-push an index
     // that is STILL live somewhere else in the shared stack -- a double-push
     // of a not-yet-retrieved index, which silently corrupts the free-list's
-    // link structure (this crate's push() explicitly documents this as the
-    // caller's responsibility to avoid, checked only for the INDEX_MASK
-    // bound, not for "is this index already live"). Always re-pushing
+    // link structure (documented as an explicit caller contract in push()'s
+    // "# Caller contract" section in the crate docs, which also notes the
+    // only bound push() itself checks is INDEX_MASK -- not "is this index
+    // already live", since a liveness check would cost an O(n) chain walk
+    // per push). Always re-pushing
     // exactly the value pop() returned (the same pattern contention/churn
     // below already uses) sidesteps this entirely: every value that is ever
     // live in the stack was placed there by exactly one push, and every

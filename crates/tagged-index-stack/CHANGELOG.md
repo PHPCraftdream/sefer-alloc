@@ -16,7 +16,13 @@ before it.
   slot recycler): the canonical "recycle a small integer id" primitive that
   slab allocators, object pools, entity-component stores, and connection
   tables reinvent. `push(links, index)` / `pop(links)` are Treiber-style
-  CAS loops over a single `AtomicU64` head.
+  CAS loops over a single `AtomicU64` head. Caller contract for `push`: an
+  index still reachable from the stack must never be pushed again — the push
+  overwrites that index's link with the current head, closing a link-cycle
+  that makes `pop` hand the same index to two callers — and `push` cannot
+  check liveness cheaply (it would cost an O(n) chain walk per push), so it
+  enforces only the `index < INDEX_MASK` range bound; liveness is the
+  caller's obligation.
 - **`TaggedIndex<INDEX_BITS>`** — the packed head word: low `INDEX_BITS` bits
   carry a slot index, the high `64 - INDEX_BITS` bits a monotonic **tag**
   bumped on every successful push, which is what defeats the ABA problem (a
