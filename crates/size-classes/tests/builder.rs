@@ -185,10 +185,24 @@ fn sefer_class_for_matches_reference_over_full_small_sweep() {
     boundary_points.sort_unstable();
     boundary_points.dedup();
 
-    let sizes: Vec<usize> = (1..=SMALL_STEP_CEIL)
+    let mut sizes: Vec<usize> = (1..=SMALL_STEP_CEIL)
         .chain(boundary_points)
         .chain((SMALL_STEP_CEIL + 1..=SEFER_MAX + 1).step_by(SEFER_MIN_BLOCK))
         .collect();
+    // The explicit boundary points and the coarse step_by chain OVERLAP.
+    // Every table entry -- and every align >= SEFER_MIN_BLOCK -- is a
+    // multiple of SEFER_MIN_BLOCK, so its `+ 1` neighbor is
+    // `== 1 (mod SEFER_MIN_BLOCK)`, exactly the residue the step_by emits
+    // (it starts at SMALL_STEP_CEIL + 1 = 8193, and 8193 % 16 == 1). Every
+    // such neighbor at or above SMALL_STEP_CEIL + 1 is assembled twice
+    // (8193 arrives both as table-entry 8192's `+ 1` and as the chain's
+    // first step). Measured while assembling for this fixture's concrete
+    // values: 22 of the 23917 sizes were double-inclusions, each swept
+    // twice per align -- harmless (the assertions are per-(size, align)
+    // with no cross-iteration state, so visit order does not matter) but
+    // wasted. sort+dedup sweeps each point exactly once.
+    sizes.sort_unstable();
+    sizes.dedup();
 
     for &align in &aligns {
         for &size in &sizes {
@@ -1286,6 +1300,90 @@ fn exactly_256_classes_build_and_index_up_to_255() {
         let need = (k + 1).min(MAX_TABLE[MAX_N - 1]);
         let want = MAX_TABLE.iter().position(|&b| b >= need).unwrap();
         assert_eq!(class_idx as usize, want, "size2class[{k}] drift");
+    }
+}
+
+// The min_block == 1 scheme is structurally special for `class_for` in two
+// ways no other fixture reaches:
+//   * `min_block_shift` is 0, so the seed `(need - 1) >> 0` is a no-op
+//     shift -- shift-by-0 is a special case for shift units on some
+//     architectures/contexts, and was never driven through `class_for`;
+//   * the fast/slow split is `align <= 1 << 0 == 1`, so `align == 1` is
+//     the ONLY fast-path input and EVERY align >= 2 takes the jump loop.
+// Until now MAX_PARAMS only ever fed `build_table`/`build_size2class` (the
+// test above); this is the first to build the full `SizeClasses` and resolve
+// real (size, align) pairs through `class_for` on it.
+#[test]
+fn exactly_256_classes_class_for_fast_and_slow_paths() {
+    // `static`, not `const`: a 256-entry table would re-materialize at
+    // every use site (see common/mod.rs's note on SEFER_SC).
+    static MAX_SC: SizeClasses<MAX_N, MAX_L> = SizeClasses::build(MAX_PARAMS);
+
+    // Pin the two structural facts the derivations below rely on.
+    assert_eq!(MAX_SC.min_block_shift(), 0);
+    assert_eq!(MAX_SC.count(), MAX_N);
+    // The independent from-scratch builder agrees with the crate's table
+    // over ALL 256 entries (the sibling test above pins only the first and
+    // the last), so `reference_class_for` in the sweep below is a genuine
+    // oracle rather than a cousin of the code under test.
+    assert_eq!(&MAX_TABLE[..], &reference_table(1, (0, 1), MAX_N, &[])[..]);
+
+    // ---- Fast path (align == 1). With table [1, 2, ..., 256] the smallest
+    // block >= size is `size` itself, i.e. class `size - 1`. Hand-derived:
+    //   (1, 1): need = 1, seed_idx = (1 - 1) >> 0 = 0 -> class 0.
+    //   (137, 1): seed_idx = 136 -> class 136 (block 137 == size).
+    //   (256, 1): seed_idx = 255 -> class 255 (block 256).
+    //   (0, 1): need = max(0, 1) = 1 (the align wins over the zero size,
+    //     which class_for's doc explicitly permits) -> class 0.
+    assert_eq!(MAX_SC.class_for(1, 1), Some(0));
+    assert_eq!(MAX_SC.class_for(137, 1), Some(136));
+    assert_eq!(MAX_SC.class_for(256, 1), Some(255));
+    assert_eq!(MAX_SC.class_for(0, 1), Some(0));
+
+    // The early index-space guard: need = 257 gives seed_idx = 256 >=
+    // L - 1 = 256 (past the last bucket) -> None on BOTH paths.
+    assert_eq!(MAX_SC.class_for(257, 1), None);
+    assert_eq!(MAX_SC.class_for(257, 2), None);
+
+    // ---- Slow path (align >= 2: every power of two here misses the
+    // `align <= 1` fast-path test). Hand-derived, `>> 0` = identity:
+    //   (1, 2): ALIGN drives need -- need = max(1, 2) = 2, seed_idx = 1 ->
+    //     class 1 (block 2); 2 & 1 == 0 -> Some(1), zero jumps.
+    //   (3, 2): need = 3, seed_idx = 2 -> class 2 (block 3); 3 & 1 == 1,
+    //     jump next_idx = 3 | 1 = 3 -> class 3 (block 4); 4 & 1 == 0 ->
+    //     Some(3). Block 4 >= max(3, 2) and 4 % 2 == 0.
+    //   (5, 4): need = 5, seed_idx = 4 -> class 4 (block 5); 5 & 3 == 1,
+    //     jump next_idx = 5 | 3 = 7 -> class 7 (block 8) -> Some(7).
+    //   (100, 64): need = 100, seed_idx = 99 -> class 99 (block 100);
+    //     100 & 63 == 36 (not divisible), jump next_idx = 100 | 63 = 127 ->
+    //     class 127 (block 128) -> Some(127).
+    //   (255, 2): seed_idx = 254 -> class 254 (block 255); 255 & 1 == 1,
+    //     jump next_idx = 255 -> class 255 (block 256) -> Some(255).
+    assert_eq!(MAX_SC.class_for(1, 2), Some(1));
+    assert_eq!(MAX_SC.class_for(3, 2), Some(3));
+    assert_eq!(MAX_SC.class_for(5, 4), Some(7));
+    assert_eq!(MAX_SC.class_for(100, 64), Some(127));
+    assert_eq!(MAX_SC.class_for(255, 2), Some(255));
+
+    // Full cross-check of both paths against the independent reference:
+    // every power-of-two align up to 256 against every size 0..=257,
+    // including aligns >= 2 that here can ONLY travel the jump loop. Every
+    // returned index must also resolve to a block >= max(size, align) that
+    // is a multiple of align -- actual-value checks, not just "no panic".
+    for align in [1usize, 2, 4, 8, 16, 32, 64, 128, 256] {
+        for size in 0..=257usize {
+            let got = MAX_SC.class_for(size, align);
+            assert_eq!(
+                got,
+                reference_class_for(&MAX_TABLE, size, align),
+                "drift at size={size} align={align}"
+            );
+            if let Some(idx) = got {
+                let block = MAX_TABLE[idx];
+                assert!(block >= size.max(align), "size={size} align={align}");
+                assert!(block.is_multiple_of(align));
+            }
+        }
     }
 }
 
