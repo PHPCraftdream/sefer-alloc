@@ -47,10 +47,12 @@ it falls out of `min_block`/`growth`/`geo_count`/`extras` together, and it
 scales with `max_class / min_block`, **not** with the class count `N`: a
 scheme with *fewer* classes can produce a *larger* LUT than one with more. A
 realistic scheme (`min_block = 16`, 49 classes; the crate itself has no
-defaults) gives `L = 16173` -- `table` + `size2class` together are ~16.18
-KiB, the object itself ~16.20 KiB on a 64-bit target; a 24-class scheme
-with `min_block = 8` reaches `L = 18207`, a larger object despite having
-half the classes. See
+defaults) gives `L = 16173` (the `## Example` below reaches the same `L`
+with a different class count, since only the largest class value — not
+how many classes precede it — determines `L`) -- `table` + `size2class`
+together are ~16.18 KiB, the object itself ~16.20 KiB on a 64-bit target;
+a 24-class scheme with `min_block = 8` reaches `L = 18207`, a larger
+object despite having half the classes. See
 [`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
 for the full worked comparison. `SizeClasses::build` should therefore run in
 a `static`/`const` initializer (const-evaluated, free) -- calling it at
@@ -85,6 +87,9 @@ static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 // already known-valid (e.g. taken from a `core::alloc::Layout`).
 fn demo() {
     let class = SC.try_class_for(100, 8).unwrap().unwrap();
+    // Idiomatic production shape (the double `.unwrap()` above is demo
+    // shorthand): `match SC.try_class_for(size, align) { Err(e) => ...,
+    // Ok(None) => /* large path */, Ok(Some(class)) => /* use class */ }`
     assert!(SC.block_size(class) >= 100);
 
     // A non-power-of-two `align` is rejected instead of guessed at.
