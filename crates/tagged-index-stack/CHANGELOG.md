@@ -154,3 +154,7 @@ before it.
   head word; the attribute only excludes it from rustdoc's rendered
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
+
+### MSRV
+
+- Rust 1.88.

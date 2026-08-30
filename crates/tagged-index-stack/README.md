@@ -168,6 +168,10 @@ stack.push(&links, 7);                        // recycle index 7
 let idx = stack.pop(&links);                  // -> Some(7)
 ```
 
+## MSRV
+
+Rust 1.88.
+
 ## License
 
 MIT OR Apache-2.0.
