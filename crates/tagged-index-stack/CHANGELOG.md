@@ -103,6 +103,30 @@ before it.
   sentinel-reservation check is a single release-active `assert!` — one guard
   covers both conditions — not a `debug_assert!`, so the bound is enforced in
   release builds too.
+- **Two speculative perf changes considered and deliberately NOT landed —
+  no unmeasured perf change ships here:** (1) `push`'s initial
+  `head.load(Ordering::Acquire)` could plausibly be `Relaxed` (push never
+  dereferences anything reached through the head; correctness rests
+  entirely on the eventual `Release` CAS — the retry read at
+  `Err(actual) => head = actual` is already `Relaxed`, so the initial load
+  is the one inconsistent site). (2) both `push`'s and `pop`'s CAS loops
+  are textbook `compare_exchange_weak` candidates (both already reload
+  from `Err(actual)` and re-run the whole loop body on any failure, which
+  is exactly `_weak`'s contract). Neither change would show up on x86-64
+  (`lock cmpxchg`) or on LSE AArch64 (`casal`) — the difference, if any,
+  is specific to non-LSE AArch64 (the *default* target for
+  `aarch64-unknown-linux-gnu`, which targets baseline ARMv8.0) and other
+  `ldxr`/`stxr`-style architectures, where a *strong* `compare_exchange`
+  compiles to an inner retry loop this code's own outer loop already
+  makes redundant. This repository has no AArch64 wall-clock/perf-gate
+  harness today, so landing either change here would be exactly the kind
+  of unmeasured perf claim this project's own evidence rules forbid.
+  **Next trigger to revisit:** an AArch64 bench-measurement harness
+  becoming available in this repository (raised, not tasked, in two
+  independent review rounds before this note existed:
+  `docs/reviews/2026-08-30-132847-tagged-index-stack-claude.md` and
+  `docs/reviews/2026-08-30-2243-tagged-index-stack-review-round3-oh.md`
+  P3-5 — this bullet is the durable record neither round produced).
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
