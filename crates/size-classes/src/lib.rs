@@ -811,13 +811,15 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// A violation trips a `debug_assert!` whenever `cfg(debug_assertions)` is
     /// on (both this and the `overflow-checks` knob below track the profile
     /// `size-classes` itself is compiled with, which normally tracks the
-    /// consumer's). With `debug_assertions` off, the behavior for a non-zero
-    /// non-power-of-two `align` is UNSPECIFIED: an incorrect `Some`/`None`
-    /// (the fast path skips the divisibility check entirely; the slow path's
-    /// bitmask round-up and its `block & (align - 1) == 0` test both assume a
+    /// consumer's). With `debug_assertions` off, the behavior for ANY
+    /// non-power-of-two `align` -- including `0` -- is UNSPECIFIED: an
+    /// incorrect `Some`/`None` (the fast path skips the divisibility check
+    /// entirely; the slow path's bitmask round-up and its
+    /// `block & (align - 1) == 0` test both assume a
     /// power of two and can overshoot, under-return, or wrongly accept a
     /// non-fitting class), never memory unsafety or a corrupt table. The
-    /// `align == 0, size == 0` corner does NOT panic, but only with
+    /// one non-power-of-two input with a SPECIFIED outcome is the
+    /// `align == 0, size == 0` corner, which does NOT panic, but only with
     /// `overflow-checks` ALSO off (a separate Cargo knob from
     /// `debug_assertions`): `need - 1` underflows to `usize::MAX`, landing on
     /// the same early `None` any other out-of-range request takes (see
