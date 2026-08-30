@@ -85,6 +85,62 @@ fn pack_truncates_an_over_wide_index_never_collides_with_the_tag() {
     assert!(!T::is_empty(word2));
 }
 
+/// `try_pack` is the checked twin of `pack`: for every in-range
+/// `(index, tag)` pair it returns EXACTLY what `pack` returns (asserted as
+/// value equality against `pack`'s own output, not merely `Some`, so any
+/// future divergence between the two is caught), and once a half crosses
+/// its width boundary it returns `None` instead of silently truncating.
+/// Pinned at width 16, the neighboring truncation test's width: the first
+/// out-of-range index (`1 << INDEX_BITS`) is precisely the value `pack`
+/// masks down to a different valid-looking index, and the first
+/// out-of-range tag (`1 << TAG_BITS`) is precisely the value whose high
+/// bit `pack`'s `<< INDEX_BITS` silently drops.
+#[test]
+fn try_pack_matches_pack_in_range_and_rejects_out_of_range_halves() {
+    type T = TaggedIndex<16>;
+
+    // In range => Some, identical to pack's own output for the SAME
+    // inputs. INDEX_MASK itself is included deliberately: try_pack's
+    // boundary is pack's truncation boundary (`< 2^INDEX_BITS`), NOT
+    // push's stricter `< INDEX_MASK` reserve-sentinel bound — packing the
+    // empty index with a tag is the legitimate H-2 shape.
+    for &(idx, tag) in &[
+        (0u64, 0u64),
+        (1, 1),
+        (2748, 42),
+        (T::INDEX_MASK, 7),
+        (0xFFFE, (1u64 << T::TAG_BITS) - 1),
+    ] {
+        assert_eq!(
+            T::try_pack(idx, tag),
+            Some(T::pack(idx, tag)),
+            "try_pack must agree with pack exactly for in-range inputs \
+             (index {idx}, tag {tag})"
+        );
+    }
+
+    // First out-of-range index: exactly `1 << INDEX_BITS`. pack() masks it
+    // to 0 — a DIFFERENT valid index; try_pack refuses it instead.
+    assert_eq!(T::try_pack(1u64 << 16, 7), None, "first invalid index");
+    // Farther out of range, including the value whose low bits are all
+    // ones (pack would truncate it to the empty sentinel).
+    assert_eq!(T::try_pack(u64::MAX, 7), None, "far out-of-range index");
+    assert_eq!(
+        T::try_pack(0x1_FFFF, 7),
+        None,
+        "over-wide index that pack would truncate to the empty sentinel"
+    );
+
+    // First out-of-range tag: exactly `1 << TAG_BITS` (2^48 at width 16).
+    // pack() silently drops that shifted-out bit and returns a word whose
+    // tag reads 0; try_pack refuses it instead.
+    assert_eq!(
+        T::try_pack(9, 1u64 << T::TAG_BITS),
+        None,
+        "first invalid tag"
+    );
+}
+
 #[test]
 fn empty_sentinel_16() {
     type T = TaggedIndex<16>;

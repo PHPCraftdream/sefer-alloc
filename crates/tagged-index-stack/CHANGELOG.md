@@ -41,6 +41,15 @@ before it.
   former width-32 cap is now structurally impossible); helpers
   `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn`. The index
   half's all-ones value is the reserved "stack empty" sentinel.
+- **`TaggedIndex::try_pack(index, tag)`** — the checked twin of `pack`:
+  `Some(word)` — with `word` exactly what `pack` returns — for an in-range
+  `(index, tag)` pair, `None` instead of a silently truncated word when
+  the index is `>= 2^INDEX_BITS` (where `pack` would mask it to a
+  different, possibly empty-sentinel, index) or the tag is
+  `>= 2^TAG_BITS` (where `pack`'s shift would silently drop the high
+  bits). Exists for external callers, whom `pack` trusts to uphold the
+  precondition itself; the stack's own `push`/`pop` keep calling `pack`
+  directly, their inputs already guaranteed in range.
 - **ABA-defeating empty transition (the H-2 rule)** — when a `pop` drains the
   last element, the empty sentinel is packed with the **running tag** the
   draining pop observed, not reset to `0`: a tag reset would reopen the ABA

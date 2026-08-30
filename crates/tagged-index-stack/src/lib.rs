@@ -241,8 +241,10 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// [`TAG_BITS`](Self::TAG_BITS) evaluate it in their own initializers, and
     /// [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
     /// [`is_empty`](Self::is_empty), and [`empty`](Self::empty) all route through
-    /// `INDEX_MASK` or `pack` — so an out-of-range `INDEX_BITS` cannot reach
-    /// any associated item without tripping this guard.
+    /// `INDEX_MASK` or `pack`, while [`try_pack`](Self::try_pack) forces it
+    /// directly with the same `let ()` statement as `pack` — so an
+    /// out-of-range `INDEX_BITS` cannot reach any associated item without
+    /// tripping this guard.
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 16,
         "INDEX_BITS must be in 1..=16: the tag half must keep at least 48 bits \
@@ -286,8 +288,10 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// [`push`](TaggedIndexStack::push), whose stricter `< INDEX_MASK` bound
     /// lies below this truncation boundary, so no index the stack packs is
     /// ever truncated. External callers of `pack` get no such protection and
-    /// must uphold the `< 2^INDEX_BITS` precondition themselves. Note the two
-    /// bounds are deliberately different ranges, not a typo: `< 2^INDEX_BITS`
+    /// must uphold the `< 2^INDEX_BITS` precondition themselves; callers
+    /// that cannot should use [`try_pack`](Self::try_pack), the checked
+    /// twin that returns `None` rather than a silently truncated word.
+    /// Note the two bounds are deliberately different ranges, not a typo: `< 2^INDEX_BITS`
     /// is pack's truncation boundary (where the silent masking kicks in),
     /// while `push`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`) is
     /// stricter because it also excludes the reserved empty sentinel.
@@ -296,6 +300,34 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         // Force the compile-time bounds check to be evaluated.
         let () = Self::_CHECK_BITS;
         (tag << INDEX_BITS) | (index & Self::INDEX_MASK)
+    }
+
+    /// The checked twin of [`pack`](Self::pack): `Some(word)` with `word`
+    /// EXACTLY what [`pack`](Self::pack) returns for the same inputs, or
+    /// `None` when either half is out of range — `index >= 2^INDEX_BITS`
+    /// (which `pack` would silently mask to a DIFFERENT, valid-looking
+    /// index, or to the [empty sentinel](Self::empty_index) if the low bits
+    /// happen to be all ones) or `tag >= 2^TAG_BITS` (whose high bits
+    /// `pack`'s `tag << INDEX_BITS` would silently drop). Use this wherever
+    /// the `< 2^INDEX_BITS` / `< 2^TAG_BITS` precondition is not already
+    /// guaranteed by the calling logic; [`pack`](Self::pack) itself stays
+    /// the trusted fast primitive for
+    /// [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) and
+    /// the other in-crate callers that uphold it.
+    #[must_use]
+    pub const fn try_pack(index: u64, tag: u64) -> Option<u64> {
+        // Force the compile-time bounds check to be evaluated HERE, not
+        // only via `TAG_BITS` in one branch or `pack` on the other: a
+        // const evaluation taking the short-circuited branch would
+        // otherwise skip both, weakening the documented
+        // _CHECK_BITS-from-every-public-item invariant into a
+        // branch-dependent one.
+        let () = Self::_CHECK_BITS;
+        if index >= (1u64 << INDEX_BITS) || tag >= (1u64 << Self::TAG_BITS) {
+            None
+        } else {
+            Some(Self::pack(index, tag))
+        }
     }
 
     /// Split a packed word back into `(index, tag)`.
