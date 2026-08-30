@@ -96,7 +96,9 @@ pub(crate) const MIN_BLOCK_SHIFT: u32 = MIN_BLOCK.trailing_zeros();
 pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 
 /// The geometric growth ratio (mimalloc's 1.25× small spacing): each class
-/// after the first is `round_up(prev * 5 / 4, MIN_BLOCK)`.
+/// after the first is `round_up(ceil(prev * 5 / 4), MIN_BLOCK)`, with a
+/// minimum step of `MIN_BLOCK` (see `size_classes::Params::growth`'s doc for
+/// the authoritative formula).
 const GROWTH: (usize, usize) = (5, 4);
 
 /// The number of classes contributed by the geometric progression (unchanged

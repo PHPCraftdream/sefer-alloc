@@ -1,6 +1,4 @@
-//! `bench-scale-tool` fixed-iteration benches for `size-classes` (task #761).
-//! This crate previously had zero benches of its own — it is a lookup-table
-//! crate, so incorrect perf claims would be particularly misleading.
+//! `bench-scale-tool` fixed-iteration benches for `size-classes`.
 //!
 //! Run:
 //! ```text

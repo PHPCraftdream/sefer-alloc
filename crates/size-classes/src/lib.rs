@@ -60,8 +60,7 @@
 //! static SC: SizeClasses<N, L> = SizeClasses::build(PARAMS);
 //! ```
 //!
-//! (Runnable form with concrete values in the crate's `README.md`, mirrored
-//! by a compiled test so it cannot silently rot.)
+//! (Runnable form with concrete values in the crate's `README.md`.)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -175,14 +174,10 @@ impl<'a> Params<'a> {
 /// for `min_block == 1` and `max_class == usize::MAX`; for any `min_block >=
 /// 2` the quotient cannot reach `usize::MAX`).
 ///
-/// Both are checked, not merely documented: an unchecked `+ 1` here would
-/// wrap to `0` in a release build — including a release-profile `const`
-/// evaluation reached through a `const fn` CALL (not a bare literal
-/// expression), since const-eval overflow checks for such a call follow the
-/// `overflow-checks` profile the crate's MIR was built with — silently
-/// yielding an empty lookup. See
-/// <https://github.com/rust-lang/rust/issues/74823> ("Const functions
-/// sometimes don't do overflow checks in release mode").
+/// The `+ 1` overflow check is explicit rather than relying on the profile's
+/// default: a release-profile `const` evaluation reached through a `const fn`
+/// call follows the crate's `overflow-checks` setting and can silently wrap
+/// to `0` otherwise (<https://github.com/rust-lang/rust/issues/74823>).
 #[must_use]
 pub const fn size2class_len(max_class: usize, min_block: usize) -> usize {
     assert!(
@@ -572,8 +567,10 @@ pub struct SizeClasses<const N: usize, const L: usize> {
     size2class: [u8; L],
     // `min_block`, `small_align_max`, and `1 << min_block_shift` are the same
     // value by construction (see `build` below) -- storing only the shift
-    // removes two provably-redundant hot-path field loads;
-    // `min_block()`/`small_align_max()` re-derive it.
+    // removes one hot-path field load (`small_align_max`, read once in
+    // `class_for`'s fast-path check) at the cost of re-deriving `1 << shift`
+    // there instead; `min_block` was already accessor-only (never read
+    // directly in `class_for`). `min_block()`/`small_align_max()` re-derive it.
     min_block_shift: u32,
     huge_threshold: usize,
 }
@@ -617,6 +614,12 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// the params (see [`build_table`] / [`build_size2class`] for the exact
     /// obligations); a mismatch panics identically in `const` evaluation
     /// (compile error) and at runtime.
+    ///
+    /// Intended for a `static` (or `const`) initializer, where this is
+    /// const-evaluated and free. Nothing stops calling it at *runtime*
+    /// instead: doing so materializes the whole return value -- at least `L`
+    /// bytes, several KiB for a realistic scheme -- by value on the caller's
+    /// stack, which matters on a small-stack `no_std` target.
     ///
     /// `small_align_max` — the alignment ceiling of the O(1) fast path — is set
     /// to `min_block`: every class size is a multiple of `min_block`, so the
@@ -667,39 +670,27 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     ///   with `size.checked_sub(1)` if `size` may be `0`.
     /// - **`size <= small_max()`** for a genuine classification. Do NOT
     ///   derive this bound as a byte size (`L * min_block()` is NOT
-    ///   guaranteed to fit `usize`, even for a fully valid scheme — e.g.
-    ///   `min_block = 1 << 62`, `L = 4` gives `L * min_block() == 2^64`,
-    ///   overflowing `usize`; this crate's own test suite exercises exactly
-    ///   this scheme). Compare `size` to [`small_max`](Self::small_max)
-    ///   directly, or reason about the INDEX instead — beyond
-    ///   `small_max()` the raw index is NOT uniformly clamped:
-    ///   - `idx == L - 1` IS in-bounds and returns the clamped sentinel —
-    ///     the LAST class index, a false "fits" instead of the `None`
-    ///     [`class_for`](Self::class_for) would give;
-    ///   - `idx >= L` is genuinely OUT-OF-BOUNDS array indexing and panics,
-    ///     not a sentinel.
+    ///   guaranteed to fit `usize` for every valid scheme). Compare `size` to
+    ///   [`small_max`](Self::small_max) directly, or reason about the INDEX
+    ///   instead — beyond `small_max()` the raw index is NOT uniformly
+    ///   clamped: `idx == L - 1` is in-bounds and returns the clamped
+    ///   sentinel (a false "fits" instead of the `None`
+    ///   [`class_for`](Self::class_for) would give), while `idx >= L` is
+    ///   genuinely out-of-bounds and panics.
     ///
-    /// [`class_for`](Self::class_for) avoids both pitfalls: it indexes by
-    /// `need = max(size, align)`, which is always `>= 1` given `align`'s
-    /// own power-of-two contract (so the `size - 1` underflow above never
-    /// applies to it — `size` itself is never validated, `need` just
-    /// happens to always avoid THAT particular failure mode), and it
-    /// separately rejects a too-large `need` before ever indexing — plus
-    /// applies the `align` predicate this raw LUT ignores entirely. Prefer
-    /// it unless you specifically need the raw LUT and are prepared to
-    /// enforce both preconditions yourself.
+    /// [`class_for`](Self::class_for) avoids both pitfalls (its `need =
+    /// max(size, align)` is always `>= 1`, and it rejects a too-large `need`
+    /// before indexing) and additionally applies the `align` predicate this
+    /// raw LUT ignores. Prefer it unless you specifically need the raw LUT.
     ///
     /// **This shape is a deliberate, but not permanently promised, choice.**
     /// The LUT is today one flat `u8` per `min_block`-sized bucket over the
     /// *whole* size range (see [`size2class_len`]'s `# Memory cost`) — the
-    /// only shape that stays O(1) for arbitrary `extras`, which is this
-    /// crate's whole reason to exist, but a memory-hungry one for a scheme
-    /// with a large `max_class`. `L` being a public const generic means a
-    /// future layout change (e.g. a hybrid: an exact small-size LUT below
-    /// some threshold, a computed answer above it) would very likely require
-    /// a breaking release regardless. Prefer [`class_for`](Self::class_for)/
-    /// [`try_class_for`](Self::try_class_for) over the raw array shape
-    /// wherever possible.
+    /// simplest shape that stays O(1) for arbitrary `extras`, but a
+    /// memory-hungry one for a scheme with a large `max_class`. `L` being a
+    /// public const generic means a future layout change (e.g. a hybrid:
+    /// an exact small-size LUT below some threshold, a computed answer
+    /// above it) would very likely require a breaking release regardless.
     #[must_use]
     #[inline]
     pub const fn size2class(&self) -> &[u8; L] {
@@ -724,12 +715,9 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
         self.min_block_shift
     }
 
-    /// The alignment ceiling of the O(1) fast path (equal to `min_block`). Not
-    /// the ceiling on alignments the small path can serve — see
-    /// [`class_for`](Self::class_for)'s slow path. Same derivation as
-    /// [`min_block`](Self::min_block) -- kept as a distinct accessor NAME
-    /// because it anticipates becoming a genuinely independent `Params`
-    /// field later, not because it is a distinct value today.
+    /// The alignment ceiling of the O(1) fast path (equal to `min_block`) --
+    /// not the ceiling on alignments [`class_for`](Self::class_for) can
+    /// serve at all; larger alignments take its slow path instead.
     #[must_use]
     #[inline]
     pub const fn small_align_max(&self) -> usize {
@@ -764,9 +752,9 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     }
 
     /// The caller's [`Params::huge_threshold`] policy value, as built. The
-    /// only `Params` field with a dedicated read-back accessor here -- a
-    /// caller that needs to report or log the threshold no longer has to
-    /// keep its own separate copy of it.
+    /// only `Params` field with a dedicated read-back accessor here, for a
+    /// caller that needs to report or log the threshold without keeping its
+    /// own separate copy of it.
     #[must_use]
     #[inline]
     pub const fn huge_threshold(&self) -> usize {
@@ -792,9 +780,11 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// establish about block addresses.
     ///
     /// **Fast path (`align <= min_block`):** every class SIZE is a multiple of
-    /// `min_block`, so the stride divisibility check is trivially satisfied —
-    /// one O(1) lookup (same base-alignment precondition as the slow path,
-    /// below).
+    /// `min_block`, which does two things: the stride divisibility check is
+    /// trivially satisfied, **and** the LUT's bucket-top answer is the
+    /// smallest *fitting* class (no class value can lie strictly between
+    /// `need` and its bucket's top) — one O(1) lookup (same base-alignment
+    /// precondition as the slow path, below).
     ///
     /// **Slow path (`align > min_block`, a power of two):** seed at the lookup
     /// entry covering `max(size, align)`, then jump forward over non-divisible
@@ -819,39 +809,23 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// by hand may not.
     ///
     /// A violation trips a `debug_assert!` whenever `cfg(debug_assertions)` is
-    /// on -- both this and the `overflow-checks` knob below are lowered
-    /// against the profile `size-classes` itself is compiled with, which
-    /// normally tracks the consumer's own profile (that is the ordinary
-    /// `cargo build`/`cargo build --release` case); a per-package profile
-    /// override (`[profile.*.package.size-classes]`) can desync the two.
-    /// With `debug_assertions` off, the behavior for a non-zero
-    /// non-power-of-two `align` is UNSPECIFIED, not merely "a wrong class
-    /// choice" -- it can return an incorrect `Some`/`None` (see the three
-    /// failure modes below), never memory unsafety or a corrupt table. The
+    /// on (both this and the `overflow-checks` knob below track the profile
+    /// `size-classes` itself is compiled with, which normally tracks the
+    /// consumer's). With `debug_assertions` off, the behavior for a non-zero
+    /// non-power-of-two `align` is UNSPECIFIED: an incorrect `Some`/`None`
+    /// (the fast path skips the divisibility check entirely; the slow path's
+    /// bitmask round-up and its `block & (align - 1) == 0` test both assume a
+    /// power of two and can overshoot, under-return, or wrongly accept a
+    /// non-fitting class), never memory unsafety or a corrupt table. The
     /// `align == 0, size == 0` corner does NOT panic, but only with
-    /// `overflow-checks` ALSO off (the default release profile, but a
-    /// separate Cargo knob from `debug_assertions` -- a consumer can turn it
-    /// on in release): `need - 1` underflows to `usize::MAX`, and the
-    /// resulting index is always `>= L - 1` (see `class_for`'s own
-    /// index-space guard comment for the proof), so it takes the same early
-    /// `None` return as any other out-of-range request. With
-    /// `overflow-checks` on, that same subtraction panics instead. Prefer
+    /// `overflow-checks` ALSO off (a separate Cargo knob from
+    /// `debug_assertions`): `need - 1` underflows to `usize::MAX`, landing on
+    /// the same early `None` any other out-of-range request takes (see
+    /// `class_for`'s own index-space guard comment for the proof); with
+    /// `overflow-checks` on, that subtraction panics instead. Prefer
     /// [`try_class_for`](Self::try_class_for), which rejects `align == 0`
     /// before any of this arithmetic runs in every profile, over relying on
     /// this fallback behavior.
-    ///
-    /// Concretely, all three of the fit predicate's WRONG-ANSWER failure
-    /// modes become reachable for a non-pow2 `align`:
-    ///
-    /// - the fast path (`align <= min_block`) returns its seed without
-    ///   checking divisibility at all;
-    /// - the slow path's bitmask round-up computes the wrong "next multiple
-    ///   of `align`", so it can overshoot a class that would have fit, or
-    ///   return `None` when one exists;
-    /// - the slow path's `block & (align - 1) == 0` test is not a
-    ///   divisibility test for a non-pow2 `align`, so it can ACCEPT a class
-    ///   that does not fit — e.g. `class_for(20, 24)` returning a 32-byte
-    ///   block, where `32 % 24 == 8`.
     ///
     /// **The carve base must also be `align`-aligned.** For blocks carved at
     /// `base + k * block_size`, `block_size % align == 0` gives `address(k) %
@@ -947,9 +921,7 @@ impl<const N: usize, const L: usize> SizeClasses<N, L> {
     /// already-valid input; the only behavior difference is on the inputs
     /// `class_for`'s own `# Preconditions` already document as
     /// contract-violating. Does strictly more work than `class_for` (the
-    /// added power-of-two check) -- the crate's own benchmark suite has a
-    /// `try_class_for/*` row for this if you want to measure the difference
-    /// on your own target.
+    /// added power-of-two check).
     ///
     /// **Never panics, for any `(size, align)` pair** — this is the
     /// substantive reason to prefer it over `class_for` for an `align` that

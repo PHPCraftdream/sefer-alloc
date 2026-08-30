@@ -52,7 +52,10 @@ KiB, the object itself ~16.20 KiB on a 64-bit target; a 24-class scheme
 with `min_block = 8` reaches `L = 18207`, a larger object despite having
 half the classes. See
 [`size2class_len`'s rustdoc](https://docs.rs/size-classes/latest/size_classes/fn.size2class_len.html)
-for the full worked comparison.
+for the full worked comparison. `SizeClasses::build` should therefore run in
+a `static`/`const` initializer (const-evaluated, free) -- calling it at
+runtime instead materializes the whole object by value on the caller's
+stack, which matters on a small-stack `no_std` target.
 
 `Params` is `#[non_exhaustive]` (field growth is plausible, e.g. a future
 `small_align_max` knob) — construct it via `Params::new(..)`, not a struct

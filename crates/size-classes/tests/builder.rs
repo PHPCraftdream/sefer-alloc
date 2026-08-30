@@ -94,11 +94,11 @@ fn reference_class_for(table: &[usize], size: usize, align: usize) -> Option<usi
         .position(|&b| b >= need && b.is_multiple_of(align))
 }
 
-// MS prepublish review, task #1503 (P2-2): the exact geo_count where
-// production succeeds (182 on 64-bit, per sefer_growth_geo_count_182_is_
-// the_last_that_fits_on_64_bit below) but where `reference_table`'s
-// PRE-fix unconditional last-iteration advance would additionally compute
-// one more, unused step -- the same step that overflows at geo_count=183.
+// The exact geo_count where production succeeds (182 on 64-bit, per
+// sefer_growth_geo_count_182_is_the_last_that_fits_on_64_bit below) but
+// where `reference_table`'s PRE-fix unconditional last-iteration advance
+// would additionally compute one more, unused step -- the same step that
+// overflows at geo_count=183.
 // Pins that `reference_table` agrees with production at the boundary
 // instead of spuriously panicking on work production never does.
 #[cfg(target_pointer_width = "64")]
@@ -475,8 +475,9 @@ fn sefer_bench_jump_rows_genuinely_exercise_the_slow_path() {
 // `geo_count > 0`, `N == geo_count + extras.len()` are likewise asserted in
 // `build_table`/`build_size2class` with no separate compile-fail harness).
 //
-// docs/reviews/2026-08-06-size-classes-publish-readiness-review.md §5.1 (S1)
-// reproduced both as silent-corruption bugs before this fix.
+// Both were originally silent-corruption bugs: a non-`min_block`-multiple
+// extra merged into the table with no diagnostic, breaking `class_for`'s
+// fast-path alignment invariant.
 
 #[test]
 #[should_panic(expected = "multiple of min_block")]
@@ -711,17 +712,15 @@ fn geometric_run_matches_hand_derived_golden_values() {
 }
 
 // ---------------------------------------------------------------------------
-// task #701 (rust-intel audit §B26, MEDIUM): the geometric-advance multiply
-// (`cur * num`) was a bare, unchecked `usize` multiply on a value that grows
-// on every geometric step -- in a release profile (this crate does not
-// control the consumer's `overflow-checks` setting) it would silently WRAP,
-// and the subsequent `next <= cur` min-step fallback masked the wrap into a
-// valid-looking, strictly-increasing table (min_block-sized steps instead of
-// the requested geometry) rather than surfacing an error anywhere.
-// `build_size2class`'s own monotonicity check cannot catch this, since the
-// masked table genuinely IS strictly increasing.
-//
-// docs/reviews/2026-08-07-size-classes-rust-intel-audit.md §B26.
+// The geometric-advance multiply (`cur * num`) was once a bare, unchecked
+// `usize` multiply on a value that grows on every geometric step -- in a
+// release profile (this crate does not control the consumer's
+// `overflow-checks` setting) it would silently WRAP, and the subsequent
+// `next <= cur` min-step fallback masked the wrap into a valid-looking,
+// strictly-increasing table (min_block-sized steps instead of the requested
+// geometry) rather than surfacing an error anywhere. `build_size2class`'s own
+// monotonicity check cannot catch this, since the masked table genuinely IS
+// strictly increasing.
 
 #[test]
 #[should_panic(expected = "geometric progression overflows usize")]
@@ -875,10 +874,7 @@ fn build_size2class_l_check_overflow_panics_instead_of_accepting_a_wrong_l() {
 //
 // geo_count = 1 never reaches the geometric advance (that only runs after
 // the FIRST push, guarded by `gi < geo_count`), so the scheme is legal for
-// any growth pair; (5, 4) matches the rest of this file.
-//
-// docs/reviews/2026-08-26-102907-size-classes-publication-audit-run-1-Sol-codex.md
-// (P2-1), fixed in cc94a46.
+// any growth pair; (5, 4) matches the rest of this file. Fixed in cc94a46.
 
 // size-classes publication audit run 2 (Claude, review-2 F6, extended past
 // the report's own two named sites): every const in this module uses a
@@ -1129,11 +1125,8 @@ mod extreme64_overflow {
 // for a power-of-two `align`. Neither path panicked; both could return a
 // non-conforming class or a wrong `None`. `align` must be a power of two is
 // now a documented precondition, enforced by a `debug_assert!` (deliberately
-// NOT a release-active `assert!` -- see the doc comment on `class_for` for
-// why this differs from task #701's promotion).
-//
-// docs/reviews/2026-08-07-size-classes-rust-intel-audit.md §F2 (lib.rs:408)
-// and the companion §B26 (lib.rs:432).
+// NOT a release-active `assert!` -- see `class_for`'s own doc comment for the
+// profile-dependent contract this leaves for a non-power-of-two `align`).
 
 // task #755's closing review (F3, HIGH): the guard under test is a
 // `debug_assert!`, which compiles away entirely in `--release` (debug
@@ -1198,6 +1191,18 @@ fn invalid_align_display_names_the_offending_value() {
     let msg = InvalidAlign(6).to_string();
     assert!(msg.contains('6'), "got: {msg}");
 }
+
+/// Mechanical guards for two semver-visible trait impls that no other test
+/// exercises: `InvalidAlign: core::error::Error` (only its `Display` is
+/// tested above) and `SizeClasses: Clone` (a deliberate decision, not
+/// `Copy` -- see `SizeClasses`'s own doc and `CHANGELOG.md`). A future
+/// accidental removal of either impl fails here at compile time.
+const _: fn() = || {
+    fn assert_error<T: core::error::Error>() {}
+    fn assert_clone<T: Clone>() {}
+    assert_error::<InvalidAlign>();
+    assert_clone::<SizeClasses<1, 1>>();
+};
 
 #[test]
 fn is_huge_uses_the_policy_threshold_not_an_os_constant() {

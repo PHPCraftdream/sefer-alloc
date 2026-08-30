@@ -62,12 +62,10 @@ before it.
     power-of-two alignments, a provably
     equivalent **jump** slow path rounds the block up to the next multiple of
     `align` and re-seeds through the lookup, skipping whole runs of
-    non-divisible classes instead of stepping one class at a time. Without
-    that classifier, a request whose `align` exceeds what the caller's
-    classifier happens to handle silently falls through to the caller's
-    whole-segment path — the real bug class in hand-rolled allocators this
-    crate exists to remove (`sefer-alloc`'s own motivating case, the
-    allocator this crate was extracted from: `align >= 512`).
+    non-divisible classes instead of stepping one class at a time (see
+    `class_for`'s own rustdoc for why this matters -- a request whose
+    `align` exceeds what a hand-rolled classifier happens to handle is a
+    real bug class this crate exists to remove).
     `align` must be a power of two (the `Layout` contract), enforced by a
     `debug_assert!` — with `debug_assertions` off, a non-zero
     non-power-of-two `align` is unspecified: it can return a wrong
