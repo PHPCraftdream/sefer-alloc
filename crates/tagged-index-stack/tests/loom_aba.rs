@@ -26,7 +26,7 @@
 //!     true of the separate, rendezvous-pinned H-2 scenario (d) below).
 //! (b) Regardless of which way (a)'s race resolves, the free-list stays
 //!     loss/duplication-free — the actual property
-//!     `aba_repush_forces_stale_cas_retry_and_stays_consistent` asserts.
+//!     `aba_repush_keeps_free_list_conservation` asserts.
 //! (c) **Untagged counterfactual** (`#[should_panic]`): a bare `AtomicU32` head
 //!     with NO tag lets a same-shape interleaving corrupt the free-list —
 //!     proving the harness is non-vacuous and the tag is load-bearing. Also
@@ -84,7 +84,7 @@ fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
 // ============================================================================
 
 #[test]
-fn aba_repush_forces_stale_cas_retry_and_stays_consistent() {
+fn aba_repush_keeps_free_list_conservation() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
@@ -134,8 +134,11 @@ fn aba_repush_forces_stale_cas_retry_and_stays_consistent() {
         assert_eq!(
             popped,
             vec![0, 1],
-            "free-list corrupted (loss or duplication): got {popped:?} — the ABA \
-             tag guard failed to force A's stale CAS to retry"
+            "free-list corrupted (lost or duplicated index): draining after \
+             A's single-shot CAS raced B's pop+repush yielded {popped:?}, \
+             expected exactly [0, 1] — A's CAS may legitimately succeed or \
+             fail depending on scheduling; either outcome must conserve the \
+             free-list set"
         );
     });
 }
@@ -281,7 +284,7 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 // against the real crate type via cas_head_for_test, so it demonstrates the
 // tag defeats THIS specific resurrection mechanism, not just the older
 // single-pop-single-repush one already covered by
-// aba_repush_forces_stale_cas_retry_and_stays_consistent.
+// aba_repush_keeps_free_list_conservation.
 // ============================================================================
 
 #[test]
@@ -380,13 +383,24 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 // model's rationale: a free race admits degenerate orderings that false-positive).
 // ============================================================================
 
-/// A single-slot stack seeded at a caller-chosen running tag (models the
-/// realistic steady state, not a bootstrap artifact). Built from the REAL crate
-/// type by pushing once then re-seeding the tag via repeated push/pop is
-/// fiddly; instead we drive the REAL `push`/`pop` and reason about the tag it
-/// produces. Seeding is done by pushing index 0 `start_pushes` times through a
-/// pop/push cycle so the running tag reaches the desired value.
+/// A single-slot stack (slot 0 resting on it) whose running tag is exactly
+/// `target_tag` — the realistic steady state for the H-2 scenario, not a
+/// bootstrap artifact. Built by driving the REAL `push`/`pop`: each push
+/// bumps the tag by 1 and each pop preserves it, so `target_tag - 1`
+/// push/pop round-trips followed by one final push leave the running tag
+/// exactly at `target_tag` (asserted at the end of this function).
+///
+/// Precondition: `target_tag >= 1`. Getting slot 0 onto the stack takes one
+/// push, and that push already leaves the running tag at 1, so a populated
+/// single-slot stack can never sit at tag 0; asserted loudly here rather
+/// than surfacing later as a confusing seeded-tag mismatch.
 fn single_slot_seeded(target_tag: u64) -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<1>>) {
+    assert!(
+        target_tag >= 1,
+        "single_slot_seeded: target_tag must be >= 1 (a single push already \
+         leaves the running tag at 1, so a populated single-slot stack can \
+         never sit at tag 0); got {target_tag}"
+    );
     let links = Arc::new(ArrayLinks::<1>::new());
     let stack = Arc::new(TaggedIndexStack::<16>::new());
     // Each push bumps the tag by 1; a pop preserves it. Push once => tag 1.
