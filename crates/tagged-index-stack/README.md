@@ -138,7 +138,7 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_ab
 
 ## Notes
 
-`TaggedIndexStack::raw_head` is a `#[doc(hidden)]` test-only probe, not part of the stable public API — do not depend on it.
+`TaggedIndexStack::raw_head` is a `#[doc(hidden)]` test-only probe: the attribute only hides it from rustdoc's rendered navigation, and the function remains publicly callable — it carries no semver stability guarantee and exists only for this crate's own `tests/`, so do not depend on it.
 
 ## Example
 

@@ -346,9 +346,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// reopens the ABA window.
     ///
     /// `#[doc(hidden)]`: this is a `pub const fn` (so `tests/` — an external
-    /// crate from this crate's own perspective — can reach it) but NOT a
-    /// stable, documented part of the public API. Its only correct in-crate
-    /// caller is [`TaggedIndexStack::new`]'s bootstrap path; anywhere else the
+    /// crate from this crate's own perspective — can reach it). The attribute
+    /// hides it from rustdoc's rendered navigation ONLY — it is still a fully
+    /// callable `pub` item from any downstream crate; nothing in the language
+    /// or this crate enforces non-callability. It carries no semver stability
+    /// guarantee and is `pub` for the `tests/` reason above alone, not as an
+    /// invitation for other external use. Its only correct in-crate caller is
+    /// [`TaggedIndexStack::new`]'s bootstrap path; anywhere else the
     /// unconditional tag-0 reset reopens the H-2 ABA window documented above —
     /// a runtime drain must instead use [`empty_index`](Self::empty_index) with
     /// the tag it just observed. See this project's established
@@ -817,8 +821,9 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// `pop`'s `Acquire` head load does.
     ///
     /// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
-    /// from this crate's own perspective — can reach it) but NOT a stable,
-    /// documented part of the public API; it is not exercised by any
+    /// from this crate's own perspective — can reach it). The attribute hides
+    /// it from rustdoc's rendered navigation ONLY; nothing prevents any
+    /// downstream crate from calling it. It is not exercised by any
     /// production caller and carries no semver stability guarantee. See this
     /// project's established `#[doc(hidden)]` test-only-forwarder convention.
     #[doc(hidden)]

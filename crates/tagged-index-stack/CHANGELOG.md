@@ -113,4 +113,6 @@ before it.
   non-vacuous. `loom` is a `cfg(loom)`-gated library dependency only; a
   normal build pulls in zero non-`std` dependencies.
 - **`raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the packed
-  head word; deliberately excluded from the stable, documented API.
+  head word; the attribute only excludes it from rustdoc's rendered
+  navigation (it remains publicly callable), it carries no semver stability
+  guarantee, and it exists for this crate's own `tests/`.
