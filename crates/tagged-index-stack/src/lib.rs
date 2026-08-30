@@ -295,6 +295,21 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// success) also sees the link a pusher wrote (via its `Release` store) before
 /// publishing that slot as head.
 ///
+/// This requirement is deliberately STRONGER than the stack's own internal
+/// minimum. Each [`store_next`](Self::store_next) is sequenced-before the
+/// pushing thread's `Release` CAS on the head — and a release operation
+/// publishes ALL of its thread's prior writes, whatever tags those writes
+/// carry themselves — and each [`load_next`](Self::load_next) is
+/// sequenced-after the popping thread's `Acquire` observation of that head.
+/// Given the stack's own head orderings, even `Relaxed` links would therefore
+/// be ordered correctly for this stack's own usage. The full pairing is
+/// mandated anyway so that a [`Links`] implementation stays correct on its
+/// own terms, rather than being coupled to the stack's internal head
+/// orderings — an implementation detail that could change. On weakly-ordered
+/// targets, where `Acquire`/`Release` cost real instructions, read this as
+/// considered defence-in-depth for an openly-implementable trait, not
+/// naivety.
+///
 /// # Stability
 ///
 /// This trait is intentionally OPEN to external implementation — slot-resident
@@ -368,6 +383,30 @@ impl<const N: usize> Links for ArrayLinks<N> {
 /// pushes indices as they become free.
 #[derive(Debug)]
 pub struct TaggedIndexStack<const INDEX_BITS: u32> {
+    /// INVARIANT (release sequence): every modification of `head` MUST be a
+    /// compare_exchange (an RMW). Today both writers are —
+    /// [`push`](TaggedIndexStack::push)'s `Release` CAS and
+    /// [`pop`](TaggedIndexStack::pop)'s `Acquire` CAS (plus the loom-only
+    /// `cas_head_for_test`, also a CAS; constructing the atomic in `new` is
+    /// initialization, not a modification, and `raw_head` only loads). Per
+    /// the release-sequence rule, a release sequence continues through every
+    /// subsequent RMW to the same location regardless of those RMWs' own
+    /// orderings, so with every write here an RMW the release sequence headed
+    /// by any push's `Release` CAS stays UNBROKEN across all later
+    /// modifications. That is what lets `pop`'s successful CAS be plain
+    /// `Acquire` instead of `AcqRel`: any later `Acquire` read of a value
+    /// this pop wrote still lands inside that push's release sequence, so the
+    /// happens-before edge back to the link-writing push survives
+    /// transitively.
+    ///
+    /// Do NOT add a plain `store` to this field (e.g. a hypothetical
+    /// `clear()`/`reset()`, or a `Drop` impl zeroing it). A non-RMW write
+    /// severs every release sequence it follows; after that, `pop`'s
+    /// `Acquire`-only success ordering can silently un-publish links on
+    /// weakly-ordered targets — no compile error, and likely no test failure
+    /// on x86. If such an API is ever genuinely needed, promote `pop`'s
+    /// success ordering to `AcqRel` in the same change. (Plain loads are
+    /// harmless: they modify nothing, so they break no sequence.)
     head: AtomicU64,
 }
 
@@ -509,6 +548,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             } else {
                 TaggedIndex::<INDEX_BITS>::pack(next as u64, tag)
             };
+            // Acquire on success with NO Release half is sound ONLY because
+            // every write to `head` is an RMW: this CAS stays inside the
+            // release sequence headed by the push that `Release`d the link
+            // being handed out, so our own write need not head one. See the
+            // INVARIANT on the `head` field — a plain `store` there would
+            // sever that sequence and make this ordering unsound.
             match self
                 .head
                 .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire)
