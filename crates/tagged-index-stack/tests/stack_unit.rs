@@ -131,81 +131,55 @@ fn tag_wraps_at_2_pow_48() {
     );
 }
 
-/// A different width (`INDEX_BITS = 20`) partitions the word correctly and the
-/// empty sentinel is width-appropriate — exercises the const generic.
+/// A different width (`INDEX_BITS = 12`) partitions the word correctly and the
+/// empty sentinel is width-appropriate — exercises the const generic. (Width
+/// 20 was retired when `_CHECK_BITS` narrowed the legal range to `1..=16`;
+/// 12 keeps the same shape at a mid-range legal width, distinct from this
+/// file's other widths 1 and 16.)
 #[test]
-fn width_20_partitions() {
-    type T = TaggedIndex<20>;
-    assert_eq!(T::INDEX_MASK, 0xFFFFF);
-    assert_eq!(T::TAG_BITS, 44);
-    let w = T::pack(0xABCDE, 7);
+fn width_12_partitions() {
+    type T = TaggedIndex<12>;
+    assert_eq!(T::INDEX_MASK, 0xFFF);
+    assert_eq!(T::TAG_BITS, 52);
+    let w = T::pack(0xABC, 7);
     let (v, t) = T::unpack(w);
-    assert_eq!(v, 0xABCDE);
+    assert_eq!(v, 0xABC);
     assert_eq!(t, 7);
     assert!(T::is_empty(T::empty()));
-    // TAIL (u32::MAX) differs from this width's empty_index (0xFFFFF).
+    // TAIL (u32::MAX) differs from this width's empty_index (0xFFF).
     assert_ne!(T::empty_index() as u32, TAIL);
 }
 
-/// Pins the width-32 boundary: at the maximum allowed width
-/// `INDEX_BITS = 32`, `INDEX_MASK` numerically equals `TAIL` (`u32::MAX`),
-/// so the empty sentinel and `TAIL` coincide — and `push`'s
-/// `index < INDEX_MASK` runtime guard therefore already rejects
-/// `index == TAIL`. That coincidence is only guaranteed because
-/// `_CHECK_BITS` caps `INDEX_BITS` at 32: at a hypothetical width above
-/// 32, `INDEX_MASK` would exceed `u32::MAX` and `index == TAIL` would
-/// silently pass the guard, corrupting a chain.
-///
-/// The panic assertion pins the guard's own message substring (not just
-/// `is_err()`): an unrelated out-of-bounds panic from
-/// `ArrayLinks::store_next` (reached if the guard were ever deleted or
-/// weakened) would ALSO satisfy a bare `is_err()` check, making the test
-/// pass whether or not the guard this test exists to pin is even present.
+/// The old legal maximum `INDEX_BITS = 32` made `INDEX_MASK` numerically
+/// equal `TAIL` (`u32::MAX`), collapsing `push`'s two reject-purposes
+/// (out-of-range and reject-`TAIL`) into one value; the former
+/// `width_32_index_mask_equals_tail_and_is_rejected` test pinned that
+/// coincidence (and `push` panicking on `index == TAIL` because of it).
+/// The `_CHECK_BITS` cap is now `1..=16`, so the coincidence is structurally
+/// impossible at EVERY legal width (`INDEX_MASK <= 0xFFFF`) — pinned here at
+/// the MAXIMUM legal width. The guard's panic path and its exact message
+/// remain pinned by `width_16_push_rejects_index_mask_itself` below, which
+/// rejects the equally out-of-range `INDEX_MASK` itself.
 #[test]
-fn width_32_index_mask_equals_tail_and_is_rejected() {
-    type T = TaggedIndex<32>;
-    assert_eq!(
+fn max_legal_width_index_mask_never_equals_tail() {
+    type T = TaggedIndex<16>;
+    assert_eq!(T::INDEX_MASK, 0xFFFF, "width 16 is the maximum legal width");
+    assert_ne!(
         T::INDEX_MASK,
         TAIL as u64,
-        "empty_index coincides with TAIL at the max width"
-    );
-    assert_eq!(T::TAG_BITS, 32);
-
-    let links = ArrayLinks::<4>::new();
-    let stack = TaggedIndexStack::<32>::new();
-    // A valid, non-TAIL index still works normally.
-    stack.push(&links, 3);
-    assert_eq!(stack.pop(&links), Some(3));
-
-    // `index == TAIL` (== INDEX_MASK at this width) must panic — it is
-    // indistinguishable from the empty sentinel/end-of-chain otherwise. The
-    // guard is a full `assert!`, not a `debug_assert!`, so this holds
-    // identically in both debug and release builds.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        stack.push(&links, TAIL);
-    }));
-    let err = result.expect_err("pushing index == TAIL must panic");
-    let message = err
-        .downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| err.downcast_ref::<String>().cloned())
-        .expect("panic payload should be a string message");
-    assert!(
-        message.contains("index must be < INDEX_MASK"),
-        "panic message did not name the push guard's own contract (got: {message:?}) — \
-         an unrelated panic (e.g. an ArrayLinks out-of-bounds index) must NOT satisfy \
-         this test, since that would mean the guard itself could be deleted without \
-         this test noticing"
+        "INDEX_MASK must never coincide with TAIL at any legal width — the \
+         1..=16 cap makes the old width-32 coincidence impossible"
     );
 }
 
 /// push's `index < INDEX_MASK` guard at a NON-degenerate width, where the two
 /// things the guard exists to reject are DIFFERENT values: at
 /// `INDEX_BITS = 16`, `INDEX_MASK` is `0xFFFF` (the reserved empty sentinel)
-/// while `TAIL` is `u32::MAX`. The width-32 test above pins only the special
-/// case where `INDEX_MASK == TAIL` numerically and the guard's two purposes
-/// (reject-out-of-range AND reject-`TAIL`) coincide; this pins the guard's
-/// ordinary, out-of-range purpose in its own right.
+/// while `TAIL` is `u32::MAX`. (At the old legal maximum `INDEX_BITS = 32`
+/// the two coincided and the guard's purposes collapsed into one; the
+/// `1..=16` cap has made that coincidence impossible — see
+/// `max_legal_width_index_mask_never_equals_tail` above — so this pins the
+/// guard's ordinary, out-of-range purpose in its own right.)
 #[test]
 fn width_16_push_rejects_index_mask_itself() {
     type T = TaggedIndex<16>;
@@ -213,15 +187,16 @@ fn width_16_push_rejects_index_mask_itself() {
         T::INDEX_MASK,
         TAIL as u64,
         "at width 16 INDEX_MASK (0xFFFF) and TAIL (u32::MAX) must differ — \
-         this test covers the guard's ordinary case, not the width-32 coincidence"
+         this test covers the guard's ordinary out-of-range case (no legal \
+         width has an INDEX_MASK/TAIL coincidence any more)"
     );
 
     let links = ArrayLinks::<4>::new();
     let stack = TaggedIndexStack::<16>::new();
     // 0xFFFF == INDEX_MASK at this width: an in-range-looking u32 that the
-    // guard must reject because it is the reserved empty sentinel. Same full
-    // panic assertion as the width-32 test: the message must name the guard's
-    // own contract, so an unrelated out-of-bounds panic (e.g. from
+    // guard must reject because it is the reserved empty sentinel. The full
+    // panic assertion (not a bare is_err()) means the message must name the
+    // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
     // `ArrayLinks`) cannot satisfy this test.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         stack.push(&links, T::INDEX_MASK as u32);
@@ -239,11 +214,11 @@ fn width_16_push_rejects_index_mask_itself() {
 }
 
 // Compile-fail coverage note: this crate has no trybuild (or similar
-// compile-fail) test infrastructure wired up, so `INDEX_BITS > 32` failing to
+// compile-fail) test infrastructure wired up, so `INDEX_BITS > 16` failing to
 // compile is NOT pinned by an automated test. Manually verified instead:
-// instantiating `TaggedIndex::<33>` (or any `TaggedIndexStack<N>` with
-// `N > 32`) fails `cargo build` with the `_CHECK_BITS` assertion message
-// ("INDEX_BITS must be in 1..=32 ..."). This is a known coverage gap, not a
+// instantiating `TaggedIndex::<17>` (or any `TaggedIndexStack<N>` with
+// `N > 16`) fails `cargo build` with the `_CHECK_BITS` assertion message
+// ("INDEX_BITS must be in 1..=16 ..."). This is a known coverage gap, not a
 // silent omission.
 
 // ---------------------------------------------------------------------------

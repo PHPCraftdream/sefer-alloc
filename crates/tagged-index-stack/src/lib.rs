@@ -178,17 +178,25 @@ pub const TAIL: u32 = u32::MAX;
 pub struct TaggedIndex<const INDEX_BITS: u32>;
 
 impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
-    /// Compile-time guard: `INDEX_BITS` must be in `1..=32` so both halves are
-    /// non-empty, the shifts are well-defined, AND every representable index fits
-    /// in the `u32` that [`push`](TaggedIndexStack::push) actually takes.
+    /// Compile-time guard: `INDEX_BITS` must be in `1..=16` so both halves are
+    /// non-empty, the shifts are well-defined, every representable index fits
+    /// in the `u32` that [`push`](TaggedIndexStack::push) actually takes, AND
+    /// the tag half keeps a minimum of 48 bits.
     ///
-    /// Widths above 32 are rejected rather than merely discouraged: `push` takes
-    /// a `u32` index, so `INDEX_BITS > 32` can never buy reachable index range —
-    /// it only shrinks the tag budget — and worse, it makes `INDEX_MASK` exceed
-    /// `u32::MAX`, which let `index == u32::MAX` (the internal [`TAIL`] sentinel)
-    /// silently pass the old `< INDEX_MASK` runtime guard and corrupt a chain.
-    /// Capping at compile time closes that class of bug structurally instead of
-    /// requiring every caller to separately exclude `TAIL` at runtime.
+    /// Widths above 16 are rejected rather than merely discouraged: the 16 cap
+    /// guarantees every legal configuration at least a 48-bit ABA tag, the
+    /// cache-line-throughput-derived floor below which a tag wrap stops being
+    /// structurally implausible (see the crate docs' "Tag-width budget"
+    /// section for the full derivation). The `u32` bound is respected a
+    /// fortiori: `push` takes a `u32` index, so `INDEX_BITS > 32` could never
+    /// buy reachable index range anyway — it only shrinks the tag budget — and
+    /// worse, it would make `INDEX_MASK` exceed `u32::MAX`, letting
+    /// `index == u32::MAX` (the internal [`TAIL`] sentinel) silently pass the
+    /// `< INDEX_MASK` runtime guard and corrupt a chain. (At every legal width
+    /// `INDEX_MASK <= 0xFFFF`, so the historical `INDEX_MASK == TAIL`
+    /// coincidence at width 32 is now structurally impossible.) Capping at
+    /// compile time closes that class of bug structurally instead of requiring
+    /// every caller to separately exclude `TAIL` at runtime.
     ///
     /// This `const` is forced to evaluate from EVERY public associated item of
     /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) references it via a
@@ -199,10 +207,11 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// `INDEX_MASK` or `pack` — so an out-of-range `INDEX_BITS` cannot reach
     /// any associated item without tripping this guard.
     const _CHECK_BITS: () = assert!(
-        INDEX_BITS >= 1 && INDEX_BITS <= 32,
-        "INDEX_BITS must be in 1..=32 (both the index half and the tag half must \
-         be non-empty, and every valid index must fit in push's u32 parameter — \
-         widths above 32 buy no reachable index range and are rejected)"
+        INDEX_BITS >= 1 && INDEX_BITS <= 16,
+        "INDEX_BITS must be in 1..=16: the tag half must keep at least 48 bits \
+         (the cache-line-throughput-derived floor against ABA tag wrap — see \
+         the crate docs' \"Tag-width budget\" section), both halves must be \
+         non-empty, and every valid index must fit in push's u32 parameter"
     );
 
     /// Bit-mask for the low `INDEX_BITS` (the index half), e.g. `0xFFFF`
@@ -489,11 +498,11 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// parent allocator means handing out a slot that is still live elsewhere
     /// — memory unsafety reachable from this `#![forbid(unsafe_code)]` crate's
     /// 100% safe public API. The real bound is also `index != TAIL`: since
-    /// `INDEX_BITS` is compile-time capped at `32` (see [`TaggedIndex`]'s
+    /// `INDEX_BITS` is compile-time capped at `16` (see [`TaggedIndex`]'s
     /// `_CHECK_BITS`), `INDEX_MASK` can never exceed `u32::MAX` (`TAIL`), so
     /// `index < INDEX_MASK` already implies `index != TAIL` for every
-    /// representable width — the two conditions coincide instead of needing to
-    /// be asserted separately.
+    /// representable width — one guard covers both conditions, no separate
+    /// `TAIL` assertion is needed.
     ///
     /// # Caller contract
     ///
@@ -548,11 +557,14 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             let (cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
             // The link this index chains to: the current head's index, or TAIL
             // if the stack is empty. The empty sentinel packs INDEX_MASK, which
-            // numerically equals TAIL (`u32::MAX`) only when INDEX_BITS == 32;
-            // for other widths they differ. We spell the empty→TAIL mapping out
-            // explicitly (and keep `is_empty` a dedicated check on the raw word
-            // rather than deriving emptiness from the unpacked index) so the
-            // invariant never rests on that coincidence.
+            // can no longer equal TAIL (`u32::MAX`) at ANY legal width: the
+            // `1..=16` cap on INDEX_BITS (`TaggedIndex::_CHECK_BITS`) keeps
+            // `INDEX_MASK <= 0xFFFF`, so the historical INDEX_BITS == 32
+            // coincidence is structurally impossible. We still spell the
+            // empty→TAIL mapping out explicitly (and keep `is_empty` a
+            // dedicated check on the raw word rather than deriving emptiness
+            // from the unpacked index) so the invariant never rests on any
+            // numeric coincidence.
             let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                 TAIL
             } else {
