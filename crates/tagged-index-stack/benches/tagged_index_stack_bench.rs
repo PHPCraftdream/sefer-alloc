@@ -179,8 +179,25 @@ fn main() {
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
     // This measures throughput under contention with a always-nonempty stack.
-    // Pre-fill the stack with some indices before spawning threads.
     let prefill_count = 64u32;
+
+    // Drain the shared stack back to empty before prefilling. Phase 1
+    // (contention/push_pop) leaves every seeded index still live on this
+    // stack: each of its iterations is a balanced pop-then-repush of the same
+    // value, so nothing there ever removes an index. Prefilling on top of
+    // those leftovers would double-push at least index 0 (thread 0's seed is
+    // always 0 and the prefill range starts at 0) while it is still reachable
+    // from the stack -- a violation of push()'s documented caller contract,
+    // which closes the free-list into a cycle; pop() may then never return
+    // None again, and churn would measure a corrupted, cyclic structure
+    // instead of LIFO throughput. The prefill must therefore start from a
+    // known-empty stack.
+    while shared_stack.pop(shared_links).is_some() {}
+    // Cheap sanity check that the drain really emptied the stack: a leftover
+    // live index here would silently reintroduce the double-push bug above.
+    assert!(shared_stack.pop(shared_links).is_none());
+
+    // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
         shared_stack.push(shared_links, i);
     }
@@ -203,7 +220,18 @@ fn main() {
                 // contention/push_pop above), so the fallback only fires
                 // once per outstanding push, not unconditionally every time
                 // pop() happens to return None.
-                let fresh_idx = (thread_id as u32 * 1000) % (LINKS_SIZE as u32);
+                // Fallback indices live in prefill_count..LINKS_SIZE --
+                // provably disjoint from the prefill range 0..prefill_count
+                // above, so a fallback push can never collide with a still-
+                // live prefill index. (num_threads is capped at 8 and
+                // thread_id < LINKS_SIZE - prefill_count, so the modulo is an
+                // identity here and each thread still gets a distinct index.)
+                let fresh_idx =
+                    prefill_count + (thread_id as u32 % (LINKS_SIZE as u32 - prefill_count));
+                assert!(
+                    (prefill_count..LINKS_SIZE as u32).contains(&fresh_idx),
+                    "fresh_idx must land in prefill_count..LINKS_SIZE (disjoint from prefill)"
+                );
                 let mut fresh_idx_outstanding = false;
                 while start.elapsed().as_secs() < DURATION_SECS {
                     if let Some(idx) = shared_stack.pop(shared_links) {
