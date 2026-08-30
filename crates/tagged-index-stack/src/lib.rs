@@ -233,11 +233,18 @@ pub const TAIL: u32 = u32::MAX;
 /// ([`empty_index`](Self::empty_index)) is reserved as the empty-stack sentinel,
 /// so valid indices are `0 .. (1 << INDEX_BITS) - 1`.
 ///
-/// This is a zero-sized namespace of `const fn` bit operations — no state, no
-/// memory, no `unsafe`, strict-provenance-clean by construction (it packs a
-/// plain integer index, never a pointer/address).
-#[derive(Debug, Clone, Copy)]
-pub struct TaggedIndex<const INDEX_BITS: u32>;
+/// This is a namespace of `const fn` bit operations, not a value type — no
+/// state, no memory, no `unsafe`, strict-provenance-clean by construction (it
+/// packs a plain integer index, never a pointer/address). Declared as an
+/// UNINHABITED `enum` (zero variants) rather than a unit `struct`: a unit
+/// struct is a freely constructible, cloneable, `Debug`-printable value
+/// (nothing about `TaggedIndex::<16>` alone would stop a caller from
+/// constructing, comparing, or printing one), and adding a private field
+/// later to close that off would be a breaking change once published. An
+/// uninhabited `enum` has no constructor at all, in this crate or any other
+/// — the "namespace, not a value" shape is enforced by the type itself and
+/// stays open for the future.
+pub enum TaggedIndex<const INDEX_BITS: u32> {}
 
 impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Compile-time guard: `INDEX_BITS` must be in `1..=16` so both halves are
