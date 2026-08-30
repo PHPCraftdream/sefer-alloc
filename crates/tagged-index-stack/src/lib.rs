@@ -520,15 +520,19 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
         );
         let mut head = self.head.load(Ordering::Acquire);
         loop {
+            // Unpack the current head ONCE: the index half chains this push to
+            // the top of the stack (below), the tag half feeds the ABA bump.
+            let (cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
             // The link this index chains to: the current head's index, or TAIL
             // if the stack is empty. The empty sentinel packs INDEX_MASK, which
             // numerically equals TAIL (`u32::MAX`) only when INDEX_BITS == 32;
             // for other widths they differ. We spell the empty→TAIL mapping out
-            // explicitly so the invariant never rests on that coincidence.
+            // explicitly (and keep `is_empty` a dedicated check on the raw word
+            // rather than deriving emptiness from the unpacked index) so the
+            // invariant never rests on that coincidence.
             let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                 TAIL
             } else {
-                let (cur_idx, _tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                 cur_idx as u32
             };
             // Write the link under Release so a concurrent pop's Acquire read of
@@ -536,7 +540,6 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // ONLY link write — never an eager init (RAD-1).
             links.store_next(index, next_link);
             // Advance the tag (the ABA fix) and CAS the head to this index.
-            let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
             let new_tag = tag.wrapping_add(1);
             let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
             // Release on success so a pop's Acquire sees the link we wrote;

@@ -114,10 +114,11 @@ fn main() {
 
     // Shared stack and links.
     // Stack's head is an AtomicU64, and ArrayLinks stores AtomicU32s.
-    // Both are Sync, so we can share them by & reference directly.
-    // We create them in the outer scope and pass &'static references to threads.
-    let shared_links: &'static ArrayLinks<LINKS_SIZE> = Box::leak(Box::new(ArrayLinks::new()));
-    let shared_stack: &'static Stack = Box::leak(Box::new(Stack::new()));
+    // Both are Sync, and both contention phases run inside `std::thread::scope`,
+    // whose spawned closures can borrow these locals by plain `&` reference for
+    // the scope's duration -- no heap leak / 'static coercion needed.
+    let shared_links = ArrayLinks::<LINKS_SIZE>::new();
+    let shared_stack = Stack::new();
 
     // contention/push_pop: each thread seeds its own index into the shared
     // stack, then repeatedly pops WHATEVER is currently on top (which may be
@@ -146,6 +147,13 @@ fn main() {
     let mut ops_per_thread = Vec::with_capacity(num_threads);
 
     std::thread::scope(|s| {
+        // Re-bind the shared state as references: the `move` closures spawned
+        // below capture these bindings (references are `Copy`), so every
+        // thread gets its own `&` to the same shared objects instead of an
+        // owned value (moving the owned `Stack`/`ArrayLinks` into the first
+        // closure would make the later spawns fail to compile).
+        let shared_links = &shared_links;
+        let shared_stack = &shared_stack;
         let mut handles = Vec::with_capacity(num_threads);
         for thread_id in 0..num_threads {
             let handle = s.spawn(move || {
@@ -181,10 +189,11 @@ fn main() {
     });
 
     let total_ops: u64 = ops_per_thread.iter().sum();
-    let total_ops_per_sec = total_ops / DURATION_SECS;
+    let elapsed = start.elapsed().as_secs_f64();
+    let total_ops_per_sec = total_ops as f64 / elapsed;
     println!(
-        "contention/push_pop: {} ops/sec total ({} threads, {} sec)",
-        total_ops_per_sec, num_threads, DURATION_SECS
+        "contention/push_pop: {:.0} ops/sec total ({} threads, {} sec target, {:.3} sec measured)",
+        total_ops_per_sec, num_threads, DURATION_SECS, elapsed
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
 
@@ -203,20 +212,24 @@ fn main() {
     // None again, and churn would measure a corrupted, cyclic structure
     // instead of LIFO throughput. The prefill must therefore start from a
     // known-empty stack.
-    while shared_stack.pop(shared_links).is_some() {}
+    while shared_stack.pop(&shared_links).is_some() {}
     // Cheap sanity check that the drain really emptied the stack: a leftover
     // live index here would silently reintroduce the double-push bug above.
-    assert!(shared_stack.pop(shared_links).is_none());
+    assert!(shared_stack.pop(&shared_links).is_none());
 
     // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
-        shared_stack.push(shared_links, i);
+        shared_stack.push(&shared_links, i);
     }
 
     let start = Instant::now();
     let mut ops_per_thread = Vec::with_capacity(num_threads);
 
     std::thread::scope(|s| {
+        // Same re-borrow as the contention/push_pop scope above: the `move`
+        // closures capture these reference bindings, not the owned values.
+        let shared_links = &shared_links;
+        let shared_stack = &shared_stack;
         let mut handles = Vec::with_capacity(num_threads);
         for thread_id in 0..num_threads {
             let handle = s.spawn(move || {
@@ -276,10 +289,11 @@ fn main() {
     });
 
     let total_ops: u64 = ops_per_thread.iter().sum();
-    let total_ops_per_sec = total_ops / DURATION_SECS;
+    let elapsed = start.elapsed().as_secs_f64();
+    let total_ops_per_sec = total_ops as f64 / elapsed;
     println!(
-        "contention/churn: {} ops/sec total ({} threads, {} sec, prefill={})",
-        total_ops_per_sec, num_threads, DURATION_SECS, prefill_count
+        "contention/churn: {:.0} ops/sec total ({} threads, {} sec target, {:.3} sec measured, prefill={})",
+        total_ops_per_sec, num_threads, DURATION_SECS, elapsed, prefill_count
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
 
