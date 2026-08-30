@@ -195,7 +195,7 @@ resolved" in RESOLVED.md.)_
 
 69. **CLOSED** by task #1063 (added the missing `serial_guard()` call to `windows_virtualfree_release_failures_accessor_exists`). See "Recently resolved" in RESOLVED.md for the full closure narrative.
 
-96. **[T, filed 2026-08-23, task #1247] `wasted_dirty_drains_stays_low_under_class_aware_routing`
+96. **[T, filed 2026-08-23, task #1247, mitigated 2026-08-30] `wasted_dirty_drains_stays_low_under_class_aware_routing`
     (`tests/class_aware_dirty_routing.rs`, around lines 680-709) failed once in CI on the F1-F4
     push (commit `7037a4c`), not reproduced on immediate rerun.** Failure:
     `assertion failed: ratio < 0.20` with the observed ratio at 26.7%
@@ -213,3 +213,17 @@ resolved" in RESOLVED.md.)_
     from scratch. Not investigated further here — the test's own threshold already accepts
     this failure class; tightening it or replacing the ratio-threshold approach entirely is
     out of scope for a filing task.
+
+    **Second occurrence (2026-08-30, `test (feature isolation)` job, commit `296628a`):**
+    same test, same shape — `ratio < 0.20` tripped at 26.7% again, not reproduced on an
+    immediate `gh run rerun --failed` of the same commit (100% green, including Kani).
+    Unrelated to the landing commit's actual diff (`crates/tagged-index-stack/**` +
+    two new CI steps in `.github/workflows/ci.yml`, neither touching this test or its
+    production dependencies) — confirmed by reading the test's own code before accepting
+    the rerun-green signal at face value, not just trusting the precedent. **Mitigated**
+    (not fully eliminated — a true 30%+ CI-jitter spike remains theoretically possible)
+    by owner request: the assertion now uses a **dual threshold** — `0.30` when the
+    standard `CI` environment variable is set (GitHub Actions, and effectively every other
+    CI provider, sets `CI=true`), `0.20` otherwise, so a local `cargo test` run keeps the
+    original tighter bound while CI gets more headroom against exactly the shared-runner
+    jitter both occurrences exhibited. See the commit that added this for the exact diff.
