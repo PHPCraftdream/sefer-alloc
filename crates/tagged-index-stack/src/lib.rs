@@ -112,17 +112,23 @@
 //! between cores. That transfer cost caps the aggregate rate at roughly
 //! `10^8` to `10^9` RMWs/sec no matter how many threads contend — more
 //! contention only makes the line's ownership transfers slower, never
-//! faster. That argument covers the CONTENDED regime; the fastest one is its
-//! opposite — the UNCONTENDED single-threaded case, where the head line
-//! stays resident and exclusive in one core's L1 and no cross-core ownership
-//! transfer ever happens — a regime governed not by coherence transfer but
-//! by the latency of the bare RMW instruction itself (`lock cmpxchg` on
-//! x86-64, or the target's equivalent CAS instruction): materially faster,
-//! but still bounded. The wrap-time conclusion survives both regimes: this
-//! crate's own bench measures even that fastest one at ~`2 × 10^7`
-//! successful pushes/sec, an order of magnitude under the working ceiling
-//! the next paragraph adopts. (The single-threaded `churn` bench row:
-//! `50.75 ns` per pop+push pair — exactly one successful push per pair.)
+//! faster. That argument covers the CONTENDED regime; the other bound to
+//! check is its opposite — the UNCONTENDED single-threaded case, where the
+//! head line stays resident and exclusive in one core's L1 and no
+//! cross-core ownership transfer ever happens — a regime governed not by
+//! coherence transfer but by the latency of the bare RMW instruction itself
+//! (`lock cmpxchg` on x86-64, or the target's equivalent CAS instruction):
+//! materially faster, but still bounded. The wrap-time conclusion survives
+//! both regimes: this crate's own single-threaded `churn` bench row
+//! measures ~`2 × 10^7` successful pushes/sec in that uncontended regime (a
+//! pop+push pair per iteration, so one successful push per pair — a
+//! push-only rate would run faster still, but the pair rate is already an
+//! order of magnitude under the working ceiling the next paragraph adopts,
+//! so the argument does not need the tighter push-only number). Measured at
+//! 51.56 ns/pair on an 11th Gen Intel Core i7-11800H, rustc 1.97.0
+//! (2026-08-31); re-run `cargo bench -p tagged-index-stack --bench
+//! tagged_index_stack_bench` for a fresh sample — the bound below only
+//! needs the order of magnitude, not the exact figure.
 //!
 //! Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling:
 //! at `INDEX_BITS = 16` — the widest permitted index half, 65535 usable
