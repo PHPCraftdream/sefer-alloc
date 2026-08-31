@@ -264,13 +264,9 @@ const BACKOFF_SPIN_CAP: u32 = 6;
 /// state, no memory, no `unsafe`, strict-provenance-clean by construction (it
 /// packs a plain integer index, never a pointer/address). Declared as an
 /// UNINHABITED `enum` (zero variants) rather than a unit `struct`: a unit
-/// struct is a freely constructible, cloneable, `Debug`-printable value
-/// (nothing about `TaggedIndex::<16>` alone would stop a caller from
-/// constructing, comparing, or printing one), and adding a private field
-/// later to close that off would be a breaking change once published. An
-/// uninhabited `enum` has no constructor at all, in this crate or any other
-/// — the "namespace, not a value" shape is enforced by the type itself and
-/// stays open for the future.
+/// struct is freely constructible, and closing that off later with a private
+/// field would be a breaking change once published, whereas an uninhabited
+/// `enum` has no constructor at all from the start.
 pub enum TaggedIndex<const INDEX_BITS: u32> {}
 
 impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
@@ -422,24 +418,14 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// hides it from rustdoc's rendered navigation ONLY — it is still a fully
     /// callable `pub` item from any downstream crate; nothing in the language
     /// or this crate enforces non-callability. It carries no semver stability
-    /// guarantee and is not `pub` as an invitation for other external use:
-    /// beyond the `tests/` reason above it has exactly two real callers. One
-    /// is [`TaggedIndexStack::new`]'s bootstrap path — the only correct
-    /// in-crate caller. The other is a non-`tests/` caller this workspace
-    /// itself contains, so any "tests-only" description of this item would be
-    /// false: the `sefer-alloc` root crate's `#[cfg(loom)] mod loom_shim` (in
-    /// `src/registry/bootstrap.rs`) defines a const-capable `TaggedIndexStack`
-    /// stand-in whose `new` calls `empty()` for the identical reason this
-    /// crate's `new` does — constructing a `const`-capable bootstrap-empty
-    /// head word (loom's atomics have no `const` constructor, so the shim
-    /// re-implements the head on `core` atomics while reusing the real
-    /// packing). Because of that in-workspace consumer, `empty` is NOT freely
+    /// guarantee. Beyond the `tests/` reason above, it also has a real
+    /// in-workspace consumer outside this crate, so it is NOT freely
     /// removable in a future 0.2 release without checking that caller first.
-    /// Anywhere else the
-    /// unconditional tag-0 reset reopens the H-2 ABA window documented above —
-    /// a runtime drain must instead use [`empty_index`](Self::empty_index) with
-    /// the tag it just observed. See this project's established
-    /// `#[doc(hidden)]` rationale convention (cf. `raw_head`).
+    /// Anywhere else the unconditional tag-0 reset reopens the H-2 ABA window
+    /// documented above — a runtime drain must instead use
+    /// [`empty_index`](Self::empty_index) with the tag it just observed. See
+    /// this project's established `#[doc(hidden)]` rationale convention (cf.
+    /// `raw_head`).
     #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
@@ -830,13 +816,10 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     ///
     /// That guard is the only bound this method itself checks, and it
     /// depends on `INDEX_BITS` alone. The supplied [`Links`] implementation
-    /// may impose its own, separate bound: `N` in [`ArrayLinks`]`<N>` and
-    /// `INDEX_BITS` are independent const parameters with nothing relating
-    /// them — a `TaggedIndexStack<16>` accepts indices up to 65534 even over
-    /// an `ArrayLinks<256>` that holds only `0..=255` — so out-of-range
-    /// access in the links layer ([`ArrayLinks::store_next`] panics on
-    /// `index >= N`) is a second panic source the guard above does not
-    /// cover.
+    /// may impose its own, separate bound — see [`ArrayLinks::load_next`]/
+    /// [`ArrayLinks::store_next`]'s own `# Panics` docs for the `N`-vs-
+    /// `INDEX_BITS` independence — so out-of-range access in the links layer
+    /// is a second panic source this guard does not cover.
     #[track_caller]
     pub fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
         let mask = TaggedIndex::<INDEX_BITS>::INDEX_MASK;
