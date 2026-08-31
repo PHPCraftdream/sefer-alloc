@@ -52,20 +52,27 @@
 //! [`pop_index`](StackOps::pop_index)'s corruption-detection guard; see its
 //! `# Panics`).
 //!
-//! And here is the genuine surprise: the head↔links binding is established
-//! once, structurally, by a single crate-owned [`StackStorage`] impl —
-//! [`StackOps`] is blanket-implemented for every implementor and coherence
-//! makes a downstream override impossible — instead of being re-asserted per
-//! call via a per-call `&L: Links` parameter, as in the previous design. The
-//! old repro's per-call shape — two independent calls, each supplying a
-//! different backing against one head — no longer compiles (pinned by a
-//! compile-fail regression test). The obligation moved rather than vanished:
-//! from every call site, where it was unenforceable, to the implementor's
-//! one `impl` block, where it is discharged and audited once. An implementor
-//! whose own `load_next`/`store_next` internally read and write different
-//! backings is still expressible in safe Rust — a live implementor
-//! obligation (the [`StackStorage`] trait doc's rules 3 and 4), not a
-//! structural impossibility.
+//! And here is the genuine surprise: the head↔links binding is expressed in
+//! ONE place — the implementor's own single [`StackStorage`] impl, a trait
+//! deliberately OPEN to external implementation (that is the extension
+//! point, not a crate-owned surface) — instead of being re-asserted per
+//! call via a per-call `&L: Links` parameter, as in the previous design.
+//! What IS crate-owned is the operation side: [`StackOps`] is
+//! blanket-implemented for every implementor and coherence makes a
+//! downstream override impossible. The old repro's per-call shape — two
+//! independent calls, each supplying a different backing against one head —
+//! no longer compiles (pinned by a compile-fail regression test). The
+//! obligation moved rather than vanished, but it is not discharged once per
+//! impl and done: the per-implementor hazards (an impl whose own
+//! `load_next`/`store_next` internally read and write different backings —
+//! the [`StackStorage`] trait doc's rules 3 and 4) are auditable inside one
+//! impl block, yet the instance-level obligation — a [`StackHead`]
+//! reachable through exactly ONE live implementor VALUE at a time (trait
+//! rule 1) — spans impl blocks and stays implementor/caller discipline:
+//! two separately-coherent implementor values sharing one borrowed head
+//! over different link storage still compile and still double-issue
+//! indices, and auditing each impl block in isolation cannot see the
+//! combination.
 //!
 //! [`store_next`](StackStorage::store_next) is the only write the stack ever
 //! makes to a link, and it happens during

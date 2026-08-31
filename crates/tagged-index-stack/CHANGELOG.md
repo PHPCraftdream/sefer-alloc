@@ -95,15 +95,23 @@ before it.
   section.
 - **One-implementor storage binding — `StackStorage` / `StackOps`** — the
   implementor supplies head AND links in ONE impl: `head()` alongside
-  `load_next` / `store_next`, so the head↔links binding is structural,
-  established once per impl. A production allocator keeps links
+  `load_next` / `store_next`, so the head↔links binding is expressed once
+  per impl rather than re-asserted per call. A production allocator keeps
+  links
   **slot-resident** (an `AtomicU32` inside a slot it already owns) instead of
   paying for a second array. The blanket `StackOps` impl's CAS-loop bodies
   are crate-owned and cannot be overridden or reimplemented downstream.
-  The former per-call `&Links` parameter — which allowed two `ArrayLinks`
-  backings against one head, double-issuing an index (an independent
-  pre-release review's release-blocking P1-1 finding) — is gone, and that
-  repro no longer compiles. **`ArrayLinks<N>`** remains a public links
+  The former per-call `&Links` parameter — which allowed the old repro's
+  specific shape, two `ArrayLinks` backings supplied as per-call arguments
+  against one head, double-issuing an index (an independent pre-release
+  review's release-blocking P1-1 finding) — is gone, and THAT repro no
+  longer compiles. The double-issue CLASS is not structurally closed
+  (round-11 @oh review, finding P2-1): two `StackStorage` implementor
+  values whose `head()` methods return the same borrowed `StackHead` while
+  their links differ still compile and still double-issue; that shape is
+  now a named implementor/caller obligation (the `StackStorage` trait
+  doc's rule 1), pinned by an assert-based demonstration in
+  `tests/custom_storage_impl.rs`. **`ArrayLinks<N>`** remains a public links
   building block (inherent Acquire `load_next` / Release `store_next`); it is
   what `ArrayIndexStack` composes internally. The link storage must be a
   DEDICATED cell, never
