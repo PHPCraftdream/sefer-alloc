@@ -151,6 +151,16 @@ before it.
   head word; the attribute only excludes it from rustdoc's rendered
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
+- **`retry_counts_for_test()`** — a `#[doc(hidden)]` test-support accessor
+  reading BOTH CAS-retry counters in one call as a `(pop, push)` tuple
+  (process-global, cumulative, never reset by this crate — snapshot and
+  diff is the caller's job); the non-loom twin of the loom suite's
+  `#[cfg(loom)]` `pop_retry_count_for_test`/`push_retry_count_for_test`,
+  serving `tests/threaded_conservation.rs`'s "the retry branch was
+  actually reached under real OS threads" activation oracle. The
+  attribute only excludes it from rustdoc's rendered navigation (it
+  remains publicly callable) and it carries no semver stability
+  guarantee, like `raw_head()` above.
 - **`pub const TAIL: u32`** — the per-slot link end-of-chain sentinel
   (`u32::MAX`), part of the `Links` contract: an implementor's backing must
   be able to represent it.
@@ -222,12 +232,24 @@ before it.
   contention discipline: at 8 threads x 200k pop-then-repush iterations
   the single worst `pop` blocked 41-60 ms across 3 runs under the shipped
   cap 6 vs 0.6-24 ms at cap 0 (median 54.5 ms vs 2.0 ms), with 60-86 pops
-  over 1 ms per rep vs 0-8 — while the same workload ran ~4.9x faster in
-  aggregate under cap 6 (322 ms vs 1,560 ms median wall); at 16 threads x
-  200k, worst pop 130-173 ms vs 40-46 ms. **`push`/`pop` are lock-free but
-  NOT starvation-free**: the backoff trades per-call tail latency for
-  aggregate throughput, and `BACKOFF_SPIN_CAP`'s doc comment now says
-  exactly that. Raw log
+  over 1 ms per rep vs 0-8; at 16 threads x 200k, worst pop 130-173 ms vs
+  40-46 ms, and 4/3/3 pops over 100 ms vs cap 0's 0/0/0. The full tail
+  picture cuts BOTH ways — quoting only the max side is selective (all
+  counts 3 reps, from the cited raw log): at 16 threads the `> 1 ms`
+  cell REVERSES, cap 6 logging 285/266/249 pops over 1 ms per rep vs cap
+  0's 553/661/650 (~2.4x MORE at cap 0: 650 vs 266 at the rep medians);
+  the 16-thread `> 10 ms` band is roughly tied (178/131/169 vs
+  110/161/157); and cap 6 is 1-2 orders of magnitude better at
+  p50/p90/p99/p99.9 in EVERY shape (cap 0's p99.9 spans
+  0.022-0.037 / 0.054-0.057 / 0.172-0.182 ms across the three shapes vs
+  cap 6's 0.000-0.001 ms everywhere), with the same workloads 4.05-4.85x
+  faster under cap 6 on median wall-clock (4.18x / 4.85x / 4.05x for the
+  4x20k / 8x200k / 16x200k shapes). **`push`/`pop` are lock-free but NOT
+  starvation-free**: the shipped cap trades a small number of very large
+  outlier pops — worse ONLY at the extreme maximum — for better latency
+  at every percentile through p99.9 AND ~4-5x better aggregate
+  throughput, not "worse tail latency across the board";
+  `BACKOFF_SPIN_CAP`'s doc comment now says exactly that. Raw log
   `docs/perf/_raw_tis_backoff_per_call_latency.log` plus run-3 rows in
   `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`; derived, with in-script
   assertions, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` —

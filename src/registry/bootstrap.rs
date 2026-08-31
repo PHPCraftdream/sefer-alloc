@@ -465,9 +465,10 @@ mod loom_shim {
     // replicates the crate's push/pop HEAD PROTOCOL (same H-2 running-tag empty
     // transition, same Acquire/Release/Relaxed orderings, same RAD-1 lazy links
     // — `store_next` only ever fires inside `push`) but is NOT a byte-for-byte
-    // replica of the shipped type. THREE deliberate divergences, each irrelevant
-    // to what the shim is FOR — model-checking free_slots' head protocol in the
-    // root crate's loom CI jobs:
+    // replica of the shipped type. Deliberate divergences, each irrelevant to
+    // what the shim is FOR — model-checking free_slots' head protocol in the
+    // root crate's loom CI jobs (deliberately no hardcoded count — a "THREE"
+    // here already went stale once):
     //   1. no CAS-retry backoff — the shipped `push`/`pop` spin
     //      `1 << spins.min(BACKOFF_SPIN_CAP)` times between retries; the shim
     //      retries immediately, forever. The backoff is a pure LATENCY device:
@@ -481,6 +482,16 @@ mod loom_shim {
     //      reasoning: `HeapSlot::next_free` is written ONLY by the shipped
     //      `push` (with `TAIL` or a previously-admitted index), so the guard's
     //      condition is unsatisfiable for this consumer.
+    //   4. no CAS-retry counting — the shipped `push`/`pop` each increment a
+    //      process-global telemetry counter (`PUSH_RETRY_COUNT` /
+    //      `POP_RETRY_COUNT`: plain `core::sync::atomic::AtomicUsize`
+    //      statics, a `Relaxed` `fetch_add(1)` on the CAS-retry
+    //      `Err(actual)` arm, read by nothing in the algorithm) so tests
+    //      can assert the retry branch was actually reached; the shim has
+    //      no counterpart. Retry bookkeeping is pure activation telemetry
+    //      with no bearing on the head-word CAS protocol the shim exists
+    //      to model-check, and a bare `core::sync::atomic::AtomicU64` head
+    //      carries no such metadata to replicate.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
     use tagged_index_stack::{Links, TaggedIndex, TAIL};
