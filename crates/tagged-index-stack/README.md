@@ -2,15 +2,26 @@
 
 A lock-free LIFO free-list of small **indices** — a *slot recycler* — whose head
 is a single atomic word packing an `(index | tag)` pair, where a wrapping
-generation **tag** in the high bits structurally defeats the ABA problem for
-every permitted `INDEX_BITS`. That is a derived claim, not a slogan: the
+generation **tag** in the high bits mitigates the ABA problem for every
+permitted `INDEX_BITS`: the tag defeats the ordinary short-window ABA
+pattern, but it is finite and demonstrably wraps, so ABA is reduced to a
+quantified recurrence risk, not eliminated. A collision requires a FULL tag
+wrap — `2^TAG_BITS` successful pushes anywhere on the stack — occurring WHILE
+one specific victim thread stays parked holding its stale snapshot for that
+entire span. The mitigation is a derived, quantified bound, not a slogan: the
 enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
 tag of at least 48 bits, and the "Tag-width budget" section below derives,
-from cache-coherence throughput on the single head cache line, that such a tag
-cannot repeat within any physically plausible observation window. (The tag is
-not strictly monotonic — a strictly monotonic counter never repeats a value,
-and this one wraps — it just never repeats on a timescale the coherence
-protocol can deliver.) Allocation-free, `no_std`,
+from cache-coherence throughput on the single head cache line, a
+hardware-bounded floor on that recurrence window — roughly 3.3-16 days of
+continuously saturated pushes at the widest permitted width. The floor is an
+engineering risk-reduction argument, not a proof of impossibility:
+suspending a thread is outside the crate's control (a debugger pause, a
+stop-the-world pause, extreme starvation, instrumentation) and can stretch
+the observation window past it; accepting that residual risk is part of the
+caller's contract. (The tag is not strictly monotonic — a strictly monotonic
+counter never repeats a value, and this one wraps — it just does not repeat
+until a full `2^TAG_BITS` pushes have elapsed, days of continuously
+saturated operation at every permitted width.) Allocation-free, `no_std`,
 `#![forbid(unsafe_code)]`.
 
 This is the canonical "recycle a small integer id" primitive that slab
@@ -155,6 +166,14 @@ that — and the pre-cap `INDEX_BITS = 32` maximum gave only
 `2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling jitter.
 Within the permitted range a caller still trades index range against tag
 headroom, but never below the 48-bit floor.
+
+This derivation bounds the RECURRENCE window — the minimum time a victim
+thread must stay parked, at saturated push rates, before its exact
+`(index, tag)` snapshot can recur. It does not prove recurrence impossible:
+the tag turns ABA into a quantified, engineering-manageable risk, and a
+deployment whose threads can be parked indefinitely (debuggers,
+stop-the-world pauses, extreme starvation) needs its own hazard/epoch-style
+protection on top of this crate.
 
 ### Why the default is not a wider packed word (128-bit CAS)
 

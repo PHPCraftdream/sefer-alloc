@@ -1,21 +1,33 @@
 //! `tagged-index-stack` — a lock-free LIFO free-list of small **indices** (a
 //! *slot recycler*) whose head is a single atomic word packing an
 //! `(index | tag)` pair, where a wrapping generation **tag** in the high bits
-//! structurally defeats the ABA problem for every permitted `INDEX_BITS`.
+//! MITIGATES the ABA problem for every permitted `INDEX_BITS`: the tag
+//! defeats the ordinary short-window ABA pattern, but it is finite and
+//! demonstrably wraps, so ABA is reduced to a quantified recurrence risk,
+//! not eliminated. A collision requires a FULL tag wrap — `2^TAG_BITS`
+//! successful pushes anywhere on the stack — occurring WHILE one specific
+//! victim thread stays parked holding its stale snapshot for that entire
+//! span; until both conditions hold, the stale CAS fails and retries.
 //! Lock-freedom here describes the stack's own CAS loops; end-to-end it
 //! additionally requires a non-blocking [`StackStorage`] implementation —
 //! [`ArrayIndexStack`] and the slot-resident one-`AtomicU32`-per-slot shape both
 //! qualify, while a hypothetical mutex-backed [`StackStorage`] would make
 //! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
-//! blocking again. That is a derived claim, not a slogan: the enforced `1..=16`
-//! cap on `INDEX_BITS` guarantees every legal configuration a tag of at least
-//! 48 bits, and the "Tag-width budget" section below derives, from
-//! cache-coherence throughput on the single head cache line, that such a tag
-//! cannot repeat within any physically plausible observation window. (The
-//! tag is not strictly monotonic — a strictly monotonic counter never
-//! repeats a value, and this one wraps — it just never repeats on a
-//! timescale the coherence protocol can deliver.) Allocation-free, `no_std`,
-//! `#![forbid(unsafe_code)]`.
+//! blocking again. The mitigation is a derived, quantified bound, not a
+//! slogan: the enforced `1..=16` cap on `INDEX_BITS` guarantees every legal
+//! configuration a tag of at least 48 bits, and the "Tag-width budget"
+//! section below derives, from cache-coherence throughput on the single head
+//! cache line, a hardware-bounded floor on that recurrence window — roughly
+//! 3.3-16 days of continuously saturated pushes at the widest permitted
+//! width. The floor is an engineering risk-reduction argument, not a proof
+//! of impossibility: suspending a thread is outside the crate's control (a
+//! debugger pause, extreme starvation, instrumentation) and can stretch the
+//! observation window past it; accepting that residual risk is part of the
+//! caller's contract. (The tag is not strictly monotonic — a strictly
+//! monotonic counter never repeats a value, and this one wraps — it just
+//! does not repeat until a full `2^TAG_BITS` pushes have elapsed, days of
+//! continuously saturated operation at every permitted width.)
+//! Allocation-free, `no_std`, `#![forbid(unsafe_code)]`.
 //!
 //! This is the canonical "recycle a small integer id" primitive that slab
 //! allocators, object pools, entity-component stores, and connection tables all
@@ -129,7 +141,7 @@
 //! indices via a separate monotonic counter and only ever pushes RECYCLED
 //! ones onto this stack.)
 //!
-//! # Tag-width budget — the wrap-time bound behind the ABA guarantee
+//! # Tag-width budget — the wrap-time bound behind the ABA mitigation
 //!
 //! A tag defends against ABA only while it does not recur: a stale CAS can
 //! succeed again only if the head word returns to the exact `(index, tag)`
@@ -192,6 +204,14 @@
 //! `2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling
 //! jitter. Within the permitted range a caller still trades index range
 //! against tag headroom, but never below the 48-bit floor.
+//!
+//! Read this section as what it is: a bound on the RECURRENCE window — the
+//! minimum time a victim thread must stay parked, at saturated push rates,
+//! before its exact `(index, tag)` snapshot can recur. It does not prove
+//! recurrence impossible; the tag turns ABA into a quantified,
+//! engineering-manageable risk, and a caller whose threads can be parked
+//! indefinitely (debuggers, stop-the-world pauses, extreme starvation) needs
+//! its own hazard/epoch-style protection on top.
 //!
 //! # Lock-freedom and starvation
 //!
@@ -401,8 +421,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     ///
     /// Widths above 16 are rejected rather than merely discouraged: the 16 cap
     /// guarantees every legal configuration at least a 48-bit ABA tag, the
-    /// cache-line-throughput-derived floor below which a tag wrap stops being
-    /// physically implausible (see the crate docs' "Tag-width budget"
+    /// wrap-time floor below which a tag wrap comes within reach of an
+    /// ordinary long suspension (see the crate docs' "Tag-width budget"
     /// section for the full derivation). The `u32` bound is respected a
     /// fortiori: `push_index` takes a `u32` index, so `INDEX_BITS > 32` could
     /// never buy reachable index range anyway — it only shrinks the tag
@@ -978,9 +998,10 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// bits is the ABA defence: if a concurrent thread pops-then-repushes the
     /// SAME index between our load and our CAS, the tag advances and our CAS
     /// fails, forcing a retry. (The only residual hazard is a full tag wrap
-    /// inside that window, which the wrap-time bound in the crate docs'
-    /// "Tag-width budget" section places outside any physically plausible
-    /// observation window at every permitted width.)
+    /// occurring while THIS thread stays parked holding its stale snapshot
+    /// the entire time; the wrap-time bound in the crate docs' "Tag-width
+    /// budget" section quantifies that recurrence window — it bounds it, it
+    /// does not prove the recurrence impossible.)
     ///
     /// **H-2 empty transition:** when the popped element is the last one
     /// (`next == TAIL`), the new head packs the empty sentinel's index with the
@@ -1306,9 +1327,11 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
 /// An owned standalone stack: head and links fused into ONE object, so there is
 /// no external backing to mis-bind — the [`StackStorage`] impl below IS the
 /// binding. A lock-free LIFO free-list of indices with a wrapping generation
-/// tag packed into the head word, structurally defeating ABA at every permitted
-/// `INDEX_BITS` (the crate-root docs' "Tag-width budget" section carries the
-/// wrap-time derivation). Const-generic over the index width `INDEX_BITS` and
+/// tag packed into the head word, mitigating ABA at every permitted
+/// `INDEX_BITS`: the tag defeats the ordinary short-window pattern, while a
+/// full tag wrap under a thread parked across the whole span remains the
+/// (quantified, see the crate-root docs' "Tag-width budget" section) residual
+/// recurrence condition. Const-generic over the index width `INDEX_BITS` and
 /// the link capacity `N`.
 ///
 /// The simple [`push`](Self::push)/[`pop`](Self::pop) inherent forwarders exist

@@ -34,10 +34,12 @@ before it.
   is for diagnostics/monitoring, not correctness decisions.
 - **`TaggedIndex<INDEX_BITS>`** — the packed head word: low `INDEX_BITS` bits
   carry a slot index, the high `64 - INDEX_BITS` bits a wrapping generation
-  **tag** bumped on every successful push, which is what structurally defeats
-  the ABA problem for every permitted width (a pop-then-re-push of the same
-  index bumps the tag, so a parked CAS on the stale `(index, tag)` pair fails
-  and retries). `INDEX_BITS` is a const generic capped at `1..=16` at compile
+  **tag** bumped on every successful push, which is what mitigates the ABA
+  problem for every permitted width (a pop-then-re-push of the same index
+  bumps the tag, so a parked CAS on the stale `(index, tag)` pair fails and
+  retries; only a full tag wrap under a thread parked across that entire
+  span can recur the stale pair — see the "Tag-width budget analysis" bullet
+  below). `INDEX_BITS` is a const generic capped at `1..=16` at compile
   time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged — the cap
   keeps both halves non-empty, every valid index inside the `u32` that `push`
   actually takes, every legal configuration guaranteed a tag of at least
@@ -58,7 +60,7 @@ before it.
   bits). Exists for external callers, whom `pack` trusts to uphold the
   precondition itself; the stack's own `push_index`/`pop_index` keep calling
   `pack` directly, their inputs already guaranteed in range.
-- **ABA-defeating empty transition (the H-2 rule)** — when a `pop` drains the
+- **ABA-mitigating empty transition (the H-2 rule)** — when a `pop` drains the
   last element, the empty sentinel is packed with the **running tag** the
   draining pop observed, not reset to `0`: a tag reset would reopen the ABA
   window for a popper parked across a drain-and-refill. The shipped loom
@@ -84,8 +86,13 @@ before it.
   than merely discouraged: at `INDEX_BITS = 24` the tag would be 40 bits
   (`2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling) and the pre-cap
   `INDEX_BITS = 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21` seconds,
-  within reach of ordinary scheduling jitter. Documented so a consumer
-  choosing `INDEX_BITS` knows the trade.
+  within reach of ordinary scheduling jitter. The derivation bounds the
+  recurrence window — the minimum time a victim thread must stay parked
+  before its stale snapshot can recur — it does not prove recurrence
+  impossible (suspending a thread is outside the crate's control), so the
+  tag is documented as an ABA mitigation with a quantified bound, not an ABA
+  prevention guarantee. Documented so a consumer choosing `INDEX_BITS` knows
+  the trade.
 - **One-implementor storage binding — `StackStorage` / `StackOps`** — the
   implementor supplies head AND links in ONE impl: `head()` alongside
   `load_next` / `store_next`, so the head↔links binding is structural,
