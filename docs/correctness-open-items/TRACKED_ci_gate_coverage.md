@@ -79,37 +79,7 @@ split the same day.)
     would still slip through. The release-notes caveat above remains
     accurate as stated and is not being reworded.
 
-25. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 1] `TaggedIndex<INDEX_BITS>` rejecting `INDEX_BITS > 32` at compile time (F1, task #638) has no automated compile-fail test — CI coverage gap, honestly recorded but unfiled until now.**
-
-    - **Status:** OPEN — not fixed. CI-coverage gap only; the underlying
-      compile-time guard itself (`_CHECK_BITS`) is already correct and
-      shipped (task #638, commit `d78625b`).
-    - **Current-number-or-verdict:** `crates/tagged-index-stack/src/lib.rs`
-      (the `_CHECK_BITS` const, ~lines 179-195) enforces `INDEX_BITS in
-      1..=32` via a `const` `assert!`, so `TaggedIndex::<33>` (or any width
-      above 32) fails `cargo build`. No `trybuild`-style (or equivalent)
-      automated test pins this failure — it was manually verified once and
-      the gap explicitly recorded as a code comment:
-      `crates/tagged-index-stack/tests/stack_unit.rs` (~lines 137-144) says
-      "this crate has no trybuild (or similar compile-fail) test
-      infrastructure wired up, so `INDEX_BITS > 32` failing to compile is
-      NOT pinned by an automated test. ... This is a known, honestly-recorded
-      coverage gap, not a silent omission."
-    - **Why filed instead of fixed here:** adding `trybuild` (or an
-      equivalent compile-fail harness) is new test infrastructure for one
-      crate, not a bookkeeping fix — out of scope for a bookkeeping-only
-      task; a real coverage-closing task should own it.
-    - **Next trigger:** add a `trybuild`-style compile-fail test asserting
-      `TaggedIndex::<33>` (or `TaggedIndexStack<33, _>`, whichever the
-      crate's public generic surface exposes) fails to compile with the
-      `_CHECK_BITS` assertion message, OR document an explicit accepted-risk
-      rationale if compile-fail infra is judged not worth adding for a
-      single-crate, single-assertion case.
-    - **Evidence:** `crates/tagged-index-stack/src/lib.rs` ~lines 179-195
-      (`_CHECK_BITS`); `crates/tagged-index-stack/tests/stack_unit.rs`
-      ~lines 137-144 (the recorded-gap comment, from task #638, commit
-      `d78625b`); `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
-      finding P3-4 item 1.
+25. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 1] `TaggedIndex<INDEX_BITS>` rejecting `INDEX_BITS > 32` at compile time (F1, task #638) has no automated compile-fail test — CI coverage gap, honestly recorded but unfiled until now.** (Headline kept verbatim per the history-is-not-rewritten convention — the `>32` figure was accurate at filing time; the cap narrowed to `1..=16` in round 2, see the closure note below.) — **CLOSED** (2026-08-31, tagged-index-stack round-4 independent review, finding P3-8, `docs/reviews/2026-08-31-025356-tagged-index-stack-review-round4-oh.md`). See "Recently resolved" in RESOLVED.md.
 
 50. **`aligned-vmem` — `page_size()`'s OWN end-to-end wiring is untestable in-process (the extracted pure guard IS tested).** (Filed round 8, task #903, finding U11 of `docs/reviews/2026-08-13-aligned-vmem-round8-review.md`. The U10 half — Windows `bench-internals` reserve-path counters — was closed per task #917: see "Recently resolved" §50-U10 in RESOLVED.md.)
     - **Status:** OPEN — record-only; no code fix in scope for either half (see each half's own note on why a cheap fix is not appropriate here).
