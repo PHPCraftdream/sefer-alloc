@@ -2618,12 +2618,22 @@ jobs:
       # convention — they are the real coverage of the shipping HeapOverflow
       # ring + overflow-first composition referenced in the CRATE-P4 note
       # above.
+      # `alloc-global` pulls in `tagged-index-stack` as a path dependency
+      # (root Cargo.toml: `alloc-global = ["alloc-core",
+      # "dep:tagged-index-stack"]`), so under this job's `RUSTFLAGS: "--cfg
+      # loom"` it gets compiled with `cfg(loom)` active. Since round-3
+      # review P1-1 made `loom` an optional Cargo feature of that crate (see
+      # the `loom-alloc-global` job's comment above), its own
+      # `compile_error!` guard now fires unless that feature is ALSO
+      # enabled here via `tagged-index-stack/loom` — the job-level cfg
+      # alone is no longer sufficient (this broke CI once, landing SHA
+      # e2377c7, before this line was added).
       - name: loom_magazine_ring_compose
         # Task #1110: tee + grep postconditions (task #1086 shape) — one
         # sentinel per `--test` target in this four-target invocation (#1101
         # per-FILE granularity); `shell: bash` for `-eo pipefail`.
         run: |
-          cargo test --release --features "alloc-global alloc-xthread" \
+          cargo test --release --features "alloc-global alloc-xthread tagged-index-stack/loom" \
             --test loom_magazine_ring_compose \
             --test loom_overflow_first_retry \
             --test loom_heap_overflow \
