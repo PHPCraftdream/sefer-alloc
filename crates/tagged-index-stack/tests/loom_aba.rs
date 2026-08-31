@@ -542,6 +542,16 @@ fn run_h2(preserve_tag_on_drain: bool) {
         let (idx_v, tag) = Tag::unpack(head);
         let idx = idx_v as u32;
         let next = links.load_next(idx);
+        // NOTE: this branch on `preserve_tag_on_drain` computes `new_head` --
+        // the value A's CAS would WRITE on success -- but a
+        // `compare_exchange`'s success/failure depends only on `current`
+        // (`head`, captured above, before B's cycle) matching the atomic's
+        // present value, never on `new`. So this branch cannot itself affect
+        // whether A's CAS below succeeds or fails; only thread B's drain
+        // behaviour (real `pop` vs `bug_pop_drain_to_empty`) does that. It's
+        // here for faithfulness -- computing exactly what a real caller in
+        // A's position would compute -- not because it changes the asserted
+        // outcome.
         let new_head = if next == TAIL {
             if preserve_tag_on_drain {
                 Tag::pack(Tag::empty_index(), tag)
