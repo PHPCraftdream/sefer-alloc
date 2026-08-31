@@ -212,8 +212,9 @@ threads x 200k pop-then-repush iterations, `--release`): the single worst
 one axis where disabling the backoff wins — while the same workload finished
 ~4.9x faster in aggregate under the cap, every percentile through p99.9 was
 1-2 orders of magnitude better under the cap (p99.9 ≈ 1 µs vs 54-182 µs at
-8-16 threads), and at 16 threads the backoff-free build produced 2.2-2.6x
-MORE pops over 1 ms. A consumer recycling a slot on a latency-sensitive
+8-16 threads), and at 16 threads the backoff-free build produced ~2.4x
+MORE pops over 1 ms median-to-median (1.9-2.6x across rep pairings). A
+consumer recycling a slot on a latency-sensitive
 request path should size its tolerance for those rare outliers, not fear a
 broad tail; the full table is
 [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
@@ -260,9 +261,10 @@ Under default features: `StackHead::raw_head` (also reachable through
 `ArrayIndexStack`'s `#[doc(hidden)]` forwarder) is a test-only probe,
 used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
 test-only — it is used internally by this crate's bootstrap path
-(`StackHead::new` / `ArrayIndexStack::new`) and by known in-workspace consumers
-for the same
-purpose (a const-capable bootstrap-empty head word), so it is not freely
+(`StackHead::new` / `ArrayIndexStack::new`) and by the production allocator
+this crate ships alongside (`sefer-alloc`, whose registry bootstrap free-list
+is built on this crate's head) for the same purpose (a const-capable
+bootstrap-empty head word), so it is not freely
 removable, but do not depend on it either.
 
 Under the `test-internals` feature (off by default — a default build of the

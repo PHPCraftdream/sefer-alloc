@@ -326,8 +326,7 @@ fn main() {
     // instead of computing the division.
     if min == 0.0 {
         println!(
-            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed); min/mean = {:.1}% of the even split (100% = fair)\n",
-            100.0 * min / mean
+            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed)\n"
         );
     } else {
         println!(
@@ -463,8 +462,7 @@ fn main() {
     // instead of computing the division.
     if min == 0.0 {
         println!(
-            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed); min/mean = {:.1}% of the even split (100% = fair)\n",
-            100.0 * min / mean
+            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed)\n"
         );
     } else {
         println!(

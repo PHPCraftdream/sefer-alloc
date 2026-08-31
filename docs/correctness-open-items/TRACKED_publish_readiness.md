@@ -146,37 +146,7 @@ split the same day.)
       decision above refers to), but it is stated here rather than left to
       read as full CI coverage.
 
-27. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 3] tagged-index-stack's `compile_error!` guard for unsupported `target_has_atomic` widths doesn't suppress the cascading `E0432` unresolved-import error on the same build — a deliberate, unrecorded tradeoff.**
-
-    - **Status:** OPEN — low-priority polish, deliberately deferred, not an
-      oversight. Purely cosmetic (the build already fails either way on an
-      unsupported target; the only difference is whether the FIRST error a
-      user sees is the clear named-reason `compile_error!` or that error
-      followed by a cascade of confusing `E0432`s).
-    - **Current-number-or-verdict:** commit
-      `300b41f97a0e7c85310e5ed53dcbf289414e779f`'s own body: adding the
-      `#[cfg(not(target_has_atomic = "64"))] compile_error!` guard (F2) does
-      fire first and gives a clear, named-reason error on an unsupported
-      target — a real (if small) behavior improvement. But it does not
-      suppress the subsequent cascading `E0432` unresolved-import error
-      that still follows on the same build, because `compile_error!` does
-      not halt the rest of module compilation. Fully suppressing the
-      cascade would require `#[cfg(target_has_atomic = "64")]`-gating every
-      downstream item in the file — "judged too intrusive for the benefit
-      on an already-broken build," per the commit body.
-    - **Why filed instead of fixed here:** it is a conscious, defensible,
-      already-reasoned-through tradeoff, not a bug — filing it only so the
-      decision is recorded somewhere indexed instead of living solely in
-      one commit message.
-    - **Next trigger:** none required; revisit only if a future contributor
-      finds the cascading `E0432` output genuinely confusing enough in
-      practice to justify the `cfg`-gating cost across the file. Low
-      priority, no forcing deadline.
-    - **Evidence:** commit `300b41f97a0e7c85310e5ed53dcbf289414e779f`'s
-      full commit body; `crates/tagged-index-stack/src/lib.rs` (the
-      `compile_error!` guard);
-      `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md`
-      finding P3-4 item 3.
+27. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 3] tagged-index-stack's `compile_error!` guard for unsupported `target_has_atomic` widths doesn't suppress the cascading `E0432` unresolved-import error on the same build — a deliberate, unrecorded tradeoff.** (Headline kept verbatim per the history-is-not-rewritten convention.) — **Status: CLOSED** (2026-09-01, tagged-index-stack round-11 @oh independent review, finding P3-4 — the review that caught this card describing an already-fixed state). The cascade was eliminated by the Sol-codex run-3 P2-4 fix (commit `db8bb77`), which moved the crate's whole implementation behind one `#[cfg(all(target_has_atomic = "64", any(not(loom), feature = "loom")))]` gate (`crates/tagged-index-stack/src/lib.rs`) — the exact complement of both `compile_error!` conditions — so no implementation item is name-resolved on an invalid config; this card's "cfg-gating every downstream item — judged too intrusive" tradeoff sentence described the pre-fix state and no longer applied. Full closure narrative (including the regression-coverage caveat that decided closing this with a new CI gate rather than a manual check) in "Recently resolved" in RESOLVED.md.
 
 28. **[T, filed 2026-08-06, task #653/P19, `docs/reviews/2026-08-06-publish-readiness-sweep-closing-review.md` finding P3-4 item 4] Two one-way-door publish decisions for `racy-ptr-cell` — its name and its 383-character `description` — were surfaced in commit `9ecada3`'s body but never recorded anywhere indexed, and become permanent the moment the crate first publishes.**
 
