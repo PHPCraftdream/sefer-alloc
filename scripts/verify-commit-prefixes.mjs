@@ -487,6 +487,55 @@ const GRANDFATHERED = new Map([
       'point, it does not foreclose it. Durable record: item 78, ' +
       'sub-card 12 (task #1678).',
   ],
+  [
+    'ab6a2ed',
+    'NOT a genuine mis-slot -- the SAME recurring Cargo.toml `description` ' +
+      'false-positive class as eaa3310/e25ec74/abf2061/08d8260 (sub-cards ' +
+      '7/8/9/12), this time on tagged-index-stack again (Sol-codex run-3 ' +
+      'P1-2, task tis-sc3-Group1). ENTIRE crates/tagged-index-stack/' +
+      'src/lib.rs delta is //! doc-comment lines (already correctly ' +
+      'recognized as comment by hasNonCommentChange), rewording the ' +
+      '"structurally defeats"/"cannot repeat" ABA claim to an honest ' +
+      'bounded-mitigation contract. The one non-comment changed line is ' +
+      'Cargo.toml\'s `description = "..."` value ("ABA-defeating" -> ' +
+      '"ABA-mitigating", matching the same wording correction the doc ' +
+      'comments carry); `version`/`dependencies` untouched. Crates.io-' +
+      'facing PACKAGE METADATA PROSE, not shipping/opt-in code. No honest ' +
+      'alternative prefix fits better -- docs(tis): is correct. Not ' +
+      'taught to the guard as a new exception path (same guard-cleverness ' +
+      'risk e25ec74\'s entry already warns against). UNPUSHED: the owner ' +
+      'may still reword it by rebase -- this exemption records that ' +
+      'decision point, it does not foreclose it. Durable record: item 78, ' +
+      'sub-card 13 (task tis-sc3-Group4, #1770 merge).',
+  ],
+  [
+    '67ea38d',
+    'A GENUINE mis-slot, same defect class as 66f47d2/4c332ab (sub-cards ' +
+      '10/11) -- NOT a heuristic false positive. Bare `perf(tis):` on a ' +
+      'Sol-codex run-3 P3-2 commit that lands a real shipping hot-path ' +
+      'ordering change: push_index\'s initial head load Ordering::Acquire ' +
+      '-> Ordering::Relaxed (crate-owned StackOps blanket impl, no feature ' +
+      'gate -- always-on for every tagged-index-stack consumer, including ' +
+      'the root registry). R30-12 requires perf(runtime): for a landed ' +
+      'default hot-path change; the honest prefix would have been ' +
+      '`perf(runtime): tagged-index-stack -- ...`, matching this crate\'s ' +
+      'own 069d187/3944336 precedent for the same taxonomy slot. UNPUSHED, ' +
+      'so a rebase to reword it was available -- deliberately not taken, ' +
+      'same reasoning as 66f47d2\'s entry: this commit sits inside a run of ' +
+      'six merge commits interleaving five parallel /rush worktree ' +
+      'branches (Sol-codex run-3 remediation wave), each merge carrying its ' +
+      'own hand-resolved conflict (e.g. this exact commit\'s CHANGELOG.md ' +
+      'hunk against a sibling group\'s concurrent ABA-wording edit); a ' +
+      '`git rebase --rebase-merges` to reword one commit\'s subject line ' +
+      'would re-run every one of those merges from scratch with no ' +
+      'guarantee of reproducing the same by-hand resolutions (confirmed by ' +
+      'a live attempt: a plain `-i` rebase over this range immediately hit ' +
+      'a spurious conflict replaying a commit whose original merge context ' +
+      'no longer existed) -- exactly the kind of git-history action this ' +
+      'repo\'s own conventions reserve for explicit owner request, for a ' +
+      'one-word prefix fix. Durable record: item 78, sub-card 14 (task ' +
+      'tis-sc3-Group5, #1771/#1772 merge).',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
