@@ -31,14 +31,14 @@ report resolves that by actually sweeping the cap on the real, committed
 
 **Base commit (immutable source identity — CLAUDE.md's R29-6 rule):**
 `47c81e9087d6bf353d537e15e362c5b65925c90e` (`main`, working tree CLEAN before
-and after every measurement — see §2's protocol; no uncommitted diff was ever
+and after every measurement — see §7's protocol; no uncommitted diff was ever
 present DURING a timed run, only inside the build step immediately preceding
 it, reverted before the next build). `git show
 47c81e9087d6bf353d537e15e362c5b65925c90e:crates/tagged-index-stack/src/lib.rs`
 and the same path for `benches/tagged_index_stack_bench.rs` recover the exact
 pre-sweep source; the sweep's per-cap/per-thread-cap edits are mechanical
-one-line substitutions documented in full in §2 below (also reproducible from
-this report alone, byte for byte).
+one-line substitutions documented in full later in this section (also
+reproducible from this report alone, byte for byte).
 
 **Machine:** Windows 10 Pro 10.0.19045 (MINGW64/Git-Bash), 16 logical CPUs
 (`std::thread::available_parallelism()` = 16), `rustc 1.97.0 (2d8144b78
@@ -49,7 +49,7 @@ this report alone, byte for byte).
 tagged_index_stack_bench` builds under `[profile.bench]`
 (`lto = "thin"`, `codegen-units = 1`), NOT `[profile.release]` — the two
 happen to be byte-identical in this repo's root `Cargo.toml` today (see
-§5/P4-7 below), so no number in this report is affected by which name is
+§6 below), so no number in this report is affected by which name is
 used, but `[profile.bench]` is the technically correct citation for a
 `cargo bench` run.
 
@@ -95,11 +95,13 @@ the original `.min(8)` in every commit this report lands with.
 
 - **Cap values:** `{0, 4, 6, 8, 10}` — `0` is "no backoff" (the pre-Round-6
   baseline shape, immediate retry), `6` is shipped, `4`/`8`/`10` bracket it.
-- **Thread counts:** `{2, 4, 8, 16}` — 2 is the lowest contention this
-  harness's `contention/*` section can reach (it always spawns
-  `num_threads >= 2`... in practice the harness's own
-  `available_parallelism()` floor is whatever the OS reports, clamped to the
-  arm under test here); 16 is genuine oversubscription on this 16-logical-CPU
+- **Thread counts:** `{2, 4, 8, 16}` — 2 is the lowest contention measured
+  in this sweep; it is a choice of this sweep's arm set, not a floor in the
+  harness: the `contention/*` section spawns exactly the `num_threads` it
+  resolves at startup (the `TIS_SWEEP_THREADS` env override when set — the
+  sweep's own mechanism — else `available_parallelism().min(8)`), with no
+  internal minimum, so a 1-thread arm was possible but simply not measured;
+  16 is genuine oversubscription on this 16-logical-CPU
   host (16 worker threads + 1 coordinating main thread + OS/background load).
 - **Benches measured:** both committed contention rows,
   `contention/push_pop` and `contention/churn` (see
