@@ -52,6 +52,22 @@ proptest = "1"
 # consumers). See benches/tagged_index_stack_bench.rs.
 bench-scale-tool = "0.1"
 
+[features]
+# Gates the crate's CAS-retry/backoff activation counters (`POP_RETRY_COUNT`,
+# `PUSH_RETRY_COUNT`, the two backoff-cap-reach counters) and their
+# `#[doc(hidden)]` accessors (`retry_counts_for_test`,
+# `backoff_cap_reached_for_test`): instrumentation with no production caller,
+# so per this crate's minimality pitch ("allocation-free, no_std") it must
+# not ride the default build (round-9 review P3-4: an earlier revision
+# compiled all of it unconditionally into every published build). Off by
+# default. The loom build does NOT need this feature: under `--cfg loom` the
+# same counters compile (the loom suite's `pop_retry_count_for_test` /
+# `push_retry_count_for_test` read them), so the documented loom invocation
+# is unchanged. `tests/threaded_conservation.rs` compiles its activation-
+# oracle assertions only when this feature is on (its conservation and drain
+# checks still run without it).
+test-internals = []
+
 [[bench]]
 name = "tagged_index_stack_bench"
 harness = false

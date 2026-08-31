@@ -144,7 +144,7 @@ static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// so collapsing every call site's identical `Builder::new()` into this one
 /// function also removes that duplication.
 ///
-/// The three tests whose activation-oracle snapshot/assert window must span
+/// The tests whose activation-oracle snapshot/assert window must span
 /// the entire `check()` call — not just wrap it — use
 /// [`model_with_oracle`] instead: `MODEL_LOCK` is a plain `std::sync::Mutex`,
 /// which is not reentrant, so this function cannot be nested inside an
@@ -159,7 +159,7 @@ where
     loom::model::Builder::new().check(f);
 }
 
-/// Variant of [`model`] for the four tests whose activation-oracle
+/// Variant of [`model`] for the tests whose activation-oracle
 /// snapshot/assert window must cover the ENTIRE `check()` call, not just
 /// wrap it: `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 /// `push_push_conservation`, `pop_pop_conservation`,

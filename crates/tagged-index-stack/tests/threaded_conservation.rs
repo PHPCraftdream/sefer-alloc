@@ -11,12 +11,26 @@
 //! fixed, modest number of REAL OS threads hammering a SHARED stack for many
 //! iterations, so genuine contention forces many CAS retries per call, and
 //! `spins` genuinely climbs into its higher range in practice — something no
-//! existing test (loom or otherwise) does. That claim is ASSERTED, not
-//! assumed: the test snapshots the crate's retry counters
-//! (`retry_counts_for_test()`, the non-loom twin of the loom suite's
-//! per-counter accessors) before the threaded phase and asserts both the pop
-//! and push counters advanced after it, so a regression that makes the retry
-//! path unreachable fails loudly instead of passing vacuously. This is the
+//! existing test (loom or otherwise) does. That two-part claim is ASSERTED,
+//! not assumed — at two levels. First, the test snapshots the crate's retry
+//! counters (`retry_counts_for_test()`, the non-loom twin of the loom
+//! suite's per-counter accessors) before the threaded phase and asserts
+//! both the pop and push counters advanced after it, so a regression that
+//! makes the retry PATH unreachable fails loudly instead of passing
+//! vacuously — but that level alone cannot distinguish 1 retry from
+//! thousands. Second (round-9 P3-1), it does the same with the
+//! backoff-cap-reach counters (`backoff_cap_reached_for_test()`), which
+//! count only retries whose spin loop ran at FULL depth (`spins` saturated
+//! at `BACKOFF_SPIN_CAP`), so a regression that caps `spins` at 0, resets
+//! it per iteration, or moves its increment off the reachable path —
+//! leaving the documented backoff silently inert while every retry counter
+//! still advances — fails loudly too. The counters compile only under the
+//! crate's `test-internals` feature (round-9 P3-4 — a default build of the
+//! crate carries no instrumentation), so WITHOUT that feature this file
+//! still runs its conservation and drain checks but the oracle assertions
+//! compile out; run
+//! `cargo test -p tagged-index-stack --features test-internals` for the
+//! full-strength oracle. This is the
 //! committed replacement
 //! for the throwaway ad hoc probe cited in the round-6 backoff commit
 //! (`069d187`): "8 threads x 200,000 contention-shaped pop/push iterations
@@ -58,10 +72,12 @@ const NUM_THREADS: usize = 8;
 /// Pop-then-repush iterations per thread. `NUM_THREADS * ITERS_PER_THREAD`
 /// (1.6M total pop/push pairs) matches the 8-threads-x-200,000 shape of the
 /// throwaway ad hoc probe this file replaces. Scale alone does NOT enforce
-/// the retry-path claim — the activation-oracle assertions below (snapshot
-/// of `retry_counts_for_test()` before the threaded phase, non-zero delta
-/// after) do; the scale just makes genuine contention — and therefore
-/// retry activation — routine rather than a rare race. Measured cost: runs
+/// the retry/backoff claims — the two-level activation-oracle assertions
+/// below (snapshot of `retry_counts_for_test()` AND
+/// `backoff_cap_reached_for_test()` before the threaded phase, non-zero
+/// delta after, both under `--features test-internals`) do; the scale just
+/// makes genuine contention — and therefore retry activation at full
+/// backoff depth — routine rather than a rare race. Measured cost: runs
 /// in ~0.3 s under a debug `cargo test` (~0.1 s release).
 const ITERS_PER_THREAD: u32 = 200_000;
 
@@ -81,13 +97,24 @@ fn conservation_under_real_thread_contention() {
         stack.push(&links, i);
     }
 
-    // Activation oracle (P3-1): the whole point of this file over
-    // `loom_aba.rs` is real-contention retry activation, so ASSERT it —
-    // snapshot both retry counters before the threaded phase and require
-    // non-zero deltas after. One #[test] per binary here, so the window
+    // Activation oracle (round-7 P2-2; round-9 P3-1/P3-4): the whole point
+    // of this file over `loom_aba.rs` is real-contention retry activation,
+    // so ASSERT it at two levels — the retry counters prove the retry arms
+    // are REACHED, the backoff-cap-reach counters prove `spins` genuinely
+    // climbs into its higher range (at least one call per branch executed
+    // its spin loop at full depth). The counters exist only under the
+    // crate's `test-internals` feature (or a loom build, which this file is
+    // `#![cfg(not(loom))]`-excluded from), so without the feature the
+    // conservation and drain checks below still run but these oracle
+    // assertions compile out — run this file with
+    // `cargo test -p tagged-index-stack --features test-internals` for the
+    // full-strength version. One #[test] per binary here, so the window
     // needs no MODEL_LOCK-style serialization (see `retry_counts_for_test`'s
     // doc).
+    #[cfg(feature = "test-internals")]
     let (pop_retries_before, push_retries_before) = tagged_index_stack::retry_counts_for_test();
+    #[cfg(feature = "test-internals")]
+    let (pop_cap_before, push_cap_before) = tagged_index_stack::backoff_cap_reached_for_test();
 
     thread::scope(|s| {
         let links = &links;
@@ -110,23 +137,47 @@ fn conservation_under_real_thread_contention() {
         }
     });
 
-    let (pop_retries_after, push_retries_after) = tagged_index_stack::retry_counts_for_test();
-    assert!(
-        pop_retries_after > pop_retries_before,
-        "activation oracle: `pop`'s CAS-retry branch never executed across \
-         {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
-         (before={pop_retries_before}, after={pop_retries_after}) — the \
-         contention this test exists to exercise did not happen, and its \
-         conservation assertion alone cannot catch a broken retry path"
-    );
-    assert!(
-        push_retries_after > push_retries_before,
-        "activation oracle: `push`'s CAS-retry branch never executed across \
-         {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
-         (before={push_retries_before}, after={push_retries_after}) — the \
-         contention this test exists to exercise did not happen, and its \
-         conservation assertion alone cannot catch a broken retry path"
-    );
+    #[cfg(feature = "test-internals")]
+    {
+        let (pop_retries_after, push_retries_after) = tagged_index_stack::retry_counts_for_test();
+        let (pop_cap_after, push_cap_after) = tagged_index_stack::backoff_cap_reached_for_test();
+        assert!(
+            pop_retries_after > pop_retries_before,
+            "activation oracle: `pop`'s CAS-retry branch never executed across \
+             {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
+             (before={pop_retries_before}, after={pop_retries_after}) — the \
+             contention this test exists to exercise did not happen, and its \
+             conservation assertion alone cannot catch a broken retry path"
+        );
+        assert!(
+            push_retries_after > push_retries_before,
+            "activation oracle: `push`'s CAS-retry branch never executed across \
+             {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
+             (before={push_retries_before}, after={push_retries_after}) — the \
+             contention this test exists to exercise did not happen, and its \
+             conservation assertion alone cannot catch a broken retry path"
+        );
+        assert!(
+            pop_cap_after > pop_cap_before,
+            "backoff-depth oracle: no `pop` retry ever reached FULL backoff \
+             depth (spins saturated at BACKOFF_SPIN_CAP, a \
+             1 << BACKOFF_SPIN_CAP-iteration spin loop) across {NUM_THREADS} \
+             threads x {ITERS_PER_THREAD} contended iterations \
+             (before={pop_cap_before}, after={pop_cap_after}) — the backoff's \
+             `spins` never climbed into its higher range, exactly the \
+             silently-inert-backoff regression this oracle exists to catch"
+        );
+        assert!(
+            push_cap_after > push_cap_before,
+            "backoff-depth oracle: no `push` retry ever reached FULL backoff \
+             depth (spins saturated at BACKOFF_SPIN_CAP, a \
+             1 << BACKOFF_SPIN_CAP-iteration spin loop) across {NUM_THREADS} \
+             threads x {ITERS_PER_THREAD} contended iterations \
+             (before={push_cap_before}, after={push_cap_after}) — the backoff's \
+             `spins` never climbed into its higher range, exactly the \
+             silently-inert-backoff regression this oracle exists to catch"
+        );
+    }
 
     // Drain and confirm the exact multiset 0..LINKS_SIZE came back: no
     // duplicate, no missing index.
