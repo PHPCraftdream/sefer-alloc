@@ -194,7 +194,10 @@ used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
 test-only — it is used internally by this crate's bootstrap path
 (`TaggedIndexStack::new`) and by known in-workspace consumers for the same
 purpose (a const-capable bootstrap-empty head word), so it is not freely
-removable, but do not depend on it either.
+removable, but do not depend on it either. `retry_counts_for_test` is the
+non-loom twin of the loom-only retry-count accessors below — it reads both
+CAS-retry counters in one call and is what `tests/threaded_conservation.rs`
+uses as its activation oracle under real OS threads.
 
 Under `--cfg loom` (not present in a normal build or on docs.rs):
 `TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the
