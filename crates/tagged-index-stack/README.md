@@ -36,6 +36,12 @@ links **slot-resident** (an `AtomicU32` field inside a slot it already owns)
 rather than paying for a second array. For standalone use, `ArrayLinks<N>`
 provides an owned `[AtomicU32; N]` backing.
 
+**Storage requirement: dedicated, never payload-aliased.** Slot-resident means
+the link lives in memory the slot owns, not that it may share bytes with the
+slot's live payload — a backing that overlays the link on the popped slot's
+first bytes (the classic free-block-header idiom) is not supported and defeats
+`pop`'s own corruption-detection `debug_assert!`.
+
 ## The two hard-won subtleties (people get these wrong)
 
 - **H-2 empty-transition tag preservation.** When a pop drains the LAST element,

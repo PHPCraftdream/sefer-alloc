@@ -86,7 +86,11 @@ before it.
   `store_next`), so a production allocator keeps links **slot-resident** (an
   `AtomicU32` inside a slot it already owns) instead of paying for a second
   array. **`ArrayLinks<N>`** provides an owned `[AtomicU32; N]` backing for
-  standalone use.
+  standalone use. The link storage must be a DEDICATED cell, never
+  payload-aliased on the popped slot's own bytes — `pop` carries a
+  `debug_assert!` that fires (debug builds only) the moment a backing
+  returns anything but `TAIL` or a currently-valid index, which is exactly
+  what a payload-aliased backing does on every ordinary benign race.
 - **Lazy link discipline (internally: RAD-1)** — links are never eagerly initialised:
   only a `push` writes a link, immediately before publishing that index as
   head. A caller whose link backing is OS-zeroed memory (a fresh `mmap`, a

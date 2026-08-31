@@ -41,6 +41,10 @@
 //! keep its links **slot-resident** (an `AtomicU32` field inside each slot it
 //! already owns) instead of paying for a second array. For standalone use, the
 //! crate provides [`ArrayLinks`]`<N>` — an owned `[AtomicU32; N]` backing.
+//! Slot-resident does NOT mean payload-aliased — see the [`Links`] trait
+//! doc's "Storage requirement" section for the full dedicated-storage rule
+//! and why violating it defeats [`pop`](TaggedIndexStack::pop)'s own
+//! corruption-detection `debug_assert!`.
 //!
 //! [`Links::store_next`] is the ONLY write the stack ever makes to a link, and
 //! it happens during [`push`](TaggedIndexStack::push), immediately before the
