@@ -151,7 +151,9 @@ before it.
   6`, max 64 `core::hint::spin_loop()` spins per retry, per-call `spins`
   counter never persisted across calls). Measured on the committed harness
   (`benches/tagged_index_stack_bench.rs`, x86-64, this repo's
-  `[profile.release]`, 8 threads = `available_parallelism().min(8)` on this
+  `[profile.bench]` — `cargo bench`'s actual profile, byte-identical to
+  `[profile.release]` in this repo's `Cargo.toml` today — 8 threads =
+  `available_parallelism().min(8)` on this
   machine): `contention/push_pop` 5,804,630 / 5,284,307 ops/sec (baseline, 2
   runs) → 30,049,461 / 29,850,246 / 29,993,450 ops/sec (with backoff, 3
   runs) — roughly 5.3x; `contention/churn` 2,899,902 / 2,961,754 ops/sec →
@@ -167,6 +169,25 @@ before it.
   loom suite (`tests/loom_aba.rs`, all 10 models) stayed green at the same
   wall-clock (~0.16s test time): `core::hint::spin_loop()` touches no
   loom-tracked atomic, so it adds no new interleaving for loom to explore.
+- **`BACKOFF_SPIN_CAP = 6` kept after a dedicated throughput-vs-fairness cap
+  sweep** (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`) — an independent
+  review flagged the cap's original doc comment as claiming an unmeasured
+  "low enough for LOW contention" rationale. Sweeping caps `{0, 4, 6, 8,
+  10}` at 2/4/8/16 threads on the committed bench found that claim WRONG:
+  cap 8 and cap 10 both beat cap 6 on throughput at every thread count
+  tested, including the lowest-contention 2-thread arm (+17% to +58%
+  depending on regime). What the sweep found INSTEAD is a real
+  fairness cost that GROWS with the cap under oversubscription: at 16
+  threads on a 16-logical-CPU host, cap 6's per-thread throughput skew
+  (`max/min`) averaged ~6.1x across 6 independent samples vs. ~13.1x for
+  cap 8 and ~20.6x for cap 10, with cap 8/cap 10 each producing a
+  single-run outlier past 19x/46x (one thread starved to a small fraction
+  of its fair share). `BACKOFF_SPIN_CAP` stays `6` — the most
+  fairness-conscious of the caps measured — trading a real but bounded
+  throughput ceiling against a starvation risk judged not worth imposing
+  on every caller by default. Both `src/lib.rs`'s doc comment and this
+  bullet now state the real throughput-vs-fairness axis instead of the old
+  unmeasured low-contention-latency claim.
 - **Two other speculative perf changes evaluated and declined** (unrelated
   to the backoff above): `push`'s initial `head.load(Ordering::Acquire)`
   could plausibly be `Relaxed`, and both `push`'s and `pop`'s CAS loops are

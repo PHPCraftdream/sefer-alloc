@@ -255,12 +255,32 @@ pub const TAIL: u32 = u32::MAX;
 /// [`core::hint::spin_loop`] before retrying. `N` is a per-call local, reset
 /// on every fresh `push`/`pop` — this backs off within one call's retry loop,
 /// never across calls. Measured on the committed bench (x86-64, this repo's
-/// `[profile.release]`, 8 threads): ~5.3x-9.7x contended throughput, 0%
-/// single-thread cost (see CHANGELOG.md for the exact numbers). Capped at 6
-/// (max 64 spins/retry): high enough to materially reduce head-cache-line
-/// ping-pong under contention, low enough that a spurious retry under LOW
-/// contention doesn't stall the one thread that lost the CAS for longer than
-/// the win is worth.
+/// `[profile.bench]` — `cargo bench`'s actual profile; byte-identical to
+/// `[profile.release]` in this repo's `Cargo.toml` today, so no cited number
+/// is affected by which name is used): ~5.3x-9.7x contended throughput at 8
+/// threads, 0% single-thread cost (see CHANGELOG.md for the exact numbers).
+///
+/// **The cap is 6, and this is a fairness-vs-throughput choice, NOT a
+/// low-contention-latency one.** A dedicated cap sweep
+/// (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`) measured caps `{0, 4, 6, 8,
+/// 10}` at 2/4/8/16 threads on the committed bench and found cap 8 and cap
+/// 10 BOTH beat cap 6 on throughput at every thread count tested, including
+/// the lowest-contention 2-thread arm (+17% to +58% depending on regime) —
+/// so cap 6 is not "the low-contention-optimal cap", contrary to an earlier
+/// version of this doc comment that claimed exactly that without having
+/// measured it. What cap 6 IS is the most fair of the three under
+/// oversubscription: at 16 threads on a 16-logical-CPU host, cap 6's
+/// per-thread throughput skew (`max/min` across threads) averaged ~6.1x
+/// across 6 independent samples, vs. ~13.1x for cap 8 and ~20.6x for cap 10
+/// — both cap 8 and cap 10 showed single-run outliers past 19x and 46x
+/// respectively, i.e. one thread starved to a small fraction of its fair
+/// share. Because a starved thread here means a starved allocator-slot
+/// recycler for whatever consumer thread lost the race, that fairness cost
+/// was judged not worth the throughput gain for the SHIPPED default — see
+/// the linked report's §5 for the full reasoning. A caller who specifically
+/// wants peak aggregate throughput under contention they know is benign can
+/// measure a higher local cap using that report's §1 reproduction recipe;
+/// the crate's default does not impose that tradeoff on every caller.
 const BACKOFF_SPIN_CAP: u32 = 6;
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
