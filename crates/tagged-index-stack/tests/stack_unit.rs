@@ -448,13 +448,12 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
 // named `compile_error!`, no secondary name-resolution error). The mechanism
 // is this crate's established hand-rolled alternative to `trybuild`
 // (`tests/compile_fail_two_backings.rs` -- see its doc comment for the full
-// rationale; this workspace has declined a `trybuild` dependency five
-// separate times, each documented in-source:
-// `crates/sefer-region/tests/handle_static_asserts.rs`,
-// `crates/aligned-vmem/tests/smoke.rs`, root
-// `tests/r31_4_reserved_small_segment_handle.rs`, root
-// `tests/r34_3_internals_boundary_api.rs`, and the note this comment
-// replaces). `compile_fail` doctests remain unavailable in this repo (banned
+// rationale; this workspace's standing convention is to decline a `trybuild`
+// dependency in favor of hand-rolled compile-fail tests, each decision
+// documented in-source where it was made -- find the notes with
+// `grep -rn trybuild --include=*.rs .` from the workspace root rather than
+// trusting any count quoted in a comment). `compile_fail` doctests remain
+// unavailable in this repo (banned
 // outright, see CLAUDE.md's "No doctests" rule). Revisit only if
 // `_CHECK_BITS`'s const-evaluation routing is ever refactored.
 
