@@ -127,6 +127,39 @@ before it.
   `docs/reviews/2026-08-30-132847-tagged-index-stack-claude.md` and
   `docs/reviews/2026-08-30-2243-tagged-index-stack-review-round3-oh.md`
   P3-5 — this bullet is the durable record neither round produced).
+- **A crate-doc "one Invariants section" consolidation was considered a
+  second time and declined a second time — with new evidence, not the same
+  reasoning restated.** Round 3 (`ab4497f`) declined this with an explicit
+  revisit condition: "if a future round finds NEW drift instances — that
+  would be empirical evidence a restructuring is warranted." Round 4's
+  independent review found six new drift instances (the `scripts/loom.mjs`
+  feature-map staleness, two loom-coverage over-attribution clauses, a
+  stale `How to run` command, two stale `assert!` references, a stale CI
+  test-file count) and argued the condition had fired. On inspection, all
+  six were duplicate FACTS restated slightly differently across SEPARATE
+  files (`README.md`, `CHANGELOG.md`, `.github/workflows/ci.yml`,
+  `scripts/loom.mjs`, `tests/loom_aba.rs`) — not excess verbosity within
+  one `src/lib.rs` doc passage. A single in-crate "Invariants" section
+  would not have prevented any of the six: `README.md` is what a reader
+  sees on crates.io without opening rustdoc, `CHANGELOG.md` records what
+  shipped, `ci.yml`'s comments explain CI configuration, and
+  `scripts/loom.mjs`/`tests/loom_aba.rs` need their own working commands —
+  none of those four files is generated from `src/lib.rs`'s rustdoc, so
+  consolidating within one file does not eliminate the other files' need
+  to independently restate the same facts, which is the actual mechanism
+  that produced this round's drift. Separately, direct re-reading of all
+  five passages the round-4 review named as consolidation candidates
+  (`TaggedIndex`'s uninhabited-enum defence, `_CHECK_BITS`'s rationale,
+  `pack`'s truncation essay, the `Links` ordering contract, `push`'s
+  `# Caller contract`) found every sentence in all five to carry a
+  distinct, load-bearing fact (a concrete failure mode, a specific reason
+  a bound exists) rather than review-dialogue prose — unlike the
+  `size-classes` sibling crate's precedent (tasks #1638/#1589/#1545),
+  none of these five passages quote or reference a past reviewer's
+  question inline. The six new instances are the drift-across-files
+  problem this crate already has dedicated per-task fixes for (this same
+  round); they are not evidence that `src/lib.rs`'s own documentation
+  density is the cause.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
