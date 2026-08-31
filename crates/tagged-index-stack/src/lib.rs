@@ -988,6 +988,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
     /// the crate docs' H-2 section).
     ///
+    /// On a lost CAS, the retry backoff (see [`push`](Self::push)'s identical
+    /// backoff comment and `BACKOFF_SPIN_CAP`) is skipped when the CAS's
+    /// `actual` value shows the stack just went empty — the loop's next
+    /// iteration returns `None` immediately regardless, so backing off first
+    /// would only add latency to a call about to do zero further work.
+    ///
     /// # Panics
     ///
     /// Panics if the [`Links::load_next`] result for the popped index is
@@ -1080,13 +1086,23 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     }
                     head = actual;
                     // Exponential backoff before retrying — see push's
-                    // identical comment and BACKOFF_SPIN_CAP.
-                    for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
-                        core::hint::spin_loop();
-                    }
-                    // Capped — see push's identical comment.
-                    if spins < BACKOFF_SPIN_CAP {
-                        spins += 1;
+                    // identical comment and BACKOFF_SPIN_CAP. Skipped when
+                    // the lost CAS reveals the stack just went empty: the
+                    // top of this loop's `is_empty` check will return `None`
+                    // on the very next iteration regardless of backoff, so
+                    // spinning here is pure wasted latency on a path about
+                    // to do zero work. Purely a latency choice — `is_empty`
+                    // is still evaluated at the top of the loop exactly as
+                    // before, so which outcome a call eventually returns is
+                    // unchanged; only how fast it gets there differs.
+                    if !TaggedIndex::<INDEX_BITS>::is_empty(actual) {
+                        for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
+                            core::hint::spin_loop();
+                        }
+                        // Capped — see push's identical comment.
+                        if spins < BACKOFF_SPIN_CAP {
+                            spins += 1;
+                        }
                     }
                 }
             }
