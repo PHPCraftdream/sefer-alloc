@@ -28,6 +28,10 @@ all-ones value is the reserved "stack empty" sentinel. The classic ABA scenario
 (A reads `head = X`; B pops X then re-pushes X) is defeated because B's re-push
 bumps the tag, so A's CAS on `(X, old_tag)` fails and retries.
 
+`pack`/`unpack` convert between an `(index, tag)` pair and the packed word;
+`try_pack` is `pack`'s checked twin, returning `None` instead of silently
+truncating an out-of-range index or tag.
+
 ## Slot-resident OR owned links
 
 The stack stores only the HEAD. Each pushed index's "next" link lives in caller
@@ -42,6 +46,11 @@ slot's live payload — a backing that overlays the link on the popped slot's
 first bytes (the classic free-block-header idiom) is not supported and defeats
 `pop`'s own corruption-detection `debug_assert!`.
 
+`TaggedIndexStack::is_empty()` is an advisory, `Relaxed` emptiness check —
+useful for diagnostics/monitoring, but a concurrent push or pop can make it
+stale the instant it returns, so `pop`'s `None` remains the only
+authoritative empty check.
+
 ## The two hard-won subtleties (people get these wrong)
 
 - **H-2 empty-transition tag preservation.** When a pop drains the LAST element,
@@ -55,7 +64,10 @@ first bytes (the classic free-block-header idiom) is not supported and defeats
   writes a link. A caller whose link backing is OS-zeroed memory never
   first-touches those pages merely to set up the free-list; they commit lazily,
   on first push of each index. (In the allocator this crate was extracted from,
-  this saved a ~16 MiB bootstrap first-touch.) A fresh stack is therefore EMPTY.
+  this saved a ~16 MiB bootstrap first-touch — because the links there were
+  slot-resident, so eagerly chaining them would have first-touched every
+  slot's page, and the SLOTS are what total ~16 MiB, not the link array
+  itself.) A fresh stack is therefore EMPTY.
 
 ### The rule that is NOT one of the two: no double-push (caller-enforced)
 
@@ -167,9 +179,11 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loo
 
 ## Notes
 
-`TaggedIndexStack::raw_head` is a `#[doc(hidden)]` test-only probe: the attribute only hides it from rustdoc's rendered navigation, and the function remains publicly callable — it carries no semver stability guarantee and exists only for this crate's own `tests/`, so do not depend on it.
+This crate has two `#[doc(hidden)]` `pub` items under default features, and two more that only exist under `--cfg loom`. In all four cases the attribute only hides the item from rustdoc's rendered navigation — the item remains publicly callable, carries no semver stability guarantee, and should not be depended on.
 
-`TaggedIndex::empty()` is the crate's other `#[doc(hidden)]` `pub` item, and the same rules apply — publicly callable, no semver stability guarantee, do not treat it as stable public API. It is not test-only: it is used internally by this crate's bootstrap path (`TaggedIndexStack::new`) and by known in-workspace consumers for the same purpose (a const-capable bootstrap-empty head word), so it is not freely removable — but do not depend on it.
+Under default features: `TaggedIndexStack::raw_head` is a test-only probe, used only by this crate's own `tests/`. `TaggedIndex::empty()` is not test-only — it is used internally by this crate's bootstrap path (`TaggedIndexStack::new`) and by known in-workspace consumers for the same purpose (a const-capable bootstrap-empty head word), so it is not freely removable, but do not depend on it either.
+
+Under `--cfg loom` (not present in a normal build or on docs.rs): `TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from its CAS and drive ABA counterfactuals; `pop_retry_count_for_test`/`push_retry_count_for_test` read the loom-only retry-activation counters the same suite asserts against.
 
 ## Example
 

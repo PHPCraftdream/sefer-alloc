@@ -33,6 +33,11 @@
 //! `(X, old_tag)` observes a changed tag and fails, forcing a retry. A pop
 //! preserves the tag; only a push advances it.
 //!
+//! [`TaggedIndex::pack`]/[`unpack`](TaggedIndex::unpack) convert between an
+//! `(index, tag)` pair and the packed word; [`try_pack`](TaggedIndex::try_pack)
+//! is `pack`'s checked twin, returning `None` instead of silently truncating
+//! an out-of-range index or tag.
+//!
 //! # Links — slot-resident OR owned
 //!
 //! The stack stores only the HEAD. Each pushed index's "next" link lives in
@@ -50,6 +55,11 @@
 //! it happens during [`push`](TaggedIndexStack::push), immediately before the
 //! CAS that publishes the index as the new head. The stack NEVER eagerly
 //! initialises links — see "The lazy link discipline (RAD-1)" below.
+//!
+//! [`TaggedIndexStack::is_empty`] is an advisory, `Relaxed` emptiness check —
+//! useful for diagnostics/monitoring, but a concurrent push or pop can make
+//! it stale the instant it returns, so [`pop`](TaggedIndexStack::pop)'s
+//! `None` remains the only authoritative empty check.
 //!
 //! # The two hard-won subtleties
 //!
@@ -1069,10 +1079,19 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// buggy-drain counterfactual, all against the REAL head atomic. NOT part of
     /// the public API: it is compiled only under `--cfg loom`.
     ///
+    /// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
+    /// from this crate's own perspective — can reach it). The attribute hides
+    /// it from rustdoc's rendered navigation ONLY; nothing prevents any
+    /// downstream crate from calling it under `--cfg loom`. It is not
+    /// exercised by any production caller and carries no semver stability
+    /// guarantee. See this project's established `#[doc(hidden)]`
+    /// test-only-forwarder convention (cf. `raw_head`).
+    ///
     /// # Errors
     ///
     /// Forwards `AtomicU64::compare_exchange`'s `Err(actual)` on CAS failure.
     #[cfg(loom)]
+    #[doc(hidden)]
     pub fn cas_head_for_test(
         &self,
         current: u64,

@@ -137,6 +137,13 @@ before it.
   head word; the attribute only excludes it from rustdoc's rendered
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
+- **`pub const TAIL: u32`** — the per-slot link end-of-chain sentinel
+  (`u32::MAX`), part of the `Links` contract: an implementor's backing must
+  be able to represent it.
+- **`Default` for `TaggedIndexStack` and `ArrayLinks`** — both forward to
+  `new()`; pinned by `default_stack_behaves_like_new` /
+  `default_array_links_behaves_like_new` (`tests/stack_unit.rs`).
+- **`Debug` derived on `TaggedIndexStack` and `ArrayLinks`.**
 
 ### Performance
 
