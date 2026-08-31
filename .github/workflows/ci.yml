@@ -2469,6 +2469,15 @@ jobs:
           cargo test --release -p tagged-index-stack --features loom --test loom_aba 2>&1 | tee "$RUNNER_TEMP/loom-aba.log"
           grep -F "test pop_empty_transition_preserves_tag ... ok" "$RUNNER_TEMP/loom-aba.log"
         shell: bash
+      # Round-7 review P3-2 (task #1741): `test-workspace`'s `cargo clippy -p
+      # tagged-index-stack --all-targets -- -D warnings` row (above, line
+      # ~1985) never sets `--cfg loom`/`--features loom`, so `loom_aba.rs`
+      # (`#![cfg(loom)]`) and the crate's own `#[cfg(loom)]` lib code
+      # (`cas_head_for_test`, both retry counters) compile to nothing there
+      # and are never linted by ANY CI row. This job already carries the
+      # job-level `RUSTFLAGS: "--cfg loom"` the lint needs, so the fix is one
+      # more step here, not a new job.
+      - run: cargo clippy -p tagged-index-stack --features loom --all-targets -- -D warnings
       # CRATE-P3: real-type `OncePtrCell` loom suite (replaces the 4 shadow
       # models above). Includes the Relaxed-publish and spin-on-READY-livelock
       # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
