@@ -231,6 +231,13 @@ fn main() {
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
     // This measures throughput under contention with a always-nonempty stack.
+    // Confound: prefill below seeds indices 0..64 CONTIGUOUSLY (16 indices
+    // per 64-byte ArrayLinks cache line, see ArrayLinks's own "Layout note"
+    // doc), unlike contention/push_pop above (one seed per thread, spread by
+    // LINKS_SIZE/num_threads) -- so this row's throughput also reflects
+    // link-array false sharing on top of head-CAS contention, and undercounts
+    // pure head-CAS throughput. Treat this row as a LOWER BOUND on head-CAS
+    // throughput alone, not a clean isolation of it.
     let prefill_count = 64u32;
 
     // Drain the shared stack back to empty before prefilling. Phase 1

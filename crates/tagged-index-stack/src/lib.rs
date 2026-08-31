@@ -552,6 +552,25 @@ pub trait Links {
 /// [`TaggedIndexStack`] (when there is no pre-existing slot storage to host the
 /// links). Every link starts at `0` — matching OS-zeroed backing — and is only
 /// ever written by a push (RAD-1: no eager free-list chaining).
+///
+/// # Layout note — link-array false sharing
+///
+/// Each link is a 4-byte `AtomicU32`, so 16 consecutive indices share one
+/// 64-byte cache line (`4 bytes × 16 = 64 bytes`). [`push`](Links::store_next)
+/// writes a link under `Release` and [`pop`](Links::load_next) reads one under
+/// `Acquire`, so if indices from the same 16-index group are handed to
+/// different threads under contention, this array becomes a SECOND contended
+/// surface alongside the stack's own head — contended by accident of index
+/// numbering, not by design. Fix it at the CALLER when a profile shows it:
+/// wrap the index-to-link mapping so contended indices land in different
+/// groups, use a `#[repr(align(64))]` newtype per link, or — the shape this
+/// crate's own README recommends for production use — host links
+/// slot-resident inside a larger per-slot struct instead of this array. Do
+/// NOT pad `ArrayLinks` itself to one link per cache line: that would
+/// multiply its footprint 16x for every single-threaded (or
+/// contention-indifferent) caller, and this crate's whole pitch is not
+/// paying for a second array's worth of memory traffic that most callers
+/// never need.
 #[derive(Debug)]
 pub struct ArrayLinks<const N: usize> {
     next: [AtomicU32; N],
