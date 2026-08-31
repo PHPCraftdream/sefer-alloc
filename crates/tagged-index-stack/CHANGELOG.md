@@ -107,14 +107,6 @@ before it.
   sentinel-reservation check is a single release-active bounds check (a
   `#[cold]` panic helper, not `debug_assert!`) — one guard covers both
   conditions, and it stays enforced in release builds too.
-- **Two speculative perf changes evaluated and not landed:** `push`'s
-  initial `head.load(Ordering::Acquire)` could plausibly be `Relaxed`, and
-  both `push`'s and `pop`'s CAS loops are `compare_exchange_weak`
-  candidates. Neither change would show up on x86-64 (`lock cmpxchg`) or
-  LSE AArch64 (`casal`) — any difference is specific to non-LSE AArch64 and
-  similar `ldxr`/`stxr`-style architectures, and this repository has no
-  AArch64 wall-clock/perf-gate harness to measure it. Revisit when one
-  exists.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
@@ -168,6 +160,14 @@ before it.
   loom suite (`tests/loom_aba.rs`, all 10 models) stayed green at the same
   wall-clock (~0.16s test time): `core::hint::spin_loop()` touches no
   loom-tracked atomic, so it adds no new interleaving for loom to explore.
+- **Two other speculative perf changes evaluated and declined** (unrelated
+  to the backoff above): `push`'s initial `head.load(Ordering::Acquire)`
+  could plausibly be `Relaxed`, and both `push`'s and `pop`'s CAS loops are
+  `compare_exchange_weak` candidates. Neither change would show up on
+  x86-64 (`lock cmpxchg`) or LSE AArch64 (`casal`) — any difference is
+  specific to non-LSE AArch64 and similar `ldxr`/`stxr`-style
+  architectures, and this repository has no AArch64 wall-clock/perf-gate
+  harness to measure it. Revisit when one exists.
 
 ### MSRV
 
