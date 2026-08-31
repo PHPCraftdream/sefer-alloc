@@ -70,6 +70,21 @@ use loom::thread;
 
 use tagged_index_stack::{ArrayLinks, Links, TaggedIndex, TaggedIndexStack, TAIL};
 
+/// Serializes every test in this file that drives the REAL `pop` under
+/// contention. `POP_RETRY_COUNT` (`src/lib.rs`) is a single process-global
+/// counter incremented inside `pop`'s own CAS-retry arm; libtest's default
+/// (parallel) harness runs this binary's `#[test]` functions concurrently,
+/// so without this lock a delta measured by one test's snapshot-before /
+/// assert-after window is NOT exclusive to that test's own `check()` run —
+/// any other test in this binary racing the real `pop` at the same time
+/// increments the SAME counter, making the activation-oracle assertion in
+/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
+/// vacuously satisfiable by cross-test noise instead of by its own model.
+/// `unwrap_or_else(|e| e.into_inner())`, not `.unwrap()`: three tests below
+/// are `#[should_panic]` and would otherwise poison this mutex for every
+/// test that acquires it afterward.
+static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 type Tag = TaggedIndex<16>;
 
 // A 2-slot backing is sufficient for the ABA scenario when designed correctly.
@@ -94,6 +109,7 @@ fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
 
 #[test]
 fn aba_repush_keeps_free_list_conservation() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let builder = loom::model::Builder::new();
     builder.check(|| {
         let (stack, links) = both_free();
@@ -297,6 +313,7 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 
 #[test]
 fn tagged_stack_survives_the_same_resurrection_pattern() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let builder = loom::model::Builder::new();
     builder.check(|| {
         let (stack, links) = both_free();
@@ -538,9 +555,16 @@ fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
 fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // Activation oracle: snapshot the process-global retry counter BEFORE the
     // exploration and assert below that it advanced. A DELTA, not the raw
-    // count: other tests in this binary also drive the real `pop` (whose
-    // retry arm increments the same counter), so only the increment this
-    // test's own `check()` run produces is this test's own.
+    // count — but a delta alone is not enough under libtest's default
+    // parallel harness: `MODEL_LOCK`, held for this whole test body, is what
+    // actually makes the delta exclusive to this test's own `check()` run.
+    // Without it, any other test in this binary that also drives the real
+    // `pop` under contention (`aba_repush_keeps_free_list_conservation`,
+    // `tagged_stack_survives_the_same_resurrection_pattern`) could run
+    // concurrently on another libtest thread and increment the same counter,
+    // making this assertion pass on cross-test noise instead of on this
+    // test's own model.
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let retries_before = tagged_index_stack::pop_retry_count_for_test();
     let builder = loom::model::Builder::new();
     builder.check(|| {
@@ -691,6 +715,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
 /// B's push.
 #[test]
 fn cas_retry_path_must_acquire_with_concurrent_push() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_cas_retry(Ordering::Acquire);
 }
 
