@@ -1,59 +1,23 @@
 //! 48-bit tag WRAP-boundary regression tests for [`TaggedIndex`], pinning the
 //! `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag wrap at `2^48`.
 //!
-//! They drive the tag to its maximum (`2^48 - 1`), bump it once so it WRAPS
-//! to 0, and assert the packed index round-trips intact across the wrap and
-//! that the empty sentinel is never confused with a live index. Non-vacuous:
-//! on a narrower tag (e.g. a 32-bit revert) the `2^48 - 1` maximum is
-//! unrepresentable, so these values cannot even be expressed pre-widening.
+//! `tests/stack_unit.rs`'s `pack_unpack_round_trip_16` and
+//! `tag_wraps_at_2_pow_48` already pin the width/wrap facts this file used to
+//! duplicate (`split_is_16_48` and `tag_wraps_at_2_pow_48_and_index_survives`
+//! were removed as exact duplicates — round-4 review P4-8). What remains
+//! here is the coverage those two tests do NOT provide: a parametrized sweep
+//! over multiple (index, tag) pairs confirming the empty sentinel is never
+//! confused with a live one, including the pool-cap-relevance argument, and
+//! a check that the empty sentinel stays unambiguous at multiple tags
+//! spanning the wrap boundary specifically. Non-vacuous: on a narrower tag
+//! (e.g. a 32-bit revert) the `2^48 - 1` maximum is unrepresentable, so
+//! these values cannot even be expressed pre-widening.
 
 #![cfg(not(loom))]
 
 use tagged_index_stack::TaggedIndex;
 
 type T = TaggedIndex<16>;
-
-#[test]
-fn split_is_16_48() {
-    assert_eq!(T::INDEX_MASK, 0xFFFF, "index half must be 16 all-ones bits");
-    assert_eq!(T::TAG_BITS, 48, "tag half must be 48 bits");
-}
-
-#[test]
-fn tag_wraps_at_2_pow_48_and_index_survives() {
-    let max_tag: u64 = (1u64 << T::TAG_BITS) - 1; // 2^48 - 1
-    assert!(
-        max_tag > u32::MAX as u64,
-        "the 48-bit max tag must exceed the old 32-bit range (the point of the \
-         widening; makes this test unrepresentable on a 32-bit tag)"
-    );
-
-    let idx: u64 = 0x0ABC; // 2748 — a representative valid index
-    let at_max = T::pack(idx, max_tag);
-    let (v0, t0) = T::unpack(at_max);
-    assert_eq!(v0, idx, "index survives packing at the tag maximum");
-    assert_eq!(t0, max_tag, "tag round-trips at its 48-bit maximum");
-
-    // `push` computes `tag.wrapping_add(1)` on the unpacked tag (always < 2^48)
-    // and re-packs. At the maximum this is 2^48, whose bit-48 is shifted OUT by
-    // `pack`'s `tag << 16`, so the stored-and-re-read tag wraps to 0.
-    let bumped = max_tag.wrapping_add(1); // 2^48
-    let after = T::pack(idx, bumped);
-    let (v1, t1) = T::unpack(after);
-    assert_eq!(
-        t1, 0,
-        "tag at 2^48 - 1 wraps to 0 once bumped and re-packed"
-    );
-    assert_eq!(
-        v1, idx,
-        "index is IDENTICAL across the wrap (no tag->index bleed)"
-    );
-    assert_eq!(v0, v1, "index at the maximum and after the wrap match");
-    assert!(
-        !T::is_empty(after),
-        "a live index with a wrapped (0) tag must NOT read as the empty sentinel"
-    );
-}
 
 #[test]
 fn empty_sentinel_never_collides_with_a_live_index() {
