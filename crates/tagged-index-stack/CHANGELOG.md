@@ -151,16 +151,25 @@ before it.
   head word; the attribute only excludes it from rustdoc's rendered
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
-- **`retry_counts_for_test()`** — a `#[doc(hidden)]` test-support accessor
-  reading BOTH CAS-retry counters in one call as a `(pop, push)` tuple
-  (process-global, cumulative, never reset by this crate — snapshot and
-  diff is the caller's job); the non-loom twin of the loom suite's
-  `#[cfg(loom)]` `pop_retry_count_for_test`/`push_retry_count_for_test`,
-  serving `tests/threaded_conservation.rs`'s "the retry branch was
-  actually reached under real OS threads" activation oracle. The
-  attribute only excludes it from rustdoc's rendered navigation (it
-  remains publicly callable) and it carries no semver stability
-  guarantee, like `raw_head()` above.
+- **`retry_counts_for_test()`** and **`backoff_cap_reached_for_test()`** —
+  `#[doc(hidden)]` test-support accessors, each reading a `(pop, push)`
+  tuple of counters (process-global, cumulative, never reset by this
+  crate — snapshot and diff is the caller's job). `retry_counts_for_test`
+  reads both CAS-retry counters (the non-loom twin of the loom suite's
+  `#[cfg(loom)]` `pop_retry_count_for_test`/`push_retry_count_for_test`);
+  `backoff_cap_reached_for_test` reads two further counters that advance
+  only when a retry's spin loop ran at full backoff depth. Together they
+  serve `tests/threaded_conservation.rs`'s two-level activation oracle:
+  the first level proves the retry branch was reached under real OS
+  threads, the second proves the backoff genuinely climbs into its higher
+  range rather than shipping silently inert. Both accessors, both
+  counters, and the retry-arm increments that write them compile only
+  under the crate's off-by-default `test-internals` Cargo feature (or a
+  `--cfg loom` build, where the loom suite's own accessors need them) — a
+  default published build carries none of this instrumentation. The
+  `#[doc(hidden)]` attribute only excludes them from rustdoc's rendered
+  navigation (they remain publicly callable when the feature is on) and
+  they carry no semver stability guarantee, like `raw_head()` above.
 - **`pub const TAIL: u32`** — the per-slot link end-of-chain sentinel
   (`u32::MAX`), part of the `Links` contract: an implementor's backing must
   be able to represent it.
