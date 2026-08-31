@@ -759,6 +759,27 @@ jobs:
       # against the published manifest (no reliance on workspace-inherited
       # lints/deps that would not exist for a real crates.io consumer).
       - run: cargo publish --dry-run -p tagged-index-stack
+      # P2-1 (round-10 @oh review): the `cargo publish --dry-run` step above
+      # builds the lib target ONLY — it never runs the PACKAGED test suite,
+      # which is exactly how the P2-1 regression shipped: cargo auto-excludes
+      # every directory containing its own Cargo.toml, so the four
+      # compile-fail fixture crates under tests/compile_fail/ silently
+      # dropped out of the .crate while their three driver test files
+      # shipped, and `cargo test` inside the downloaded package failed three
+      # test binaries on fixture-manifest panics. This step reproduces the
+      # review's repro end-to-end — package, extract, run the packaged suite
+      # under an isolated CARGO_TARGET_DIR — and any packaged-test failure
+      # fails this step. `--no-verify` avoids a redundant lib build: the
+      # publish --dry-run above already verifies the packaged lib, and the
+      # extracted `cargo test` below builds it again for the dev profile.
+      - name: run the packaged .crate test suite (P2-1 regression gate)
+        run: |
+          cargo package -p tagged-index-stack --no-verify
+          crate_file=$(ls target/package/tagged-index-stack-*.crate)
+          extract_dir=$(mktemp -d)
+          tar xzf "$crate_file" -C "$extract_dir"
+          cd "$extract_dir"/tagged-index-stack-*/
+          CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
 
   once-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
