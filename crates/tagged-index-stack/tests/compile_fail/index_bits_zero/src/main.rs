@@ -8,6 +8,6 @@ use tagged_index_stack::TaggedIndex;
 fn main() {
     // INDEX_MASK's initializer evaluates `Self::_CHECK_BITS` directly (see
     // src/imp.rs), so a bare const read is the earliest, most direct route to
-    // the guard — independent of pack()/try_pack().
+    // the guard — independent of pack().
     let _ = TaggedIndex::<0>::INDEX_MASK;
 }

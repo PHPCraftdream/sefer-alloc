@@ -20,10 +20,12 @@
 //! driver file itself IS packaged (a plain `.rs` file directly under
 //! `tests/`), so `cargo test` inside a downloaded package reaches it —
 //! but not usefully as a compile-fail test: the fixtures are simply not
-//! there. The runner therefore reports a missing fixture manifest and
-//! SKIPS (returns successfully) instead of failing the packaged suite.
-//! From a full git checkout (this workspace, CI) the fixtures exist and
-//! every assertion below runs exactly as before.
+//! there. The skip fires ONLY in a packaged context — detected via the
+//! `Cargo.toml.orig` `cargo package` writes into every extracted package
+//! (absent from any git checkout) — so a fixture that goes missing from a
+//! real checkout FAILS LOUD instead (round-11 @oh review, P2-2: a bare
+//! `manifest.exists()` guard silently skipped the test in a checkout whose
+//! fixture directory had been renamed away, reporting a false `ok`).
 //!
 //! # Why the assertion names the range requirement
 //!
@@ -35,10 +37,10 @@
 //!
 //! # Why hand-rolled and not `trybuild`
 //!
-//! This workspace has declined a `trybuild` dev-dependency FIVE separate
-//! times; see the full rationale in
-//! `tests/compile_fail_two_backings.rs` ("Why hand-rolled and not
-//! `trybuild`"). This runner follows the same established alternative: an
+//! This workspace's standing convention is to decline a `trybuild`
+//! dev-dependency in favor of hand-rolled compile-fail tests; see the full
+//! rationale in `tests/compile_fail_two_backings.rs` ("Why hand-rolled and
+//! not `trybuild`"). This runner follows the same established alternative: an
 //! out-of-process `cargo build` of a deliberately-broken fixture, asserted
 //! to FAIL with a SPECIFIC error. (Sol-codex run-3 P3-6, task
 //! tis-sc3-Group4 #1774.)
@@ -65,13 +67,25 @@ fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
         .join("compile_fail")
         .join(fixture_dir)
         .join("Cargo.toml");
-    // P2-1 (round-10 @oh review): the fixture crates are excluded from the
-    // published .crate (cargo's nested-manifest rule; see the `[package]`
-    // `exclude` in Cargo.toml), so in a downloaded package the manifest is
-    // legitimately absent — report and skip rather than fail the packaged
-    // suite. From a git checkout the fixture exists and everything below
-    // runs unchanged.
+    // P2-1 (round-10 @oh review), skip-guard hardened by round-11 @oh review
+    // P2-2: the fixture crates are excluded from the published .crate
+    // (cargo's nested-manifest rule; see the `[package]` `exclude` in
+    // Cargo.toml), so in a downloaded package the manifest is legitimately
+    // absent — report and skip rather than fail the packaged suite. The skip
+    // fires ONLY in a packaged context: `cargo package` writes
+    // `Cargo.toml.orig` next to the manifest in every extracted package, and
+    // that file never exists in a git checkout — so a fixture missing from a
+    // REAL checkout (a bad rename, an accidental deletion) fails loud here
+    // instead of silently reporting `ok` with the regression untested.
+    let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("Cargo.toml.orig")
+        .exists();
     if !manifest.exists() {
+        assert!(
+            packaged,
+            "compile-fail fixture missing from a git checkout: {}",
+            manifest.display()
+        );
         eprintln!(
             "skipping: compile-fail fixture not present ({}) — fixture \
              crates are git-checkout-only test infrastructure, excluded \
@@ -80,11 +94,6 @@ fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
         );
         return;
     }
-    assert!(
-        manifest.exists(),
-        "compile-fail fixture manifest missing: {}",
-        manifest.display()
-    );
 
     // Cached across runs; target/tmp is gitignored.
     let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(fixture_dir);
