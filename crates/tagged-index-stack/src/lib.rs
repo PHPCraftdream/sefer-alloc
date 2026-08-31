@@ -854,7 +854,20 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                 .compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed)
             {
                 Ok(_) => return,
-                Err(actual) => head = actual,
+                Err(actual) => {
+                    #[cfg(loom)]
+                    {
+                        // Activation oracle for the loom suite (see
+                        // `PUSH_RETRY_COUNT` below): deliberately a REAL
+                        // core atomic, NOT loom's, so the count survives
+                        // loom's many re-runs of the test closure and
+                        // accumulates across the explored schedules.
+                        // `Relaxed`: the counter promises no ordering, it
+                        // only counts.
+                        PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
+                    head = actual;
+                }
             }
         }
     }
@@ -1075,4 +1088,45 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 #[must_use]
 pub fn pop_retry_count_for_test() -> usize {
     POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// **loom-test-only** activation counter for [`push`](TaggedIndexStack::push)'s
+/// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
+/// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
+/// `loom::sync::atomic`: loom re-runs the closure passed to
+/// `Builder::check` across many schedules within one process, and a real
+/// static survives those re-runs, so the accumulated count is an exact
+/// "how often was the retry branch actually reached" oracle over an entire
+/// exploration. `Relaxed` access: the counter promises no ordering, it only
+/// counts.
+///
+/// Compiled only under `--cfg loom`; never reset by this crate (snapshot and
+/// diff is the caller's job — see [`push_retry_count_for_test`]).
+#[cfg(loom)]
+static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// **loom-test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
+/// number of times `push`'s CAS-retry branch has executed in this process. The
+/// loom suite asserts this counter ADVANCES across an exploration so a model
+/// whose schedules never actually reach `push`'s retry path fails loudly
+/// instead of passing vacuously (see the assertion in
+/// `push_push_conservation`).
+///
+/// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
+/// from this crate's own perspective — can reach it). The attribute hides
+/// it from rustdoc's rendered navigation ONLY; nothing prevents any
+/// downstream crate from calling it. It is not exercised by any production
+/// caller and carries no semver stability guarantee. See this project's
+/// established `#[doc(hidden)]` test-only-forwarder convention (cf.
+/// `raw_head`).
+///
+/// Never reset by this crate: snapshot before and diff after. The count is
+/// process-global and cumulative — across loom's internal re-runs of a
+/// test closure, across a test file's models, and (under the default
+/// multi-threaded test harness) across concurrently running test functions.
+#[cfg(loom)]
+#[doc(hidden)]
+#[must_use]
+pub fn push_retry_count_for_test() -> usize {
+    PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }

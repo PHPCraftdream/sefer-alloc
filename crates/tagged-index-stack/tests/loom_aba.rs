@@ -727,3 +727,148 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
 fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
     run_cas_retry(Ordering::Relaxed);
 }
+
+// ============================================================================
+// (f) push‖push and pop‖pop: the two most ordinary interleavings a
+// production free-list sees (two threads freeing concurrently, two threads
+// allocating concurrently), driven end-to-end through the REAL `push`/`pop`
+// — neither hand-inlined nor raced against a hand-unrolled stand-in.
+// ============================================================================
+
+/// Two threads each do ONE real [`TaggedIndexStack::push`] of a DIFFERENT
+/// index onto a shared fresh stack, concurrently. Proves push‖push
+/// conservation: regardless of which push's CAS wins the race (the loser
+/// retries with the winner's new head as its base, re-reading the current
+/// head and re-chaining its own link before retrying — see `push`'s loop),
+/// draining the stack afterward yields both pushed indices exactly once
+/// each, in EITHER order. LIFO order between two concurrent pushes is not
+/// commit-ordered by anything this crate promises, so the oracle checks the
+/// drained MULTISET against the pushed multiset, not a specific pop order.
+///
+/// Also asserts the `PUSH_RETRY_COUNT` activation oracle advances across
+/// this model's explored schedules (mirroring
+/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`'s use
+/// of `POP_RETRY_COUNT`): a green run with zero retries would only prove
+/// two independent pushes can succeed when they never collide, not that a
+/// losing push's retry re-chains correctly — the actual property this test
+/// exists to cover.
+#[test]
+fn push_push_conservation() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let retries_before = tagged_index_stack::push_retry_count_for_test();
+    let builder = loom::model::Builder::new();
+    builder.check(|| {
+        let links = Arc::new(ArrayLinks::<N>::new());
+        let stack = Arc::new(TaggedIndexStack::<16>::new());
+
+        let stack_a = Arc::clone(&stack);
+        let links_a = Arc::clone(&links);
+        let ta = thread::spawn(move || {
+            stack_a.push(&*links_a, 0);
+        });
+
+        let stack_b = Arc::clone(&stack);
+        let links_b = Arc::clone(&links);
+        let tb = thread::spawn(move || {
+            stack_b.push(&*links_b, 1);
+        });
+
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        let mut popped: Vec<u32> = Vec::new();
+        while let Some(idx) = stack.pop(&*links) {
+            popped.push(idx);
+        }
+        popped.sort_unstable();
+        assert_eq!(
+            popped,
+            vec![0, 1],
+            "free-list corrupted (lost or duplicated index) after two \
+             concurrent real pushes: draining yielded {popped:?}, expected \
+             exactly [0, 1] regardless of which push's CAS won the race"
+        );
+    });
+
+    let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
+    assert!(
+        retried > 0,
+        "activation oracle: `push`'s CAS-retry branch was never reached in \
+         any explored schedule — this test is vacuously green, since its \
+         free-list conservation assertion cannot catch a stale-retry \
+         corruption if no retry ever executes"
+    );
+}
+
+/// Two threads each do ONE real [`TaggedIndexStack::pop`] concurrently
+/// against a stack pre-seeded with exactly 2 free indices. Proves pop‖pop
+/// conservation for the 2-elements/2-poppers case.
+///
+/// **Derivation of the asserted outcome (traced from `pop`'s actual CAS
+/// loop, not assumed):** `pop` never returns `None` from inside its retry
+/// loop except at loop-top, when it observes the head as empty
+/// (`TaggedIndex::is_empty`). A failed CAS does not exit the loop — it
+/// re-reads the CAS failure's `actual` head and retries with THAT fresh
+/// state, which is always synchronized (the failure ordering is `Acquire`)
+/// with whatever the other popper's successful CAS just installed. With
+/// exactly 2 elements and exactly 2 concurrent poppers and nothing else
+/// touching the stack: whichever popper's CAS wins first pops one index and
+/// advances the head to the other index (pop never bumps the tag, so no ABA
+/// tag-mismatch can spuriously fail the loser's retry beyond the one
+/// legitimate head-changed failure). The loser's CAS fails once, retries
+/// against the now-single-element head, reads that element's link (`TAIL`),
+/// and its retry CAS succeeds uncontested (no third party can race it) —
+/// so it also returns `Some`. There is no reachable schedule in which
+/// either popper observes an empty stack before completing: the stack does
+/// not become empty until AFTER both pops have committed. Therefore the
+/// only reachable outcome is BOTH poppers return `Some` with the two
+/// DISTINCT seeded indices — never `None` for either, never a duplicate.
+/// This is stronger than the general "subset, no duplicates" invariant used
+/// elsewhere in this file for scenarios with a third concurrent actor (e.g.
+/// `aba_repush_keeps_free_list_conservation`); here there is no third actor,
+/// so the outcome space collapses to exactly one shape.
+#[test]
+fn pop_pop_conservation() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let builder = loom::model::Builder::new();
+    builder.check(|| {
+        let (stack, links) = both_free();
+
+        let stack_a = Arc::clone(&stack);
+        let links_a = Arc::clone(&links);
+        let ta = thread::spawn(move || stack_a.pop(&*links_a));
+
+        let stack_b = Arc::clone(&stack);
+        let links_b = Arc::clone(&links);
+        let tb = thread::spawn(move || stack_b.pop(&*links_b));
+
+        let a_result = ta.join().unwrap();
+        let b_result = tb.join().unwrap();
+
+        assert!(
+            a_result.is_some() && b_result.is_some(),
+            "a concurrent popper observed None against a 2-element stack \
+             with only 2 poppers and no other concurrent actor: a={a_result:?}, \
+             b={b_result:?} — per this test's doc comment, this outcome is \
+             unreachable through pop's real retry loop, so its occurrence \
+             means the traced derivation was wrong or the shipped `pop` \
+             regressed"
+        );
+        let mut popped = [a_result.unwrap(), b_result.unwrap()];
+        popped.sort_unstable();
+        assert_eq!(
+            popped,
+            [0, 1],
+            "free-list corrupted (duplicated index) after two concurrent \
+             real pops: got {popped:?}, expected exactly [0, 1] — both \
+             poppers returned Some but did not partition the two seeded \
+             indices"
+        );
+        assert!(
+            stack.pop(&*links).is_none(),
+            "stack not fully drained by the two concurrent pops: a third \
+             index was available afterward, meaning fewer than 2 indices \
+             were actually handed out despite both poppers reporting Some"
+        );
+    });
+}
