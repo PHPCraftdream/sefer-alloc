@@ -98,9 +98,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// caller to separately exclude `TAIL` at runtime.
     ///
     /// This `const` is forced to evaluate from EVERY associated item of
-    /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) and
-    /// [`try_pack`](Self::try_pack) force it directly with a
-    /// `let () = Self::_CHECK_BITS;` statement, `INDEX_MASK` and
+    /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) forces it directly
+    /// with a `let () = Self::_CHECK_BITS;` statement, `INDEX_MASK` and
     /// [`TAG_BITS`](Self::TAG_BITS) evaluate it in their own initializers, and
     /// [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
     /// [`is_empty`](Self::is_empty), [`empty`](Self::empty), and the
@@ -203,21 +202,6 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         (tag << INDEX_BITS) | (index & Self::INDEX_MASK)
     }
 
-    /// Deprecated forwarding twin of [`pack`](Self::pack): `pack` is now
-    /// itself checked (it returns `None` instead of silently truncating an
-    /// out-of-range half), so the "checked twin" this function used to be is
-    /// redundant — it forwards to `pack` unchanged. Kept, rather than
-    /// deleted, only so existing references to the name keep resolving;
-    /// call [`pack`](Self::pack) directly. Scheduled for removal in 0.2.
-    #[must_use]
-    #[deprecated(
-        since = "0.1.0",
-        note = "pack is now itself checked and returns Option<u64>; call pack directly"
-    )]
-    pub const fn try_pack(index: u64, tag: u64) -> Option<u64> {
-        Self::pack(index, tag)
-    }
-
     /// Split a packed word back into `(index, tag)`.
     #[must_use]
     pub const fn unpack(word: u64) -> (u64, u64) {
@@ -245,7 +229,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 
     /// The empty sentinel's index half (`INDEX_MASK`), for packing it with a
     /// NON-zero, caller-supplied RUNNING tag (`pack(empty_index(), running_tag)`)
-    /// instead of [`empty`](Self::empty) (which always zeroes the tag).
+    /// instead of `empty()` (which always zeroes the tag).
     ///
     /// **H-2 fix:** the empty transition in [`pop_index`](StackOps::pop_index)
     /// uses this, packing the tag it just observed on the popped head, so the
@@ -473,10 +457,15 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// IMPLEMENTOR, satisfied once in one impl:
 ///
 /// 1. **One backing for the whole life of a non-empty stack.** A
-///    [`StackStorage`] implementor IS the backing — the head it returns from
-///    [`head`](Self::head) and the cells its `load_next`/`store_next` touch
-///    belong to the same object, so a "different backing for the same head"
-///    cannot arise.
+///    [`StackStorage`] implementor IS the backing: the [`head`](Self::head)
+///    it returns and the cells its `load_next`/`store_next` touch are bound
+///    through ONE `impl` block on ONE object, established once — no caller
+///    can supply a second, different backing on a later call (the old
+///    per-call-`&L` repro does not compile). This makes the BINDING
+///    structural, not the coherence of the impl body: an implementor whose
+///    `load_next`/`store_next` internally touch different storage still
+///    compiles, and violates rules 3 and 4 below — live implementor
+///    obligations, not structural impossibilities.
 /// 2. **Stable one-to-one index↔cell mapping.** Every valid index must map to
 ///    the SAME link cell for the implementor's whole lifetime.
 /// 3. **Coherence of `store_next`/`load_next`.** A
@@ -508,9 +497,15 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    and keep their identity for as long as the stack's head can reference
 ///    them — in practice, for the implementor's own lifetime.
 ///
-/// Because the implementor IS the head-and-links pair, the two-backings-one-
-/// head swap trap the old API could only document cannot be expressed in
-/// safe Rust against this API.
+/// The old API's two-backings-one-head swap trap — two independent calls,
+/// each supplying a different backing for the same head — does not compile
+/// against this API (pinned by `tests/compile_fail_two_backings.rs`). What
+/// does NOT carry over: a SINGLE implementor whose `load_next`/`store_next`
+/// internally disagree about which storage backs the head is still
+/// expressible in safe Rust. That narrower, real hazard is exactly what
+/// rules 3 and 4 oblige the implementor to prevent — implementor-enforced,
+/// not structurally impossible — and only rule 4 has a release-active
+/// runtime guard (see its text above).
 ///
 /// # Mechanical requirement on `head()`
 ///
@@ -548,6 +543,19 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// [`ArrayLinks`]) is the whole design point. New methods will only ever be
 /// added with default bodies (or via a major version bump); this trait is not
 /// sealed.
+///
+/// Converting this trait to an `unsafe trait` was considered and DECLINED.
+/// Its contract is caller/implementor-enforced, not compiler-enforced, and
+/// `unsafe trait` would not enforce it either — it would only annotate the
+/// obligation — while this crate's `#![forbid(unsafe_code)]` invariant is
+/// the actual constraint: this crate's own
+/// `impl StackStorage<B> for ArrayIndexStack<B, N>` would have to become an
+/// `unsafe impl`, which `#![forbid(unsafe_code)]` rejects at compile time
+/// inside this very crate. The trait therefore stays safe-implementable, and
+/// its contract remains implementor discipline — exactly the same category
+/// as [`push_index`](StackOps::push_index)'s pre-existing, already-documented
+/// no-double-push liveness rule, which this crate has always accepted as
+/// caller discipline rather than a structural guarantee.
 pub trait StackStorage<const INDEX_BITS: u32> {
     /// The stack's head word. Must return the SAME logical head for every
     /// operation on this implementor — see the trait doc's "Mechanical
@@ -923,8 +931,8 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
 /// binding. A lock-free LIFO free-list of indices with a wrapping generation
 /// tag packed into the head word mitigating ABA at every permitted
 /// `INDEX_BITS` (the tag defeats the ordinary short-window pattern; the
-/// residual wrap bound is the crate-root docs' "Tag-width budget" section's
-/// to derive). Const-generic over the index width `INDEX_BITS` and the link
+/// residual wrap bound is derived in the crate-root docs' "Tag-width budget"
+/// section). Const-generic over the index width `INDEX_BITS` and the link
 /// capacity `N`.
 ///
 /// The simple [`push`](Self::push)/[`pop`](Self::pop) inherent forwarders exist

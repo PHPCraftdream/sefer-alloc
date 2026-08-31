@@ -40,8 +40,8 @@ all-ones value is the reserved "stack empty" sentinel. The classic ABA scenario
 bumps the tag, so A's CAS on `(X, old_tag)` fails and retries.
 
 `pack`/`unpack` convert between an `(index, tag)` pair and the packed word;
-`try_pack` is `pack`'s checked twin, returning `None` instead of silently
-truncating an out-of-range index or tag.
+`pack` is checked, returning `None` for an out-of-range index or tag instead
+of silently truncating it.
 
 ## One implementor owns the head AND the links
 
@@ -49,11 +49,15 @@ A `StackStorage<INDEX_BITS>` implementor supplies BOTH the head (its `head()`)
 AND the links (`load_next` / `store_next`) in a single impl — the head↔links
 binding is established ONCE, structurally. `push_index`/`pop_index` are
 crate-owned (a blanket `StackOps` impl over every `StackStorage`
-implementor), so the CAS-loop bodies cannot be overridden downstream, and a
-two-backing setup — two different link arrays against one head, double-issuing
-an index — is no longer expressible against this API: it does not compile.
-This is the structural fix for the review's double-issue repro, which the
-previous per-call `&Links`-parameter design permitted.
+implementor), so the CAS-loop bodies cannot be overridden downstream. The
+old per-call repro — two independent calls, each supplying a different link
+array against one head and double-issuing an index — no longer compiles. The
+obligation moved rather than vanished: from every call site (where it was
+unenforceable) to the implementor's one `impl` block, where it is discharged
+and audited once. An implementor whose own `load_next`/`store_next`
+internally read and write different backings is still expressible in safe
+Rust — a live implementor obligation (the `StackStorage` trait doc's rules 3
+and 4), not a structural impossibility.
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
