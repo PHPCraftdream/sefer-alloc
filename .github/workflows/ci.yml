@@ -733,6 +733,33 @@ jobs:
       # lints/deps that would not exist for a real crates.io consumer).
       - run: cargo publish --dry-run -p size-classes
 
+  tagged-index-stack-gates:
+    # tagged-index-stack review (Sol-codex, run 3, P3-5, task tis-sc3-Group3
+    # #1773): every other standalone crate with its own package-gates job
+    # (sefer-region, aligned-vmem, once-ptr-cell, size-classes) has one that
+    # actually packages/publish-dry-runs the crate on every PR;
+    # tagged-index-stack did not, so a tarball-content,
+    # manifest-normalization, or packaged-dependency-resolution regression
+    # would surface for the first time at tag/release time instead of here.
+    # This crate's clippy/rustdoc/test rows already live in the big
+    # test-workspace job below — not duplicated here, same convention the
+    # size-classes job immediately above states. No `cargo semver-checks
+    # check-release` step: the crate has never been published (crates.io 404
+    # per the 2026-08-30 session checkpoint; task #661's first-publish
+    # decision is still pending), so there is no crates.io baseline to diff
+    # against yet — add that step once the first
+    # `cargo publish -p tagged-index-stack` has actually landed.
+    name: tagged-index-stack package gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # Packaging verification only, per the finding: confirms the crate
+      # packages and the packaged tarball's own isolated build succeeds
+      # against the published manifest (no reliance on workspace-inherited
+      # lints/deps that would not exist for a real crates.io consumer).
+      - run: cargo publish --dry-run -p tagged-index-stack
+
   once-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
     # crate's central soundness argument is a provenance one (a sentinel built
@@ -1698,9 +1725,11 @@ jobs:
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
     # member crates' own test suites never ran in CI otherwise. Run each
-    # member's tests explicitly. Six steps below, not all default-features-only
-    # (task #639/P5 added steps 3-6 on top of the original step 1; see each
-    # step's own inline comment for the gap it closes):
+    # member's tests explicitly. The steps below are not all
+    # default-features-only (task #639/P5 added steps 3-6 on top of the
+    # original step 1; see each step's own inline comment for the gap it
+    # closes — no step count is stated here; this enumeration has gone stale
+    # before, so describe steps by name, not by count):
     #   1. `aligned-vmem` + `sefer-region` + `malloc-bench-rs` — default
     #      features only. The feature flags are root-crate-scoped, so
     #      `--workspace` with `--features` would not apply cleanly to the
@@ -1716,6 +1745,11 @@ jobs:
     #   6-9. `size-classes` (debug + release, task #755 F1-F3) and
     #      `once-ptr-cell` (debug + release, task #773 F1) — `cargo test`
     #      proper, since steps 4-5's cross-builds compile no test target.
+    #   10. `tagged-index-stack` — `--features test-internals` in --release
+    #      (the `threaded_conservation` file only) plus a matching
+    #      test-internals clippy row (Sol-codex run-3 review P2-2, task
+    #      tis-sc3-Group3 #1768): steps 2's default-feature runs compile the
+    #      file's retry/backoff activation-oracle assertions out entirely.
     name: test workspace members
     runs-on: ubuntu-latest
     steps:
@@ -1752,6 +1786,29 @@ jobs:
       # `assert!` were ever accidentally reverted to `debug_assert!`, this
       # step is what would catch it.
       - run: cargo test -p tagged-index-stack --release --no-fail-fast
+      # tagged-index-stack review (Sol-codex, run 3, P2-2, task
+      # tis-sc3-Group3 #1768): both rows above run this crate with DEFAULT
+      # features only, so the activation-oracle assertions inside
+      # `tests/threaded_conservation.rs` — the `retry_counts_for_test()` /
+      # `backoff_cap_reached_for_test()` snapshots, each gated on
+      # `#[cfg(feature = "test-internals")]` — compiled out of every CI run:
+      # CI executed the file's conservation/drain checks but never the
+      # assertions added specifically to prove retry and full-depth backoff
+      # activation. This row runs that one file in --release with the
+      # feature on (its own doc comment: ~0.1 s there), the same per-file
+      # row shape the `loom-alloc-global` job uses for `loom_aba.rs`. No
+      # tee+grep sentinel (task #1110 shape) is possible here — the feature
+      # flag changes no libtest output line — and it is not needed for the
+      # flag itself: cargo hard-errors on an unknown feature name, so the
+      # flag cannot silently degrade into a no-op (the residual risk — the
+      # flag being deleted outright — is what this comment documents; a
+      # deleted row leaves the two default rows above passing silently).
+      # Verified locally: green with the feature on; a temporary
+      # counter-mutation (backoff-cap accessor pinned to zeros) made the
+      # backoff-depth oracle fail under this exact invocation and pass
+      # without the feature, then passed again after the restore — the
+      # oracle is feature-activated, not vacuous.
+      - run: cargo test -p tagged-index-stack --release --features test-internals --test threaded_conservation
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
@@ -1934,16 +1991,18 @@ jobs:
       # is presumably why it was skipped when the two builds above were
       # added. `x86_64-unknown-none` has 64-bit atomics and no std in its
       # sysroot, so it is a genuine bare-metal proof for this crate
-      # specifically. No `std` feature to disable: the crate declares exactly
-      # ONE Cargo feature, `loom` — the implicit feature Cargo auto-creates
-      # for its optional `cfg(loom)` dependency (round-3 review P1-1 made
-      # `loom` optional; verified via `cargo metadata --no-deps
-      # --format-version 1 | jq -r '.packages[] |
-      # select(.name=="tagged-index-stack") | .features'`) — and it is not a
-      # `std` toggle, so no `--no-default-features` flag is needed. This row
-      # passes neither `--all-features` nor `RUSTFLAGS: "--cfg loom"`, so the
-      # feature and the cfg-gated loom sources are invisible to this plain
-      # build regardless. Verified locally: compiles clean.
+      # specifically. No `std` feature to disable: nothing in the crate's
+      # feature map is a `std` toggle — the map holds the implicit `loom`
+      # feature Cargo auto-creates for its optional `cfg(loom)` dependency
+      # (round-3 review P1-1 made `loom` optional) and the explicit
+      # `test-internals` instrumentation gate (round-9 review P3-4). Name
+      # features, never count them, and re-derive rather than trusting this
+      # prose: `cargo metadata --no-deps --format-version 1 | jq -r
+      # '.packages[] | select(.name=="tagged-index-stack") | .features'`.
+      # This row passes neither `--all-features` nor `RUSTFLAGS: "--cfg
+      # loom"` nor `--features test-internals`, so the cfg-gated loom sources
+      # and the test-only instrumentation are invisible to this plain build
+      # regardless. Verified locally: compiles clean.
       - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
       # tagged-index-stack publication readiness review (Sol-codex, run 2,
       # P2-4): no `cargo clippy -p tagged-index-stack` or `cargo doc -p
@@ -1961,16 +2020,22 @@ jobs:
       # step (`loom_aba.rs` compiles to zero tests here by its own
       # `#![cfg(loom)]` gate -- its real coverage stays the
       # `loom-alloc-global` job). No
-      # `--all-features` needed for either row: verified via
-      # `cargo metadata --no-deps --format-version 1 | jq -r
-      # '.packages[] | select(.name=="tagged-index-stack") | .features'`
-      # -- the crate declares exactly ONE feature, `loom` (the implicit
-      # feature for its optional `cfg(loom)` dependency; round-3 review P1-1
-      # made that dependency optional, which is what un-emptied the feature
-      # map), and neither row passes `--all-features` nor sets
-      # `RUSTFLAGS: "--cfg loom"`, so the feature and the cfg-gated loom
-      # sources are invisible to both steps regardless — the same fact the
-      # bare-metal build row above already cites.
+      # `--all-features` for either row: the crate's feature map holds only
+      # the implicit `loom` feature (the implicit feature for its optional
+      # `cfg(loom)` dependency; round-3 review P1-1 made that dependency
+      # optional, which is what un-emptied the feature map) and the explicit
+      # `test-internals` instrumentation gate (round-9 review P3-4) — and
+      # neither row passes `--all-features` nor sets `RUSTFLAGS: "--cfg
+      # loom"`, so the cfg-gated loom sources are invisible to both steps
+      # regardless — the same fact the bare-metal build row above already
+      # cites. `test-internals` is invisible here by the same design (a
+      # default build carries none of that instrumentation, round-9 review
+      # P3-4); it gets its own dedicated test row higher up in this job and
+      # clippy row immediately below (Sol-codex run-3 review P2-2, task
+      # tis-sc3-Group3 #1768), matching how `loom` gets its own rows in
+      # `loom-alloc-global`. Re-derive the feature list, never trust a prose
+      # count: `cargo metadata --no-deps --format-version 1 | jq -r
+      # '.packages[] | select(.name=="tagged-index-stack") | .features'`.
       #
       # One sub-claim of the same review is REFUTED and recorded here so
       # the bench is never later "silenced" for a warning this gate does
@@ -1983,6 +2048,17 @@ jobs:
       # tagged-index-stack --all-targets -- -D warnings` is clean on the
       # unmodified bench.
       - run: cargo clippy -p tagged-index-stack --all-targets -- -D warnings
+      # tagged-index-stack review (Sol-codex, run 3, P2-2, task
+      # tis-sc3-Group3 #1768): the row above lints DEFAULT features only, so
+      # the `test-internals`-gated accessors (`retry_counts_for_test`,
+      # `backoff_cap_reached_for_test`) and the cfg-gated oracle code in
+      # `tests/threaded_conservation.rs` were never linted. One dedicated
+      # clippy row per non-default feature combination — deliberately NOT
+      # `--all-features`: that would also drag the implicit `loom` feature in
+      # without the `RUSTFLAGS: "--cfg loom"` its sources gate on, a
+      # combination whose real coverage stays the `loom-alloc-global` job's
+      # own dedicated loom clippy row (round-7 review P3-2, task #1741).
+      - run: cargo clippy -p tagged-index-stack --features test-internals --all-targets -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps
       # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
       # of gap, but UNLIKE the two crates above, sefer-region genuinely
@@ -2147,11 +2223,15 @@ jobs:
       # `bench-scale-tool`-based bench were never compiled on the pinned 1.88
       # toolchain by anything in this job before these rows — and this is the
       # crate about to publish with `rust-version = "1.88"`. No
-      # `--all-features` here: the crate's only feature is the implicit
-      # `loom` optional-dependency feature, which (without this job's
-      # `RUSTFLAGS: "--cfg loom"`, which it never sets) would merely build the
-      # `loom` crate itself at 1.88 while its cfg-gated code compiles out —
-      # coverage the `loom-alloc-global` job already owns on stable.
+      # `--all-features` here: the crate's feature map holds the implicit
+      # `loom` optional-dependency feature and the explicit `test-internals`
+      # instrumentation gate (round-9 review P3-4; name features, never
+      # count them). `loom` (without this job's `RUSTFLAGS: "--cfg loom"`,
+      # which it never sets) would merely build the `loom` crate itself at
+      # 1.88 while its cfg-gated code compiles out — coverage the
+      # `loom-alloc-global` job already owns on stable — and `test-internals`
+      # has its own stable-toolchain test/clippy rows in `test-workspace`
+      # (Sol-codex run-3 review P2-2, task tis-sc3-Group3 #1768).
       - run: cargo check -p tagged-index-stack
       - run: cargo test -p tagged-index-stack --no-run
       # `cargo test`'s default target set excludes bench targets entirely
