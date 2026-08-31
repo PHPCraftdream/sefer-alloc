@@ -150,9 +150,11 @@
 //! [`TaggedIndexStack`] / [`TaggedIndex`] code exhaustively — no
 //! `preemption_bound`, so loom explores every interleaving these small models
 //! admit. One model runs end-to-end through the shipped
-//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop); the rest
-//! drive the real head atomic and the real packing through `cas_head_for_test`
-//! so an interleaving can be pinned. `#[should_panic]` counterfactuals
+//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop); most of
+//! the rest drive the real head atomic and the real packing through
+//! `cas_head_for_test` so an interleaving can be pinned — the one exception is
+//! the untagged-ABA counterfactual, which drives a locally-defined buggy
+//! stand-in stack instead of the real type. `#[should_panic]` counterfactuals
 //! (untagged corruption, the H-2 empty-transition tag-reset ABA, and a
 //! Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous.
 //!
@@ -799,8 +801,11 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // consult next, so pop's failure ordering MUST stay Acquire (the
             // loom counterfactual
             // `counterfactual_relaxed_cas_failure_corrupts_free_list` proves
-            // Relaxed there corrupts the free-list). The happens-before edge a
-            // popper needs from THIS push is carried entirely by the Release
+            // Relaxed corrupts the free-list in a faithful hand-expansion of
+            // this loop; the actual guard on `pop` itself is the end-to-end
+            // test `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
+            // The happens-before edge a popper needs from THIS push is
+            // carried entirely by the Release
             // success CAS's own release sequence — which every later head RMW
             // extends (see the `head` field's INVARIANT) — never by anything
             // push's failed-CAS reads observe.

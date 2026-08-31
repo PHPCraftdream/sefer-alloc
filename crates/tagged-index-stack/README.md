@@ -141,8 +141,10 @@ build fails fast with an explicit `compile_error!` naming the requirement.
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite
 model-checks the real `TaggedIndexStack` / `TaggedIndex` code exhaustively (no
 `preemption_bound`). One model runs end-to-end through the shipped
-`push`/`pop`; the rest drive the real head atomic and the real packing through
-`cas_head_for_test` so an interleaving can be pinned. `#[should_panic]`
+`push`/`pop`; most of the rest drive the real head atomic and the real
+packing through `cas_head_for_test` so an interleaving can be pinned — the one
+exception is the untagged-ABA counterfactual, which drives a locally-defined
+buggy stand-in stack instead of the real type. `#[should_panic]`
 counterfactuals (untagged corruption, the H-2 tag-reset ABA, and a
 Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous:
 
