@@ -103,6 +103,24 @@ fn main() {
     // bench_scale_tool::Harness is single-threaded only, so we measure contention
     // throughput manually with real threads. This is the standard pattern for
     // benchmarking lock-free structures under contention.
+    //
+    // This section is hand-rolled and outside `Harness`, so it is NOT what
+    // `--calibrate <secs>` calibrates -- `Harness::run()` above already
+    // returned once it wrote the manifest, and `bench-scale-tool`'s own
+    // `--calibrate` handling (`run_harness`, its `lib.rs`) has nothing to do
+    // with a workload it doesn't manage. Skip this section under
+    // `--calibrate` (mirroring bench-scale-tool's own
+    // `args.iter().any(|a| a == "--calibrate")` check) so the documented
+    // `-- --calibrate 1` invocation in this file's header doc comment
+    // returns quickly instead of also burning the full ~2s of contention
+    // workload below.
+    if std::env::args().any(|a| a == "--calibrate") {
+        println!(
+            "(--calibrate passed: skipping multi-threaded contention section -- \
+                   it is outside bench-scale-tool's Harness and has nothing to calibrate)"
+        );
+        return;
+    }
 
     println!("\n=== Multi-threaded contention benchmarks ===\n");
 
