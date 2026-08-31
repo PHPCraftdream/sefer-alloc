@@ -100,9 +100,9 @@ before it.
   stale link, and the shipped loom counterfactual
   `counterfactual_relaxed_cas_failure_corrupts_free_list` plants exactly that
   bug and watches the free-list corrupt. Push's index-validity and
-  sentinel-reservation check is a single release-active `assert!` — one guard
-  covers both conditions — not a `debug_assert!`, so the bound is enforced in
-  release builds too.
+  sentinel-reservation check is a single release-active bounds check (a
+  `#[cold]` panic helper, not `debug_assert!`) — one guard covers both
+  conditions, and it stays enforced in release builds too.
 - **Two speculative perf changes considered and deliberately NOT landed —
   no unmeasured perf change ships here:** (1) `push`'s initial
   `head.load(Ordering::Acquire)` could plausibly be `Relaxed` (push never

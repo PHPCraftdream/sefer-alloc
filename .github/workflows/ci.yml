@@ -1956,10 +1956,10 @@ jobs:
       # and dependencies are built, not linted), and the root `docs` job
       # further down is `--no-deps` (never reaches a dependency crate)
       # and drops `RUSTDOCFLAGS: "-D warnings"`. `--all-targets` covers
-      # all four `tests/` files (`stack_unit.rs`,
-      # `regression_counter_wrap.rs`, `proptest_pack_unpack.rs`, and
-      # `loom_aba.rs`, which compiles to zero tests here by its own
-      # `#![cfg(loom)]` gate -- its real coverage stays the
+      # all five `tests/` files (`stack_unit.rs`,
+      # `regression_counter_wrap.rs`, `proptest_pack_unpack.rs`,
+      # `readme_example.rs`, and `loom_aba.rs`, which compiles to zero tests
+      # here by its own `#![cfg(loom)]` gate -- its real coverage stays the
       # `loom-alloc-global` job) plus
       # `benches/tagged_index_stack_bench.rs` in one step. No
       # `--all-features` needed for either row: verified via

@@ -52,7 +52,7 @@
 //! # How to run
 //!
 //! ```text
-//! RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --test loom_aba
+//! RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loom --test loom_aba
 //! ```
 //!
 //! No model sets loom's `preemption_bound`: every run is exhaustive over the

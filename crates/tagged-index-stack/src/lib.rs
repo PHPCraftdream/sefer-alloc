@@ -737,8 +737,8 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// the parent allocator means handing the same slot to two different
     /// owners. The crate cannot detect a backing swap. This rule is caller
     /// discipline, unenforceable at compile time AND at runtime — unlike the
-    /// `index < INDEX_MASK` bound this very method's `assert!` DOES enforce
-    /// on every call (see `# Panics`).
+    /// `index < INDEX_MASK` bound this very method's release-active bounds
+    /// check DOES enforce on every call (see `# Panics`).
     ///
     /// # Panics
     ///
