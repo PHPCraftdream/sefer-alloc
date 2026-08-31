@@ -229,7 +229,7 @@ use once_ptr_cell::OncePtrCell;
 pub use once_ptr_cell::RollbackProbe;
 
 #[cfg(loom)]
-mod loom_shim {
+pub(crate) mod loom_shim {
     //! Const-capable, `core::sync::atomic`-backed stand-in for
     //! `once_ptr_cell::OncePtrCell`, used ONLY under `--cfg loom` so sefer's own
     //! (unrelated) shadow-model loom harnesses can link the crate with its const
@@ -452,72 +452,107 @@ mod loom_shim {
         }
     }
 
-    // -----------------------------------------------------------------------
     // CRATE-P7: const-capable, `core`-atomic stand-in for
-    // `tagged_index_stack::TaggedIndexStack<16>`.
+    // the tagged free-list head (`tagged_index_stack::StackHead<16>`) +
+    // StackStorage/StackOps binding.
     // -----------------------------------------------------------------------
 
     use core::sync::atomic::AtomicU64;
     // The PACKING (`TaggedIndex`) is pure `const fn` bit arithmetic with no
-    // atomics, and the `Links` trait / `TAIL` sentinel carry no atomics either —
-    // all are loom-agnostic, so the shim reuses the REAL crate types for them and
+    // atomics, and the `TAIL` sentinel carries no atomics either — both are
+    // loom-agnostic, so the shim reuses the REAL crate types for them and
     // only re-implements the `AtomicU64` head on `core` atomics. The shim
-    // replicates the crate's push/pop HEAD PROTOCOL (same H-2 running-tag empty
-    // transition, same Acquire/Release/Relaxed orderings, same RAD-1 lazy links
-    // — `store_next` only ever fires inside `push`) but is NOT a byte-for-byte
-    // replica of the shipped type. Deliberate divergences, each irrelevant to
-    // what the shim is FOR — model-checking free_slots' head protocol in the
-    // root crate's loom CI jobs (deliberately no hardcoded count — a "THREE"
-    // here already went stale once):
-    //   1. no CAS-retry backoff — the shipped `push`/`pop` spin
+    // replicates the crate's `StackOps` push_index/pop_index HEAD PROTOCOL (same
+    // H-2 running-tag empty transition, same Acquire/Release/Relaxed orderings,
+    // same RAD-1 lazy links — `store_next` only ever fires inside `push_index`)
+    // but is NOT a byte-for-byte replica of the shipped type. Deliberate
+    // divergences, each irrelevant to what the shim is FOR — model-checking
+    // free_slots' head protocol in the root crate's loom CI jobs (deliberately
+    // no hardcoded count — a "THREE" here already went stale once):
+    //   1. no CAS-retry backoff — the shipped `push_index`/`pop_index` spin
     //      `1 << spins.min(BACKOFF_SPIN_CAP)` times between retries; the shim
     //      retries immediately, forever. The backoff is a pure LATENCY device:
     //      `core::hint::spin_loop()` touches no atomic and adds no interleaving
     //      loom could explore, so copying it in would add zero protocol content.
-    //   2. no `push` release-active `index < INDEX_MASK` guard — the guard
+    //   2. no `push_index` release-active `index < INDEX_MASK` guard — the guard
     //      catches a caller-contract violation the registry's own construction
     //      excludes here: only slot indices `< MAX_HEAPS (4096)` are ever
     //      pushed, well under `INDEX_MASK (65535)`. Dead code in this shim.
-    //   3. no `pop` release-active rule-4 guard on `load_next`'s result — same
-    //      reasoning: `HeapSlot::next_free` is written ONLY by the shipped
-    //      `push` (with `TAIL` or a previously-admitted index), so the guard's
-    //      condition is unsatisfiable for this consumer.
-    //   4. no CAS-retry counting — the shipped `push`/`pop` each increment a
-    //      process-global telemetry counter (`PUSH_RETRY_COUNT` /
-    //      `POP_RETRY_COUNT`: plain `core::sync::atomic::AtomicUsize`
-    //      statics, a `Relaxed` `fetch_add(1)` on the CAS-retry
-    //      `Err(actual)` arm, read by nothing in the algorithm) so tests
-    //      can assert the retry branch was actually reached; the shim has
-    //      no counterpart. Retry bookkeeping is pure activation telemetry
-    //      with no bearing on the head-word CAS protocol the shim exists
-    //      to model-check, and a bare `core::sync::atomic::AtomicU64` head
-    //      carries no such metadata to replicate.
+    //   3. no `pop_index` release-active rule-4 guard on `load_next`'s result —
+    //      same reasoning: `HeapSlot::next_free` is written ONLY by the shipped
+    //      `push_index` (with `TAIL` or a previously-admitted index), so the
+    //      guard's condition is unsatisfiable for this consumer.
+    //   4. no CAS-retry counting — the shipped `push_index`/`pop_index` each
+    //      increment a process-global telemetry counter
+    //      (`PUSH_RETRY_COUNT` / `POP_RETRY_COUNT`: plain
+    //      `core::sync::atomic::AtomicUsize` statics, a `Relaxed`
+    //      `fetch_add(1)` on the CAS-retry `Err(actual)` arm, read by nothing
+    //      in the algorithm) so tests can assert the retry branch was actually
+    //      reached; the shim has no counterpart. Retry bookkeeping is pure
+    //      activation telemetry with no bearing on the head-word CAS protocol
+    //      the shim exists to model-check, and a bare
+    //      `core::sync::atomic::AtomicU64` head carries no such metadata to
+    //      replicate.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
-    use tagged_index_stack::{Links, TaggedIndex, TAIL};
+    use tagged_index_stack::{TaggedIndex, TAIL};
 
-    /// Const-capable stand-in for `tagged_index_stack::TaggedIndexStack<16>` used
-    /// ONLY under `--cfg loom`, so `static REGISTRY: Registry = Registry::new()`
-    /// still const-evaluates (loom's `AtomicU64::new` is non-`const`). Never on a
-    /// loom-modeled interleaving — the real-type verification is the crate's own
-    /// `loom_aba` suite. Fixed at `INDEX_BITS = 16` (the only width the registry
-    /// uses), so it needs no const generic.
-    pub(crate) struct TaggedIndexStack<const INDEX_BITS: u32> {
+    /// Const-capable stand-in for the tagged free-list head
+    /// (`tagged_index_stack::StackHead<16>`) + StackStorage/StackOps binding,
+    /// used ONLY under `--cfg loom`, so `static REGISTRY: Registry =
+    /// Registry::new()` still const-evaluates (loom's `AtomicU64::new` is
+    /// non-`const`). Never on a loom-modeled interleaving — the real-type
+    /// verification is the crate's own `loom_aba` suite. Fixed at
+    /// `INDEX_BITS = 16` (the only width the registry uses), so it needs no
+    /// const generic beyond mirroring the real type's parameter.
+    pub(crate) struct StackHead<const INDEX_BITS: u32> {
         head: AtomicU64,
     }
 
-    impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
+    impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
         pub(crate) const fn new() -> Self {
-            TaggedIndexStack {
+            StackHead {
                 head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
             }
         }
 
-        /// Head-protocol replica of `TaggedIndexStack::push` (Release CAS, tag
+        /// Thin wrapper over the head atomic's load (mirrors the real
+        /// `StackHead::load`'s shape — for the `StackOps` blanket impl).
+        pub(crate) fn load(&self, ordering: Ordering) -> u64 {
+            self.head.load(ordering)
+        }
+
+        /// Thin wrapper over the head atomic's compare_exchange (mirrors the
+        /// real `StackHead::compare_exchange`'s shape — for the `StackOps`
+        /// blanket impl).
+        pub(crate) fn compare_exchange(
+            &self,
+            current: u64,
+            new: u64,
+            success: Ordering,
+            failure: Ordering,
+        ) -> Result<u64, u64> {
+            self.head.compare_exchange(current, new, success, failure)
+        }
+    }
+
+    /// Mirror of the real `tagged_index_stack::StackStorage` trait: one
+    /// implementor owns the head↔links binding.
+    pub(crate) trait StackStorage<const INDEX_BITS: u32> {
+        fn head(&self) -> &StackHead<INDEX_BITS>;
+        fn load_next(&self, index: u32) -> u32;
+        fn store_next(&self, index: u32, next: u32);
+    }
+
+    /// Mirror of the real `tagged_index_stack::StackOps` trait, blanket-implemented
+    /// for every `StackStorage` implementor (same shape as the crate).
+    pub(crate) trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
+        /// Head-protocol replica of `StackOps::push_index` (Release CAS, tag
         /// bump, RAD-1 lazy link write inside push only; no backoff and no
         /// caller-contract guard — see the module comment above).
-        pub(crate) fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
-            let mut head = self.head.load(Ordering::Acquire);
+        fn push_index(&self, index: u32) {
+            let head_ref = self.head();
+            let mut head = head_ref.load(Ordering::Acquire);
             loop {
                 let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                     TAIL
@@ -525,11 +560,11 @@ mod loom_shim {
                     let (cur_idx, _tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                     cur_idx as u32
                 };
-                links.store_next(index, next_link);
+                self.store_next(index, next_link);
                 let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                 let new_tag = tag.wrapping_add(1);
                 let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
-                match self.head.compare_exchange(
+                match head_ref.compare_exchange(
                     head,
                     new_head,
                     Ordering::Release,
@@ -541,25 +576,26 @@ mod loom_shim {
             }
         }
 
-        /// Head-protocol replica of `TaggedIndexStack::pop` (Acquire CAS, same
+        /// Head-protocol replica of `StackOps::pop_index` (Acquire CAS, same
         /// tag; H-2 running-tag preservation on the empty transition; no
         /// backoff and no rule-4 guard — see the module comment above).
-        pub(crate) fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
-            let mut head = self.head.load(Ordering::Acquire);
+        fn pop_index(&self) -> Option<u32> {
+            let head_ref = self.head();
+            let mut head = head_ref.load(Ordering::Acquire);
             loop {
                 if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                     return None;
                 }
                 let (idx_v, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                 let index = idx_v as u32;
-                let next = links.load_next(index);
+                let next = self.load_next(index);
                 let new_head = if next == TAIL {
                     // H-2: preserve the RUNNING tag across the empty transition.
                     TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
                 } else {
                     TaggedIndex::<INDEX_BITS>::pack(next as u64, tag)
                 };
-                match self.head.compare_exchange(
+                match head_ref.compare_exchange(
                     head,
                     new_head,
                     Ordering::Acquire,
@@ -571,21 +607,24 @@ mod loom_shim {
             }
         }
     }
+
+    impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {}
 }
 
 #[cfg(feature = "alloc-xthread")]
 use super::heap_overflow::{HeapOverflowSidecar, SIDECAR_CAP, SIDECAR_SENTINEL_INITIALIZING};
 use super::heap_slot::HeapSlot;
 use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
-// CRATE-P7: the `free_slots` stack. Under a NORMAL/`production` build sefer uses
-// the real `tagged_index_stack::TaggedIndexStack`. Under `--cfg loom` the crate
-// aliases its atomics to `loom`, so `TaggedIndexStack::new` is NOT `const`
+// CRATE-P7: the `free_slots` stack head. Under a NORMAL/`production` build sefer
+// uses the real `tagged_index_stack::StackHead`. Under `--cfg loom` the crate
+// aliases its atomics to `loom`, so `StackHead::new` is NOT `const`
 // (loom's `AtomicU64::new` has no const ctor) and `static REGISTRY: Registry =
 // Registry::new()` would fail to const-evaluate — the SAME const-static hazard
 // the `OncePtrCell` shim above solves. So under loom we swap in a const-capable,
-// `core`-atomic shim with the identical `new`/`push`/`pop` API `bootstrap` and
-// `heap_registry` use (over the REAL `tagged_index_stack::Links` trait — only
-// the `AtomicU64` head must be `core`, not `loom`, for const-ness). This is
+// `core`-atomic shim with the identical `new`/`StackStorage`/`StackOps` API
+// `bootstrap` and `heap_registry` use (over the shim's mirrored
+// `StackStorage`/`StackOps` traits — only the `AtomicU64` head must be `core`,
+// not `loom`, for const-ness). This is
 // sound: the real-type loom VERIFICATION of the tagged stack lives in the
 // crate's OWN suite (`crates/tagged-index-stack/tests/loom_aba.rs`, run via
 // `-p tagged-index-stack`); sefer's loom harnesses never exercise `free_slots`
@@ -593,9 +632,9 @@ use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
 // that crate suite), so the shim is NEVER on any modeled interleaving — it
 // exists only to keep the const static compiling.
 #[cfg(loom)]
-use loom_shim::TaggedIndexStack;
+use loom_shim::StackHead;
 #[cfg(not(loom))]
-use tagged_index_stack::TaggedIndexStack;
+use tagged_index_stack::StackHead;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
 /// slot for its heap; `recycle` returns it. 4096 is generous for realistic
@@ -635,14 +674,16 @@ pub struct Registry {
     /// The `free_slots` recycler: the ABA-tagged Treiber free-index stack,
     /// extracted to the `tagged-index-stack` crate (CRATE-P7). Its head is one
     /// `AtomicU64` packing `(index:16 | tag:48)`; the per-slot next links live
-    /// slot-resident in [`HeapSlot::next_free`] and are reached through the
-    /// crate's `Links` trait (see `heap_registry`'s `RegistryLinks` adapter and
+    /// slot-resident in [`HeapSlot::next_free`] and are bound to the head by
+    /// `Registry`'s own `StackStorage` impl (see `heap_registry`'s
+    /// `StackStorage<16> for Registry` impl and
     /// `pop_free_slot`/`push_free_slot`). The H-2 empty-transition tag
     /// preservation and the RAD-1 lazy-link discipline both live inside the
-    /// crate now. `INDEX_BITS = 16` holds every valid slot index
+    /// crate's `StackStorage`/`StackOps` traits now. `INDEX_BITS = 16` holds
+    /// every valid slot index
     /// (`0..MAX_HEAPS = 4096`) with the empty sentinel `0xFFFF` reserved above
     /// the cap, leaving the 48-bit ABA tag (the W7a repack). Initialised empty.
-    pub(crate) free_slots: TaggedIndexStack<16>,
+    pub(crate) free_slots: StackHead<16>,
 }
 
 impl Registry {
@@ -663,7 +704,7 @@ impl Registry {
         Registry {
             chunks: [const { OncePtrCell::new() }; NUM_CHUNKS],
             count: AtomicU32::new(0),
-            free_slots: TaggedIndexStack::new(),
+            free_slots: StackHead::new(),
         }
     }
 

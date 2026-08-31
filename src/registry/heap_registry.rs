@@ -27,8 +27,9 @@
 //! tagged head, the ABA guard, the H-2 empty-transition tag preservation, the
 //! RAD-1 lazy links, and the tag-width-vs-churn (~89-year) budget analysis —
 //! lives in the `tagged-index-stack` crate (CRATE-P7); `free_slots` is a
-//! `tagged_index_stack::TaggedIndexStack<16>` and `pop_free_slot` /
-//! `push_free_slot` below delegate to it over the slot-resident links.
+//! `tagged_index_stack::StackHead<16>` and `pop_free_slot` /
+//! `push_free_slot` below delegate to it through `Registry`'s own
+//! `tagged_index_stack::StackStorage<16>` impl (the slot-resident links).
 //!
 //! (The abandoned-segments intrusive Treiber stack that previously also lived
 //! here was removed — task #97 / R4-5. It was unreachable on the production
@@ -539,41 +540,58 @@ impl Drop for ConflictRollback {
     }
 }
 
-// ---------------------------------------------------------------------------
+#[cfg(loom)]
+use super::bootstrap::loom_shim::StackOps as _;
+#[cfg(not(loom))]
+use tagged_index_stack::StackOps as _;
+
 // Treiber-stack primitives on the `free_slots` stack.
 //
 // The stack itself — the tagged head word, the ABA guard, the H-2
 // empty-transition tag preservation, and the RAD-1 lazy-link discipline — now
 // lives in the `tagged-index-stack` crate (CRATE-P7); `Registry::free_slots` is
-// a `TaggedIndexStack<16>`. The registry supplies only the SLOT-RESIDENT links,
-// through the `RegistryLinks` adapter below, so the crate's `push`/`pop` write
-// each slot's next link into the slot's own `next_free: AtomicU32` field (never
+// a `StackHead<16>`. `Registry` implements the crate's `StackStorage<16>` trait
+// below — binding the head to the SLOT-RESIDENT links ONCE, per impl (the P1-1
+// structural fix: one implementor owns the head↔links binding, instead of the
+// old per-call `RegistryLinks` adapter re-asserting it on every `push`/`pop`) —
+// so the crate's blanket `StackOps` `push_index`/`pop_index` write each slot's
+// next link into the slot's own `next_free: AtomicU32` field (never
 // a second array) exactly as the hand-rolled Treiber loop used to — preserving
-// the lazy-links saving (the crate only ever writes a link inside `push`).
-// ---------------------------------------------------------------------------
+// the lazy-links saving (the crate only ever writes a link inside
+// `push_index`).
 
-/// Adapts `Registry`'s slot-resident `next_free` links to the crate's `Links`
-/// trait. `load_next`/`store_next` funnel through `reg.slot(idx)` (the single
-/// chunk-materialising slot accessor), so the crate's stack reaches the exact
-/// per-slot `AtomicU32` the previous inline Treiber loop used — with the same
-/// `Acquire`/`Release` orderings the crate's contract requires.
+/// Binds `Registry`'s head (`free_slots`) to its slot-resident `next_free`
+/// links via the crate's [`tagged_index_stack::StackStorage`] trait (one impl
+/// establishes the binding, once). `load_next`/`store_next` funnel through
+/// `reg.slot(idx)` (the single chunk-materialising slot accessor), so the
+/// crate's stack reaches the exact per-slot `AtomicU32` the previous inline
+/// Treiber loop used — with the same `Acquire`/`Release` orderings the crate's
+/// contract requires.
 ///
 /// The crate's `TAIL` sentinel (`u32::MAX`) is numerically identical to
-/// [`NEXT_FREE_TAIL`], so a slot link written by `push` reads back as the
+/// [`NEXT_FREE_TAIL`], so a slot link written by `push_index` reads back as the
 /// familiar tail sentinel; the compile-time `const` assert below pins that
 /// equivalence so a future divergence fails loudly at compile time (in every
 /// build profile) rather than silently corrupting a chain.
-struct RegistryLinks<'a> {
-    reg: &'a Registry,
-}
-
+///
+/// The two cfg-gated impls below have IDENTICAL bodies, deliberately: under
+/// `--cfg loom`, `Registry::free_slots` is the const-capable loom shim
+/// (`bootstrap::loom_shim::StackHead`), whose `StackStorage` mirrors the real
+/// trait's shape — so the bodies must stay in lockstep with each other.
 const _: () = assert!(
     NEXT_FREE_TAIL == tagged_index_stack::TAIL,
     "the registry's tail sentinel must equal the crate's TAIL so slot links \
-     round-trip through TaggedIndexStack unchanged"
+     round-trip through the tagged stack unchanged"
 );
 
-impl tagged_index_stack::Links for RegistryLinks<'_> {
+#[cfg(not(loom))]
+impl tagged_index_stack::StackStorage<16> for Registry {
+    #[inline]
+    fn head(&self) -> &tagged_index_stack::StackHead<16> {
+        &self.free_slots
+    }
+
+    #[inline]
     fn load_next(&self, index: u32) -> u32 {
         // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
         // holds indices that `push_free_slot` put there, and those are valid
@@ -584,15 +602,41 @@ impl tagged_index_stack::Links for RegistryLinks<'_> {
         // corrupted that it names an out-of-range index now panics (OOB in
         // `slot()`) rather than silently returning an empty stack, which is the
         // preferable failure mode for an unreachable-by-construction invariant.
-        self.reg
-            .slot(index as usize)
-            .next_free
-            .load(Ordering::Acquire)
+        self.slot(index as usize).next_free.load(Ordering::Acquire)
     }
 
+    #[inline]
     fn store_next(&self, index: u32, next: u32) {
-        self.reg
-            .slot(index as usize)
+        self.slot(index as usize)
+            .next_free
+            .store(next, Ordering::Release);
+    }
+}
+
+#[cfg(loom)]
+impl super::bootstrap::loom_shim::StackStorage<16> for Registry {
+    #[inline]
+    fn head(&self) -> &super::bootstrap::loom_shim::StackHead<16> {
+        &self.free_slots
+    }
+
+    #[inline]
+    fn load_next(&self, index: u32) -> u32 {
+        // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
+        // holds indices that `push_free_slot` put there, and those are valid
+        // slot indices); `slot()` resolves it through the chunked slot array.
+        // NOTE (CRATE-P7): the pre-swap inline `pop_free_slot` carried a
+        // defensive `idx >= MAX_HEAPS -> None` early return; the crate delegation
+        // intentionally drops it in favour of FAIL-LOUD — a head word so
+        // corrupted that it names an out-of-range index now panics (OOB in
+        // `slot()`) rather than silently returning an empty stack, which is the
+        // preferable failure mode for an unreachable-by-construction invariant.
+        self.slot(index as usize).next_free.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    fn store_next(&self, index: u32, next: u32) {
+        self.slot(index as usize)
             .next_free
             .store(next, Ordering::Release);
     }
@@ -600,20 +644,21 @@ impl tagged_index_stack::Links for RegistryLinks<'_> {
 
 /// Pop a free slot index off the `free_slots` stack, or `None` if empty.
 ///
-/// Delegates to [`TaggedIndexStack::pop`](tagged_index_stack::TaggedIndexStack::pop)
-/// over the slot-resident links: the crate performs the tagged Treiber pop (the
-/// ABA guard and the H-2 empty-transition tag preservation are inside it),
-/// reading the popped slot's `next_free` link via [`RegistryLinks`].
+/// Delegates to [`tagged_index_stack::StackOps::pop_index`] through
+/// `Registry`'s own `StackStorage` impl (the slot-resident links): the crate
+/// performs the tagged Treiber pop (the ABA guard and the H-2
+/// empty-transition tag preservation are inside it), reading the popped slot's
+/// `next_free` link via the impl's `load_next`.
 fn pop_free_slot(reg: &Registry) -> Option<usize> {
-    let links = RegistryLinks { reg };
-    reg.free_slots.pop(&links).map(|idx| idx as usize)
+    reg.pop_index().map(|idx| idx as usize)
 }
 
 /// Push a slot index onto the `free_slots` stack.
 ///
-/// Delegates to [`TaggedIndexStack::push`](tagged_index_stack::TaggedIndexStack::push)
-/// over the slot-resident links: the crate writes this slot's `next_free` link
-/// (via [`RegistryLinks`]) and bumps the ABA tag on the CAS. `idx < MAX_HEAPS`
+/// Delegates to [`tagged_index_stack::StackOps::push_index`] through
+/// `Registry`'s own `StackStorage` impl (the slot-resident links): the crate
+/// writes this slot's `next_free` link (via the impl's `store_next`) and bumps
+/// the ABA tag on the CAS. `idx < MAX_HEAPS`
 /// (the caller derived it from a valid heap pointer), so it fits the 16-bit
 /// index half with room below the empty sentinel.
 fn push_free_slot(reg: &Registry, idx: u32) {
@@ -621,8 +666,7 @@ fn push_free_slot(reg: &Registry, idx: u32) {
         (idx as usize) < MAX_HEAPS,
         "push_free_slot given an out-of-range slot index"
     );
-    let links = RegistryLinks { reg };
-    reg.free_slots.push(&links, idx);
+    reg.push_index(idx);
 }
 
 /// Mint a fresh slot by bumping `count`. Returns the new slot's index, or

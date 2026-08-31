@@ -35,7 +35,8 @@ const FEATURES = {
   // atomics to `loom` under `--cfg loom`), run with `-p tagged-index-stack` and
   // no sefer features — flagged by the `crate:` prefix. This REPLACES the
   // in-tree `loom_free_slots_aba` shadow model below: `heap_registry.rs` now
-  // consumes the crate's `TaggedIndexStack`, so the crate's real-type suite IS
+  // binds the crate's `StackHead` through its `StackStorage` impl, so the
+  // crate's real-type suite IS
   // the coverage for the shipping code (the shadow model is deleted).
   loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
