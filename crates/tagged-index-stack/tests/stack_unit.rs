@@ -1,6 +1,8 @@
 //! Single-threaded unit tests for the `tagged-index-stack` public API: the
 //! [`TaggedIndex`] packing at several widths (round-trip, empty sentinel,
-//! tag-wrap boundary — the 48-bit budget's `2^48` wrap) and the
+//! and the checked pack's acceptance/rejection boundaries — the 48-bit tag's
+//! `2^48` wrap now happens inside push via the crate-private truncating fast
+//! path and is pinned here at the boundary by rejection) and the
 //! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the H-2
 //! empty transition observed single-threaded: drain to empty then refill,
 //! and confirm the tag keeps climbing).
@@ -46,7 +48,7 @@ fn pack_unpack_round_trip_16() {
     assert_eq!(T::TAG_BITS, 48);
     for &idx in &[0u64, 1, 2748, 0xFFFE] {
         for &tag in &[0u64, 1, 12345, (1u64 << 48) - 1] {
-            let w = T::pack(idx, tag);
+            let w = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
             let (v, t) = T::unpack(w);
             assert_eq!(v, idx, "index round-trip (tag {tag})");
             assert_eq!(t, tag, "tag round-trip (idx {idx})");
@@ -55,94 +57,86 @@ fn pack_unpack_round_trip_16() {
     }
 }
 
+/// The checked `pack` REJECTS an over-wide index with `None` — the
+/// fail-closed replacement for the pre-P2-1 truncating `pack`, whose
+/// silent masking turned `0x1_FFFF` into the EMPTY SENTINEL (its low 16
+/// bits equal `INDEX_MASK`) and `0x1_0001` into the unrelated live index
+/// `1`. The truncating behaviour survives only as the crate-private
+/// `pack_truncating` fast path used by `push_index`/`pop_index`, whose
+/// inputs are guard-proven in range.
 #[test]
-fn pack_truncates_an_over_wide_index_never_collides_with_the_tag() {
-    // pack()'s doc says an over-wide index is TRUNCATED (masked with
-    // INDEX_MASK before OR-ing with the tag), not that it "collides" with
-    // the tag bits. This pins the sharpest case: at width 16, an
-    // over-wide index whose low 16 bits equal INDEX_MASK itself truncates
-    // to the EMPTY SENTINEL, not merely "a wrong index" — is_empty() then
-    // reads true for a packed word whose caller-supplied index was never
-    // the empty sentinel.
+fn pack_rejects_an_over_wide_index_instead_of_truncating_it() {
     type T = TaggedIndex<16>;
     let tag = 42u64;
 
-    // 0x1_FFFF's low 16 bits are 0xFFFF == INDEX_MASK == the empty sentinel.
-    let over_wide = 0x1_FFFFu64;
-    let word = T::pack(over_wide, tag);
-    let (v, t) = T::unpack(word);
-    assert_eq!(v, T::INDEX_MASK, "truncates to the low INDEX_BITS bits");
-    assert_eq!(t, tag, "the tag half is untouched by truncation");
-    assert!(
-        T::is_empty(word),
-        "truncating to INDEX_MASK reads as the empty sentinel, not merely \
-         a wrong live index"
+    // 0x1_FFFF's low 16 bits are 0xFFFF == INDEX_MASK == the empty
+    // sentinel: the old truncating pack turned this into a word that
+    // is_empty() read as EMPTY. The checked pack refuses it instead.
+    assert_eq!(
+        T::pack(0x1_FFFF, tag),
+        None,
+        "an over-wide index whose low bits are the empty sentinel must be \
+         rejected, not silently masked into it"
     );
-
-    // A less extreme over-wide value truncates to a live (non-sentinel)
-    // index, confirming truncation (not collision) in the general case too.
-    let over_wide_live = 0x1_0001u64; // low 16 bits: 0x0001
-    let word2 = T::pack(over_wide_live, tag);
-    let (v2, t2) = T::unpack(word2);
-    assert_eq!(v2, 1, "truncates to the low INDEX_BITS bits");
-    assert_eq!(t2, tag, "the tag half is untouched by truncation");
-    assert!(!T::is_empty(word2));
+    // A less extreme over-wide value would have truncated to the live
+    // index 1 — also rejected now.
+    assert_eq!(
+        T::pack(0x1_0001, tag),
+        None,
+        "an over-wide index must be rejected, not truncated to its low bits"
+    );
+    assert_eq!(T::pack(u64::MAX, tag), None, "far out-of-range index");
 }
 
-/// `try_pack` is the checked twin of `pack`: for every in-range
-/// `(index, tag)` pair it returns EXACTLY what `pack` returns (asserted as
-/// value equality against `pack`'s own output, not merely `Some`, so any
-/// future divergence between the two is caught), and once a half crosses
-/// its width boundary it returns `None` instead of silently truncating.
-/// Pinned at width 16, the neighboring truncation test's width: the first
-/// out-of-range index (`1 << INDEX_BITS`) is precisely the value `pack`
-/// masks down to a different valid-looking index, and the first
-/// out-of-range tag (`1 << TAG_BITS`) is precisely the value whose high
-/// bit `pack`'s `<< INDEX_BITS` silently drops.
+/// The CHECKED `pack`'s boundary behaviour, pinned with literal expected
+/// words (an independent hand-computed oracle, not a comparison against
+/// `pack` itself): an in-range pair packs to the exact
+/// `(tag << INDEX_BITS) | index` word — `INDEX_MASK` itself included,
+/// because pack's acceptance boundary is `< 2^INDEX_BITS`, NOT push's
+/// stricter `< INDEX_MASK` reserve-sentinel bound (packing the empty
+/// index with a tag is the legitimate H-2 shape) — and the first
+/// out-of-range value on either half is rejected with `None` exactly
+/// where the old truncating `pack` silently produced a different
+/// valid-looking word.
 #[test]
-fn try_pack_matches_pack_in_range_and_rejects_out_of_range_halves() {
+fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
     type T = TaggedIndex<16>;
 
-    // In range => Some, identical to pack's own output for the SAME
-    // inputs. INDEX_MASK itself is included deliberately: try_pack's
-    // boundary is pack's truncation boundary (`< 2^INDEX_BITS`), NOT
-    // push's stricter `< INDEX_MASK` reserve-sentinel bound — packing the
-    // empty index with a tag is the legitimate H-2 shape.
-    for &(idx, tag) in &[
-        (0u64, 0u64),
-        (1, 1),
-        (2748, 42),
-        (T::INDEX_MASK, 7),
-        (0xFFFE, (1u64 << T::TAG_BITS) - 1),
+    for &(idx, tag, word) in &[
+        (0u64, 0u64, 0u64),
+        (1, 1, (1u64 << 16) | 1),
+        (2748, 42, (42u64 << 16) | 2748),
+        (T::INDEX_MASK, 7, (7u64 << 16) | T::INDEX_MASK),
+        (
+            0xFFFE,
+            (1u64 << T::TAG_BITS) - 1,
+            (((1u64 << T::TAG_BITS) - 1) << 16) | 0xFFFE,
+        ),
     ] {
         assert_eq!(
-            T::try_pack(idx, tag),
-            Some(T::pack(idx, tag)),
-            "try_pack must agree with pack exactly for in-range inputs \
-             (index {idx}, tag {tag})"
+            T::pack(idx, tag),
+            Some(word),
+            "in-range (index {idx}, tag {tag}) must pack to the exact word"
         );
     }
 
-    // First out-of-range index: exactly `1 << INDEX_BITS`. pack() masks it
-    // to 0 — a DIFFERENT valid index; try_pack refuses it instead.
-    assert_eq!(T::try_pack(1u64 << 16, 7), None, "first invalid index");
+    // First out-of-range index: exactly `1 << INDEX_BITS` — the value the
+    // old truncating pack masked to 0, a DIFFERENT valid index.
+    assert_eq!(T::pack(1u64 << 16, 7), None, "first invalid index");
     // Farther out of range, including the value whose low bits are all
-    // ones (pack would truncate it to the empty sentinel).
-    assert_eq!(T::try_pack(u64::MAX, 7), None, "far out-of-range index");
+    // ones (the old pack truncated it to the empty sentinel).
+    assert_eq!(T::pack(u64::MAX, 7), None, "far out-of-range index");
     assert_eq!(
-        T::try_pack(0x1_FFFF, 7),
+        T::pack(0x1_FFFF, 7),
         None,
-        "over-wide index that pack would truncate to the empty sentinel"
+        "over-wide index that the old pack truncated to the empty sentinel"
     );
 
-    // First out-of-range tag: exactly `1 << TAG_BITS` (2^48 at width 16).
-    // pack() silently drops that shifted-out bit and returns a word whose
-    // tag reads 0; try_pack refuses it instead.
-    assert_eq!(
-        T::try_pack(9, 1u64 << T::TAG_BITS),
-        None,
-        "first invalid tag"
-    );
+    // First out-of-range tag: exactly `1 << TAG_BITS` (2^48 at width 16) —
+    // the value whose shifted-out high bit the old pack silently dropped,
+    // restarting the tag at 0. The checked pack refuses it; the actual
+    // wrap happens inside push via the crate-private truncating fast path.
+    assert_eq!(T::pack(9, 1u64 << T::TAG_BITS), None, "first invalid tag");
 }
 
 #[test]
@@ -154,7 +148,7 @@ fn empty_sentinel_16() {
     assert_eq!(v, 0xFFFF);
     assert_eq!(tag, 0);
     // empty_index packed with a running (non-zero) tag is STILL empty (H-2).
-    let running = T::pack(T::empty_index(), 99);
+    let running = T::pack(T::empty_index(), 99).expect("empty_index and 99 are both in range");
     assert!(
         T::is_empty(running),
         "empty is index-only, tag-agnostic (H-2)"
@@ -163,10 +157,16 @@ fn empty_sentinel_16() {
     assert_eq!(t, 99, "the running tag survives on the empty word");
 }
 
-/// The 48-bit tag reaches its maximum (`2^48 - 1`) and WRAPS to 0 on the next
-/// bump, with the index intact across the wrap — the tag-width budget boundary.
+/// The 48-bit tag reaches its maximum (`2^48 - 1`) and still packs; the
+/// bump PAST it (`2^48`, what `push`'s `wrapping_add(1)` produces at the
+/// boundary) is REJECTED by the checked `pack` — the fail-closed P2-1
+/// contract. The wrap itself (the bumped tag restarting at 0 with the
+/// index intact) is unchanged machine behaviour inside `push`, which
+/// packs through the crate-private truncating fast path whose shift drops
+/// the `2^TAG_BITS` high bit; it is no longer reachable through any
+/// public packing function.
 #[test]
-fn tag_wraps_at_2_pow_48() {
+fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
     type T = TaggedIndex<16>;
     let max_tag = (1u64 << T::TAG_BITS) - 1; // 2^48 - 1
     assert!(
@@ -174,20 +174,19 @@ fn tag_wraps_at_2_pow_48() {
         "48-bit tag exceeds the old 32-bit range"
     );
     let idx = 0x0ABCu64;
-    let at_max = T::pack(idx, max_tag);
+    let at_max = T::pack(idx, max_tag).expect("2^48 - 1 is the last valid tag");
     let (v0, t0) = T::unpack(at_max);
     assert_eq!(v0, idx);
     assert_eq!(t0, max_tag);
-    // Bump once — `push` computes wrapping_add(1); at 2^48-1 that is 2^48, whose
-    // bit-48 is shifted out of the word by `pack`'s `<< 16`, so it re-reads 0.
+    // Bump once — `push` computes wrapping_add(1); at 2^48-1 that is 2^48.
+    // The checked pack rejects it (fail closed) instead of silently
+    // dropping its high bit.
     let bumped = max_tag.wrapping_add(1); // 2^48
-    let after = T::pack(idx, bumped);
-    let (v1, t1) = T::unpack(after);
-    assert_eq!(t1, 0, "tag wraps to 0 (bit 48 shifted out)");
-    assert_eq!(v1, idx, "index survives the wrap unchanged");
-    assert!(
-        !T::is_empty(after),
-        "live index + wrapped tag 0 is not empty"
+    assert_eq!(
+        T::pack(idx, bumped),
+        None,
+        "the post-bump 2^48 tag is out of range and must be rejected by \
+         the checked pack (push wraps it via the private truncating path)"
     );
 }
 
@@ -201,7 +200,7 @@ fn width_12_partitions() {
     type T = TaggedIndex<12>;
     assert_eq!(T::INDEX_MASK, 0xFFF);
     assert_eq!(T::TAG_BITS, 52);
-    let w = T::pack(0xABC, 7);
+    let w = T::pack(0xABC, 7).expect("0xABC < 0xFFF, 7 < 2^52");
     let (v, t) = T::unpack(w);
     assert_eq!(v, 0xABC);
     assert_eq!(t, 7);

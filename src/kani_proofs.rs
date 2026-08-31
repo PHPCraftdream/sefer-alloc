@@ -198,7 +198,7 @@ mod pack_proofs {
         kani::assume(value <= index_mask);
         kani::assume(tag < (1u64 << (64 - INDEX_BITS)));
 
-        let word = Packed::pack(value, tag);
+        let word = Packed::pack(value, tag).expect("in range by the kani::assume guards above");
         let (got_value, got_tag) = Packed::unpack(word);
         assert_eq!(got_value, value);
         assert_eq!(got_tag, tag);
@@ -217,7 +217,7 @@ mod pack_proofs {
         // Halves never overlap: value occupies only the low bits.
         assert!(value <= index_mask);
         // The split is lossless: recombining reproduces the original word.
-        assert_eq!(Packed::pack(value, tag), word);
+        assert_eq!(Packed::pack(value, tag), Some(word));
     }
 }
 

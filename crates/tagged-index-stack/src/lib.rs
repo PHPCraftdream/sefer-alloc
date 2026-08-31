@@ -414,14 +414,14 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// compile time closes that class of bug structurally instead of requiring
     /// every caller to separately exclude `TAIL` at runtime.
     ///
-    /// This `const` is forced to evaluate from EVERY public associated item of
-    /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) references it via a
+    /// This `const` is forced to evaluate from EVERY associated item of
+    /// `TaggedIndex<INDEX_BITS>`: [`pack`](Self::pack) and
+    /// [`try_pack`](Self::try_pack) force it directly with a
     /// `let () = Self::_CHECK_BITS;` statement, `INDEX_MASK` and
     /// [`TAG_BITS`](Self::TAG_BITS) evaluate it in their own initializers, and
     /// [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
-    /// [`is_empty`](Self::is_empty), and [`empty`](Self::empty) all route through
-    /// `INDEX_MASK` or `pack`, while [`try_pack`](Self::try_pack) forces it
-    /// directly with the same `let ()` statement as `pack` — so an
+    /// [`is_empty`](Self::is_empty), [`empty`](Self::empty), and the
+    /// crate-private `pack_truncating` all route through `INDEX_MASK` — so an
     /// out-of-range `INDEX_BITS` cannot reach any associated item without
     /// tripping this guard.
     const _CHECK_BITS: () = assert!(
@@ -436,12 +436,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Bit-mask for the low `INDEX_BITS` (the index half), e.g. `0xFFFF`
     /// for `INDEX_BITS = 16`. Also the [`empty_index`](Self::empty_index) value.
     ///
-    /// Forces `_CHECK_BITS` to evaluate here too (not just
-    /// inside [`pack`](Self::pack)), since [`unpack`](Self::unpack),
-    /// [`empty_index`](Self::empty_index), and [`is_empty`](Self::is_empty) all
-    /// reference `INDEX_MASK` directly — this closes the residual gap where an
-    /// out-of-range `INDEX_BITS` could reach those associated items without
-    /// ever calling `pack` first.
+    /// Forces `_CHECK_BITS` to evaluate here too — [`pack`](Self::pack) and
+    /// [`try_pack`](Self::try_pack) force it directly in their own bodies —
+    /// since [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
+    /// [`is_empty`](Self::is_empty), [`empty`](Self::empty), and the
+    /// crate-private `pack_truncating` all reference `INDEX_MASK` directly —
+    /// this closes the residual gap where an out-of-range `INDEX_BITS` could
+    /// reach those associated items without ever calling `pack` first.
     pub const INDEX_MASK: u64 = {
         let () = Self::_CHECK_BITS;
         (1u64 << INDEX_BITS) - 1
@@ -455,72 +456,89 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         64 - INDEX_BITS
     };
 
-    /// Pack `(index, tag)` into one `u64`. `index` MUST be `< 2^INDEX_BITS`; a
-    /// wider value is silently TRUNCATED to its low `INDEX_BITS` bits (the
-    /// `& Self::INDEX_MASK` below masks it before OR-ing with the tag, so the
-    /// two never actually collide bitwise — the failure mode is a wrong index
-    /// round-tripping out of [`unpack`](Self::unpack), not tag corruption).
-    /// The sharpest case of this: if the truncated low bits happen to equal
-    /// `INDEX_MASK` itself, the result reads as the EMPTY sentinel via
-    /// [`is_empty`](Self::is_empty), not merely as some other live index.
-    /// Through the stack's own API this truncation is unreachable by
-    /// construction: indices only ever enter via
-    /// [`push_index`](StackOps::push_index), whose stricter `< INDEX_MASK` bound
-    /// lies below this truncation boundary, so no index the stack packs is
-    /// ever truncated. External callers of `pack` get no such protection and
-    /// must uphold the `< 2^INDEX_BITS` precondition themselves; callers
-    /// that cannot should use [`try_pack`](Self::try_pack), the checked
-    /// twin that returns `None` rather than a silently truncated word.
-    /// Note the two bounds are deliberately different ranges, not a typo: `< 2^INDEX_BITS`
-    /// is pack's truncation boundary (where the silent masking kicks in),
-    /// while `push_index`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`)
-    /// is stricter because it also excludes the reserved empty sentinel.
+    /// Pack `(index, tag)` into one `u64`, CHECKED: `Some(word)` for an
+    /// in-range pair, `None` when either half is out of range — `index >=
+    /// 2^INDEX_BITS` (which unchecked masking would silently turn into a
+    /// DIFFERENT, valid-looking index, or into the
+    /// [empty sentinel](Self::empty_index) if the low bits happen to be all
+    /// ones) or `tag >= 2^TAG_BITS` (whose high bits a `tag << INDEX_BITS`
+    /// shift would silently drop). For an accepted pair the word is exactly
+    /// `(index | tag << INDEX_BITS)`: both halves are already within their
+    /// bit budgets, so no masking takes place and `unpack` recovers both
+    /// halves exactly.
     ///
-    /// The tag half truncates the same silent way, and that truncation is
-    /// deliberate, relied-upon behaviour rather than an oversight: `tag <<
-    /// INDEX_BITS` on the fixed-width `u64` drops every bit at or above
-    /// `2^TAG_BITS`, so an out-of-range tag loses its high bits instead of
-    /// corrupting the (separately masked) index half. The stack depends on
-    /// exactly this at the ABA wrap boundary —
-    /// [`push_index`](StackOps::push_index)'s `tag.wrapping_add(1)` may produce
-    /// `2^TAG_BITS`, whose shifted-out high bit `pack` drops, restarting the
-    /// tag at 0 (pinned by `tag_wraps_at_2_pow_48` in `tests/stack_unit.rs`).
-    /// As with the index half, a caller that has not already validated its
-    /// arguments should use [`try_pack`](Self::try_pack), the checked twin
-    /// that returns `None` rather than a silently truncated word.
+    /// Note the two bounds in this crate are deliberately different ranges:
+    /// `< 2^INDEX_BITS` is THIS function's acceptance boundary, while
+    /// [`push_index`](StackOps::push_index)'s `< INDEX_MASK`
+    /// (`INDEX_MASK == 2^INDEX_BITS - 1`) is stricter because it also
+    /// excludes the reserved empty sentinel. Packing the empty index with a
+    /// tag IS accepted here — that is the legitimate H-2 shape
+    /// ([`empty_index`](Self::empty_index)).
+    ///
+    /// `push_index`/`pop_index` do NOT call this function on the hot path:
+    /// their inputs are already guaranteed within their halves by the
+    /// crate's own guards, AND `push_index`'s tag bump legitimately produces
+    /// `tag == 2^TAG_BITS` at the ABA wrap boundary (the value whose
+    /// shifted-out high bit restarts the tag at 0), which this checked
+    /// function must reject. They pack through the crate-private truncating
+    /// fast path `pack_truncating` instead, which is where the silent
+    /// truncation semantics — and their sharp edges — now live.
     #[must_use]
-    pub const fn pack(index: u64, tag: u64) -> u64 {
-        // Force the compile-time bounds check to be evaluated.
-        let () = Self::_CHECK_BITS;
-        (tag << INDEX_BITS) | (index & Self::INDEX_MASK)
-    }
-
-    /// The checked twin of [`pack`](Self::pack): `Some(word)` with `word`
-    /// EXACTLY what [`pack`](Self::pack) returns for the same inputs, or
-    /// `None` when either half is out of range — `index >= 2^INDEX_BITS`
-    /// (which `pack` would silently mask to a DIFFERENT, valid-looking
-    /// index, or to the [empty sentinel](Self::empty_index) if the low bits
-    /// happen to be all ones) or `tag >= 2^TAG_BITS` (whose high bits
-    /// `pack`'s `tag << INDEX_BITS` would silently drop). Use this wherever
-    /// the `< 2^INDEX_BITS` / `< 2^TAG_BITS` precondition is not already
-    /// guaranteed by the calling logic; [`pack`](Self::pack) itself stays
-    /// the trusted fast primitive for
-    /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
-    /// and the other in-crate callers that uphold it.
-    #[must_use]
-    pub const fn try_pack(index: u64, tag: u64) -> Option<u64> {
+    pub const fn pack(index: u64, tag: u64) -> Option<u64> {
         // Force the compile-time bounds check to be evaluated HERE, not
-        // only via `TAG_BITS` in one branch or `pack` on the other: a
-        // const evaluation taking the short-circuited branch would
-        // otherwise skip both, weakening the documented
-        // _CHECK_BITS-from-every-public-item invariant into a
+        // only via `TAG_BITS` in one branch: a const evaluation taking the
+        // short-circuited branch would otherwise skip both, weakening the
+        // documented _CHECK_BITS-from-every-public-item invariant into a
         // branch-dependent one.
         let () = Self::_CHECK_BITS;
         if index >= (1u64 << INDEX_BITS) || tag >= (1u64 << Self::TAG_BITS) {
             None
         } else {
-            Some(Self::pack(index, tag))
+            Some((tag << INDEX_BITS) | index)
         }
+    }
+
+    /// Truncating fast path: `(tag << INDEX_BITS) | (index &
+    /// INDEX_MASK)`, dropping every index bit at or above `2^INDEX_BITS`
+    /// and every tag bit at or above `2^TAG_BITS`. TRUSTS ITS PRECONDITION —
+    /// the name is the contract: this silently produces a VALID-LOOKING
+    /// word from invalid input. An over-wide index masks to a DIFFERENT
+    /// (possibly still-live) index, or to the
+    /// [empty sentinel](Self::empty_index) if the low bits are all ones; an
+    /// over-wide tag loses its high bits. If you cannot prove your halves
+    /// are in range, use [`pack`](Self::pack), which rejects instead.
+    ///
+    /// Crate-private precisely so the sharp edges stay in-crate: the only
+    /// callers are [`push_index`](StackOps::push_index) and
+    /// [`pop_index`](StackOps::pop_index), whose inputs are guaranteed in
+    /// range by their own guards (`push_index`'s `index < INDEX_MASK`
+    /// panic guard, `pop_index`'s rule-4 guard on the link it read) — with
+    /// ONE deliberate exception: `push_index` hands this helper
+    /// `tag.wrapping_add(1)`, which at the ABA wrap boundary is exactly
+    /// `2^TAG_BITS`, whose shifted-out high bit RESTARTS THE TAG AT 0
+    /// here. That truncation is the wrap mechanism, relied-upon behaviour
+    /// rather than an oversight (the checked [`pack`](Self::pack) rejects
+    /// that value; the hot path must wrap it instead).
+    #[must_use]
+    pub(crate) const fn pack_truncating(index: u64, tag: u64) -> u64 {
+        // Force the compile-time bounds check to be evaluated.
+        let () = Self::_CHECK_BITS;
+        (tag << INDEX_BITS) | (index & Self::INDEX_MASK)
+    }
+
+    /// Deprecated forwarding twin of [`pack`](Self::pack): `pack` is now
+    /// itself checked (it returns `None` instead of silently truncating an
+    /// out-of-range half), so the "checked twin" this function used to be is
+    /// redundant — it forwards to `pack` unchanged. Kept, rather than
+    /// deleted, only so existing references to the name keep resolving;
+    /// call [`pack`](Self::pack) directly. Scheduled for removal in 0.2.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "pack is now itself checked and returns Option<u64>; call pack directly"
+    )]
+    pub const fn try_pack(index: u64, tag: u64) -> Option<u64> {
+        Self::pack(index, tag)
     }
 
     /// Split a packed word back into `(index, tag)`.
@@ -548,7 +566,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
-        Self::pack(Self::INDEX_MASK, 0)
+        Self::pack_truncating(Self::INDEX_MASK, 0)
     }
 
     /// The empty sentinel's index half (`INDEX_MASK`), for packing it with a
@@ -816,10 +834,12 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    [`pop_index`](StackOps::pop_index)'s compare-exchange
 ///    `current -> current` succeeds trivially. An out-of-range return is a
 ///    second, distinct hazard — and a silent one, because
-///    [`pop_index`](StackOps::pop_index) packs the value it read with
-///    [`TaggedIndex::pack`], which never rejects an over-wide value: it masks
-///    it to its low `INDEX_BITS` bits. That truncation corrupts in one of two
-///    ways. Masked to a live index: `next = 0x1_0000` at `INDEX_BITS = 16`
+///    [`pop_index`](StackOps::pop_index) packs the value it read with its
+///    crate-private truncating fast path (`pack_truncating` — the public
+///    [`pack`](TaggedIndex::pack) is checked and rejects), which never
+///    rejects an over-wide value: it masks it to its low `INDEX_BITS`
+///    bits. That truncation corrupts in one of two ways. Masked to a live
+///    index: `next = 0x1_0000` at `INDEX_BITS = 16`
 ///    packs as index `0`, which may still be owned elsewhere in the free-list
 ///    — the same double-issue as the zero-init collision above, reached by a
 ///    different route. Masked to the empty sentinel: a `next` whose low
@@ -1003,7 +1023,8 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///
     /// Panics if the [`load_next`](StackStorage::load_next) result for the
     /// popped index is neither [`TAIL`] nor `< INDEX_MASK` — i.e. a value
-    /// [`TaggedIndex::pack`] would otherwise silently truncate into a wrong
+    /// that `pop_index`'s crate-private truncating fast path
+    /// (`pack_truncating`) would otherwise silently truncate into a wrong
     /// (possibly still-live) index or into the empty sentinel (see rule 4 of
     /// the [`StackStorage`] implementor contract). This check is
     /// unconditional (release-active), in both debug and release builds,
@@ -1080,7 +1101,7 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             self.store_next(index, next_link);
             // Advance the tag (the ABA fix) and CAS the head to this index.
             let new_tag = tag.wrapping_add(1);
-            let new_head = TaggedIndex::<B>::pack(index as u64, new_tag);
+            let new_head = TaggedIndex::<B>::pack_truncating(index as u64, new_tag);
             // Release on success so a pop's Acquire sees the link we wrote.
             // Relaxed on failure is sound HERE, and the asymmetry with pop is
             // deliberate: a failed CAS sends push around the loop with the
@@ -1181,7 +1202,7 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             // `index < INDEX_MASK` check) for rule 4 of the StackStorage
             // implementor contract: an implementation returning anything but
             // TAIL or a currently-valid index is SILENTLY TRUNCATED by the
-            // pack() below — to a wrong (possibly still-live) index,
+            // pack_truncating() below — to a wrong (possibly still-live) index,
             // double-issuing it, or to the empty sentinel, leaking the whole
             // remaining chain at once. Promoted from `debug_assert!` in round 7
             // (P3-1): an out-of-tree A/B measured the release-active check
@@ -1197,9 +1218,9 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             }
             let new_head = if next == TAIL {
                 // H-2: preserve the RUNNING tag across the empty transition.
-                TaggedIndex::<B>::pack(TaggedIndex::<B>::empty_index(), tag)
+                TaggedIndex::<B>::pack_truncating(TaggedIndex::<B>::empty_index(), tag)
             } else {
-                TaggedIndex::<B>::pack(next as u64, tag)
+                TaggedIndex::<B>::pack_truncating(next as u64, tag)
             };
             // Acquire on success with NO Release half is sound ONLY because
             // every write to `head` is an RMW: this CAS stays inside the
@@ -1298,7 +1319,7 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
     };
     panic!(
         "load_next({index}) returned {next:#x}, neither TAIL nor \
-         a valid index (< {mask:#x}): pop_index's pack() would silently \
+         a valid index (< {mask:#x}): pop_index's truncating pack would silently \
          truncate it to {outcome}"
     );
 }
