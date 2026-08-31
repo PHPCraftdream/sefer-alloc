@@ -181,6 +181,17 @@ fn main() {
     // setup cost excluded -- and each worker checks the clock only once per
     // DEADLINE_CHECK_INTERVAL iterations instead of every iteration
     // (mechanism documented on the const above).
+    // Seed indices are `thread_id * LINKS_SIZE / num_threads` -- distinct
+    // for every thread only while `num_threads <= LINKS_SIZE`. True today
+    // (num_threads capped at 8 above, LINKS_SIZE = 256), but nothing
+    // asserted it. Mirrors contention/churn's analogous
+    // `num_threads <= prefill_count` assert below.
+    assert!(
+        num_threads <= LINKS_SIZE,
+        "contention/push_pop's seed formula (thread_id * LINKS_SIZE / num_threads) \
+         requires num_threads <= LINKS_SIZE so every thread's seed index stays distinct"
+    );
+
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
         let shared_links = &shared_links;
@@ -246,6 +257,19 @@ fn main() {
         total_ops_per_sec, num_threads, DURATION_SECS, elapsed
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
+    // Fairness signal: the round-7 cap-sweep investigation
+    // (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found per-thread throughput
+    // skew is where the interesting signal hides, and nothing printed it as
+    // a number before now. max/min is the spread across all threads;
+    // min/mean shows how far the worst thread falls below the average.
+    let max = *ops_per_thread.iter().max().unwrap() as f64;
+    let min = *ops_per_thread.iter().min().unwrap() as f64;
+    let mean = total_ops as f64 / ops_per_thread.len() as f64;
+    println!(
+        "  Fairness: max/min = {:.2}x, min/mean = {:.2}x\n",
+        max / min,
+        min / mean
+    );
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
     // This measures throughput under contention with a always-nonempty stack.
@@ -341,6 +365,16 @@ fn main() {
         total_ops_per_sec, num_threads, DURATION_SECS, elapsed, prefill_count
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
+    // Fairness signal -- see contention/push_pop's identical printout above
+    // for the rationale.
+    let max = *ops_per_thread.iter().max().unwrap() as f64;
+    let min = *ops_per_thread.iter().min().unwrap() as f64;
+    let mean = total_ops as f64 / ops_per_thread.len() as f64;
+    println!(
+        "  Fairness: max/min = {:.2}x, min/mean = {:.2}x\n",
+        max / min,
+        min / mean
+    );
 
     println!("=== All contention benchmarks complete ===");
 }
