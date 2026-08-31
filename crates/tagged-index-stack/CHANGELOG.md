@@ -146,6 +146,29 @@ before it.
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
 
+### Performance
+
+- **Exponential backoff on `push`/`pop`'s CAS-retry arm** (`BACKOFF_SPIN_CAP =
+  6`, max 64 `core::hint::spin_loop()` spins per retry, per-call `spins`
+  counter never persisted across calls). Measured on the committed harness
+  (`benches/tagged_index_stack_bench.rs`, x86-64, this repo's
+  `[profile.release]`, 8 threads = `available_parallelism().min(8)` on this
+  machine): `contention/push_pop` 5,804,630 / 5,284,307 ops/sec (baseline, 2
+  runs) → 30,049,461 / 29,850,246 / 29,993,450 ops/sec (with backoff, 3
+  runs) — roughly 5.3x; `contention/churn` 2,899,902 / 2,961,754 ops/sec →
+  28,450,827 / 28,101,745 / 28,633,845 ops/sec — roughly 9.7x. Single-thread
+  cost stayed within run-to-run noise: `push_pop/single_thread` 50.63/51.14
+  ns/op (baseline) vs 50.38/53.53/49.87 ns/op (with backoff); `churn`
+  49.71/51.20 ns/op vs 50.47/50.18/50.18 ns/op. A separate ad hoc check (not
+  committed — a throwaway `examples/` run, per this crate's own convention
+  that a probe reproducing an already-published number does not itself need
+  a permanent harness) drained the stack after 8 threads × 200,000
+  contention-shaped pop/push iterations under the backoff and confirmed the
+  exact multiset `0..64` came back with no duplicate or missing index. The
+  loom suite (`tests/loom_aba.rs`, all 10 models) stayed green at the same
+  wall-clock (~0.16s test time): `core::hint::spin_loop()` touches no
+  loom-tracked atomic, so it adds no new interleaving for loom to explore.
+
 ### MSRV
 
 - Rust 1.88.

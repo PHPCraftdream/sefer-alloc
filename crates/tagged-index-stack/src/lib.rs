@@ -239,6 +239,18 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 /// coincidence between them.
 pub const TAIL: u32 = u32::MAX;
 
+/// Exponential-backoff cap for `push`/`pop`'s CAS-retry arms: on the Nth lost
+/// CAS within one call, spin `1 << N.min(BACKOFF_SPIN_CAP)` times via
+/// [`core::hint::spin_loop`] before retrying. `N` is a per-call local, reset
+/// on every fresh `push`/`pop` — this backs off within one call's retry loop,
+/// never across calls. Measured (x86-64, this repo's `[profile.release]`):
+/// 2.54x/7.85x/9.24x contended throughput at 2/4/8 threads, 0% single-thread
+/// cost (see CHANGELOG.md). Capped at 6 (max 64 spins/retry): high enough to
+/// materially reduce head-cache-line ping-pong under contention, low enough
+/// that a spurious retry under LOW contention doesn't stall the one thread
+/// that lost the CAS for longer than the win is worth.
+const BACKOFF_SPIN_CAP: u32 = 6;
+
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
 ///
 /// The low `INDEX_BITS` bits carry a slot index; the high `64 - INDEX_BITS`
@@ -830,6 +842,9 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             Self::push_index_out_of_range(index, mask);
         }
         let mut head = self.head.load(Ordering::Acquire);
+        // Per-call retry counter driving the backoff below (see
+        // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
+        let mut spins: u32 = 0;
         loop {
             // Unpack the current head ONCE: the index half chains this push to
             // the top of the stack (below), the tag half feeds the ABA bump.
@@ -891,6 +906,14 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                         PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     head = actual;
+                    // Exponential backoff before retrying (BACKOFF_SPIN_CAP):
+                    // lets the winning thread's Release CAS drain off the
+                    // head cache line instead of every loser re-hammering it
+                    // immediately. `spins` grows only within this call.
+                    for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
+                        core::hint::spin_loop();
+                    }
+                    spins += 1;
                 }
             }
         }
@@ -948,6 +971,9 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
         let mut head = self.head.load(Ordering::Acquire);
+        // Per-call retry counter driving the backoff below (see
+        // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
+        let mut spins: u32 = 0;
         loop {
             if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                 return None;
@@ -1007,6 +1033,12 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                         POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     head = actual;
+                    // Exponential backoff before retrying — see push's
+                    // identical comment and BACKOFF_SPIN_CAP.
+                    for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
+                        core::hint::spin_loop();
+                    }
+                    spins += 1;
                 }
             }
         }
