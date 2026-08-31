@@ -532,23 +532,32 @@ fn empty_transition_preserves_running_tag() {
 }
 
 /// The link storage is only ever written by a push (RAD-1 lazy discipline):
-/// after construction every link is the zero value, and popping never writes a
-/// link. We can only observe this behaviourally (the stack is empty until a
-/// push, and pops leave links untouched) — checked here by confirming a
-/// never-pushed index's link is still 0 via a fresh backing.
+/// after construction every link is the zero value, and popping never writes
+/// a link. Observed DIRECTLY through the storage trait (`load_next`), not
+/// inferred from push/pop behaviour: a never-pushed index's link reads 0
+/// before AND after other indices are pushed and popped, so an eager
+/// link-chaining pass (at construction or on the first push) fails here.
+/// (`fresh_stack_is_empty` alone cannot distinguish lazy links from an
+/// eagerly-chained-but-empty-headed stack.)
 #[test]
 fn links_are_lazy() {
     let stack = ArrayIndexStack::<16, 4>::new();
-    // Never push index 3. Push/drain 0 fully.
+    // Never push index 3 in this test.
+    assert_eq!(
+        stack.load_next(3),
+        0,
+        "a never-pushed index's link is the zero value straight after construction"
+    );
+    // Push/drain 0 fully, then re-check: operating on OTHER indices must not
+    // have touched index 3's link (a pop never writes a link, a push writes
+    // only the pushed index's own link).
     stack.push(0);
     assert_eq!(stack.pop(), Some(0));
-    // Index 3 was never touched; its link load reads the initial 0 value.
-    // (Exposed only through the storage trait — a fresh push of 3 would
-    // overwrite it.) We assert indirectly: pushing 3 now chains it to the
-    // empty sentinel -> TAIL, so a subsequent pop returns 3 and then None.
-    stack.push(3);
-    assert_eq!(stack.pop(), Some(3));
-    assert_eq!(stack.pop(), None);
+    assert_eq!(
+        stack.load_next(3),
+        0,
+        "push/pop of other indices never writes a never-pushed index's link"
+    );
 }
 
 /// Neither `Default` impl was previously exercised by any test.
