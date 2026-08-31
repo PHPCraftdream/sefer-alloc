@@ -293,14 +293,61 @@ before it.
   assertions, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` —
   the same script now re-derives the sweep tables and hard-fails on the
   two corrected claim shapes (closing P3-3's uncommitted-pipeline gap).
-- **Two other speculative perf changes evaluated and declined** (unrelated
-  to the backoff above): `push`'s initial `head.load(Ordering::Acquire)`
-  could plausibly be `Relaxed`, and both `push`'s and `pop`'s CAS loops are
-  `compare_exchange_weak` candidates. Neither change would show up on
-  x86-64 (`lock cmpxchg`) or LSE AArch64 (`casal`) — any difference is
-  specific to non-LSE AArch64 and similar `ldxr`/`stxr`-style
-  architectures, and this repository has no AArch64 wall-clock/perf-gate
-  harness to measure it. Revisit when one exists.
+- **One speculative perf change evaluated and declined** (unrelated to the
+  backoff above): both `push`'s and `pop`'s CAS loops are
+  `compare_exchange_weak` candidates, but any difference is specific to
+  non-LSE AArch64 and similar `ldxr`/`stxr`-style architectures, and this
+  repository has no AArch64 wall-clock/perf-gate harness to measure it.
+  Revisit when one exists. (A second item originally listed here —
+  relaxing `push`'s initial head load to `Relaxed` — has since LANDED; see
+  the Sol-codex run-3 bullet below. Correction to this bullet's original
+  wording: "neither change would show up on x86-64 or LSE AArch64" was
+  accurate for the CAS-strength half but not the load-ordering half — an
+  acquire load is a real ordering constraint (`ldar`/`LDAPR`) on AArch64
+  with or without LSE; it is x86-64 where the two compile identically.)
+- **`push`'s initial head load relaxed to `Relaxed`; link-ordering and
+  CAS-strength relaxations deferred; contention-harness timing window
+  fixed** (`docs/reviews/2026-08-31-162115-tagged-index-stack-review-Sol-codex-run-3.md`,
+  findings P3-1/P3-2/P3-3/P3-4; task tis-sc3-Group5 #1771 + #1772).
+  (1) LANDED — `push_index`'s initial head load is now `Ordering::Relaxed`
+  (was `Acquire`): push uses the observed word only as `(index, tag)`
+  values and never follows a link through it, so the load carries no
+  ordering burden by the same proof already applied to push's `Relaxed`
+  failed-CAS read. The reasoning is target-independent (happens-before
+  structure, not a machine-model assumption); it was exhaustively
+  model-checked by the full 11-model loom suite (`tests/loom_aba.rs`)
+  staying green with exactly this ordering, and an x86-64 A/B on the
+  committed contention benches confirmed expected neutrality (baseline
+  28,447,805 / 27,711,456 ops/sec → 30,146,657 / 27,815,346 — machine
+  noise: on x86-64 an Acquire load and a Relaxed load compile to the same
+  plain load, so no timing difference exists by construction). The
+  expected benefit is on weakly-ordered targets, where the change drops a
+  real acquire-load ordering constraint (e.g. AArch64 `ldar`/`LDAPR` →
+  plain `ldr`) — unmeasured here. `pop_index`'s orderings are deliberately
+  untouched (pop DOES follow a link from the observed head word). (2)
+  DEFERRED — `ArrayLinks`' link `Acquire`/`Release` (P3-1) and both CAS
+  loops' strong `compare_exchange` (P3-3) stay as-is: both would-be
+  relaxations target LL/SC weakly-ordered hardware this repository has no
+  timing-valid harness for (CI's aarch64 row is cross/QEMU on GitHub
+  runners — tests only, wall-clock-invalid), so they are documented
+  in-code as deliberate defence-in-depth / pending real multi-target A/B
+  measurement rather than switched blind. (3) FIXED — the contention
+  harness (`benches/tagged_index_stack_bench.rs`) now times every worker
+  against ONE shared `[timed_start, deadline)` window computed before the
+  barrier is released, with an uncounted 300 ms warm-up phase, instead of
+  each worker's own post-barrier-resume clock against the coordinator's
+  separate post-barrier start (the old shape let scheduler skew
+  decorrelate the summed-ops numerator's exposure window from the elapsed
+  denominator). Impact on the already-published
+  `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` numbers (which used the old
+  harness across rounds 6-9): expected footnote-level — per-thread
+  fairness ratios were computed from each worker's own full 1-second
+  window count (window-duration-normalized by construction), and
+  barrier-resume skew on an idle host is µs-scale against a 1 s window
+  (post-fix runs still measure 1.001 s elapsed); the old totals were, if
+  anything, very slightly UNDERstated, since the coordinator-to-last-join
+  denominator absorbed the skew tail. No re-run or re-publication of that
+  report is part of this change.
 
 ### MSRV
 

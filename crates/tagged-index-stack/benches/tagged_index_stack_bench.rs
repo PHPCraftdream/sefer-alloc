@@ -143,6 +143,18 @@ fn main() {
     // timed.
     const DEADLINE_CHECK_INTERVAL: u32 = 256;
 
+    // Lead time between the coordinator computing the shared timed window
+    // and the barrier releasing the workers: every worker must be through
+    // `barrier.wait()` and into its warm-up spin well before `timed_start`
+    // arrives. A worker that (pathologically) arrives late simply skips
+    // most of its warm-up -- its counted window is STILL the same shared
+    // one, so correctness of the window is unaffected.
+    const BARRIER_LEAD: Duration = Duration::from_millis(100);
+    // Uncounted warm-up before the timed window opens: lets caches, branch
+    // predictors and the contention steady-state settle so the first
+    // counted iterations are representative rather than cold-start-shaped.
+    const WARMUP: Duration = Duration::from_millis(200);
+
     // Shared stack -- the fused `ArrayIndexStack` owns both the head (an
     // AtomicU64) and the links (ArrayLinks stores AtomicU32s) internally.
     // Both are Sync, and both contention phases run inside
@@ -174,10 +186,15 @@ fn main() {
     // by exactly one push, and every subsequent operation on it is
     // pop-then-immediate-repush of that same value, so no index is ever
     // pushed while still reachable elsewhere.
-    // The timed window starts at a shared barrier release -- all spawn and
-    // setup cost excluded -- and each worker checks the clock only once per
-    // DEADLINE_CHECK_INTERVAL iterations instead of every iteration
-    // (mechanism documented on the const above).
+    // The timed window is ONE shared pair of instants (`timed_start` /
+    // `deadline` below) computed BEFORE the barrier is released, so every
+    // worker -- and the coordinator's elapsed denominator -- times against
+    // the SAME window instead of each worker's own post-barrier-resume
+    // clock (the old shape let scheduler skew decorrelate the numerator's
+    // exposure window from the denominator). Each worker checks the clock
+    // only once per DEADLINE_CHECK_INTERVAL iterations inside the timed
+    // loop (mechanism documented on the const above), and runs an
+    // uncounted warm-up until the shared window opens.
     // Seed indices are `thread_id * LINKS_SIZE / num_threads` -- distinct
     // for every thread only while `num_threads <= LINKS_SIZE`. True today
     // (num_threads capped at 8 above, LINKS_SIZE = 256), but nothing
@@ -188,6 +205,14 @@ fn main() {
         "contention/push_pop's seed formula (thread_id * LINKS_SIZE / num_threads) \
          requires num_threads <= LINKS_SIZE so every thread's seed index stays distinct"
     );
+
+    // The ONE shared timed window (see the comment above): opens
+    // BARRIER_LEAD + WARMUP from now -- far above worst-case thread-spawn +
+    // barrier-release skew -- and runs for exactly DURATION_SECS. Workers
+    // burn their warm-up against `timed_start` and count ops only inside
+    // [timed_start, deadline).
+    let timed_start = Instant::now() + BARRIER_LEAD + WARMUP;
+    let deadline = timed_start + Duration::from_secs(DURATION_SECS);
 
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
@@ -207,7 +232,15 @@ fn main() {
                 // until all have finished setup, then all are released at
                 // approximately the same instant.
                 barrier.wait();
-                let deadline = Instant::now() + Duration::from_secs(DURATION_SECS);
+                // Warm-up: run the workload uncounted until the SHARED
+                // window opens, so caches, branch predictors and the
+                // contention steady-state settle before any op is counted
+                // and every thread's counted window is the same one.
+                while Instant::now() < timed_start {
+                    if let Some(idx) = shared_stack.pop() {
+                        shared_stack.push(black_box(idx));
+                    }
+                }
 
                 let mut ops = 0u64;
                 let mut since_check = 0u32;
@@ -236,14 +269,20 @@ fn main() {
             handles.push(handle);
         }
 
-        // Main thread joins the same barrier: its own `Instant::now()`
-        // right after `wait()` returns is a good proxy for the same instant
-        // every worker's local deadline was computed from, so `elapsed`
-        // below excludes all spawn and setup time.
+        // Main thread joins the same barrier so its own coordination cost
+        // stays out of the workers' way, then blocks in `join` while they
+        // run: `elapsed` below is measured from the SHARED window anchor
+        // (`timed_start`), not from any coordinator-local clock read, so it
+        // excludes all spawn and setup time by construction.
         barrier.wait();
-        let start = Instant::now();
+        // No local clock read anchors the start: the window is the
+        // pre-agreed [timed_start, deadline). Measuring elapsed from the
+        // shared anchor to the last join honestly includes any worker's
+        // overshoot past `deadline` (up to DEADLINE_CHECK_INTERVAL - 1
+        // unobserved iterations) instead of hiding it in the numerator.
         let ops_per_thread: Vec<u64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        (start.elapsed().as_secs_f64(), ops_per_thread)
+        let elapsed = Instant::now().duration_since(timed_start).as_secs_f64();
+        (elapsed, ops_per_thread)
     });
 
     let total_ops: u64 = ops_per_thread.iter().sum();
@@ -316,6 +355,10 @@ fn main() {
         "contention/churn's invariant (stack never empties) requires num_threads <= prefill_count"
     );
 
+    // Shared timed window -- see contention/push_pop's identical block.
+    let timed_start = Instant::now() + BARRIER_LEAD + WARMUP;
+    let deadline = timed_start + Duration::from_secs(DURATION_SECS);
+
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
         let shared_stack = &shared_stack;
@@ -324,7 +367,14 @@ fn main() {
         for _ in 0..num_threads {
             let handle = s.spawn(move || {
                 barrier.wait();
-                let deadline = Instant::now() + Duration::from_secs(DURATION_SECS);
+                // Warm-up -- see contention/push_pop's identical comment.
+                while Instant::now() < timed_start {
+                    let idx = shared_stack.pop().expect(
+                        "contention/churn: stack drained -- invariant violated \
+                         (see prefill_count/num_threads assert above)",
+                    );
+                    shared_stack.push(idx);
+                }
 
                 let mut ops = 0u64;
                 let mut since_check = 0u32;
@@ -351,9 +401,10 @@ fn main() {
         }
 
         barrier.wait();
-        let start = Instant::now();
+        // Shared-anchor elapsed -- see contention/push_pop's identical note.
         let ops_per_thread: Vec<u64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        (start.elapsed().as_secs_f64(), ops_per_thread)
+        let elapsed = Instant::now().duration_since(timed_start).as_secs_f64();
+        (elapsed, ops_per_thread)
     });
 
     let total_ops: u64 = ops_per_thread.iter().sum();

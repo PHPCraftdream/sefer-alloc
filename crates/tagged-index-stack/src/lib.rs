@@ -768,30 +768,33 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// # Ordering contract
 ///
 /// Implementations MUST use `Acquire` on [`load_next`](Self::load_next) and
-/// `Release` on [`store_next`](Self::store_next): the stack relies on this
-/// pairing so a pop that observes a slot as the head also sees the link a
-/// pusher wrote (via its `Release` store) before publishing that slot as
-/// head. The load-bearing `Acquire` is the head observation itself — the
+/// `Release` on [`store_next`](Self::store_next). The load-bearing
+/// `Acquire` for the stack's own proof is the head observation itself — the
 /// initial `Acquire` load of the head, or (on a retry) the PREVIOUS
 /// iteration's `Acquire`-ordered CAS-failure read — which happens BEFORE the
-/// [`load_next`](Self::load_next) call. The CAS is attempted only AFTER
+/// [`load_next`](Self::load_next) call: each
+/// [`store_next`](Self::store_next) is sequenced-before the pushing
+/// thread's `Release` CAS on the head, and a release operation publishes
+/// ALL of its thread's prior writes, whatever tags those writes carry
+/// themselves, so a pop that observes a slot as the head sees the link a
+/// pusher wrote before publishing that slot as head EVEN IF the link
+/// accesses themselves were `Relaxed`. The CAS is attempted only AFTER
 /// [`load_next`](Self::load_next) has run, so its success ordering plays no
 /// part in making that link visible.
 ///
-/// This requirement is deliberately STRONGER than the stack's own internal
-/// minimum. Each [`store_next`](Self::store_next) is sequenced-before the
-/// pushing thread's `Release` CAS on the head — and a release operation
-/// publishes ALL of its thread's prior writes, whatever tags those writes
-/// carry themselves — and each [`load_next`](Self::load_next) is
-/// sequenced-after the popping thread's `Acquire` observation of that head.
-/// Given the stack's own head orderings, even `Relaxed` links would therefore
-/// be ordered correctly for this stack's own usage. The full pairing is
-/// mandated anyway so that a [`StackStorage`] implementation stays correct on
-/// its own terms, rather than being coupled to the stack's internal head
-/// orderings — an implementation detail that could change. On weakly-ordered
-/// targets, where `Acquire`/`Release` cost real instructions, read this as
-/// considered defence-in-depth for an openly-implementable trait, not
-/// naivety.
+/// The full link-level `Acquire`/`Release` pairing is therefore mandated as
+/// deliberate change-resilience / defence-in-depth for an
+/// openly-implementable trait — STRONGER than the stack's own internal
+/// minimum — so that a [`StackStorage`] implementation stays correct on its
+/// own terms rather than being coupled to the stack's internal head
+/// orderings, an implementation detail that could change. It is retained at
+/// a real but — as of the Sol-codex run-3 review, finding P3-1 — UNMEASURED
+/// cost on weakly-ordered targets: relaxing the shipped [`ArrayLinks`]
+/// accesses to `Relaxed` was considered and deferred pending an AArch64 or
+/// RISC-V A/B throughput measurement this repository has no harness for,
+/// NOT because the stack's proof needs the stronger ordering. On
+/// weakly-ordered targets, where `Acquire`/`Release` cost real
+/// instructions, read this as considered defence-in-depth, not naivety.
 ///
 /// This ordering contract speaks to ONE head-and-backing pair used
 /// consistently — it is what makes a [`load_next`](Self::load_next) observe
@@ -1074,7 +1077,18 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
         // pathological `head()` implementation cannot split one logical
         // operation across two different heads.
         let head_ref: &StackHead<B> = self.head();
-        let mut head = head_ref.load(Ordering::Acquire);
+        // `Relaxed`, not `Acquire` (Sol-codex run-3 review, finding P3-2):
+        // push uses the observed word ONLY as `(index, tag)` values — it
+        // never follows a link through it — so by the same reasoning as the
+        // failed-CAS read below (Relaxed there, proof in the match comment),
+        // this initial load carries no ordering burden: whatever a
+        // concurrent popper must observe of this push is published by the
+        // Release SUCCESS CAS and recovered by the popper's OWN Acquire head
+        // observation, never by anything this load orders. `pop_index`'s
+        // initial load below MUST stay `Acquire` — pop DOES follow a link
+        // from the observed word. The full loom suite (`tests/loom_aba.rs`,
+        // 11 models) passes with exactly this ordering.
+        let mut head = head_ref.load(Ordering::Relaxed);
         // Per-call retry counter driving the backoff below (see
         // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
         let mut spins: u32 = 0;
@@ -1122,6 +1136,16 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             // success CAS's own release sequence — which every later head RMW
             // extends (see the `head` field's INVARIANT) — never by anything
             // push's failed-CAS reads observe.
+            // Strong `compare_exchange`, deliberately NOT
+            // `compare_exchange_weak` (Sol-codex run-3 review, finding P3-3
+            // — deferred, not rejected): the two are equivalent on x86-64,
+            // but on LL/SC targets (non-LSE ARM, RISC-V) `weak` can avoid
+            // the hardware's hidden internal spurious-failure retries and
+            // let THIS loop's own measured backoff govern them instead.
+            // That win is real but unmeasured — this repository has no
+            // AArch64/RISC-V wall-clock harness — so the strong form is
+            // kept rather than switched blind. Revisit with real
+            // multi-target A/B throughput + retry-count data.
             match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
                 Ok(_) => return,
                 Err(actual) => {
@@ -1228,6 +1252,9 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             // being handed out, so our own write need not head one. See the
             // INVARIANT on the `head` field — a plain `store` there would
             // sever that sequence and make this ordering unsound.
+            // Strong CAS, deliberately kept over `compare_exchange_weak` —
+            // see push's identically-shaped note above (Sol-codex run-3
+            // review, finding P3-3 deferral).
             match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {
                 Ok(_) => return Some(index),
                 Err(actual) => {
@@ -1494,6 +1521,13 @@ impl<const N: usize> ArrayLinks<N> {
 
     /// Load the "next" link for `index` with `Acquire` ordering.
     ///
+    /// This `Acquire` — and [`store_next`](Self::store_next)'s `Release` —
+    /// is deliberately retained rather than weakened to `Relaxed`, which the
+    /// stack's own head-publication proof would permit for THIS stack's
+    /// usage: defence-in-depth for an openly-implementable trait, kept at a
+    /// real but unmeasured cost on weakly-ordered targets (Sol-codex run-3
+    /// review, finding P3-1 — see [`StackStorage`]'s "Ordering contract").
+    ///
     /// # Panics
     ///
     /// Panics if `index >= N`. `N` (this backing's capacity) and the
@@ -1509,6 +1543,9 @@ impl<const N: usize> ArrayLinks<N> {
     /// Store the "next" link for `index` with `Release` ordering. This is the
     /// ONLY write the stack makes to link storage, and only during a push — the
     /// lazy-link (RAD-1) discipline: link storage is never eagerly initialised.
+    /// Like [`load_next`](Self::load_next)'s `Acquire`, this `Release` is
+    /// deliberate defence-in-depth, not a stack-proof requirement — see
+    /// [`StackStorage`]'s "Ordering contract".
     ///
     /// # Panics
     ///
