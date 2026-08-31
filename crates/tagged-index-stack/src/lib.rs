@@ -283,6 +283,12 @@ pub const TAIL: u32 = u32::MAX;
 /// the crate's default does not impose that tradeoff on every caller.
 const BACKOFF_SPIN_CAP: u32 = 6;
 
+/// `1u32 << spins.min(BACKOFF_SPIN_CAP)` masks/panics if `BACKOFF_SPIN_CAP`
+/// ever reaches 32 — the same technique [`TaggedIndex::_CHECK_BITS`] uses to
+/// turn a would-be shift-overflow into a compile error instead of a debug
+/// panic / silently masked shift in release.
+const _: () = assert!(BACKOFF_SPIN_CAP < 32);
+
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
 ///
 /// The low `INDEX_BITS` bits carry a slot index; the high `64 - INDEX_BITS`
@@ -928,7 +934,16 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
                         core::hint::spin_loop();
                     }
-                    spins += 1;
+                    // Capped, not unconditional: every increment past
+                    // BACKOFF_SPIN_CAP is already dead (only ever consumed
+                    // through `.min(BACKOFF_SPIN_CAP)` above), so let it keep
+                    // climbing forever would just be an eventual
+                    // `attempt to add with overflow` panic under
+                    // overflow-checks after ~2^32 consecutive lost CASes in
+                    // one call — remote, but free to close.
+                    if spins < BACKOFF_SPIN_CAP {
+                        spins += 1;
+                    }
                 }
             }
         }
@@ -970,13 +985,16 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
     /// the crate docs' H-2 section).
     ///
-    /// Pop reaches link storage only through the supplied [`Links`]
-    /// implementation ([`load_next`](Links::load_next)), which may panic on
-    /// an out-of-range index under its OWN, narrower bound (e.g.
-    /// [`ArrayLinks::load_next`]'s `index >= N`) — the links-layer panic
-    /// source [`push`](Self::push)'s `# Panics` section describes; nothing
-    /// here re-validates the index beyond what `push` guaranteed when the
-    /// index was admitted.
+    /// # Panics
+    ///
+    /// `pop` itself checks nothing and so has no direct panic source, but it
+    /// reaches link storage through the supplied [`Links`] implementation
+    /// ([`load_next`](Links::load_next)), which may panic on an out-of-range
+    /// index under its OWN, narrower bound (e.g. [`ArrayLinks::load_next`]'s
+    /// `index >= N`) — the same links-layer panic source
+    /// [`push`](Self::push)'s `# Panics` section describes; nothing here
+    /// re-validates the index beyond what `push` guaranteed when the index
+    /// was admitted.
     ///
     /// The `&L` passed here is subject to the same caller contract as
     /// [`push`](Self::push)'s — and `pop` is equally exposed to a backing
@@ -1053,7 +1071,10 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
                         core::hint::spin_loop();
                     }
-                    spins += 1;
+                    // Capped — see push's identical comment.
+                    if spins < BACKOFF_SPIN_CAP {
+                        spins += 1;
+                    }
                 }
             }
         }
