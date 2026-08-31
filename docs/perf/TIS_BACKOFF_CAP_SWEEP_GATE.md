@@ -5,6 +5,18 @@ Date: 2026-08-31. First `docs/perf/` artifact for `crates/tagged-index-stack`
 than `R{N}_...`, per this crate's own convention going forward).
 
 **`bench`-classified — measurement only, no shipping code changed.**
+
+**Round-8 correction note** (independent review
+`docs/reviews/2026-08-31-125420-tagged-index-stack-review-round8-oh.md`,
+findings P2-1/P2-2/P3-2/P3-3, task tis-r8-Group1 #1758): §3.2/§5's fairness
+conclusion and §3.1's throughput headline were contradicted by this report's
+own committed CSV; the per-call latency axis was unmeasured; and the
+derivation pipeline was uncommitted. All four are fixed in place: §3.1's
+heading now states the real range and its exception, §3.2 covers ALL five
+measured caps, §3.4 adds the per-call latency axis, §5 states cap 6 as a
+compromise (not a fairness optimum), and every table is now re-derived, with
+in-script assertions, by the committed
+`scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
 `BACKOFF_SPIN_CAP` stays `6`. This report replaces the doc comment's old
 unmeasured "low enough for LOW contention" rationale
 (`src/lib.rs`'s `BACKOFF_SPIN_CAP` doc, before this task) with the real
@@ -129,19 +141,31 @@ the original `.min(8)` in every commit this report lands with.
 all 5 caps × 4 thread counts, one sample each — 23,342 bytes, under the
 200 KiB tier-1 ceiling, committed verbatim, no truncation needed) and
 `docs/perf/_raw_tis_backoff_cap_sweep_run2_repeat16.log` (repeat run,
-caps {6, 8, 10} × 16 threads × 2 reps — 8,564 bytes, same tier). Both were
+caps {6, 8, 10} × 16 threads × 2 reps — 8,564 bytes, same tier).
+Round-8 addition: `_raw_tis_backoff_per_call_latency.log` (§3.4's per-call
+latency measurement — 6,365 bytes, tier 1, committed verbatim). Both were
 produced by the sweep driver described in §1's reproduction recipe; the
-driver script itself was scratch (not committed — see the "no scaffolding
-survives" note in §1).
+sweep driver itself was scratch (see the "no scaffolding survives" note
+in §1) — but as of round 8 the AGGREGATION half of the pipeline is committed:
+`scripts/tis_backoff_cap_sweep_derive_report_data.mjs` re-derives every row
+of the summary CSV directly from the raw logs, cross-checks all 52 sweep rows
+cell-for-cell, appends the §3.4 latency rows, and asserts every ratio and
+superlative §3-§5 publish (closes round-8 P3-3).
 
-**Summary CSV:** `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv` — every
-row from both raw logs, parsed by a small `awk` script (not hand-transcribed;
-the per-arm `max`/`min`/`mean`/ratios below are read directly from this
-file's columns, not retyped).
+**Summary CSV:** `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv` — the
+52 sweep rows (40 from run 1, 12 from run 2) were first produced by a scratch
+`awk` pass; as of round 8 they are re-derived and cross-checked against the
+raw logs cell-for-cell by
+`scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (its assertion set
+fails the build on any disagreement), and the file gains 18 `run=3`
+`bench=pop_latency` rows for §3.4's per-call latency axis (its 9 new
+trailing columns are empty for the sweep rows and its throughput columns are
+empty for the latency rows). Every per-arm number below is read from this
+file's columns via that script, not retyped.
 
 ## 3. Results
 
-### 3.1 Throughput: cap 8 and cap 10 beat cap 6 at EVERY thread count, including 2 (run 1, one sample per cell)
+### 3.1 Throughput: cap 8 and cap 10 beat cap 6 in 15 of 16 cells — the exception is 4-thread churn, where cap 10 lands 0.4% BELOW cap 6 (run 1, one sample per cell)
 
 | threads | bench     | cap 0      | cap 4      | cap 6 (shipped) | cap 8      | Δ8 vs 6  | cap 10     | Δ10 vs 6 |
 |---------|-----------|-----------:|-----------:|----------------:|-----------:|---------:|-----------:|---------:|
@@ -155,62 +179,119 @@ file's columns, not retyped).
 | 16      | churn     | 2,703,969  | 5,513,033  | 21,974,093      | 33,757,933 | +53.6%   | 34,803,110 | +58.4%   |
 
 All figures are `total_ops_per_sec` from `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`
-(`run=1` rows). `Δ` = `(cap_N − cap_6) / cap_6`, computed by the same `awk`
-pass that produced the table (not hand-computed).
+(`run=1` rows). `Δ` = `(cap_N − cap_6) / cap_6`, re-derived from the CSV by
+`scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (assertion A1 pins
+all 16 cells). **n=1 caveat (round-8 P3-2):** every cell is a SINGLE sample,
+while §3.3 shows the same 16-thread arm swinging 14.66M → 32.68M ops/sec
+(2.2x) between two reps — the four 4-thread deltas (+4.7%, +2.7%, +6.7%,
+−0.4%) sit inside that noise band and must be read as "indistinguishable at
+n=1", not as ordering facts. The honest span over all 16 cap-8/cap-10 cells
+is **−0.4% to +58.4%** (assertion A3) — an earlier version of this section
+and of the rustdoc/CHANGELOG quotes compressed that to "+17% to +58%",
+excluding the whole 4-thread block in both directions.
 
 This independently reproduces the reviewer's core finding on this machine:
-cap 6 is NOT the throughput optimum at any thread count tested, including
-the lowest-contention 2-thread arm the harness can reach — cap 8/10 beat it
-there too (+17-37%), contradicting the old doc's "low enough for LOW
-contention" framing, which implied cap 6 was specifically tuned to be
-*better*, not worse, than a higher cap under low contention.
+cap 6 is NOT the throughput optimum at any thread count tested — at the
+lowest-contention 2-thread arm the harness can reach, the cap-8/cap-10
+deltas are +17.4% to +37.3% (assertion A4), contradicting the old doc's
+"low enough for LOW contention" framing, which implied cap 6 was
+specifically tuned to be *better*, not worse, than a higher cap under low
+contention. For the same reason cap 6 is not the fairness optimum either —
+see §3.2.
 
-### 3.2 Fairness: cap 6 has the BEST (lowest) skew at every thread count; cap 8 has the WORST, cap 10 is between but with the worst single outlier
+### 3.2 Fairness across ALL five measured caps: 0 and 4 are the fairest; cap 6 is mid-curve — fairer than 8/10, less fair than 0/4 (run 1)
 
 `max/min` = per-thread ops skew ratio (`1.0` = perfectly even); `min/mean` =
 unluckiest thread's share of a fair split (`1.0` = fair, lower = worse
-starvation). Both from `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`.
+starvation). Both from `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`
+(`run=1` rows), re-derived by
+`scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
 
-| threads | bench    | cap 6 max/min | cap 6 min/mean | cap 8 max/min | cap 8 min/mean | cap 10 max/min | cap 10 min/mean |
-|---------|----------|---------------:|----------------:|---------------:|-----------------:|----------------:|------------------:|
-| 2       | push_pop | 1.106          | 0.950           | 1.279          | 0.877            | 1.643           | 0.757             |
-| 2       | churn    | 1.149          | 0.931           | 1.247          | 0.890            | 1.098           | 0.953             |
-| 4       | push_pop | 2.424          | 0.549           | 1.758          | 0.742            | 1.972           | 0.629             |
-| 4       | churn    | 1.458          | 0.803           | 2.044          | 0.693            | 2.254           | 0.548             |
-| 8       | push_pop | 2.202          | 0.655           | 3.022          | 0.541            | 2.821           | 0.502             |
-| 8       | churn    | 2.344          | 0.634           | 5.156          | 0.355            | 4.371           | 0.352             |
-| 16      | push_pop | 6.263          | 0.331           | 10.846         | 0.242            | 7.948           | 0.295             |
-| 16      | churn    | 7.499          | 0.365           | 17.310         | 0.157            | 7.118           | 0.267             |
+Round-8 correction (P2-1): the first version of this section tabulated only
+caps {6, 8, 10} — dropping the two caps its own CSV shows are FAIRER than 6 —
+and its heading claimed "cap 6 has the BEST skew at every thread count",
+which its own body then contradicted (cap 8 edges it at `4/push_pop`). Both
+defects are fixed here: the tables below cover all five measured caps, and
+cap 6 is the strict `min/mean` maximum in **0 of 8 arms** (assertion B7).
 
-At 4/8/16 threads, cap 6 is the most fair of the three in every row except
-one (`4/push_pop`, where cap 8 edges it: 1.758 vs 2.424). Cap 8 is the LEAST
-fair of the three in 6 of 8 rows, including the worst single figure in this
-table (`16/churn`: 17.31x skew, min/mean 0.157 — the unluckiest thread got
-under 16% of a fair share).
+**`min/mean` (primary starvation metric):**
 
-### 3.3 The 16-thread tail, re-measured twice more (run 2): the fairness ranking is noisy in magnitude but stable in ORDER — cap 6 best, cap 8 worst
+| threads | bench | cap 0 | cap 4 | cap 6 | cap 8 | cap 10 |
+|---|---|---|---|---|---|---|
+| 2 | push_pop | 0.950 | 0.852 | 0.950 | 0.877 | 0.757 |
+| 2 | churn | 0.975 | 0.955 | 0.931 | 0.890 | 0.953 |
+| 4 | push_pop | 0.929 | 0.825 | 0.549 | 0.742 | 0.629 |
+| 4 | churn | 0.951 | 0.792 | 0.803 | 0.693 | 0.548 |
+| 8 | push_pop | 0.951 | 0.855 | 0.655 | 0.541 | 0.502 |
+| 8 | churn | 0.878 | 0.784 | 0.634 | 0.355 | 0.352 |
+| 16 | push_pop | 0.493 | 0.615 | 0.331 | 0.242 | 0.295 |
+| 16 | churn | 0.638 | 0.441 | 0.365 | 0.157 | 0.267 |
+
+**`max/min`:**
+
+| threads | bench | cap 0 | cap 4 | cap 6 | cap 8 | cap 10 |
+|---|---|---|---|---|---|---|
+| 2 | push_pop | 1.106 | 1.348 | 1.106 | 1.279 | 1.643 |
+| 2 | churn | 1.051 | 1.094 | 1.149 | 1.247 | 1.098 |
+| 4 | push_pop | 1.127 | 1.429 | 2.424 | 1.758 | 1.972 |
+| 4 | churn | 1.102 | 1.535 | 1.458 | 2.044 | 2.254 |
+| 8 | push_pop | 1.168 | 1.405 | 2.202 | 3.022 | 2.821 |
+| 8 | churn | 1.227 | 1.624 | 2.344 | 5.156 | 4.371 |
+| 16 | push_pop | 8.890 | 3.236 | 6.263 | 10.846 | 7.948 |
+| 16 | churn | 5.687 | 6.781 | 7.499 | 17.310 | 7.118 |
+
+(both tables generated by
+`node scripts/tis_backoff_cap_sweep_derive_report_data.mjs`; assertions
+B1-B6 pin every count below)
+
+- **Cap 0 vs cap 6, `min/mean`:** cap 0 is better-or-equal in 8 of 8 arms —
+  strictly better in 7, tied at `2/push_pop` (both 0.950) (assertion B1).
+- **Cap 4 vs cap 6, `min/mean`:** cap 4 is better in 6 of 8 arms (it loses
+  `2/push_pop` and `4/churn`) (assertion B2).
+- **Cap 6 vs caps 8/10, `min/mean`:** cap 6 is better than cap 8 in 7 of 8
+  arms (loses `4/push_pop`) and better than cap 10 in 6 of 8 (loses
+  `2/churn` and `4/push_pop`) (assertion B3).
+- **Per-cap averages over the 8 arms:** `min/mean` = 0.846 / 0.765 / 0.652 /
+  0.562 / 0.538 for caps 0/4/6/8/10 — strictly ordered `0 > 4 > 6 > 8 > 10`.
+  `max/min` = 2.670 / 2.307 / 3.056 / 5.333 / 3.653 — ordered
+  `4 < 0 < 6 < 10 < 8`. The 0-vs-4 and 8-vs-10 orderings therefore FLIP
+  between the two metrics (assertion B5); what does NOT flip — on either
+  metric, and in the per-arm counts — is that **{0, 4} are fairer than 6,
+  which is fairer than {8, 10}**.
+- One honest nuance the five-cap table exposes (assertion B6): at
+  `16/push_pop`, cap 0's `max/min` (8.890) is WORSE than cap 6's (6.263) —
+  the no-backoff baseline is not uniformly fairest on every metric in every
+  arm (its unluckiest thread still has the better `min/mean` there: 0.493 vs
+  0.331). Fairness-ordering claims in this report are made per stated
+  metric, not as a blanket total order.
+- Cap 8 keeps the worst single run-1 figure in either table (`16/churn`:
+  17.310x skew, min/mean 0.157 — the unluckiest thread got under 16% of a
+  fair share).
+
+### 3.3 The 16-thread tail, re-measured twice more (run 2): the fairness ranking is noisy in magnitude but stable at the top — cap 6 best; caps 8 and 10 both materially worse, their relative order noisy
 
 Run 1's single 16-thread sample per cap was re-measured with 2 more
 independent reps per cap (cap 6/8/10 only — the decisive regime), from a
 fresh build each time, on the same shared host:
 
-| cap | rep | bench    | total ops/sec | max/min | min/mean |
-|-----|-----|----------|---------------:|--------:|---------:|
-| 6   | 1   | push_pop | 25,271,226     | 6.957   | 0.289    |
-| 6   | 1   | churn    | 24,211,225     | 7.828   | 0.250    |
-| 6   | 2   | push_pop | 26,160,655     | 3.411   | 0.556    |
-| 6   | 2   | churn    | 23,970,451     | 4.737   | 0.458    |
-| 8   | 1   | push_pop | 19,199,465     | 8.579   | 0.188    |
-| 8   | 1   | churn    | 14,657,136     | 17.391  | 0.108    |
-| 8   | 2   | push_pop | 32,676,865     | 19.312  | 0.103    |
-| 8   | 2   | churn    | 30,634,872     | 5.252   | 0.340    |
-| 10  | 1   | push_pop | 34,927,192     | 46.739  | 0.096    |
-| 10  | 1   | churn    | 34,589,143     | 24.704  | 0.115    |
-| 10  | 2   | push_pop | 35,087,901     | 24.464  | 0.164    |
-| 10  | 2   | churn    | 33,942,472     | 12.891  | 0.268    |
+| cap | rep | bench | ops/sec | max/min | min/mean |
+|---|---|---|---|---|---|
+| 6 | 1 | push_pop | 25,271,226 | 6.957 | 0.289 |
+| 6 | 1 | churn | 24,211,225 | 7.828 | 0.250 |
+| 6 | 2 | push_pop | 26,160,655 | 3.411 | 0.556 |
+| 6 | 2 | churn | 23,970,451 | 4.737 | 0.458 |
+| 8 | 1 | push_pop | 19,199,465 | 8.579 | 0.188 |
+| 8 | 1 | churn | 14,657,136 | 17.391 | 0.108 |
+| 8 | 2 | push_pop | 32,676,865 | 19.312 | 0.103 |
+| 8 | 2 | churn | 30,634,872 | 5.252 | 0.340 |
+| 10 | 1 | push_pop | 34,927,192 | 46.739 | 0.096 |
+| 10 | 1 | churn | 34,589,143 | 24.704 | 0.115 |
+| 10 | 2 | push_pop | 35,087,901 | 24.464 | 0.164 |
+| 10 | 2 | churn | 33,942,472 | 12.891 | 0.268 |
 
 (Source: `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`, `run=2` rows,
-derived from `docs/perf/_raw_tis_backoff_cap_sweep_run2_repeat16.log`.)
+derived from `docs/perf/_raw_tis_backoff_cap_sweep_run2_repeat16.log`; table
+generated by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.)
 
 **This run is visibly noisier than run 1** — `cap 8`'s single-threaded rows
 in this run's own bench output show a `churn` cost spike to 108.13 ns/op
@@ -220,11 +301,13 @@ benchmark machine (see §4). Despite that noise, the RANKING is stable across
 all three regimes (run 1 single sample, run 2 rep 1, run 2 rep 2):
 
 - **Averaged `max/min` across all 6 samples per cap (run 1 §3.2's 16-thread
-  row + run 2's 4 samples):** cap 6 ≈ **6.12x**, cap 8 ≈ **13.12x**, cap 10 ≈
-  **20.64x**.
+  row + run 2's 4 samples):** cap 6 ≈ **6.12x**, cap 8 ≈ **13.1x**, cap 10 ≈
+  **20.64x** (assertion C1; cap 8's average is 13.115 exactly — the script's
+  toFixed(2) renders it 13.11, and the "13.12x" an earlier version of this
+  section quoted was the same value rounded the other way at the boundary).
 - **Averaged `min/mean` across the same 6 samples:** cap 6 ≈ **0.375**
   (best), cap 8 ≈ **0.190**, cap 10 ≈ **0.201** (worst two, close to each
-  other, both clearly worse than cap 6).
+  other, both clearly worse than cap 6) (assertion C1).
 - Cap 10 produced this sweep's single worst outlier — **46.7x** skew
   (`10/rep1/push_pop`) — confirming the original review's observation that
   cap 10 is "clearly too aggressive" is reproducible on this machine too,
@@ -232,6 +315,65 @@ all three regimes (run 1 single sample, run 2 rep 1, run 2 rep 2):
   10 (the two are close and both are materially worse than 6 — this
   ordering between 8 and 10 specifically should be read as noisy, not as
   "cap 8 is safer than cap 10").
+
+### 3.4 Per-call `pop` tail latency (round-8 addition): the axis §3.2's metric cannot see
+
+Round-8 P2-2: every fairness number above is per-thread ops over a 1-second
+window — a thread that loses 90% of a second inside ONE call and a thread
+that is uniformly 10x slow produce the same `min/mean`. Per-CALL latency was
+never measured. This section adds that axis.
+
+**Harness:** `crates/tagged-index-stack/examples/backoff_per_call_latency.rs`
+(committed, observation-only, public API only): `ArrayLinks<64>` prefilled
+`0..64`, N threads x M pop-then-repush-exactly-what-you-popped iterations
+(the committed test's and bench's own contention discipline), every `pop`
+individually timed with `Instant` (the two clock reads sit outside the pop
+itself and are identical in both arms), 3 reps per shape, `--release`. The
+cap-0 arm is §1's documented one-line substitution; the raw log carries the
+resolved-cap evidence (the captured `const BACKOFF_SPIN_CAP` source line
+immediately before each build — requested config AND resolved config, per
+this repo's R26-4 rule), the patch hash of the substitution, and the
+post-run restore verification.
+
+**Raw log:** `docs/perf/_raw_tis_backoff_per_call_latency.log` (committed —
+under the 200 KiB tier-1 ceiling, verbatim). Per-rep rows are appended to
+`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv` as `run=3`,
+`bench=pop_latency` rows; the medians and ratios below are derived, with
+assertions D1-D4, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
+**Source identity:** base commit `842c99805992d362c5d82df59fc646c691598285`
+(this crate's round-8 worktree HEAD — the cap-6 arm was measured on that
+CLEAN tree, R29-6 option 1); cap-0 arm patch hash
+`9cf4469a1ba5f79a8c98871dd7d4ee6e90f2a3a5fee4465e54ba1b7af1333b86`
+(R29-6 option 3), recorded in the raw log.
+
+**Median over 3 reps (worst-of-3 in parens), same host as §3.1:**
+
+| shape | worst single `pop`, cap 6 (shipped) | worst single `pop`, cap 0 | median wall, cap 6 | median wall, cap 0 | wall speedup, cap 6 |
+|---|---|---|---|---|---|
+| 4 x 20,000 | 4.813 ms (10.828) | 0.159 ms (0.297) | 14.6 ms | 61.0 ms | 4.18x |
+| 8 x 200,000 | 54.464 ms (59.705) | 2.031 ms (23.567) | 321.9 ms | 1,560.3 ms | 4.85x |
+| 16 x 200,000 | 160.092 ms (173.365) | 42.335 ms (46.301) | 867.5 ms | 3,509.6 ms | 4.05x |
+
+Tail mass tells the same story per call-count: at `8 x 200,000`, 60-86 pops
+of 1.6M per rep exceeded 1 ms under cap 6, vs 0-8 pops under cap 0; at
+`16 x 200,000`, 3-4 pops of 3.2M per rep exceeded 100 ms under cap 6, vs 0
+under cap 0. Meanwhile 99.9% of cap-6 pops at 8 threads completed within
+~1 microsecond (`pop_p999_ms` = 0.001 in the CSV rows) — the distribution is
+not uniformly slower under backoff, it is HEAVIER-TAILED.
+
+**Reading:** the backoff does not reduce contention, it REDISTRIBUTES it —
+the same harness that shows the worst single pop multiplied ~27x
+(median-to-median, `8 x 200,000`) also shows the whole phase ~4.9x FASTER
+under the shipped cap 6 (assertions D2/D3 pin both figures). That is the
+per-call-tail-vs-throughput trade in one table, in the unit a
+slot-recycling consumer actually experiences. Two caveats: (1) part of even
+cap 0's tail is scheduler noise on this shared host (its `8 x 200,000`
+rep-1 max was 23.567 ms) — but 60-86 pops-over-1ms per rep vs 0-8 is
+backoff-shaped, not noise; (2) 3 reps on a shared dev host — read absolute
+magnitudes as order-of-magnitude and the cap6/cap0 RATIOS as the robust
+part. `push`/`pop` are lock-free but NOT starvation-free, and the shipped
+cap is the reason for the tail's shape; `BACKOFF_SPIN_CAP`'s doc comment
+now states exactly this.
 
 ## 4. Noise caveat
 
@@ -252,14 +394,25 @@ sometimes very wide margin" rather than as precise ratios.
 
 ## 5. Decision: KEEP `BACKOFF_SPIN_CAP = 6`
 
+Round-8 correction: the prior version of this section concluded cap 6 was
+"the most fairness-conscious of the caps measured" — false against §3.2's
+own CSV (cap 6 is the strict `min/mean` maximum in 0 of 8 arms) — and
+quoted "+17% to +58% ... at EVERY thread count" — false against §3.1's own
+table (4-thread churn, cap 10: −0.4%). Both phrases are gone from this
+report, from `CHANGELOG.md`, and from `src/lib.rs`'s doc comment; the
+derivation script's assertions B7 and A2/A3 fail if either shape is
+reintroduced against the committed data.
+
 **Not changed.** Per this task's own explicit conservative-bias instruction
 (prefer keeping 6 unless the data overwhelmingly favors a change AND the
 fairness cost is acceptable) and this crate's own production-hot-path
 posture (`push`/`pop` are the crate's only two operations):
 
 - The throughput case for raising the cap is real and reproduces on this
-  machine (§3.1: +17% to +58% depending on thread count, at EVERY thread
-  count tested including the lowest-contention 2-thread arm).
+  machine (§3.1: cap 8/10 beat cap 6 in 15 of 16 cells, −0.4% to +58.4%,
+  one sample per cell; the sole exception is 4-thread churn, where cap 10
+  lands 0.4% below cap 6; the lowest-contention 2-thread arm specifically
+  spans +17.4% to +37.3%).
 - The fairness cost of raising the cap is ALSO real, reproduces across two
   independent runs (§3.2, §3.3), and gets WORSE — not better — at exactly
   the oversubscribed regime a production allocator is most likely to hit
@@ -274,14 +427,25 @@ posture (`push`/`pop` are the crate's only two operations):
   known-benign contention can already reproduce a higher cap locally (§1's
   reproduction recipe), but the crate's SHIPPED default should not impose
   that tradeoff on every caller.
+- Lowering the cap is not free either (§3.1, run 1): cap 0 costs cap 6 a
+  factor of 1.60x-9.50x in aggregate throughput across the eight cells
+  (assertion A5), and cap 4 costs up to ~4.0x at 16 threads (cap6/cap4
+  0.78x-3.99x, assertion A6). §3.4 adds the per-call tail axis: the shipped
+  cap 6 multiplies the worst single `pop` by ~27x vs cap 0 at 8 threads
+  while making the same workload ~4.9x faster in aggregate. The default
+  picks a point on that five-point curve; it does not dominate either end.
 
 This does not mean cap 6 is "the low-contention-optimal choice" — §3.1
-shows it explicitly is not, at any thread count tested. The corrected
-rationale (now in `src/lib.rs`'s doc comment and `CHANGELOG.md`, replacing
-the old unmeasured "low enough for LOW contention" claim) is: **cap 6 is
-the most fairness-conscious of the caps measured, at a real but bounded
-throughput cost relative to cap 8/10, and that tradeoff — not a
-low-contention latency argument — is why it ships.**
+shows it explicitly is not, at any thread count tested. It ALSO does not
+mean cap 6 is the fairness optimum of the sweep — §3.2 shows caps 0 and 4
+are fairer still (cap 0's `min/mean` beats cap 6's in 7 of 8 arms and ties
+the eighth; cap 4's beats it in 6 of 8). The corrected rationale (round 8;
+now in `src/lib.rs`'s doc comment and `CHANGELOG.md`) is: **cap 6 is a
+deliberate COMPROMISE on the five-point sweep curve — fairer than caps
+8/10, less fair than caps 0/4, and in aggregate 1.60x-9.50x cap 0's
+throughput — with the per-call tail cost of that fairness gap made explicit
+in §3.4. That tradeoff — not a low-contention latency argument, and not a
+fairness-optimality claim — is why it ships.**
 
 ## 6. Companion fix: P4-7, `[profile.release]` vs `[profile.bench]` citation
 
@@ -310,6 +474,17 @@ today.
   hard-fails if the restore leaves any diff) — no measurement scaffolding
   survives in the final committed tree; `BACKOFF_SPIN_CAP` is `6` and the
   bench's thread-count cap is the original `.min(8)`.
+- Round-8 additions: `cargo clippy -p tagged-index-stack --all-targets --
+  -D warnings` covers the new `examples/backoff_per_call_latency.rs`; `node
+  scripts/tis_backoff_cap_sweep_derive_report_data.mjs` passes with exit 0
+  on the committed artifacts (re-derive the current assertion count by
+  running it — it prints its own ALL <N> ASSERTIONS PASSED line; the count
+  is deliberately not hardcoded here, and differs between the CSV's
+  pre-write and post-write shapes); and the assertion layer was
+  negative-tested by consistently doctoring (a) the 4-thread churn cap-10
+  cell and (b) the cap-6 fairness rows in the working log+CSV — each
+  doctoring made the script exit 1 on the corresponding assertion (A1,
+  then B1) before the artifacts were restored byte-identical from backups.
 
 (Exact command output for the items above is reported in this task's commit
 message / accompanying session report, not duplicated here — this report's

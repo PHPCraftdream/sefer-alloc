@@ -273,23 +273,41 @@ pub const TAIL: u32 = u32::MAX;
 /// low-contention-latency one.** A dedicated cap sweep
 /// (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`) measured caps `{0, 4, 6, 8,
 /// 10}` at 2/4/8/16 threads on the committed bench and found cap 8 and cap
-/// 10 BOTH beat cap 6 on throughput at every thread count tested, including
-/// the lowest-contention 2-thread arm (+17% to +58% depending on regime) —
+/// 10 beat cap 6 on aggregate throughput in 15 of the 16 thread-count x
+/// bench cells measured (-0.4% to +58.4%, one sample per cell; the sole
+/// exception is 4-thread churn, where cap 10 landed 0.4% BELOW cap 6) —
 /// so cap 6 is not "the low-contention-optimal cap", contrary to an earlier
 /// version of this doc comment that claimed exactly that without having
-/// measured it. What cap 6 IS is the most fair of the three under
-/// oversubscription: at 16 threads on a 16-logical-CPU host, cap 6's
+/// measured it. What cap 6 IS is a compromise: fairer than caps 8/10 under
+/// oversubscription — at 16 threads on a 16-logical-CPU host, cap 6's
 /// per-thread throughput skew (`max/min` across threads) averaged ~6.1x
 /// across 6 independent samples, vs. ~13.1x for cap 8 and ~20.6x for cap 10
 /// — both cap 8 and cap 10 showed single-run outliers past 19x and 46x
 /// respectively, i.e. one thread starved to a small fraction of its fair
-/// share. Because a starved thread here means a starved allocator-slot
-/// recycler for whatever consumer thread lost the race, that fairness cost
-/// was judged not worth the throughput gain for the SHIPPED default — see
-/// the linked report's §5 for the full reasoning. A caller who specifically
-/// wants peak aggregate throughput under contention they know is benign can
-/// measure a higher local cap using that report's §1 reproduction recipe;
-/// the crate's default does not impose that tradeoff on every caller.
+/// share — and LESS fair than caps 0/4, which the same sweep also measured
+/// (cap 0's `min/mean` beats cap 6's in 7 of 8 arms and ties the eighth;
+/// cap 4's beats it in 6 of 8 — the report's §3.2). Because a starved
+/// thread here means a starved allocator-slot recycler for whatever
+/// consumer thread lost the race, that fairness cost was judged not worth
+/// the throughput gain for the SHIPPED default — see the linked report's
+/// §5 for the full reasoning. A caller who specifically wants peak
+/// aggregate throughput under contention they know is benign can measure a
+/// higher local cap using that report's §1 reproduction recipe; the
+/// crate's default does not impose that tradeoff on every caller.
+///
+/// **Lock-free is not starvation-free.** `push` and `pop` never block on a
+/// lock — a losing CAS retries — but a call can lose arbitrarily many
+/// CASes in a row, and the backoff deliberately makes an unlucky call wait
+/// LONGER between retries: it trades per-call tail latency for aggregate
+/// throughput. Measured on a 64-element `ArrayLinks` under the crate's own
+/// contention discipline (`examples/backoff_per_call_latency.rs`; 8
+/// threads x 200k pop-then-repush iterations, `--release`): the single
+/// worst `pop` blocked 41-60 ms across three runs under this cap, vs
+/// 0.6-24 ms with the backoff disabled (cap 0), while the same workload
+/// finished ~4.9x faster in aggregate under the cap. A consumer recycling
+/// a slot on a latency-sensitive request path should size its tolerance
+/// for that tail; the full table is
+/// `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4.
 const BACKOFF_SPIN_CAP: u32 = 6;
 
 /// `1u32 << spins.min(BACKOFF_SPIN_CAP)` masks/panics if `BACKOFF_SPIN_CAP`

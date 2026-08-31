@@ -189,20 +189,50 @@ before it.
   review flagged the cap's original doc comment as claiming an unmeasured
   "low enough for LOW contention" rationale. Sweeping caps `{0, 4, 6, 8,
   10}` at 2/4/8/16 threads on the committed bench found that claim WRONG:
-  cap 8 and cap 10 both beat cap 6 on throughput at every thread count
-  tested, including the lowest-contention 2-thread arm (+17% to +58%
-  depending on regime). What the sweep found INSTEAD is a real
+  cap 8 and cap 10 beat cap 6 on aggregate throughput in 15 of the 16
+  thread-count x bench cells measured (one sample per cell; the real span
+  is -0.4% to +58.4% — the sole exception is 4-thread churn, where cap 10
+  landed 0.4% BELOW cap 6; the lowest-contention 2-thread arm specifically
+  spans +17.4% to +37.3%). What the sweep found INSTEAD is a real
   fairness cost that GROWS with the cap under oversubscription: at 16
   threads on a 16-logical-CPU host, cap 6's per-thread throughput skew
   (`max/min`) averaged ~6.1x across 6 independent samples vs. ~13.1x for
   cap 8 and ~20.6x for cap 10, with cap 8/cap 10 each producing a
   single-run outlier past 19x/46x (one thread starved to a small fraction
-  of its fair share). `BACKOFF_SPIN_CAP` stays `6` — the most
-  fairness-conscious of the caps measured — trading a real but bounded
-  throughput ceiling against a starvation risk judged not worth imposing
-  on every caller by default. Both `src/lib.rs`'s doc comment and this
-  bullet now state the real throughput-vs-fairness axis instead of the old
-  unmeasured low-contention-latency claim.
+  of its fair share). `BACKOFF_SPIN_CAP` stays `6` — a deliberate
+  compromise, not a fairness optimum: fairer than caps 8/10, LESS fair
+  than caps 0/4 (also measured: cap 0's min/mean beats cap 6's in 7 of 8
+  arms and ties the eighth; cap 4's beats it in 6 of 8) — trading a real
+  but bounded throughput ceiling against a starvation risk judged not
+  worth imposing on every caller by default. Both `src/lib.rs`'s doc
+  comment and this bullet now state the real throughput-vs-fairness axis
+  instead of the old unmeasured low-contention-latency claim.
+- **Round-8 review corrections to the two backoff bullets above**
+  (`docs/reviews/2026-08-31-125420-tagged-index-stack-review-round8-oh.md`,
+  findings P2-1/P2-2/P3-2/P3-3; task tis-r8-Group1 #1758). (1) The
+  cap-sweep bullet's "most fairness-conscious of the caps measured" claim
+  was FALSE against the sweep's own committed CSV — its fairness table had
+  silently dropped caps 0 and 4, the two caps fairer than 6; corrected
+  above and in `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.2. (2) The
+  "+17% to +58% at every thread count" range was contradicted by the same
+  table's own -0.4% cell; corrected above and in the report's §3.1. (3)
+  Per-CALL latency had never been measured on any axis. New
+  observation-only example `examples/backoff_per_call_latency.rs` (public
+  API only) measures it on a 64-element `ArrayLinks` under the crate's own
+  contention discipline: at 8 threads x 200k pop-then-repush iterations
+  the single worst `pop` blocked 41-60 ms across 3 runs under the shipped
+  cap 6 vs 0.6-24 ms at cap 0 (median 54.5 ms vs 2.0 ms), with 60-86 pops
+  over 1 ms per rep vs 0-8 — while the same workload ran ~4.9x faster in
+  aggregate under cap 6 (322 ms vs 1,560 ms median wall); at 16 threads x
+  200k, worst pop 130-173 ms vs 40-46 ms. **`push`/`pop` are lock-free but
+  NOT starvation-free**: the backoff trades per-call tail latency for
+  aggregate throughput, and `BACKOFF_SPIN_CAP`'s doc comment now says
+  exactly that. Raw log
+  `docs/perf/_raw_tis_backoff_per_call_latency.log` plus run-3 rows in
+  `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`; derived, with in-script
+  assertions, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` —
+  the same script now re-derives the sweep tables and hard-fails on the
+  two corrected claim shapes (closing P3-3's uncommitted-pipeline gap).
 - **Two other speculative perf changes evaluated and declined** (unrelated
   to the backoff above): `push`'s initial `head.load(Ordering::Acquire)`
   could plausibly be `Relaxed`, and both `push`'s and `pop`'s CAS loops are
