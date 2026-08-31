@@ -270,14 +270,34 @@ fn width_16_push_rejects_index_mask_itself() {
 }
 
 /// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
-/// narrower bound — independent of `INDEX_BITS`). Same `#[should_panic]`
-/// pattern as `width_16_push_rejects_index_mask_itself` above, but hits the
-/// links-layer panic path instead of the stack's own guard.
+/// narrower bound — independent of `INDEX_BITS`). Unlike
+/// `width_16_push_rejects_index_mask_itself` above (which uses
+/// `catch_unwind` plus an explicit message assertion), this is a plain
+/// `#[should_panic(expected = ...)]`: the expected substring is Rust's own
+/// slice-indexing panic text (`self.next[index as usize]` in
+/// `ArrayLinks::load_next`), which is unambiguous enough on its own that the
+/// heavier `catch_unwind` pattern is not needed here.
 #[test]
-#[should_panic]
+#[should_panic(expected = "index out of bounds")]
 fn array_links_load_next_panics_on_index_out_of_range() {
     let links = ArrayLinks::<4>::new();
     links.load_next(4); // valid range is 0..=3
+}
+
+/// [`ArrayLinks::store_next`] panics if `index >= N` — the same bound as
+/// `load_next` above, documented alongside it in `src/lib.rs`. Reached via
+/// the worked example in `push`'s own `# Panics` section: a
+/// `TaggedIndexStack::<16>` accepts indices up to 65534, but an
+/// `ArrayLinks<4>` backing it holds only `0..=3`, so `push`'s `store_next`
+/// call (which runs before the head CAS) panics on the links layer's own,
+/// narrower bound before the stack's wider `INDEX_BITS` guard is ever in
+/// play.
+#[test]
+#[should_panic(expected = "index out of bounds")]
+fn array_links_store_next_panics_on_index_out_of_range() {
+    let links = ArrayLinks::<4>::new();
+    let stack = TaggedIndexStack::<16>::new();
+    stack.push(&links, 5); // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
 }
 
 /// The debug-build-only rule-4 `debug_assert!` inside `pop` fires when a
@@ -315,7 +335,7 @@ impl Links for AlwaysInvalidLinks {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic]
+#[should_panic(expected = "neither TAIL")]
 fn pop_debug_assert_fires_on_invalid_next_from_backing() {
     let links = AlwaysInvalidLinks;
     let stack = TaggedIndexStack::<16>::new();

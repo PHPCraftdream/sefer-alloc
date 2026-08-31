@@ -1107,6 +1107,9 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 /// process-global and cumulative — across loom's internal re-runs of a
 /// test closure, across a test file's models, and (under the default
 /// multi-threaded test harness) across concurrently running test functions.
+/// The shipped loom suite's `MODEL_LOCK` mutex (`tests/loom_aba.rs`)
+/// serializes every test that reads this counter specifically to prevent
+/// this cross-test contamination.
 #[cfg(loom)]
 #[doc(hidden)]
 #[must_use]
@@ -1148,6 +1151,9 @@ static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::A
 /// process-global and cumulative — across loom's internal re-runs of a
 /// test closure, across a test file's models, and (under the default
 /// multi-threaded test harness) across concurrently running test functions.
+/// The shipped loom suite's `MODEL_LOCK` mutex (`tests/loom_aba.rs`)
+/// serializes every test that reads this counter specifically to prevent
+/// this cross-test contamination.
 #[cfg(loom)]
 #[doc(hidden)]
 #[must_use]

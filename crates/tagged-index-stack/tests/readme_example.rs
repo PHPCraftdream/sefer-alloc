@@ -1,5 +1,7 @@
-//! Mirrors README.md's `## Example` section verbatim so a future API change
-//! that breaks it fails CI instead of silently rotting the published docs.
+//! Mirrors README.md's `## Example` section, and additionally asserts the
+//! drained-empty case the README's example does not show, so a future API
+//! change that breaks either fails CI instead of silently rotting the
+//! published docs.
 //!
 //! This repo bans doctests (`#[doc = include_str!(...)]` is not used to pull
 //! README.md into rustdoc either, so `cargo test --doc` never compiles the
@@ -9,8 +11,9 @@
 //! `readme_example_compiles_and_derives_its_generics` does the identical
 //! thing for a sibling crate. This crate's own test suite is organized
 //! one-file-per-concern (`stack_unit.rs`, `proptest_pack_unpack.rs`,
-//! `regression_counter_wrap.rs`, `loom_aba.rs`), so the README mirror gets
-//! its own dedicated file rather than folding into an existing one.
+//! `regression_counter_wrap.rs`, `custom_links_impl.rs`, `loom_aba.rs`), so
+//! the README mirror gets its own dedicated file rather than folding into an
+//! existing one.
 
 #![cfg(not(loom))]
 
