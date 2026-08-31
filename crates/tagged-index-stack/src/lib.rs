@@ -243,12 +243,13 @@ pub const TAIL: u32 = u32::MAX;
 /// CAS within one call, spin `1 << N.min(BACKOFF_SPIN_CAP)` times via
 /// [`core::hint::spin_loop`] before retrying. `N` is a per-call local, reset
 /// on every fresh `push`/`pop` — this backs off within one call's retry loop,
-/// never across calls. Measured (x86-64, this repo's `[profile.release]`):
-/// 2.54x/7.85x/9.24x contended throughput at 2/4/8 threads, 0% single-thread
-/// cost (see CHANGELOG.md). Capped at 6 (max 64 spins/retry): high enough to
-/// materially reduce head-cache-line ping-pong under contention, low enough
-/// that a spurious retry under LOW contention doesn't stall the one thread
-/// that lost the CAS for longer than the win is worth.
+/// never across calls. Measured on the committed bench (x86-64, this repo's
+/// `[profile.release]`, 8 threads): ~5.3x-9.7x contended throughput, 0%
+/// single-thread cost (see CHANGELOG.md for the exact numbers). Capped at 6
+/// (max 64 spins/retry): high enough to materially reduce head-cache-line
+/// ping-pong under contention, low enough that a spurious retry under LOW
+/// contention doesn't stall the one thread that lost the CAS for longer than
+/// the win is worth.
 const BACKOFF_SPIN_CAP: u32 = 6;
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
