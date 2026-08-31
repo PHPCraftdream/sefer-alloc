@@ -155,7 +155,7 @@
 //! shipped loom suite (`tests/loom_aba.rs`) model-checks the real
 //! [`TaggedIndexStack`] / [`TaggedIndex`] code exhaustively — no
 //! `preemption_bound`, so loom explores every interleaving these small models
-//! admit. One model runs end-to-end through the shipped
+//! admit. Several models run end-to-end through the shipped
 //! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop); most of
 //! the rest drive the real head atomic and the real packing through
 //! `cas_head_for_test` so an interleaving can be pinned — the one exception is
@@ -163,6 +163,7 @@
 //! stand-in stack instead of the real type. `#[should_panic]` counterfactuals
 //! (untagged corruption, the H-2 empty-transition tag-reset ABA, and a
 //! Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous.
+//! See `tests/loom_aba.rs`'s own module doc for the per-model breakdown.
 //!
 //! # Portability limit — requires 64-bit atomics
 //!

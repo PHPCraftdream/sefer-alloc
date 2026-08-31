@@ -3,11 +3,17 @@
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
 //! code that ships. How much of each model calls the shipped `push`/`pop`
-//! directly varies and is stated per model below: one model is end-to-end
-//! through both, most hand-inline one side of an interaction through
-//! `cas_head_for_test` (real head atomic, real packing) to pin an
-//! interleaving, and two models drive locally-defined buggy stand-ins to
-//! prove the harness non-vacuous.
+//! directly varies and is stated per model below: **three** models
+//! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
+//! `push_push_conservation`, `pop_pop_conservation`) run end-to-end through
+//! the real `push`/`pop`, most of the rest hand-inline one side of an
+//! interaction through `cas_head_for_test` (real head atomic, real packing)
+//! to pin an interleaving — the one exception is the untagged-ABA
+//! counterfactual, which drives a locally-defined buggy stand-in stack
+//! instead of the real type, to prove the harness non-vacuous. This module
+//! doc is the source of truth for this per-model breakdown; other published
+//! copies (crate-root rustdoc, README.md, CHANGELOG.md) point back here
+//! rather than repeating a specific count.
 //!
 //! # What loom covers
 //!
@@ -48,6 +54,15 @@
 //!     calling the real `pop`/`push` directly — the `#[should_panic]`
 //!     counterfactual `counterfactual_relaxed_cas_failure_corrupts_free_list`
 //!     proves a `Relaxed` failure ordering lets this corrupt the free-list.
+//! (f) **push‖push and pop‖pop conservation:** two threads each doing ONE
+//!     real `push` (`push_push_conservation`) — or, on a stack pre-seeded
+//!     with exactly 2 free indices, ONE real `pop`
+//!     (`pop_pop_conservation`) — concurrently, driven end-to-end through the
+//!     shipped `push`/`pop` with no hand-inlining. Both prove the free-list
+//!     stays loss/duplication-free under the two most ordinary interleavings
+//!     a production free-list sees (two threads freeing concurrently, two
+//!     threads allocating concurrently); `push_push_conservation` also
+//!     asserts a `PUSH_RETRY_COUNT` activation oracle mirroring `pop`'s.
 //!
 //! # How to run
 //!

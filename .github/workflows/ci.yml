@@ -1731,10 +1731,11 @@ jobs:
       # crate anywhere in this workflow is `loom-alloc-global`'s `cargo test
       # --release -p tagged-index-stack --test loom_aba` under `RUSTFLAGS:
       # "--cfg loom"`, which excludes both files by cfg (and by `--test`
-      # target selection regardless). 12 of the crate's 16 tests — packing
-      # round-trip, the empty sentinel, the 2^48 tag-wrap boundary, LIFO
-      # order, H-2 single-threaded observation, RAD-1 laziness, and the F1
-      # regression test added by task #638 — had never run in CI. Plain
+      # target selection regardless). At the time, 12 of the crate's then-16
+      # tests — packing round-trip, the empty sentinel, the 2^48 tag-wrap
+      # boundary, LIFO order, H-2 single-threaded observation, RAD-1
+      # laziness, and the F1 regression test added by task #638 — had never
+      # run in CI. Plain
       # `cargo test` (no `--cfg loom`) exercises all of them; `loom_aba.rs`
       # itself still compiles to 0 tests here (correctly excluded by its own
       # `#![cfg(loom)]` gate), which is fine — its real coverage stays the
@@ -1956,12 +1957,10 @@ jobs:
       # and dependencies are built, not linted), and the root `docs` job
       # further down is `--no-deps` (never reaches a dependency crate)
       # and drops `RUSTDOCFLAGS: "-D warnings"`. `--all-targets` covers
-      # all five `tests/` files (`stack_unit.rs`,
-      # `regression_counter_wrap.rs`, `proptest_pack_unpack.rs`,
-      # `readme_example.rs`, and `loom_aba.rs`, which compiles to zero tests
-      # here by its own `#![cfg(loom)]` gate -- its real coverage stays the
-      # `loom-alloc-global` job) plus
-      # `benches/tagged_index_stack_bench.rs` in one step. No
+      # every `tests/` file plus `benches/tagged_index_stack_bench.rs` in one
+      # step (`loom_aba.rs` compiles to zero tests here by its own
+      # `#![cfg(loom)]` gate -- its real coverage stays the
+      # `loom-alloc-global` job). No
       # `--all-features` needed for either row: verified via
       # `cargo metadata --no-deps --format-version 1 | jq -r
       # '.packages[] | select(.name=="tagged-index-stack") | .features'`

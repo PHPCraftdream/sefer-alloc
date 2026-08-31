@@ -173,9 +173,12 @@ before it.
   interleaving these small models admit — with `#[should_panic]`
   counterfactuals (untagged corruption, the H-2 empty-transition tag-reset
   ABA, and the Relaxed-CAS-failure-ordering regression) proving the harness
-  is non-vacuous. One model runs end-to-end through the shipped
-  `push`/`pop`; the rest drive the real head atomic and the real packing
-  through `cas_head_for_test` so an interleaving can be pinned. `loom` is an
+  is non-vacuous. Several models run end-to-end through the shipped
+  `push`/`pop`; most of the rest drive the real head atomic and the real
+  packing through `cas_head_for_test` so an interleaving can be pinned — the
+  one exception is the untagged-ABA counterfactual, which drives a
+  locally-defined buggy stand-in stack instead of the real type. See
+  `tests/loom_aba.rs`'s own module doc for the per-model breakdown. `loom` is an
   OPTIONAL `cfg(loom)`-gated dependency (feature
   `loom`): a normal build (default features, no `--cfg loom`) has zero
   non-`std` entries in `Cargo.lock` — not merely zero compiled code, which is
