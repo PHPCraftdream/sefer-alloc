@@ -87,10 +87,12 @@ before it.
   `AtomicU32` inside a slot it already owns) instead of paying for a second
   array. **`ArrayLinks<N>`** provides an owned `[AtomicU32; N]` backing for
   standalone use. The link storage must be a DEDICATED cell, never
-  payload-aliased on the popped slot's own bytes — `pop` carries a
-  `debug_assert!` that fires (debug builds only) the moment a backing
-  returns anything but `TAIL` or a currently-valid index, which is exactly
-  what a payload-aliased backing does on every ordinary benign race.
+  payload-aliased on the popped slot's own bytes — `pop` carries an
+  unconditional, release-active guard (a `#[cold]` panic helper mirroring
+  `push`'s own index-range guard; see the "Behavior" entry below for why it
+  is no longer a `debug_assert!`) that panics the moment a backing returns
+  anything but `TAIL` or a currently-valid index, which is exactly what a
+  payload-aliased backing does on every ordinary benign race.
 - **Lazy link discipline (internally: RAD-1)** — links are never eagerly initialised:
   only a `push` writes a link, immediately before publishing that index as
   head. A caller whose link backing is OS-zeroed memory (a fresh `mmap`, a
@@ -196,6 +198,33 @@ before it.
   specific to non-LSE AArch64 and similar `ldxr`/`stxr`-style
   architectures, and this repository has no AArch64 wall-clock/perf-gate
   harness to measure it. Revisit when one exists.
+
+### Behavior
+
+- **`pop`'s rule-4 caller-contract guard is now release-active, not
+  debug-only** — a `Links::load_next` result that is neither `TAIL` nor a
+  valid index (the failure mode `TaggedIndex::pack` would otherwise
+  silently truncate into a double-issued live index or a leaked-chain empty
+  sentinel) now panics unconditionally, in every build profile, exactly
+  like `push`'s existing `index < INDEX_MASK` guard for the identical
+  failure class. Previously this was a `debug_assert!`, justified as
+  "release builds pay nothing" — an independent review (round 7, P3-1)
+  measured that justification and found it no longer distinguishes the two
+  guards: an out-of-tree A/B of a release-active version of this exact
+  check, interleaved 4 run-pairs on the single-threaded `churn` bench (the
+  pop-heaviest row), measured the guarded arm *faster* at the median
+  (50.58 vs 51.60 ns/op shipped debug-only) — the cost is below this
+  harness's noise floor next to the two `lock cmpxchg`/iteration already on
+  the hot path. This is a real, if narrow, behavior change: a `Links`
+  backing that violates rule 4 of `push`'s `# Caller contract` (e.g. the
+  payload-aliased layout the `Links` trait doc warns against, or an
+  off-by-one in an index mapping) now panics in release builds where it
+  previously silently corrupted the free-list. The one in-workspace
+  consumer, `RegistryLinks` (`src/registry/heap_registry.rs` in the root
+  crate), cannot trigger this: its `next_free` field is only ever written
+  by this crate's own `push` with `TAIL` or a previously-admitted index
+  `< MAX_HEAPS (4096) < INDEX_MASK (65535)`, so `load_next` can only ever
+  return `TAIL` or an in-range value.
 
 ### MSRV
 

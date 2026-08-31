@@ -49,7 +49,8 @@
 //! Slot-resident does NOT mean payload-aliased — see the [`Links`] trait
 //! doc's "Storage requirement" section for the full dedicated-storage rule
 //! and why violating it defeats [`pop`](TaggedIndexStack::pop)'s own
-//! corruption-detection `debug_assert!`.
+//! corruption-detection guard (release-active, not debug-only — see
+//! [`pop`](TaggedIndexStack::pop)'s `# Panics`).
 //!
 //! [`Links::store_next`] is the ONLY write the stack ever makes to a link, and
 //! it happens during [`push`](TaggedIndexStack::push), immediately before the
@@ -558,14 +559,16 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// consumer-written user data instead — not a link at all — which defeats
 /// two things at once: the reasoning above (the read was never "safe
 /// because meaningful", but a payload-aliased read is not even
-/// link-shaped), and [`pop`](TaggedIndexStack::pop)'s
-/// `debug_assert!` (which exists to catch a backing violating rule 4 of
-/// [`push`](TaggedIndexStack::push)'s `# Caller contract`) — that assert
-/// would then fire on every ordinary benign race instead of only on a real
-/// contract violation, reading as a corruption report for expected
-/// behaviour. A caller that wants this idiom needs a DEDICATED link field
-/// per slot (as [`ArrayLinks`] does, and as this crate's own downstream
-/// production consumers do), not payload overlay.
+/// link-shaped), and [`pop`](TaggedIndexStack::pop)'s rule-4 guard (which
+/// exists to catch a backing violating rule 4 of
+/// [`push`](TaggedIndexStack::push)'s `# Caller contract`, and is
+/// release-active — see [`pop`](TaggedIndexStack::pop)'s `# Panics`) — that
+/// guard would then PANIC on every ordinary benign race instead of only on
+/// a real contract violation, in every build profile, not just a corruption
+/// report confined to debug/test builds. A caller that wants this idiom
+/// needs a DEDICATED link field per slot (as [`ArrayLinks`] does, and as
+/// this crate's own downstream production consumers do), not payload
+/// overlay.
 ///
 /// # Stability
 ///
@@ -987,14 +990,25 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     ///
     /// # Panics
     ///
-    /// `pop` itself checks nothing and so has no direct panic source, but it
-    /// reaches link storage through the supplied [`Links`] implementation
-    /// ([`load_next`](Links::load_next)), which may panic on an out-of-range
-    /// index under its OWN, narrower bound (e.g. [`ArrayLinks::load_next`]'s
-    /// `index >= N`) — the same links-layer panic source
-    /// [`push`](Self::push)'s `# Panics` section describes; nothing here
-    /// re-validates the index beyond what `push` guaranteed when the index
-    /// was admitted.
+    /// Panics if the [`Links::load_next`] result for the popped index is
+    /// neither [`TAIL`] nor `< INDEX_MASK` — i.e. a value
+    /// [`TaggedIndex::pack`] would otherwise silently truncate into a wrong
+    /// (possibly still-live) index or into the empty sentinel (see rule 4 of
+    /// [`push`](Self::push)'s `# Caller contract`). This check is
+    /// unconditional (release-active), in both debug and release builds,
+    /// mirroring [`push`](Self::push)'s `index < INDEX_MASK` guard: an
+    /// out-of-tree A/B measured a release-active version of this check at
+    /// ≈ 0 ns cost (see CHANGELOG.md), so there is no throughput reason left
+    /// to leave a caller-contract violation whose failure mode is silent
+    /// free-list corruption checked only in debug builds.
+    ///
+    /// `pop` also reaches link storage through the supplied [`Links`]
+    /// implementation ([`load_next`](Links::load_next)), which may panic on
+    /// an out-of-range index under its OWN, narrower bound (e.g.
+    /// [`ArrayLinks::load_next`]'s `index >= N`) — the same links-layer
+    /// panic source [`push`](Self::push)'s `# Panics` section describes;
+    /// nothing here re-validates the index beyond what `push` guaranteed
+    /// when the index was admitted.
     ///
     /// The `&L` passed here is subject to the same caller contract as
     /// [`push`](Self::push)'s — and `pop` is equally exposed to a backing
@@ -1017,25 +1031,24 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // Release; our Acquire observation of head — whether from the
             // initial load OR from a retry CAS failure — synchronizes with it).
             let next = links.load_next(index);
-            // Debug-only guard for rule 4 of push's `# Caller contract`: a
-            // backing returning anything but TAIL or a currently-valid index
-            // is SILENTLY TRUNCATED by the pack() below — to a wrong (possibly
-            // still-live) index, double-issuing it, or to the empty sentinel,
-            // leaking the whole remaining chain at once. Turns that silent
-            // corruption into a loud failure in debug/test builds; release
-            // builds pay nothing.
-            debug_assert!(
-                next == TAIL || (next as u64) < TaggedIndex::<INDEX_BITS>::INDEX_MASK,
-                "Links::load_next({index}) returned {next:#x}, neither TAIL \
-                 nor a valid index: pop's pack() will silently truncate it {}",
-                if (next as u64 & TaggedIndex::<INDEX_BITS>::INDEX_MASK)
-                    == TaggedIndex::<INDEX_BITS>::INDEX_MASK
-                {
-                    "to the EMPTY SENTINEL, leaking the whole remaining chain"
-                } else {
-                    "to a wrong index, possibly a live one — double-issuing it"
-                }
-            );
+            // Unconditional guard (release-active, mirroring push's
+            // `index < INDEX_MASK` check) for rule 4 of push's `# Caller
+            // contract`: a backing returning anything but TAIL or a
+            // currently-valid index is SILENTLY TRUNCATED by the pack()
+            // below — to a wrong (possibly still-live) index, double-issuing
+            // it, or to the empty sentinel, leaking the whole remaining
+            // chain at once. Promoted from `debug_assert!` in round 7
+            // (P3-1): an out-of-tree A/B measured the release-active check
+            // at ≈ 0 ns cost (within noise of two `lock cmpxchg`/iter — see
+            // `# Panics` below and CHANGELOG.md), so "release builds pay
+            // nothing" no longer distinguishes debug-only from
+            // release-active here, and the failure mode (silent free-list
+            // corruption) is the same one `push`'s guard already treats as
+            // unconditional.
+            let mask = TaggedIndex::<INDEX_BITS>::INDEX_MASK;
+            if next != TAIL && (next as u64) >= mask {
+                Self::pop_link_out_of_range(index, next, mask);
+            }
             let new_head = if next == TAIL {
                 // H-2: preserve the RUNNING tag across the empty transition.
                 TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
@@ -1078,6 +1091,28 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                 }
             }
         }
+    }
+
+    /// Cold panic path for [`pop`](Self::pop)'s rule-4 guard, split out of
+    /// `pop` itself so the panic and its message formatting can never land
+    /// in the hot loop's body — the same `#[cold]` + `#[inline(never)]`
+    /// shape as [`push_index_out_of_range`](Self::push_index_out_of_range).
+    /// Reports which of the two truncation outcomes the caller's
+    /// `Links::load_next` would otherwise have silently produced (see
+    /// `# Panics` on [`pop`](Self::pop)).
+    #[cold]
+    #[inline(never)]
+    fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
+        let outcome = if (next as u64 & mask) == mask {
+            "the EMPTY SENTINEL, leaking the whole remaining chain"
+        } else {
+            "a wrong index, possibly a live one — double-issuing it"
+        };
+        panic!(
+            "Links::load_next({index}) returned {next:#x}, neither TAIL nor \
+             a valid index (< {mask:#x}): pop's pack() would silently \
+             truncate it to {outcome}"
+        );
     }
 
     /// Whether the stack is currently empty. Advisory only — a concurrent

@@ -330,33 +330,28 @@ fn array_links_store_next_panics_on_index_out_of_range() {
     stack.push(&links, 5); // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
 }
 
-/// The debug-build-only rule-4 `debug_assert!` inside `pop` fires when a
-/// [`Links`] backing returns a `next` value that is neither `TAIL` nor a
-/// valid index — a caller-contract violation `pop` cannot otherwise detect
-/// (see the crate docs' "Storage requirement" section on `Links`). A tiny
-/// custom backing whose `load_next` always answers `INDEX_MASK` (a value
-/// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
+/// `pop`'s rule-4 guard fires when a [`Links`] backing returns a `next`
+/// value that is neither `TAIL` nor a valid index — a caller-contract
+/// violation `pop` cannot otherwise detect (see the crate docs' "Storage
+/// requirement" section on `Links`). A tiny custom backing whose
+/// `load_next` always answers `INDEX_MASK` (a value that is not `TAIL` and
+/// not `< INDEX_MASK`) triggers it directly.
 ///
-/// `#[cfg(debug_assertions)]`-gated: `debug_assert!` compiles to nothing when
-/// `debug-assertions` is off, which is the workspace's `[profile.release]`
-/// default (no override in root `Cargo.toml`) — and `.github/workflows/ci.yml`'s
-/// `test workspace members` job runs this crate specifically under
-/// `cargo test -p tagged-index-stack --release`, a real CI configuration this
-/// test must not assume away. Without this gate the test compiles and runs
-/// there too, the assert never fires, and `#[should_panic]` fails on "test did
-/// not panic as expected" (confirmed: this is exactly how it failed in CI
-/// before this gate was added). Plain `cargo test -p tagged-index-stack` (no
-/// `--release`, the dev/test profile default) still runs it, since
-/// debug-assertions defaults to on there. Gated alongside its one caller
-/// below so it isn't flagged dead code when compiled out under `--release`.
-#[cfg(debug_assertions)]
+/// Release-active (round 7, P3-1): promoted from `debug_assert!` to an
+/// unconditional `#[cold]` panic helper mirroring `push`'s own
+/// `index < INDEX_MASK` guard, once an out-of-tree A/B measured the
+/// release-active cost at ≈ 0 ns (see CHANGELOG.md). Unlike its
+/// predecessor, this test needs no `#[cfg(debug_assertions)]` gate: the
+/// panic now fires identically under `cargo test -p tagged-index-stack
+/// --release` (the configuration `.github/workflows/ci.yml`'s `test
+/// workspace members` job actually uses for this crate) and under the
+/// dev/test profile default.
 struct AlwaysInvalidLinks;
 
-#[cfg(debug_assertions)]
 impl Links for AlwaysInvalidLinks {
     fn load_next(&self, _index: u32) -> u32 {
         // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
-        // exactly the shape pop's rule-4 debug_assert! exists to catch.
+        // exactly the shape pop's rule-4 guard exists to catch.
         TaggedIndex::<16>::INDEX_MASK as u32
     }
 
@@ -364,13 +359,12 @@ impl Links for AlwaysInvalidLinks {
 }
 
 #[test]
-#[cfg(debug_assertions)]
 #[should_panic(expected = "neither TAIL")]
-fn pop_debug_assert_fires_on_invalid_next_from_backing() {
+fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
     let links = AlwaysInvalidLinks;
     let stack = TaggedIndexStack::<16>::new();
     stack.push(&links, 0); // real push, so the head is non-empty
-    let _ = stack.pop(&links); // load_next() always answers INDEX_MASK -> debug_assert! fires
+    let _ = stack.pop(&links); // load_next() always answers INDEX_MASK -> guard fires
 }
 
 // Compile-fail coverage note: this crate has no trybuild (or similar

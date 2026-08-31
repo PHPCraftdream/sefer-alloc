@@ -44,7 +44,8 @@ provides an owned `[AtomicU32; N]` backing.
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
 first bytes (the classic free-block-header idiom) is not supported and defeats
-`pop`'s own corruption-detection `debug_assert!`.
+`pop`'s own corruption-detection guard, which panics unconditionally
+(release-active, not debug-only) on a backing that violates it.
 
 `TaggedIndexStack::is_empty()` is an advisory, `Relaxed` emptiness check —
 useful for diagnostics/monitoring, but a concurrent push or pop can make it
