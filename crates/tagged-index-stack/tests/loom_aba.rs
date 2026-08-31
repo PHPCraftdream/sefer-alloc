@@ -76,6 +76,18 @@
 //! whole suite still runs in a fraction of a second, so completeness costs
 //! nothing here. (Loom's separate per-execution branch cap, 1000 by default,
 //! stays armed as a LOUD panic valve, not a silent truncation.)
+//!
+//! # `MODEL_LOCK` serialization
+//!
+//! Every `#[test]` in this file drives its model through one of two helpers,
+//! [`model`] or [`model_with_oracle`], both of which acquire `MODEL_LOCK`
+//! internally — the guard is acquired BY CONSTRUCTION, not by per-test
+//! discipline. A new test cannot forget to serialize with the rest of this
+//! file's tests the way two earlier tests once did (round-4 scoped the lock
+//! to only `pop`'s oracle; round-5's own remediation then added
+//! `push_push_conservation` with a `PUSH_RETRY_COUNT` oracle outside that
+//! scope, unnoticed for a full review round) — see `MODEL_LOCK`'s own doc
+//! comment for why serialization matters at all.
 
 #![cfg(loom)]
 
@@ -101,7 +113,64 @@ use tagged_index_stack::{ArrayLinks, Links, TaggedIndex, TaggedIndexStack, TAIL}
 /// model (e.g. `push_push_conservation` itself, if its own assertion failed
 /// while holding the lock) would otherwise poison this mutex for every test
 /// that acquires it afterward.
+///
+/// The guard is acquired by construction via [`model`] (or
+/// [`model_with_oracle`]), not by per-test discipline: every `#[test]` in
+/// this file that drives the real `push`/`pop` routes through one of those
+/// two helpers, so a new test cannot forget the lock the way two earlier
+/// rounds did (round-4 scoped the lock to only `pop`'s oracle; round-5's own
+/// remediation then added `push_push_conservation` with a `PUSH_RETRY_COUNT`
+/// oracle outside that scope, unnoticed for a full review round).
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Every model in this file that does not read an activation-oracle counter
+/// runs through here: the guard is acquired by construction, so a new test
+/// cannot forget it. No model in this file sets any `Builder` field (the
+/// module doc's "no preemption_bound" note above states this is deliberate),
+/// so collapsing every call site's identical `Builder::new()` into this one
+/// function also removes that duplication.
+///
+/// The three tests whose activation-oracle snapshot/assert window must span
+/// the entire `check()` call — not just wrap it — use
+/// [`model_with_oracle`] instead: `MODEL_LOCK` is a plain `std::sync::Mutex`,
+/// which is not reentrant, so this function cannot be nested inside an
+/// already-held `MODEL_LOCK` guard, and its own guard is dropped before
+/// returning, so a snapshot taken after this call returns is not exclusive
+/// to this call's `check()` run.
+fn model<F>(f: F)
+where
+    F: Fn() + Sync + Send + 'static,
+{
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    loom::model::Builder::new().check(f);
+}
+
+/// Variant of [`model`] for the three tests whose activation-oracle
+/// snapshot/assert window must cover the ENTIRE `check()` call, not just
+/// wrap it: `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
+/// `push_push_conservation`, `pop_pop_conservation`. Each snapshots a
+/// process-global retry counter, runs its model, then asserts the counter
+/// advanced — and that delta is only exclusive to this call's own `check()`
+/// run if no other test's `check()` can interleave between the snapshot and
+/// the assert, which is exactly what holding `MODEL_LOCK` the whole time
+/// guarantees.
+///
+/// `snapshot` runs AFTER the lock is acquired and BEFORE `check` starts, so
+/// the "before" reading is already inside the same critical section `check`
+/// runs under; the guard is then returned to the caller, STILL HELD, so the
+/// caller's own post-check "after" reading and delta assertion stay covered
+/// by the same lock acquisition — the full "acquire lock -> snapshot counter
+/// -> run model -> assert delta -> drop lock" ordering the oracle depends on.
+fn model_with_oracle<F, S, T>(snapshot: S, f: F) -> (T, std::sync::MutexGuard<'static, ()>)
+where
+    F: Fn() + Sync + Send + 'static,
+    S: FnOnce() -> T,
+{
+    let g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let before = snapshot();
+    loom::model::Builder::new().check(f);
+    (before, g)
+}
 
 type Tag = TaggedIndex<16>;
 
@@ -127,9 +196,7 @@ fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
 
 #[test]
 fn aba_repush_keeps_free_list_conservation() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
+    model(|| {
         let (stack, links) = both_free();
 
         // Thread A: inline `pop`'s body ONCE (load head, read link, compute
@@ -241,8 +308,13 @@ impl UntaggedStack {
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
+    // Routed through `model()` too, even though this is the one model that
+    // drives no crate code (a locally-defined `UntaggedStack`, never the real
+    // `push`/`pop`/retry counters) and so does not strictly NEED `MODEL_LOCK`
+    // for exclusivity — one extra serialization costs nothing here, and a
+    // single call-site pattern for every `Builder::new()` use in this file is
+    // simpler than carving out an exemption.
+    model(|| {
         // Initial state: head=0, next[0]=1, next[1]=TAIL. Both slots 0 and 1 are free.
         let reg = UntaggedStack::aba_setup();
 
@@ -331,9 +403,7 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 
 #[test]
 fn tagged_stack_survives_the_same_resurrection_pattern() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
+    model(|| {
         let (stack, links) = both_free();
 
         let stack_a = Arc::clone(&stack);
@@ -427,8 +497,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 // ============================================================================
 
 fn run_h2(preserve_tag_on_drain: bool) {
-    let builder = loom::model::Builder::new();
-    builder.check(move || {
+    model(move || {
         // Seed: ONE real `push` puts slot 0 on a fresh (lazy, empty) stack
         // and leaves the running tag at exactly 1. Tag 1 is not merely
         // sufficient but the ONLY seed that can exercise this counterfactual:
@@ -531,7 +600,6 @@ fn bug_pop_drain_to_empty<L: Links + ?Sized>(
 /// stale CAS is always forced to fail.
 #[test]
 fn pop_empty_transition_preserves_tag() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_h2(true);
 }
 
@@ -540,7 +608,6 @@ fn pop_empty_transition_preserves_tag() {
 #[test]
 #[should_panic(expected = "stale CAS succeeded")]
 fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_h2(false);
 }
 
@@ -576,7 +643,8 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // Activation oracle: snapshot the process-global retry counter BEFORE the
     // exploration and assert below that it advanced. A DELTA, not the raw
     // count — but a delta alone is not enough under libtest's default
-    // parallel harness: `MODEL_LOCK`, held for this whole test body, is what
+    // parallel harness: `MODEL_LOCK`, held from the snapshot through the
+    // assert below via `model_with_oracle`'s returned guard, is what
     // actually makes the delta exclusive to this test's own `check()` run.
     // Without it, any other test in this binary that also drives the real
     // `pop` under contention (`aba_repush_keeps_free_list_conservation`,
@@ -584,41 +652,39 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // concurrently on another libtest thread and increment the same counter,
     // making this assertion pass on cross-test noise instead of on this
     // test's own model.
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let retries_before = tagged_index_stack::pop_retry_count_for_test();
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
-        let links = Arc::new(ArrayLinks::<N>::new());
-        let stack = Arc::new(TaggedIndexStack::<16>::new());
-        stack.push(&*links, 1);
+    let (retries_before, _g) =
+        model_with_oracle(tagged_index_stack::pop_retry_count_for_test, || {
+            let links = Arc::new(ArrayLinks::<N>::new());
+            let stack = Arc::new(TaggedIndexStack::<16>::new());
+            stack.push(&*links, 1);
 
-        let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
-        let ta = thread::spawn(move || stack_a.pop(&*links_a));
+            let stack_a = Arc::clone(&stack);
+            let links_a = Arc::clone(&links);
+            let ta = thread::spawn(move || stack_a.pop(&*links_a));
 
-        let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
-        let tb = thread::spawn(move || {
-            stack_b.push(&*links_b, 0);
+            let stack_b = Arc::clone(&stack);
+            let links_b = Arc::clone(&links);
+            let tb = thread::spawn(move || {
+                stack_b.push(&*links_b, 0);
+            });
+
+            let a_result = ta.join().unwrap();
+            tb.join().unwrap();
+
+            let mut popped: Vec<u32> = Vec::new();
+            if let Some(idx) = a_result {
+                popped.push(idx);
+            }
+            while let Some(idx) = stack.pop(&*links) {
+                popped.push(idx);
+            }
+            popped.sort_unstable();
+            assert_eq!(
+                popped,
+                vec![0, 1],
+                "free-list corrupted (loss or duplication) via the real pop/push: got {popped:?}"
+            );
         });
-
-        let a_result = ta.join().unwrap();
-        tb.join().unwrap();
-
-        let mut popped: Vec<u32> = Vec::new();
-        if let Some(idx) = a_result {
-            popped.push(idx);
-        }
-        while let Some(idx) = stack.pop(&*links) {
-            popped.push(idx);
-        }
-        popped.sort_unstable();
-        assert_eq!(
-            popped,
-            vec![0, 1],
-            "free-list corrupted (loss or duplication) via the real pop/push: got {popped:?}"
-        );
-    });
 
     let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
     assert!(
@@ -639,8 +705,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
 /// must keep the free-list intact; `Ordering::Relaxed` (the counterfactual)
 /// must let the retry read a stale link and corrupt it.
 fn run_cas_retry(failure_ordering: Ordering) {
-    let builder = loom::model::Builder::new();
-    builder.check(move || {
+    model(move || {
         // Start with slot 1 only on stack (not slot 0).
         let links = Arc::new(ArrayLinks::<N>::new());
         let stack = Arc::new(TaggedIndexStack::<16>::new());
@@ -735,7 +800,6 @@ fn run_cas_retry(failure_ordering: Ordering) {
 /// B's push.
 #[test]
 fn cas_retry_path_must_acquire_with_concurrent_push() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_cas_retry(Ordering::Acquire);
 }
 
@@ -745,7 +809,6 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_cas_retry(Ordering::Relaxed);
 }
 
@@ -775,41 +838,39 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
 /// exists to cover.
 #[test]
 fn push_push_conservation() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let retries_before = tagged_index_stack::push_retry_count_for_test();
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
-        let links = Arc::new(ArrayLinks::<N>::new());
-        let stack = Arc::new(TaggedIndexStack::<16>::new());
+    let (retries_before, _g) =
+        model_with_oracle(tagged_index_stack::push_retry_count_for_test, || {
+            let links = Arc::new(ArrayLinks::<N>::new());
+            let stack = Arc::new(TaggedIndexStack::<16>::new());
 
-        let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
-        let ta = thread::spawn(move || {
-            stack_a.push(&*links_a, 0);
-        });
+            let stack_a = Arc::clone(&stack);
+            let links_a = Arc::clone(&links);
+            let ta = thread::spawn(move || {
+                stack_a.push(&*links_a, 0);
+            });
 
-        let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
-        let tb = thread::spawn(move || {
-            stack_b.push(&*links_b, 1);
-        });
+            let stack_b = Arc::clone(&stack);
+            let links_b = Arc::clone(&links);
+            let tb = thread::spawn(move || {
+                stack_b.push(&*links_b, 1);
+            });
 
-        ta.join().unwrap();
-        tb.join().unwrap();
+            ta.join().unwrap();
+            tb.join().unwrap();
 
-        let mut popped: Vec<u32> = Vec::new();
-        while let Some(idx) = stack.pop(&*links) {
-            popped.push(idx);
-        }
-        popped.sort_unstable();
-        assert_eq!(
-            popped,
-            vec![0, 1],
-            "free-list corrupted (lost or duplicated index) after two \
+            let mut popped: Vec<u32> = Vec::new();
+            while let Some(idx) = stack.pop(&*links) {
+                popped.push(idx);
+            }
+            popped.sort_unstable();
+            assert_eq!(
+                popped,
+                vec![0, 1],
+                "free-list corrupted (lost or duplicated index) after two \
              concurrent real pushes: draining yielded {popped:?}, expected \
              exactly [0, 1] regardless of which push's CAS won the race"
-        );
-    });
+            );
+        });
 
     let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
     assert!(
@@ -858,49 +919,47 @@ fn push_push_conservation() {
 /// property the derivation above traces and this test exists to cover.
 #[test]
 fn pop_pop_conservation() {
-    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let retries_before = tagged_index_stack::pop_retry_count_for_test();
-    let builder = loom::model::Builder::new();
-    builder.check(|| {
-        let (stack, links) = both_free();
+    let (retries_before, _g) =
+        model_with_oracle(tagged_index_stack::pop_retry_count_for_test, || {
+            let (stack, links) = both_free();
 
-        let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
-        let ta = thread::spawn(move || stack_a.pop(&*links_a));
+            let stack_a = Arc::clone(&stack);
+            let links_a = Arc::clone(&links);
+            let ta = thread::spawn(move || stack_a.pop(&*links_a));
 
-        let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
-        let tb = thread::spawn(move || stack_b.pop(&*links_b));
+            let stack_b = Arc::clone(&stack);
+            let links_b = Arc::clone(&links);
+            let tb = thread::spawn(move || stack_b.pop(&*links_b));
 
-        let a_result = ta.join().unwrap();
-        let b_result = tb.join().unwrap();
+            let a_result = ta.join().unwrap();
+            let b_result = tb.join().unwrap();
 
-        assert!(
-            a_result.is_some() && b_result.is_some(),
-            "a concurrent popper observed None against a 2-element stack \
+            assert!(
+                a_result.is_some() && b_result.is_some(),
+                "a concurrent popper observed None against a 2-element stack \
              with only 2 poppers and no other concurrent actor: a={a_result:?}, \
              b={b_result:?} — per this test's doc comment, this outcome is \
              unreachable through pop's real retry loop, so its occurrence \
              means the traced derivation was wrong or the shipped `pop` \
              regressed"
-        );
-        let mut popped = [a_result.unwrap(), b_result.unwrap()];
-        popped.sort_unstable();
-        assert_eq!(
-            popped,
-            [0, 1],
-            "free-list corrupted (duplicated index) after two concurrent \
+            );
+            let mut popped = [a_result.unwrap(), b_result.unwrap()];
+            popped.sort_unstable();
+            assert_eq!(
+                popped,
+                [0, 1],
+                "free-list corrupted (duplicated index) after two concurrent \
              real pops: got {popped:?}, expected exactly [0, 1] — both \
              poppers returned Some but did not partition the two seeded \
              indices"
-        );
-        assert!(
-            stack.pop(&*links).is_none(),
-            "stack not fully drained by the two concurrent pops: a third \
+            );
+            assert!(
+                stack.pop(&*links).is_none(),
+                "stack not fully drained by the two concurrent pops: a third \
              index was available afterward, meaning fewer than 2 indices \
              were actually handed out despite both poppers reporting Some"
-        );
-    });
+            );
+        });
 
     let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
     assert!(
