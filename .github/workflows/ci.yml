@@ -772,7 +772,7 @@ jobs:
       # fails this step. `--no-verify` avoids a redundant lib build: the
       # publish --dry-run above already verifies the packaged lib, and the
       # extracted `cargo test` below builds it again for the dev profile.
-      - name: run the packaged .crate test suite (P2-1 regression gate)
+      - name: run the packaged .crate test suite + build the packaged bench (P2-1/P4-7 regression gate)
         run: |
           cargo package -p tagged-index-stack --no-verify
           crate_file=$(ls target/package/tagged-index-stack-*.crate)
@@ -780,6 +780,12 @@ jobs:
           tar xzf "$crate_file" -C "$extract_dir"
           cd "$extract_dir"/tagged-index-stack-*/
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
+          # P4-7 (round-11 @oh review): plain `cargo test` never builds the
+          # bench target (`[[bench]] test = false`, and no --benches), so a
+          # packaged-bench regression — a dev-dependency that does not survive
+          # packaging, a lost file — would surface only after publication.
+          # Build it without running it, in the same extraction and target dir.
+          CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo bench --no-run
 
   once-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
@@ -1777,7 +1783,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: thumbv7em-none-eabi,x86_64-unknown-none,i686-unknown-linux-gnu
+          targets: thumbv7em-none-eabi,x86_64-unknown-none,i686-unknown-linux-gnu,thumbv6m-none-eabi
       - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
       # Publish-readiness task #639 (P5, gap 1 of 4 — 2026-08-06 consolidated
       # summary §8 cross-cutting theme #4): `tests/stack_unit.rs` and
@@ -2025,6 +2031,36 @@ jobs:
       # and the test-only instrumentation are invisible to this plain build
       # regardless. Verified locally: compiles clean.
       - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
+      # tagged-index-stack round-11 @oh review, finding P3-4 — closes
+      # `docs/CORRECTNESS_OPEN_ITEMS.md` item 27 with automated coverage.
+      # The crate's unsupported-target fail-fast (`compile_error!`,
+      # src/lib.rs) once let secondary name-resolution errors (E0432) follow
+      # it; the Sol-codex run-3 P2-4 fix (commit `db8bb77`) moved the whole
+      # implementation behind one cfg gate covering the exact complement of
+      # both invalid-config conditions — but nothing AUTOMATICALLY pinned the
+      # no-atomics branch: the x86_64-unknown-none row above has 64-bit
+      # atomics, and only the loom half of the guard is pinned by
+      # tests/compile_fail_loom_cfg_without_feature.rs. This row asserts the
+      # error SHAPE on a genuinely atomic-less target — the build must fail
+      # with exactly the one named compile_error! and zero numbered
+      # (`error[E...]`) cascade lines — not merely "it fails". Verified
+      # locally against this exact command: exit 101, 1 named error, 0
+      # cascade lines.
+      - name: tagged-index-stack unsupported-target guard emits exactly ONE named error (no cascade)
+        run: |
+          if cargo check -p tagged-index-stack --target thumbv6m-none-eabi > /tmp/tis_thumbv6m_check.log 2>&1; then
+            echo "FAIL: thumbv6m-none-eabi build unexpectedly succeeded (the crate requires 64-bit atomics)"
+            exit 1
+          fi
+          cascade=$(grep -c '^error\[' /tmp/tis_thumbv6m_check.log || true)
+          named=$(grep '^error:' /tmp/tis_thumbv6m_check.log | grep -vc 'could not compile' || true)
+          guard=$(grep '^error:' /tmp/tis_thumbv6m_check.log | grep -c 'requires a target with native 64-bit atomics' || true)
+          echo "numbered cascade errors: $cascade / named error lines: $named / named-guard hits: $guard"
+          if [ "$cascade" != "0" ] || [ "$named" != "1" ] || [ "$guard" != "1" ]; then
+            echo "FAIL: expected exactly the one named compile_error! and no secondary E0432/E0433 cascade:"
+            cat /tmp/tis_thumbv6m_check.log
+            exit 1
+          fi
       # tagged-index-stack publication readiness review (Sol-codex, run 2,
       # P2-4): no `cargo clippy -p tagged-index-stack` or `cargo doc -p
       # tagged-index-stack` row existed anywhere in this file -- the

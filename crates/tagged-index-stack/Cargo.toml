@@ -11,7 +11,7 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
-# Round-10 @oh review, P2-1: the four compile-fail fixture crates under
+# The four compile-fail fixture crates under
 # tests/compile_fail/ each have their own Cargo.toml, so cargo's nested-
 # manifest packaging rule already auto-excludes them — this states that
 # EXPLICITLY so the published .crate does not silently depend on that
@@ -20,11 +20,15 @@ categories = ["concurrency", "data-structures", "no-std::no-alloc"]
 # own skip-when-fixture-absent behavior for the packaged suite.
 exclude = ["tests/compile_fail/"]
 
-[lints]
-# The `unexpected_cfgs` allowlist (several cfgs, including `loom`) is shared
-# at the workspace root (`[workspace.lints.rust]`); most entries there are
-# root-crate-only and harmlessly unused here.
-workspace = true
+# A crate-local `unexpected_cfgs` declaration, deliberately NOT the
+# workspace-inherited table (`[lints] workspace = true`): the workspace
+# allowlist also carries root-crate-only cfgs (`kani`,
+# `aligned_vmem_page_size_override`, `numa_shim_mock`) that would otherwise
+# ship in this crate's published, normalized manifest looking like this
+# crate's own. `loom` is the only non-standard cfg this crate's source uses
+# (same pattern as `crates/aligned-vmem/Cargo.toml`'s `[lints.rust]` table).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dependencies]
 # Zero non-std deps in a NORMAL build — enforced by Cargo's RESOLVER, not just

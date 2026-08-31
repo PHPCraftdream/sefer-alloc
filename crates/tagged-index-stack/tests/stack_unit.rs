@@ -563,8 +563,9 @@ fn links_are_lazy() {
 /// Neither `Default` impl was previously exercised by any test.
 /// `ArrayLinks::<N>::default()` must behave exactly like `new()`: every link
 /// at the zero value (RAD-1 — no eager chaining), readable through the
-/// inherent `load_next`, and usable as a push/pop backing without further
-/// setup.
+/// inherent `load_next`, verified here link-for-link across all `N` indices.
+/// (A bare `ArrayLinks` is not itself a `StackStorage`; push/pop behavior is
+/// the stack-level tests' subject, e.g. `default_array_index_stack_behaves_like_new`.)
 #[test]
 fn default_array_links_behaves_like_new() {
     let default_links = ArrayLinks::<4>::default();
@@ -581,9 +582,6 @@ fn default_array_links_behaves_like_new() {
             "link {i}: a fresh backing's links are the zero value (RAD-1)"
         );
     }
-    let stack = ArrayIndexStack::<16, 4>::new();
-    stack.push(2);
-    assert_eq!(stack.pop(), Some(2));
 }
 
 /// `ArrayIndexStack::<INDEX_BITS, N>::default()` must behave exactly like
