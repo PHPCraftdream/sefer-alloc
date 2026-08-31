@@ -3,9 +3,10 @@
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
 //! code that ships. How much of each model calls the shipped `push`/`pop`
-//! directly varies and is stated per model below: **three** models
+//! directly varies and is stated per model below: **four** models
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
-//! `push_push_conservation`, `pop_pop_conservation`) run end-to-end through
+//! `push_push_conservation`, `pop_pop_conservation`,
+//! `pop_pop_single_element_loser_sees_empty_actual`) run end-to-end through
 //! the real `push`/`pop`, most of the rest hand-inline one side of an
 //! interaction through `cas_head_for_test` (real head atomic, real packing)
 //! to pin an interleaving — the one exception is the untagged-ABA
@@ -65,6 +66,17 @@
 //!     activation oracle — `push_push_conservation` a `PUSH_RETRY_COUNT`
 //!     delta, `pop_pop_conservation` a `POP_RETRY_COUNT` delta — mirroring
 //!     the other's.
+//! (g) **Empty-`actual` retry (pop's skip-backoff arm):**
+//!     `pop_pop_single_element_loser_sees_empty_actual` races TWO real
+//!     `pop`s against a stack pre-seeded with exactly ONE free index: both
+//!     poppers read the same head snapshot, only ONE CAS can succeed, and
+//!     the loser's CAS fails against an EMPTY `actual` — pop's Err arm then
+//!     skips its exponential-backoff spin (`is_empty(actual) == true`)
+//!     and the loop-top empty check returns `None` without spinning. The
+//!     only head transition this model admits is `(0, t) -> (empty, t)`, so
+//!     its `POP_RETRY_COUNT` delta is provably an empty-`actual` retry —
+//!     a path no other shipped model or test reaches (round-8 review
+//!     P3-4).
 //!
 //! # How to run
 //!
@@ -147,10 +159,11 @@ where
     loom::model::Builder::new().check(f);
 }
 
-/// Variant of [`model`] for the three tests whose activation-oracle
+/// Variant of [`model`] for the four tests whose activation-oracle
 /// snapshot/assert window must cover the ENTIRE `check()` call, not just
 /// wrap it: `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
-/// `push_push_conservation`, `pop_pop_conservation`. Each snapshots a
+/// `push_push_conservation`, `pop_pop_conservation`,
+/// `pop_pop_single_element_loser_sees_empty_actual`. Each snapshots a
 /// process-global retry counter, runs its model, then asserts the counter
 /// advanced — and that delta is only exclusive to this call's own `check()`
 /// run if no other test's `check()` can interleave between the snapshot and
@@ -995,6 +1008,102 @@ fn pop_pop_conservation() {
                  any explored schedule — this test is vacuously green, since its \
                  free-list conservation assertion cannot catch a stale-retry \
                  corruption if no retry ever executes"
+            );
+        },
+    );
+}
+
+// ============================================================================
+// (g) Empty-`actual` retry: the 1-element counterpart of `pop_pop_conservation`'s
+// 2-element shape. Two real poppers race a stack pre-seeded with exactly ONE
+// free index, so the loser's CAS fails against an EMPTY `actual` and pop's
+// Err-branch backoff-skip (`is_empty(actual) == true`) is taken — round-8
+// review P3-4: no other shipped model or test reaches that arm.
+// ============================================================================
+
+/// Two threads each do ONE real [`TaggedIndexStack::pop`] concurrently
+/// against a stack pre-seeded with exactly 1 free index. Proves pop‖pop
+/// conservation for the 1-element/2-poppers case AND activates `pop`'s
+/// empty-`actual` skip-backoff arm.
+///
+/// **Derivation of the asserted outcome (traced from `pop`'s actual CAS
+/// loop, not assumed):** both poppers may read the same head snapshot
+/// `(0, t)`; only ONE `compare_exchange` against `(0, t)` can succeed. The
+/// winner installs `(empty, t)` — `pop` preserves the running tag across
+/// the drain (H-2). The loser's CAS therefore fails with
+/// `actual = (empty, t)`: an EMPTY actual. That loser takes `pop`'s Err
+/// arm: the retry counter increments (under the hood), then the
+/// `is_empty(actual) == true` guard SKIPS the exponential-backoff spin
+/// (spinning would be pure wasted latency before the loop-top `None`),
+/// assigns `head = actual`, and the loop-top empty check returns `None`. A
+/// popper scheduled entirely after the winner committed instead sees the
+/// empty head at loop top and returns `None` without ever reaching the Err
+/// arm — both reachable outcome shapes are covered by the same assertions.
+/// No third actor exists, so the outcome space is exactly {A wins, B wins}:
+/// precisely one `Some(0)`, precisely one `None`, and the stack drains to
+/// empty.
+///
+/// The ONLY head transition this model admits is `(0, t) -> (empty, t)`, so
+/// EVERY `POP_RETRY_COUNT` increment the oracle asserts is provably a
+/// failed CAS against an empty actual — the delta doubles as a
+/// path-activation oracle for `pop`'s `is_empty(actual) == true`
+/// skip-backoff arm specifically, which no other shipped model or test
+/// reaches. Note this is STRONGER than in models with >1 element or a
+/// concurrent push (e.g. `pop_pop_conservation`,
+/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`),
+/// where an increment could also come from a non-empty actual.
+#[test]
+fn pop_pop_single_element_loser_sees_empty_actual() {
+    model_with_oracle(
+        tagged_index_stack::pop_retry_count_for_test,
+        || {
+            // Seed exactly ONE element: slot 0 on a fresh (lazy, empty)
+            // stack via the REAL push — running tag ends at exactly 1.
+            let links = Arc::new(ArrayLinks::<1>::new());
+            let stack = Arc::new(TaggedIndexStack::<16>::new());
+            stack.push(&*links, 0);
+
+            let stack_a = Arc::clone(&stack);
+            let links_a = Arc::clone(&links);
+            let ta = thread::spawn(move || stack_a.pop(&*links_a));
+
+            let stack_b = Arc::clone(&stack);
+            let links_b = Arc::clone(&links);
+            let tb = thread::spawn(move || stack_b.pop(&*links_b));
+
+            let a_result = ta.join().unwrap();
+            let b_result = tb.join().unwrap();
+
+            let popped: Vec<u32> = [a_result, b_result].iter().filter_map(|r| *r).collect();
+            assert_eq!(
+                popped.len(),
+                1,
+                "expected exactly one of the two concurrent poppers to win \
+                 the single seeded index: got {popped:?} — a duplicate would \
+                 be free-list corruption, two Nones would mean the seeded \
+                 index vanished"
+            );
+            assert_eq!(
+                popped,
+                [0],
+                "free-list corrupted (lost or duplicated index) after two \
+                 concurrent real pops on a 1-element stack: got {popped:?}, \
+                 expected exactly [0]"
+            );
+            assert!(
+                stack.pop(&*links).is_none(),
+                "stack not fully drained by the two concurrent pops: the \
+                 single seeded index was handed out twice or the loser \
+                 fabricated an index"
+            );
+        },
+        |before, after| {
+            assert!(
+                after - before > 0,
+                "activation oracle: `pop`'s CAS-retry branch was never reached in \
+                 any explored schedule — this test is vacuously green, since its \
+                 loser-returns-None assertion cannot catch a broken skip-backoff \
+                 arm if no retry ever executes"
             );
         },
     );

@@ -11,11 +11,18 @@
 //! fixed, modest number of REAL OS threads hammering a SHARED stack for many
 //! iterations, so genuine contention forces many CAS retries per call, and
 //! `spins` genuinely climbs into its higher range in practice — something no
-//! existing test (loom or otherwise) does. This is the committed replacement
+//! existing test (loom or otherwise) does. That claim is ASSERTED, not
+//! assumed: the test snapshots the crate's retry counters
+//! (`retry_counts_for_test()`, the non-loom twin of the loom suite's
+//! per-counter accessors) before the threaded phase and asserts both the pop
+//! and push counters advanced after it, so a regression that makes the retry
+//! path unreachable fails loudly instead of passing vacuously. This is the
+//! committed replacement
 //! for the throwaway ad hoc probe cited in the round-6 backoff commit
 //! (`069d187`): "8 threads x 200,000 contention-shaped pop/push iterations
 //! under the backoff, then drained and confirmed the exact multiset 0..64
-//! came back" — never committed. See round-7 review finding P2-2
+//! came back" — never committed. This file now runs at that probe's exact
+//! 8 x 200,000 shape. See round-7 review finding P2-2
 //! (`docs/reviews/2026-08-31-100751-tagged-index-stack-review-round7-oh.md`).
 //!
 //! Discipline mirrors `benches/tagged_index_stack_bench.rs`'s
@@ -46,14 +53,17 @@ type Stack = TaggedIndexStack<16>;
 const LINKS_SIZE: u32 = 64;
 
 /// Real OS threads racing the shared stack concurrently.
-const NUM_THREADS: usize = 4;
+const NUM_THREADS: usize = 8;
 
 /// Pop-then-repush iterations per thread. `NUM_THREADS * ITERS_PER_THREAD`
-/// (80,000 total ops) is enough real contention to push the CAS-retry
-/// backoff's `spins` counter well past 2-3 -- the ceiling any loom model in
-/// `loom_aba.rs` can reach (those models cap out at 2 threads / 2 seeded
-/// indices) -- while still running in a couple of seconds.
-const ITERS_PER_THREAD: u32 = 20_000;
+/// (1.6M total pop/push pairs) matches the 8-threads-x-200,000 shape of the
+/// throwaway ad hoc probe this file replaces. Scale alone does NOT enforce
+/// the retry-path claim — the activation-oracle assertions below (snapshot
+/// of `retry_counts_for_test()` before the threaded phase, non-zero delta
+/// after) do; the scale just makes genuine contention — and therefore
+/// retry activation — routine rather than a rare race. Measured cost: runs
+/// in ~0.3 s under a debug `cargo test` (~0.1 s release).
+const ITERS_PER_THREAD: u32 = 200_000;
 
 /// N threads x M iterations of pop-then-immediately-repush-exactly-what-you-
 /// popped against a shared, prefilled stack, followed by a full drain and an
@@ -70,6 +80,14 @@ fn conservation_under_real_thread_contention() {
     for i in 0..LINKS_SIZE {
         stack.push(&links, i);
     }
+
+    // Activation oracle (P3-1): the whole point of this file over
+    // `loom_aba.rs` is real-contention retry activation, so ASSERT it —
+    // snapshot both retry counters before the threaded phase and require
+    // non-zero deltas after. One #[test] per binary here, so the window
+    // needs no MODEL_LOCK-style serialization (see `retry_counts_for_test`'s
+    // doc).
+    let (pop_retries_before, push_retries_before) = tagged_index_stack::retry_counts_for_test();
 
     thread::scope(|s| {
         let links = &links;
@@ -91,6 +109,24 @@ fn conservation_under_real_thread_contention() {
             });
         }
     });
+
+    let (pop_retries_after, push_retries_after) = tagged_index_stack::retry_counts_for_test();
+    assert!(
+        pop_retries_after > pop_retries_before,
+        "activation oracle: `pop`'s CAS-retry branch never executed across \
+         {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
+         (before={pop_retries_before}, after={pop_retries_after}) — the \
+         contention this test exists to exercise did not happen, and its \
+         conservation assertion alone cannot catch a broken retry path"
+    );
+    assert!(
+        push_retries_after > push_retries_before,
+        "activation oracle: `push`'s CAS-retry branch never executed across \
+         {NUM_THREADS} threads x {ITERS_PER_THREAD} contended iterations \
+         (before={push_retries_before}, after={push_retries_after}) — the \
+         contention this test exists to exercise did not happen, and its \
+         conservation assertion alone cannot catch a broken retry path"
+    );
 
     // Drain and confirm the exact multiset 0..LINKS_SIZE came back: no
     // duplicate, no missing index.

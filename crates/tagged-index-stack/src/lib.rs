@@ -929,17 +929,15 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             {
                 Ok(_) => return,
                 Err(actual) => {
-                    #[cfg(loom)]
-                    {
-                        // Activation oracle for the loom suite (see
-                        // `PUSH_RETRY_COUNT` below): deliberately a REAL
-                        // core atomic, NOT loom's, so the count survives
-                        // loom's many re-runs of the test closure and
-                        // accumulates across the explored schedules.
-                        // `Relaxed`: the counter promises no ordering, it
-                        // only counts.
-                        PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    }
+                    // Activation oracle for the loom suite AND the non-loom
+                    // threaded conservation test (see `PUSH_RETRY_COUNT`
+                    // below): deliberately a REAL
+                    // core atomic, NOT loom's, so the count survives
+                    // loom's many re-runs of the test closure and
+                    // accumulates across the explored schedules.
+                    // `Relaxed`: the counter promises no ordering, it
+                    // only counts.
+                    PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     head = actual;
                     // Exponential backoff before retrying (BACKOFF_SPIN_CAP):
                     // lets the winning thread's Release CAS drain off the
@@ -1089,17 +1087,15 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             {
                 Ok(_) => return Some(index),
                 Err(actual) => {
-                    #[cfg(loom)]
-                    {
-                        // Activation oracle for the loom suite (see
-                        // `POP_RETRY_COUNT` below): deliberately a REAL
-                        // core atomic, NOT loom's, so the count survives
-                        // loom's many re-runs of the test closure and
-                        // accumulates across the explored schedules.
-                        // `Relaxed`: the counter promises no ordering, it
-                        // only counts.
-                        POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    }
+                    // Activation oracle for the loom suite AND the non-loom
+                    // threaded conservation test (see `POP_RETRY_COUNT`
+                    // below): deliberately a REAL
+                    // core atomic, NOT loom's, so the count survives
+                    // loom's many re-runs of the test closure and
+                    // accumulates across the explored schedules.
+                    // `Relaxed`: the counter promises no ordering, it
+                    // only counts.
+                    POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     head = actual;
                     // Exponential backoff before retrying — see push's
                     // identical comment and BACKOFF_SPIN_CAP. Skipped when
@@ -1232,9 +1228,12 @@ impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
 /// exploration. `Relaxed` access: the counter promises no ordering, it only
 /// counts.
 ///
-/// Compiled only under `--cfg loom`; never reset by this crate (snapshot and
-/// diff is the caller's job — see [`pop_retry_count_for_test`]).
-#[cfg(loom)]
+/// Compiled in EVERY build — the retry-arm increments are unconditional —
+/// serving the `#[cfg(loom)]` loom suite via `pop_retry_count_for_test` and
+/// the non-loom threaded test via [`retry_counts_for_test`]. Cost is one
+/// Relaxed `fetch_add` per lost CAS, on the retry arm only — the
+/// uncontended fast path never touches it. Never reset by this crate
+/// (snapshot and diff is the caller's job).
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `POP_RETRY_COUNT` — the
@@ -1272,9 +1271,12 @@ pub fn pop_retry_count_for_test() -> usize {
 /// exploration. `Relaxed` access: the counter promises no ordering, it only
 /// counts.
 ///
-/// Compiled only under `--cfg loom`; never reset by this crate (snapshot and
-/// diff is the caller's job — see [`push_retry_count_for_test`]).
-#[cfg(loom)]
+/// Compiled in EVERY build — the retry-arm increments are unconditional —
+/// serving the `#[cfg(loom)]` loom suite via `push_retry_count_for_test` and
+/// the non-loom threaded test via [`retry_counts_for_test`]. Cost is one
+/// Relaxed `fetch_add` per lost CAS, on the retry arm only — the
+/// uncontended fast path never touches it. Never reset by this crate
+/// (snapshot and diff is the caller's job).
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
@@ -1300,4 +1302,33 @@ static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::A
 #[must_use]
 pub fn push_retry_count_for_test() -> usize {
     PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// **test-only** activation oracle: reads BOTH CAS-retry counters in one
+/// call, as `(pop, push)` — `POP_RETRY_COUNT` first, then
+/// `PUSH_RETRY_COUNT`. The non-loom twin of `pop_retry_count_for_test` /
+/// `push_retry_count_for_test` (both `#[cfg(loom)]`, invisible to a plain
+/// build): `tests/threaded_conservation.rs` is `#![cfg(not(loom))]`, so the
+/// real-OS-thread conservation test snapshots this tuple before its threaded
+/// phase and asserts BOTH counters advanced after it — the activation oracle
+/// for its "spins genuinely climbs into its higher range" claim, which
+/// asserts nothing if left to the conservation check alone (an 80,000-call
+/// run can satisfy conservation with a handful of retries or none).
+///
+/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// rationale; this item reads the two retry counters specifically.
+///
+/// Never reset by this crate: snapshot before and diff after. The counts are
+/// process-global and cumulative — across a test binary's whole run — so a
+/// test that wants a delta exclusive to its own window must be the only
+/// active driver of the real `push`/`pop` during it (the loom suite
+/// serializes with `MODEL_LOCK`; `threaded_conservation.rs` is a one-test
+/// binary, so its window is exclusive by construction).
+#[doc(hidden)]
+#[must_use]
+pub fn retry_counts_for_test() -> (usize, usize) {
+    (
+        POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed),
+        PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed),
+    )
 }
