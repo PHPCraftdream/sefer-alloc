@@ -15,11 +15,19 @@
 // them in-script, and pins the round-8 review findings P2-1 / P2-2 / P3-2 /
 // P3-3 (the two false claims round 8 caught fail loudly here).
 //
+// Round 9 (task tis-r9-Group1): CSV latency rows fixed to the correct
+// 20-column width (6 empty throughput fields, not 9 — P2-1), --write made
+// idempotent against its own output, verify-block offsets corrected, D4
+// extended to all five threshold cells (P2-2), and new D5/D6 assertions pin
+// the percentile columns and worst-pop ratio spreads (P3-2/P4-7).
+//
 // Usage:
 //   node scripts/tis_backoff_cap_sweep_derive_report_data.mjs            # verify + print tables
 //   node scripts/tis_backoff_cap_sweep_derive_report_data.mjs --write    # also regenerate the summary CSV
 
 import { readFileSync, writeFileSync } from 'node:fs';
+
+const WRITE = process.argv.includes('--write');
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
@@ -172,8 +180,8 @@ if (latencyRows.length === 0) {
     const [run, cap, threads, rep, bench] = vals.slice(0, 11);
     assert(run === '3' && bench === 'pop_latency', `latency CSV row ${vals.slice(0, 5).join(',')} is run=3 bench=pop_latency`);
     assert(
-      vals.slice(5, 14).every((v) => v === ''),
-      `latency CSV row ${vals.slice(0, 5).join(',')}: the 6 throughput fields and 4 spacers are empty`,
+      vals.slice(5, 11).every((v) => v === ''),
+      `latency CSV row ${vals.slice(0, 5).join(',')}: the 6 throughput fields (header cols 6-11) are empty`,
     );
     const rec = latRecords.find(
       (r) => r.cap_label === cap && r.threads === Number(threads) && r.rep === Number(rep),
@@ -181,7 +189,7 @@ if (latencyRows.length === 0) {
     assert(!!rec, `latency CSV row (3,${cap},${threads},${rep},pop_latency) has a matching JSON line in the latency log`);
     if (!rec) continue;
     assert(
-      vals.slice(14, 23).length === 9,
+      vals.slice(11, 20).length === 9,
       `latency CSV row (3,${cap},${threads},${rep}): has 9 latency fields`,
     );
     const want = [
@@ -195,10 +203,35 @@ if (latencyRows.length === 0) {
       fmtCount(rec.pop_over_100ms),
       rec.wall_ms.toFixed(1),
     ];
-    const got = vals.slice(14, 23);
+    const got = vals.slice(11, 20);
     const ok = want.every((w, i) => got[i] === w);
-    assert(ok, `latency CSV row (3,${cap},${threads},${rep}): all 9 latency fields match the JSON log exactly (got [${got.join(',')}])`);
+    if (WRITE) {
+      // --write is about to regenerate the latency rows from the raw log;
+      // a stale pre-write CSV (old 23-field shape) must not block it. The
+      // regenerated file is re-verified by a plain verify-mode run.
+      pass(`latency CSV row (3,${cap},${threads},${rep}): stale pre-write row skipped (--write regenerates it)`);
+    } else {
+      assert(ok, `latency CSV row (3,${cap},${threads},${rep}): all 9 latency fields match the JSON log exactly (got [${got.join(',')}])`);
+    }
   }
+  // P2-1 pin (round 9): the gate report's "pop_p999_ms = 0.001 in the CSV
+  // rows" sentence is asserted against the actual CSV column — the value is
+  // only correct now that latency rows carry 6 empty throughput fields
+  // instead of 9 (the old 23-field shape shifted every latency value three
+  // columns right, hiding 0.001 under pop_p999_ms as 0.000).
+  const p999Col = 11 + 3;
+  // NOTE (round 9): the review's draft pin expected all six 8-thread rows to
+  // carry 0.001, but the CSV's cap-0 rows correctly carry 0.057/0.054/0.056
+  // (matching the raw log); only the cap-6 rows are 0.001. Pin follows the
+  // data.
+  const rows8c6 = latencyRows.filter((v) => v[2] === '8' && v[1] === '6');
+  const rows8c0 = latencyRows.filter((v) => v[2] === '8' && v[1] === '0');
+  assert(
+    rows8c6.length === 3 && rows8c6.every((v) => v[p999Col] === '0.001') &&
+      rows8c0.length === 3 &&
+      rows8c0.every((v) => ['0.057', '0.054', '0.056'].includes(v[p999Col])),
+    `P2-1 pin: all 6 CSV 8-thread pop_latency rows carry pop_p999_ms in the correctly-aligned column (cap 6 = 0.001, got [${rows8c6.map((v) => v[p999Col]).join(', ')}]; cap 0 = 0.054/0.056/0.057, got [${rows8c0.map((v) => v[p999Col]).join(', ')}])`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +343,41 @@ for (const [t, it] of SHAPES) {
   const zero = latStats[`${t}x${it}/0`];
   const worstPopRatio = six.medMax / zero.medMax;
   const wallSpeedup = zero.medWall / six.medWall;
-  console.log(`| ${t}x${it} | cap6/cap0 worst-pop ratio ${worstPopRatio.toFixed(1)}x | cap0/cap6 wall speedup ${wallSpeedup.toFixed(2)}x |`);
+  const sixes = latFor('6', t, it).map((r) => r.pop_max_ms);
+  const zeros = latFor('0', t, it).map((r) => r.pop_max_ms);
+  const minPl = Math.min(...sixes) / Math.max(...zeros);
+  const maxPl = Math.max(...sixes) / Math.min(...zeros);
+  console.log(`| ${t}x${it} | cap6/cap0 worst-pop ratio ${worstPopRatio.toFixed(1)}x (plausible ${minPl.toFixed(1)}x-${maxPl.toFixed(1)}x across rep pairings) | cap0/cap6 wall speedup ${wallSpeedup.toFixed(2)}x |`);
+}
+console.log('\n## Tail mass by threshold (per-rep counts, cap6 | cap0)');
+console.log('| shape/threshold | cap 6 | cap 0 |');
+console.log('|---|---|---|');
+for (const [name, t, it, field] of [
+  ['8x200000 >1ms', 8, 200000, 'pop_over_1ms'],
+  ['8x200000 >10ms', 8, 200000, 'pop_over_10ms'],
+  ['16x200000 >1ms', 16, 200000, 'pop_over_1ms'],
+  ['16x200000 >10ms', 16, 200000, 'pop_over_10ms'],
+  ['16x200000 >100ms', 16, 200000, 'pop_over_100ms'],
+]) {
+  const fmt = (cl) => {
+    const xs = latFor(cl, t, it).map((r) => r[field]);
+    return `[${xs.join(', ')}]`;
+  };
+  console.log(`| ${name} | ${fmt('6')} | ${fmt('0')} |`);
+}
+console.log('\n## Percentiles, cap6 vs cap0 (median (min-max) over 3 reps, ms)');
+console.log('| shape | cap6 p50 | cap0 p50 | cap6 p90 | cap0 p90 | cap6 p99 | cap0 p99 | cap6 p999 | cap0 p999 |');
+console.log('|---|---|---|---|---|---|---|---|---|');
+for (const [t, it] of SHAPES) {
+  const cell = (cl, p) => {
+    const xs = latFor(cl, t, it).map((r) => r[p]);
+    const mn = Math.min(...xs);
+    const mx = Math.max(...xs);
+    return mn === mx ? mn.toFixed(3) : `${median(xs).toFixed(3)} (${mn.toFixed(3)}-${mx.toFixed(3)})`;
+  };
+  const ps = ['pop_p50_ms', 'pop_p90_ms', 'pop_p99_ms', 'pop_p999_ms'];
+  const cells = ps.map((p) => [cell('6', p), cell('0', p)]).flat();
+  console.log(`| ${t}x${it} | ${cells.join(' | ')} |`);
 }
 
 // ---------------------------------------------------------------------------
@@ -467,25 +534,97 @@ console.log('\n-- assertions --');
     assert(near(zero / six, expSpeed[key], 0.03), `D3: ${key} wall speedup cap0/cap6 = ${expSpeed[key]} (got ${(zero / six).toFixed(3)})`);
   }
 }
-// D4
+// D4 — extended in round 9 (P2-2/P4-7): ALL five threshold cells, both arms,
+// exact per-rep triples (an earlier version pinned only the two cells that
+// agreed with the prose and omitted the 16-thread >1 ms reversal).
 {
-  const sixOver1 = latFor('6', 8, 200000).map((r) => r.pop_over_1ms);
-  const zeroOver1 = latFor('0', 8, 200000).map((r) => r.pop_over_1ms);
-  assert(Math.min(...sixOver1) > Math.max(...zeroOver1), `D4: at 8x200000 min cap6 over_1ms (${Math.min(...sixOver1)}) > max cap0 over_1ms (${Math.max(...zeroOver1)})`);
-  const sixOver100 = latFor('6', 16, 200000).map((r) => r.pop_over_100ms);
-  const zeroOver100 = latFor('0', 16, 200000).map((r) => r.pop_over_100ms);
-  assert(sixOver100.every((x) => x >= 3), `D4: at 16x200000 cap6 over_100ms >= 3 in every rep (got [${sixOver100.join(', ')}])`);
-  assert(zeroOver100.every((x) => x === 0), `D4: at 16x200000 cap0 over_100ms == 0 in every rep (got [${zeroOver100.join(', ')}])`);
+  const cell = (cl, t, it, field) => latFor(cl, t, it).map((r) => r[field]);
+  const expect = {
+    '8x200000 >1ms': [[86, 66, 60], [8, 0, 3]],
+    '8x200000 >10ms': [[34, 29, 26], [2, 0, 0]],
+    '16x200000 >1ms': [[285, 266, 249], [553, 661, 650]],
+    '16x200000 >10ms': [[178, 131, 169], [110, 161, 157]],
+    '16x200000 >100ms': [[4, 3, 3], [0, 0, 0]],
+  };
+  const order = [
+    ['8x200000 >1ms', 8, 200000, 'pop_over_1ms'],
+    ['8x200000 >10ms', 8, 200000, 'pop_over_10ms'],
+    ['16x200000 >1ms', 16, 200000, 'pop_over_1ms'],
+    ['16x200000 >10ms', 16, 200000, 'pop_over_10ms'],
+    ['16x200000 >100ms', 16, 200000, 'pop_over_100ms'],
+  ];
+  for (const [name, t, it, field] of order) {
+    const six = cell('6', t, it, field);
+    const zero = cell('0', t, it, field);
+    const [e6, e0] = expect[name];
+    assert(JSON.stringify(six) === JSON.stringify(e6), `D4: ${name} cap6 over-threshold counts = [${e6.join(', ')}] (got [${six.join(', ')}])`);
+    assert(JSON.stringify(zero) === JSON.stringify(e0), `D4: ${name} cap0 over-threshold counts = [${e0.join(', ')}] (got [${zero.join(', ')}])`);
+  }
+  assert(Math.min(...cell('6', 8, 200000, 'pop_over_1ms')) > Math.max(...cell('0', 8, 200000, 'pop_over_1ms')), 'D4: 8x200000 >1ms — every cap6 rep (60-86) exceeds every cap0 rep (0-8)');
+  assert(Math.min(...cell('6', 8, 200000, 'pop_over_10ms')) > Math.max(...cell('0', 8, 200000, 'pop_over_10ms')), 'D4: 8x200000 >10ms — every cap6 rep (26-34) exceeds every cap0 rep (0-2)');
+  assert(Math.min(...cell('0', 16, 200000, 'pop_over_1ms')) > Math.max(...cell('6', 16, 200000, 'pop_over_1ms')), 'D4: 16x200000 >1ms REVERSES the 8-thread sign — every cap0 rep (553-661) exceeds every cap6 rep (249-285)');
+  assert(near(median(cell('0', 16, 200000, 'pop_over_1ms')) / median(cell('6', 16, 200000, 'pop_over_1ms')), 2.44, 0.05), `D4: 16x200000 >1ms cap0/cap6 median-to-median ~2.44x (got ${(median(cell('0', 16, 200000, 'pop_over_1ms')) / median(cell('6', 16, 200000, 'pop_over_1ms'))).toFixed(2)}x)`);
+  assert(Math.min(...cell('6', 16, 200000, 'pop_over_10ms')) < Math.max(...cell('0', 16, 200000, 'pop_over_10ms')) && Math.max(...cell('6', 16, 200000, 'pop_over_10ms')) > Math.min(...cell('0', 16, 200000, 'pop_over_10ms')), 'D4: 16x200000 >10ms — ranges OVERLAP (110-161 vs 131-178): roughly tied, neither arm dominates');
+  assert(Math.min(...cell('6', 16, 200000, 'pop_over_100ms')) >= 3 && Math.max(...cell('0', 16, 200000, 'pop_over_100ms')) === 0, 'D4: 16x200000 >100ms — cap6 >= 3 in every rep, cap0 == 0 in every rep');
+}
+// D5 — round 9 (P2-2/P4-7): percentiles and quoted extremes. The report
+// publishes cap 6 as better-or-equal at p50/p90/p99/p99.9 in EVERY shape and
+// rep, plus specific range values; pin all of them.
+{
+  for (const [t, it] of SHAPES) {
+    for (const p of ['pop_p50_ms', 'pop_p90_ms', 'pop_p99_ms', 'pop_p999_ms']) {
+      const worse = latFor('6', t, it).filter((r) => {
+        const z = latFor('0', t, it).find((x) => x.rep === r.rep);
+        return r[p] > z[p];
+      });
+      assert(worse.length === 0, `D5: ${t}x${it} — cap6 ${p} <= cap0 in every rep (violations: ${worse.map((r) => `rep${r.rep}=${r[p]}`).join(', ') || 'none'})`);
+    }
+  }
+  const six999_8 = latFor('6', 8, 200000).map((r) => r.pop_p999_ms);
+  assert(six999_8.every((v) => v === 0.001), `D5: 8x200000 cap6 pop_p999_ms = 0.001 in every rep (got [${six999_8.join(', ')}])`);
+  const zero999 = {
+    '4x20000': latFor('0', 4, 20000).map((r) => r.pop_p999_ms),
+    '8x200000': latFor('0', 8, 200000).map((r) => r.pop_p999_ms),
+    '16x200000': latFor('0', 16, 200000).map((r) => r.pop_p999_ms),
+  };
+  assert(Math.min(...zero999['4x20000']) === 0.022 && Math.max(...zero999['4x20000']) === 0.037, `D5: 4x20000 cap0 pop_p999_ms range 0.022-0.037 (got [${zero999['4x20000'].join(', ')}])`);
+  assert(Math.min(...zero999['8x200000']) === 0.054 && Math.max(...zero999['8x200000']) === 0.057, `D5: 8x200000 cap0 pop_p999_ms range 0.054-0.057 (got [${zero999['8x200000'].join(', ')}])`);
+  assert(Math.min(...zero999['16x200000']) === 0.172 && Math.max(...zero999['16x200000']) === 0.182, `D5: 16x200000 cap0 pop_p999_ms range 0.172-0.182 (got [${zero999['16x200000'].join(', ')}])`);
+  assert([...latFor('6', 4, 20000), ...latFor('6', 8, 200000), ...latFor('6', 16, 200000)].every((r) => r.pop_p50_ms === 0), 'D5: cap6 pop_p50_ms = 0.000 in every rep of every shape');
+  const speeds = SHAPES.map(([t, it]) => median(latFor('0', t, it).map((r) => r.wall_ms)) / median(latFor('6', t, it).map((r) => r.wall_ms)));
+  assert(near(Math.min(...speeds), 4.05, 0.01) && near(Math.max(...speeds), 4.85, 0.01), `D5: wall-clock speedup range 4.05-4.85 across shapes (got ${Math.min(...speeds).toFixed(2)}-${Math.max(...speeds).toFixed(2)})`);
+  const expMaxOf3 = { '4x20000': [10.828, 0.297], '8x200000': [59.705, 23.567], '16x200000': [173.365, 46.301] };
+  for (const [t, it] of SHAPES) {
+    const key = `${t}x${it}`;
+    assert(near(Math.max(...latFor('6', t, it).map((r) => r.pop_max_ms)), expMaxOf3[key][0], 0.01), `D5: ${key} cap6 worst-of-3 pop_max = ${expMaxOf3[key][0]} ms (got ${Math.max(...latFor('6', t, it).map((r) => r.pop_max_ms)).toFixed(3)})`);
+    assert(near(Math.max(...latFor('0', t, it).map((r) => r.pop_max_ms)), expMaxOf3[key][1], 0.01), `D5: ${key} cap0 worst-of-3 pop_max = ${expMaxOf3[key][1]} ms (got ${Math.max(...latFor('0', t, it).map((r) => r.pop_max_ms)).toFixed(3)})`);
+  }
+  assert(latFor('0', 8, 200000).find((r) => r.rep === 1).pop_max_ms === 23.567, `D5: cap0 8x200000 rep-1 pop_max = 23.567 ms (the caveat-(1) scheduler-noise figure)`);
+}
+// D6 — round 9 (P3-2): the worst-pop cap6/cap0 ratio is a max-of-3-over-max-
+// of-3 statistic; pin its plausible min/max across rep pairings per shape.
+{
+  const exp = { '4x20000': [4.3, 68.1], '8x200000': [1.8, 100.2], '16x200000': [2.8, 4.4] };
+  for (const [t, it] of SHAPES) {
+    const key = `${t}x${it}`;
+    const sixes = latFor('6', t, it).map((r) => r.pop_max_ms);
+    const zeros = latFor('0', t, it).map((r) => r.pop_max_ms);
+    const minPl = Math.min(...sixes) / Math.max(...zeros);
+    const maxPl = Math.max(...sixes) / Math.min(...zeros);
+    assert(near(minPl, exp[key][0], 0.06), `D6: ${key} MIN plausible cap6/cap0 worst-pop ratio = ${exp[key][0]} (got ${minPl.toFixed(2)})`);
+    assert(near(maxPl, exp[key][1], 0.2), `D6: ${key} MAX plausible cap6/cap0 worst-pop ratio = ${exp[key][1]} (got ${maxPl.toFixed(2)})`);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // (6) --write: regenerate the summary CSV
 // ---------------------------------------------------------------------------
-const WRITE = process.argv.includes('--write');
 const HEADER_EXTRA = ',pop_p50_ms,pop_p90_ms,pop_p99_ms,pop_p999_ms,pop_max_ms,pop_over_1ms,pop_over_10ms,pop_over_100ms,wall_ms';
 if (WRITE) {
   // verify the current file's first 11 fields against the freshly derived rows
-  for (const vals of csvRows) {
+  // Latency (run=3) rows are regenerated from the raw latency log below, so
+  // only sweep rows are re-validated here against the raw records.
+  for (const vals of sweepRows) {
     const [run, cap, threads, rep, bench] = vals;
     const rec = findRec(Number(run), Number(cap), Number(threads), Number(rep), bench);
     const fresh = [
@@ -515,11 +654,11 @@ if (WRITE) {
   });
   const latRows = latSorted.map(
     (r) =>
-      `3,${r.cap_label},${r.threads},${r.rep},pop_latency,,,,,,,,,,${r.pop_p50_ms.toFixed(3)},${r.pop_p90_ms.toFixed(3)},${r.pop_p99_ms.toFixed(3)},${r.pop_p999_ms.toFixed(3)},${r.pop_max_ms.toFixed(3)},${r.pop_over_1ms},${r.pop_over_10ms},${r.pop_over_100ms},${r.wall_ms.toFixed(1)}`,
+      `3,${r.cap_label},${r.threads},${r.rep},pop_latency,,,,,,,${r.pop_p50_ms.toFixed(3)},${r.pop_p90_ms.toFixed(3)},${r.pop_p99_ms.toFixed(3)},${r.pop_p999_ms.toFixed(3)},${r.pop_max_ms.toFixed(3)},${r.pop_over_1ms},${r.pop_over_10ms},${r.pop_over_100ms},${r.wall_ms.toFixed(1)}`,
   );
   const lines = [
     `run,cap,threads,rep,bench,total_ops_per_sec,per_thread_max,per_thread_min,per_thread_mean,max_over_min,min_over_mean${HEADER_EXTRA}`,
-    ...csvRows.map((vals) => `${vals.slice(0, 11).join(',')},,,,,,,,,`),
+    ...sweepRows.map((vals) => `${vals.slice(0, 11).join(',')},,,,,,,,,`),
     ...latRows,
   ];
   writeFileSync(new URL(CSV, ROOT), lines.join('\n') + '\n');
