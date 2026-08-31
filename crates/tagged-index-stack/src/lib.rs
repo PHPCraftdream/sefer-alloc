@@ -495,6 +495,37 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// `Links` backing for the whole life of a non-empty stack") for the full
 /// rule and its concrete failure mode.
 ///
+/// # Storage requirement: a DEDICATED cell, never payload-aliased
+///
+/// A link cell must remain dedicated storage — bytes this crate alone
+/// writes — for as long as its index is out of the stack. It must NOT be
+/// overlaid on the popped slot's payload (the classic "the link IS the free
+/// block's first N bytes" idiom other allocators use to avoid a second
+/// array). This crate does not support that layout, even though the
+/// crate-root docs' "slot-resident" phrasing ("an `AtomicU32` field inside a
+/// slot it already owns") can read as inviting it: slot-resident means the
+/// link lives in memory the slot owns, not that it may share bytes with the
+/// slot's live payload. The reason is [`pop`](TaggedIndexStack::pop)'s own
+/// concurrency shape: a popper may legitimately call
+/// [`load_next`](Self::load_next) on an index that a DIFFERENT thread has
+/// already popped and handed to a consumer in the meantime (the popper read
+/// a stale head, hasn't yet CASed) — this is benign only because the
+/// popper's subsequent CAS is guaranteed to fail (the head moved) and the
+/// read value is discarded on retry, never acted on. With dedicated storage
+/// that stale read is still a valid TAIL-or-index value, merely a stale one.
+/// With payload-aliased storage, the same read can observe arbitrary
+/// consumer-written user data instead — not a link at all — which defeats
+/// two things at once: the reasoning above (the read was never "safe
+/// because meaningful", but a payload-aliased read is not even
+/// link-shaped), and [`pop`](TaggedIndexStack::pop)'s
+/// `debug_assert!` (which exists to catch a backing violating rule 4 of
+/// [`push`](TaggedIndexStack::push)'s `# Caller contract`) — that assert
+/// would then fire on every ordinary benign race instead of only on a real
+/// contract violation, reading as a corruption report for expected
+/// behaviour. A caller that wants this idiom needs a DEDICATED link field
+/// per slot (as [`ArrayLinks`] does, and as this crate's own downstream
+/// production consumers do), not payload overlay.
+///
 /// # Stability
 ///
 /// This trait is intentionally OPEN to external implementation — slot-resident
@@ -732,7 +763,10 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     ///    into a word [`is_empty`](TaggedIndex::is_empty) reads as EMPTY,
     ///    so the stack silently reports itself drained and every remaining
     ///    index in the chain is leaked at once — no panic, no `None`
-    ///    anomaly, just a free-list that quietly shrinks to zero.
+    ///    anomaly, just a free-list that quietly shrinks to zero. See the
+    ///    [`Links`] trait doc's "Storage requirement" section for why
+    ///    payload-aliased link storage in particular always violates this
+    ///    rule, even though no adversarial intent is involved.
     /// 5. **Backing lifetime.** The backing and its cells must remain alive
     ///    and keep their identity for as long as the stack's head can
     ///    reference them — in practice, for the stack's own lifetime.
