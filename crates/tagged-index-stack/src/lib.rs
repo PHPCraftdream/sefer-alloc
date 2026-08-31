@@ -3,13 +3,13 @@
 //! `(index | tag)` pair, where a wrapping generation **tag** in the high bits
 //! structurally defeats the ABA problem for every permitted `INDEX_BITS`.
 //! Lock-freedom here describes the stack's own CAS loops; end-to-end it
-//! additionally requires a non-blocking [`Links`] implementation —
-//! [`ArrayLinks`] and the slot-resident one-`AtomicU32`-per-slot shape both
-//! qualify, while a hypothetical mutex-backed [`Links`] would make
-//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) blocking
-//! again. That is a derived claim, not a slogan: the enforced `1..=16` cap on
-//! `INDEX_BITS` guarantees every legal configuration a tag of at least 48
-//! bits, and the "Tag-width budget" section below derives, from
+//! additionally requires a non-blocking [`StackStorage`] implementation —
+//! [`ArrayIndexStack`] and the slot-resident one-`AtomicU32`-per-slot shape both
+//! qualify, while a hypothetical mutex-backed [`StackStorage`] would make
+//! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+//! blocking again. That is a derived claim, not a slogan: the enforced `1..=16`
+//! cap on `INDEX_BITS` guarantees every legal configuration a tag of at least
+//! 48 bits, and the "Tag-width budget" section below derives, from
 //! cache-coherence throughput on the single head cache line, that such a tag
 //! cannot repeat within any physically plausible observation window. (The
 //! tag is not strictly monotonic — a strictly monotonic counter never
@@ -43,35 +43,51 @@
 //! is `pack`'s checked twin, returning `None` instead of silently truncating
 //! an out-of-range index or tag.
 //!
-//! # Links — slot-resident OR owned
+//! # Storage — one implementor owns the head AND the links
 //!
-//! The stack stores only the HEAD. Each pushed index's "next" link lives in
-//! caller storage, reached through the [`Links`] trait ([`load_next`](Links::load_next) /
-//! [`store_next`](Links::store_next)). This is what lets a production allocator
+//! Each pushed index's "next" link lives in the implementor's storage, reached
+//! through the [`StackStorage`] trait ([`load_next`](StackStorage::load_next) /
+//! [`store_next`](StackStorage::store_next)), alongside the head it exposes via
+//! [`head`](StackStorage::head). This is what lets a production allocator
 //! keep its links **slot-resident** (an `AtomicU32` field inside each slot it
 //! already owns) instead of paying for a second array. For standalone use, the
-//! crate provides [`ArrayLinks`]`<N>` — an owned `[AtomicU32; N]` backing.
-//! Slot-resident does NOT mean payload-aliased — see the [`Links`] trait
-//! doc's "Storage requirement" section for the full dedicated-storage rule
-//! and why violating it defeats [`pop`](TaggedIndexStack::pop)'s own
-//! corruption-detection guard (release-active, not debug-only — see
-//! [`pop`](TaggedIndexStack::pop)'s `# Panics`).
+//! crate provides [`ArrayIndexStack`]`<INDEX_BITS, N>` — head and links fused
+//! into one owned object. Slot-resident does NOT mean payload-aliased — see
+//! the [`StackStorage`] trait doc's "Storage requirement" section for the full
+//! dedicated-storage rule and why violating it defeats
+//! [`pop_index`](StackOps::pop_index)'s own corruption-detection guard
+//! (release-active, not debug-only — see
+//! [`pop_index`](StackOps::pop_index)'s `# Panics`).
 //!
-//! [`Links::store_next`] is the ONLY write the stack ever makes to a link, and
-//! it happens during [`push`](TaggedIndexStack::push), immediately before the
-//! CAS that publishes the index as the new head. The stack NEVER eagerly
+//! The head↔links binding is established ONCE, structurally, by a single
+//! [`StackStorage`] impl — instead of being re-asserted per call, as the
+//! previous design's per-call `&L: Links` parameter required. The
+//! CAS-retry-loop bodies themselves are crate-owned: [`StackOps`] is blanket-
+//! implemented by the crate for every [`StackStorage`] implementor, and
+//! trait coherence makes a downstream override impossible. Consequently the
+//! review's "two `ArrayLinks` instances against one head" double-issue repro —
+//! in which two independent `push`/`pop` calls each supplied a different
+//! backing for the same head — is no longer EXPRESSIBLE against this API: it
+//! does not compile (pinned by a compile-fail regression test added
+//! separately).
+//!
+//! [`store_next`](StackStorage::store_next) is the ONLY write the stack ever
+//! makes to a link, and it happens during
+//! [`push_index`](StackOps::push_index), immediately before the CAS that
+//! publishes the index as the new head. The stack NEVER eagerly
 //! initialises links — see "The lazy link discipline (RAD-1)" below.
 //!
-//! [`TaggedIndexStack::is_empty`] is an advisory, `Relaxed` emptiness check —
+//! [`StackHead::is_empty`] is an advisory, `Relaxed` emptiness check —
 //! useful for diagnostics/monitoring, but a concurrent push or pop can make
-//! it stale the instant it returns, so [`pop`](TaggedIndexStack::pop)'s
-//! `None` remains the only authoritative empty check.
+//! it stale the instant it returns, so
+//! [`pop_index`](StackOps::pop_index)'s `None` remains the only authoritative
+//! empty check.
 //!
 //! # The two hard-won subtleties
 //!
 //! ## H-2: the empty-transition tag MUST be preserved (not reset to 0)
 //!
-//! When a [`pop`](TaggedIndexStack::pop) drains the LAST element, the head
+//! When a [`pop_index`](StackOps::pop_index) drains the LAST element, the head
 //! transitions to "empty". A naive implementation packs the empty sentinel with
 //! **tag 0** (`TaggedIndex::empty()`). **That is a bug.** Resetting the tag to 0
 //! reopens the ABA window: a popper parked mid-`pop`, holding a stale
@@ -79,21 +95,23 @@
 //! spuriously RECUR once the stack drains (→ tag 0) and is immediately refilled
 //! by a push of the SAME index (→ tag `0 + 1 = 1`); if the parked snapshot's tag
 //! was `1`, the head word recurs EXACTLY and the stale CAS succeeds — a genuine
-//! ABA collision that corrupts the free-list. The fix ([`pop`](TaggedIndexStack::pop)
-//! here) packs the empty sentinel's index half with the RUNNING tag the draining pop just
-//! observed, so the tag keeps climbing across the empty transition exactly as it
-//! would across any other pop. [`is_empty`](TaggedIndex::is_empty) inspects only
-//! the index half, so a non-zero tag on the empty word is still unambiguously
-//! "empty". The [`push`](TaggedIndexStack::push) side already reads the tag out
-//! of the current head (empty or not) and bumps it, so it composes with no other
+//! ABA collision that corrupts the free-list. The fix
+//! ([`pop_index`](StackOps::pop_index) here) packs the empty sentinel's index
+//! half with the RUNNING tag the draining pop just observed, so the tag keeps
+//! climbing across the empty transition exactly as it would across any other
+//! pop. [`is_empty`](TaggedIndex::is_empty) inspects only the index half, so a
+//! non-zero tag on the empty word is still unambiguously "empty". The
+//! [`push_index`](StackOps::push_index) side already reads the tag out of the
+//! current head (empty or not) and bumps it, so it composes with no other
 //! change. The shipped loom counterfactual
 //! `counterfactual_empty_transition_tag_reset_lets_aba_recur` proves this is
 //! load-bearing: with tag-reset restored, loom finds the collision.
 //!
 //! ## The lazy link discipline (RAD-1): links are NEVER eagerly written
 //!
-//! The stack writes a slot's link ONLY inside [`push`](TaggedIndexStack::push)
-//! (the [`store_next`](Links::store_next) immediately before publishing that
+//! The stack writes a slot's link ONLY inside
+//! [`push_index`](StackOps::push_index) (the
+//! [`store_next`](StackStorage::store_next) immediately before publishing that
 //! index as head). It performs NO bulk/eager initialisation of the link storage
 //! at construction. A caller whose link backing is OS-zeroed memory (a fresh
 //! mmap, a zeroed slot array) therefore never first-touches those pages merely
@@ -177,8 +195,8 @@
 //!
 //! # Lock-freedom and starvation
 //!
-//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) never
-//! block on a lock — a losing CAS retries — but lock-freedom is not
+//! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+//! never block on a lock — a losing CAS retries — but lock-freedom is not
 //! starvation-freedom: a call can lose arbitrarily many CASes in a row, and
 //! the exponential backoff deliberately makes an unlucky call wait longer
 //! between retries. The measured trade is a SMALL NUMBER OF VERY LARGE
@@ -204,10 +222,10 @@
 //!
 //! Under `--cfg loom` the stack's atomics alias to `loom::sync::atomic`, so the
 //! shipped loom suite (`tests/loom_aba.rs`) model-checks the real
-//! [`TaggedIndexStack`] / [`TaggedIndex`] code exhaustively — no
-//! `preemption_bound`, so loom explores every interleaving these small models
-//! admit. Several models run end-to-end through the shipped
-//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop); most of
+//! [`ArrayIndexStack`] / [`StackHead`] / [`TaggedIndex`] code exhaustively —
+//! no `preemption_bound`, so loom explores every interleaving these small
+//! models admit. Several models run end-to-end through the shipped
+//! [`push`](StackOps::push_index)/[`pop`](StackOps::pop_index); most of
 //! the rest drive the real head atomic and the real packing through
 //! `cas_head_for_test` so an interleaving can be pinned — the one exception is
 //! the untagged-ABA counterfactual, which drives a locally-defined buggy
@@ -220,7 +238,8 @@
 //!
 //! The stack head is a single `AtomicU64` (the packed `(index | tag)` word — see
 //! above); packing both halves into ONE atomic word is the entire mechanism that
-//! makes the CAS in [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop)
+//! makes the CAS in
+//! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 //! atomic across index-and-tag together, so this is not an incidental
 //! implementation choice. That means this crate needs `target_has_atomic = "64"`
 //! and will **not compile** on a target without native 64-bit atomic support —
@@ -267,9 +286,9 @@ compile_error!(
 
 // The atomics are aliased so loom can shadow the REAL stack type: under
 // `--cfg loom` they are built on `loom::sync::atomic`, so the shipped loom tests
-// exercise the actual `TaggedIndexStack`/`TaggedIndex` code rather than a
-// transcription. Under normal builds it is `core::sync::atomic`, keeping the
-// crate zero-non-std-dep.
+// exercise the actual `ArrayIndexStack`/`StackHead`/`TaggedIndex` code rather
+// than a transcription. Under normal builds it is `core::sync::atomic`, keeping
+// the crate zero-non-std-dep.
 #[cfg(not(loom))]
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 #[cfg(loom)]
@@ -282,20 +301,22 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 /// Note this is distinct from the "stack empty" head sentinel
 /// ([`TaggedIndex::empty_index`]): `TAIL` marks a per-slot link's end-of-chain,
 /// while the empty sentinel marks the HEAD word as carrying no index at all. The
-/// two mappings are kept spelled out separately in [`push`](TaggedIndexStack::push) /
-/// [`pop`](TaggedIndexStack::pop) so the invariant never rests on a numeric
+/// two mappings are kept spelled out separately in
+/// [`push_index`](StackOps::push_index) /
+/// [`pop_index`](StackOps::pop_index) so the invariant never rests on a numeric
 /// coincidence between them.
 pub const TAIL: u32 = u32::MAX;
 
-/// Exponential-backoff cap for `push`/`pop`'s CAS-retry arms: on the Nth lost
-/// CAS within one call, spin `1 << N.min(BACKOFF_SPIN_CAP)` times via
-/// [`core::hint::spin_loop`] before retrying. `N` is a per-call local, reset
-/// on every fresh `push`/`pop` — this backs off within one call's retry loop,
-/// never across calls. Measured on the committed bench (x86-64, this repo's
-/// `[profile.bench]` — `cargo bench`'s actual profile; byte-identical to
-/// `[profile.release]` in this repo's `Cargo.toml` today, so no cited number
-/// is affected by which name is used): ~5.3x-9.7x contended throughput at 8
-/// threads, 0% single-thread cost (see CHANGELOG.md for the exact numbers).
+/// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: on
+/// the Nth lost CAS within one call, spin `1 << N.min(BACKOFF_SPIN_CAP)` times
+/// via [`core::hint::spin_loop`] before retrying. `N` is a per-call local,
+/// reset on every fresh `push_index`/`pop_index` — this backs off within one
+/// call's retry loop, never across calls. Measured on the committed bench
+/// (x86-64, this repo's `[profile.bench]` — `cargo bench`'s actual profile;
+/// byte-identical to `[profile.release]` in this repo's `Cargo.toml` today, so
+/// no cited number is affected by which name is used): ~5.3x-9.7x contended
+/// throughput at 8 threads, 0% single-thread cost (see CHANGELOG.md for the
+/// exact numbers).
 ///
 /// **The cap is 6, and this is a fairness-vs-throughput choice, NOT a
 /// low-contention-latency one.** A dedicated cap sweep
@@ -323,10 +344,10 @@ pub const TAIL: u32 = u32::MAX;
 /// higher local cap using that report's §1 reproduction recipe; the
 /// crate's default does not impose that tradeoff on every caller.
 ///
-/// **Lock-free is not starvation-free.** `push` and `pop` never block on a
-/// lock — a losing CAS retries — but a call can lose arbitrarily many
-/// CASes in a row, and the backoff deliberately makes an unlucky call wait
-/// LONGER between retries. The precise trade is narrower than "per-call
+/// **Lock-free is not starvation-free.** `push_index` and `pop_index` never
+/// block on a lock — a losing CAS retries — but a call can lose arbitrarily
+/// many CASes in a row, and the backoff deliberately makes an unlucky call
+/// wait LONGER between retries. The precise trade is narrower than "per-call
 /// tail latency for aggregate throughput": against the measured data it
 /// trades a SMALL NUMBER OF VERY LARGE OUTLIERS for better latency at
 /// every percentile through p99.9 AND better throughput. Measured on a
@@ -375,17 +396,17 @@ pub enum TaggedIndex<const INDEX_BITS: u32> {}
 impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// Compile-time guard: `INDEX_BITS` must be in `1..=16` so both halves are
     /// non-empty, the shifts are well-defined, every representable index fits
-    /// in the `u32` that [`push`](TaggedIndexStack::push) actually takes, AND
-    /// the tag half keeps a minimum of 48 bits.
+    /// in the `u32` that [`push_index`](StackOps::push_index) actually takes,
+    /// AND the tag half keeps a minimum of 48 bits.
     ///
     /// Widths above 16 are rejected rather than merely discouraged: the 16 cap
     /// guarantees every legal configuration at least a 48-bit ABA tag, the
     /// cache-line-throughput-derived floor below which a tag wrap stops being
     /// physically implausible (see the crate docs' "Tag-width budget"
     /// section for the full derivation). The `u32` bound is respected a
-    /// fortiori: `push` takes a `u32` index, so `INDEX_BITS > 32` could never
-    /// buy reachable index range anyway — it only shrinks the tag budget — and
-    /// worse, it would make `INDEX_MASK` exceed `u32::MAX`, letting
+    /// fortiori: `push_index` takes a `u32` index, so `INDEX_BITS > 32` could
+    /// never buy reachable index range anyway — it only shrinks the tag
+    /// budget — and worse, it would make `INDEX_MASK` exceed `u32::MAX`, letting
     /// `index == u32::MAX` (the internal [`TAIL`] sentinel) silently pass the
     /// `< INDEX_MASK` runtime guard and corrupt a chain. (At every legal width
     /// `INDEX_MASK <= 0xFFFF`, so the historical `INDEX_MASK == TAIL`
@@ -408,7 +429,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         "INDEX_BITS must be in 1..=16: the tag half must keep at least 48 bits \
          (the cache-line-throughput-derived floor against ABA tag wrap — see \
          the crate docs' \"Tag-width budget\" section), both halves must be \
-         non-empty, and every valid index must fit in push's u32 parameter"
+         non-empty, and every valid index must fit in push_index's u32 \
+         parameter"
     );
 
     /// Bit-mask for the low `INDEX_BITS` (the index half), e.g. `0xFFFF`
@@ -443,7 +465,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// [`is_empty`](Self::is_empty), not merely as some other live index.
     /// Through the stack's own API this truncation is unreachable by
     /// construction: indices only ever enter via
-    /// [`push`](TaggedIndexStack::push), whose stricter `< INDEX_MASK` bound
+    /// [`push_index`](StackOps::push_index), whose stricter `< INDEX_MASK` bound
     /// lies below this truncation boundary, so no index the stack packs is
     /// ever truncated. External callers of `pack` get no such protection and
     /// must uphold the `< 2^INDEX_BITS` precondition themselves; callers
@@ -451,8 +473,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// twin that returns `None` rather than a silently truncated word.
     /// Note the two bounds are deliberately different ranges, not a typo: `< 2^INDEX_BITS`
     /// is pack's truncation boundary (where the silent masking kicks in),
-    /// while `push`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`) is
-    /// stricter because it also excludes the reserved empty sentinel.
+    /// while `push_index`'s `< INDEX_MASK` (`INDEX_MASK == 2^INDEX_BITS - 1`)
+    /// is stricter because it also excludes the reserved empty sentinel.
     ///
     /// The tag half truncates the same silent way, and that truncation is
     /// deliberate, relied-upon behaviour rather than an oversight: `tag <<
@@ -460,7 +482,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// `2^TAG_BITS`, so an out-of-range tag loses its high bits instead of
     /// corrupting the (separately masked) index half. The stack depends on
     /// exactly this at the ABA wrap boundary —
-    /// [`push`](TaggedIndexStack::push)'s `tag.wrapping_add(1)` may produce
+    /// [`push_index`](StackOps::push_index)'s `tag.wrapping_add(1)` may produce
     /// `2^TAG_BITS`, whose shifted-out high bit `pack` drops, restarting the
     /// tag at 0 (pinned by `tag_wraps_at_2_pow_48` in `tests/stack_unit.rs`).
     /// As with the index half, a caller that has not already validated its
@@ -483,8 +505,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// the `< 2^INDEX_BITS` / `< 2^TAG_BITS` precondition is not already
     /// guaranteed by the calling logic; [`pack`](Self::pack) itself stays
     /// the trusted fast primitive for
-    /// [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) and
-    /// the other in-crate callers that uphold it.
+    /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+    /// and the other in-crate callers that uphold it.
     #[must_use]
     pub const fn try_pack(index: u64, tag: u64) -> Option<u64> {
         // Force the compile-time bounds check to be evaluated HERE, not
@@ -508,7 +530,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     }
 
     /// The bootstrap empty-stack word: index = [`empty_index`](Self::empty_index),
-    /// tag = 0. A freshly-constructed [`TaggedIndexStack`] head is this.
+    /// tag = 0. A freshly-constructed [`StackHead`] is this.
     ///
     /// **Only the bootstrap-time empty state uses tag 0 unconditionally.** A
     /// RUNTIME empty transition (a pop that drains the last element) MUST instead
@@ -516,7 +538,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// H-2 note in the crate docs. Resetting the tag to 0 on a runtime drain
     /// reopens the ABA window.
     ///
-    /// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+    /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
     /// rationale. Beyond that generic reason, this item also has a real
     /// in-workspace consumer outside this crate, so it is NOT freely
     /// removable in a future 0.2 release without checking that caller first.
@@ -533,9 +555,9 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// NON-zero, caller-supplied RUNNING tag (`pack(empty_index(), running_tag)`)
     /// instead of [`empty`](Self::empty) (which always zeroes the tag).
     ///
-    /// **H-2 fix:** the empty transition in [`pop`](TaggedIndexStack::pop) uses
-    /// this, packing the tag it just observed on the popped head, so the ABA tag
-    /// keeps counting forward across the empty→non-empty churn cycle.
+    /// **H-2 fix:** the empty transition in [`pop_index`](StackOps::pop_index)
+    /// uses this, packing the tag it just observed on the popped head, so the
+    /// ABA tag keeps counting forward across the empty→non-empty churn cycle.
     /// [`is_empty`](Self::is_empty) inspects only the index half, so a non-zero
     /// tag here is still unambiguously "empty".
     #[must_use]
@@ -551,15 +573,177 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     }
 }
 
-/// The "next link" storage for a [`TaggedIndexStack`]. Each pushed index's next
-/// pointer (another index, or [`TAIL`]) lives here — slot-resident in caller
-/// storage (the production shape) or in an owned array ([`ArrayLinks`]).
+/// The head word of a tagged Treiber free-list: a single `AtomicU64` packing an
+/// `(index | tag)` pair (see [`TaggedIndex`]). Owned by exactly ONE
+/// [`StackStorage`] implementor — the binding between this head and its links
+/// is established by that impl, not re-asserted per call. The stack operations
+/// themselves live on [`StackOps`] (blanket-implemented by the crate), not
+/// here; this type is the bare atomic embedders inherit a cache line through.
+///
+/// # Layout note — no cache-line isolation
+///
+/// This type is a bare `AtomicU64` with no cache-line padding or alignment
+/// attribute of its own: it inherits the cache line of whatever struct embeds
+/// it. If it lands adjacent to another frequently-modified atomic — say, a
+/// slot counter bumped on every allocation — the two fields false-share:
+/// each write invalidates the other core's copy of the line, and contending
+/// cores ping-pong the line even though the two atomics are logically
+/// independent. That costs throughput, never correctness, and only matters
+/// when the line is genuinely hot. Fix it at the embedding site when a
+/// profile shows it — wrap this stack in a `#[repr(align(64))]` newtype or
+/// interpose padding — rather than paying for blanket alignment inside the
+/// crate, which would waste most of a cache line for every embedder that
+/// does not need the isolation.
+#[derive(Debug)]
+pub struct StackHead<const INDEX_BITS: u32> {
+    /// INVARIANT (release sequence): every modification of `head` MUST be a
+    /// compare_exchange (an RMW). Today both writers are —
+    /// [`push_index`](StackOps::push_index)'s `Release` CAS and
+    /// [`pop_index`](StackOps::pop_index)'s `Acquire` CAS (plus the loom-only
+    /// `cas_head_for_test`, also a CAS; constructing the atomic in `new` is
+    /// initialization, not a modification, and `raw_head` only loads). Per
+    /// the release-sequence rule, a release sequence continues through every
+    /// subsequent RMW to the same location regardless of those RMWs' own
+    /// orderings, so with every write here an RMW the release sequence headed
+    /// by any push's `Release` CAS stays UNBROKEN across all later
+    /// modifications. That is what lets `pop_index`'s successful CAS be plain
+    /// `Acquire` instead of `AcqRel`: any later `Acquire` read of a value
+    /// this pop wrote still lands inside that push's release sequence, so the
+    /// happens-before edge back to the link-writing push survives
+    /// transitively.
+    ///
+    /// Do NOT add a plain `store` to this field (e.g. a hypothetical
+    /// `clear()`/`reset()`, or a `Drop` impl zeroing it). A non-RMW write
+    /// severs every release sequence it follows; after that, `pop_index`'s
+    /// `Acquire`-only success ordering can silently un-publish links on
+    /// weakly-ordered targets — no compile error, and likely no test failure
+    /// on x86. If such an API is ever genuinely needed, promote `pop_index`'s
+    /// success ordering to `AcqRel` in the same change. (Plain loads are
+    /// harmless: they modify nothing, so they break no sequence.)
+    head: AtomicU64,
+}
+
+impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
+    /// A fresh, EMPTY stack head (the bootstrap empty sentinel, tag 0). Under
+    /// `--cfg loom` this cannot be `const` (loom's atomics have no `const` ctor).
+    #[cfg(not(loom))]
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+        }
+    }
+
+    /// A fresh, EMPTY stack head (loom build — non-`const`).
+    #[cfg(loom)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+        }
+    }
+
+    /// Thin wrapper over the head atomic's load — for the [`StackOps`] blanket
+    /// impl.
+    pub(crate) fn load(&self, ordering: Ordering) -> u64 {
+        self.head.load(ordering)
+    }
+
+    /// Thin wrapper over the head atomic's compare_exchange — for the
+    /// [`StackOps`] blanket impl.
+    pub(crate) fn compare_exchange(
+        &self,
+        current: u64,
+        new: u64,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<u64, u64> {
+        self.head.compare_exchange(current, new, success, failure)
+    }
+
+    /// Whether the stack is currently empty. Advisory only — a concurrent
+    /// push or pop can make the answer stale the instant this returns, in
+    /// either direction — so use it for diagnostics/monitoring, not for
+    /// correctness decisions ([`pop_index`](StackOps::pop_index)'s `None` is
+    /// the authoritative empty check).
+    ///
+    /// A `Relaxed` load is sufficient here because the result is explicitly
+    /// racy: no ordering is being promised, and a plain load touches nothing,
+    /// so the release-sequence invariant documented on the private `head`
+    /// field is untouched.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        TaggedIndex::<INDEX_BITS>::is_empty(self.head.load(Ordering::Relaxed))
+    }
+
+    /// The raw packed head word (`Acquire`) — for this crate's own diagnostics
+    /// and tests only. The index half is a live top-of-stack index or
+    /// [`empty_index`](TaggedIndex::empty_index); the high bits are the running
+    /// tag. `Acquire` so a loom test that splits a pop's read from its CAS (to
+    /// open the ABA window) still forms the same happens-before edge the real
+    /// `pop_index`'s `Acquire` head load does.
+    ///
+    /// `#[doc(hidden)]` (this project's established test-only-forwarder
+    /// convention — every other `#[doc(hidden)]` item in this crate points
+    /// here for the generic rationale): this is a `pub` item solely so
+    /// `tests/` — an external crate from this crate's own perspective — can
+    /// reach it. The attribute hides it from rustdoc's rendered navigation
+    /// ONLY; it stays a fully callable `pub` item from any downstream crate,
+    /// nothing in the language or this crate enforces non-callability. It is
+    /// not exercised by any production caller and carries no semver
+    /// stability guarantee.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn raw_head(&self) -> u64 {
+        self.head.load(Ordering::Acquire)
+    }
+
+    /// **loom-test-only** raw CAS on the head word, exposed so the shipped loom
+    /// proof (`tests/loom_aba.rs`) can split a pop's head-load from its CAS —
+    /// opening the ABA window the real `pop_index` closes internally — and
+    /// drive the buggy-drain counterfactual, all against the REAL head atomic.
+    /// NOT part of the public API: it is compiled only under `--cfg loom`.
+    ///
+    /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
+    /// rationale. This item is additionally `#[cfg(loom)]`-gated, so unlike
+    /// `raw_head` it does not exist at all outside a `--cfg loom` build.
+    ///
+    /// # Errors
+    ///
+    /// Forwards `AtomicU64::compare_exchange`'s `Err(actual)` on CAS failure.
+    #[cfg(loom)]
+    #[doc(hidden)]
+    pub fn cas_head_for_test(
+        &self,
+        current: u64,
+        new: u64,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<u64, u64> {
+        self.head.compare_exchange(current, new, success, failure)
+    }
+}
+
+impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// ONE implementor supplies BOTH the stack head and the per-index link access —
+/// this trait replaces the previous per-call `Links` parameter, so the
+/// head↔links binding is established ONCE per impl instead of being re-asserted
+/// on every [`push_index`](StackOps::push_index)/
+/// [`pop_index`](StackOps::pop_index) call. The stack stores the head word; each
+/// pushed index's next pointer (another index, or [`TAIL`]) lives in the
+/// implementor's storage — slot-resident in implementor-owned storage (the
+/// production shape) or in an owned fused object ([`ArrayIndexStack`]).
 ///
 /// The stack's own CAS loops never block, but end-to-end lock-freedom of
-/// [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop)
+/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 /// additionally requires THIS trait's implementation to be non-blocking:
 /// the shipped `AtomicU32`-cell implementations are; a hypothetical
-/// mutex-backed `Links` would make every stack operation blocking again.
+/// mutex-backed `StackStorage` would make every stack operation blocking again.
 ///
 /// # Ordering contract
 ///
@@ -582,26 +766,82 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// sequenced-after the popping thread's `Acquire` observation of that head.
 /// Given the stack's own head orderings, even `Relaxed` links would therefore
 /// be ordered correctly for this stack's own usage. The full pairing is
-/// mandated anyway so that a [`Links`] implementation stays correct on its
-/// own terms, rather than being coupled to the stack's internal head
+/// mandated anyway so that a [`StackStorage`] implementation stays correct on
+/// its own terms, rather than being coupled to the stack's internal head
 /// orderings — an implementation detail that could change. On weakly-ordered
 /// targets, where `Acquire`/`Release` cost real instructions, read this as
 /// considered defence-in-depth for an openly-implementable trait, not
 /// naivety.
 ///
-/// This ordering contract speaks to ONE backing used consistently — it is
-/// what makes a [`load_next`](Self::load_next) observe the
-/// [`store_next`](Self::store_next) the stack performed, *given* that every
-/// call reaches the same backing. It cannot say anything about a
-/// [`TaggedIndexStack`] being handed a DIFFERENT backing instance (even of
-/// the identical type) between calls: nothing binds the stack's head to the
-/// backing a push wrote, so a fresh/different backing was never the target
-/// of any [`store_next`](Self::store_next) the stack performed at all, and
-/// coherence across the swap is broken trivially. That swap is a
-/// caller-contract violation this crate cannot detect — see
-/// [`push`](TaggedIndexStack::push)'s `# Caller contract` section ("ONE
-/// `Links` backing for the whole life of a non-empty stack") for the full
-/// rule and its concrete failure mode.
+/// This ordering contract speaks to ONE head-and-backing pair used
+/// consistently — it is what makes a [`load_next`](Self::load_next) observe
+/// the [`store_next`](Self::store_next) the stack performed, *given* that
+/// every call reaches the same implementor. Under this API that "given" is
+/// structural: see "The binding is structural" below.
+///
+/// # The binding is structural
+///
+/// Under the previous design, push and pop were independently generic over
+/// `&L` on every call and the caller had to uphold — per call, in code the
+/// type system could not express — that the SAME logical backing served every
+/// operation on a non-empty stack. That obligation is now an OBLIGATION OF
+/// THE IMPLEMENTOR, satisfied once in one impl:
+///
+/// 1. **One backing for the whole life of a non-empty stack.** A
+///    [`StackStorage`] implementor IS the backing — the head it returns from
+///    [`head`](Self::head) and the cells its `load_next`/`store_next` touch
+///    belong to the same object, so a "different backing for the same head"
+///    cannot arise.
+/// 2. **Stable one-to-one index↔cell mapping.** Every valid index must map to
+///    the SAME link cell for the implementor's whole lifetime.
+/// 3. **Coherence of `store_next`/`load_next`.** A
+///    [`load_next`](Self::load_next) of index `i` must observe the most recent
+///    [`store_next`](Self::store_next) of `(i, _)` the crate itself performed
+///    on this implementor. The Acquire/Release ordering contract above
+///    guarantees THIS for a single, stable implementor.
+/// 5. **Backing lifetime.** The implementor and its cells must remain alive
+///    and keep their identity for as long as the stack's head can reference
+///    them — in practice, for the implementor's own lifetime.
+///
+/// Because the implementor IS the head-and-links pair, the review's
+/// two-`ArrayLinks`-one-head swap repro — the caller-contract trap the old API
+/// could only document — cannot be expressed in safe Rust against this API.
+///
+/// 4. **`load_next` must return only [`TAIL`] or a currently-valid index** for
+///    the implementor in use. This rule STAYS a live runtime obligation: an
+///    implementation that returns an arbitrary, stale, or foreign value can
+///    corrupt the free-list with no adversarial intent at all: a fresh
+///    zero-initialized [`ArrayLinks`] "coincidentally" returns `0` for every
+///    index, and if that happens to equal the live head's own index,
+///    [`pop_index`](StackOps::pop_index)'s compare-exchange
+///    `current -> current` succeeds trivially. An out-of-range return is a
+///    second, distinct hazard — and a silent one, because
+///    [`pop_index`](StackOps::pop_index) packs the value it read with
+///    [`TaggedIndex::pack`], which never rejects an over-wide value: it masks
+///    it to its low `INDEX_BITS` bits. That truncation corrupts in one of two
+///    ways. Masked to a live index: `next = 0x1_0000` at `INDEX_BITS = 16`
+///    packs as index `0`, which may still be owned elsewhere in the free-list
+///    — the same double-issue as the zero-init collision above, reached by a
+///    different route. Masked to the empty sentinel: a `next` whose low
+///    `INDEX_BITS` bits are all ones (e.g. `0xFFFF` at width 16) packs into a
+///    word [`is_empty`](TaggedIndex::is_empty) reads as EMPTY, so the stack
+///    silently reports itself drained and every remaining index in the chain
+///    is leaked at once — no panic, no `None` anomaly, just a free-list that
+///    quietly shrinks to zero. [`pop_index`](StackOps::pop_index)'s
+///    release-active guard enforces exactly this rule — see its `# Panics`.
+///    See the "Storage requirement" section below for why payload-aliased
+///    link storage in particular always violates this rule, even though no
+///    adversarial intent is involved.
+///
+/// # Mechanical requirement on `head()`
+///
+/// Implementations must return the SAME logical head from [`head`](Self::head)
+/// for every operation on a given implementor. The crate's [`StackOps`]
+/// blanket impl reads `head()` exactly ONCE per operation and holds the
+/// resulting `&StackHead` for the entire CAS retry loop, so even a
+/// pathological `head()` implementation cannot split one logical operation
+/// across two different heads — but the one-read-per-operation discipline only
+/// makes sense if every read lands on the same logical head.
 ///
 /// # Storage requirement: a DEDICATED cell, never payload-aliased
 ///
@@ -613,37 +853,41 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// crate-root docs' "slot-resident" phrasing ("an `AtomicU32` field inside a
 /// slot it already owns") can read as inviting it: slot-resident means the
 /// link lives in memory the slot owns, not that it may share bytes with the
-/// slot's live payload. The reason is [`pop`](TaggedIndexStack::pop)'s own
-/// concurrency shape: a popper may legitimately call
-/// [`load_next`](Self::load_next) on an index that a DIFFERENT thread has
-/// already popped and handed to a consumer in the meantime (the popper read
-/// a stale head, hasn't yet CASed) — this is benign only because the
-/// popper's subsequent CAS is guaranteed to fail (the head moved) and the
-/// read value is discarded on retry, never acted on. With dedicated storage
-/// that stale read is still a valid TAIL-or-index value, merely a stale one.
-/// With payload-aliased storage, the same read can observe arbitrary
-/// consumer-written user data instead — not a link at all — which defeats
-/// two things at once: the reasoning above (the read was never "safe
-/// because meaningful", but a payload-aliased read is not even
-/// link-shaped), and [`pop`](TaggedIndexStack::pop)'s rule-4 guard (which
-/// exists to catch a backing violating rule 4 of
-/// [`push`](TaggedIndexStack::push)'s `# Caller contract`, and is
-/// release-active — see [`pop`](TaggedIndexStack::pop)'s `# Panics`) — that
-/// guard would then PANIC on every ordinary benign race instead of only on
-/// a real contract violation, in every build profile, not just a corruption
-/// report confined to debug/test builds. A caller that wants this idiom
-/// needs a DEDICATED link field per slot (as [`ArrayLinks`] does, and as
-/// this crate's own downstream production consumers do), not payload
+/// slot's live payload. The reason is
+/// [`pop_index`](StackOps::pop_index)'s own concurrency shape: a popper may
+/// legitimately call [`load_next`](Self::load_next) on an index that a
+/// DIFFERENT thread has already popped and handed to a consumer in the
+/// meantime (the popper read a stale head, hasn't yet CASed) — this is benign
+/// only because the popper's subsequent CAS is guaranteed to fail (the head
+/// moved) and the read value is discarded on retry, never acted on. With
+/// dedicated storage that stale read is still a valid TAIL-or-index value,
+/// merely a stale one. With payload-aliased storage, the same read can
+/// observe arbitrary consumer-written user data instead — not a link at all —
+/// which defeats two things at once: the reasoning above (the read was never
+/// "safe because meaningful", but a payload-aliased read is not even
+/// link-shaped), and [`pop_index`](StackOps::pop_index)'s rule-4 guard (which
+/// exists to catch an implementation violating rule 4 above, and is
+/// release-active — see [`pop_index`](StackOps::pop_index)'s `# Panics`) —
+/// that guard would then PANIC on every ordinary benign race instead of only
+/// on a real contract violation, in every build profile, not just a
+/// corruption report confined to debug/test builds. An implementor that wants
+/// this idiom needs a DEDICATED link field per slot (as [`ArrayLinks`] does,
+/// and as this crate's own downstream production consumers do), not payload
 /// overlay.
 ///
 /// # Stability
 ///
 /// This trait is intentionally OPEN to external implementation — slot-resident
-/// links in caller-owned storage (rather than an owned array like
+/// links in implementor-owned storage (rather than an owned array like
 /// [`ArrayLinks`]) is the whole design point. New methods will only ever be
 /// added with default bodies (or via a major version bump); this trait is not
 /// sealed.
-pub trait Links {
+pub trait StackStorage<const INDEX_BITS: u32> {
+    /// The stack's head word. Must return the SAME logical head for every
+    /// operation on this implementor — see the trait doc's "Mechanical
+    /// requirement on `head()`".
+    fn head(&self) -> &StackHead<INDEX_BITS>;
+
     /// Load the "next" link for `index` with `Acquire` ordering.
     fn load_next(&self, index: u32) -> u32;
 
@@ -653,158 +897,13 @@ pub trait Links {
     fn store_next(&self, index: u32, next: u32);
 }
 
-/// An owned `[AtomicU32; N]` link backing for standalone use of
-/// [`TaggedIndexStack`] (when there is no pre-existing slot storage to host the
-/// links). Every link starts at `0` — matching OS-zeroed backing — and is only
-/// ever written by a push (RAD-1: no eager free-list chaining).
-///
-/// # Layout note — link-array false sharing
-///
-/// Each link is a 4-byte `AtomicU32`, so 16 consecutive indices share one
-/// 64-byte cache line (`4 bytes × 16 = 64 bytes`). [`push`](Links::store_next)
-/// writes a link under `Release` and [`pop`](Links::load_next) reads one under
-/// `Acquire`, so if indices from the same 16-index group are handed to
-/// different threads under contention, this array becomes a SECOND contended
-/// surface alongside the stack's own head — contended by accident of index
-/// numbering, not by design. Fix it at the CALLER when a profile shows it:
-/// wrap the index-to-link mapping so contended indices land in different
-/// groups, use a `#[repr(align(64))]` newtype per link, or — the shape this
-/// crate's own README recommends for production use — host links
-/// slot-resident inside a larger per-slot struct instead of this array. Do
-/// NOT pad `ArrayLinks` itself to one link per cache line: that would
-/// multiply its footprint 16x for every single-threaded (or
-/// contention-indifferent) caller, and this crate's whole pitch is not
-/// paying for a second array's worth of memory traffic that most callers
-/// never need.
-#[derive(Debug)]
-pub struct ArrayLinks<const N: usize> {
-    next: [AtomicU32; N],
-}
-
-impl<const N: usize> ArrayLinks<N> {
-    /// Construct `N` links, every one at `0`. NOT a bulk free-list init — links
-    /// only become meaningful once their index is pushed (RAD-1). Under
-    /// `--cfg loom` this cannot be `const` (loom's atomics have no `const` ctor).
-    #[cfg(not(loom))]
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            next: [const { AtomicU32::new(0) }; N],
-        }
-    }
-
-    /// Construct `N` links, every one at `0` (loom build — non-`const`).
-    #[cfg(loom)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            next: core::array::from_fn(|_| AtomicU32::new(0)),
-        }
-    }
-}
-
-impl<const N: usize> Default for ArrayLinks<N> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<const N: usize> Links for ArrayLinks<N> {
-    /// # Panics
-    ///
-    /// Panics if `index >= N`. `N` (this backing's capacity) and the
-    /// stack's `INDEX_BITS` are independent const parameters with nothing
-    /// relating them, so a [`TaggedIndexStack`] can accept an index this
-    /// backing cannot hold — see [`TaggedIndexStack::push`]'s note on the
-    /// two bounds.
-    fn load_next(&self, index: u32) -> u32 {
-        self.next[index as usize].load(Ordering::Acquire)
-    }
-
-    /// # Panics
-    ///
-    /// Panics if `index >= N` — the same bound as
-    /// [`load_next`](Links::load_next); likewise independent of the stack's
-    /// `INDEX_BITS` (see [`TaggedIndexStack::push`]'s note on the two
-    /// bounds).
-    fn store_next(&self, index: u32, next: u32) {
-        self.next[index as usize].store(next, Ordering::Release);
-    }
-}
-
-/// A lock-free LIFO free-list of indices with a wrapping generation tag packed
-/// into the head word, structurally defeating ABA at every permitted
-/// `INDEX_BITS` (the crate-root docs' "Tag-width budget" section carries the
-/// wrap-time derivation). Const-generic over the index width `INDEX_BITS`.
-///
-/// The stack owns ONLY the head (`AtomicU64`); the per-index next links live in
-/// caller-supplied [`Links`] storage passed to [`push`](Self::push) /
-/// [`pop`](Self::pop). A fresh stack is EMPTY (lazy links, RAD-1) — the caller
-/// pushes indices as they become free.
-///
-/// # Layout note — no cache-line isolation
-///
-/// This type is a bare `AtomicU64` with no cache-line padding or alignment
-/// attribute of its own: it inherits the cache line of whatever struct embeds
-/// it. If it lands adjacent to another frequently-modified atomic — say, a
-/// slot counter bumped on every allocation — the two fields false-share:
-/// each write invalidates the other core's copy of the line, and contending
-/// cores ping-pong the line even though the two atomics are logically
-/// independent. That costs throughput, never correctness, and only matters
-/// when the line is genuinely hot. Fix it at the embedding site when a
-/// profile shows it — wrap this stack in a `#[repr(align(64))]` newtype or
-/// interpose padding — rather than paying for blanket alignment inside the
-/// crate, which would waste most of a cache line for every embedder that
-/// does not need the isolation.
-#[derive(Debug)]
-pub struct TaggedIndexStack<const INDEX_BITS: u32> {
-    /// INVARIANT (release sequence): every modification of `head` MUST be a
-    /// compare_exchange (an RMW). Today both writers are —
-    /// [`push`](TaggedIndexStack::push)'s `Release` CAS and
-    /// [`pop`](TaggedIndexStack::pop)'s `Acquire` CAS (plus the loom-only
-    /// `cas_head_for_test`, also a CAS; constructing the atomic in `new` is
-    /// initialization, not a modification, and `raw_head` only loads). Per
-    /// the release-sequence rule, a release sequence continues through every
-    /// subsequent RMW to the same location regardless of those RMWs' own
-    /// orderings, so with every write here an RMW the release sequence headed
-    /// by any push's `Release` CAS stays UNBROKEN across all later
-    /// modifications. That is what lets `pop`'s successful CAS be plain
-    /// `Acquire` instead of `AcqRel`: any later `Acquire` read of a value
-    /// this pop wrote still lands inside that push's release sequence, so the
-    /// happens-before edge back to the link-writing push survives
-    /// transitively.
-    ///
-    /// Do NOT add a plain `store` to this field (e.g. a hypothetical
-    /// `clear()`/`reset()`, or a `Drop` impl zeroing it). A non-RMW write
-    /// severs every release sequence it follows; after that, `pop`'s
-    /// `Acquire`-only success ordering can silently un-publish links on
-    /// weakly-ordered targets — no compile error, and likely no test failure
-    /// on x86. If such an API is ever genuinely needed, promote `pop`'s
-    /// success ordering to `AcqRel` in the same change. (Plain loads are
-    /// harmless: they modify nothing, so they break no sequence.)
-    head: AtomicU64,
-}
-
-impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
-    /// A fresh, EMPTY stack (head = the bootstrap empty sentinel, tag 0). Under
-    /// `--cfg loom` this cannot be `const` (loom's atomics have no `const` ctor).
-    #[cfg(not(loom))]
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
-        }
-    }
-
-    /// A fresh, EMPTY stack (loom build — non-`const`).
-    #[cfg(loom)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
-        }
-    }
-
+/// The stack operations — [`push_index`](Self::push_index) /
+/// [`pop_index`](Self::pop_index) — blanket-implemented by the crate for every
+/// [`StackStorage`] implementor. Downstream impls are impossible (trait
+/// coherence: a second impl would conflict with this blanket), so the
+/// CAS-retry-loop bodies cannot be overridden or drifted from; an implementor
+/// controls only `head`/`load_next`/`store_next`.
+pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// Push `index` onto the stack (classic Treiber push with a tag bump).
     ///
     /// Writes `index`'s next link (the current head's index, or [`TAIL`] if the
@@ -812,7 +911,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// CASes the head to `(index, tag + 1)`. `index` MUST be a valid index
     /// (`< TaggedIndex::INDEX_MASK`) — a violation panics (see `# Panics`)
     /// rather than being trusted, because a corrupted head word downstream lets
-    /// a later `pop` return an index nobody actually pushed, which in the
+    /// a later `pop_index` return an index nobody actually pushed, which in the
     /// parent allocator means handing out a slot that is still live elsewhere
     /// — memory unsafety reachable from this `#![forbid(unsafe_code)]` crate's
     /// 100% safe public API. The real bound is also `index != TAIL`: since
@@ -825,91 +924,29 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// # Caller contract
     ///
     /// `index` must NOT already be reachable from the stack: every index on
-    /// the stack must have been placed there by exactly one `push` and not
-    /// yet popped. Re-pushing an index that is still live is a
+    /// the stack must have been placed there by exactly one `push_index` and
+    /// not yet popped. Re-pushing an index that is still live is a
     /// caller-contract violation this method cannot catch — and cannot even
     /// check cheaply, because liveness is a property of the whole link chain
     /// and verifying it would cost an O(n) walk of that chain on every push.
     /// (Unlike the two subtleties the crate root documents — H-2 and RAD-1 —
     /// this one is enforced by caller discipline, not structurally.)
     ///
-    /// What `push` DOES check, unconditionally on every call, is the separate
-    /// `index < INDEX_MASK` range bound (see `# Panics` below); that observes
-    /// only the index's numeric width, never whether it is already live.
+    /// What `push_index` DOES check, unconditionally on every call, is the
+    /// separate `index < INDEX_MASK` range bound (see `# Panics` below); that
+    /// observes only the index's numeric width, never whether it is already
+    /// live.
     ///
-    /// Violating the liveness rule corrupts the free-list silently: `push`
-    /// overwrites `index`'s link with the current head, so if `index` was
-    /// still chained into the stack, the chain closes a cycle — following it
-    /// from the head reaches `index` again, and `index` now links back to
-    /// the very head it was reached from. `pop` then stops returning `None`
-    /// (the chain never reaches [`TAIL`] again) and hands the same index to
-    /// two different callers, which in the parent allocator means two owners
-    /// of one slot.
-    ///
-    /// ## Second rule, same contract: ONE `Links` backing for the whole life
-    /// of a non-empty stack
-    ///
-    /// [`push`](Self::push) and [`pop`](Self::pop) are independently generic
-    /// over `&L` on every call — nothing in the signatures binds the head to
-    /// the specific backing a push wrote. The caller must therefore uphold
-    /// what the type system cannot express: the SAME logical [`Links`]
-    /// backing must serve every push and pop across a [`TaggedIndexStack`]
-    /// instance's entire non-empty lifetime.
-    ///
-    /// 1. **One backing for the whole life of a non-empty stack.** Swapping
-    ///    to a DIFFERENT backing instance (even of the identical type and
-    ///    width) while the stack holds live indices is undefined WITHIN
-    ///    this crate's safe-Rust guarantees: memory-safe (no unsafe code
-    ///    runs), but logically corrupting.
-    /// 2. **Stable one-to-one index↔cell mapping.** Every valid index must
-    ///    map to the SAME link cell for the backing's whole lifetime.
-    /// 3. **Coherence of `store_next`/`load_next`.** A
-    ///    [`load_next`](Links::load_next) of index `i` must observe the
-    ///    most recent [`store_next`](Links::store_next) of `(i, _)` this
-    ///    crate itself performed. The [`Links`] trait's Acquire/Release
-    ///    ordering contract (documented on the trait) already guarantees
-    ///    THIS for a single, stable backing — but says nothing about using
-    ///    two DIFFERENT backings, which breaks it trivially, since a
-    ///    fresh/different backing was never the target of any `store_next`
-    ///    this crate performed at all.
-    /// 4. **`load_next` must return only [`TAIL`] or a currently-valid
-    ///    index** for the backing in use. A backing that returns an
-    ///    arbitrary, stale, or foreign value can corrupt the free-list
-    ///    with no adversarial intent at all: a fresh zero-initialized
-    ///    [`ArrayLinks`] "coincidentally" returns `0` for every index, and
-    ///    if that happens to equal the live head's own index,
-    ///    [`pop`](Self::pop)'s compare-exchange `current -> current`
-    ///    succeeds trivially. An out-of-range return is a second, distinct
-    ///    hazard — and a silent one, because [`pop`](Self::pop) packs the
-    ///    value it read with [`TaggedIndex::pack`], which never rejects an
-    ///    over-wide value: it masks it to its low `INDEX_BITS` bits. That
-    ///    truncation corrupts in one of two ways. Masked to a live index:
-    ///    `next = 0x1_0000` at `INDEX_BITS = 16` packs as index `0`, which
-    ///    may still be owned elsewhere in the free-list — the same
-    ///    double-issue as the zero-init collision above, reached by a
-    ///    different route. Masked to the empty sentinel: a `next` whose low
-    ///    `INDEX_BITS` bits are all ones (e.g. `0xFFFF` at width 16) packs
-    ///    into a word [`is_empty`](TaggedIndex::is_empty) reads as EMPTY,
-    ///    so the stack silently reports itself drained and every remaining
-    ///    index in the chain is leaked at once — no panic, no `None`
-    ///    anomaly, just a free-list that quietly shrinks to zero. See the
-    ///    [`Links`] trait doc's "Storage requirement" section for why
-    ///    payload-aliased link storage in particular always violates this
-    ///    rule, even though no adversarial intent is involved.
-    /// 5. **Backing lifetime.** The backing and its cells must remain alive
-    ///    and keep their identity for as long as the stack's head can
-    ///    reference them — in practice, for the stack's own lifetime.
-    ///
-    /// Violating this contract is memory-safe (no unsafe code runs) but
-    /// logically catastrophic: `pop` against an unrelated backing can read a
-    /// value that happens to equal the current head's own index, so its CAS
-    /// succeeds as a no-op (`current -> current`) and returns the SAME index
-    /// again and again — an infinite double-issue of one index — which in
-    /// the parent allocator means handing the same slot to two different
-    /// owners. The crate cannot detect a backing swap. This rule is caller
-    /// discipline, unenforceable at compile time AND at runtime — unlike the
-    /// `index < INDEX_MASK` bound this very method's release-active bounds
-    /// check DOES enforce on every call (see `# Panics`).
+    /// Violating the liveness rule corrupts the free-list silently:
+    /// `push_index` overwrites `index`'s link with the current head, so if
+    /// `index` was still chained into the stack, the chain closes a cycle —
+    /// following it from the head reaches `index` again, and `index` now links
+    /// back to the very head it was reached from. `pop_index` then stops
+    /// returning `None` (the chain never reaches [`TAIL`] again) and hands the
+    /// same index to two different callers, which in the parent allocator means
+    /// two owners of one slot. (The old per-call "ONE `Links` backing for the
+    /// whole life of a non-empty stack" rules have moved to the
+    /// [`StackStorage`] implementor contract — the binding is now structural.)
     ///
     /// # Panics
     ///
@@ -923,25 +960,107 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// as abort-equivalent, not catchable-and-recoverable.
     ///
     /// That guard is the only bound this method itself checks, and it
-    /// depends on `INDEX_BITS` alone. The supplied [`Links`] implementation
-    /// may impose its own, separate bound — see [`ArrayLinks::load_next`]/
-    /// [`ArrayLinks::store_next`]'s own `# Panics` docs for the `N`-vs-
-    /// `INDEX_BITS` independence — so out-of-range access in the links layer
-    /// is a second panic source this guard does not cover.
+    /// depends on `INDEX_BITS` alone. The [`StackStorage`] implementation's
+    /// [`load_next`](StackStorage::load_next)/[`store_next`](StackStorage::store_next)
+    /// (e.g. [`ArrayLinks`]'s `index >= N`) may impose their own, separate
+    /// bound — see [`ArrayLinks::load_next`]/[`ArrayLinks::store_next`]'s own
+    /// `# Panics` docs for the `N`-vs-`INDEX_BITS` independence — so
+    /// out-of-range access in the links layer is a second panic source this
+    /// guard does not cover.
     #[track_caller]
-    pub fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
-        let mask = TaggedIndex::<INDEX_BITS>::INDEX_MASK;
+    fn push_index(&self, index: u32);
+
+    /// Pop the top index off the stack (classic Treiber pop), or `None` if
+    /// empty.
+    ///
+    /// Loads the tagged head, reads its next link, then CASes the head to that
+    /// link with the SAME tag (a pop never bumps the tag). The tag in the high
+    /// bits is the ABA defence: if a concurrent thread pops-then-repushes the
+    /// SAME index between our load and our CAS, the tag advances and our CAS
+    /// fails, forcing a retry. (The only residual hazard is a full tag wrap
+    /// inside that window, which the wrap-time bound in the crate docs'
+    /// "Tag-width budget" section places outside any physically plausible
+    /// observation window at every permitted width.)
+    ///
+    /// **H-2 empty transition:** when the popped element is the last one
+    /// (`next == TAIL`), the new head packs the empty sentinel's index with the
+    /// RUNNING tag we just observed — NOT tag 0 — so the ABA tag keeps counting
+    /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
+    /// the crate docs' H-2 section).
+    ///
+    /// On a lost CAS, the retry backoff (see
+    /// [`push_index`](StackOps::push_index)'s identical backoff comment and
+    /// `BACKOFF_SPIN_CAP`) is skipped when the CAS's `actual` value shows the
+    /// stack just went empty — the loop's next iteration returns `None`
+    /// immediately regardless, so backing off first would only add latency to a
+    /// call about to do zero further work.
+    ///
+    /// `pop_index` reads links through the implementor's own
+    /// [`load_next`](StackStorage::load_next), so the head↔links binding cannot
+    /// be swapped between calls — see [`StackStorage`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the [`load_next`](StackStorage::load_next) result for the
+    /// popped index is neither [`TAIL`] nor `< INDEX_MASK` — i.e. a value
+    /// [`TaggedIndex::pack`] would otherwise silently truncate into a wrong
+    /// (possibly still-live) index or into the empty sentinel (see rule 4 of
+    /// the [`StackStorage`] implementor contract). This check is
+    /// unconditional (release-active), in both debug and release builds,
+    /// mirroring [`push_index`](StackOps::push_index)'s `index < INDEX_MASK`
+    /// guard: an out-of-tree A/B measured a release-active version of this
+    /// check at ≈ 0 ns cost (see CHANGELOG.md), so there is no throughput
+    /// reason left to leave a caller-contract violation whose failure mode is
+    /// silent free-list corruption checked only in debug builds. The formatted
+    /// panic payload is allocated through the global allocator, so a
+    /// consumer running this stack inside its own `#[global_allocator]`
+    /// allocation path should treat this guard firing as abort-equivalent,
+    /// not catchable-and-recoverable.
+    ///
+    /// `pop_index` also reaches link storage through the implementor's
+    /// [`load_next`](StackStorage::load_next), which may panic on
+    /// an out-of-range index under its OWN, narrower bound (e.g.
+    /// [`ArrayLinks::load_next`]'s `index >= N`) — the same links-layer
+    /// panic source [`push_index`](StackOps::push_index)'s `# Panics` section
+    /// describes; nothing here re-validates the index beyond what
+    /// `push_index` guaranteed when the index was admitted.
+    ///
+    /// # Lock-freedom and starvation
+    ///
+    /// Lock-free is not starvation-free: `pop_index` never blocks on a lock,
+    /// but a call can lose arbitrarily many CASes in a row, and the retry
+    /// backoff deliberately makes an unlucky call wait longer between
+    /// retries. The measured trade (numbers in the crate-root doc's
+    /// "Lock-freedom and starvation" section): a small number of very
+    /// large outlier calls — the worst observed `pop` blocked 41-60 ms on
+    /// a heavily contended 8x200k workload — in exchange for better
+    /// latency at every percentile through p99.9 AND ~4.9x better
+    /// aggregate throughput.
+    #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
+    #[track_caller]
+    fn pop_index(&self) -> Option<u32>;
+}
+
+impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
+    #[track_caller]
+    fn push_index(&self, index: u32) {
+        let mask = TaggedIndex::<B>::INDEX_MASK;
         if (index as u64) >= mask {
-            Self::push_index_out_of_range(index, mask);
+            push_index_out_of_range(index, mask);
         }
-        let mut head = self.head.load(Ordering::Acquire);
+        // The ops deliberately read `head()` exactly ONCE per operation and
+        // hold that `&StackHead` for the entire CAS retry loop, so even a
+        // pathological `head()` implementation cannot split one logical
+        // operation across two different heads.
+        let head_ref: &StackHead<B> = self.head();
+        let mut head = head_ref.load(Ordering::Acquire);
         // Per-call retry counter driving the backoff below (see
         // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
         let mut spins: u32 = 0;
         loop {
             // Unpack the current head ONCE: the index half chains this push to
             // the top of the stack (below), the tag half feeds the ABA bump.
-            let (cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+            let (cur_idx, tag) = TaggedIndex::<B>::unpack(head);
             // The link this index chains to: the current head's index, or TAIL
             // if the stack is empty. The empty sentinel packs INDEX_MASK, which
             // can no longer equal TAIL (`u32::MAX`) at ANY legal width: the
@@ -950,7 +1069,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // coincidence is structurally impossible. We still spell the
             // empty→TAIL mapping out explicitly so the invariant never rests
             // on any numeric coincidence.
-            let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
+            let next_link = if TaggedIndex::<B>::is_empty(head) {
                 TAIL
             } else {
                 cur_idx as u32
@@ -958,10 +1077,10 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // Write the link under Release so a concurrent pop's Acquire read of
             // this slot's link (after observing it as head) sees it. This is the
             // ONLY link write — never an eager init (RAD-1).
-            links.store_next(index, next_link);
+            self.store_next(index, next_link);
             // Advance the tag (the ABA fix) and CAS the head to this index.
             let new_tag = tag.wrapping_add(1);
-            let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
+            let new_head = TaggedIndex::<B>::pack(index as u64, new_tag);
             // Release on success so a pop's Acquire sees the link we wrote.
             // Relaxed on failure is sound HERE, and the asymmetry with pop is
             // deliberate: a failed CAS sends push around the loop with the
@@ -974,17 +1093,15 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // loom counterfactual
             // `counterfactual_relaxed_cas_failure_corrupts_free_list` proves
             // Relaxed corrupts the free-list in a faithful hand-expansion of
-            // this loop; the actual guard on `pop` itself is the end-to-end
-            // test `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
+            // this loop; the actual guard on `pop_index` itself is the
+            // end-to-end test
+            // `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
             // The happens-before edge a popper needs from THIS push is
             // carried entirely by the Release
             // success CAS's own release sequence — which every later head RMW
             // extends (see the `head` field's INVARIANT) — never by anything
             // push's failed-CAS reads observe.
-            match self
-                .head
-                .compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed)
-            {
+            match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
                 Ok(_) => return,
                 Err(actual) => {
                     // Activation oracle for the loom suite AND the non-loom
@@ -1039,131 +1156,50 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
         }
     }
 
-    /// Cold panic path for [`push`](Self::push)'s `index < INDEX_MASK`
-    /// caller-contract guard, split out of `push` itself so the panic and its
-    /// message formatting can never land in the hot loop's body (`#[cold]` +
-    /// `#[inline(never)]`). `#[track_caller]` here — combined with
-    /// `#[track_caller]` on `push`, which is what makes the location name the
-    /// caller's call site rather than this crate's source line — forwards
-    /// `push`'s received caller location down: a consumer pushing from many
-    /// call sites learns WHICH one violated the contract.
-    #[cold]
-    #[inline(never)]
     #[track_caller]
-    fn push_index_out_of_range(index: u32, mask: u64) -> ! {
-        panic!(
-            "index must be < INDEX_MASK (the empty sentinel is reserved), \
-             got {index} (INDEX_MASK = {mask:#x})"
-        );
-    }
-
-    /// Pop the top index off the stack (classic Treiber pop), or `None` if
-    /// empty.
-    ///
-    /// Loads the tagged head, reads its next link, then CASes the head to that
-    /// link with the SAME tag (a pop never bumps the tag). The tag in the high
-    /// bits is the ABA defence: if a concurrent thread pops-then-repushes the
-    /// SAME index between our load and our CAS, the tag advances and our CAS
-    /// fails, forcing a retry. (The only residual hazard is a full tag wrap
-    /// inside that window, which the wrap-time bound in the crate docs'
-    /// "Tag-width budget" section places outside any physically plausible
-    /// observation window at every permitted width.)
-    ///
-    /// **H-2 empty transition:** when the popped element is the last one
-    /// (`next == TAIL`), the new head packs the empty sentinel's index with the
-    /// RUNNING tag we just observed — NOT tag 0 — so the ABA tag keeps counting
-    /// across the empty→non-empty churn. Resetting to 0 here reopens ABA (see
-    /// the crate docs' H-2 section).
-    ///
-    /// On a lost CAS, the retry backoff (see [`push`](Self::push)'s identical
-    /// backoff comment and `BACKOFF_SPIN_CAP`) is skipped when the CAS's
-    /// `actual` value shows the stack just went empty — the loop's next
-    /// iteration returns `None` immediately regardless, so backing off first
-    /// would only add latency to a call about to do zero further work.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the [`Links::load_next`] result for the popped index is
-    /// neither [`TAIL`] nor `< INDEX_MASK` — i.e. a value
-    /// [`TaggedIndex::pack`] would otherwise silently truncate into a wrong
-    /// (possibly still-live) index or into the empty sentinel (see rule 4 of
-    /// [`push`](Self::push)'s `# Caller contract`). This check is
-    /// unconditional (release-active), in both debug and release builds,
-    /// mirroring [`push`](Self::push)'s `index < INDEX_MASK` guard: an
-    /// out-of-tree A/B measured a release-active version of this check at
-    /// ≈ 0 ns cost (see CHANGELOG.md), so there is no throughput reason left
-    /// to leave a caller-contract violation whose failure mode is silent
-    /// free-list corruption checked only in debug builds. The formatted
-    /// panic payload is allocated through the global allocator, so a
-    /// consumer running this stack inside its own `#[global_allocator]`
-    /// allocation path should treat this guard firing as abort-equivalent,
-    /// not catchable-and-recoverable.
-    ///
-    /// `pop` also reaches link storage through the supplied [`Links`]
-    /// implementation ([`load_next`](Links::load_next)), which may panic on
-    /// an out-of-range index under its OWN, narrower bound (e.g.
-    /// [`ArrayLinks::load_next`]'s `index >= N`) — the same links-layer
-    /// panic source [`push`](Self::push)'s `# Panics` section describes;
-    /// nothing here re-validates the index beyond what `push` guaranteed
-    /// when the index was admitted.
-    ///
-    /// The `&L` passed here is subject to the same caller contract as
-    /// [`push`](Self::push)'s — and `pop` is equally exposed to a backing
-    /// swap (the corrupting call in that failure mode is typically a `pop`
-    /// itself): see [`push`](Self::push)'s `# Caller contract` section,
-    /// "ONE `Links` backing for the whole life of a non-empty stack".
-    ///
-    /// # Lock-freedom and starvation
-    ///
-    /// Lock-free is not starvation-free: `pop` never blocks on a lock, but
-    /// a call can lose arbitrarily many CASes in a row, and the retry
-    /// backoff deliberately makes an unlucky call wait longer between
-    /// retries. The measured trade (numbers in the crate-root doc's
-    /// "Lock-freedom and starvation" section): a small number of very
-    /// large outlier calls — the worst observed `pop` blocked 41-60 ms on
-    /// a heavily contended 8x200k workload — in exchange for better
-    /// latency at every percentile through p99.9 AND ~4.9x better
-    /// aggregate throughput.
-    #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
-    #[track_caller]
-    pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
-        let mut head = self.head.load(Ordering::Acquire);
+    fn pop_index(&self) -> Option<u32> {
+        // The ops deliberately read `head()` exactly ONCE per operation and
+        // hold that `&StackHead` for the entire CAS retry loop, so even a
+        // pathological `head()` implementation cannot split one logical
+        // operation across two different heads.
+        let head_ref: &StackHead<B> = self.head();
+        let mut head = head_ref.load(Ordering::Acquire);
         // Per-call retry counter driving the backoff below (see
         // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
         let mut spins: u32 = 0;
         loop {
-            if TaggedIndex::<INDEX_BITS>::is_empty(head) {
+            if TaggedIndex::<B>::is_empty(head) {
                 return None;
             }
-            let (idx_v, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+            let (idx_v, tag) = TaggedIndex::<B>::unpack(head);
             let index = idx_v as u32;
             // Read the next link BEFORE the CAS (the push stored it under
             // Release; our Acquire observation of head — whether from the
             // initial load OR from a retry CAS failure — synchronizes with it).
-            let next = links.load_next(index);
+            let next = self.load_next(index);
             // Unconditional guard (release-active, mirroring push's
-            // `index < INDEX_MASK` check) for rule 4 of push's `# Caller
-            // contract`: a backing returning anything but TAIL or a
-            // currently-valid index is SILENTLY TRUNCATED by the pack()
-            // below — to a wrong (possibly still-live) index, double-issuing
-            // it, or to the empty sentinel, leaking the whole remaining
-            // chain at once. Promoted from `debug_assert!` in round 7
+            // `index < INDEX_MASK` check) for rule 4 of the StackStorage
+            // implementor contract: an implementation returning anything but
+            // TAIL or a currently-valid index is SILENTLY TRUNCATED by the
+            // pack() below — to a wrong (possibly still-live) index,
+            // double-issuing it, or to the empty sentinel, leaking the whole
+            // remaining chain at once. Promoted from `debug_assert!` in round 7
             // (P3-1): an out-of-tree A/B measured the release-active check
             // at ≈ 0 ns cost (within noise of two `lock cmpxchg`/iter — see
             // `# Panics` below and CHANGELOG.md), so "release builds pay
             // nothing" no longer distinguishes debug-only from
             // release-active here, and the failure mode (silent free-list
-            // corruption) is the same one `push`'s guard already treats as
-            // unconditional.
-            let mask = TaggedIndex::<INDEX_BITS>::INDEX_MASK;
+            // corruption) is the same one `push_index`'s guard already treats
+            // as unconditional.
+            let mask = TaggedIndex::<B>::INDEX_MASK;
             if next != TAIL && (next as u64) >= mask {
-                Self::pop_link_out_of_range(index, next, mask);
+                pop_link_out_of_range(index, next, mask);
             }
             let new_head = if next == TAIL {
                 // H-2: preserve the RUNNING tag across the empty transition.
-                TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
+                TaggedIndex::<B>::pack(TaggedIndex::<B>::empty_index(), tag)
             } else {
-                TaggedIndex::<INDEX_BITS>::pack(next as u64, tag)
+                TaggedIndex::<B>::pack(next as u64, tag)
             };
             // Acquire on success with NO Release half is sound ONLY because
             // every write to `head` is an RMW: this CAS stays inside the
@@ -1171,10 +1207,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             // being handed out, so our own write need not head one. See the
             // INVARIANT on the `head` field — a plain `store` there would
             // sever that sequence and make this ordering unsound.
-            match self
-                .head
-                .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire)
-            {
+            match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {
                 Ok(_) => return Some(index),
                 Err(actual) => {
                     // Activation oracle for the loom suite AND the non-loom
@@ -1201,7 +1234,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     // is still evaluated at the top of the loop exactly as
                     // before, so which outcome a call eventually returns is
                     // unchanged; only how fast it gets there differs.
-                    if !TaggedIndex::<INDEX_BITS>::is_empty(actual) {
+                    if !TaggedIndex::<B>::is_empty(actual) {
                         for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
                             core::hint::spin_loop();
                         }
@@ -1222,81 +1255,137 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
             }
         }
     }
+}
 
-    /// Cold panic path for [`pop`](Self::pop)'s rule-4 guard, split out of
-    /// `pop` itself so the panic and its message formatting can never land
-    /// in the hot loop's body — the same `#[cold]` + `#[inline(never)]` +
-    /// `#[track_caller]` shape as
-    /// [`push_index_out_of_range`](Self::push_index_out_of_range): the
-    /// attribute — combined with `#[track_caller]` on `pop` itself, which
-    /// forwards the caller's location down — makes the panic report the
-    /// `pop` CALL SITE rather than this crate's source line, so a consumer
-    /// with many `pop` sites learns which one got the invalid link.
-    /// Reports which of the two truncation outcomes the caller's
-    /// `Links::load_next` would otherwise have silently produced (see
-    /// `# Panics` on [`pop`](Self::pop)).
-    #[cold]
-    #[inline(never)]
-    #[track_caller]
-    fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
-        let outcome = if (next as u64 & mask) == mask {
-            "the EMPTY SENTINEL, leaking the whole remaining chain"
-        } else {
-            "a wrong index, possibly a live one — double-issuing it"
-        };
-        panic!(
-            "Links::load_next({index}) returned {next:#x}, neither TAIL nor \
-             a valid index (< {mask:#x}): pop's pack() would silently \
-             truncate it to {outcome}"
-        );
+/// Cold panic path for [`StackOps::push_index`]'s `index < INDEX_MASK`
+/// caller-contract guard, split out of `push_index`
+/// itself so the panic and its message formatting can never land in the hot
+/// loop's body (`#[cold]` + `#[inline(never)]`). `#[track_caller]` here —
+/// combined with `#[track_caller]` on `push_index`, which is what makes the
+/// location name the caller's call site rather than this crate's source
+/// line — forwards `push_index`'s received caller location down: a consumer
+/// pushing from many call sites learns WHICH one violated the contract.
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn push_index_out_of_range(index: u32, mask: u64) -> ! {
+    panic!(
+        "index must be < INDEX_MASK (the empty sentinel is reserved), \
+         got {index} (INDEX_MASK = {mask:#x})"
+    );
+}
+
+/// Cold panic path for [`StackOps::pop_index`]'s rule-4 guard, split
+/// out of `pop_index` itself so the panic and its message formatting can
+/// never land in the hot loop's body — the same `#[cold]` +
+/// `#[inline(never)]` + `#[track_caller]` shape as
+/// [`push_index_out_of_range`]: the
+/// attribute — combined with `#[track_caller]` on `pop_index` itself, which
+/// forwards the caller's location down — makes the panic report the
+/// `pop_index` CALL SITE rather than this crate's source line, so a
+/// consumer with many `pop_index` sites learns which one got the invalid
+/// link. Reports which of the two truncation outcomes the caller's
+/// [`load_next`](StackStorage::load_next) would otherwise have silently
+/// produced (see `# Panics` on [`StackOps::pop_index`]).
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
+    let outcome = if (next as u64 & mask) == mask {
+        "the EMPTY SENTINEL, leaking the whole remaining chain"
+    } else {
+        "a wrong index, possibly a live one — double-issuing it"
+    };
+    panic!(
+        "load_next({index}) returned {next:#x}, neither TAIL nor \
+         a valid index (< {mask:#x}): pop_index's pack() would silently \
+         truncate it to {outcome}"
+    );
+}
+
+/// An owned standalone stack: head and links fused into ONE object, so there is
+/// no external backing to mis-bind — the [`StackStorage`] impl below IS the
+/// binding. A lock-free LIFO free-list of indices with a wrapping generation
+/// tag packed into the head word, structurally defeating ABA at every permitted
+/// `INDEX_BITS` (the crate-root docs' "Tag-width budget" section carries the
+/// wrap-time derivation). Const-generic over the index width `INDEX_BITS` and
+/// the link capacity `N`.
+///
+/// The simple [`push`](Self::push)/[`pop`](Self::pop) inherent forwarders exist
+/// for standalone callers; a fresh stack is EMPTY (lazy links, RAD-1) — the
+/// caller pushes indices as they become free. Custom implementors with
+/// slot-resident links do not use this type: they implement [`StackStorage`]
+/// instead and call the [`StackOps`] methods.
+#[derive(Debug)]
+pub struct ArrayIndexStack<const INDEX_BITS: u32, const N: usize> {
+    head: StackHead<INDEX_BITS>,
+    links: ArrayLinks<N>,
+}
+
+impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
+    /// A fresh, EMPTY stack (head = the bootstrap empty sentinel, tag 0; every
+    /// link at `0`). Under `--cfg loom` this cannot be `const` (loom's atomics
+    /// have no `const` ctor).
+    #[cfg(not(loom))]
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            links: ArrayLinks::new(),
+        }
     }
 
-    /// Whether the stack is currently empty. Advisory only — a concurrent
-    /// push or pop can make the answer stale the instant this returns, in
-    /// either direction — so use it for diagnostics/monitoring, not for
-    /// correctness decisions ([`pop`](Self::pop)'s `None` is the
-    /// authoritative empty check).
-    ///
-    /// A `Relaxed` load is sufficient here because the result is explicitly
-    /// racy: no ordering is being promised, and a plain load touches nothing,
-    /// so the release-sequence invariant documented on the private `head`
-    /// field is untouched.
+    /// A fresh, EMPTY stack (loom build — non-`const`).
+    #[cfg(loom)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            links: ArrayLinks::new(),
+        }
+    }
+
+    /// Push `index` onto the stack — a forwarder to
+    /// [`StackOps::push_index`] (this type's own [`StackStorage`] impl supplies
+    /// the head and the links). See that method's doc for the algorithm, the
+    /// caller contract and `# Panics`.
+    #[track_caller]
+    // `#[track_caller]` chains the caller location through the forwarder down
+    // to `push_index` and its `#[cold]` panic helper, so diagnostics through
+    // the owned type name the user's call site exactly as the trait method does.
+    pub fn push(&self, index: u32) {
+        self.push_index(index)
+    }
+
+    /// Pop the top index off the stack, or `None` if empty — a forwarder to
+    /// [`StackOps::pop_index`]. See that method's doc for the algorithm and
+    /// `# Panics`.
+    #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
+    #[track_caller]
+    // `#[track_caller]` chains the caller location through the forwarder down
+    // to `pop_index` and its `#[cold]` panic helper, so diagnostics through
+    // the owned type name the user's call site exactly as the trait method does.
+    pub fn pop(&self) -> Option<u32> {
+        self.pop_index()
+    }
+
+    /// Whether the stack is currently empty. Advisory `Relaxed` check — see
+    /// [`StackHead::is_empty`].
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        TaggedIndex::<INDEX_BITS>::is_empty(self.head.load(Ordering::Relaxed))
+        self.head.is_empty()
     }
 
-    /// The raw packed head word (`Acquire`) — for this crate's own diagnostics
-    /// and tests only. The index half is a live top-of-stack index or
-    /// [`empty_index`](TaggedIndex::empty_index); the high bits are the running
-    /// tag. `Acquire` so a loom test that splits a pop's read from its CAS (to
-    /// open the ABA window) still forms the same happens-before edge the real
-    /// `pop`'s `Acquire` head load does.
-    ///
-    /// `#[doc(hidden)]` (this project's established test-only-forwarder
-    /// convention — every other `#[doc(hidden)]` item in this crate points
-    /// here for the generic rationale): this is a `pub` item solely so
-    /// `tests/` — an external crate from this crate's own perspective — can
-    /// reach it. The attribute hides it from rustdoc's rendered navigation
-    /// ONLY; it stays a fully callable `pub` item from any downstream crate,
-    /// nothing in the language or this crate enforces non-callability. It is
-    /// not exercised by any production caller and carries no semver
-    /// stability guarantee.
+    /// The raw packed head word (`Acquire`) — forwarder to
+    /// [`StackHead::raw_head`] (tests/loom suite need it).
     #[doc(hidden)]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
-        self.head.load(Ordering::Acquire)
+        self.head.raw_head()
     }
 
-    /// **loom-test-only** raw CAS on the head word, exposed so the shipped loom
-    /// proof (`tests/loom_aba.rs`) can split a pop's head-load from its CAS —
-    /// opening the ABA window the real `pop` closes internally — and drive the
-    /// buggy-drain counterfactual, all against the REAL head atomic. NOT part of
-    /// the public API: it is compiled only under `--cfg loom`.
-    ///
-    /// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
-    /// rationale. This item is additionally `#[cfg(loom)]`-gated, so unlike
-    /// `raw_head` it does not exist at all outside a `--cfg loom` build.
+    /// **loom-test-only** raw CAS on the head word — forwarder to
+    /// [`StackHead::cas_head_for_test`].
     ///
     /// # Errors
     ///
@@ -1310,25 +1399,120 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
         success: Ordering,
         failure: Ordering,
     ) -> Result<u64, u64> {
-        self.head.compare_exchange(current, new, success, failure)
+        self.head.cas_head_for_test(current, new, success, failure)
     }
 }
 
-impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
+impl<const B: u32, const N: usize> Default for ArrayIndexStack<B, N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Test-only activation counter for [`pop`](TaggedIndexStack::pop)'s
-/// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
-/// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
-/// `loom::sync::atomic`: loom re-runs the closure passed to
-/// `Builder::check` across many schedules within one process, and a real
-/// static survives those re-runs, so the accumulated count is an exact
-/// "how often was the retry branch actually reached" oracle over an entire
-/// exploration. `Relaxed` access: the counter promises no ordering, it only
-/// counts.
+impl<const B: u32, const N: usize> StackStorage<B> for ArrayIndexStack<B, N> {
+    fn head(&self) -> &StackHead<B> {
+        &self.head
+    }
+    fn load_next(&self, index: u32) -> u32 {
+        self.links.load_next(index)
+    }
+    fn store_next(&self, index: u32, next: u32) {
+        self.links.store_next(index, next)
+    }
+}
+
+/// An owned `[AtomicU32; N]` link backing (now used inside the fused
+/// [`ArrayIndexStack`]; slot-resident implementors host their own links
+/// instead). Every link starts at `0` — matching OS-zeroed backing — and is
+/// only ever written by a push (RAD-1: no eager free-list chaining).
+///
+/// # Layout note — link-array false sharing
+///
+/// Each link is a 4-byte `AtomicU32`, so 16 consecutive indices share one
+/// 64-byte cache line (`4 bytes × 16 = 64 bytes`).
+/// [`store_next`](Self::store_next) writes a link under `Release` and
+/// [`load_next`](Self::load_next) reads one under `Acquire`, so if indices from
+/// the same 16-index group are handed to different threads under contention,
+/// this array becomes a SECOND contended surface alongside the stack's own
+/// head — contended by accident of index numbering, not by design. Fix it at
+/// the CALLER when a profile shows it: wrap the index-to-link mapping so
+/// contended indices land in different groups, use a `#[repr(align(64))]`
+/// newtype per link, or — the shape this crate's own README recommends for
+/// production use — host links slot-resident inside a larger per-slot struct
+/// instead of this array. Do NOT pad `ArrayLinks` itself to one link per cache
+/// line: that would multiply its footprint 16x for every single-threaded (or
+/// contention-indifferent) caller, and this crate's whole pitch is not paying
+/// for a second array's worth of memory traffic that most callers never need.
+#[derive(Debug)]
+pub struct ArrayLinks<const N: usize> {
+    next: [AtomicU32; N],
+}
+
+impl<const N: usize> ArrayLinks<N> {
+    /// Construct `N` links, every one at `0`. NOT a bulk free-list init — links
+    /// only become meaningful once their index is pushed (RAD-1). Under
+    /// `--cfg loom` this cannot be `const` (loom's atomics have no `const` ctor).
+    #[cfg(not(loom))]
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            next: [const { AtomicU32::new(0) }; N],
+        }
+    }
+
+    /// Construct `N` links, every one at `0` (loom build — non-`const`).
+    #[cfg(loom)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            next: core::array::from_fn(|_| AtomicU32::new(0)),
+        }
+    }
+
+    /// Load the "next" link for `index` with `Acquire` ordering.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index >= N`. `N` (this backing's capacity) and the
+    /// stack's `INDEX_BITS` are independent const parameters with nothing
+    /// relating them, so a stack can accept an index this
+    /// backing cannot hold — see [`StackOps::push_index`]'s note on the
+    /// two bounds.
+    #[must_use]
+    pub fn load_next(&self, index: u32) -> u32 {
+        self.next[index as usize].load(Ordering::Acquire)
+    }
+
+    /// Store the "next" link for `index` with `Release` ordering. This is the
+    /// ONLY write the stack makes to link storage, and only during a push — the
+    /// lazy-link (RAD-1) discipline: link storage is never eagerly initialised.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index >= N` — the same bound as
+    /// [`load_next`](Self::load_next); likewise independent of the stack's
+    /// `INDEX_BITS` (see [`StackOps::push_index`]'s note on the two
+    /// bounds).
+    pub fn store_next(&self, index: u32, next: u32) {
+        self.next[index as usize].store(next, Ordering::Release);
+    }
+}
+
+impl<const N: usize> Default for ArrayLinks<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Test-only activation counter for
+/// [`pop_index`](StackOps::pop_index)'s CAS-retry branch (the
+/// `Err(actual) => head = actual` arm, incremented there). Deliberately a REAL
+/// `core::sync::atomic::AtomicUsize`, NOT `loom::sync::atomic`: loom re-runs
+/// the closure passed to `Builder::check` across many schedules within one
+/// process, and a real static survives those re-runs, so the accumulated count
+/// is an exact "how often was the retry branch actually reached" oracle over an
+/// entire exploration. `Relaxed` access: the counter promises no ordering, it
+/// only counts.
 ///
 /// Compiled ONLY under the `test-internals` feature or a loom build
 /// (`--cfg loom --features loom`) — a default/published build of the crate
@@ -1346,15 +1530,15 @@ impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `POP_RETRY_COUNT` — the
-/// number of times `pop`'s CAS-retry branch has executed in this process. The
-/// loom suite asserts this counter ADVANCES across an exploration so a model
-/// whose schedules never actually reach `pop`'s retry path fails loudly
-/// instead of passing vacuously (see the assertion in
+/// number of times `pop_index`'s CAS-retry branch has executed in this
+/// process. The loom suite asserts this counter ADVANCES across an exploration
+/// so a model whose schedules never actually reach `pop_index`'s retry path
+/// fails loudly instead of passing vacuously (see the assertion in
 /// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
 ///
-/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
 /// rationale; this item reads `POP_RETRY_COUNT`, the counter for
-/// [`pop`](TaggedIndexStack::pop)'s retry branch specifically.
+/// [`pop_index`](StackOps::pop_index)'s retry branch specifically.
 ///
 /// Never reset by this crate: snapshot before and diff after. The count is
 /// process-global and cumulative — across loom's internal re-runs of a
@@ -1370,15 +1554,15 @@ pub fn pop_retry_count_for_test() -> usize {
     POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-/// Test-only activation counter for [`push`](TaggedIndexStack::push)'s
-/// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
-/// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
-/// `loom::sync::atomic`: loom re-runs the closure passed to
-/// `Builder::check` across many schedules within one process, and a real
-/// static survives those re-runs, so the accumulated count is an exact
-/// "how often was the retry branch actually reached" oracle over an entire
-/// exploration. `Relaxed` access: the counter promises no ordering, it only
-/// counts.
+/// Test-only activation counter for
+/// [`push_index`](StackOps::push_index)'s CAS-retry branch (the
+/// `Err(actual) => head = actual` arm, incremented there). Deliberately a REAL
+/// `core::sync::atomic::AtomicUsize`, NOT `loom::sync::atomic`: loom re-runs
+/// the closure passed to `Builder::check` across many schedules within one
+/// process, and a real static survives those re-runs, so the accumulated count
+/// is an exact "how often was the retry branch actually reached" oracle over an
+/// entire exploration. `Relaxed` access: the counter promises no ordering, it
+/// only counts.
 ///
 /// Compiled ONLY under the `test-internals` feature or a loom build
 /// (`--cfg loom --features loom`) — a default/published build of the crate
@@ -1396,15 +1580,15 @@ pub fn pop_retry_count_for_test() -> usize {
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
-/// number of times `push`'s CAS-retry branch has executed in this process. The
-/// loom suite asserts this counter ADVANCES across an exploration so a model
-/// whose schedules never actually reach `push`'s retry path fails loudly
-/// instead of passing vacuously (see the assertion in
+/// number of times `push_index`'s CAS-retry branch has executed in this
+/// process. The loom suite asserts this counter ADVANCES across an exploration
+/// so a model whose schedules never actually reach `push_index`'s retry path
+/// fails loudly instead of passing vacuously (see the assertion in
 /// `push_push_conservation`).
 ///
-/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
 /// rationale; this item reads `PUSH_RETRY_COUNT`, the counter for
-/// [`push`](TaggedIndexStack::push)'s retry branch specifically.
+/// [`push_index`](StackOps::push_index)'s retry branch specifically.
 ///
 /// Never reset by this crate: snapshot before and diff after. The count is
 /// process-global and cumulative — across loom's internal re-runs of a
@@ -1433,7 +1617,7 @@ pub fn push_retry_count_for_test() -> usize {
 /// An earlier revision of the test's doc claimed this counter alone pinned
 /// both halves — it cannot even distinguish 1 retry from thousands).
 ///
-/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
 /// rationale; this item reads the two retry counters specifically.
 ///
 /// Compiled under the same `test-internals`/loom gate as the counters
@@ -1442,9 +1626,9 @@ pub fn push_retry_count_for_test() -> usize {
 /// Never reset by this crate: snapshot before and diff after. The counts are
 /// process-global and cumulative — across a test binary's whole run — so a
 /// test that wants a delta exclusive to its own window must be the only
-/// active driver of the real `push`/`pop` during it (the loom suite
-/// serializes with `MODEL_LOCK`; `threaded_conservation.rs` is a one-test
-/// binary, so its window is exclusive by construction).
+/// active driver of the real `push_index`/`pop_index` during it (the loom
+/// suite serializes with `MODEL_LOCK`; `threaded_conservation.rs` is a
+/// one-test binary, so its window is exclusive by construction).
 #[doc(hidden)]
 #[must_use]
 #[cfg(any(feature = "test-internals", loom))]
@@ -1455,15 +1639,15 @@ pub fn retry_counts_for_test() -> (usize, usize) {
     )
 }
 
-/// Test-only backoff-activation counter for [`pop`](TaggedIndexStack::pop):
-/// incremented in `pop`'s retry arm for every retry whose spin loop ran at
-/// FULL backoff depth (`spins` already saturated at `BACKOFF_SPIN_CAP`, so
-/// `1 << BACKOFF_SPIN_CAP` = 64 `spin_loop` iterations actually executed).
-/// Non-zero proves the backoff climbs into its higher range under real
-/// contention; a regression that caps `spins` at 0, resets it per
-/// iteration, or moves its increment off the reachable path zeroes this
-/// counter while `POP_RETRY_COUNT` keeps advancing — exactly the
-/// silently-inert-backoff failure
+/// Test-only backoff-activation counter for
+/// [`pop_index`](StackOps::pop_index): incremented in `pop_index`'s retry arm
+/// for every retry whose spin loop ran at FULL backoff depth (`spins` already
+/// saturated at `BACKOFF_SPIN_CAP`, so `1 << BACKOFF_SPIN_CAP` = 64
+/// `spin_loop` iterations actually executed). Non-zero proves the backoff
+/// climbs into its higher range under real contention; a regression that caps
+/// `spins` at 0, resets it per iteration, or moves its increment off the
+/// reachable path zeroes this counter while `POP_RETRY_COUNT` keeps advancing
+/// — exactly the silently-inert-backoff failure
 /// `tests/threaded_conservation.rs`'s second oracle level catches (round-9
 /// P3-1). Same gate, ordering and never-reset semantics as
 /// `POP_RETRY_COUNT`; see its doc for the gating rationale.
@@ -1471,9 +1655,10 @@ pub fn retry_counts_for_test() -> (usize, usize) {
 static POP_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
-/// Test-only backoff-activation counter for [`push`](TaggedIndexStack::push):
-/// the push-side twin of `POP_BACKOFF_CAP_REACH_COUNT` — same condition,
-/// same gate, same never-reset semantics.
+/// Test-only backoff-activation counter for
+/// [`push_index`](StackOps::push_index): the push-side twin of
+/// `POP_BACKOFF_CAP_REACH_COUNT` — same condition, same gate, same never-reset
+/// semantics.
 #[cfg(any(feature = "test-internals", loom))]
 static PUSH_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
@@ -1489,7 +1674,7 @@ static PUSH_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
 /// change that silently disarms the backoff fails loudly instead of
 /// shipping with the documented behavior inert.
 ///
-/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
 /// rationale; this item reads the two backoff-cap-reach counters
 /// specifically.
 ///

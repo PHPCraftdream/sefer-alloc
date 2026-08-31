@@ -5,12 +5,13 @@
 //! distinguish "one call starved for 100+ ms" from "every call uniformly 10x
 //! slow").
 //!
-//! Observation-only: public `push`/`pop` API, std-only, no dependency added,
+//! Observation-only: public `push`/`pop` API (through `ArrayIndexStack`),
+//! std-only, no dependency added,
 //! no crate behavior changed. The workload mirrors
 //! `tests/threaded_conservation.rs` and the bench's contention rows exactly:
 //! N threads x M iterations of pop-then-repush-exactly-what-you-popped
-//! against a shared `ArrayLinks<64>` prefilled with `0..64`, started from a
-//! shared barrier. Every `pop` is individually timed.
+//! against a shared `ArrayIndexStack<16, 64>` prefilled with `0..64`, started
+//! from a shared barrier. Every `pop` is individually timed.
 //!
 //! The backoff cap itself is a private `const` in
 //! `crates/tagged-index-stack/src/lib.rs`, so an arm at a non-shipped cap is
@@ -41,12 +42,13 @@ use std::hint::black_box;
 use std::sync::Barrier;
 use std::time::Instant;
 
-use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
+use tagged_index_stack::ArrayIndexStack;
 
 /// Same width as the bench and the rest of this crate's test suite.
-type Stack = TaggedIndexStack<16>;
+type Stack = ArrayIndexStack<16, { LINKS_SIZE as usize }>;
 
-/// Number of indices in the `ArrayLinks` backing store, and the exact
+/// Number of indices in the fused stack's `ArrayLinks` links array, and the
+/// exact
 /// multiset seeded onto the stack before the threaded phase — the same
 /// 64-element shape as `tests/threaded_conservation.rs`, so the measured
 /// tail is the tail of the documented use case (a 64-slot free-list).
@@ -105,15 +107,13 @@ fn main() {
 
     for (threads, iters) in shapes {
         for rep in 1..=reps {
-            let links = ArrayLinks::<{ LINKS_SIZE as usize }>::new();
             let stack = Stack::new();
             for i in 0..LINKS_SIZE {
-                stack.push(&links, i);
+                stack.push(i);
             }
 
             let barrier = Barrier::new(threads + 1);
             let (per_thread, wall) = std::thread::scope(|s| {
-                let links = &links;
                 let stack = &stack;
                 let barrier = &barrier;
                 let mut handles = Vec::with_capacity(threads);
@@ -123,14 +123,14 @@ fn main() {
                         barrier.wait();
                         for _ in 0..iters {
                             let t0 = Instant::now();
-                            let idx = stack.pop(links).expect(
+                            let idx = stack.pop().expect(
                                 "per-call latency probe: stack drained -- invariant violated \
                                  (64 prefilled, at most `threads` indices in flight)",
                             );
                             let d = t0.elapsed();
                             black_box(idx);
                             samples.push(d.as_nanos().min(u32::MAX as u128) as u32);
-                            stack.push(links, idx);
+                            stack.push(idx);
                         }
                         samples
                     }));

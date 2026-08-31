@@ -11,24 +11,23 @@
 //! `readme_example_compiles_and_derives_its_generics` does the identical
 //! thing for a sibling crate. This crate's own test suite is organized
 //! one-file-per-concern (`stack_unit.rs`, `proptest_pack_unpack.rs`,
-//! `regression_counter_wrap.rs`, `custom_links_impl.rs`, `loom_aba.rs`,
+//! `regression_counter_wrap.rs`, `custom_storage_impl.rs`, `loom_aba.rs`,
 //! `threaded_conservation.rs`), so the README mirror gets its own dedicated
 //! file rather than folding into an existing one.
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
+use tagged_index_stack::ArrayIndexStack;
 
 #[test]
 fn readme_example_compiles_and_runs() {
-    let links = ArrayLinks::<1024>::new();
-    let stack = TaggedIndexStack::<16>::new(); // 16-bit index, 48-bit ABA tag
+    let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
-    stack.push(&links, 7); // recycle index 7
-    assert_eq!(stack.pop(&links), Some(7)); // recycled index comes back out
+    stack.push(7); // recycle index 7
+    assert_eq!(stack.pop(), Some(7)); // recycled index comes back out
 
     assert_eq!(
-        stack.pop(&links),
+        stack.pop(),
         None,
         "the stack held only the one pushed index -- draining it leaves the stack empty"
     );

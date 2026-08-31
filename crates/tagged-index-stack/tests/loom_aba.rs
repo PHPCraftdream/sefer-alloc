@@ -1,4 +1,4 @@
-//! loom model-check of the REAL [`TaggedIndexStack`] / [`TaggedIndex`] types.
+//! loom model-check of the REAL [`ArrayIndexStack`] / [`TaggedIndex`] types.
 //!
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
@@ -7,7 +7,7 @@
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 //! `push_push_conservation`, `pop_pop_conservation`,
 //! `pop_pop_single_element_loser_sees_empty_actual`) run end-to-end through
-//! the real `push`/`pop`, most of the rest hand-inline one side of an
+//! ArrayIndexStack's shipped `push`/`pop`, most of the rest hand-inline one side of an
 //! interaction through `cas_head_for_test` (real head atomic, real packing)
 //! to pin an interleaving — the one exception is the untagged-ABA
 //! counterfactual, which drives a locally-defined buggy stand-in stack
@@ -18,8 +18,9 @@
 //!
 //! # What loom covers
 //!
-//! - `TaggedIndexStack<16>` head (`AtomicU64`, packed `(index | tag << 16)`),
-//!   `ArrayLinks<N>` slot-resident `AtomicU32` links, `TAIL` end-of-chain.
+//! - `ArrayIndexStack<16, N>` — the fused stack: a `TaggedIndexStack`-style
+//!   head (`AtomicU64`, packed `(index | tag << 16)`) owning its `ArrayLinks<N>`
+//!   slot-resident `AtomicU32` links, `TAIL` end-of-chain.
 //! - `pop`: load tagged head, read the link, CAS head to `(next, SAME tag)` — a
 //!   losing CAS retries.
 //! - `push`: write the link, bump the tag, CAS head to `(idx, tag + 1)` — the
@@ -109,7 +110,7 @@ use loom::sync::atomic::{AtomicU32, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
-use tagged_index_stack::{ArrayLinks, Links, TaggedIndex, TaggedIndexStack, TAIL};
+use tagged_index_stack::{ArrayIndexStack, StackStorage, TaggedIndex, TAIL};
 
 /// Serializes every test in this file that drives the REAL `push` or `pop`
 /// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/lib.rs`)
@@ -206,17 +207,16 @@ type Tag = TaggedIndex<16>;
 // A 2-slot backing is sufficient for the ABA scenario when designed correctly.
 const N: usize = 2;
 
-/// Seed an `ArrayLinks<2>` + `TaggedIndexStack<16>` into the state "slot 0 on
-/// top, chained to slot 1, chained to TAIL" — i.e. both slots free. Because the
-/// crate's stack is lazy (a fresh stack is empty), we materialise this state by
-/// pushing 1 then 0 through the REAL `push` (which sets links + tag exactly as
+/// Seed an `ArrayIndexStack<16, 2>` into the state "slot 0 on top, chained to
+/// slot 1, chained to TAIL" — i.e. both slots free. Because the crate's stack
+/// is lazy (a fresh stack is empty), we materialise this state by pushing 1
+/// then 0 through the REAL `push` (which sets links + tag exactly as
 /// production does), leaving a running tag of 2.
-fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
-    let links = Arc::new(ArrayLinks::<N>::new());
-    let stack = Arc::new(TaggedIndexStack::<16>::new());
-    stack.push(&*links, 1);
-    stack.push(&*links, 0);
-    (stack, links)
+fn both_free() -> Arc<ArrayIndexStack<16, N>> {
+    let stack = Arc::new(ArrayIndexStack::<16, N>::new());
+    stack.push(1);
+    stack.push(0);
+    stack
 }
 
 // ============================================================================
@@ -226,19 +226,18 @@ fn both_free() -> (Arc<TaggedIndexStack<16>>, Arc<ArrayLinks<N>>) {
 #[test]
 fn aba_repush_keeps_free_list_conservation() {
     model(|| {
-        let (stack, links) = both_free();
+        let stack = both_free();
 
         // Thread A: inline `pop`'s body ONCE (load head, read link, compute
         // candidate, CAS) so B can race between A's read and A's CAS — the ABA
         // window. This mirrors the REAL `pop`'s loop body exactly (same packing,
         // same orderings), just split so loom can interleave.
         let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
         let ta = thread::spawn(move || {
             let head = stack_a.raw_head();
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = links_a.load_next(idx);
+            let next = stack_a.load_next(idx);
             let new_head = if next == TAIL {
                 Tag::pack(Tag::empty_index(), tag)
             } else {
@@ -251,10 +250,9 @@ fn aba_repush_keeps_free_list_conservation() {
 
         // Thread B: full pop+repush of the same index via the REAL type.
         let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
         let tb = thread::spawn(move || {
-            if let Some(idx) = stack_b.pop(&*links_b) {
-                stack_b.push(&*links_b, idx);
+            if let Some(idx) = stack_b.pop() {
+                stack_b.push(idx);
             }
         });
 
@@ -265,7 +263,7 @@ fn aba_repush_keeps_free_list_conservation() {
         if let Ok(idx) = a_result {
             popped.push(idx);
         }
-        while let Some(idx) = stack.pop(&*links) {
+        while let Some(idx) = stack.pop() {
             popped.push(idx);
         }
         popped.sort_unstable();
@@ -433,10 +431,9 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 #[test]
 fn tagged_stack_survives_the_same_resurrection_pattern() {
     model(|| {
-        let (stack, links) = both_free();
+        let stack = both_free();
 
         let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
         let ta = thread::spawn(move || {
             // A prepares a single CAS from a stale snapshot, same as the
             // untagged counterfactual — but here the tag in `head` no longer
@@ -454,7 +451,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             }
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = links_a.load_next(idx);
+            let next = stack_a.load_next(idx);
             let new_head = if next == TAIL {
                 Tag::pack(Tag::empty_index(), tag)
             } else {
@@ -466,7 +463,6 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
         });
 
         let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
         let tb = thread::spawn(move || {
             // B does TWO pops (drains whatever is left) then re-pushes only
             // its FIRST pop, holding onto its second pop (if any) — the same
@@ -476,10 +472,10 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             // left behind) — this is expected, not itself a defect; only a
             // DUPLICATE index across {A's result, B's held item, the final
             // drain} is a real corruption.
-            let first = stack_b.pop(&*links_b);
-            let held = stack_b.pop(&*links_b);
+            let first = stack_b.pop();
+            let held = stack_b.pop();
             if let Some(idx) = first {
-                stack_b.push(&*links_b, idx);
+                stack_b.push(idx);
             }
             held
         });
@@ -502,7 +498,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
         if let Some(idx) = b_held {
             accounted.push(idx);
         }
-        while let Some(idx) = stack.pop(&*links) {
+        while let Some(idx) = stack.pop() {
             accounted.push(idx);
         }
         accounted.sort_unstable();
@@ -534,9 +530,8 @@ fn run_h2(preserve_tag_on_drain: bool) {
         // = 1, so a collision requires A's stale snapshot to carry exactly
         // that tag 1 — no higher seeded tag can ever recur through this
         // drain.
-        let links = Arc::new(ArrayLinks::<1>::new());
-        let stack = Arc::new(TaggedIndexStack::<16>::new());
-        stack.push(&*links, 0);
+        let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
+        stack.push(0);
         let a_loaded = Arc::new(AtomicU32::new(0));
         let b_done = Arc::new(AtomicU32::new(0));
 
@@ -544,7 +539,6 @@ fn run_h2(preserve_tag_on_drain: bool) {
         // The FIXED build uses the REAL `stack.pop`; the BUGGY build uses a pop
         // whose drain branch resets the tag to 0 (`bug_pop_drain_to_empty`).
         let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
         let a_loaded_b = Arc::clone(&a_loaded);
         let b_done_b = Arc::clone(&b_done);
         let tb = thread::spawn(move || {
@@ -552,12 +546,12 @@ fn run_h2(preserve_tag_on_drain: bool) {
                 thread::yield_now();
             }
             let popped = if preserve_tag_on_drain {
-                stack_b.pop(&*links_b)
+                stack_b.pop()
             } else {
-                bug_pop_drain_to_empty(&stack_b, &*links_b)
+                bug_pop_drain_to_empty(&stack_b)
             };
             if let Some(idx) = popped {
-                stack_b.push(&*links_b, idx);
+                stack_b.push(idx);
             }
             b_done_b.store(1, Ordering::Release);
         });
@@ -568,7 +562,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
         let head = stack.raw_head();
         let (idx_v, tag) = Tag::unpack(head);
         let idx = idx_v as u32;
-        let next = links.load_next(idx);
+        let next = stack.load_next(idx);
         // NOTE: this branch on `preserve_tag_on_drain` computes `new_head` --
         // the value A's CAS would WRITE on success -- but a
         // `compare_exchange`'s success/failure depends only on `current`
@@ -611,10 +605,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
 /// A pop whose drain-to-empty branch resets the tag to 0 (`TaggedIndex::empty()`)
 /// — the exact pre-H-2-fix behaviour, expressed with the crate's own packing so
 /// the counterfactual is faithful. NOT reachable through the shipped `pop`.
-fn bug_pop_drain_to_empty<L: Links + ?Sized>(
-    stack: &TaggedIndexStack<16>,
-    links: &L,
-) -> Option<u32> {
+fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
     loop {
         let head = stack.raw_head();
         if Tag::is_empty(head) {
@@ -622,7 +613,7 @@ fn bug_pop_drain_to_empty<L: Links + ?Sized>(
         }
         let (idx_v, tag) = Tag::unpack(head);
         let idx = idx_v as u32;
-        let next = links.load_next(idx);
+        let next = stack.load_next(idx);
         let new_head = if next == TAIL {
             Tag::empty() // BUG: hardcoded tag 0 on the empty transition.
         } else {
@@ -691,18 +682,15 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     model_with_oracle(
         tagged_index_stack::pop_retry_count_for_test,
         || {
-            let links = Arc::new(ArrayLinks::<N>::new());
-            let stack = Arc::new(TaggedIndexStack::<16>::new());
-            stack.push(&*links, 1);
+            let stack = Arc::new(ArrayIndexStack::<16, N>::new());
+            stack.push(1);
 
             let stack_a = Arc::clone(&stack);
-            let links_a = Arc::clone(&links);
-            let ta = thread::spawn(move || stack_a.pop(&*links_a));
+            let ta = thread::spawn(move || stack_a.pop());
 
             let stack_b = Arc::clone(&stack);
-            let links_b = Arc::clone(&links);
             let tb = thread::spawn(move || {
-                stack_b.push(&*links_b, 0);
+                stack_b.push(0);
             });
 
             let a_result = ta.join().unwrap();
@@ -712,7 +700,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
             if let Some(idx) = a_result {
                 popped.push(idx);
             }
-            while let Some(idx) = stack.pop(&*links) {
+            while let Some(idx) = stack.pop() {
                 popped.push(idx);
             }
             popped.sort_unstable();
@@ -745,14 +733,11 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
 fn run_cas_retry(failure_ordering: Ordering) {
     model(move || {
         // Start with slot 1 only on stack (not slot 0).
-        let links = Arc::new(ArrayLinks::<N>::new());
-        let stack = Arc::new(TaggedIndexStack::<16>::new());
-        stack.push(&*links, 1);
+        let stack = Arc::new(ArrayIndexStack::<16, N>::new());
+        stack.push(1);
 
         let stack_a = Arc::clone(&stack);
-        let links_a = Arc::clone(&links);
         let stack_b = Arc::clone(&stack);
-        let links_b = Arc::clone(&links);
 
         // Thread A: does TWO iterations of pop's loop (manual expansion to
         // force loom to explore the retry path). First iteration will fail
@@ -762,7 +747,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             let mut head = stack_a.raw_head();
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = links_a.load_next(idx);
+            let next = stack_a.load_next(idx);
             let new_head = if next == TAIL {
                 Tag::pack(Tag::empty_index(), tag)
             } else {
@@ -786,7 +771,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             head = result.unwrap_err();
             let (idx_v2, tag2) = Tag::unpack(head);
             let idx2 = idx_v2 as u32;
-            let next2 = links_a.load_next(idx2);
+            let next2 = stack_a.load_next(idx2);
             // Both candidate heads pack the tag actually observed off the
             // head (`tag` / `tag2`), mirroring the real `pop`'s H-2
             // tag-preservation rule exactly — the running tag is kept
@@ -809,7 +794,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
 
         // Thread B: pushes slot 0 (changing head, bumping tag).
         let tb = thread::spawn(move || {
-            stack_b.push(&*links_b, 0);
+            stack_b.push(0);
         });
 
         let a_result = ta.join().unwrap();
@@ -820,7 +805,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
         if let Ok(idx) = a_result {
             popped.push(idx);
         }
-        while let Some(idx) = stack.pop(&*links) {
+        while let Some(idx) = stack.pop() {
             popped.push(idx);
         }
         popped.sort_unstable();
@@ -857,7 +842,7 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
 // — neither hand-inlined nor raced against a hand-unrolled stand-in.
 // ============================================================================
 
-/// Two threads each do ONE real [`TaggedIndexStack::push`] of a DIFFERENT
+/// Two threads each do ONE real [`ArrayIndexStack::push`] of a DIFFERENT
 /// index onto a shared fresh stack, concurrently. Proves push‖push
 /// conservation: regardless of which push's CAS wins the race (the loser
 /// retries with the winner's new head as its base, re-reading the current
@@ -879,26 +864,23 @@ fn push_push_conservation() {
     model_with_oracle(
         tagged_index_stack::push_retry_count_for_test,
         || {
-            let links = Arc::new(ArrayLinks::<N>::new());
-            let stack = Arc::new(TaggedIndexStack::<16>::new());
+            let stack = Arc::new(ArrayIndexStack::<16, N>::new());
 
             let stack_a = Arc::clone(&stack);
-            let links_a = Arc::clone(&links);
             let ta = thread::spawn(move || {
-                stack_a.push(&*links_a, 0);
+                stack_a.push(0);
             });
 
             let stack_b = Arc::clone(&stack);
-            let links_b = Arc::clone(&links);
             let tb = thread::spawn(move || {
-                stack_b.push(&*links_b, 1);
+                stack_b.push(1);
             });
 
             ta.join().unwrap();
             tb.join().unwrap();
 
             let mut popped: Vec<u32> = Vec::new();
-            while let Some(idx) = stack.pop(&*links) {
+            while let Some(idx) = stack.pop() {
                 popped.push(idx);
             }
             popped.sort_unstable();
@@ -922,7 +904,7 @@ fn push_push_conservation() {
     );
 }
 
-/// Two threads each do ONE real [`TaggedIndexStack::pop`] concurrently
+/// Two threads each do ONE real [`ArrayIndexStack::pop`] concurrently
 /// against a stack pre-seeded with exactly 2 free indices. Proves pop‖pop
 /// conservation for the 2-elements/2-poppers case.
 ///
@@ -962,15 +944,13 @@ fn pop_pop_conservation() {
     model_with_oracle(
         tagged_index_stack::pop_retry_count_for_test,
         || {
-            let (stack, links) = both_free();
+            let stack = both_free();
 
             let stack_a = Arc::clone(&stack);
-            let links_a = Arc::clone(&links);
-            let ta = thread::spawn(move || stack_a.pop(&*links_a));
+            let ta = thread::spawn(move || stack_a.pop());
 
             let stack_b = Arc::clone(&stack);
-            let links_b = Arc::clone(&links);
-            let tb = thread::spawn(move || stack_b.pop(&*links_b));
+            let tb = thread::spawn(move || stack_b.pop());
 
             let a_result = ta.join().unwrap();
             let b_result = tb.join().unwrap();
@@ -995,7 +975,7 @@ fn pop_pop_conservation() {
              indices"
             );
             assert!(
-                stack.pop(&*links).is_none(),
+                stack.pop().is_none(),
                 "stack not fully drained by the two concurrent pops: a third \
              index was available afterward, meaning fewer than 2 indices \
              were actually handed out despite both poppers reporting Some"
@@ -1021,7 +1001,7 @@ fn pop_pop_conservation() {
 // review P3-4: no other shipped model or test reaches that arm.
 // ============================================================================
 
-/// Two threads each do ONE real [`TaggedIndexStack::pop`] concurrently
+/// Two threads each do ONE real [`ArrayIndexStack::pop`] concurrently
 /// against a stack pre-seeded with exactly 1 free index. Proves pop‖pop
 /// conservation for the 1-element/2-poppers case AND activates `pop`'s
 /// empty-`actual` skip-backoff arm.
@@ -1059,17 +1039,14 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
         || {
             // Seed exactly ONE element: slot 0 on a fresh (lazy, empty)
             // stack via the REAL push — running tag ends at exactly 1.
-            let links = Arc::new(ArrayLinks::<1>::new());
-            let stack = Arc::new(TaggedIndexStack::<16>::new());
-            stack.push(&*links, 0);
+            let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
+            stack.push(0);
 
             let stack_a = Arc::clone(&stack);
-            let links_a = Arc::clone(&links);
-            let ta = thread::spawn(move || stack_a.pop(&*links_a));
+            let ta = thread::spawn(move || stack_a.pop());
 
             let stack_b = Arc::clone(&stack);
-            let links_b = Arc::clone(&links);
-            let tb = thread::spawn(move || stack_b.pop(&*links_b));
+            let tb = thread::spawn(move || stack_b.pop());
 
             let a_result = ta.join().unwrap();
             let b_result = tb.join().unwrap();
@@ -1091,7 +1068,7 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
                  expected exactly [0]"
             );
             assert!(
-                stack.pop(&*links).is_none(),
+                stack.pop().is_none(),
                 "stack not fully drained by the two concurrent pops: the \
                  single seeded index was handed out twice or the loser \
                  fabricated an index"

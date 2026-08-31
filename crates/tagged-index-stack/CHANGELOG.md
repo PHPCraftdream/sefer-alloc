@@ -11,19 +11,24 @@ before it.
 
 ### Added
 
-- **`TaggedIndexStack<INDEX_BITS>`** — an allocation-free, `no_std`,
+- **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` +
+  `ArrayIndexStack<INDEX_BITS, N>`** — an allocation-free, `no_std`,
   `#![forbid(unsafe_code)]` lock-free LIFO free-list of small **indices** (a
   slot recycler): the canonical "recycle a small integer id" primitive that
   slab allocators, object pools, entity-component stores, and connection
-  tables reinvent. `push(links, index)` / `pop(links)` are Treiber-style
-  CAS loops over a single `AtomicU64` head. Caller contract for `push`: an
-  index still reachable from the stack must never be pushed again — the push
-  overwrites that index's link with the current head, closing a link-cycle
-  that makes `pop` hand the same index to two callers — and `push` cannot
-  check liveness cheaply (it would cost an O(n) chain walk per push), so it
-  enforces only the `index < INDEX_MASK` range bound; liveness is the
-  caller's obligation.
-- **`TaggedIndexStack::is_empty()`** — an advisory emptiness check: a
+  tables reinvent. `StackHead` is the tagged head word; custom storage
+  implementors supply a `StackStorage` impl, and `push_index`/`pop_index` are
+  crate-owned `StackOps` blanket-impl Treiber CAS loops over that
+  implementor's single `AtomicU64` head; `ArrayIndexStack` (owned standalone)
+  exposes plain `push`/`pop` forwarders. Caller contract for
+  `push_index`: an index still reachable from the stack must never be pushed
+  again — the push overwrites that index's link with the current head,
+  closing a link-cycle that makes `pop_index` hand the same index to two
+  callers — and `push_index` cannot check liveness cheaply (it would cost an
+  O(n) chain walk per push), so it enforces only the `index < INDEX_MASK`
+  range bound; liveness is the caller's obligation.
+- **`StackHead::is_empty()`** (also exposed via `ArrayIndexStack::is_empty()`)
+  — an advisory emptiness check: a
   `Relaxed` peek at the head word's index half. Concurrent pushes/pops can
   make the answer stale the instant it returns, in either direction, so it
   is for diagnostics/monitoring, not correctness decisions.
@@ -51,8 +56,8 @@ before it.
   different, possibly empty-sentinel, index) or the tag is
   `>= 2^TAG_BITS` (where `pack`'s shift would silently drop the high
   bits). Exists for external callers, whom `pack` trusts to uphold the
-  precondition itself; the stack's own `push`/`pop` keep calling `pack`
-  directly, their inputs already guaranteed in range.
+  precondition itself; the stack's own `push_index`/`pop_index` keep calling
+  `pack` directly, their inputs already guaranteed in range.
 - **ABA-defeating empty transition (the H-2 rule)** — when a `pop` drains the
   last element, the empty sentinel is packed with the **running tag** the
   draining pop observed, not reset to `0`: a tag reset would reopen the ABA
@@ -81,12 +86,20 @@ before it.
   `INDEX_BITS = 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21` seconds,
   within reach of ordinary scheduling jitter. Documented so a consumer
   choosing `INDEX_BITS` knows the trade.
-- **Caller-owned links — `Links` trait** — the stack stores only the HEAD;
-  each index's `next` link lives in caller storage (`load_next` /
-  `store_next`), so a production allocator keeps links **slot-resident** (an
-  `AtomicU32` inside a slot it already owns) instead of paying for a second
-  array. **`ArrayLinks<N>`** provides an owned `[AtomicU32; N]` backing for
-  standalone use. The link storage must be a DEDICATED cell, never
+- **One-implementor storage binding — `StackStorage` / `StackOps`** — the
+  implementor supplies head AND links in ONE impl: `head()` alongside
+  `load_next` / `store_next`, so the head↔links binding is structural,
+  established once per impl. A production allocator keeps links
+  **slot-resident** (an `AtomicU32` inside a slot it already owns) instead of
+  paying for a second array. The blanket `StackOps` impl's CAS-loop bodies
+  are crate-owned and cannot be overridden or reimplemented downstream.
+  The former per-call `&Links` parameter — which allowed two `ArrayLinks`
+  backings against one head, double-issuing an index (an independent
+  pre-release review's release-blocking P1-1 finding) — is gone, and that
+  repro no longer compiles. **`ArrayLinks<N>`** remains a public links
+  building block (inherent Acquire `load_next` / Release `store_next`); it is
+  what `ArrayIndexStack` composes internally. The link storage must be a
+  DEDICATED cell, never
   payload-aliased on the popped slot's own bytes — `pop` carries an
   unconditional, release-active guard (a `#[cold]`, `#[inline(never)]`,
   `#[track_caller]` panic helper mirroring `push`'s own index-range guard)
@@ -99,10 +112,11 @@ before it.
   vs 51.60 ns/op debug-only), i.e. the cost sits below the harness's noise
   floor next to the two `lock cmpxchg`/iteration already on the hot path —
   and the failure mode (silent free-list corruption) is the same class
-  `push`'s guard already treats as unconditional. The one in-workspace
-  consumer, `RegistryLinks` (`src/registry/heap_registry.rs` in the root
-  crate), cannot trigger the guard: its `next_free` field is only ever
-  written by this crate's own `push` with `TAIL` or a previously-admitted
+  `push_index`'s guard already treats as unconditional. The one in-workspace
+  consumer, the root crate's `StackStorage<16>` impl on its registry
+  (`src/registry/heap_registry.rs`), cannot trigger the guard: its `next_free`
+  field is only ever
+  written by this crate's own `push_index` with `TAIL` or a previously-admitted
   index `< MAX_HEAPS (4096) < INDEX_MASK (65535)`, so `load_next` can only
   ever return `TAIL` or an in-range value.
 - **Lazy link discipline (internally: RAD-1)** — links are never eagerly initialised:
@@ -112,15 +126,20 @@ before it.
   links commit lazily on first push of each index. A fresh stack is therefore
   **empty** — deliberately no "start with `0..N` pushed" constructor, which
   would require exactly the eager chaining pass this discipline forbids.
-- **Correct CAS orderings** — push's success ordering and pop's retry
-  ordering are both chosen so a popper can never read a link through a stale
-  head: pop's CAS-failure load is `Acquire` — a `Relaxed` retry could read a
+- **Correct CAS orderings** — push_index's success ordering and pop_index's
+  retry ordering are both chosen so a popper can never read a link through a
+  stale head: pop_index's CAS-failure load is `Acquire` — a `Relaxed` retry
+  could read a
   stale link, and the shipped loom counterfactual
   `counterfactual_relaxed_cas_failure_corrupts_free_list` plants exactly that
   bug and watches the free-list corrupt. Push's index-validity and
   sentinel-reservation check is a single release-active bounds check (a
   `#[cold]` panic helper, not `debug_assert!`) — one guard covers both
   conditions, and it stays enforced in release builds too.
+- **`ArrayIndexStack<INDEX_BITS, N>`** — the owned standalone stack fusing
+  `StackHead` + `ArrayLinks<N>`, with plain `push`/`pop`/`is_empty` inherent
+  forwarders, plus `Default` and `Debug`; the compile-fail-pinned shape for
+  standalone callers.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
@@ -129,13 +148,13 @@ before it.
   alone does not imply `AtomicU64`.
 - **Exhaustive loom model-check against the real type**: under `--cfg loom`
   the stack's atomics alias to `loom::sync::atomic`, so the shipped loom suite
-  (`tests/loom_aba.rs`) model-checks the actual `TaggedIndexStack` /
-  `TaggedIndex` code with NO `preemption_bound` — loom explores every
+  (`tests/loom_aba.rs`) model-checks the actual `ArrayIndexStack` /
+  `StackHead` / `TaggedIndex` code with NO `preemption_bound` — loom explores every
   interleaving these small models admit — with `#[should_panic]`
   counterfactuals (untagged corruption, the H-2 empty-transition tag-reset
   ABA, and the Relaxed-CAS-failure-ordering regression) proving the harness
   is non-vacuous. Several models run end-to-end through the shipped
-  `push`/`pop`; most of the rest drive the real head atomic and the real
+  `push_index`/`pop_index`; most of the rest drive the real head atomic and the real
   packing through `cas_head_for_test` so an interleaving can be pinned — the
   one exception is the untagged-ABA counterfactual, which drives a
   locally-defined buggy stand-in stack instead of the real type. See
@@ -147,8 +166,10 @@ before it.
   resolver locks normal target-cfg dependencies regardless of their cfg).
   Running the loom suite requires BOTH `RUSTFLAGS="--cfg loom"` and
   `--features loom`.
-- **`raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the packed
-  head word; the attribute only excludes it from rustdoc's rendered
+- **`StackHead::raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the
+  packed head word (also reachable through `ArrayIndexStack`'s
+  `#[doc(hidden)]` forwarder); the attribute only excludes it from rustdoc's
+  rendered
   navigation (it remains publicly callable), it carries no semver stability
   guarantee, and it exists for this crate's own `tests/`.
 - **`retry_counts_for_test()`** and **`backoff_cap_reached_for_test()`** —
@@ -171,12 +192,13 @@ before it.
   navigation (they remain publicly callable when the feature is on) and
   they carry no semver stability guarantee, like `raw_head()` above.
 - **`pub const TAIL: u32`** — the per-slot link end-of-chain sentinel
-  (`u32::MAX`), part of the `Links` contract: an implementor's backing must
+  (`u32::MAX`), part of the `StackStorage` contract: an implementor's backing must
   be able to represent it.
-- **`Default` for `TaggedIndexStack` and `ArrayLinks`** — both forward to
-  `new()`; pinned by `default_stack_behaves_like_new` /
+- **`Default` for `StackHead`, `ArrayIndexStack`, and `ArrayLinks`** — all
+  forward to `new()`; pinned by `default_stack_behaves_like_new` /
+  `default_array_index_stack_behaves_like_new` /
   `default_array_links_behaves_like_new` (`tests/stack_unit.rs`).
-- **`Debug` derived on `TaggedIndexStack` and `ArrayLinks`.**
+- **`Debug` derived on `StackHead`, `ArrayIndexStack`, and `ArrayLinks`.**
 
 ### Performance
 

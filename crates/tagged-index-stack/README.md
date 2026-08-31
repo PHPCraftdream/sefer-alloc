@@ -32,24 +32,35 @@ bumps the tag, so A's CAS on `(X, old_tag)` fails and retries.
 `try_pack` is `pack`'s checked twin, returning `None` instead of silently
 truncating an out-of-range index or tag.
 
-## Slot-resident OR owned links
+## One implementor owns the head AND the links
 
-The stack stores only the HEAD. Each pushed index's "next" link lives in caller
-storage, reached through the `Links` trait — so a production allocator keeps its
-links **slot-resident** (an `AtomicU32` field inside a slot it already owns)
-rather than paying for a second array. For standalone use, `ArrayLinks<N>`
-provides an owned `[AtomicU32; N]` backing.
+A `StackStorage<INDEX_BITS>` implementor supplies BOTH the head (its `head()`)
+AND the links (`load_next` / `store_next`) in a single impl — the head↔links
+binding is established ONCE, structurally. `push_index`/`pop_index` are
+crate-owned (a blanket `StackOps` impl over every `StackStorage`
+implementor), so the CAS-loop bodies cannot be overridden downstream, and a
+two-backing setup — two different link arrays against one head, double-issuing
+an index — is no longer expressible against this API: it does not compile.
+This is the structural fix for the review's double-issue repro, which the
+previous per-call `&Links`-parameter design permitted.
+
+A production allocator keeps its links **slot-resident** (an `AtomicU32` field
+inside a slot it already owns) rather than paying for a second array, via a
+custom `StackStorage` impl. For standalone use, `ArrayIndexStack<INDEX_BITS,
+N>` is the owned standalone stack that fuses the head and an `ArrayLinks<N>`
+backing, with plain `push`/`pop` methods.
 
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
 first bytes (the classic free-block-header idiom) is not supported and defeats
-`pop`'s own corruption-detection guard, which panics unconditionally
+`pop_index`'s own corruption-detection guard, which panics unconditionally
 (release-active, not debug-only) on a backing that violates it.
 
-`TaggedIndexStack::is_empty()` is an advisory, `Relaxed` emptiness check —
+`StackHead::is_empty()` (also reachable through `ArrayIndexStack::is_empty()`)
+is an advisory, `Relaxed` emptiness check —
 useful for diagnostics/monitoring, but a concurrent push or pop can make it
-stale the instant it returns, so `pop`'s `None` remains the only
+stale the instant it returns, so `pop_index`'s `None` remains the only
 authoritative empty check.
 
 ## The two hard-won subtleties (people get these wrong)
@@ -73,13 +84,14 @@ authoritative empty check.
 ### The rule that is NOT one of the two: no double-push (caller-enforced)
 
 - **No double-push (caller-enforced).** An index that is still reachable from
-  the stack must never be pushed again: `push` overwrites the pushed index's
-  link with the current head, so re-pushing a live index closes a cycle in the
-  link chain — `pop` stops returning `None` and hands the same index to two
-  callers. Checking liveness would cost an O(n) chain walk on every push, so
-  the crate cannot enforce this (unlike H-2 and RAD-1); `push` checks only the
-  `index < INDEX_MASK` bound. Every live index comes from exactly one `push`
-  and is re-pushed only after the matching `pop`.
+  the stack must never be pushed again: `push_index` overwrites the pushed
+  index's link with the current head, so re-pushing a live index closes a cycle
+  in the link chain — `pop_index` stops returning `None` and hands the same
+  index to two callers. Checking liveness would cost an O(n) chain walk on
+  every push, so the crate cannot enforce this (unlike H-2 and RAD-1);
+  `push_index` checks only the `index < INDEX_MASK` bound. Every live index
+  comes from exactly one `push_index` and is re-pushed only after the matching
+  `pop_index`.
 
 ## Tag-width budget
 
@@ -158,7 +170,7 @@ opt-in type gated behind a feature flag — not by changing this default.
 
 ## Lock-freedom and starvation
 
-`push`/`pop` never block on a lock — a losing CAS retries — but lock-freedom
+`push_index`/`pop_index` never block on a lock — a losing CAS retries — but lock-freedom
 is not starvation-freedom: a call can lose arbitrarily many CASes in a row,
 and the exponential backoff deliberately makes an unlucky call wait longer
 between retries. The measured trade is a SMALL NUMBER OF VERY LARGE OUTLIERS
@@ -192,7 +204,8 @@ build fails fast with an explicit `compile_error!` naming the requirement.
 ## loom — real-type model-check
 
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite
-model-checks the real `TaggedIndexStack` / `TaggedIndex` code exhaustively (no
+model-checks the real `ArrayIndexStack` / `StackHead` / `TaggedIndex` code
+exhaustively (no
 `preemption_bound`). Several models run end-to-end through the shipped
 `push`/`pop`; most of the rest drive the real head atomic and the real
 packing through `cas_head_for_test` so an interleaving can be pinned — the one
@@ -214,10 +227,12 @@ only hides the item from rustdoc's rendered navigation — the item remains
 publicly callable, carries no semver stability guarantee, and should not be
 depended on.
 
-Under default features: `TaggedIndexStack::raw_head` is a test-only probe,
+Under default features: `StackHead::raw_head` (also reachable through
+`ArrayIndexStack`'s `#[doc(hidden)]` forwarder) is a test-only probe,
 used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
 test-only — it is used internally by this crate's bootstrap path
-(`TaggedIndexStack::new`) and by known in-workspace consumers for the same
+(`StackHead::new` / `ArrayIndexStack::new`) and by known in-workspace consumers
+for the same
 purpose (a const-capable bootstrap-empty head word), so it is not freely
 removable, but do not depend on it either.
 
@@ -230,7 +245,8 @@ accessors below and are what `tests/threaded_conservation.rs` uses as its
 two-level activation oracle under real OS threads.
 
 Under `--cfg loom` (not present in a normal build or on docs.rs):
-`TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the
+`StackHead::cas_head_for_test` (also reachable through `ArrayIndexStack`'s
+`#[doc(hidden)]` forwarder) is a raw CAS on the head word that the
 shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from
 its CAS and drive ABA counterfactuals;
 `pop_retry_count_for_test`/`push_retry_count_for_test` are loom-only
@@ -241,13 +257,12 @@ asserts against.
 ## Example
 
 ```rust
-use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
+use tagged_index_stack::ArrayIndexStack;
 
-let links = ArrayLinks::<1024>::new();
-let stack = TaggedIndexStack::<16>::new();   // 16-bit index, 48-bit ABA tag
+let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
-stack.push(&links, 7);                        // recycle index 7
-assert_eq!(stack.pop(&links), Some(7));       // recycled index comes back out
+stack.push(7);                            // recycle index 7
+assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 ```
 
 ## MSRV

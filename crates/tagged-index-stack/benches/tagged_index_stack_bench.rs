@@ -1,4 +1,4 @@
-//! `bench-scale-tool` fixed-iteration benches for `TaggedIndexStack`:
+//! `bench-scale-tool` fixed-iteration benches for `ArrayIndexStack`:
 //! single-threaded push/pop paths plus multi-threaded contention workloads —
 //! this is a lock-free Treiber stack whose value is concurrent throughput, so
 //! contention coverage matters alongside the single-threaded rows.
@@ -13,13 +13,13 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use bench_scale_tool::Harness;
-use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
+use tagged_index_stack::ArrayIndexStack;
 
 /// Use 16-bit indices (65535 usable indices, 0xFFFF reserved for empty).
 /// This is the documented practical choice in the crate docs.
-type Stack = TaggedIndexStack<16>;
+type Stack = ArrayIndexStack<16, LINKS_SIZE>;
 
-/// Number of indices in the ArrayLinks backing store.
+/// Number of indices in the fused stack's ArrayLinks links array.
 /// Must be > 0 and < 2^16 (the usable range at INDEX_BITS=16).
 const LINKS_SIZE: usize = 256;
 
@@ -38,17 +38,16 @@ fn main() {
     //
     // The push-onto-empty shape is load-bearing: pushing without first
     // popping would re-push index 1 while it is still the live head -- a
-    // violation of push()'s documented caller contract ("index must NOT
+    // violation of push_index's documented caller contract ("index must NOT
     // already be reachable from the stack") that also writes a
     // self-referential link (link[1] = 1).
     {
-        let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
         let index = 1u32;
 
         h.bench("push_pop/single_thread", move || {
-            stack.push(&links, black_box(index));
-            black_box(stack.pop(&links));
+            stack.push(black_box(index));
+            black_box(stack.pop());
         });
     }
 
@@ -64,11 +63,10 @@ fn main() {
     // documents what is actually timed: the empty early return, not a
     // successful pop.
     {
-        let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
 
         h.bench("pop/empty_fast_path", move || {
-            black_box(stack.pop(&links));
+            black_box(stack.pop());
         });
     }
 
@@ -84,15 +82,14 @@ fn main() {
     // Re-pushes exactly the value popped, so the stack's composition (which
     // 8 indices are present) never drifts across iterations.
     {
-        let links = ArrayLinks::<LINKS_SIZE>::new();
         let stack = Stack::new();
         for i in 0..8u32 {
-            stack.push(&links, i);
+            stack.push(i);
         }
 
         h.bench("churn", move || {
-            let idx = stack.pop(&links).unwrap();
-            stack.push(&links, idx);
+            let idx = stack.pop().unwrap();
+            stack.push(idx);
         });
     }
 
@@ -146,12 +143,12 @@ fn main() {
     // timed.
     const DEADLINE_CHECK_INTERVAL: u32 = 256;
 
-    // Shared stack and links.
-    // Stack's head is an AtomicU64, and ArrayLinks stores AtomicU32s.
-    // Both are Sync, and both contention phases run inside `std::thread::scope`,
-    // whose spawned closures can borrow these locals by plain `&` reference for
-    // the scope's duration -- no heap leak / 'static coercion needed.
-    let shared_links = ArrayLinks::<LINKS_SIZE>::new();
+    // Shared stack -- the fused `ArrayIndexStack` owns both the head (an
+    // AtomicU64) and the links (ArrayLinks stores AtomicU32s) internally.
+    // Both are Sync, and both contention phases run inside
+    // `std::thread::scope`, whose spawned closures can borrow this local by
+    // plain `&` reference for the scope's duration -- no heap leak /
+    // 'static coercion needed.
     let shared_stack = Stack::new();
 
     // contention/push_pop: each thread seeds its own index into the shared
@@ -167,9 +164,9 @@ fn main() {
     // fixed local counter could re-push an index that is STILL live
     // somewhere else in the shared stack -- a double-push of a
     // not-yet-retrieved index, which silently corrupts the free-list's
-    // link structure (documented as an explicit caller contract in push()'s
+    // link structure (documented as an explicit caller contract in push_index's
     // "# Caller contract" section in the crate docs, which also notes the
-    // only bound push() itself checks is INDEX_MASK -- not "is this index
+    // only bound push_index itself checks is INDEX_MASK -- not "is this index
     // already live", since a liveness check would cost an O(n) chain walk
     // per push). Always re-pushing exactly the value pop() returned (the
     // same pattern contention/churn below already uses) sidesteps this
@@ -194,7 +191,6 @@ fn main() {
 
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
-        let shared_links = &shared_links;
         let shared_stack = &shared_stack;
         let barrier = &barrier;
         let mut handles = Vec::with_capacity(num_threads);
@@ -204,7 +200,7 @@ fn main() {
                 // thread's own spawn latency, never land inside the
                 // measured window.
                 let seed_idx = (thread_id * LINKS_SIZE / num_threads) as u32;
-                shared_stack.push(shared_links, seed_idx);
+                shared_stack.push(seed_idx);
 
                 // Every worker (and the coordinating main thread below, the
                 // barrier's `num_threads + 1`-th participant) blocks here
@@ -216,12 +212,12 @@ fn main() {
                 let mut ops = 0u64;
                 let mut since_check = 0u32;
                 loop {
-                    if let Some(idx) = shared_stack.pop(shared_links) {
+                    if let Some(idx) = shared_stack.pop() {
                         // Re-push exactly what we popped -- never a value
                         // this thread invented independently of pop()'s
                         // result, so it can never collide with a value
                         // still live elsewhere in the stack.
-                        shared_stack.push(shared_links, black_box(idx));
+                        shared_stack.push(black_box(idx));
                         ops += 2;
                     }
                     // A momentary None (all live indices transiently held by
@@ -291,19 +287,19 @@ fn main() {
     // value, so nothing there ever removes an index. Prefilling on top of
     // those leftovers would double-push at least index 0 (thread 0's seed is
     // always 0 and the prefill range starts at 0) while it is still reachable
-    // from the stack -- a violation of push()'s documented caller contract,
+    // from the stack -- a violation of push_index's documented caller contract,
     // which closes the free-list into a cycle; pop() may then never return
     // None again, and churn would measure a corrupted, cyclic structure
     // instead of LIFO throughput. The prefill must therefore start from a
     // known-empty stack.
-    while shared_stack.pop(&shared_links).is_some() {}
+    while shared_stack.pop().is_some() {}
     // Cheap sanity check that the drain really emptied the stack: a leftover
     // live index here would silently reintroduce the double-push bug above.
-    assert!(shared_stack.pop(&shared_links).is_none());
+    assert!(shared_stack.pop().is_none());
 
     // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
-        shared_stack.push(&shared_links, i);
+        shared_stack.push(i);
     }
 
     // With `prefill_count` unique indices prefilled and at most
@@ -322,7 +318,6 @@ fn main() {
 
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
-        let shared_links = &shared_links;
         let shared_stack = &shared_stack;
         let barrier = &barrier;
         let mut handles = Vec::with_capacity(num_threads);
@@ -334,12 +329,12 @@ fn main() {
                 let mut ops = 0u64;
                 let mut since_check = 0u32;
                 loop {
-                    let idx = shared_stack.pop(shared_links).expect(
+                    let idx = shared_stack.pop().expect(
                         "contention/churn: stack drained -- invariant violated \
                          (see prefill_count/num_threads assert above)",
                     );
                     // Immediately re-push (steady-state churn).
-                    shared_stack.push(shared_links, idx);
+                    shared_stack.push(idx);
                     ops += 2;
 
                     since_check += 1;

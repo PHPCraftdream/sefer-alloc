@@ -5,7 +5,7 @@
 //! threads over a 1-2-slot backing (`const N: usize = 2` there), and loom
 //! explores every interleaving of that small model rather than running real
 //! time. That bound also caps how deep the CAS-retry backoff's `spins`
-//! counter (`src/lib.rs`, `push`/`pop`) can climb inside any loom model — a
+//! counter (`src/lib.rs`, `push_index`/`pop_index`) can climb inside any loom model — a
 //! handful of interleavings can force at most a couple of retries, nowhere
 //! near `BACKOFF_SPIN_CAP` (6). This file exercises the OPPOSITE regime: a
 //! fixed, modest number of REAL OS threads hammering a SHARED stack for many
@@ -43,7 +43,7 @@
 //! `contention/churn` phase exactly: every thread pops WHATEVER is currently
 //! on top (which may be another thread's index, under real contention) and
 //! immediately re-pushes EXACTLY that value — never a locally invented index.
-//! Re-pushing anything else violates `push`'s documented caller contract
+//! Re-pushing anything else violates `push_index`'s documented caller contract
 //! ("index must NOT already be reachable from the stack") and would corrupt
 //! the free-list independent of any bug this test exists to catch.
 //!
@@ -56,10 +56,11 @@
 
 use std::thread;
 
-use tagged_index_stack::{ArrayLinks, TaggedIndexStack};
+use tagged_index_stack::ArrayIndexStack;
 
-/// Same width as the bench and the rest of this crate's test suite.
-type Stack = TaggedIndexStack<16>;
+/// Same width as the bench and the rest of this crate's test suite; the fused
+/// `ArrayIndexStack` owns its head and its `ArrayLinks` links together.
+type Stack = ArrayIndexStack<16, { LINKS_SIZE as usize }>;
 
 /// Number of indices in the `ArrayLinks` backing store, and the exact
 /// multiset seeded onto the stack before the threaded phase. Kept modest per
@@ -87,14 +88,13 @@ const ITERS_PER_THREAD: u32 = 200_000;
 /// (no index lost, none duplicated) under REAL contention.
 #[test]
 fn conservation_under_real_thread_contention() {
-    let links = ArrayLinks::<{ LINKS_SIZE as usize }>::new();
     let stack = Stack::new();
 
     // Prefill a fresh (already-empty) stack with 0..LINKS_SIZE -- mirrors the
     // bench's `contention/churn` prefill discipline. No drain-first needed:
     // `Stack::new()` starts empty (RAD-1 lazy links).
     for i in 0..LINKS_SIZE {
-        stack.push(&links, i);
+        stack.push(i);
     }
 
     // Activation oracle (round-7 P2-2; round-9 P3-1/P3-4): the whole point
@@ -117,7 +117,6 @@ fn conservation_under_real_thread_contention() {
     let (pop_cap_before, push_cap_before) = tagged_index_stack::backoff_cap_reached_for_test();
 
     thread::scope(|s| {
-        let links = &links;
         let stack = &stack;
         for _ in 0..NUM_THREADS {
             s.spawn(move || {
@@ -125,13 +124,13 @@ fn conservation_under_real_thread_contention() {
                     // Pop whatever is currently on top (may belong to any
                     // thread under contention) and immediately re-push
                     // EXACTLY that value -- never a locally invented index.
-                    let idx = stack.pop(links).expect(
+                    let idx = stack.pop().expect(
                         "stack unexpectedly empty: with LINKS_SIZE prefilled \
                          indices and at most NUM_THREADS held outstanding at \
                          once, the stack can never observe fewer than \
                          LINKS_SIZE - NUM_THREADS elements",
                     );
-                    stack.push(links, idx);
+                    stack.push(idx);
                 }
             });
         }
@@ -182,7 +181,7 @@ fn conservation_under_real_thread_contention() {
     // Drain and confirm the exact multiset 0..LINKS_SIZE came back: no
     // duplicate, no missing index.
     let mut drained = Vec::with_capacity(LINKS_SIZE as usize);
-    while let Some(idx) = stack.pop(&links) {
+    while let Some(idx) = stack.pop() {
         drained.push(idx);
     }
     drained.sort_unstable();
