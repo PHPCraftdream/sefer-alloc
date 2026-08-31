@@ -260,15 +260,18 @@ fn main() {
     // Fairness signal: the round-7 cap-sweep investigation
     // (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found per-thread throughput
     // skew is where the interesting signal hides, and nothing printed it as
-    // a number before now. max/min is the spread across all threads;
-    // min/mean shows how far the worst thread falls below the average.
+    // a number before now. max/min is the spread across all threads (a true
+    // ratio, hence the `x`); min/mean is the worst thread's SHARE of an
+    // even split (1.0 = perfectly fair), printed as a percentage — no `x`
+    // suffix, which would invite reading 0.38 as "0.38 times worse" rather
+    // than "38% of a fair share" (round-9 review P4-10a).
     let max = *ops_per_thread.iter().max().unwrap() as f64;
     let min = *ops_per_thread.iter().min().unwrap() as f64;
     let mean = total_ops as f64 / ops_per_thread.len() as f64;
     println!(
-        "  Fairness: max/min = {:.2}x, min/mean = {:.2}x\n",
+        "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
         max / min,
-        min / mean
+        100.0 * min / mean
     );
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
@@ -371,9 +374,9 @@ fn main() {
     let min = *ops_per_thread.iter().min().unwrap() as f64;
     let mean = total_ops as f64 / ops_per_thread.len() as f64;
     println!(
-        "  Fairness: max/min = {:.2}x, min/mean = {:.2}x\n",
+        "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
         max / min,
-        min / mean
+        100.0 * min / mean
     );
 
     println!("=== All contention benchmarks complete ===");

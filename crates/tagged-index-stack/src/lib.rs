@@ -146,7 +146,10 @@
 //! order of magnitude under the working ceiling the next paragraph adopts,
 //! so the argument does not need the tighter push-only number). Committed
 //! receipt: the single-threaded `churn` rows in
-//! `docs/perf/_raw_tis_backoff_cap_sweep_run1.log` (11th Gen Intel Core
+//! `docs/perf/_raw_tis_backoff_cap_sweep_run1.log` — a file in this crate's
+//! REPOSITORY (it is not part of the published package):
+//! <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log>
+//! (11th Gen Intel Core
 //! i7-11800H, rustc 1.97.0, 2026-08-31) — e.g. 53.89 ns/pair in that log's
 //! first arm, its 20 such samples spanning 51.41-64.72 ns/pair; re-run
 //! `cargo bench -p tagged-index-stack --bench tagged_index_stack_bench`
@@ -171,6 +174,31 @@
 //! `2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling
 //! jitter. Within the permitted range a caller still trades index range
 //! against tag headroom, but never below the 48-bit floor.
+//!
+//! # Lock-freedom and starvation
+//!
+//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) never
+//! block on a lock — a losing CAS retries — but lock-freedom is not
+//! starvation-freedom: a call can lose arbitrarily many CASes in a row, and
+//! the exponential backoff deliberately makes an unlucky call wait longer
+//! between retries. The measured trade is a SMALL NUMBER OF VERY LARGE
+//! OUTLIERS in exchange for better latency at every percentile through
+//! p99.9 AND better aggregate throughput — not "tail latency for
+//! throughput" in general. On a 64-element `ArrayLinks` under this crate's
+//! own contention discipline (8 threads x 200k pop-then-repush iterations,
+//! `--release`; see `examples/backoff_per_call_latency.rs`): the single
+//! worst `pop` blocked 41-60 ms across three runs under the shipped
+//! backoff cap, vs 0.6-24 ms with the backoff disabled — a handful of
+//! extreme outliers is the one axis where disabling the backoff wins —
+//! while the same workload finished ~4.9x faster in aggregate under the
+//! cap, every percentile through p99.9 was 1-2 orders of magnitude better
+//! under the cap (p99.9 ≈ 1 µs vs 54-182 µs at 8-16 threads), and at 16
+//! threads the backoff-free build produced 2.2-2.6x MORE pops over 1 ms.
+//! A consumer recycling a slot on a latency-sensitive request path should
+//! size its tolerance for those rare outliers, not fear a broad tail; the
+//! full table is `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4 — a file
+//! in this crate's repository (it is not part of the published package):
+//! <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md>
 //!
 //! # loom — the tests run against THIS type
 //!
@@ -298,16 +326,28 @@ pub const TAIL: u32 = u32::MAX;
 /// **Lock-free is not starvation-free.** `push` and `pop` never block on a
 /// lock — a losing CAS retries — but a call can lose arbitrarily many
 /// CASes in a row, and the backoff deliberately makes an unlucky call wait
-/// LONGER between retries: it trades per-call tail latency for aggregate
-/// throughput. Measured on a 64-element `ArrayLinks` under the crate's own
-/// contention discipline (`examples/backoff_per_call_latency.rs`; 8
-/// threads x 200k pop-then-repush iterations, `--release`): the single
-/// worst `pop` blocked 41-60 ms across three runs under this cap, vs
-/// 0.6-24 ms with the backoff disabled (cap 0), while the same workload
-/// finished ~4.9x faster in aggregate under the cap. A consumer recycling
-/// a slot on a latency-sensitive request path should size its tolerance
-/// for that tail; the full table is
-/// `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4.
+/// LONGER between retries. The precise trade is narrower than "per-call
+/// tail latency for aggregate throughput": against the measured data it
+/// trades a SMALL NUMBER OF VERY LARGE OUTLIERS for better latency at
+/// every percentile through p99.9 AND better throughput. Measured on a
+/// 64-element `ArrayLinks` under the crate's own contention discipline
+/// (`examples/backoff_per_call_latency.rs`; 8 threads x 200k
+/// pop-then-repush iterations, `--release`): the single worst `pop`
+/// blocked 41-60 ms across three runs under this cap, vs 0.6-24 ms with
+/// the backoff disabled (cap 0) — a handful of extreme outliers is the
+/// ONE axis where cap 0 wins — while the same workload finished ~4.9x
+/// faster in aggregate under the cap, every percentile through p99.9 was
+/// 1-2 orders of magnitude BETTER under the cap (p99.9 ≈ 1 µs vs 54-182 µs
+/// at 8-16 threads), and at 16 threads cap 0 produced 2.2-2.6x MORE pops
+/// over 1 ms than this cap. A consumer recycling a slot on a
+/// latency-sensitive request path should size its tolerance for those
+/// rare outliers; the full table is
+/// `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4 — a file in this crate's
+/// repository (it is not part of the published package):
+/// <https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md>.
+/// The crate-root doc's "Lock-freedom and starvation" section carries the
+/// same warning on a docs.rs-rendered surface (this `const` is private, so
+/// rustdoc never renders this copy).
 const BACKOFF_SPIN_CAP: u32 = 6;
 
 /// `1u32 << spins.min(BACKOFF_SPIN_CAP)` masks/panics if `BACKOFF_SPIN_CAP`
@@ -954,7 +994,11 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     // loom's many re-runs of the test closure and
                     // accumulates across the explored schedules.
                     // `Relaxed`: the counter promises no ordering, it
-                    // only counts.
+                    // only counts. Gated (round-9 P3-4): a default build
+                    // of the crate compiles neither the counters nor this
+                    // increment — they exist only under the
+                    // `test-internals` feature or a loom build.
+                    #[cfg(any(feature = "test-internals", loom))]
                     PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     head = actual;
                     // Exponential backoff before retrying (BACKOFF_SPIN_CAP):
@@ -963,6 +1007,22 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     // immediately. `spins` grows only within this call.
                     for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
                         core::hint::spin_loop();
+                    }
+                    // Backoff-depth oracle (round-9 P3-1): counts a retry
+                    // that spun at FULL depth (`spins` already saturated at
+                    // BACKOFF_SPIN_CAP, so the loop above ran
+                    // 1 << BACKOFF_SPIN_CAP iterations). Non-zero proves the
+                    // backoff reaches its higher range under real contention
+                    // — tests/threaded_conservation.rs asserts this counter
+                    // advances, so a regression that caps `spins` at 0,
+                    // resets it per iteration, or moves its increment off
+                    // the reachable path fails loudly instead of shipping a
+                    // silently inert backoff. Same gate as the retry
+                    // counters above.
+                    #[cfg(any(feature = "test-internals", loom))]
+                    if spins >= BACKOFF_SPIN_CAP {
+                        PUSH_BACKOFF_CAP_REACH_COUNT
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     // Capped, not unconditional: every increment past
                     // BACKOFF_SPIN_CAP is already dead (only ever consumed
@@ -1052,6 +1112,18 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// swap (the corrupting call in that failure mode is typically a `pop`
     /// itself): see [`push`](Self::push)'s `# Caller contract` section,
     /// "ONE `Links` backing for the whole life of a non-empty stack".
+    ///
+    /// # Lock-freedom and starvation
+    ///
+    /// Lock-free is not starvation-free: `pop` never blocks on a lock, but
+    /// a call can lose arbitrarily many CASes in a row, and the retry
+    /// backoff deliberately makes an unlucky call wait longer between
+    /// retries. The measured trade (numbers in the crate-root doc's
+    /// "Lock-freedom and starvation" section): a small number of very
+    /// large outlier calls — the worst observed `pop` blocked 41-60 ms on
+    /// a heavily contended 8x200k workload — in exchange for better
+    /// latency at every percentile through p99.9 AND ~4.9x better
+    /// aggregate throughput.
     #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
     #[track_caller]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
@@ -1112,7 +1184,11 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     // loom's many re-runs of the test closure and
                     // accumulates across the explored schedules.
                     // `Relaxed`: the counter promises no ordering, it
-                    // only counts.
+                    // only counts. Gated (round-9 P3-4): a default build
+                    // of the crate compiles neither the counters nor this
+                    // increment — they exist only under the
+                    // `test-internals` feature or a loom build.
+                    #[cfg(any(feature = "test-internals", loom))]
                     POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     head = actual;
                     // Exponential backoff before retrying — see push's
@@ -1128,6 +1204,14 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
                     if !TaggedIndex::<INDEX_BITS>::is_empty(actual) {
                         for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
                             core::hint::spin_loop();
+                        }
+                        // Backoff-depth oracle — see push's identical
+                        // comment (round-9 P3-1). Same gate as the retry
+                        // counters above.
+                        #[cfg(any(feature = "test-internals", loom))]
+                        if spins >= BACKOFF_SPIN_CAP {
+                            POP_BACKOFF_CAP_REACH_COUNT
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         }
                         // Capped — see push's identical comment.
                         if spins < BACKOFF_SPIN_CAP {
@@ -1236,7 +1320,7 @@ impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
     }
 }
 
-/// **loom-test-only** activation counter for [`pop`](TaggedIndexStack::pop)'s
+/// Test-only activation counter for [`pop`](TaggedIndexStack::pop)'s
 /// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
 /// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
 /// `loom::sync::atomic`: loom re-runs the closure passed to
@@ -1246,12 +1330,19 @@ impl<const INDEX_BITS: u32> Default for TaggedIndexStack<INDEX_BITS> {
 /// exploration. `Relaxed` access: the counter promises no ordering, it only
 /// counts.
 ///
-/// Compiled in EVERY build — the retry-arm increments are unconditional —
-/// serving the `#[cfg(loom)]` loom suite via `pop_retry_count_for_test` and
-/// the non-loom threaded test via [`retry_counts_for_test`]. Cost is one
-/// Relaxed `fetch_add` per lost CAS, on the retry arm only — the
-/// uncontended fast path never touches it. Never reset by this crate
-/// (snapshot and diff is the caller's job).
+/// Compiled ONLY under the `test-internals` feature or a loom build
+/// (`--cfg loom --features loom`) — a default/published build of the crate
+/// carries neither this counter nor the retry-arm increments that write it
+/// (round-9 P3-4: an earlier revision compiled both unconditionally into
+/// every build, shipping two process-global atomics and a hot-path write
+/// per lost CAS to consumers who can neither use nor remove them). Under
+/// the gate it serves the `#[cfg(loom)]` loom suite via
+/// `pop_retry_count_for_test` and the non-loom threaded test via
+/// [`retry_counts_for_test`]. Cost when enabled: one Relaxed `fetch_add`
+/// per lost CAS, on the retry arm only — the uncontended fast path never
+/// touches it. Never reset by this crate (snapshot and diff is the
+/// caller's job).
+#[cfg(any(feature = "test-internals", loom))]
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `POP_RETRY_COUNT` — the
@@ -1279,7 +1370,7 @@ pub fn pop_retry_count_for_test() -> usize {
     POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-/// **loom-test-only** activation counter for [`push`](TaggedIndexStack::push)'s
+/// Test-only activation counter for [`push`](TaggedIndexStack::push)'s
 /// CAS-retry branch (the `Err(actual) => head = actual` arm, incremented
 /// there). Deliberately a REAL `core::sync::atomic::AtomicUsize`, NOT
 /// `loom::sync::atomic`: loom re-runs the closure passed to
@@ -1289,12 +1380,19 @@ pub fn pop_retry_count_for_test() -> usize {
 /// exploration. `Relaxed` access: the counter promises no ordering, it only
 /// counts.
 ///
-/// Compiled in EVERY build — the retry-arm increments are unconditional —
-/// serving the `#[cfg(loom)]` loom suite via `push_retry_count_for_test` and
-/// the non-loom threaded test via [`retry_counts_for_test`]. Cost is one
-/// Relaxed `fetch_add` per lost CAS, on the retry arm only — the
-/// uncontended fast path never touches it. Never reset by this crate
-/// (snapshot and diff is the caller's job).
+/// Compiled ONLY under the `test-internals` feature or a loom build
+/// (`--cfg loom --features loom`) — a default/published build of the crate
+/// carries neither this counter nor the retry-arm increments that write it
+/// (round-9 P3-4: an earlier revision compiled both unconditionally into
+/// every build, shipping two process-global atomics and a hot-path write
+/// per lost CAS to consumers who can neither use nor remove them). Under
+/// the gate it serves the `#[cfg(loom)]` loom suite via
+/// `push_retry_count_for_test` and the non-loom threaded test via
+/// [`retry_counts_for_test`]. Cost when enabled: one Relaxed `fetch_add`
+/// per lost CAS, on the retry arm only — the uncontended fast path never
+/// touches it. Never reset by this crate (snapshot and diff is the
+/// caller's job).
+#[cfg(any(feature = "test-internals", loom))]
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// **loom-test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
@@ -1328,13 +1426,18 @@ pub fn push_retry_count_for_test() -> usize {
 /// `push_retry_count_for_test` (both `#[cfg(loom)]`, invisible to a plain
 /// build): `tests/threaded_conservation.rs` is `#![cfg(not(loom))]`, so the
 /// real-OS-thread conservation test snapshots this tuple before its threaded
-/// phase and asserts BOTH counters advanced after it — the activation oracle
-/// for its "spins genuinely climbs into its higher range" claim, which
-/// asserts nothing if left to the conservation check alone (an 80,000-call
-/// run can satisfy conservation with a handful of retries or none).
+/// phase and asserts BOTH counters advanced after it — the FIRST half of
+/// its two-level activation oracle, pinning that the retry branches are
+/// reached under real threads (`backoff_cap_reached_for_test` supplies the
+/// second half — that `spins` climbs into its higher range; round-9 P3-1.
+/// An earlier revision of the test's doc claimed this counter alone pinned
+/// both halves — it cannot even distinguish 1 retry from thousands).
 ///
 /// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
 /// rationale; this item reads the two retry counters specifically.
+///
+/// Compiled under the same `test-internals`/loom gate as the counters
+/// themselves (round-9 P3-4) — it does not exist in a default build.
 ///
 /// Never reset by this crate: snapshot before and diff after. The counts are
 /// process-global and cumulative — across a test binary's whole run — so a
@@ -1344,9 +1447,62 @@ pub fn push_retry_count_for_test() -> usize {
 /// binary, so its window is exclusive by construction).
 #[doc(hidden)]
 #[must_use]
+#[cfg(any(feature = "test-internals", loom))]
 pub fn retry_counts_for_test() -> (usize, usize) {
     (
         POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed),
         PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed),
+    )
+}
+
+/// Test-only backoff-activation counter for [`pop`](TaggedIndexStack::pop):
+/// incremented in `pop`'s retry arm for every retry whose spin loop ran at
+/// FULL backoff depth (`spins` already saturated at `BACKOFF_SPIN_CAP`, so
+/// `1 << BACKOFF_SPIN_CAP` = 64 `spin_loop` iterations actually executed).
+/// Non-zero proves the backoff climbs into its higher range under real
+/// contention; a regression that caps `spins` at 0, resets it per
+/// iteration, or moves its increment off the reachable path zeroes this
+/// counter while `POP_RETRY_COUNT` keeps advancing — exactly the
+/// silently-inert-backoff failure
+/// `tests/threaded_conservation.rs`'s second oracle level catches (round-9
+/// P3-1). Same gate, ordering and never-reset semantics as
+/// `POP_RETRY_COUNT`; see its doc for the gating rationale.
+#[cfg(any(feature = "test-internals", loom))]
+static POP_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// Test-only backoff-activation counter for [`push`](TaggedIndexStack::push):
+/// the push-side twin of `POP_BACKOFF_CAP_REACH_COUNT` — same condition,
+/// same gate, same never-reset semantics.
+#[cfg(any(feature = "test-internals", loom))]
+static PUSH_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// **test-only** backoff-activation oracle: reads BOTH backoff-cap-reach
+/// counters in one call, as `(pop, push)` — `POP_BACKOFF_CAP_REACH_COUNT`
+/// first, then `PUSH_BACKOFF_CAP_REACH_COUNT`. The second half of
+/// `tests/threaded_conservation.rs`'s two-level activation oracle (round-9
+/// P3-1): where [`retry_counts_for_test`] proves only that a retry branch
+/// was reached at all, a non-zero delta here proves `spins` genuinely
+/// climbs into its higher range — at least one call per branch executed
+/// its spin loop at full `1 << BACKOFF_SPIN_CAP` depth — so a future
+/// change that silently disarms the backoff fails loudly instead of
+/// shipping with the documented behavior inert.
+///
+/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// rationale; this item reads the two backoff-cap-reach counters
+/// specifically.
+///
+/// Compiled under the same `test-internals`/loom gate as the counters
+/// themselves (round-9 P3-4) — it does not exist in a default build.
+/// Never reset by this crate: snapshot before and diff after;
+/// process-global and cumulative, like [`retry_counts_for_test`].
+#[doc(hidden)]
+#[must_use]
+#[cfg(any(feature = "test-internals", loom))]
+pub fn backoff_cap_reached_for_test() -> (usize, usize) {
+    (
+        POP_BACKOFF_CAP_REACH_COUNT.load(core::sync::atomic::Ordering::Relaxed),
+        PUSH_BACKOFF_CAP_REACH_COUNT.load(core::sync::atomic::Ordering::Relaxed),
     )
 }

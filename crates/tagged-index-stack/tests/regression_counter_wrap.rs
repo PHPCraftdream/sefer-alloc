@@ -57,11 +57,41 @@ fn empty_sentinel_never_collides_with_a_live_index() {
 /// unambiguously empty, across the wrap boundary.
 #[test]
 fn empty_word_with_running_tag_reads_empty_across_wrap() {
-    for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1, 0] {
+    for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1] {
         let w = T::pack(T::empty_index(), tag);
         assert!(
             T::is_empty(w),
             "empty_index packed with running tag {tag} must read empty (H-2)"
         );
     }
+
+    // The wrap itself, through the operations the stack actually uses:
+    // `push` bumps the observed tag via `wrapping_add(1)` and hands the
+    // result to `pack`, whose shift drops every tag bit at or above
+    // 2^TAG_BITS — so the all-ones tag restarts at 0 there, not inside
+    // `wrapping_add` itself. A literal repeated `0` in the sweep above
+    // cannot show that (round-9 review P4-10) — derive the post-wrap tag
+    // through the real bump-then-pack sequence and confirm the wrapped
+    // word is still unambiguously empty.
+    let max_tag = (1u64 << T::TAG_BITS) - 1;
+    let bumped_tag = max_tag.wrapping_add(1);
+    assert_eq!(
+        bumped_tag,
+        1u64 << T::TAG_BITS,
+        "wrapping_add(1) past the all-ones tag yields 2^TAG_BITS — the \
+         value `push` hands to pack after bumping the observed tag"
+    );
+    let w = T::pack(T::empty_index(), bumped_tag);
+    let (_, packed_tag) = T::unpack(w);
+    assert_eq!(
+        packed_tag, 0,
+        "pack's shift drops the 2^TAG_BITS high bit, restarting the tag \
+         at 0 — the actual wrap boundary `push` crosses"
+    );
+    assert!(
+        T::is_empty(w),
+        "empty_index packed with the post-wrap tag (0, derived from the \
+         all-ones tag via wrapping_add plus pack's truncating shift) must \
+         read empty (H-2)"
+    );
 }

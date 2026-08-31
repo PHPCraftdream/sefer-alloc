@@ -115,7 +115,10 @@ rate would run faster still, but the pair rate is already an order of
 magnitude under the working ceiling the next paragraph adopts, so the
 argument does not need the tighter push-only number). Committed receipt:
 the single-threaded `churn` rows in
-`docs/perf/_raw_tis_backoff_cap_sweep_run1.log` (11th Gen Intel Core
+`docs/perf/_raw_tis_backoff_cap_sweep_run1.log` — a file in this crate's
+repository
+(<https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log>),
+not in the published package (11th Gen Intel Core
 i7-11800H, rustc 1.97.0, 2026-08-31) — e.g. 53.89 ns/pair in that log's
 first arm, its 20 such samples spanning 51.41-64.72 ns/pair; re-run
 `cargo bench -p tagged-index-stack --bench tagged_index_stack_bench` for a
@@ -152,6 +155,28 @@ observation into an RMW on targets without a guaranteed native 128-bit CAS
 (`cmpxchg16b` is not in the x86-64 baseline). A genuine future need for more
 than 65535 indices in one pool would be better served by a separate, explicitly
 opt-in type gated behind a feature flag — not by changing this default.
+
+## Lock-freedom and starvation
+
+`push`/`pop` never block on a lock — a losing CAS retries — but lock-freedom
+is not starvation-freedom: a call can lose arbitrarily many CASes in a row,
+and the exponential backoff deliberately makes an unlucky call wait longer
+between retries. The measured trade is a SMALL NUMBER OF VERY LARGE OUTLIERS
+in exchange for better latency at every percentile through p99.9 AND better
+aggregate throughput — not "tail latency for throughput" in general. On a
+64-element `ArrayLinks` under this crate's own contention discipline (8
+threads x 200k pop-then-repush iterations, `--release`): the single worst
+`pop` blocked 41-60 ms across three runs under the shipped backoff cap, vs
+0.6-24 ms with the backoff disabled — a handful of extreme outliers is the
+one axis where disabling the backoff wins — while the same workload finished
+~4.9x faster in aggregate under the cap, every percentile through p99.9 was
+1-2 orders of magnitude better under the cap (p99.9 ≈ 1 µs vs 54-182 µs at
+8-16 threads), and at 16 threads the backoff-free build produced 2.2-2.6x
+MORE pops over 1 ms. A consumer recycling a slot on a latency-sensitive
+request path should size its tolerance for those rare outliers, not fear a
+broad tail; the full table is
+[`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
+— a file in this crate's repository, not in the published package.
 
 ## Portability limit — requires 64-bit atomics
 
@@ -194,17 +219,24 @@ used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
 test-only — it is used internally by this crate's bootstrap path
 (`TaggedIndexStack::new`) and by known in-workspace consumers for the same
 purpose (a const-capable bootstrap-empty head word), so it is not freely
-removable, but do not depend on it either. `retry_counts_for_test` is the
-non-loom twin of the loom-only retry-count accessors below — it reads both
-CAS-retry counters in one call and is what `tests/threaded_conservation.rs`
-uses as its activation oracle under real OS threads.
+removable, but do not depend on it either.
+
+Under the `test-internals` feature (off by default — a default build of the
+crate carries no instrumentation at all): `retry_counts_for_test` reads both
+CAS-retry counters in one call, and `backoff_cap_reached_for_test` reads the
+matching backoff-depth counters (non-zero only when a retry's spin loop ran
+at full backoff depth). These are the non-loom twins of the loom-only
+accessors below and are what `tests/threaded_conservation.rs` uses as its
+two-level activation oracle under real OS threads.
 
 Under `--cfg loom` (not present in a normal build or on docs.rs):
 `TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the
 shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from
 its CAS and drive ABA counterfactuals;
-`pop_retry_count_for_test`/`push_retry_count_for_test` read the loom-only
-retry-activation counters the same suite asserts against.
+`pop_retry_count_for_test`/`push_retry_count_for_test` are loom-only
+accessors over the same retry-activation counters (which themselves compile
+only under the `test-internals` feature or a loom build) that the same suite
+asserts against.
 
 ## Example
 
