@@ -231,6 +231,48 @@ fn max_legal_width_index_mask_never_equals_tail() {
     );
 }
 
+// --- Panic-hook mutation machinery (Sol-codex run-3 P2-3) ------------------
+//
+// The panic Location of `push` is observable ONLY through a panic hook (the
+// caught payload carries the message, never the location), so this file must
+// mutate the process-global hook. Three disciplines make that safe under
+// libtest's default parallel test execution:
+//
+// 1. SERIALIZATION: `HOOK_SERIALIZE` ensures hook mutation is exclusive — two
+//    hook-swapping tests running concurrently could take each other's
+//    wrappers and interleave restore order. One test mutates the hook today;
+//    the mutex makes the discipline structural for the next one.
+// 2. GENUINE RESTORE: the ORIGINAL previous hook is retained in a shared slot
+//    and reinstalled by `RestorePanicHook`'s `Drop` — `take_hook()` alone
+//    would install the DEFAULT hook and permanently lose whatever hook was
+//    installed before this test (the bug P2-3 reports).
+// 3. RAII: the guard restores the hook unconditionally, including when the
+//    test body panics unexpectedly or an assertion fails mid-test.
+//
+// The temporary wrapper still CHAINS to the original (read through the slot
+// per call), so any OTHER test panicking concurrently during the guarded
+// window gets exactly the handling it would have gotten without this test.
+type PanicHook = dyn for<'a, 'b> Fn(&'a std::panic::PanicHookInfo<'b>) + Send + Sync;
+
+static HOOK_SERIALIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct RestorePanicHook {
+    previous: std::sync::Arc<std::sync::Mutex<Option<Box<PanicHook>>>>,
+}
+
+impl std::ops::Drop for RestorePanicHook {
+    fn drop(&mut self) {
+        if let Some(original) = self
+            .previous
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            std::panic::set_hook(original);
+        }
+    }
+}
+
 /// push's `index < INDEX_MASK` guard at a NON-degenerate width, where the two
 /// things the guard exists to reject are DIFFERENT values: at
 /// `INDEX_BITS = 16`, `INDEX_MASK` is `0xFFFF` (the reserved empty sentinel)
@@ -257,31 +299,50 @@ fn width_16_push_rejects_index_mask_itself() {
     // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
     // `ArrayLinks`) cannot satisfy this test.
     //
-    // Also pins #[track_caller]'s effect (review-round6 P3-6): without it on
-    // both `push` and its `#[cold]` helper, this panic's Location would name
-    // lib.rs instead of this call site, and that regression would leave every
-    // OTHER assertion here green. The panic hook is process-global, so this
-    // closure CHAINS to whatever hook was previously installed instead of
-    // replacing it -- any other test's panic running concurrently on another
-    // thread (e.g. the should_panic tests below) still gets its usual default
-    // handling; only a panic on THIS thread is inspected for its location.
+    // Also pins #[track_caller]'s effect (Sol-codex run-3 P2-3, originally
+    // review-round6 P3-6): without it on both `push` and its `#[cold]` helper,
+    // this panic's Location would name lib.rs instead of this call site, and
+    // that regression would leave every OTHER assertion here green. The panic
+    // hook is process-global, so the mutation below is (a) SERIALIZED via
+    // `HOOK_SERIALIZE`, (b) genuinely RESTORED — an RAII guard reinstalls the
+    // ORIGINAL previous hook even if an assertion fails mid-test, rather than
+    // `take_hook()` alone, which would install the default hook and lose the
+    // previous one permanently — and (c) CHAINING: the temporary wrapper calls
+    // through to the original, so concurrent panics in other tests are
+    // unaffected; only a panic on THIS thread is inspected for its location.
     let this_thread = std::thread::current().id();
     let captured_file: std::sync::Arc<std::sync::Mutex<Option<String>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
     let captured_file_for_hook = std::sync::Arc::clone(&captured_file);
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        if std::thread::current().id() == this_thread {
-            if let Some(loc) = info.location() {
-                *captured_file_for_hook.lock().unwrap() = Some(loc.file().to_string());
+    // Reverse declaration order: `_restore_hook` drops BEFORE `_serialize`, so
+    // the hook is restored before the serialized window closes.
+    let result = {
+        let _serialize = HOOK_SERIALIZE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let original_slot =
+            std::sync::Arc::new(std::sync::Mutex::new(Some(std::panic::take_hook())));
+        let _restore_hook = RestorePanicHook {
+            previous: std::sync::Arc::clone(&original_slot),
+        };
+        std::panic::set_hook(Box::new(move |info| {
+            if std::thread::current().id() == this_thread {
+                if let Some(loc) = info.location() {
+                    *captured_file_for_hook.lock().unwrap() = Some(loc.file().to_string());
+                }
             }
-        }
-        prev_hook(info);
-    }));
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        stack.push(T::INDEX_MASK as u32);
-    }));
-    let _ = std::panic::take_hook(); // drop our hook, restoring the default
+            if let Some(original) = original_slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_deref()
+            {
+                original(info);
+            }
+        }));
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            stack.push(T::INDEX_MASK as u32);
+        }))
+    };
 
     let err = result.expect_err("pushing index == INDEX_MASK must panic");
     let message = err
@@ -375,29 +436,27 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
     let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }
 
-// Compile-fail coverage note: this crate has no trybuild (or similar
-// compile-fail) test infrastructure wired up, so `INDEX_BITS > 16` failing to
-// compile is NOT pinned by an automated test. Manually verified instead:
-// instantiating `TaggedIndex::<17>` (or any stack type with
-// `INDEX_BITS > 16`) fails `cargo build` with the `_CHECK_BITS` assertion
-// message ("INDEX_BITS must be in 1..=16 ..."). This is a known coverage gap,
-// not a silent omission -- and a deliberate choice, not an oversight: adding
-// `trybuild` for exactly this was evaluated and declined. `compile_fail`
-// doctests are unavailable in this repo (banned outright, see CLAUDE.md's
-// "No doctests" rule), and `trybuild` itself is a new dev-only dependency
-// this workspace has already declined twice for the identical
-// single-assertion tradeoff -- `crates/sefer-region/tests/handle_static_asserts.rs`
-// and `crates/aligned-vmem/tests/smoke.rs` both cite the same "would need a
-// `compile_fail` doctest or a `trybuild` dependency" reasoning and leave
-// their own const-assertion coverage manual too. The one exception now on the
-// books: this crate DOES have a single hand-rolled compile-fail regression,
-// `tests/compile_fail_two_backings.rs` (a `cargo build` of a fixture crate
-// asserted to fail, no new dev-dependency -- mirroring the workspace's
-// declined-trybuild precedent), which pins the P1-1 two-backing repro as
-// non-compiling against the storage-trait API. `INDEX_BITS > 16` remains
-// manually verified. Revisit if `_CHECK_BITS`'s const-evaluation routing is
-// ever refactored -- a real risk of silent breakage would tip the
-// cost/benefit differently than it does today.
+// Compile-fail coverage (Sol-codex run-3 P3-6): out-of-range `INDEX_BITS` IS
+// pinned by automated compile-fail regressions now --
+// `tests/compile_fail_index_bits_bounds.rs` builds the
+// `tests/compile_fail/index_bits_zero/` (width 0) and
+// `tests/compile_fail/index_bits_seventeen/` (width 17) fixture crates
+// out-of-process and asserts each fails with `_CHECK_BITS`'s E0080 naming the
+// `1..=16` range requirement, and
+// `tests/compile_fail_loom_cfg_without_feature.rs` likewise pins P2-4's
+// `--cfg loom`-without-`loom`-feature diagnostic (build fails with ONLY the
+// named `compile_error!`, no secondary name-resolution error). The mechanism
+// is this crate's established hand-rolled alternative to `trybuild`
+// (`tests/compile_fail_two_backings.rs` -- see its doc comment for the full
+// rationale; this workspace has declined a `trybuild` dependency five
+// separate times, each documented in-source:
+// `crates/sefer-region/tests/handle_static_asserts.rs`,
+// `crates/aligned-vmem/tests/smoke.rs`, root
+// `tests/r31_4_reserved_small_segment_handle.rs`, root
+// `tests/r34_3_internals_boundary_api.rs`, and the note this comment
+// replaces). `compile_fail` doctests remain unavailable in this repo (banned
+// outright, see CLAUDE.md's "No doctests" rule). Revisit only if
+// `_CHECK_BITS`'s const-evaluation routing is ever refactored.
 
 // ---------------------------------------------------------------------------
 // ArrayIndexStack — fused head+links LIFO order + H-2 single-threaded.

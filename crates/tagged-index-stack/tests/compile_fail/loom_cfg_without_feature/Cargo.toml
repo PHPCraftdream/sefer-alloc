@@ -1,0 +1,19 @@
+# `--cfg loom` without the `loom` feature compile-fail fixture — compiled ONLY
+# by tests/compile_fail_loom_cfg_without_feature.rs (never by the workspace:
+# the detached [workspace] table below opts it out, and cargo does not
+# auto-discover nested test dirs). Deliberately dependency-free apart from the
+# path dep, so `cargo build --offline` needs no network.
+#
+# NOTE: the tagged-index-stack dependency deliberately does NOT enable the
+# `loom` feature — that is the whole point: the runner builds THIS fixture
+# with RUSTFLAGS="--cfg loom", so the dependency must fail its cfg-gate check.
+[workspace]
+
+[package]
+name = "tis_compile_fail_loom_cfg_without_feature"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tagged-index-stack = { path = "../../.." }
