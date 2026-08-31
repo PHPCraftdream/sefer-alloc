@@ -107,63 +107,14 @@ before it.
   sentinel-reservation check is a single release-active bounds check (a
   `#[cold]` panic helper, not `debug_assert!`) — one guard covers both
   conditions, and it stays enforced in release builds too.
-- **Two speculative perf changes considered and deliberately NOT landed —
-  no unmeasured perf change ships here:** (1) `push`'s initial
-  `head.load(Ordering::Acquire)` could plausibly be `Relaxed` (push never
-  dereferences anything reached through the head; correctness rests
-  entirely on the eventual `Release` CAS — the retry read at
-  `Err(actual) => head = actual` is already `Relaxed`, so the initial load
-  is the one inconsistent site). (2) both `push`'s and `pop`'s CAS loops
-  are textbook `compare_exchange_weak` candidates (both already reload
-  from `Err(actual)` and re-run the whole loop body on any failure, which
-  is exactly `_weak`'s contract). Neither change would show up on x86-64
-  (`lock cmpxchg`) or on LSE AArch64 (`casal`) — the difference, if any,
-  is specific to non-LSE AArch64 (the *default* target for
-  `aarch64-unknown-linux-gnu`, which targets baseline ARMv8.0) and other
-  `ldxr`/`stxr`-style architectures, where a *strong* `compare_exchange`
-  compiles to an inner retry loop this code's own outer loop already
-  makes redundant. This repository has no AArch64 wall-clock/perf-gate
-  harness today, so landing either change here would be exactly the kind
-  of unmeasured perf claim this project's own evidence rules forbid.
-  **Next trigger to revisit:** an AArch64 bench-measurement harness
-  becoming available in this repository (raised, not tasked, in two
-  independent review rounds before this note existed:
-  `docs/reviews/2026-08-30-132847-tagged-index-stack-claude.md` and
-  `docs/reviews/2026-08-30-2243-tagged-index-stack-review-round3-oh.md`
-  P3-5 — this bullet is the durable record neither round produced).
-- **A crate-doc "one Invariants section" consolidation was considered a
-  second time and declined a second time — with new evidence, not the same
-  reasoning restated.** Round 3 (`ab4497f`) declined this with an explicit
-  revisit condition: "if a future round finds NEW drift instances — that
-  would be empirical evidence a restructuring is warranted." Round 4's
-  independent review found six new drift instances (the `scripts/loom.mjs`
-  feature-map staleness, two loom-coverage over-attribution clauses, a
-  stale `How to run` command, two stale `assert!` references, a stale CI
-  test-file count) and argued the condition had fired. On inspection, all
-  six were duplicate FACTS restated slightly differently across SEPARATE
-  files (`README.md`, `CHANGELOG.md`, `.github/workflows/ci.yml`,
-  `scripts/loom.mjs`, `tests/loom_aba.rs`) — not excess verbosity within
-  one `src/lib.rs` doc passage. A single in-crate "Invariants" section
-  would not have prevented any of the six: `README.md` is what a reader
-  sees on crates.io without opening rustdoc, `CHANGELOG.md` records what
-  shipped, `ci.yml`'s comments explain CI configuration, and
-  `scripts/loom.mjs`/`tests/loom_aba.rs` need their own working commands —
-  none of those four files is generated from `src/lib.rs`'s rustdoc, so
-  consolidating within one file does not eliminate the other files' need
-  to independently restate the same facts, which is the actual mechanism
-  that produced this round's drift. Separately, direct re-reading of all
-  five passages the round-4 review named as consolidation candidates
-  (`TaggedIndex`'s uninhabited-enum defence, `_CHECK_BITS`'s rationale,
-  `pack`'s truncation essay, the `Links` ordering contract, `push`'s
-  `# Caller contract`) found every sentence in all five to carry a
-  distinct, load-bearing fact (a concrete failure mode, a specific reason
-  a bound exists) rather than review-dialogue prose — unlike the
-  `size-classes` sibling crate's precedent (tasks #1638/#1589/#1545),
-  none of these five passages quote or reference a past reviewer's
-  question inline. The six new instances are the drift-across-files
-  problem this crate already has dedicated per-task fixes for (this same
-  round); they are not evidence that `src/lib.rs`'s own documentation
-  density is the cause.
+- **Two speculative perf changes evaluated and not landed:** `push`'s
+  initial `head.load(Ordering::Acquire)` could plausibly be `Relaxed`, and
+  both `push`'s and `pop`'s CAS loops are `compare_exchange_weak`
+  candidates. Neither change would show up on x86-64 (`lock cmpxchg`) or
+  LSE AArch64 (`casal`) — any difference is specific to non-LSE AArch64 and
+  similar `ldxr`/`stxr`-style architectures, and this repository has no
+  AArch64 wall-clock/perf-gate harness to measure it. Revisit when one
+  exists.
 - **64-bit-atomic portability gate** — the head is one `AtomicU64`, so the
   crate fails fast with a named `compile_error!` on targets without native
   64-bit atomics (`thumbv6m-none-eabi`, `thumbv7em-none-eabi`, `riscv32imc-…`,
