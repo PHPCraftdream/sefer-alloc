@@ -21,6 +21,20 @@
 //! dependency (so the crate compiles) and its `fn main() {}` is empty — the
 //! dependency's `compile_error!` is the only diagnostic expected.
 //!
+//! # Published-package behavior (round-10 @oh review, P2-1)
+//!
+//! The fixture crates under `tests/compile_fail/` are git-checkout-only
+//! test infrastructure: each has its own `Cargo.toml`, so cargo's
+//! packaging rule auto-excludes them from the published `.crate` (now
+//! stated explicitly via the `[package]` `exclude` in `Cargo.toml`). This
+//! driver file itself IS packaged (a plain `.rs` file directly under
+//! `tests/`), so `cargo test` inside a downloaded package reaches it —
+//! but not usefully as a compile-fail test: the fixtures are simply not
+//! there. The runner therefore reports a missing fixture manifest and
+//! SKIPS (returns successfully) instead of failing the packaged suite.
+//! From a full git checkout (this workspace, CI) the fixtures exist and
+//! every assertion below runs exactly as before.
+//!
 //! # Mechanics: the cfg is the point (inverse of the two_backings runner)
 //!
 //! Unlike `tests/compile_fail_two_backings.rs` — which STRIPS both flag
@@ -53,6 +67,21 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
         .join("compile_fail")
         .join("loom_cfg_without_feature")
         .join("Cargo.toml");
+    // P2-1 (round-10 @oh review): the fixture crates are excluded from the
+    // published .crate (cargo's nested-manifest rule; see the `[package]`
+    // `exclude` in Cargo.toml), so in a downloaded package the manifest is
+    // legitimately absent — report and skip rather than fail the packaged
+    // suite. From a git checkout the fixture exists and everything below
+    // runs unchanged.
+    if !manifest.exists() {
+        eprintln!(
+            "skipping: compile-fail fixture not present ({}) — fixture \
+             crates are git-checkout-only test infrastructure, excluded \
+             from the published .crate",
+            manifest.display()
+        );
+        return;
+    }
     assert!(
         manifest.exists(),
         "compile-fail fixture manifest missing: {}",

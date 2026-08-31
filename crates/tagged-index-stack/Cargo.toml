@@ -11,6 +11,14 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
+# Round-10 @oh review, P2-1: the four compile-fail fixture crates under
+# tests/compile_fail/ each have their own Cargo.toml, so cargo's nested-
+# manifest packaging rule already auto-excludes them — this states that
+# EXPLICITLY so the published .crate does not silently depend on that
+# default. The three compile_fail_*.rs driver files are plain .rs files
+# directly under tests/ and DO ship; each documents (and implements) its
+# own skip-when-fixture-absent behavior for the packaged suite.
+exclude = ["tests/compile_fail/"]
 
 [lints]
 # The `unexpected_cfgs` allowlist (several cfgs, including `loom`) is shared
