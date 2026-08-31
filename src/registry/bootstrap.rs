@@ -461,12 +461,28 @@ mod loom_shim {
     // The PACKING (`TaggedIndex`) is pure `const fn` bit arithmetic with no
     // atomics, and the `Links` trait / `TAIL` sentinel carry no atomics either —
     // all are loom-agnostic, so the shim reuses the REAL crate types for them and
-    // only re-implements the `AtomicU64` head on `core` atomics. This keeps the
-    // shim's push/pop a FAITHFUL byte-for-byte replica of the crate's algorithm
-    // (same H-2 running-tag empty transition, same Acquire/Release/Relaxed
-    // orderings, same RAD-1 lazy links — `store_next` only ever fires inside
-    // `push`), differing from the shipped type ONLY in which `AtomicU64` backs the
-    // head.
+    // only re-implements the `AtomicU64` head on `core` atomics. The shim
+    // replicates the crate's push/pop HEAD PROTOCOL (same H-2 running-tag empty
+    // transition, same Acquire/Release/Relaxed orderings, same RAD-1 lazy links
+    // — `store_next` only ever fires inside `push`) but is NOT a byte-for-byte
+    // replica of the shipped type. THREE deliberate divergences, each irrelevant
+    // to what the shim is FOR — model-checking free_slots' head protocol in the
+    // root crate's loom CI jobs:
+    //   1. no CAS-retry backoff — the shipped `push`/`pop` spin
+    //      `1 << spins.min(BACKOFF_SPIN_CAP)` times between retries; the shim
+    //      retries immediately, forever. The backoff is a pure LATENCY device:
+    //      `core::hint::spin_loop()` touches no atomic and adds no interleaving
+    //      loom could explore, so copying it in would add zero protocol content.
+    //   2. no `push` release-active `index < INDEX_MASK` guard — the guard
+    //      catches a caller-contract violation the registry's own construction
+    //      excludes here: only slot indices `< MAX_HEAPS (4096)` are ever
+    //      pushed, well under `INDEX_MASK (65535)`. Dead code in this shim.
+    //   3. no `pop` release-active rule-4 guard on `load_next`'s result — same
+    //      reasoning: `HeapSlot::next_free` is written ONLY by the shipped
+    //      `push` (with `TAIL` or a previously-admitted index), so the guard's
+    //      condition is unsatisfiable for this consumer.
+    // Keeping the shim minimal is deliberate: every shipped feature copied into
+    // it doubles the surface that can silently drift from the real type.
     use tagged_index_stack::{Links, TaggedIndex, TAIL};
 
     /// Const-capable stand-in for `tagged_index_stack::TaggedIndexStack<16>` used
@@ -486,8 +502,9 @@ mod loom_shim {
             }
         }
 
-        /// Faithful replica of `TaggedIndexStack::push` (Release CAS, tag bump,
-        /// RAD-1 lazy link write inside push only).
+        /// Head-protocol replica of `TaggedIndexStack::push` (Release CAS, tag
+        /// bump, RAD-1 lazy link write inside push only; no backoff and no
+        /// caller-contract guard — see the module comment above).
         pub(crate) fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
             let mut head = self.head.load(Ordering::Acquire);
             loop {
@@ -513,8 +530,9 @@ mod loom_shim {
             }
         }
 
-        /// Faithful replica of `TaggedIndexStack::pop` (Acquire CAS, same tag;
-        /// H-2 running-tag preservation on the empty transition).
+        /// Head-protocol replica of `TaggedIndexStack::pop` (Acquire CAS, same
+        /// tag; H-2 running-tag preservation on the empty transition; no
+        /// backoff and no rule-4 guard — see the module comment above).
         pub(crate) fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
             let mut head = self.head.load(Ordering::Acquire);
             loop {
