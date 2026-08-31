@@ -2,8 +2,9 @@
 //! `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag wrap at `2^48`.
 //!
 //! `tests/stack_unit.rs`'s `pack_unpack_round_trip_16` and
-//! `tag_wraps_at_2_pow_48` already pin the width/wrap facts this file used to
-//! duplicate (`split_is_16_48` and `tag_wraps_at_2_pow_48_and_index_survives`
+//! `checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48`
+//! already pin the width facts and the checked pack's boundary behaviour
+//! this file used to duplicate (`split_is_16_48` and `tag_wraps_at_2_pow_48_and_index_survives`
 //! were removed as exact duplicates — round-4 review P4-8). What remains
 //! here is the coverage those two tests do NOT provide: a parametrized sweep
 //! over multiple (index, tag) pairs confirming the empty sentinel is never
@@ -41,7 +42,7 @@ fn empty_sentinel_never_collides_with_a_live_index() {
 
     for &idx in &[0u64, 1, CAP - 1] {
         for &tag in &[0u64, 1, (1u64 << T::TAG_BITS) - 1] {
-            let word = T::pack(idx, tag);
+            let word = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
             assert!(
                 !T::is_empty(word),
                 "valid index {idx} (tag {tag}) is not empty"
@@ -58,40 +59,38 @@ fn empty_sentinel_never_collides_with_a_live_index() {
 #[test]
 fn empty_word_with_running_tag_reads_empty_across_wrap() {
     for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1] {
-        let w = T::pack(T::empty_index(), tag);
+        let w =
+            T::pack(T::empty_index(), tag).expect("empty_index and every swept tag is in range");
         assert!(
             T::is_empty(w),
             "empty_index packed with running tag {tag} must read empty (H-2)"
         );
     }
 
-    // The wrap itself, through the operations the stack actually uses:
-    // `push` bumps the observed tag via `wrapping_add(1)` and hands the
-    // result to `pack`, whose shift drops every tag bit at or above
-    // 2^TAG_BITS — so the all-ones tag restarts at 0 there, not inside
-    // `wrapping_add` itself. A literal repeated `0` in the sweep above
-    // cannot show that (round-9 review P4-10) — derive the post-wrap tag
-    // through the real bump-then-pack sequence and confirm the wrapped
-    // word is still unambiguously empty.
+    // The wrap boundary itself, through the value the stack actually
+    // computes there: `push` bumps the observed tag via `wrapping_add(1)`,
+    // which at the all-ones tag is exactly `2^TAG_BITS`. The CHECKED pack
+    // (review P2-1) now REJECTS that value instead of silently dropping
+    // its high bit; the wrap happens inside push, which packs through the
+    // crate-private truncating fast path (machine behaviour unchanged).
+    // Deriving the post-bump tag through the real bump sequence and
+    // confirming the checked pack refuses it is what remains testable at
+    // this boundary — a literal repeated `0` in the sweep above cannot
+    // show it (round-9 review P4-10).
     let max_tag = (1u64 << T::TAG_BITS) - 1;
     let bumped_tag = max_tag.wrapping_add(1);
     assert_eq!(
         bumped_tag,
         1u64 << T::TAG_BITS,
         "wrapping_add(1) past the all-ones tag yields 2^TAG_BITS — the \
-         value `push` hands to pack after bumping the observed tag"
+         value `push` hands to its truncating pack after bumping the \
+         observed tag"
     );
-    let w = T::pack(T::empty_index(), bumped_tag);
-    let (_, packed_tag) = T::unpack(w);
     assert_eq!(
-        packed_tag, 0,
-        "pack's shift drops the 2^TAG_BITS high bit, restarting the tag \
-         at 0 — the actual wrap boundary `push` crosses"
-    );
-    assert!(
-        T::is_empty(w),
-        "empty_index packed with the post-wrap tag (0, derived from the \
-         all-ones tag via wrapping_add plus pack's truncating shift) must \
-         read empty (H-2)"
+        T::pack(T::empty_index(), bumped_tag),
+        None,
+        "the post-bump 2^TAG_BITS tag is out of range: the checked pack \
+         refuses it instead of silently wrapping (push's private \
+         truncating path performs the actual wrap)"
     );
 }

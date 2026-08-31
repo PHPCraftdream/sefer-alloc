@@ -493,6 +493,17 @@ pub(crate) mod loom_shim {
     //      the shim exists to model-check, and a bare
     //      `core::sync::atomic::AtomicU64` head carries no such metadata to
     //      replicate.
+    //   5. the shipped `push_index`/`pop_index` now pack through the
+    //      crate-PRIVATE truncating fast path (`pack_truncating`); this
+    //      shim cannot name that private item, so it packs through the
+    //      checked public `pack` (which returns `Option`) — with push's
+    //      tag-wrap mask applied explicitly at the call site (the real
+    //      push's `wrapping_add(1)` legitimately produces `2^TAG_BITS` at
+    //      the ABA wrap boundary, which the checked pack rejects and the
+    //      private helper truncates). The `.expect`s below make the shim's
+    //      in-range caller guarantees explicit; an `expect` firing would
+    //      be a model bug, and it adds no atomic ops for loom to
+    //      interleave.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
     use tagged_index_stack::{TaggedIndex, TAIL};
@@ -562,8 +573,15 @@ pub(crate) mod loom_shim {
                 };
                 self.store_next(index, next_link);
                 let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
-                let new_tag = tag.wrapping_add(1);
-                let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
+                // Explicit tag-wrap mask (divergence note 5): the real push
+                // hands wrapping_add(1)'s possible 2^TAG_BITS to its private
+                // truncating pack, whose shift drops the high bit; the
+                // checked pack this shim must use would REJECT that value.
+                let new_tag =
+                    (tag.wrapping_add(1)) & ((1u64 << TaggedIndex::<INDEX_BITS>::TAG_BITS) - 1);
+                let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag).expect(
+                    "shim halves in range: slot index < INDEX_MASK (divergence note 2), tag masked above",
+                );
                 match head_ref.compare_exchange(
                     head,
                     new_head,
@@ -592,8 +610,11 @@ pub(crate) mod loom_shim {
                 let new_head = if next == TAIL {
                     // H-2: preserve the RUNNING tag across the empty transition.
                     TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
+                        .expect("empty_index and the unpacked tag are both in range")
                 } else {
-                    TaggedIndex::<INDEX_BITS>::pack(next as u64, tag)
+                    TaggedIndex::<INDEX_BITS>::pack(next as u64, tag).expect(
+                        "links hold only TAIL or admitted indices < INDEX_MASK (divergence note 3)",
+                    )
                 };
                 match head_ref.compare_exchange(
                     head,

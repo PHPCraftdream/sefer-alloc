@@ -31,12 +31,11 @@ proptest! {
         tag in 0u64..(1u64 << TaggedIndex::<1>::TAG_BITS),
     ) {
         type T = TaggedIndex<1>;
-        let word = T::pack(index, tag);
+        let word = T::pack(index, tag).expect("strategy generates in-range halves");
         let (v, t) = T::unpack(word);
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word), "a valid index (< INDEX_MASK) must not read empty");
-        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -45,12 +44,11 @@ proptest! {
         tag in 0u64..(1u64 << TaggedIndex::<16>::TAG_BITS),
     ) {
         type T = TaggedIndex<16>;
-        let word = T::pack(index, tag);
+        let word = T::pack(index, tag).expect("strategy generates in-range halves");
         let (v, t) = T::unpack(word);
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
-        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -59,12 +57,11 @@ proptest! {
         tag in 0u64..(1u64 << TaggedIndex::<15>::TAG_BITS),
     ) {
         type T = TaggedIndex<15>;
-        let word = T::pack(index, tag);
+        let word = T::pack(index, tag).expect("strategy generates in-range halves");
         let (v, t) = T::unpack(word);
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
-        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
     }
 
     #[test]
@@ -73,38 +70,65 @@ proptest! {
         tag in 0u64..(1u64 << TaggedIndex::<12>::TAG_BITS),
     ) {
         type T = TaggedIndex<12>;
-        let word = T::pack(index, tag);
+        let word = T::pack(index, tag).expect("strategy generates in-range halves");
         let (v, t) = T::unpack(word);
         prop_assert_eq!(v, index);
         prop_assert_eq!(t, tag);
         prop_assert!(!T::is_empty(word));
-        prop_assert_eq!(T::try_pack(index, tag), Some(T::pack(index, tag)));
+    }
+
+    #[test]
+    fn rejects_out_of_range_index_width_16(
+        // Strictly OUTSIDE the index half: the first invalid index
+        // (1 << INDEX_BITS) is the smallest possible reject, u64::MAX the
+        // largest — the exact values the old truncating pack silently
+        // masked into different valid-looking indices.
+        // `INDEX_BITS` is the const generic parameter, not an associated
+        // const, so the shift amount is spelled literally: width 16.
+        index in (1u64 << 16)..=u64::MAX,
+        tag in 0u64..(1u64 << TaggedIndex::<16>::TAG_BITS),
+    ) {
+        prop_assert_eq!(TaggedIndex::<16>::pack(index, tag), None);
+    }
+
+    #[test]
+    fn rejects_out_of_range_tag_width_16(
+        index in 0u64..TaggedIndex::<16>::INDEX_MASK,
+        // Strictly OUTSIDE the tag half: the first invalid tag
+        // (1 << TAG_BITS) is the value whose high bit the old truncating
+        // pack's shift silently dropped, wrapping the tag to 0.
+        tag in (1u64 << TaggedIndex::<16>::TAG_BITS)..=u64::MAX,
+    ) {
+        prop_assert_eq!(TaggedIndex::<16>::pack(index, tag), None);
     }
 }
 
-/// `try_pack`'s bounds check shifts `1u64 << Self::TAG_BITS`; at width 1,
-/// `TAG_BITS` is 63 — the closest this crate gets to `u64` shift overflow
-/// (`1u64 << 63` is the last representable shift amount, `1u64 << 64` would
-/// panic/UB). The properties above sample `try_pack` randomly at width 1 but
-/// are not guaranteed to land exactly on this boundary, so it gets its own
-/// focused assertion: the last valid tag (`2^63 - 1`) still packs, and the
-/// first invalid tag (`2^63`, the shift boundary itself) is rejected.
+/// The checked pack's bounds check shifts `1u64 << Self::TAG_BITS`; at
+/// width 1, `TAG_BITS` is 63 — the closest this crate gets to `u64` shift
+/// overflow (`1u64 << 63` is the last representable shift amount, `1u64
+/// << 64` would panic/UB). The properties above sample `pack` randomly at
+/// width 1 but are not guaranteed to land exactly on this boundary, so it
+/// gets its own focused assertion: the last valid tag (`2^63 - 1`) still
+/// packs to the exact word, and the first invalid tag (`2^63`, the shift
+/// boundary itself) is rejected.
 #[test]
-fn try_pack_width_1_tag_boundary_at_shift_63() {
+fn pack_width_1_tag_boundary_at_shift_63() {
     type T = TaggedIndex<1>;
     assert_eq!(T::TAG_BITS, 63);
 
     let max_valid_tag = (1u64 << 63) - 1;
     assert_eq!(
-        T::try_pack(0, max_valid_tag),
-        Some(T::pack(0, max_valid_tag)),
-        "the last valid tag at the width-1 shift boundary must still pack"
+        T::pack(0, max_valid_tag),
+        Some(max_valid_tag << 1),
+        "the last valid tag at the width-1 shift boundary must still pack \
+         to the exact word (tag in the high 63 bits, index 0 in the low bit)"
     );
 
     let first_invalid_tag = 1u64 << 63;
     assert_eq!(
-        T::try_pack(0, first_invalid_tag),
+        T::pack(0, first_invalid_tag),
         None,
-        "the first invalid tag, exactly at the shift boundary, must be rejected"
+        "the first invalid tag, exactly at the shift boundary, must be \
+         rejected"
     );
 }
