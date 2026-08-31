@@ -61,8 +61,10 @@
 //!     shipped `push`/`pop` with no hand-inlining. Both prove the free-list
 //!     stays loss/duplication-free under the two most ordinary interleavings
 //!     a production free-list sees (two threads freeing concurrently, two
-//!     threads allocating concurrently); `push_push_conservation` also
-//!     asserts a `PUSH_RETRY_COUNT` activation oracle mirroring `pop`'s.
+//!     threads allocating concurrently); each also asserts its own
+//!     activation oracle — `push_push_conservation` a `PUSH_RETRY_COUNT`
+//!     delta, `pop_pop_conservation` a `POP_RETRY_COUNT` delta — mirroring
+//!     the other's.
 //!
 //! # How to run
 //!
@@ -646,12 +648,11 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // parallel harness: `MODEL_LOCK`, held from the snapshot through the
     // assert below via `model_with_oracle`'s returned guard, is what
     // actually makes the delta exclusive to this test's own `check()` run.
-    // Without it, any other test in this binary that also drives the real
-    // `pop` under contention (`aba_repush_keeps_free_list_conservation`,
-    // `tagged_stack_survives_the_same_resurrection_pattern`) could run
-    // concurrently on another libtest thread and increment the same counter,
-    // making this assertion pass on cross-test noise instead of on this
-    // test's own model.
+    // Without it, any other test in this file that drives the real
+    // `push`/`pop` (see `MODEL_LOCK`'s own doc comment for the mechanism)
+    // could run concurrently on another libtest thread and increment the
+    // same counter, making this assertion pass on cross-test noise instead
+    // of on this test's own model.
     let (retries_before, _g) =
         model_with_oracle(tagged_index_stack::pop_retry_count_for_test, || {
             let links = Arc::new(ArrayLinks::<N>::new());
