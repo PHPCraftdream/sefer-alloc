@@ -10,8 +10,11 @@
 
 import { REPO_ROOT, run, verdict } from './lib.mjs';
 
-// Per-test feature sets — MUST mirror the ci.yml `loom` matrix. Running every
-// model with one blanket `alloc-global,alloc-xthread` set silently compiled the
+// Per-test feature sets — MUST mirror the ci.yml `loom` matrix. When editing,
+// diff against ci.yml:2636 (`loom-misc` job) for the exact feature string —
+// this file drifted out of sync with that line once already (fixed by
+// 8027d9a) because there was no pointer to the exact line to check.
+// Running every model with one blanket `alloc-global,alloc-xthread` set silently compiled the
 // experimental-tier models (`loom_sharded`, `loom_epoch`) with ZERO tests (their
 // `#![cfg(feature = "experimental")]` gate excluded the whole file → "0 tests"
 // that looks like a pass). Each model now builds under the exact features its
@@ -44,7 +47,7 @@ const FEATURES = {
   // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.
   // `compose_finds_double_issue_hole_pre164` (#[should_panic] counterfactual)
   // + `compose_drain_sees_magazine_invariant_holds` (GREEN invariant, #164).
-  loom_magazine_ring_compose: 'alloc-global,alloc-xthread',
+  loom_magazine_ring_compose: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   // task #204: the `alloc` Cargo feature (and the `Heap` type it gated) was
   // REMOVED and renamed to alloc-core/alloc-xthread/alloc-global. This mapping
   // still pointed at the deleted `alloc` feature, so cargo silently ignored the
@@ -60,11 +63,11 @@ const FEATURES = {
   loom_dirty_multi_segment: 'alloc-core,alloc-xthread',
   // R6-OPT-P0-4: overflow-first composition (segment ring -> heap overflow ring
   // -> bounded spin-retry) double-saturation model + its counterfactual.
-  loom_overflow_first_retry: 'alloc-global,alloc-xthread',
+  loom_overflow_first_retry: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   // RAD-4b: HeapOverflow two-field-entry MPSC ring (torn-read counterfactual).
-  loom_heap_overflow: 'alloc-global,alloc-xthread',
+  loom_heap_overflow: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   // R2-4: HeapOverflow drain-guard (the return-actual-stop-position contract).
-  loom_heap_overflow_drain_guard: 'alloc-global,alloc-xthread',
+  loom_heap_overflow_drain_guard: 'alloc-global,alloc-xthread,tagged-index-stack/loom',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };
@@ -119,12 +122,19 @@ for (const [features, group] of byFeature) {
   console.log(`\n[loom] ${label}: ${group.join(', ')}`);
   const testArgs = group.flatMap((t) => ['--test', t]);
   // A `crate:<name>` entry runs the extracted crate's own real-type loom suite
-  // via `-p <name>` and NO sefer features (the crate has none). Otherwise:
-  // an empty feature set must OMIT `--features` entirely — cargo rejects an
-  // empty `--features ''` argument (mirrors the ci.yml `loom_thread_free`
-  // features: "" entry).
+  // via `-p <name>` and NO sefer features (the crate has none) — EXCEPT
+  // `tagged-index-stack`, which made `loom` an optional Cargo feature of its
+  // own (round-3 review P1-1): `--cfg loom` alone no longer resolves it, so
+  // `-p tagged-index-stack` additionally needs `--features loom` (mirrors
+  // ci.yml's `loom-alloc-global` job, `-p tagged-index-stack --features loom
+  // --test loom_aba`). `once-ptr-cell` has no such feature and stays
+  // unchanged. Otherwise: an empty feature set must OMIT `--features`
+  // entirely — cargo rejects an empty `--features ''` argument (mirrors the
+  // ci.yml `loom_thread_free` features: "" entry).
   const scopeArgs = isCrate
-    ? ['-p', crateName]
+    ? crateName === 'tagged-index-stack'
+      ? ['-p', crateName, '--features', 'loom']
+      : ['-p', crateName]
     : features === ''
       ? []
       : ['--features', features];
