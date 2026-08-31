@@ -168,9 +168,10 @@ before it.
   a permanent harness) drained the stack after 8 threads × 200,000
   contention-shaped pop/push iterations under the backoff and confirmed the
   exact multiset `0..64` came back with no duplicate or missing index. The
-  loom suite (`tests/loom_aba.rs`, all 10 models) stayed green at the same
-  wall-clock (~0.16s test time): `core::hint::spin_loop()` touches no
-  loom-tracked atomic, so it adds no new interleaving for loom to explore.
+  loom suite (`tests/loom_aba.rs` — see its own module doc for the
+  per-model breakdown) stayed green at the same wall-clock (~0.16s test
+  time): `core::hint::spin_loop()` touches no loom-tracked atomic, so it
+  adds no new interleaving for loom to explore.
 - **`BACKOFF_SPIN_CAP = 6` kept after a dedicated throughput-vs-fairness cap
   sweep** (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`) — an independent
   review flagged the cap's original doc comment as claiming an unmeasured

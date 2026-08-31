@@ -180,7 +180,7 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loo
 
 ## Notes
 
-This crate has two `#[doc(hidden)]` `pub` items under default features, and two more that only exist under `--cfg loom`. In all four cases the attribute only hides the item from rustdoc's rendered navigation — the item remains publicly callable, carries no semver stability guarantee, and should not be depended on.
+This crate has several `#[doc(hidden)]` `pub` items — some under default features, more under `--cfg loom` (see below). In every case the attribute only hides the item from rustdoc's rendered navigation — the item remains publicly callable, carries no semver stability guarantee, and should not be depended on.
 
 Under default features: `TaggedIndexStack::raw_head` is a test-only probe, used only by this crate's own `tests/`. `TaggedIndex::empty()` is not test-only — it is used internally by this crate's bootstrap path (`TaggedIndexStack::new`) and by known in-workspace consumers for the same purpose (a const-capable bootstrap-empty head word), so it is not freely removable, but do not depend on it either.
 
