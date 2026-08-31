@@ -339,12 +339,35 @@ post-run restore verification.
 under the 200 KiB tier-1 ceiling, verbatim). Per-rep rows are appended to
 `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv` as `run=3`,
 `bench=pop_latency` rows; the medians and ratios below are derived, with
-assertions D1-D4, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
-**Source identity:** base commit `842c99805992d362c5d82df59fc646c691598285`
-(this crate's round-8 worktree HEAD — the cap-6 arm was measured on that
-CLEAN tree, R29-6 option 1); cap-0 arm patch hash
+assertions D1-D6, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
+**Source identity (round-9 P3-3 correction):** the cap-6 arm was measured on
+the round-8 worktree whose TRACKED state was exactly commit
+`842c99805992d362c5d82df59fc646c691598285` (the raw log's `base_sha:` line;
+the log's post-run restore verification shows the tracked tree clean) **plus
+one untracked new file — the probe itself**. That tree was therefore NOT a
+"CLEAN tree" as an earlier version of this section claimed, and `842c998`
+alone is not a sufficient R29-6 identity: the probe did not exist at that
+commit (`git cat-file -e
+842c998:crates/tagged-index-stack/examples/backoff_per_call_latency.rs`
+fails; it was first committed in
+`a1f9dc51bfbffeed57229f6f46a5e199d289b9ec` and is unchanged since).
+Practical reproduction identity for the cap-6 arm: check out `a1f9dc5`
+(contains both the probe and the shipped cap-6 source) and run the probe as
+described above. One disclosed caveat: `a1f9dc5`'s tracked state differs
+from the measured tracked state beyond doc comments — the retry-counter
+increments became unconditional and `pop` gained `#[track_caller]`; the
+round-9 review independently A/B'd both and could not resolve a cost above
+the build-layout noise floor
+(`docs/reviews/2026-08-31-130017-tagged-index-stack-review-round9-oh.md`,
+P3-4 and "Checked and clean"), so numbers re-taken at `a1f9dc5` reproduce
+§3.4's within its stated n=3 noise. A retroactive `git write-tree`/patch
+hash of the true measured tree is impossible (the round-8 worktree is gone;
+R29-6 requires capturing the identity at measurement time). The cap-0 arm
+patch hash
 `9cf4469a1ba5f79a8c98871dd7d4ee6e90f2a3a5fee4465e54ba1b7af1333b86`
-(R29-6 option 3), recorded in the raw log.
+(R29-6 option 3) is a `git diff` hash and likewise does not cover the
+untracked probe; it remains recorded in the raw log as the substitution's
+identity.
 
 **Median over 3 reps (worst-of-3 in parens), same host as §3.1:**
 
@@ -354,26 +377,66 @@ CLEAN tree, R29-6 option 1); cap-0 arm patch hash
 | 8 x 200,000 | 54.464 ms (59.705) | 2.031 ms (23.567) | 321.9 ms | 1,560.3 ms | 4.85x |
 | 16 x 200,000 | 160.092 ms (173.365) | 42.335 ms (46.301) | 867.5 ms | 3,509.6 ms | 4.05x |
 
-Tail mass tells the same story per call-count: at `8 x 200,000`, 60-86 pops
-of 1.6M per rep exceeded 1 ms under cap 6, vs 0-8 pops under cap 0; at
-`16 x 200,000`, 3-4 pops of 3.2M per rep exceeded 100 ms under cap 6, vs 0
-under cap 0. Meanwhile 99.9% of cap-6 pops at 8 threads completed within
-~1 microsecond (`pop_p999_ms` = 0.001 in the CSV rows) — the distribution is
-not uniformly slower under backoff, it is HEAVIER-TAILED.
+Tail mass by threshold — ALL five cells, both arms (3 reps each; assertion
+D4 pins every cell; round-9 P2-2: an earlier version quoted only the two
+rows that support the tail story and omitted the 16-thread `>1 ms`
+reversal):
+
+| shape / threshold | cap 6 (shipped) | cap 0 | who is worse |
+|---|---|---|---|
+| 8 x 200k, >1 ms | 86, 66, 60 | 8, 0, 3 | cap 6 (60-86 vs 0-8 per rep) |
+| 8 x 200k, >10 ms | 34, 29, 26 | 2, 0, 0 | cap 6 |
+| 16 x 200k, >1 ms | 285, 266, 249 | 553, 661, 650 | **cap 0 — ~2.4x worse median-to-median (1.9-2.6x across rep pairings)** |
+| 16 x 200k, >10 ms | 178, 131, 169 | 110, 161, 157 | roughly tied (ranges overlap) |
+| 16 x 200k, >100 ms | 4, 3, 3 | 0, 0, 0 | cap 6 |
+
+The tail story is NOT uniform across thread counts: at 8 threads the backoff
+adds mid-band (1-10 ms) outliers; at 16 threads it moves mass OUT of the
+1 ms band (cap 0 leaves ~2.4x MORE pops over 1 ms) at the price of a handful
+of >100 ms outliers cap 0 never produces. The percentile columns complete
+the picture (cap 0's side was never quoted before round 9): cap 6 is
+better-or-equal at p50, p90, p99 AND p99.9 in every shape and every rep, by
+1-2 orders of magnitude at the upper percentiles (assertion D5 pins every
+cell):
+
+| shape | cap 6 p999 | cap 0 p999 | cap 6 p50 | cap 0 p50 |
+|---|---|---|---|---|
+| 4 x 20,000 | 0.000-0.001 ms | 0.022-0.037 ms | 0.000 | 0.001 |
+| 8 x 200,000 | 0.001 ms | 0.054-0.057 ms | 0.000 | 0.002 |
+| 16 x 200,000 | 0.001 ms | 0.172-0.182 ms | 0.000 | 0.003-0.004 |
+
+99.9% of cap-6 pops at 8 threads completed within ~1 microsecond
+(`pop_p999_ms` = 0.001 in the CSV rows — an assertion now pins that column
+directly, which is only readable correctly since round-9 P2-1 fixed the
+latency rows' column alignment), and the same workload finishes 4.05-4.85x
+faster in wall clock under cap 6. The distribution under backoff is not
+uniformly slower, it is HEAVIER-TAILED — and cap 0 is not uniformly
+lighter-tailed either: it is worse at every percentile through p99.9 in
+this measurement, winning only the extreme maximum.
 
 **Reading:** the backoff does not reduce contention, it REDISTRIBUTES it —
 the same harness that shows the worst single pop multiplied ~27x
-(median-to-median, `8 x 200,000`) also shows the whole phase ~4.9x FASTER
-under the shipped cap 6 (assertions D2/D3 pin both figures). That is the
+(median-to-median, `8 x 200,000`; assertion D2) also shows the whole phase
+~4.9x FASTER under the shipped cap 6 (assertion D3). That is the
 per-call-tail-vs-throughput trade in one table, in the unit a
-slot-recycling consumer actually experiences. Two caveats: (1) part of even
-cap 0's tail is scheduler noise on this shared host (its `8 x 200,000`
-rep-1 max was 23.567 ms) — but 60-86 pops-over-1ms per rep vs 0-8 is
-backoff-shaped, not noise; (2) 3 reps on a shared dev host — read absolute
-magnitudes as order-of-magnitude and the cap6/cap0 RATIOS as the robust
-part. `push`/`pop` are lock-free but NOT starvation-free, and the shipped
-cap is the reason for the tail's shape; `BACKOFF_SPIN_CAP`'s doc comment
-now states exactly this.
+slot-recycling consumer actually experiences. Which quantity to trust:
+(1) part of even cap 0's tail is scheduler noise on this shared host (its
+`8 x 200,000` rep-1 max was 23.567 ms) — but 60-86 pops-over-1ms per rep vs
+0-8 is backoff-shaped, not noise; (2) round-9 P3-2 correction — an earlier
+version of this caveat called the cap6/cap0 worst-pop RATIOS "the robust
+part"; they are the LEAST robust quantity here. Worst-pop is a
+max-of-3-over-max-of-3 statistic and cap 0's own `8 x 200,000` maxima span
+40x (`23.567 / 0.596 / 2.031` ms), so the published ~27x ratio's plausible
+range across rep pairings is **1.8x-100.2x** at `8 x 200,000` (4.3x-68.1x
+at `4 x 20,000`; 2.8x-4.4x at `16 x 200,000` — only the 16-thread shape is
+stable; assertion D6 pins every spread). The robust quantity is the
+wall-clock speedup: 4.18x / 4.85x / 4.05x, tight within each arm
+(assertion D3). Summary in the corrected P2-2 form: the shipped cap buys
+its ~4-5x aggregate throughput by tolerating a small number of very large
+outliers, while IMPROVING latency at every percentile through p99.9 in
+every shape. `push`/`pop` are lock-free but NOT starvation-free, and the
+shipped cap is the reason for the tail's shape; `BACKOFF_SPIN_CAP`'s doc
+comment now states exactly this.
 
 ## 4. Noise caveat
 
@@ -432,8 +495,13 @@ posture (`push`/`pop` are the crate's only two operations):
   (assertion A5), and cap 4 costs up to ~4.0x at 16 threads (cap6/cap4
   0.78x-3.99x, assertion A6). §3.4 adds the per-call tail axis: the shipped
   cap 6 multiplies the worst single `pop` by ~27x vs cap 0 at 8 threads
-  while making the same workload ~4.9x faster in aggregate. The default
-  picks a point on that five-point curve; it does not dominate either end.
+  (median-to-median — a max-of-3-over-max-of-3 statistic whose plausible
+  range spans 1.8x-100.2x across rep pairings, §3.4's reading; assertion
+  D6) while making the same workload ~4.9x faster in aggregate (4.05-4.85x
+  across shapes — the robust axis) and improving every per-call percentile
+  through p99.9 (§3.4's five-cell table; round-9 P2-2/P3-2 corrections).
+  The default picks a point on that five-point curve; it does not dominate
+  either end.
 
 This does not mean cap 6 is "the low-contention-optimal choice" — §3.1
 shows it explicitly is not, at any thread count tested. It ALSO does not
@@ -468,7 +536,11 @@ today.
 - `cargo clippy -p tagged-index-stack --all-targets -- -D warnings`: green.
 - `cargo fmt -p tagged-index-stack --check`: green.
 - `RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps`: green.
-- `RUSTFLAGS="--cfg loom" cargo test --release -p tagged-index-stack --features loom --test loom_aba`: 10/10 green.
+- `RUSTFLAGS="--cfg loom" cargo test --release -p tagged-index-stack --features loom --test loom_aba`: 11/11 green
+  (re-run and confirmed in round 9; the suite has grown model-by-model, and
+  10 was already stale when this line was written — round-8's `11b6833`
+  added an 11th model before this report was last edited — so run the suite
+  for the current count rather than trusting any number printed here).
 - `git status --short crates/tagged-index-stack/` confirmed clean both before
   the sweep and after every build cycle inside it (the sweep script itself
   hard-fails if the restore leaves any diff) — no measurement scaffolding
@@ -485,6 +557,13 @@ today.
   cell and (b) the cap-6 fairness rows in the working log+CSV — each
   doctoring made the script exit 1 on the corresponding assertion (A1,
   then B1) before the artifacts were restored byte-identical from backups.
+- Round-9 additions (task tis-r9-Group1): the summary CSV's 18 `run=3`
+  latency rows were regenerated at the correct 20-column width (P2-1 —
+  `awk -F, '{print NF}' ... | sort | uniq -c` now reports only `71 20`);
+  `--write` is idempotent against its own output; assertion D4 pins all
+  five threshold cells and new D5/D6 pin the percentile columns and the
+  worst-pop ratio spreads (P2-2/P3-2/P4-7); §3.4's source identity was
+  re-cited (P3-3); this section's loom count was refreshed (P4-5).
 
 (Exact command output for the items above is reported in this task's commit
 message / accompanying session report, not duplicated here — this report's
