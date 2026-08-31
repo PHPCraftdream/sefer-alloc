@@ -254,9 +254,33 @@ fn width_16_push_rejects_index_mask_itself() {
     // panic assertion (not a bare is_err()) means the message must name the
     // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
     // `ArrayLinks`) cannot satisfy this test.
+    //
+    // Also pins #[track_caller]'s effect (review-round6 P3-6): without it on
+    // both `push` and its `#[cold]` helper, this panic's Location would name
+    // lib.rs instead of this call site, and that regression would leave every
+    // OTHER assertion here green. The panic hook is process-global, so this
+    // closure CHAINS to whatever hook was previously installed instead of
+    // replacing it -- any other test's panic running concurrently on another
+    // thread (e.g. the should_panic tests below) still gets its usual default
+    // handling; only a panic on THIS thread is inspected for its location.
+    let this_thread = std::thread::current().id();
+    let captured_file: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_file_for_hook = std::sync::Arc::clone(&captured_file);
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().id() == this_thread {
+            if let Some(loc) = info.location() {
+                *captured_file_for_hook.lock().unwrap() = Some(loc.file().to_string());
+            }
+        }
+        prev_hook(info);
+    }));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         stack.push(&links, T::INDEX_MASK as u32);
     }));
+    let _ = std::panic::take_hook(); // drop our hook, restoring the default
+
     let err = result.expect_err("pushing index == INDEX_MASK must panic");
     let message = err
         .downcast_ref::<&str>()
@@ -266,6 +290,12 @@ fn width_16_push_rejects_index_mask_itself() {
     assert!(
         message.contains("index must be < INDEX_MASK"),
         "panic message did not name the push guard's own contract (got: {message:?})"
+    );
+    assert_eq!(
+        captured_file.lock().unwrap().as_deref(),
+        Some(file!()),
+        "push's #[track_caller] should report THIS file as the panic \
+         location, not lib.rs -- #[track_caller] regressed"
     );
 }
 
