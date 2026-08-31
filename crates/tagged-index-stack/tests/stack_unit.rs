@@ -287,14 +287,22 @@ fn array_links_load_next_panics_on_index_out_of_range() {
 /// custom backing whose `load_next` always answers `INDEX_MASK` (a value
 /// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
 ///
-/// `cargo test`'s default profile is `dev`, which has `debug-assertions =
-/// true` (no `[profile.dev]`/`[profile.test]` override in this workspace's
-/// `Cargo.toml` disables it), so this plain `#[should_panic]` test exercises
-/// the real debug_assert without needing `#[cfg(debug_assertions)]`. The
-/// crate's own docs already note release builds pay nothing here — this
-/// test only claims to cover the debug build it actually runs under.
+/// `#[cfg(debug_assertions)]`-gated: `debug_assert!` compiles to nothing when
+/// `debug-assertions` is off, which is the workspace's `[profile.release]`
+/// default (no override in root `Cargo.toml`) — and `.github/workflows/ci.yml`'s
+/// `test workspace members` job runs this crate specifically under
+/// `cargo test -p tagged-index-stack --release`, a real CI configuration this
+/// test must not assume away. Without this gate the test compiles and runs
+/// there too, the assert never fires, and `#[should_panic]` fails on "test did
+/// not panic as expected" (confirmed: this is exactly how it failed in CI
+/// before this gate was added). Plain `cargo test -p tagged-index-stack` (no
+/// `--release`, the dev/test profile default) still runs it, since
+/// debug-assertions defaults to on there. Gated alongside its one caller
+/// below so it isn't flagged dead code when compiled out under `--release`.
+#[cfg(debug_assertions)]
 struct AlwaysInvalidLinks;
 
+#[cfg(debug_assertions)]
 impl Links for AlwaysInvalidLinks {
     fn load_next(&self, _index: u32) -> u32 {
         // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
@@ -306,6 +314,7 @@ impl Links for AlwaysInvalidLinks {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic]
 fn pop_debug_assert_fires_on_invalid_next_from_backing() {
     let links = AlwaysInvalidLinks;
