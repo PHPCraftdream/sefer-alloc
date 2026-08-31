@@ -450,19 +450,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// H-2 note in the crate docs. Resetting the tag to 0 on a runtime drain
     /// reopens the ABA window.
     ///
-    /// `#[doc(hidden)]`: this is a `pub const fn` (so `tests/` — an external
-    /// crate from this crate's own perspective — can reach it). The attribute
-    /// hides it from rustdoc's rendered navigation ONLY — it is still a fully
-    /// callable `pub` item from any downstream crate; nothing in the language
-    /// or this crate enforces non-callability. It carries no semver stability
-    /// guarantee. Beyond the `tests/` reason above, it also has a real
+    /// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+    /// rationale. Beyond that generic reason, this item also has a real
     /// in-workspace consumer outside this crate, so it is NOT freely
     /// removable in a future 0.2 release without checking that caller first.
     /// Anywhere else the unconditional tag-0 reset reopens the H-2 ABA window
     /// documented above — a runtime drain must instead use
-    /// [`empty_index`](Self::empty_index) with the tag it just observed. See
-    /// this project's established `#[doc(hidden)]` rationale convention (cf.
-    /// `raw_head`).
+    /// [`empty_index`](Self::empty_index) with the tag it just observed.
     #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
@@ -1153,12 +1147,15 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// open the ABA window) still forms the same happens-before edge the real
     /// `pop`'s `Acquire` head load does.
     ///
-    /// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
-    /// from this crate's own perspective — can reach it). The attribute hides
-    /// it from rustdoc's rendered navigation ONLY; nothing prevents any
-    /// downstream crate from calling it. It is not exercised by any
-    /// production caller and carries no semver stability guarantee. See this
-    /// project's established `#[doc(hidden)]` test-only-forwarder convention.
+    /// `#[doc(hidden)]` (this project's established test-only-forwarder
+    /// convention — every other `#[doc(hidden)]` item in this crate points
+    /// here for the generic rationale): this is a `pub` item solely so
+    /// `tests/` — an external crate from this crate's own perspective — can
+    /// reach it. The attribute hides it from rustdoc's rendered navigation
+    /// ONLY; it stays a fully callable `pub` item from any downstream crate,
+    /// nothing in the language or this crate enforces non-callability. It is
+    /// not exercised by any production caller and carries no semver
+    /// stability guarantee.
     #[doc(hidden)]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
@@ -1171,13 +1168,9 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// buggy-drain counterfactual, all against the REAL head atomic. NOT part of
     /// the public API: it is compiled only under `--cfg loom`.
     ///
-    /// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
-    /// from this crate's own perspective — can reach it). The attribute hides
-    /// it from rustdoc's rendered navigation ONLY; nothing prevents any
-    /// downstream crate from calling it under `--cfg loom`. It is not
-    /// exercised by any production caller and carries no semver stability
-    /// guarantee. See this project's established `#[doc(hidden)]`
-    /// test-only-forwarder convention (cf. `raw_head`).
+    /// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+    /// rationale. This item is additionally `#[cfg(loom)]`-gated, so unlike
+    /// `raw_head` it does not exist at all outside a `--cfg loom` build.
     ///
     /// # Errors
     ///
@@ -1223,13 +1216,9 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 /// instead of passing vacuously (see the assertion in
 /// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
 ///
-/// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
-/// from this crate's own perspective — can reach it). The attribute hides
-/// it from rustdoc's rendered navigation ONLY; nothing prevents any
-/// downstream crate from calling it. It is not exercised by any production
-/// caller and carries no semver stability guarantee. See this project's
-/// established `#[doc(hidden)]` test-only-forwarder convention (cf.
-/// `raw_head`).
+/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// rationale; this item reads `POP_RETRY_COUNT`, the counter for
+/// [`pop`](TaggedIndexStack::pop)'s retry branch specifically.
 ///
 /// Never reset by this crate: snapshot before and diff after. The count is
 /// process-global and cumulative — across loom's internal re-runs of a
@@ -1267,13 +1256,9 @@ static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::A
 /// instead of passing vacuously (see the assertion in
 /// `push_push_conservation`).
 ///
-/// `#[doc(hidden)]`: this is a `pub fn` (so `tests/` — an external crate
-/// from this crate's own perspective — can reach it). The attribute hides
-/// it from rustdoc's rendered navigation ONLY; nothing prevents any
-/// downstream crate from calling it. It is not exercised by any production
-/// caller and carries no semver stability guarantee. See this project's
-/// established `#[doc(hidden)]` test-only-forwarder convention (cf.
-/// `raw_head`).
+/// `#[doc(hidden)]`: see [`raw_head`](TaggedIndexStack::raw_head)'s
+/// rationale; this item reads `PUSH_RETRY_COUNT`, the counter for
+/// [`push`](TaggedIndexStack::push)'s retry branch specifically.
 ///
 /// Never reset by this crate: snapshot before and diff after. The count is
 /// process-global and cumulative — across loom's internal re-runs of a
