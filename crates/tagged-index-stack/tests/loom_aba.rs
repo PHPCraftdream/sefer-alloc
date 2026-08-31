@@ -70,19 +70,22 @@ use loom::thread;
 
 use tagged_index_stack::{ArrayLinks, Links, TaggedIndex, TaggedIndexStack, TAIL};
 
-/// Serializes every test in this file that drives the REAL `pop` under
-/// contention. `POP_RETRY_COUNT` (`src/lib.rs`) is a single process-global
-/// counter incremented inside `pop`'s own CAS-retry arm; libtest's default
-/// (parallel) harness runs this binary's `#[test]` functions concurrently,
-/// so without this lock a delta measured by one test's snapshot-before /
-/// assert-after window is NOT exclusive to that test's own `check()` run —
-/// any other test in this binary racing the real `pop` at the same time
-/// increments the SAME counter, making the activation-oracle assertion in
-/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`
-/// vacuously satisfiable by cross-test noise instead of by its own model.
-/// `unwrap_or_else(|e| e.into_inner())`, not `.unwrap()`: three tests below
-/// are `#[should_panic]` and would otherwise poison this mutex for every
-/// test that acquires it afterward.
+/// Serializes every test in this file that drives the REAL `push` or `pop`
+/// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/lib.rs`)
+/// are single process-global counters incremented inside `pop`'s / `push`'s
+/// own CAS-retry arm; libtest's default (parallel) harness runs this
+/// binary's `#[test]` functions concurrently, so without this lock a delta
+/// measured by one test's snapshot-before / assert-after window is NOT
+/// exclusive to that test's own `check()` run — any other test in this
+/// binary racing the real `push`/`pop` at the same time increments the SAME
+/// counter, making the activation-oracle assertions in
+/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type` and
+/// `push_push_conservation` vacuously satisfiable by cross-test noise
+/// instead of by their own models.
+/// `unwrap_or_else(|e| e.into_inner())`, not `.unwrap()`: a FAILING locked
+/// model (e.g. `push_push_conservation` itself, if its own assertion failed
+/// while holding the lock) would otherwise poison this mutex for every test
+/// that acquires it afterward.
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 type Tag = TaggedIndex<16>;
@@ -513,6 +516,7 @@ fn bug_pop_drain_to_empty<L: Links + ?Sized>(
 /// stale CAS is always forced to fail.
 #[test]
 fn pop_empty_transition_preserves_tag() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_h2(true);
 }
 
@@ -521,6 +525,7 @@ fn pop_empty_transition_preserves_tag() {
 #[test]
 #[should_panic(expected = "stale CAS succeeded")]
 fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_h2(false);
 }
 
@@ -725,6 +730,7 @@ fn cas_retry_path_must_acquire_with_concurrent_push() {
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_cas_retry(Ordering::Relaxed);
 }
 
