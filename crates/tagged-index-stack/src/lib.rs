@@ -2,7 +2,12 @@
 //! *slot recycler*) whose head is a single atomic word packing an
 //! `(index | tag)` pair, where a wrapping generation **tag** in the high bits
 //! structurally defeats the ABA problem for every permitted `INDEX_BITS`.
-//! That is a derived claim, not a slogan: the enforced `1..=16` cap on
+//! Lock-freedom here describes the stack's own CAS loops; end-to-end it
+//! additionally requires a non-blocking [`Links`] implementation —
+//! [`ArrayLinks`] and the slot-resident one-`AtomicU32`-per-slot shape both
+//! qualify, while a hypothetical mutex-backed [`Links`] would make
+//! [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop) blocking
+//! again. That is a derived claim, not a slogan: the enforced `1..=16` cap on
 //! `INDEX_BITS` guarantees every legal configuration a tag of at least 48
 //! bits, and the "Tag-width budget" section below derives, from
 //! cache-coherence throughput on the single head cache line, that such a tag
@@ -139,10 +144,13 @@
 //! pop+push pair per iteration, so one successful push per pair — a
 //! push-only rate would run faster still, but the pair rate is already an
 //! order of magnitude under the working ceiling the next paragraph adopts,
-//! so the argument does not need the tighter push-only number). Measured at
-//! 51.56 ns/pair on an 11th Gen Intel Core i7-11800H, rustc 1.97.0
-//! (2026-08-31); re-run `cargo bench -p tagged-index-stack --bench
-//! tagged_index_stack_bench` for a fresh sample — the bound below only
+//! so the argument does not need the tighter push-only number). Committed
+//! receipt: the single-threaded `churn` rows in
+//! `docs/perf/_raw_tis_backoff_cap_sweep_run1.log` (11th Gen Intel Core
+//! i7-11800H, rustc 1.97.0, 2026-08-31) — e.g. 53.89 ns/pair in that log's
+//! first arm, its 20 such samples spanning 51.41-64.72 ns/pair; re-run
+//! `cargo bench -p tagged-index-stack --bench tagged_index_stack_bench`
+//! for a fresh sample — the bound below only
 //! needs the order of magnitude, not the exact figure.
 //!
 //! Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling:
@@ -488,6 +496,12 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// The "next link" storage for a [`TaggedIndexStack`]. Each pushed index's next
 /// pointer (another index, or [`TAIL`]) lives here — slot-resident in caller
 /// storage (the production shape) or in an owned array ([`ArrayLinks`]).
+///
+/// The stack's own CAS loops never block, but end-to-end lock-freedom of
+/// [`push`](TaggedIndexStack::push)/[`pop`](TaggedIndexStack::pop)
+/// additionally requires THIS trait's implementation to be non-blocking:
+/// the shipped `AtomicU32`-cell implementations are; a hypothetical
+/// mutex-backed `Links` would make every stack operation blocking again.
 ///
 /// # Ordering contract
 ///
@@ -845,7 +859,10 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// both debug and release builds — this is a caller-contract violation
     /// checked unconditionally, not a `debug_assert!`, because the failure
     /// mode is silent free-list corruption rather than a merely-suboptimal
-    /// fallback.
+    /// fallback. The formatted panic payload is allocated through the global
+    /// allocator, so a consumer running this stack inside its own
+    /// `#[global_allocator]` allocation path should treat this guard firing
+    /// as abort-equivalent, not catchable-and-recoverable.
     ///
     /// That guard is the only bound this method itself checks, and it
     /// depends on `INDEX_BITS` alone. The supplied [`Links`] implementation
@@ -1000,7 +1017,11 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// out-of-tree A/B measured a release-active version of this check at
     /// ≈ 0 ns cost (see CHANGELOG.md), so there is no throughput reason left
     /// to leave a caller-contract violation whose failure mode is silent
-    /// free-list corruption checked only in debug builds.
+    /// free-list corruption checked only in debug builds. The formatted
+    /// panic payload is allocated through the global allocator, so a
+    /// consumer running this stack inside its own `#[global_allocator]`
+    /// allocation path should treat this guard firing as abort-equivalent,
+    /// not catchable-and-recoverable.
     ///
     /// `pop` also reaches link storage through the supplied [`Links`]
     /// implementation ([`load_next`](Links::load_next)), which may panic on
@@ -1016,6 +1037,7 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
     /// itself): see [`push`](Self::push)'s `# Caller contract` section,
     /// "ONE `Links` backing for the whole life of a non-empty stack".
     #[must_use = "a popped index is removed from the free-list; discarding it leaks the slot"]
+    #[track_caller]
     pub fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
         let mut head = self.head.load(Ordering::Acquire);
         // Per-call retry counter driving the backoff below (see
@@ -1105,13 +1127,19 @@ impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
 
     /// Cold panic path for [`pop`](Self::pop)'s rule-4 guard, split out of
     /// `pop` itself so the panic and its message formatting can never land
-    /// in the hot loop's body — the same `#[cold]` + `#[inline(never)]`
-    /// shape as [`push_index_out_of_range`](Self::push_index_out_of_range).
+    /// in the hot loop's body — the same `#[cold]` + `#[inline(never)]` +
+    /// `#[track_caller]` shape as
+    /// [`push_index_out_of_range`](Self::push_index_out_of_range): the
+    /// attribute — combined with `#[track_caller]` on `pop` itself, which
+    /// forwards the caller's location down — makes the panic report the
+    /// `pop` CALL SITE rather than this crate's source line, so a consumer
+    /// with many `pop` sites learns which one got the invalid link.
     /// Reports which of the two truncation outcomes the caller's
     /// `Links::load_next` would otherwise have silently produced (see
     /// `# Panics` on [`pop`](Self::pop)).
     #[cold]
     #[inline(never)]
+    #[track_caller]
     fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
         let outcome = if (next as u64 & mask) == mask {
             "the EMPTY SENTINEL, leaking the whole remaining chain"
