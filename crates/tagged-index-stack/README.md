@@ -47,17 +47,23 @@ of silently truncating it.
 
 A `StackStorage<INDEX_BITS>` implementor supplies BOTH the head (its `head()`)
 AND the links (`load_next` / `store_next`) in a single impl — the head↔links
-binding is established ONCE, structurally. `push_index`/`pop_index` are
-crate-owned (a blanket `StackOps` impl over every `StackStorage`
-implementor), so the CAS-loop bodies cannot be overridden downstream. The
-old per-call repro — two independent calls, each supplying a different link
-array against one head and double-issuing an index — no longer compiles. The
-obligation moved rather than vanished: from every call site (where it was
-unenforceable) to the implementor's one `impl` block, where it is discharged
-and audited once. An implementor whose own `load_next`/`store_next`
-internally read and write different backings is still expressible in safe
-Rust — a live implementor obligation (the `StackStorage` trait doc's rules 3
-and 4), not a structural impossibility.
+binding is expressed once, in that impl, rather than re-asserted per call.
+`push_index`/`pop_index` are crate-owned (a blanket `StackOps` impl over
+every `StackStorage` implementor), so the CAS-loop bodies cannot be
+overridden downstream. The old per-call repro — two independent calls, each
+supplying a different link array against one head and double-issuing an
+index — no longer compiles. The obligation moved rather than vanished, and
+part of it stayed live: an implementor whose own `load_next`/`store_next`
+read and write different backings is still expressible in safe Rust (the
+trait doc's rules 3 and 4), and so is a subtler shape — two implementor
+values whose `head()` methods return the SAME `StackHead` while their links
+differ. Each value is individually coherent, yet the combination
+double-issues indices exactly like the old repro, and nothing in the
+compiler or the runtime guard catches it. A head must be reachable through
+exactly ONE live implementor value at a time (the trait doc's rule 1) — an
+implementor/caller obligation, discharged by construction (one storage
+object per head), not by auditing impl blocks, which cannot see the
+combination.
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a

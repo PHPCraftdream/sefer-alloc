@@ -251,10 +251,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 
 /// The head word of a tagged Treiber free-list: a single `AtomicU64` packing an
 /// `(index | tag)` pair (see [`TaggedIndex`]). Owned by exactly ONE
-/// [`StackStorage`] implementor — the binding between this head and its links
-/// is established by that impl, not re-asserted per call. The stack operations
-/// themselves live on [`StackOps`] (blanket-implemented by the crate), not
-/// here; this type is the bare atomic embedders inherit a cache line through.
+/// [`StackStorage`] implementor VALUE at a time — the binding between this
+/// head and its links is established by that impl, not re-asserted per call;
+/// two implementor values sharing one head over different link storage is
+/// the shared-head hazard named by the [`StackStorage`] trait doc's rule 1,
+/// which nothing structural prevents. The stack operations themselves live
+/// on [`StackOps`] (blanket-implemented by the crate), not here; this type
+/// is the bare atomic embedders inherit a cache line through.
 ///
 /// # Layout note — no cache-line isolation
 ///
@@ -448,23 +451,88 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// consistently — it is what makes a [`load_next`](Self::load_next) observe
 /// the [`store_next`](Self::store_next) the stack performed, *given* that
 /// every call reaches the same implementor. Under this API that "given" is
-/// structural: see "The binding is structural" below.
+/// structural only at the type level and a live obligation at the value
+/// level: see "The binding: what is structural, what is not" below.
 ///
-/// # The binding is structural
+/// # The trait's methods are implementor hooks, not caller-facing API
+///
+/// [`head`](Self::head), [`load_next`](Self::load_next), and
+/// [`store_next`](Self::store_next) are the STORAGE IMPLEMENTOR's hooks —
+/// the three surfaces this crate's own [`StackOps`] blanket impl drives —
+/// not part of the caller-facing API. They are nevertheless plain, safe,
+/// callable `pub` trait methods: any consumer with this trait in scope can
+/// call them directly on a live stack (an [`ArrayIndexStack`], or a custom
+/// implementor), bypassing
+/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+/// entirely, and nothing warns. Doing so corrupts the free-list exactly the
+/// way a double-push does: e.g. `s.store_next(1, 1)` immediately after
+/// `s.push(1)` makes index 1 its own successor, closing a cycle so
+/// [`pop_index`](StackOps::pop_index) never returns `None` again and hands
+/// the same index to two callers — the same two-owners-of-one-slot failure
+/// documented under [`push_index`](StackOps::push_index)'s `# Caller
+/// contract`. Callers drive a stack ONLY through
+/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+/// (or [`ArrayIndexStack`]'s `push`/`pop` forwarders); the three hooks
+/// belong inside the implementor's `impl` block.
+///
+/// # The binding: what is structural, what is not
 ///
 /// The caller-side obligation the old per-call-`&L` API could only document
 /// (same logical backing on every call) is now an OBLIGATION OF THE
-/// IMPLEMENTOR, satisfied once in one impl:
+/// IMPLEMENTOR — but it is only PARTLY discharged by the compiler:
 ///
-/// 1. **One backing for the whole life of a non-empty stack.** A
-///    [`StackStorage`] implementor IS the backing: the [`head`](Self::head)
-///    it returns and the cells its `load_next`/`store_next` touch are bound
-///    through ONE `impl` block on ONE object, established once — no caller
-///    can supply a second, different backing on a later call (the old
-///    per-call-`&L` repro does not compile). This makes the BINDING
-///    structural, not the coherence of the impl body: an implementor whose
+/// 1. **One backing and ONE live implementor value for the whole life of a
+///    non-empty stack.** A [`StackStorage`] implementor IS the backing: the
+///    [`head`](Self::head) it returns and the cells its
+///    `load_next`/`store_next` touch are bound through ONE `impl` block on
+///    ONE object. What the compiler enforces is the death of the old
+///    per-call shape: a caller cannot hand a second, different backing
+///    ARGUMENT to
+///    [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
+///    on a later call (the per-call-`&L` repro does not compile — pinned by
+///    `tests/compile_fail_two_backings.rs`). What NOTHING enforces — not
+///    the type system, not the [`StackOps`] blanket impl, not rule 4's
+///    release-active guard — is the instance-level half: a given
+///    [`StackHead`] value must be reachable through exactly ONE live
+///    implementor VALUE at a time. Two SEPARATE, individually coherent
+///    implementor values can each return a reference to the SAME
+///    [`StackHead`] while reading and writing DIFFERENT link storage —
+///    that compiles, and it reproduces this crate's original
+///    release-blocking double-issue hazard. No rule's wording catches it:
+///    every rule here is stated per implementor, and each of the two
+///    values satisfies the rules on its own terms; rule 4's runtime guard
+///    cannot fire either, because the mismatched backing's answers are
+///    numerically valid (`0` is a legal index). The shape, abbreviated
+///    (a runnable, assert-pinned version lives at
+///    `two_implementor_values_sharing_one_head_still_double_issue` in
+///    `tests/custom_storage_impl.rs`):
+///
+///    ```text
+///    struct View<'a> { head: &'a StackHead<16>, links: &'a ArrayLinks<64> }
+///    // ONE StackStorage<16> impl for View: head() -> self.head,
+///    // load_next(i) -> self.links.load_next(i), store_next(i, n) analogous.
+///    let head = StackHead::<16>::new();
+///    let (a, b) = (ArrayLinks::<64>::new(), ArrayLinks::<64>::new());
+///    let va = View { head: &head, links: &a };
+///    let vb = View { head: &head, links: &b }; // SAME head, DIFFERENT links
+///    va.push_index(1);
+///    // pop via vb: Some(1), then Some(0) forever — 0 was never pushed
+///    // through ANY implementor; vb's own zero-initialised links answer
+///    // every load_next with 0 and the (0, tag) -> (0, tag) head CAS
+///    // succeeds trivially, so the same never-pushed index is handed out
+///    // infinitely.
+///    ```
+///
+///    The binding is therefore structural only at the type level (one impl
+///    establishes the head↔links pairing for a type) and a LIVE
+///    implementor/caller obligation at the value level. Discharge it by
+///    construction — one implementor value per head (the owned
+///    [`ArrayIndexStack`] shape, or one storage object reached through one
+///    accessor) — not by auditing impl blocks: each block in the
+///    shared-head shape is individually correct, so per-impl audit cannot
+///    see the combination. An implementor whose
 ///    `load_next`/`store_next` internally touch different storage still
-///    compiles, and violates rules 3 and 4 below — live implementor
+///    compiles too, and violates rules 3 and 4 below — live implementor
 ///    obligations, not structural impossibilities.
 /// 2. **Stable one-to-one index↔cell mapping.** Every valid index must map to
 ///    the SAME link cell for the implementor's whole lifetime.
@@ -500,12 +568,18 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// The old API's two-backings-one-head swap trap — two independent calls,
 /// each supplying a different backing for the same head — does not compile
 /// against this API (pinned by `tests/compile_fail_two_backings.rs`). What
-/// does NOT carry over: a SINGLE implementor whose `load_next`/`store_next`
-/// internally disagree about which storage backs the head is still
-/// expressible in safe Rust. That narrower, real hazard is exactly what
-/// rules 3 and 4 oblige the implementor to prevent — implementor-enforced,
-/// not structurally impossible — and only rule 4 has a release-active
-/// runtime guard (see its text above).
+/// does NOT carry over — TWO surviving hazard classes, and neither is the
+/// only gap the other leaves: a SINGLE implementor whose
+/// `load_next`/`store_next` internally disagree about which storage backs
+/// the head is still expressible in safe Rust (that hazard is what rules 3
+/// and 4 oblige the implementor to prevent — implementor-enforced, not
+/// structurally impossible, and only rule 4 has a release-active runtime
+/// guard — see its text above), AND two implementor VALUES sharing one
+/// [`StackHead`] over different link storage is still expressible too
+/// (rule 1's instance-level obligation above — the values are individually
+/// coherent, and no runtime guard fires). Neither class is a
+/// compiler-enforced impossibility; both are implementor/caller-enforced
+/// obligations.
 ///
 /// # Mechanical requirement on `head()`
 ///
@@ -547,11 +621,15 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// Converting this trait to an `unsafe trait` was considered and DECLINED.
 /// Its contract is caller/implementor-enforced, not compiler-enforced, and
 /// `unsafe trait` would not enforce it either — it would only annotate the
-/// obligation — while this crate's `#![forbid(unsafe_code)]` invariant is
-/// the actual constraint: this crate's own
-/// `impl StackStorage<B> for ArrayIndexStack<B, N>` would have to become an
-/// `unsafe impl`, which `#![forbid(unsafe_code)]` rejects at compile time
-/// inside this very crate. The trait therefore stays safe-implementable, and
+/// obligation. This crate's `#![forbid(unsafe_code)]` invariant blocks the
+/// idea at its MOST DIRECT point — the declaration itself: an `unsafe
+/// trait` under `forbid(unsafe_code)` fails to compile with
+/// ``error: declaration of an `unsafe` trait``, before any impl even
+/// exists to reject. The downstream consequence is blocked for the same
+/// reason: this crate's own `impl StackStorage<B> for ArrayIndexStack<B, N>`
+/// would have to become an `unsafe impl`, which the same forbid rejects at
+/// compile time inside this very crate. The trait therefore stays
+/// safe-implementable, and
 /// its contract remains implementor discipline — exactly the same category
 /// as [`push_index`](StackOps::push_index)'s pre-existing, already-documented
 /// no-double-push liveness rule, which this crate has always accepted as
@@ -560,14 +638,23 @@ pub trait StackStorage<const INDEX_BITS: u32> {
     /// The stack's head word. Must return the SAME logical head for every
     /// operation on this implementor — see the trait doc's "Mechanical
     /// requirement on `head()`".
+    ///
+    /// Implementor hook, not caller-facing API — see the trait doc's
+    /// "implementor hooks" section before calling directly.
     fn head(&self) -> &StackHead<INDEX_BITS>;
 
     /// Load the "next" link for `index` with `Acquire` ordering.
+    ///
+    /// Implementor hook, not caller-facing API — see the trait doc's
+    /// "implementor hooks" section before calling directly.
     fn load_next(&self, index: u32) -> u32;
 
     /// Store the "next" link for `index` with `Release` ordering. This is the
     /// ONLY write the stack makes to link storage, and only during a push — the
     /// lazy-link (RAD-1) discipline: link storage is never eagerly initialised.
+    ///
+    /// Implementor hook, not caller-facing API — see the trait doc's
+    /// "implementor hooks" section before calling directly.
     fn store_next(&self, index: u32, next: u32);
 }
 
