@@ -229,7 +229,8 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// The "no next" sentinel stored in a slot's link to denote the BOTTOM of the
-/// stack (the last-pushed index chains to this). `u32::MAX`.
+/// stack (the first index pushed onto an empty stack chains to this).
+/// `u32::MAX`.
 ///
 /// Note this is distinct from the "stack empty" head sentinel
 /// ([`TaggedIndex::empty_index`]): `TAIL` marks a per-slot link's end-of-chain,
