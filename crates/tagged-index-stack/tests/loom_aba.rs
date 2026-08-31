@@ -109,7 +109,7 @@ use loom::thread;
 use tagged_index_stack::{ArrayIndexStack, StackStorage, TaggedIndex, TAIL};
 
 /// Serializes every test in this file that drives the REAL `push` or `pop`
-/// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/lib.rs`)
+/// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/imp.rs`)
 /// are single process-global counters incremented inside `pop`'s / `push`'s
 /// own CAS-retry arm; libtest's default (parallel) harness runs this
 /// binary's `#[test]` functions concurrently, so without this lock a delta

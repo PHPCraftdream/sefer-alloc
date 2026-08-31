@@ -5,7 +5,7 @@
 //! threads over a 1-2-slot backing (`const N: usize = 2` there), and loom
 //! explores every interleaving of that small model rather than running real
 //! time. That bound also caps how deep the CAS-retry backoff's `spins`
-//! counter (`src/lib.rs`, `push_index`/`pop_index`) can climb inside any loom model — a
+//! counter (`src/imp.rs`, `push_index`/`pop_index`) can climb inside any loom model — a
 //! handful of interleavings can force at most a couple of retries, nowhere
 //! near `BACKOFF_SPIN_CAP` (6). This file exercises the OPPOSITE regime: a
 //! fixed, modest number of REAL OS threads hammering a SHARED stack for many

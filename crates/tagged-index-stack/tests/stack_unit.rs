@@ -378,7 +378,7 @@ fn array_links_load_next_panics_on_index_out_of_range() {
 }
 
 /// [`ArrayLinks::store_next`] panics if `index >= N` — the same bound as
-/// `load_next` above, documented alongside it in `src/lib.rs`. Reached via
+/// `load_next` above, documented alongside it in `src/imp.rs`. Reached via
 /// the worked example in `push_index`'s own `# Panics` section: an
 /// `ArrayIndexStack::<16, 4>` accepts indices up to 65534 by `INDEX_BITS`,
 /// but its `ArrayLinks<4>` links hold only `0..=3`, so

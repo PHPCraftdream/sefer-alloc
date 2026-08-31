@@ -14,7 +14,7 @@
 //! from a shared barrier. Every `pop` is individually timed.
 //!
 //! The backoff cap itself is a private `const` in
-//! `crates/tagged-index-stack/src/lib.rs`, so an arm at a non-shipped cap is
+//! `crates/tagged-index-stack/src/imp.rs`, so an arm at a non-shipped cap is
 //! produced by temporarily editing that one line and rebuilding — the same
 //! documented substitution the cap sweep used (report §1). This binary cannot
 //! observe that const; the `cap_label` it prints comes from `TIS_CAP_LABEL`
