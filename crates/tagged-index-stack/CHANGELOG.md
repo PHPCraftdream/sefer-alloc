@@ -14,7 +14,7 @@ before it.
 - **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` +
   `ArrayIndexStack<INDEX_BITS, N>`** — an allocation-free, `no_std`,
   `#![forbid(unsafe_code)]` lock-free LIFO free-list of small **indices** (a
-  slot recycler): the canonical "recycle a small integer id" primitive that
+  slot recycler): the "recycle a small integer id" primitive that
   slab allocators, object pools, entity-component stores, and connection
   tables reinvent. `StackHead` is the tagged head word; custom storage
   implementors supply a `StackStorage` impl, and `push_index`/`pop_index` are
@@ -75,30 +75,24 @@ before it.
   collision.
 - **Tag-width budget analysis** — the enforced `INDEX_BITS = 1..=16` cap
   guarantees every legal configuration a tag of at least 48 bits. The tag is
-  GLOBAL to the whole stack, not per-slot: every successful push — of any
-  index, from any thread — is a compare-exchange (a locked RMW) on the ONE
-  `AtomicU64` head word, serializing on a single cache line whose exclusive
-  ownership must transfer between cores, so a wrap takes
-  `wrap_time = 2^TAG_BITS / aggregate_successful_push_rate` with the rate
-  term bounded by hardware, not workload: cache-coherence transfer cost caps
-  the aggregate rate at roughly `10^8` to `10^9` RMWs/sec no matter how many
-  threads contend. At a generous `2 × 10^8` successful pushes/sec ceiling, a
-  48-bit tag wraps at `2^48 ≈ 2.8 × 10^14` — a wrap every `~16` days
-  (`~3.3` days even at `10^9`/sec) — and a wrap is only the PRECONDITION for
-  a collision, which further requires the head line saturated at that
-  ceiling continuously for the entire span AND one specific victim thread
-  parked motionless, holding its stale snapshot, the whole time. Widths
-  above 16 are rejected at compile time (`TaggedIndex::_CHECK_BITS`) rather
-  than merely discouraged: at `INDEX_BITS = 24` the tag would be 40 bits
-  (`2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling) and the pre-cap
-  `INDEX_BITS = 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21` seconds,
-  within reach of ordinary scheduling jitter. The derivation bounds the
+  GLOBAL to the whole stack, not per-slot, and every successful push serializes
+  on the single head cache line (a locked RMW), so a wrap takes
+  `wrap_time = 2^TAG_BITS / aggregate_successful_push_rate` with the rate term
+  bounded by hardware, not workload. At a generous `2 × 10^8` pushes/sec
+  ceiling, a 48-bit tag wraps every `~16` days (`~3.3` days even at
+  `10^9`/sec) — and a wrap is only the PRECONDITION for a collision, which
+  further requires the head line saturated continuously for the entire span
+  AND one specific victim thread parked motionless the whole time. Widths
+  above 16 are rejected at compile time (`TaggedIndex::_CHECK_BITS`) because
+  the tag would shrink to 40 bits (at width 24) or 32 bits, collapsing the
+  wrap window from days to minutes-to-seconds. The derivation bounds the
   recurrence window — the minimum time a victim thread must stay parked
   before its stale snapshot can recur — it does not prove recurrence
-  impossible (suspending a thread is outside the crate's control), so the
-  tag is documented as an ABA mitigation with a quantified bound, not an ABA
-  prevention guarantee. Documented so a consumer choosing `INDEX_BITS` knows
-  the trade.
+  impossible (suspending a thread is outside the crate's control).
+  Documented so a consumer choosing `INDEX_BITS` knows the trade. Full
+  derivation (rate bound, contended vs uncontended regimes, and why
+  `INDEX_BITS` > 16 is rejected): the crate-root docs' "Tag-width budget"
+  section.
 - **One-implementor storage binding — `StackStorage` / `StackOps`** — the
   implementor supplies head AND links in ONE impl: `head()` alongside
   `load_next` / `store_next`, so the head↔links binding is structural,
@@ -218,87 +212,56 @@ before it.
 - **Exponential backoff on `push`/`pop`'s CAS-retry arm** (`BACKOFF_SPIN_CAP =
   6`, max 64 `core::hint::spin_loop()` spins per retry, per-call `spins`
   counter never persisted across calls). Measured on the committed harness
-  (`benches/tagged_index_stack_bench.rs`, x86-64, this repo's
-  `[profile.bench]` — `cargo bench`'s actual profile, byte-identical to
-  `[profile.release]` in this repo's `Cargo.toml` today — 8 threads =
-  `available_parallelism().min(8)` on this
-  machine): `contention/push_pop` 5,804,630 / 5,284,307 ops/sec (baseline, 2
-  runs) → 30,049,461 / 29,850,246 / 29,993,450 ops/sec (with backoff, 3
-  runs) — roughly 5.3x; `contention/churn` 2,899,902 / 2,961,754 ops/sec →
-  28,450,827 / 28,101,745 / 28,633,845 ops/sec — roughly 9.7x. Single-thread
-  cost stayed within run-to-run noise: `push_pop/single_thread` 50.63/51.14
-  ns/op (baseline) vs 50.38/53.53/49.87 ns/op (with backoff); `churn`
-  49.71/51.20 ns/op vs 50.47/50.18/50.18 ns/op. A separate ad hoc check (not
-  committed — a throwaway `examples/` run, per this crate's own convention
-  that a probe reproducing an already-published number does not itself need
-  a permanent harness) drained the stack after 8 threads × 200,000
-  contention-shaped pop/push iterations under the backoff and confirmed the
-  exact multiset `0..64` came back with no duplicate or missing index. The
-  loom suite (`tests/loom_aba.rs` — see its own module doc for the
-  per-model breakdown) stayed green at the same wall-clock (~0.16s test
-  time): `core::hint::spin_loop()` touches no loom-tracked atomic, so it
-  adds no new interleaving for loom to explore.
+  (`benches/tagged_index_stack_bench.rs`, x86-64): roughly 5.3x-9.7x
+  contended throughput at 8 threads (`contention/push_pop` ~5.3x,
+  `contention/churn` ~9.7x over baseline); single-thread cost stayed within
+  run-to-run noise. A contention-shaped conservation check drained the stack
+  after 8 threads × 200,000 pop/push iterations under the backoff and
+  confirmed the exact multiset `0..64` came back with no duplicate or
+  missing index. The loom suite (`tests/loom_aba.rs`) stayed green at the
+  same wall-clock: `core::hint::spin_loop()` touches no loom-tracked atomic,
+  so it adds no new interleaving for loom to explore. Full ops/sec and
+  ns/op receipt tables: `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` (with its
+  raw logs and `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`).
 - **`BACKOFF_SPIN_CAP = 6` kept after a dedicated throughput-vs-fairness cap
-  sweep** (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`) — an independent
-  review flagged the cap's original doc comment as claiming an unmeasured
-  "low enough for LOW contention" rationale. Sweeping caps `{0, 4, 6, 8,
-  10}` at 2/4/8/16 threads on the committed bench found that claim WRONG:
-  cap 8 and cap 10 beat cap 6 on aggregate throughput in 15 of the 16
-  thread-count x bench cells measured (one sample per cell; the real span
-  is -0.4% to +58.4% — the sole exception is 4-thread churn, where cap 10
-  landed 0.4% BELOW cap 6; the lowest-contention 2-thread arm specifically
-  spans +17.4% to +37.3%). What the sweep found INSTEAD is a real
-  fairness cost that GROWS with the cap under oversubscription: at 16
-  threads on a 16-logical-CPU host, cap 6's per-thread throughput skew
-  (`max/min`) averaged ~6.1x across 6 independent samples vs. ~13.1x for
-  cap 8 and ~20.6x for cap 10, with cap 8/cap 10 each producing a
-  single-run outlier past 19x/46x (one thread starved to a small fraction
-  of its fair share). `BACKOFF_SPIN_CAP` stays `6` — a deliberate
-  compromise, not a fairness optimum: fairer than caps 8/10, LESS fair
-  than caps 0/4 (also measured: cap 0's min/mean beats cap 6's in 7 of 8
-  arms and ties the eighth; cap 4's beats it in 6 of 8) — trading a real
-  but bounded throughput ceiling against a starvation risk judged not
-  worth imposing on every caller by default. Both `src/lib.rs`'s doc
-  comment and this bullet now state the real throughput-vs-fairness axis
-  instead of the old unmeasured low-contention-latency claim.
+  sweep** (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` — its §3.1-§3.2/§5 hold
+  the tables) — an independent review flagged the cap's original doc comment
+  as claiming an unmeasured "low enough for LOW contention" rationale.
+  Sweeping caps `{0, 4, 6, 8, 10}` at 2/4/8/16 threads found that claim
+  WRONG: caps 8 and 10 beat cap 6 on aggregate throughput in nearly all
+  cells, but with a real fairness cost that GROWS with the cap under
+  oversubscription (single threads starved to a small fraction of their
+  fair share), while caps 0/4 are fairer but slower. `BACKOFF_SPIN_CAP`
+  stays `6` — a deliberate compromise, not a fairness optimum: fairer than
+  caps 8/10, LESS fair than caps 0/4 — trading a real but bounded
+  throughput ceiling against a starvation risk judged not worth imposing on
+  every caller by default. Both `src/lib.rs`'s doc comment and this bullet
+  now state the real throughput-vs-fairness axis instead of the old
+  unmeasured low-contention-latency claim.
 - **Round-8 review corrections to the two backoff bullets above**
   (`docs/reviews/2026-08-31-125420-tagged-index-stack-review-round8-oh.md`,
-  findings P2-1/P2-2/P3-2/P3-3; task tis-r8-Group1 #1758). (1) The
-  cap-sweep bullet's "most fairness-conscious of the caps measured" claim
-  was FALSE against the sweep's own committed CSV — its fairness table had
-  silently dropped caps 0 and 4, the two caps fairer than 6; corrected
-  above and in `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.2. (2) The
-  "+17% to +58% at every thread count" range was contradicted by the same
-  table's own -0.4% cell; corrected above and in the report's §3.1. (3)
-  Per-CALL latency had never been measured on any axis. New
-  observation-only example `examples/backoff_per_call_latency.rs` (public
-  API only) measures it on a 64-element `ArrayLinks` under the crate's own
-  contention discipline: at 8 threads x 200k pop-then-repush iterations
-  the single worst `pop` blocked 41-60 ms across 3 runs under the shipped
-  cap 6 vs 0.6-24 ms at cap 0 (median 54.5 ms vs 2.0 ms), with 60-86 pops
-  over 1 ms per rep vs 0-8; at 16 threads x 200k, worst pop 130-173 ms vs
-  40-46 ms, and 4/3/3 pops over 100 ms vs cap 0's 0/0/0. The full tail
-  picture cuts BOTH ways — quoting only the max side is selective (all
-  counts 3 reps, from the cited raw log): at 16 threads the `> 1 ms`
-  cell REVERSES, cap 6 logging 285/266/249 pops over 1 ms per rep vs cap
-  0's 553/661/650 (~2.4x MORE at cap 0: 650 vs 266 at the rep medians);
-  the 16-thread `> 10 ms` band is roughly tied (178/131/169 vs
-  110/161/157); and cap 6 is 1-2 orders of magnitude better at
-  p50/p90/p99/p99.9 in EVERY shape (cap 0's p99.9 spans
-  0.022-0.037 / 0.054-0.057 / 0.172-0.182 ms across the three shapes vs
-  cap 6's 0.000-0.001 ms everywhere), with the same workloads 4.05-4.85x
-  faster under cap 6 on median wall-clock (4.18x / 4.85x / 4.05x for the
-  4x20k / 8x200k / 16x200k shapes). **`push`/`pop` are lock-free but NOT
-  starvation-free**: the shipped cap trades a small number of very large
-  outlier pops — worse ONLY at the extreme maximum — for better latency
-  at every percentile through p99.9 AND ~4-5x better aggregate
-  throughput, not "worse tail latency across the board";
-  `BACKOFF_SPIN_CAP`'s doc comment now says exactly that. Raw log
+  findings P2-1/P2-2/P3-2/P3-3; task tis-r8-Group1 #1758). The review found
+  three claim defects: (1) the cap-sweep bullet's "most fairness-conscious
+  of the caps measured" claim was FALSE against the sweep's own committed
+  CSV — its fairness table had silently dropped caps 0 and 4, the two caps
+  fairer than 6; (2) the "+17% to +58% at every thread count" range was
+  contradicted by the same table's own -0.4% cell; (3) per-CALL latency had
+  never been measured on any axis. The corrections landed in this
+  changelog, the report, and the deriving script
+  `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (which now
+  re-derives the sweep tables and hard-fails on the two corrected claim
+  shapes, closing P3-3's uncommitted-pipeline gap). A new observation-only
+  example `examples/backoff_per_call_latency.rs` (public API only) measured
+  per-call latency on a 64-element `ArrayLinks` under the crate's own
+  contention discipline: **`push`/`pop` are lock-free but NOT
+  starvation-free** — the shipped cap trades a small number of very large
+  outlier pops — worse ONLY at the extreme maximum — for better latency at
+  every percentile through p99.9 AND ~4-5x better aggregate throughput, not
+  "worse tail latency across the board"; `BACKOFF_SPIN_CAP`'s doc comment
+  now says exactly that. Raw log
   `docs/perf/_raw_tis_backoff_per_call_latency.log` plus run-3 rows in
-  `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`; derived, with in-script
-  assertions, by `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` —
-  the same script now re-derives the sweep tables and hard-fails on the
-  two corrected claim shapes (closing P3-3's uncommitted-pipeline gap).
+  `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`; the full percentile/count
+  tables and tail picture are in the report's §3.4 and the cited raw log.
 - **One speculative perf change evaluated and declined** (unrelated to the
   backoff above): both `push`'s and `pop`'s CAS loops are
   `compare_exchange_weak` candidates, but any difference is specific to
@@ -306,11 +269,11 @@ before it.
   repository has no AArch64 wall-clock/perf-gate harness to measure it.
   Revisit when one exists. (A second item originally listed here —
   relaxing `push`'s initial head load to `Relaxed` — has since LANDED; see
-  the Sol-codex run-3 bullet below. Correction to this bullet's original
-  wording: "neither change would show up on x86-64 or LSE AArch64" was
-  accurate for the CAS-strength half but not the load-ordering half — an
-  acquire load is a real ordering constraint (`ldar`/`LDAPR`) on AArch64
-  with or without LSE; it is x86-64 where the two compile identically.)
+  the Sol-codex run-3 bullet below. Correction: the original "neither change
+  would show up on x86-64 or LSE AArch64" was accurate for the CAS-strength
+  half but not the load-ordering half — an acquire load is a real ordering
+  constraint (`ldar`/`LDAPR`) on AArch64 with or without LSE; it is x86-64
+  where the two compile identically.)
 - **`push`'s initial head load relaxed to `Relaxed`; link-ordering and
   CAS-strength relaxations deferred; contention-harness timing window
   fixed** (`docs/reviews/2026-08-31-162115-tagged-index-stack-review-Sol-codex-run-3.md`,
@@ -321,39 +284,29 @@ before it.
   ordering burden by the same proof already applied to push's `Relaxed`
   failed-CAS read. The reasoning is target-independent (happens-before
   structure, not a machine-model assumption); it was exhaustively
-  model-checked by the full 11-model loom suite (`tests/loom_aba.rs`)
-  staying green with exactly this ordering, and an x86-64 A/B on the
-  committed contention benches confirmed expected neutrality (baseline
-  28,447,805 / 27,711,456 ops/sec → 30,146,657 / 27,815,346 — machine
-  noise: on x86-64 an Acquire load and a Relaxed load compile to the same
-  plain load, so no timing difference exists by construction). The
-  expected benefit is on weakly-ordered targets, where the change drops a
-  real acquire-load ordering constraint (e.g. AArch64 `ldar`/`LDAPR` →
-  plain `ldr`) — unmeasured here. `pop_index`'s orderings are deliberately
-  untouched (pop DOES follow a link from the observed head word). (2)
-  DEFERRED — `ArrayLinks`' link `Acquire`/`Release` (P3-1) and both CAS
-  loops' strong `compare_exchange` (P3-3) stay as-is: both would-be
-  relaxations target LL/SC weakly-ordered hardware this repository has no
-  timing-valid harness for (CI's aarch64 row is cross/QEMU on GitHub
-  runners — tests only, wall-clock-invalid), so they are documented
-  in-code as deliberate defence-in-depth / pending real multi-target A/B
-  measurement rather than switched blind. (3) FIXED — the contention
-  harness (`benches/tagged_index_stack_bench.rs`) now times every worker
-  against ONE shared `[timed_start, deadline)` window computed before the
-  barrier is released, with an uncounted 300 ms warm-up phase, instead of
-  each worker's own post-barrier-resume clock against the coordinator's
-  separate post-barrier start (the old shape let scheduler skew
-  decorrelate the summed-ops numerator's exposure window from the elapsed
-  denominator). Impact on the already-published
+  model-checked by the full loom suite (`tests/loom_aba.rs`) staying green
+  with exactly this ordering, and an x86-64 A/B on the committed contention
+  benches confirmed expected neutrality (on x86-64 an Acquire load and a
+  Relaxed load compile to the same plain load, so no timing difference
+  exists by construction). The expected benefit is on weakly-ordered
+  targets, where the change drops a real acquire-load ordering constraint —
+  unmeasured here. `pop_index`'s orderings are deliberately untouched (pop
+  DOES follow a link from the observed head word). (2) DEFERRED —
+  `ArrayLinks`' link `Acquire`/`Release` (P3-1) and both CAS loops' strong
+  `compare_exchange` (P3-3) stay as-is: documented in-code as deliberate
+  defence-in-depth pending real multi-target A/B measurement — this
+  repository has no timing-valid LL/SC harness (CI's aarch64 row is
+  cross/QEMU on GitHub runners — tests only, wall-clock-invalid). (3) FIXED
+  — the contention harness (`benches/tagged_index_stack_bench.rs`) now
+  times every worker against ONE shared `[timed_start, deadline)` window
+  computed before the barrier is released, with an uncounted 300 ms
+  warm-up phase, instead of each worker's own post-barrier-resume clock
+  against the coordinator's separate start. Impact on the already-published
   `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` numbers (which used the old
-  harness across rounds 6-9): expected footnote-level — per-thread
-  fairness ratios were computed from each worker's own full 1-second
-  window count (window-duration-normalized by construction), and
-  barrier-resume skew on an idle host is µs-scale against a 1 s window
-  (post-fix runs still measure 1.001 s elapsed); the old totals were, if
-  anything, very slightly UNDERstated, since the coordinator-to-last-join
-  denominator absorbed the skew tail. No re-run or re-publication of that
-  report is part of this change.
+  harness across rounds 6-9) expected footnote-level: per-thread fairness
+  ratios were window-duration-normalized by construction, and
+  barrier-resume skew is µs-scale against the 1 s window. No re-run or
+  re-publication of that report is part of this change.
 
 ### MSRV
 

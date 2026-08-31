@@ -76,8 +76,7 @@
 //!     and the loop-top empty check returns `None` without spinning. The
 //!     only head transition this model admits is `(0, t) -> (empty, t)`, so
 //!     its `POP_RETRY_COUNT` delta is provably an empty-`actual` retry —
-//!     a path no other shipped model or test reaches (round-8 review
-//!     P3-4).
+//!     a path no other shipped model or test reaches.
 //!
 //! # How to run
 //!
@@ -96,13 +95,10 @@
 //!
 //! Every `#[test]` in this file drives its model through one of two helpers,
 //! [`model`] or [`model_with_oracle`], both of which acquire `MODEL_LOCK`
-//! internally — the guard is acquired BY CONSTRUCTION, not by per-test
-//! discipline. A new test cannot forget to serialize with the rest of this
-//! file's tests the way two earlier tests once did (round-4 scoped the lock
-//! to only `pop`'s oracle; round-5's own remediation then added
-//! `push_push_conservation` with a `PUSH_RETRY_COUNT` oracle outside that
-//! scope, unnoticed for a full review round) — see `MODEL_LOCK`'s own doc
-//! comment for why serialization matters at all.
+//! internally — the guard is acquired by construction, not by per-test
+//! discipline, so a new test cannot forget to serialize with the rest of
+//! this file's tests. See `MODEL_LOCK`'s own doc comment for why
+//! serialization matters at all.
 
 #![cfg(loom)]
 
@@ -128,14 +124,6 @@ use tagged_index_stack::{ArrayIndexStack, StackStorage, TaggedIndex, TAIL};
 /// model (e.g. `push_push_conservation` itself, if its own assertion failed
 /// while holding the lock) would otherwise poison this mutex for every test
 /// that acquires it afterward.
-///
-/// The guard is acquired by construction via [`model`] (or
-/// [`model_with_oracle`]), not by per-test discipline: every `#[test]` in
-/// this file that drives the real `push`/`pop` routes through one of those
-/// two helpers, so a new test cannot forget the lock the way two earlier
-/// rounds did (round-4 scoped the lock to only `pop`'s oracle; round-5's own
-/// remediation then added `push_push_conservation` with a `PUSH_RETRY_COUNT`
-/// oracle outside that scope, unnoticed for a full review round).
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Every model in this file that does not read an activation-oracle counter
@@ -161,7 +149,7 @@ where
 }
 
 /// Variant of [`model`] for the tests whose activation-oracle
-/// snapshot/assert window must cover the ENTIRE `check()` call, not just
+/// snapshot/assert window must cover the entire `check()` call, not just
 /// wrap it: `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 /// `push_push_conservation`, `pop_pop_conservation`,
 /// `pop_pop_single_element_loser_sees_empty_actual`. Each snapshots a
@@ -169,19 +157,10 @@ where
 /// advanced — and that delta is only exclusive to this call's own `check()`
 /// run if no other test's `check()` can interleave between the snapshot and
 /// the assert, which is exactly what holding `MODEL_LOCK` the whole time
-/// guarantees.
-///
-/// Round-7 review P3-2 (task #1741): the prior signature returned
-/// `(T, MutexGuard<'static, ()>)` and left the snapshot-before/assert-after
-/// delta check to the CALLER, after this function had already returned —
-/// meaning the guard had to cross the function boundary and be correctly
-/// bound (`let (before, _g) = ...`, never `let (before, _) = ...`) by every
-/// caller for the lock to actually still be held during the caller's own
-/// assertion. `clippy`'s `let_underscore_lock` would catch that mistake, but
-/// only where clippy actually runs `--cfg loom` — CI never did until this
-/// same task added it. This is the airtight fix: `verify` runs INSIDE this
-/// function, still under the lock, so the guard never needs to leave — there
-/// is no `MutexGuard` for any caller to mishandle, lint or no lint.
+/// guarantees. Because the whole "snapshot -> `check` -> snapshot -> verify
+/// delta" sequence runs inside this function while the lock is held, the
+/// guard never needs to leave it — there is no `MutexGuard` for any caller
+/// to mishandle.
 ///
 /// `snapshot` runs once AFTER the lock is acquired and BEFORE `check`
 /// starts (the "before" reading), and once more AFTER `check` returns (the
@@ -674,16 +653,10 @@ fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
 /// itself), this one fails if `pop`'s own `compare_exchange` failure ordering
 /// ever regresses.
 ///
-/// That last claim used to rest on a one-off manual experiment ("revert
-/// `pop`'s failure ordering to `Relaxed` and this test fails with
-/// `left: [0, 0, 1]`, `right: [0, 1]` — index 0 duplicated, a real
-/// double-allocated free-list slot, then passes again once reverted") — a
-/// receipt about a mutated working tree that no longer exists and cannot be
-/// re-run. It is SUPERSEDED by the live activation oracle asserted on every
-/// run below: the process-global `pop_retry_count_for_test` counter
-/// (incremented in `pop`'s own retry arm) must ADVANCE across this model's
-/// explored schedules, so a green run proves the retry branch actually
-/// executed — not merely that its absence went unnoticed.
+/// The live activation oracle asserted on every run — the process-global
+/// `pop_retry_count_for_test` counter (incremented in `pop`'s own retry arm)
+/// must advance across this model's explored schedules — proves the retry
+/// branch actually executed, so a green run is not vacuous.
 #[test]
 fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // Activation oracle: `model_with_oracle` snapshots the process-global
@@ -860,21 +833,19 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
 
 /// Two threads each do ONE real [`ArrayIndexStack::push`] of a DIFFERENT
 /// index onto a shared fresh stack, concurrently. Proves push‖push
-/// conservation: regardless of which push's CAS wins the race (the loser
-/// retries with the winner's new head as its base, re-reading the current
-/// head and re-chaining its own link before retrying — see `push`'s loop),
-/// draining the stack afterward yields both pushed indices exactly once
-/// each, in EITHER order. LIFO order between two concurrent pushes is not
-/// commit-ordered by anything this crate promises, so the oracle checks the
-/// drained MULTISET against the pushed multiset, not a specific pop order.
+/// conserves: whichever push's CAS wins the race (the loser retries with the
+/// winner's new head as its base, re-reading the current head and re-chaining
+/// its own link before retrying — see `push`'s loop), draining the stack
+/// afterward yields both pushed indices exactly once each, in either order.
+/// LIFO order between two concurrent pushes is not commit-ordered by anything
+/// this crate promises, so the oracle checks the drained multiset against the
+/// pushed multiset, not a specific pop order.
 ///
 /// Also asserts the `PUSH_RETRY_COUNT` activation oracle advances across
-/// this model's explored schedules (mirroring
-/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`'s use
-/// of `POP_RETRY_COUNT`): a green run with zero retries would only prove
-/// two independent pushes can succeed when they never collide, not that a
-/// losing push's retry re-chains correctly — the actual property this test
-/// exists to cover.
+/// this model's explored schedules: a green run with zero retries would only
+/// prove two independent pushes can succeed when they never collide, not
+/// that a losing push's retry re-chains correctly — the actual property this
+/// test exists to cover.
 #[test]
 fn push_push_conservation() {
     model_with_oracle(
@@ -926,35 +897,25 @@ fn push_push_conservation() {
 ///
 /// **Derivation of the asserted outcome (traced from `pop`'s actual CAS
 /// loop, not assumed):** `pop` never returns `None` from inside its retry
-/// loop except at loop-top, when it observes the head as empty
-/// (`TaggedIndex::is_empty`). A failed CAS does not exit the loop — it
-/// re-reads the CAS failure's `actual` head and retries with THAT fresh
-/// state, which is always synchronized (the failure ordering is `Acquire`)
-/// with whatever the other popper's successful CAS just installed. With
-/// exactly 2 elements and exactly 2 concurrent poppers and nothing else
-/// touching the stack: whichever popper's CAS wins first pops one index and
-/// advances the head to the other index (pop never bumps the tag, so no ABA
-/// tag-mismatch can spuriously fail the loser's retry beyond the one
-/// legitimate head-changed failure). The loser's CAS fails once, retries
-/// against the now-single-element head, reads that element's link (`TAIL`),
-/// and its retry CAS succeeds uncontested (no third party can race it) —
-/// so it also returns `Some`. There is no reachable schedule in which
-/// either popper observes an empty stack before completing: the stack does
-/// not become empty until AFTER both pops have committed. Therefore the
-/// only reachable outcome is BOTH poppers return `Some` with the two
-/// DISTINCT seeded indices — never `None` for either, never a duplicate.
-/// This is stronger than the general "subset, no duplicates" invariant used
-/// elsewhere in this file for scenarios with a third concurrent actor (e.g.
-/// `aba_repush_keeps_free_list_conservation`); here there is no third actor,
-/// so the outcome space collapses to exactly one shape.
+/// loop except at loop-top, when it observes the head as empty. A failed
+/// CAS does not exit the loop — it retries against the CAS failure's `actual`
+/// head, which is always Acquire-synchronized with whatever the other
+/// popper's successful CAS just installed. With exactly 2 elements, exactly
+/// 2 poppers, and no third actor: the first winner pops one index and
+/// advances the head to the other; the loser's CAS fails once, retries
+/// against the now-single-element head, and succeeds uncontested — so both
+/// poppers return `Some` with the two DISTINCT seeded indices; the stack
+/// cannot be empty until after both pops commit, so neither ever sees
+/// `None`. This is stronger than the general "subset, no duplicates"
+/// invariant used elsewhere in this file where a third concurrent actor
+/// exists (e.g. `aba_repush_keeps_free_list_conservation`): here the
+/// outcome space collapses to exactly one shape.
 ///
 /// Also asserts the `POP_RETRY_COUNT` activation oracle advances across this
-/// model's explored schedules (mirroring `push_push_conservation`'s use of
-/// `PUSH_RETRY_COUNT`): a green run with zero retries would only prove two
-/// independent pops can succeed when they never collide, not that the
-/// loser's retry — reading the now-single-element head's link and
-/// succeeding uncontested — actually recovers correctly, which is the
-/// property the derivation above traces and this test exists to cover.
+/// model's explored schedules: a green run with zero retries would only
+/// prove two independent pops can succeed when they never collide, not that
+/// the loser's uncontested retry actually recovers correctly — the property
+/// the derivation above traces and this test exists to cover.
 #[test]
 fn pop_pop_conservation() {
     model_with_oracle(
@@ -1013,8 +974,8 @@ fn pop_pop_conservation() {
 // (g) Empty-`actual` retry: the 1-element counterpart of `pop_pop_conservation`'s
 // 2-element shape. Two real poppers race a stack pre-seeded with exactly ONE
 // free index, so the loser's CAS fails against an EMPTY `actual` and pop's
-// Err-branch backoff-skip (`is_empty(actual) == true`) is taken — round-8
-// review P3-4: no other shipped model or test reaches that arm.
+// Err-branch backoff-skip (`is_empty(actual) == true`) is taken — no other
+// shipped model or test reaches that arm.
 // ============================================================================
 
 /// Two threads each do ONE real [`ArrayIndexStack::pop`] concurrently
@@ -1026,9 +987,8 @@ fn pop_pop_conservation() {
 /// loop, not assumed):** both poppers may read the same head snapshot
 /// `(0, t)`; only ONE `compare_exchange` against `(0, t)` can succeed. The
 /// winner installs `(empty, t)` — `pop` preserves the running tag across
-/// the drain (H-2). The loser's CAS therefore fails with
-/// `actual = (empty, t)`: an EMPTY actual. That loser takes `pop`'s Err
-/// arm: the retry counter increments (under the hood), then the
+/// the drain (H-2). The loser's CAS therefore fails with an EMPTY `actual`,
+/// taking `pop`'s Err arm: the retry counter increments, then the
 /// `is_empty(actual) == true` guard SKIPS the exponential-backoff spin
 /// (spinning would be pure wasted latency before the loop-top `None`),
 /// assigns `head = actual`, and the loop-top empty check returns `None`. A
@@ -1039,12 +999,12 @@ fn pop_pop_conservation() {
 /// precisely one `Some(0)`, precisely one `None`, and the stack drains to
 /// empty.
 ///
-/// The ONLY head transition this model admits is `(0, t) -> (empty, t)`, so
-/// EVERY `POP_RETRY_COUNT` increment the oracle asserts is provably a
+/// The only head transition this model admits is `(0, t) -> (empty, t)`, so
+/// every `POP_RETRY_COUNT` increment the oracle asserts is provably a
 /// failed CAS against an empty actual — the delta doubles as a
 /// path-activation oracle for `pop`'s `is_empty(actual) == true`
 /// skip-backoff arm specifically, which no other shipped model or test
-/// reaches. Note this is STRONGER than in models with >1 element or a
+/// reaches. Note this is stronger than in models with >1 element or a
 /// concurrent push (e.g. `pop_pop_conservation`,
 /// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`),
 /// where an increment could also come from a non-empty actual.
