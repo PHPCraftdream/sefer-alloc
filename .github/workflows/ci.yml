@@ -2137,6 +2137,28 @@ jobs:
       # any job that type-checks `benches/size_classes_bench.rs` on the
       # pinned 1.88 toolchain (rush-tests review finding T1).
       - run: cargo bench -p size-classes --no-run
+      # tagged-index-stack-specific MSRV checks (round-8 review P4-7, task
+      # tis-r8-Group3 #1755 — the same parity gap the once-ptr-cell and
+      # size-classes rows above close): the workspace-root `--all-features`
+      # steps at the top of this job reach tagged-index-stack only as a
+      # path-dependency LIBRARY (via `alloc-global`'s
+      # `dep:tagged-index-stack`), never as its own tested workspace member,
+      # so its `tests/` (proptest + `std::thread::scope`) and its
+      # `bench-scale-tool`-based bench were never compiled on the pinned 1.88
+      # toolchain by anything in this job before these rows — and this is the
+      # crate about to publish with `rust-version = "1.88"`. No
+      # `--all-features` here: the crate's only feature is the implicit
+      # `loom` optional-dependency feature, which (without this job's
+      # `RUSTFLAGS: "--cfg loom"`, which it never sets) would merely build the
+      # `loom` crate itself at 1.88 while its cfg-gated code compiles out —
+      # coverage the `loom-alloc-global` job already owns on stable.
+      - run: cargo check -p tagged-index-stack
+      - run: cargo test -p tagged-index-stack --no-run
+      # `cargo test`'s default target set excludes bench targets entirely
+      # (the same fact the size-classes row above relies on), so this row is
+      # the only thing in this job that type-checks
+      # `benches/tagged_index_stack_bench.rs` on the pinned 1.88 toolchain.
+      - run: cargo bench -p tagged-index-stack --no-run
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
