@@ -62,10 +62,10 @@ before it.
   inputs already guaranteed in range by their own guards, so the hot path
   pays no new branch and the ABA tag wrap at `2^TAG_BITS` still happens
   exactly as before.
-- **`TaggedIndex::try_pack(index, tag)`** — now a deprecated forwarding
-  twin of the (itself checked) `pack`, kept only so existing references
-  to the name keep resolving; call `pack` directly. Scheduled for removal
-  in 0.2.
+- **`TaggedIndex::try_pack` removed before publication** (round-10 @oh
+  review, finding P3-1) — it had become a dead deprecated forwarding twin
+  of the (itself checked) `pack` with zero live callers; since nothing has
+  shipped yet, removing it pre-0.1.0 costs nothing. Call `pack` directly.
 - **ABA-mitigating empty transition (the H-2 rule)** — when a `pop` drains the
   last element, the empty sentinel is packed with the **running tag** the
   draining pop observed, not reset to `0`: a tag reset would reopen the ABA
@@ -237,7 +237,7 @@ before it.
   stays `6` — a deliberate compromise, not a fairness optimum: fairer than
   caps 8/10, LESS fair than caps 0/4 — trading a real but bounded
   throughput ceiling against a starvation risk judged not worth imposing on
-  every caller by default. Both `src/lib.rs`'s doc comment and this bullet
+  every caller by default. Both `src/imp.rs`'s doc comment and this bullet
   now state the real throughput-vs-fairness axis instead of the old
   unmeasured low-contention-latency claim.
 - **`push`/`pop` are lock-free but NOT starvation-free** — the shipped cap
