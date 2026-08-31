@@ -157,21 +157,35 @@ where
 /// the assert, which is exactly what holding `MODEL_LOCK` the whole time
 /// guarantees.
 ///
-/// `snapshot` runs AFTER the lock is acquired and BEFORE `check` starts, so
-/// the "before" reading is already inside the same critical section `check`
-/// runs under; the guard is then returned to the caller, STILL HELD, so the
-/// caller's own post-check "after" reading and delta assertion stay covered
-/// by the same lock acquisition — the full "acquire lock -> snapshot counter
-/// -> run model -> assert delta -> drop lock" ordering the oracle depends on.
-fn model_with_oracle<F, S, T>(snapshot: S, f: F) -> (T, std::sync::MutexGuard<'static, ()>)
+/// Round-7 review P3-2 (task #1741): the prior signature returned
+/// `(T, MutexGuard<'static, ()>)` and left the snapshot-before/assert-after
+/// delta check to the CALLER, after this function had already returned —
+/// meaning the guard had to cross the function boundary and be correctly
+/// bound (`let (before, _g) = ...`, never `let (before, _) = ...`) by every
+/// caller for the lock to actually still be held during the caller's own
+/// assertion. `clippy`'s `let_underscore_lock` would catch that mistake, but
+/// only where clippy actually runs `--cfg loom` — CI never did until this
+/// same task added it. This is the airtight fix: `verify` runs INSIDE this
+/// function, still under the lock, so the guard never needs to leave — there
+/// is no `MutexGuard` for any caller to mishandle, lint or no lint.
+///
+/// `snapshot` runs once AFTER the lock is acquired and BEFORE `check`
+/// starts (the "before" reading), and once more AFTER `check` returns (the
+/// "after" reading) — both inside the same critical section `check` itself
+/// runs under. `verify(before, after)` then runs, still holding the lock,
+/// before the guard is dropped at the end of this function: the full
+/// "acquire lock -> snapshot before -> run model -> snapshot after -> verify
+/// delta -> drop lock" ordering the oracle depends on, entirely internal.
+fn model_with_oracle<F, S, T>(snapshot: S, f: F, verify: impl FnOnce(T, T))
 where
     F: Fn() + Sync + Send + 'static,
-    S: FnOnce() -> T,
+    S: Fn() -> T,
 {
-    let g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let before = snapshot();
     loom::model::Builder::new().check(f);
-    (before, g)
+    let after = snapshot();
+    verify(before, after);
 }
 
 type Tag = TaggedIndex<16>;
@@ -652,19 +666,18 @@ fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
 /// executed — not merely that its absence went unnoticed.
 #[test]
 fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
-    // Activation oracle: snapshot the process-global retry counter BEFORE the
-    // exploration and assert below that it advanced. A DELTA, not the raw
-    // count — but a delta alone is not enough under libtest's default
-    // parallel harness: `MODEL_LOCK`, held from the snapshot through the
-    // assert below via `model_with_oracle`'s returned guard, is what
-    // actually makes the delta exclusive to this test's own `check()` run.
-    // Without it, any other test in this file that drives the real
-    // `push`/`pop` (see `MODEL_LOCK`'s own doc comment for the mechanism)
-    // could run concurrently on another libtest thread and increment the
-    // same counter, making this assertion pass on cross-test noise instead
-    // of on this test's own model.
-    let (retries_before, _g) =
-        model_with_oracle(tagged_index_stack::pop_retry_count_for_test, || {
+    // Activation oracle: `model_with_oracle` snapshots the process-global
+    // retry counter both before and after the exploration and runs `verify`
+    // on the delta ITSELF, still holding `MODEL_LOCK` — the delta is only
+    // exclusive to this test's own `check()` run because the lock never
+    // leaves that function. Without it, any other test in this file that
+    // drives the real `push`/`pop` (see `MODEL_LOCK`'s own doc comment for
+    // the mechanism) could run concurrently on another libtest thread and
+    // increment the same counter, making this assertion pass on cross-test
+    // noise instead of on this test's own model.
+    model_with_oracle(
+        tagged_index_stack::pop_retry_count_for_test,
+        || {
             let links = Arc::new(ArrayLinks::<N>::new());
             let stack = Arc::new(TaggedIndexStack::<16>::new());
             stack.push(&*links, 1);
@@ -695,15 +708,16 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
                 vec![0, 1],
                 "free-list corrupted (loss or duplication) via the real pop/push: got {popped:?}"
             );
-        });
-
-    let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
-    assert!(
-        retried > 0,
-        "activation oracle: `pop`'s CAS-retry branch was never reached in \
-         any explored schedule — this test is vacuously green, since its \
-         free-list conservation assertion cannot catch a stale-retry \
-         corruption if no retry ever executes"
+        },
+        |before, after| {
+            assert!(
+                after - before > 0,
+                "activation oracle: `pop`'s CAS-retry branch was never reached in \
+                 any explored schedule — this test is vacuously green, since its \
+                 free-list conservation assertion cannot catch a stale-retry \
+                 corruption if no retry ever executes"
+            );
+        },
     );
 }
 
@@ -849,8 +863,9 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
 /// exists to cover.
 #[test]
 fn push_push_conservation() {
-    let (retries_before, _g) =
-        model_with_oracle(tagged_index_stack::push_retry_count_for_test, || {
+    model_with_oracle(
+        tagged_index_stack::push_retry_count_for_test,
+        || {
             let links = Arc::new(ArrayLinks::<N>::new());
             let stack = Arc::new(TaggedIndexStack::<16>::new());
 
@@ -881,15 +896,16 @@ fn push_push_conservation() {
              concurrent real pushes: draining yielded {popped:?}, expected \
              exactly [0, 1] regardless of which push's CAS won the race"
             );
-        });
-
-    let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
-    assert!(
-        retried > 0,
-        "activation oracle: `push`'s CAS-retry branch was never reached in \
-         any explored schedule — this test is vacuously green, since its \
-         free-list conservation assertion cannot catch a stale-retry \
-         corruption if no retry ever executes"
+        },
+        |before, after| {
+            assert!(
+                after - before > 0,
+                "activation oracle: `push`'s CAS-retry branch was never reached in \
+                 any explored schedule — this test is vacuously green, since its \
+                 free-list conservation assertion cannot catch a stale-retry \
+                 corruption if no retry ever executes"
+            );
+        },
     );
 }
 
@@ -930,8 +946,9 @@ fn push_push_conservation() {
 /// property the derivation above traces and this test exists to cover.
 #[test]
 fn pop_pop_conservation() {
-    let (retries_before, _g) =
-        model_with_oracle(tagged_index_stack::pop_retry_count_for_test, || {
+    model_with_oracle(
+        tagged_index_stack::pop_retry_count_for_test,
+        || {
             let (stack, links) = both_free();
 
             let stack_a = Arc::clone(&stack);
@@ -970,14 +987,15 @@ fn pop_pop_conservation() {
              index was available afterward, meaning fewer than 2 indices \
              were actually handed out despite both poppers reporting Some"
             );
-        });
-
-    let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
-    assert!(
-        retried > 0,
-        "activation oracle: `pop`'s CAS-retry branch was never reached in \
-         any explored schedule — this test is vacuously green, since its \
-         free-list conservation assertion cannot catch a stale-retry \
-         corruption if no retry ever executes"
+        },
+        |before, after| {
+            assert!(
+                after - before > 0,
+                "activation oracle: `pop`'s CAS-retry branch was never reached in \
+                 any explored schedule — this test is vacuously green, since its \
+                 free-list conservation assertion cannot catch a stale-retry \
+                 corruption if no retry ever executes"
+            );
+        },
     );
 }
