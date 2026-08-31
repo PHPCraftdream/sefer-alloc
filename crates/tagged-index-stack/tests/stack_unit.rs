@@ -378,7 +378,7 @@ fn array_links_load_next_panics_on_index_out_of_range() {
 }
 
 /// [`ArrayLinks::store_next`] panics if `index >= N` — the same bound as
-/// `load_next` above, documented alongside it in `src/lib.rs`. Reached via
+/// `load_next` above, documented alongside it in `src/imp.rs`. Reached via
 /// the worked example in `push_index`'s own `# Panics` section: an
 /// `ArrayIndexStack::<16, 4>` accepts indices up to 65534 by `INDEX_BITS`,
 /// but its `ArrayLinks<4>` links hold only `0..=3`, so
@@ -592,4 +592,37 @@ fn default_array_index_stack_behaves_like_new() {
     stack.push(7);
     assert!(!stack.is_empty());
     assert_eq!(stack.pop(), Some(7));
+}
+
+/// `StackHead::<INDEX_BITS>::default()` must behave exactly like `new()`:
+/// the same bootstrap head word — `TaggedIndex::<16>::empty()`'s documented
+/// empty-index sentinel with tag 0 — reading empty through the advisory
+/// `is_empty`. This is the one `Default` impl a custom-storage implementor
+/// reaches directly (`StackHead` is the head half of the `StackStorage`
+/// extension point); round-10 review P3-3: previously pinned by nothing —
+/// the CHANGELOG cited a test name that did not exist.
+#[test]
+fn default_stack_head_behaves_like_new() {
+    let default_head = StackHead::<16>::default();
+    let new_head = StackHead::<16>::new();
+    assert_eq!(
+        default_head.raw_head(),
+        new_head.raw_head(),
+        "Default and New heads hold the identical packed word"
+    );
+    assert_eq!(
+        default_head.raw_head(),
+        TaggedIndex::<16>::empty(),
+        "a freshly-defaulted head IS the documented bootstrap empty sentinel"
+    );
+    assert_eq!(
+        new_head.raw_head(),
+        TaggedIndex::<16>::empty(),
+        "a freshly-newed head IS the documented bootstrap empty sentinel"
+    );
+    assert!(
+        default_head.is_empty(),
+        "a freshly-defaulted head reads empty"
+    );
+    assert!(new_head.is_empty(), "a freshly-newed head reads empty");
 }

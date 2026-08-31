@@ -202,7 +202,7 @@ before it.
   (`u32::MAX`), part of the `StackStorage` contract: an implementor's backing must
   be able to represent it.
 - **`Default` for `StackHead`, `ArrayIndexStack`, and `ArrayLinks`** — all
-  forward to `new()`; pinned by `default_stack_behaves_like_new` /
+  forward to `new()`; pinned by `default_stack_head_behaves_like_new` /
   `default_array_index_stack_behaves_like_new` /
   `default_array_links_behaves_like_new` (`tests/stack_unit.rs`).
 - **`Debug` derived on `StackHead`, `ArrayIndexStack`, and `ArrayLinks`.**
