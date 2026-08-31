@@ -235,10 +235,27 @@ fn main() {
                 // Warm-up: run the workload uncounted until the SHARED
                 // window opens, so caches, branch predictors and the
                 // contention steady-state settle before any op is counted
-                // and every thread's counted window is the same one.
-                while Instant::now() < timed_start {
+                // and every thread's counted window is the same one. The
+                // clock check uses the SAME DEADLINE_CHECK_INTERVAL cadence
+                // as the timed loop below: checking every iteration would
+                // roughly halve the warm-up's op rate (the clock read is a
+                // significant fraction of a two-atomic-op iteration) and
+                // settle a different steady state than the one measured.
+                // Up to DEADLINE_CHECK_INTERVAL - 1 warm-up iterations may
+                // land inside the counted window past the check that opens
+                // it -- uncounted, mirroring the timed loop's own deadline
+                // overshoot.
+                let mut since_check = 0u32;
+                loop {
                     if let Some(idx) = shared_stack.pop() {
                         shared_stack.push(black_box(idx));
+                    }
+                    since_check += 1;
+                    if since_check >= DEADLINE_CHECK_INTERVAL {
+                        since_check = 0;
+                        if Instant::now() >= timed_start {
+                            break;
+                        }
                     }
                 }
 
@@ -303,11 +320,22 @@ fn main() {
     let max = *ops_per_thread.iter().max().unwrap() as f64;
     let min = *ops_per_thread.iter().min().unwrap() as f64;
     let mean = total_ops as f64 / ops_per_thread.len() as f64;
-    println!(
-        "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
-        max / min,
-        100.0 * min / mean
-    );
+    // A thread starved to zero ops (single-run outliers of exactly this
+    // shape appear in the committed cap-sweep data at higher backoff caps)
+    // makes max/min infinite -- print an explicit degenerate-cell marker
+    // instead of computing the division.
+    if min == 0.0 {
+        println!(
+            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed); min/mean = {:.1}% of the even split (100% = fair)\n",
+            100.0 * min / mean
+        );
+    } else {
+        println!(
+            "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
+            max / min,
+            100.0 * min / mean
+        );
+    }
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
     // This measures throughput under contention with a always-nonempty stack.
@@ -367,13 +395,23 @@ fn main() {
         for _ in 0..num_threads {
             let handle = s.spawn(move || {
                 barrier.wait();
-                // Warm-up -- see contention/push_pop's identical comment.
-                while Instant::now() < timed_start {
+                // Warm-up -- see contention/push_pop's identical comment
+                // (same DEADLINE_CHECK_INTERVAL clock cadence as the timed
+                // loop, for the same reason).
+                let mut since_check = 0u32;
+                loop {
                     let idx = shared_stack.pop().expect(
                         "contention/churn: stack drained -- invariant violated \
                          (see prefill_count/num_threads assert above)",
                     );
                     shared_stack.push(idx);
+                    since_check += 1;
+                    if since_check >= DEADLINE_CHECK_INTERVAL {
+                        since_check = 0;
+                        if Instant::now() >= timed_start {
+                            break;
+                        }
+                    }
                 }
 
                 let mut ops = 0u64;
@@ -419,11 +457,22 @@ fn main() {
     let max = *ops_per_thread.iter().max().unwrap() as f64;
     let min = *ops_per_thread.iter().min().unwrap() as f64;
     let mean = total_ops as f64 / ops_per_thread.len() as f64;
-    println!(
-        "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
-        max / min,
-        100.0 * min / mean
-    );
+    // A thread starved to zero ops (single-run outliers of exactly this
+    // shape appear in the committed cap-sweep data at higher backoff caps)
+    // makes max/min infinite -- print an explicit degenerate-cell marker
+    // instead of computing the division.
+    if min == 0.0 {
+        println!(
+            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed); min/mean = {:.1}% of the even split (100% = fair)\n",
+            100.0 * min / mean
+        );
+    } else {
+        println!(
+            "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
+            max / min,
+            100.0 * min / mean
+        );
+    }
 
     println!("=== All contention benchmarks complete ===");
 }

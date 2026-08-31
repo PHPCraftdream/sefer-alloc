@@ -157,10 +157,12 @@
 //! trades index range against tag headroom, but never below the 48-bit floor.
 //!
 //! The rate assumption's order of magnitude is confirmed by this repository's
-//! own bench receipts (`docs/perf/_raw_tis_backoff_cap_sweep_run1.log` — a
-//! repository file, not part of the published package; re-run `cargo bench -p
-//! tagged-index-stack --bench tagged_index_stack_bench` for a fresh sample) —
-//! the bound needs only the order of magnitude, not the exact figure.
+//! own bench receipts
+//! ([`docs/perf/_raw_tis_backoff_cap_sweep_run1.log`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log)
+//! — a repository file, not part of the published package; re-run `cargo
+//! bench -p tagged-index-stack --bench tagged_index_stack_bench` for a fresh
+//! sample) — the bound needs only the order of magnitude, not the exact
+//! figure.
 //!
 //! Read this section as what it is: a bound on the recurrence window — the
 //! minimum time a victim thread must stay parked, at saturated push rates,
@@ -178,10 +180,14 @@
 //! between retries. The measured trade is a small number of very large
 //! outliers in exchange for better latency at every percentile through p99.9
 //! and better aggregate throughput — not "tail latency for throughput" in
-//! general. A consumer recycling a slot on a latency-sensitive request path
-//! should size its tolerance for those rare outliers, not fear a broad tail.
-//! Full measurements and the derivation are in
-//! `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4 — a repository file (not
+//! general. Sizing figure: on a 64-element `ArrayLinks` at 8 threads ×
+//! 200,000 pop-then-repush iterations, the single worst `pop` blocked
+//! 41-60 ms across three runs under the shipped backoff cap (0.6-24 ms with
+//! the backoff disabled). A consumer recycling a slot on a latency-sensitive
+//! request path should size its tolerance for those rare outliers, not fear
+//! a broad tail. Full measurements and the derivation are in
+//! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
+//! — a repository file (not
 //! part of the published package), measured with
 //! `examples/backoff_per_call_latency.rs`.
 //!

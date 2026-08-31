@@ -2860,6 +2860,33 @@ for completeness.
       one-syscall candidate — different API, different crate,
       cross-reference only, not the same item).
 
+61. **[D] `tagged-index-stack` `push_index`'s CAS-retry loop re-issues
+    `store_next` on every retry even when the link value is unchanged — an
+    elidable extra `Release` store per retry; hot-path idea deferred pending
+    a dedicated multi-target measurement.** (Filed 2026-08-31 from the
+    round-10 @oh adversarial review, finding 7 — DECIDE-don't-implement
+    disposition, task tis-r10-groupD.)
+
+    - **Status:** OPEN — observation only. Nothing measured, nothing
+      changed; not quotable as a speedup.
+    - **Current-number-or-verdict:** unmeasured. Mechanism
+      (`crates/tagged-index-stack/src/imp.rs`, `StackOps::push_index`'s
+      retry loop, the unconditional `self.store_next(index, next_link)`):
+      a CAS that failed purely on a tag-only head change (e.g. a concurrent
+      pop-then-repush of the SAME head index) leaves `next_link` identical
+      to the value the previous attempt already stored, so the retry's
+      `store_next` rewrites the same word — one redundant `Release` store
+      per retry, most relevant on weakly-ordered targets where a Release
+      store is a real instruction. An elision guard would add its own
+      branch to the same hot path, so the trade is not obviously positive
+      even on paper.
+    - **Next trigger:** the same missing-harness blocker as this crate's
+      link-ordering/weak-CAS candidates (tagged-index-stack CHANGELOG 0.1.0
+      Performance section, Sol-codex run-3 P3-1/P3-3): a dedicated
+      x86-64 + weakly-ordered-target (e.g. AArch64) wall-clock A/B with a
+      per-arm path-activation oracle. Per CLAUDE.md, no hot-path runtime
+      change lands without a gate report.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

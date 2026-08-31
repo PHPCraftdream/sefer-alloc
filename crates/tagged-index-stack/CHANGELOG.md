@@ -218,7 +218,9 @@ before it.
   run-to-run noise. A contention-shaped conservation check drained the stack
   after 8 threads × 200,000 pop/push iterations under the backoff and
   confirmed the exact multiset `0..64` came back with no duplicate or
-  missing index. The loom suite (`tests/loom_aba.rs`) stayed green at the
+  missing index (the same shape ships permanently as the committed
+  `tests/threaded_conservation.rs` conservation test). The loom suite
+  (`tests/loom_aba.rs`) stayed green at the
   same wall-clock: `core::hint::spin_loop()` touches no loom-tracked atomic,
   so it adds no new interleaving for loom to explore. Full ops/sec and
   ns/op receipt tables: `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` (with its
@@ -238,75 +240,25 @@ before it.
   every caller by default. Both `src/lib.rs`'s doc comment and this bullet
   now state the real throughput-vs-fairness axis instead of the old
   unmeasured low-contention-latency claim.
-- **Round-8 review corrections to the two backoff bullets above**
-  (`docs/reviews/2026-08-31-125420-tagged-index-stack-review-round8-oh.md`,
-  findings P2-1/P2-2/P3-2/P3-3; task tis-r8-Group1 #1758). The review found
-  three claim defects: (1) the cap-sweep bullet's "most fairness-conscious
-  of the caps measured" claim was FALSE against the sweep's own committed
-  CSV — its fairness table had silently dropped caps 0 and 4, the two caps
-  fairer than 6; (2) the "+17% to +58% at every thread count" range was
-  contradicted by the same table's own -0.4% cell; (3) per-CALL latency had
-  never been measured on any axis. The corrections landed in this
-  changelog, the report, and the deriving script
-  `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (which now
-  re-derives the sweep tables and hard-fails on the two corrected claim
-  shapes, closing P3-3's uncommitted-pipeline gap). A new observation-only
-  example `examples/backoff_per_call_latency.rs` (public API only) measured
-  per-call latency on a 64-element `ArrayLinks` under the crate's own
-  contention discipline: **`push`/`pop` are lock-free but NOT
-  starvation-free** — the shipped cap trades a small number of very large
-  outlier pops — worse ONLY at the extreme maximum — for better latency at
-  every percentile through p99.9 AND ~4-5x better aggregate throughput, not
-  "worse tail latency across the board"; `BACKOFF_SPIN_CAP`'s doc comment
-  now says exactly that. Raw log
-  `docs/perf/_raw_tis_backoff_per_call_latency.log` plus run-3 rows in
-  `TIS_BACKOFF_CAP_SWEEP_GATE_summary.csv`; the full percentile/count
-  tables and tail picture are in the report's §3.4 and the cited raw log.
+- **`push`/`pop` are lock-free but NOT starvation-free** — the shipped cap
+  trades a few very large outlier pops (worse ONLY at the extreme maximum)
+  for better latency at every percentile through p99.9 and ~4-5x better
+  aggregate throughput (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4).
 - **One speculative perf change evaluated and declined** (unrelated to the
   backoff above): both `push`'s and `pop`'s CAS loops are
   `compare_exchange_weak` candidates, but any difference is specific to
   non-LSE AArch64 and similar `ldxr`/`stxr`-style architectures, and this
   repository has no AArch64 wall-clock/perf-gate harness to measure it.
-  Revisit when one exists. (A second item originally listed here —
-  relaxing `push`'s initial head load to `Relaxed` — has since LANDED; see
-  the Sol-codex run-3 bullet below. Correction: the original "neither change
-  would show up on x86-64 or LSE AArch64" was accurate for the CAS-strength
-  half but not the load-ordering half — an acquire load is a real ordering
-  constraint (`ldar`/`LDAPR`) on AArch64 with or without LSE; it is x86-64
-  where the two compile identically.)
-- **`push`'s initial head load relaxed to `Relaxed`; link-ordering and
-  CAS-strength relaxations deferred; contention-harness timing window
-  fixed** (`docs/reviews/2026-08-31-162115-tagged-index-stack-review-Sol-codex-run-3.md`,
-  findings P3-1/P3-2/P3-3/P3-4; task tis-sc3-Group5 #1771 + #1772).
-  (1) LANDED — `push_index`'s initial head load is now `Ordering::Relaxed`
-  (was `Acquire`): push uses the observed word only as `(index, tag)`
-  values and never follows a link through it, so the load carries no
-  ordering burden by the same proof already applied to push's `Relaxed`
-  failed-CAS read. The reasoning is target-independent (happens-before
-  structure, not a machine-model assumption); it was exhaustively
-  model-checked by the full loom suite (`tests/loom_aba.rs`) staying green
-  with exactly this ordering, and an x86-64 A/B on the committed contention
-  benches confirmed expected neutrality (on x86-64 an Acquire load and a
-  Relaxed load compile to the same plain load, so no timing difference
-  exists by construction). The expected benefit is on weakly-ordered
-  targets, where the change drops a real acquire-load ordering constraint —
-  unmeasured here. `pop_index`'s orderings are deliberately untouched (pop
-  DOES follow a link from the observed head word). (2) DEFERRED —
-  `ArrayLinks`' link `Acquire`/`Release` (P3-1) and both CAS loops' strong
-  `compare_exchange` (P3-3) stay as-is: documented in-code as deliberate
-  defence-in-depth pending real multi-target A/B measurement — this
-  repository has no timing-valid LL/SC harness (CI's aarch64 row is
-  cross/QEMU on GitHub runners — tests only, wall-clock-invalid). (3) FIXED
-  — the contention harness (`benches/tagged_index_stack_bench.rs`) now
-  times every worker against ONE shared `[timed_start, deadline)` window
-  computed before the barrier is released, with an uncounted 300 ms
-  warm-up phase, instead of each worker's own post-barrier-resume clock
-  against the coordinator's separate start. Impact on the already-published
-  `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` numbers (which used the old
-  harness across rounds 6-9) expected footnote-level: per-thread fairness
-  ratios were window-duration-normalized by construction, and
-  barrier-resume skew is µs-scale against the 1 s window. No re-run or
-  re-publication of that report is part of this change.
+  Revisit when one exists.
+- **`push`'s initial head load uses `Ordering::Relaxed`** (push never follows
+  a link through the observed word, so no ordering burden applies — the
+  proof is in `push_index`'s source comment and `StackStorage`'s
+  "Ordering contract" docs; expected benefit on weakly-ordered targets,
+  unmeasured). `ArrayLinks`' link `Acquire`/`Release` and both CAS loops'
+  strong `compare_exchange` stay as deliberate defence-in-depth pending a
+  real multi-target measurement, and the contention harness times every
+  worker against one shared `[timed_start, deadline)` window with an
+  uncounted warm-up.
 
 ### MSRV
 
