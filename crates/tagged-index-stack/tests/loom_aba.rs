@@ -833,9 +833,18 @@ fn push_push_conservation() {
 /// elsewhere in this file for scenarios with a third concurrent actor (e.g.
 /// `aba_repush_keeps_free_list_conservation`); here there is no third actor,
 /// so the outcome space collapses to exactly one shape.
+///
+/// Also asserts the `POP_RETRY_COUNT` activation oracle advances across this
+/// model's explored schedules (mirroring `push_push_conservation`'s use of
+/// `PUSH_RETRY_COUNT`): a green run with zero retries would only prove two
+/// independent pops can succeed when they never collide, not that the
+/// loser's retry — reading the now-single-element head's link and
+/// succeeding uncontested — actually recovers correctly, which is the
+/// property the derivation above traces and this test exists to cover.
 #[test]
 fn pop_pop_conservation() {
     let _g = MODEL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let retries_before = tagged_index_stack::pop_retry_count_for_test();
     let builder = loom::model::Builder::new();
     builder.check(|| {
         let (stack, links) = both_free();
@@ -877,4 +886,13 @@ fn pop_pop_conservation() {
              were actually handed out despite both poppers reporting Some"
         );
     });
+
+    let retried = tagged_index_stack::pop_retry_count_for_test() - retries_before;
+    assert!(
+        retried > 0,
+        "activation oracle: `pop`'s CAS-retry branch was never reached in \
+         any explored schedule — this test is vacuously green, since its \
+         free-list conservation assertion cannot catch a stale-retry \
+         corruption if no retry ever executes"
+    );
 }
