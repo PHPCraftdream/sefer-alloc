@@ -113,11 +113,14 @@ measures ~`2 × 10^7` successful pushes/sec in that uncontended regime (a
 pop+push pair per iteration, so one successful push per pair — a push-only
 rate would run faster still, but the pair rate is already an order of
 magnitude under the working ceiling the next paragraph adopts, so the
-argument does not need the tighter push-only number). Measured at 51.56
-ns/pair on an 11th Gen Intel Core i7-11800H, rustc 1.97.0 (2026-08-31);
-re-run `cargo bench -p tagged-index-stack --bench tagged_index_stack_bench`
-for a fresh sample — the bound below only needs the order of magnitude, not
-the exact figure.
+argument does not need the tighter push-only number). Committed receipt:
+the single-threaded `churn` rows in
+`docs/perf/_raw_tis_backoff_cap_sweep_run1.log` (11th Gen Intel Core
+i7-11800H, rustc 1.97.0, 2026-08-31) — e.g. 53.89 ns/pair in that log's
+first arm, its 20 such samples spanning 51.41-64.72 ns/pair; re-run
+`cargo bench -p tagged-index-stack --bench tagged_index_stack_bench` for a
+fresh sample — the bound below only needs the order of magnitude, not the
+exact figure.
 
 Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling: the
 enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
@@ -180,11 +183,25 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loo
 
 ## Notes
 
-This crate has several `#[doc(hidden)]` `pub` items — some under default features, more under `--cfg loom` (see below). In every case the attribute only hides the item from rustdoc's rendered navigation — the item remains publicly callable, carries no semver stability guarantee, and should not be depended on.
+This crate has several `#[doc(hidden)]` `pub` items — some under default
+features, more under `--cfg loom` (see below). In every case the attribute
+only hides the item from rustdoc's rendered navigation — the item remains
+publicly callable, carries no semver stability guarantee, and should not be
+depended on.
 
-Under default features: `TaggedIndexStack::raw_head` is a test-only probe, used only by this crate's own `tests/`. `TaggedIndex::empty()` is not test-only — it is used internally by this crate's bootstrap path (`TaggedIndexStack::new`) and by known in-workspace consumers for the same purpose (a const-capable bootstrap-empty head word), so it is not freely removable, but do not depend on it either.
+Under default features: `TaggedIndexStack::raw_head` is a test-only probe,
+used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
+test-only — it is used internally by this crate's bootstrap path
+(`TaggedIndexStack::new`) and by known in-workspace consumers for the same
+purpose (a const-capable bootstrap-empty head word), so it is not freely
+removable, but do not depend on it either.
 
-Under `--cfg loom` (not present in a normal build or on docs.rs): `TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from its CAS and drive ABA counterfactuals; `pop_retry_count_for_test`/`push_retry_count_for_test` read the loom-only retry-activation counters the same suite asserts against.
+Under `--cfg loom` (not present in a normal build or on docs.rs):
+`TaggedIndexStack::cas_head_for_test` is a raw CAS on the head word that the
+shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from
+its CAS and drive ABA counterfactuals;
+`pop_retry_count_for_test`/`push_retry_count_for_test` read the loom-only
+retry-activation counters the same suite asserts against.
 
 ## Example
 
