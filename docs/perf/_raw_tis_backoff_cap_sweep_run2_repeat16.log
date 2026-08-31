@@ -1,0 +1,132 @@
+=== tagged-index-stack BACKOFF_SPIN_CAP repeat-run (16 threads only) ===
+rustc: rustc 1.97.0 (2d8144b78 2026-07-07)
+base_sha: 47c81e9087d6bf353d537e15e362c5b65925c90e
+
+--- building cap=6 ---
+   Compiling tagged-index-stack v0.1.0 (D:\dev\rust\sefer-alloc\.claude\worktrees\agent-a9ddeb0f43f076aaa\crates\tagged-index-stack)
+    Finished `release` profile [optimized] target(s) in 6.63s
+binary: D:/dev/rust/.cargo-target/release/deps/tagged_index_stack_bench-7cf914753a47a2af.exe
+
+=== cap=6 threads=16 rep=1 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1030.840 ms       54.47 ns/op
+  pop/empty_fast_path                              233827422 iters    1239.272 ms        5.30 ns/op
+  churn                                             18835603 iters    1054.319 ms       55.97 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 3.325s   SUM(ns/op) = 115.7
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 25271226 ops/sec total (16 threads, 1 sec target, 1.036 sec measured)
+  Per-thread breakdown: [3208704, 2907136, 1067008, 1366528, 1907712, 3283968, 1725440, 1994752, 1310720, 960000, 1049600, 978432, 951808, 2081280, 472064, 904704]
+
+contention/churn: 24211225 ops/sec total (16 threads, 1 sec target, 1.017 sec measured, prefill=64)
+  Per-thread breakdown: [384512, 1594368, 1400832, 1171968, 980992, 2672640, 2841088, 700416, 1274880, 1513984, 1660928, 2087424, 1302528, 3010048, 1536512, 481280]
+
+=== All contention benchmarks complete ===
+
+=== cap=6 threads=16 rep=2 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1051.294 ms       55.55 ns/op
+  pop/empty_fast_path                              233827422 iters    1218.928 ms        5.21 ns/op
+  churn                                             18835603 iters    1042.442 ms       55.34 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 3.313s   SUM(ns/op) = 116.1
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 26160655 ops/sec total (16 threads, 1 sec target, 1.034 sec measured)
+  Per-thread breakdown: [1461248, 2294272, 1926144, 1310208, 1522688, 1163264, 1500160, 1932288, 3202560, 2489344, 1319936, 1858560, 1193984, 1612288, 1311744, 939008]
+
+contention/churn: 23970451 ops/sec total (16 threads, 1 sec target, 1.037 sec measured, prefill=64)
+  Per-thread breakdown: [906752, 1202176, 1571328, 755712, 1917952, 1279488, 2658304, 3368448, 1553920, 1187840, 1543680, 1319936, 1471488, 1220608, 711168, 2191360]
+
+=== All contention benchmarks complete ===
+--- building cap=8 ---
+   Compiling tagged-index-stack v0.1.0 (D:\dev\rust\sefer-alloc\.claude\worktrees\agent-a9ddeb0f43f076aaa\crates\tagged-index-stack)
+    Finished `release` profile [optimized] target(s) in 7.61s
+binary: D:/dev/rust/.cargo-target/release/deps/tagged_index_stack_bench-7cf914753a47a2af.exe
+
+=== cap=8 threads=16 rep=1 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1096.850 ms       57.96 ns/op
+  pop/empty_fast_path                              233827422 iters    1463.791 ms        6.26 ns/op
+  churn                                             18835603 iters    2036.689 ms      108.13 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 4.598s   SUM(ns/op) = 172.3
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 19199465 ops/sec total (16 threads, 1 sec target, 1.100 sec measured)
+  Per-thread breakdown: [854528, 1871360, 555008, 247808, 1172480, 1712128, 1523200, 1068032, 1450496, 1702400, 1658368, 1045504, 1351168, 1299968, 2125824, 1475072]
+
+contention/churn: 14657136 ops/sec total (16 threads, 1 sec target, 1.440 sec measured, prefill=64)
+  Per-thread breakdown: [1598464, 1651200, 2291712, 142848, 158208, 1055744, 649216, 1997824, 2244608, 2484224, 1463296, 256000, 343552, 1878016, 879104, 2012160]
+
+=== All contention benchmarks complete ===
+
+=== cap=8 threads=16 rep=2 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1817.645 ms       96.04 ns/op
+  pop/empty_fast_path                              233827422 iters    1602.220 ms        6.85 ns/op
+  churn                                             18835603 iters    1034.203 ms       54.91 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 4.454s   SUM(ns/op) = 157.8
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 32676865 ops/sec total (16 threads, 1 sec target, 1.008 sec measured)
+  Per-thread breakdown: [1894400, 2167296, 1611264, 3074048, 525312, 211968, 657408, 1858560, 1905664, 1686528, 3779584, 3336704, 3006976, 681472, 4093440, 2447872]
+
+contention/churn: 30634872 ops/sec total (16 threads, 1 sec target, 1.035 sec measured, prefill=64)
+  Per-thread breakdown: [1941504, 2057216, 1371648, 2342912, 1853440, 2494976, 2653696, 672768, 2576384, 2213888, 1789952, 2159616, 1254400, 1070080, 1712128, 3533312]
+
+=== All contention benchmarks complete ===
+--- building cap=10 ---
+   Compiling tagged-index-stack v0.1.0 (D:\dev\rust\sefer-alloc\.claude\worktrees\agent-a9ddeb0f43f076aaa\crates\tagged-index-stack)
+    Finished `release` profile [optimized] target(s) in 8.18s
+binary: D:/dev/rust/.cargo-target/release/deps/tagged_index_stack_bench-7cf914753a47a2af.exe
+
+=== cap=10 threads=16 rep=1 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1010.179 ms       53.38 ns/op
+  pop/empty_fast_path                              233827422 iters    1044.079 ms        4.47 ns/op
+  churn                                             18835603 iters     990.127 ms       52.57 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 3.045s   SUM(ns/op) = 110.4
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 34927192 ops/sec total (16 threads, 1 sec target, 1.004 sec measured)
+  Per-thread breakdown: [9811456, 1028608, 466432, 300544, 996352, 1075200, 1234944, 1016320, 209920, 912896, 1736704, 1856512, 5883904, 5027840, 1937920, 1553920]
+
+contention/churn: 34589143 ops/sec total (16 threads, 1 sec target, 1.042 sec measured, prefill=64)
+  Per-thread breakdown: [998912, 1032192, 1268736, 884736, 679936, 5561344, 4841984, 460288, 1030656, 1375232, 2665984, 259072, 3009024, 4556800, 6400000, 1016320]
+
+=== All contention benchmarks complete ===
+
+=== cap=10 threads=16 rep=2 ===
+== run `tagged_index_stack_bench` (fixed iterations, scale=1.000) ==
+  push_pop/single_thread                            18925790 iters    1019.702 ms       53.88 ns/op
+  pop/empty_fast_path                              233827422 iters    1055.746 ms        4.52 ns/op
+  churn                                             18835603 iters     989.987 ms       52.56 ns/op
+  ------------------------------------------------------------------------------------------
+  `tagged_index_stack_bench` wall 3.066s   SUM(ns/op) = 111.0
+
+=== Multi-threaded contention benchmarks ===
+
+Using 16 threads (based on available_parallelism, capped at 8)
+contention/push_pop: 35087901 ops/sec total (16 threads, 1 sec target, 1.037 sec measured)
+  Per-thread breakdown: [5771264, 1786880, 465920, 1153536, 9118720, 1073152, 1484800, 687104, 878592, 797696, 372736, 821760, 1231872, 8866304, 1032704, 848384]
+
+contention/churn: 33942472 ops/sec total (16 threads, 1 sec target, 1.032 sec measured, prefill=64)
+  Per-thread breakdown: [891904, 1701376, 3611648, 762368, 622592, 587776, 1780224, 2683904, 1387008, 4069376, 2504704, 7577088, 1266176, 1346048, 3072000, 1166336]
+
+=== All contention benchmarks complete ===
+
+=== repeat-run complete, source files restored, git diff clean ===
