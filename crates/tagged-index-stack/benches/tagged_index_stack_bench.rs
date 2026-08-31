@@ -125,7 +125,7 @@ fn main() {
     // itself a significant fraction of what's being measured (two short
     // atomic pop/push ops); checking once per this many iterations instead
     // keeps the clock-read overhead negligible relative to the work being
-    // timed (Sol-codex review run 2, P3-1).
+    // timed.
     const DEADLINE_CHECK_INTERVAL: u32 = 256;
 
     // Shared stack and links.
@@ -159,11 +159,10 @@ fn main() {
     // by exactly one push, and every subsequent operation on it is
     // pop-then-immediate-repush of that same value, so no index is ever
     // pushed while still reachable elsewhere.
-    // P3-1 (Sol-codex review run 2): the timed window now starts at a
-    // shared barrier release -- all spawn and setup cost excluded -- and
-    // each worker checks the clock only once per DEADLINE_CHECK_INTERVAL
-    // iterations instead of every iteration (mechanism documented on the
-    // const above).
+    // The timed window starts at a shared barrier release -- all spawn and
+    // setup cost excluded -- and each worker checks the clock only once per
+    // DEADLINE_CHECK_INTERVAL iterations instead of every iteration
+    // (mechanism documented on the const above).
     let barrier = std::sync::Barrier::new(num_threads + 1);
     let (elapsed, ops_per_thread) = std::thread::scope(|s| {
         let shared_links = &shared_links;
@@ -255,15 +254,15 @@ fn main() {
         shared_stack.push(&shared_links, i);
     }
 
-    // Sol-codex review run 2, P3-2: with `prefill_count` unique indices
-    // prefilled and at most `num_threads` threads each holding at most one
-    // popped-and-not-yet-repushed index at a time, the stack can never
-    // observe fewer than `prefill_count - num_threads` elements -- at least
-    // 56 with today's constants. A `None` here is therefore not a
-    // legitimate steady-state outcome to route around with a fallback
-    // workload (the old per-thread `fresh_idx`/`fresh_idx_outstanding`
-    // machinery, now removed) -- it is an invariant violation, so it now
-    // hard-panics via `.expect(...)` instead.
+    // With `prefill_count` unique indices prefilled and at most
+    // `num_threads` threads each holding at most one popped-and-not-yet-
+    // repushed index at a time, the stack can never observe fewer than
+    // `prefill_count - num_threads` elements -- at least 56 with today's
+    // constants. A `None` here is therefore not a legitimate steady-state
+    // outcome to route around with a fallback workload (the old per-thread
+    // `fresh_idx`/`fresh_idx_outstanding` machinery, now removed) -- it is
+    // an invariant violation, so it now hard-panics via `.expect(...)`
+    // instead.
     assert!(
         num_threads <= prefill_count as usize,
         "contention/churn's invariant (stack never empties) requires num_threads <= prefill_count"

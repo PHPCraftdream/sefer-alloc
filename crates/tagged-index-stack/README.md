@@ -173,7 +173,7 @@ let links = ArrayLinks::<1024>::new();
 let stack = TaggedIndexStack::<16>::new();   // 16-bit index, 48-bit ABA tag
 
 stack.push(&links, 7);                        // recycle index 7
-let idx = stack.pop(&links);                  // -> Some(7)
+assert_eq!(stack.pop(&links), Some(7));       // recycled index comes back out
 ```
 
 ## MSRV

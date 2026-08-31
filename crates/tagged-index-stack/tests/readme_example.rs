@@ -22,13 +22,8 @@ fn readme_example_compiles_and_runs() {
     let stack = TaggedIndexStack::<16>::new(); // 16-bit index, 48-bit ABA tag
 
     stack.push(&links, 7); // recycle index 7
-    let idx = stack.pop(&links); // -> Some(7)
+    assert_eq!(stack.pop(&links), Some(7)); // recycled index comes back out
 
-    assert_eq!(
-        idx,
-        Some(7),
-        "pop after the README's push returns exactly the pushed index"
-    );
     assert_eq!(
         stack.pop(&links),
         None,

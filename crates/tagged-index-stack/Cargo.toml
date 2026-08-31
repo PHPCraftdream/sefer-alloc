@@ -13,8 +13,9 @@ keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
 
 [lints]
-# `loom` / `kani` cfg declarations are shared at the workspace root
-# (`[workspace.lints.rust]`); `kani` is root-only and harmlessly unused here.
+# The `unexpected_cfgs` allowlist (several cfgs, including `loom`) is shared
+# at the workspace root (`[workspace.lints.rust]`); most entries there are
+# root-crate-only and harmlessly unused here.
 workspace = true
 
 [dependencies]
@@ -23,11 +24,11 @@ workspace = true
 # an implicit `loom` feature; because Cargo's resolver is cfg-agnostic when
 # producing `Cargo.lock`, a NON-optional `cfg(loom)` target dependency would
 # still be resolved, locked, vendored and audited into every consumer's
-# lockfile even though its cfg never holds in their build (measured in the
-# round-3 review: 31 locked packages downstream of a crate whose only
-# dependency is this one; 2 once optional). Marking it optional means a normal
-# build (no `--features loom`) has ZERO loom-related entries in `Cargo.lock`
-# — not merely zero compiled code.
+# lockfile even though its cfg never holds in their build (a crate whose only
+# dependency is this one goes from 31 locked packages down to 2 once `loom` is
+# optional). Marking it optional means a normal build (no `--features loom`)
+# has ZERO loom-related entries in `Cargo.lock` — not merely zero compiled
+# code.
 #
 # Running the loom suite therefore requires BOTH:
 #   1. `--cfg loom` in RUSTFLAGS, so the `#[cfg(loom)]` source lines compile —

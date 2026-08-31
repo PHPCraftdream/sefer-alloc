@@ -269,24 +269,68 @@ fn width_16_push_rejects_index_mask_itself() {
     );
 }
 
+/// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
+/// narrower bound — independent of `INDEX_BITS`). Same `#[should_panic]`
+/// pattern as `width_16_push_rejects_index_mask_itself` above, but hits the
+/// links-layer panic path instead of the stack's own guard.
+#[test]
+#[should_panic]
+fn array_links_load_next_panics_on_index_out_of_range() {
+    let links = ArrayLinks::<4>::new();
+    links.load_next(4); // valid range is 0..=3
+}
+
+/// The debug-build-only rule-4 `debug_assert!` inside `pop` fires when a
+/// [`Links`] backing returns a `next` value that is neither `TAIL` nor a
+/// valid index — a caller-contract violation `pop` cannot otherwise detect
+/// (see the crate docs' "Storage requirement" section on `Links`). A tiny
+/// custom backing whose `load_next` always answers `INDEX_MASK` (a value
+/// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
+///
+/// `cargo test`'s default profile is `dev`, which has `debug-assertions =
+/// true` (no `[profile.dev]`/`[profile.test]` override in this workspace's
+/// `Cargo.toml` disables it), so this plain `#[should_panic]` test exercises
+/// the real debug_assert without needing `#[cfg(debug_assertions)]`. The
+/// crate's own docs already note release builds pay nothing here — this
+/// test only claims to cover the debug build it actually runs under.
+struct AlwaysInvalidLinks;
+
+impl Links for AlwaysInvalidLinks {
+    fn load_next(&self, _index: u32) -> u32 {
+        // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
+        // exactly the shape pop's rule-4 debug_assert! exists to catch.
+        TaggedIndex::<16>::INDEX_MASK as u32
+    }
+
+    fn store_next(&self, _index: u32, _next: u32) {}
+}
+
+#[test]
+#[should_panic]
+fn pop_debug_assert_fires_on_invalid_next_from_backing() {
+    let links = AlwaysInvalidLinks;
+    let stack = TaggedIndexStack::<16>::new();
+    stack.push(&links, 0); // real push, so the head is non-empty
+    let _ = stack.pop(&links); // load_next() always answers INDEX_MASK -> debug_assert! fires
+}
+
 // Compile-fail coverage note: this crate has no trybuild (or similar
 // compile-fail) test infrastructure wired up, so `INDEX_BITS > 16` failing to
 // compile is NOT pinned by an automated test. Manually verified instead:
 // instantiating `TaggedIndex::<17>` (or any `TaggedIndexStack<N>` with
 // `N > 16`) fails `cargo build` with the `_CHECK_BITS` assertion message
 // ("INDEX_BITS must be in 1..=16 ..."). This is a known coverage gap, not a
-// silent omission -- and a deliberate choice, not an oversight (Sol-codex
-// review run 2, P3-5, evaluated adding `trybuild` for exactly this):
-// `compile_fail` doctests are unavailable in this repo (banned outright, see
-// CLAUDE.md's "No doctests" rule), and `trybuild` itself is a new dev-only
-// dependency this workspace has already declined twice for the identical
+// silent omission -- and a deliberate choice, not an oversight: adding
+// `trybuild` for exactly this was evaluated and declined. `compile_fail`
+// doctests are unavailable in this repo (banned outright, see CLAUDE.md's
+// "No doctests" rule), and `trybuild` itself is a new dev-only dependency
+// this workspace has already declined twice for the identical
 // single-assertion tradeoff -- `crates/sefer-region/tests/handle_static_asserts.rs`
 // and `crates/aligned-vmem/tests/smoke.rs` both cite the same "would need a
 // `compile_fail` doctest or a `trybuild` dependency" reasoning and leave
 // their own const-assertion coverage manual too. Revisit if `_CHECK_BITS`'s
-// const-evaluation routing is ever refactored, per the review's own
-// suggestion -- a real risk of silent breakage would tip the cost/benefit
-// differently than it does today.
+// const-evaluation routing is ever refactored -- a real risk of silent
+// breakage would tip the cost/benefit differently than it does today.
 
 // ---------------------------------------------------------------------------
 // TaggedIndexStack over ArrayLinks — LIFO order + H-2 single-threaded.
