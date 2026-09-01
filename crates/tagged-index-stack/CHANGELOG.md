@@ -267,6 +267,52 @@ before it.
   worker against one shared `[timed_start, deadline)` window with an
   uncounted warm-up.
 
+### Fixed
+
+- **`pop_index`'s release-active rule-4 guard now also catches the
+  self-loop shape (`next == index`) — the first RUNTIME code change to
+  the crate since its documentation-hardening rounds began** (round-13
+  @oh review, findings P2-1/P2-2). A contract-abiding chain can never
+  link an index to itself — `push_index` stores the PREVIOUS head into
+  `next[index]`, and that head is trivially already reachable — so a
+  self-loop proves a foreign writer answered for the popped index: in
+  practice the zero-initialised backing of a second implementor value
+  shared with (or stolen via `head()` from) another stack, whose `0`
+  answers coincide with the popped index on the SECOND pop through it.
+  That is exactly the double-issue repro shape the round-11 and round-12
+  pinning tests in `tests/custom_storage_impl.rs` documented as silently
+  returning a never-pushed `0` forever; both tests are now
+  `#[should_panic]` — they pin the GUARD FIRING (silent corruption made
+  loud), a strict improvement, and the same cold panic helper
+  (`pop_link_out_of_range`) now dispatches THREE cases (self-loop;
+  masked-to-empty-sentinel; masked-to-live-index). The added arm is a
+  single `|| next == index` on the already-cold, release-active path; a
+  real-contention audit over the actual `StackOps` code path (8 threads ×
+  200,000 pop-then-repush iterations through an auditing `StackStorage`
+  wrapper, mirroring `tests/threaded_conservation.rs`'s shape) observed
+  1,670,492 `load_next` calls and ZERO self-loops — no false-positive
+  risk under contract-abiding contention — and the loom suite stayed
+  11/11 green. HONEST LIMITS, stated in the guard's own comment,
+  `pop_index`'s `# Panics`, and pinned by two new tests: (a) a
+  hand-crafted ACYCLIC link forgery (`links[1] = 0`, `links[0] = TAIL`)
+  still double-issues silently
+  (`hand_crafted_acyclic_forgery_still_double_issues`) — the guard is a
+  DETECTOR for one shape, not a structural fix for the shared-storage
+  hazard class; (b) SHARED LINK STORAGE between two independent stacks —
+  two SEPARATE heads over one link array — double-issues with no
+  detection at all (`two_stacks_sharing_link_storage_still_double_issue`:
+  `b`'s push of an index chains it into both stacks; the shared chain
+  stays acyclic). For (b) the fix is documentation: `push_index`'s
+  `# Caller contract` now states the liveness obligation over LINK CELLS
+  ("reachable from ANY stack that reads and writes the same link cells",
+  not merely "the stack"), and the `StackStorage` trait's rule 3 gained
+  a value-level clause — link cells must not be shared between
+  implementor values whose stacks are meant to be independent — parallel
+  to rule 1's instance-level one-value-per-head clause. Rule 1's
+  abbreviated shape description and the trait doc's "what does NOT carry
+  over" hazard-class inventory were updated to match the new behavior
+  (three surviving hazard shapes, one of them now partially detected).
+
 ### MSRV
 
 - Rust 1.88.
