@@ -3,7 +3,7 @@
 //! assertion (E0080) naming the `1..=16` range requirement — the 16 cap is
 //! what guarantees every legal configuration at least the documented
 //! minimum 48-bit ABA tag. Pinned failing by
-//! `tests/compile_fail_index_bits_bounds.rs`.
+//! `tests/compile_fail.rs`.
 use tagged_index_stack::TaggedIndex;
 
 fn main() {

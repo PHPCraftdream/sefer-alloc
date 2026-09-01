@@ -11,7 +11,7 @@
 //! `readme_example_compiles_and_derives_its_generics` does the identical
 //! thing for a sibling crate. This crate's own test suite is organized
 //! one-file-per-concern (`stack_unit.rs`, `proptest_pack_unpack.rs`,
-//! `regression_counter_wrap.rs`, `custom_storage_impl.rs`, `loom_aba.rs`,
+//! `custom_storage_impl.rs`, `loom_aba.rs`,
 //! `threaded_conservation.rs`), so the README mirror gets its own dedicated
 //! file rather than folding into an existing one.
 

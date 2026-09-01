@@ -2,7 +2,7 @@
 //! NOT compile. This file MUST FAIL TO COMPILE with the `_CHECK_BITS`
 //! assertion (E0080) naming the `1..=16` range requirement — the guard that
 //! carries the documented minimum-48-bit-tag argument. Pinned failing by
-//! `tests/compile_fail_index_bits_bounds.rs`.
+//! `tests/compile_fail.rs`.
 use tagged_index_stack::TaggedIndex;
 
 fn main() {

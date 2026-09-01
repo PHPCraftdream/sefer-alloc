@@ -1,4 +1,4 @@
-# P1-1 compile-fail fixture — compiled ONLY by tests/compile_fail_array_index_stack_head.rs
+# P1-1 compile-fail fixture — compiled ONLY by tests/compile_fail.rs
 # (never by the workspace: the detached [workspace] table below opts it out, and
 # cargo does not auto-discover nested test dirs). Deliberately dependency-free
 # apart from the path dep, so `cargo build --offline` needs no network.

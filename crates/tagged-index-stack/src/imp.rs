@@ -36,12 +36,10 @@ pub const TAIL: u32 = u32::MAX;
 /// Kth lost CAS within one call, counting from 0, spins `1 << K` times via
 /// [`core::hint::spin_loop`] before retrying — the 1st lost CAS (K = 0) spins
 /// once, the 2nd (K = 1) spins twice, and so on up to the cap (the 7th and
-/// every later lost CAS spin 64 times). The cap is ENFORCED by the explicit
-/// increment guard each retry arm runs below its spin loop (`if spins
-/// < BACKOFF_SPIN_CAP`), which saturates `K` — it can never exceed the cap —
-/// so the `spins.min(BACKOFF_SPIN_CAP)` in the shift expression is
-/// belt-and-braces, not the enforcement mechanism. `K` is a per-call local,
-/// reset on every fresh
+/// every later lost CAS spin 64 times). The cap is ENFORCED by
+/// [`Backoff`]`::spin`, which refuses to increment `K` past it, saturating
+/// `K` — it can never exceed the cap. `K` is a per-call local owned by a
+/// [`Backoff`], reset on every fresh
 /// `push_index`/`pop_index` — this backs off within one call's retry loop,
 /// never across calls. Not unconditional: `pop_index` skips the backoff when
 /// the lost CAS reveals the stack just went empty (documented at
@@ -65,11 +63,62 @@ pub const TAIL: u32 = u32::MAX;
 /// renders this copy; the crate-root section is the rendered surface).
 const BACKOFF_SPIN_CAP: u32 = 6;
 
-/// `1u32 << spins.min(BACKOFF_SPIN_CAP)` masks/panics if `BACKOFF_SPIN_CAP`
-/// ever reaches 32 — the same technique [`TaggedIndex::_CHECK_BITS`] uses to
+/// `1u32 << K` masks/panics if `BACKOFF_SPIN_CAP` ever reaches 32 — the same technique [`TaggedIndex::_CHECK_BITS`] uses to
 /// turn a would-be shift-overflow into a compile error instead of a debug
 /// panic / silently masked shift in release.
 const _: () = assert!(BACKOFF_SPIN_CAP < 32);
+
+/// Per-call exponential-backoff state for the CAS-retry arms: wraps the retry
+/// counter (`K`, starting at 0) that drives the spin-loop depth below.
+/// Starts fresh every call, never persisted.
+struct Backoff(u32);
+
+impl Backoff {
+    fn new() -> Self {
+        Backoff(0)
+    }
+
+    /// `#[inline]`: called from generic fns monomorphized in downstream
+    /// crates — a non-`#[inline]` non-generic private fn would not be
+    /// cross-crate-inlinable, a codegen regression in a hot path.
+    #[inline]
+    fn at_cap(&self) -> bool {
+        self.0 >= BACKOFF_SPIN_CAP
+    }
+
+    /// Exponential backoff before retrying (BACKOFF_SPIN_CAP): spins
+    /// `1 << K` times, letting the winning thread's Release CAS drain off
+    /// the head cache line instead of every loser re-hammering it
+    /// immediately. `K` grows only within one call.
+    ///
+    /// Returns whether THIS retry spun at FULL depth (the PRE-increment
+    /// `K` was already at the cap) — the oracle trigger for
+    /// `PUSH_BACKOFF_CAP_REACH_COUNT` / `POP_BACKOFF_CAP_REACH_COUNT`.
+    /// The check deliberately happens BEFORE the increment, so the oracle
+    /// does not fire one retry early.
+    ///
+    /// `#[inline]`: see [`Self::at_cap`] — same monomorphization/codegen
+    /// reasoning.
+    ///
+    /// Capped, not unconditional: every increment past BACKOFF_SPIN_CAP is
+    /// already dead (`K` is only ever consumed through the shift here), so
+    /// letting `K` keep climbing forever would just be an eventual
+    /// `attempt to add with overflow` panic under overflow-checks after
+    /// ~2^32 consecutive lost CASes in one call — remote, but free to
+    /// close. That saturation also guarantees `self.0 <= BACKOFF_SPIN_CAP`
+    /// at the shift, so no `.min` guard is needed on the shift expression.
+    #[inline]
+    fn spin(&mut self) -> bool {
+        let at_cap = self.at_cap();
+        for _ in 0..(1u32 << self.0) {
+            core::hint::spin_loop();
+        }
+        if !at_cap {
+            self.0 += 1;
+        }
+        at_cap
+    }
+}
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
 ///
@@ -554,7 +603,7 @@ const HOOK: Hook = Hook(());
 /// finding P2-1). The closure is pinned by the compile-fail fixture
 /// `tests/compile_fail/hook_token_unconstructible/` (both the
 /// omitted-witness and forge-the-witness spellings fail; asserted by
-/// `tests/compile_fail_hook_token_unconstructible.rs`). Callers drive a
+/// `tests/compile_fail.rs`). Callers drive a
 /// stack ONLY through
 /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 /// (or [`ArrayIndexStack`]'s inherent `push`/`pop`); the three hooks
@@ -588,7 +637,7 @@ const HOOK: Hook = Hook(());
 ///    ARGUMENT to
 ///    [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 ///    on a later call (the per-call-`&L` repro does not compile — pinned by
-///    `tests/compile_fail_two_backings.rs`). What NOTHING enforces — not
+///    `tests/compile_fail.rs`). What NOTHING enforces — not
 ///    the type system, not the [`StackOps`] blanket impl, not rule 4's
 ///    release-active guard, and not even the `unsafe impl` acknowledgment
 ///    (which forces every implementor to ASSERT the contract but detects no
@@ -771,7 +820,7 @@ const HOOK: Hook = Hook(());
 /// each supplying a different backing for the same head — does not compile
 /// against this API. That is the API REMOVAL, not a safety invariant: the
 /// per-call calling convention itself is gone
-/// (`tests/compile_fail_two_backings.rs` pins exactly that), and the trap's
+/// (`tests/compile_fail.rs` pins exactly that), and the trap's
 /// hazard content — one head, two backings — survives as shape 2 below.
 /// What does NOT carry over is the REST of the shared-storage hazard class:
 /// FOUR surviving shapes, none of them the only gap the others leave. Since
@@ -1245,9 +1294,7 @@ pub(crate) fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S,
     // initial load below MUST stay `Acquire` — pop DOES follow a link from
     // the observed word. The loom suite passes with exactly this ordering.
     let mut head = head_ref.load(Ordering::Relaxed);
-    // Per-call retry counter driving the backoff below (see
-    // BACKOFF_SPIN_CAP) — starts fresh every call, never persisted.
-    let mut spins: u32 = 0;
+    let mut backoff = Backoff::new();
     loop {
         // Unpack the current head ONCE: the index half chains this push to
         // the top of the stack (below), the tag half feeds the ABA bump.
@@ -1309,33 +1356,13 @@ pub(crate) fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S,
                 #[cfg(any(feature = "test-internals", loom))]
                 PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 head = actual;
-                // Exponential backoff before retrying (BACKOFF_SPIN_CAP):
-                // lets the winning thread's Release CAS drain off the
-                // head cache line instead of every loser re-hammering it
-                // immediately. `spins` grows only within this call.
-                for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
-                    core::hint::spin_loop();
-                }
-                // Backoff-depth oracle: counts a retry that spun at FULL
-                // depth — non-zero proves the backoff reaches its higher
-                // range under real contention, so a regression that makes
-                // it silently inert fails loudly. Same gate as the retry
-                // counters above (see `PUSH_BACKOFF_CAP_REACH_COUNT`).
                 #[cfg(any(feature = "test-internals", loom))]
-                if spins >= BACKOFF_SPIN_CAP {
+                if backoff.spin() {
                     PUSH_BACKOFF_CAP_REACH_COUNT
                         .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 }
-                // Capped, not unconditional: every increment past
-                // BACKOFF_SPIN_CAP is already dead (only ever consumed
-                // through `.min(BACKOFF_SPIN_CAP)` above), so let it keep
-                // climbing forever would just be an eventual
-                // `attempt to add with overflow` panic under
-                // overflow-checks after ~2^32 consecutive lost CASes in
-                // one call — remote, but free to close.
-                if spins < BACKOFF_SPIN_CAP {
-                    spins += 1;
-                }
+                #[cfg(not(any(feature = "test-internals", loom)))]
+                backoff.spin();
             }
         }
     }
@@ -1353,8 +1380,7 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
     // "Mechanical requirement on head()".
     let head_ref: &StackHead<B> = s.head();
     let mut head = head_ref.load(Ordering::Acquire);
-    // Per-call retry counter — see push's identical comment.
-    let mut spins: u32 = 0;
+    let mut backoff = Backoff::new();
     loop {
         if TaggedIndex::<B>::is_empty(head) {
             return None;
@@ -1405,28 +1431,19 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
                 #[cfg(any(feature = "test-internals", loom))]
                 POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 head = actual;
-                // Exponential backoff before retrying — see push's
-                // identical comment and BACKOFF_SPIN_CAP. Skipped when
-                // the lost CAS reveals the stack just went empty: the
-                // top-of-loop `is_empty` check returns `None` next
-                // iteration regardless, so spinning here is pure wasted
-                // latency; which outcome a call eventually returns is
-                // unchanged, only how fast it gets there.
+                // Skipped when the lost CAS reveals the stack just went
+                // empty: the top-of-loop `is_empty` check returns `None`
+                // next iteration regardless, so spinning here is pure
+                // wasted latency; which outcome a call eventually returns
+                // is unchanged, only how fast it gets there.
                 if !TaggedIndex::<B>::is_empty(actual) {
-                    for _ in 0..(1u32 << spins.min(BACKOFF_SPIN_CAP)) {
-                        core::hint::spin_loop();
-                    }
-                    // Backoff-depth oracle — see push's identical
-                    // comment (`POP_BACKOFF_CAP_REACH_COUNT`).
                     #[cfg(any(feature = "test-internals", loom))]
-                    if spins >= BACKOFF_SPIN_CAP {
+                    if backoff.spin() {
                         POP_BACKOFF_CAP_REACH_COUNT
                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
-                    // Capped — see push's identical comment.
-                    if spins < BACKOFF_SPIN_CAP {
-                        spins += 1;
-                    }
+                    #[cfg(not(any(feature = "test-internals", loom)))]
+                    backoff.spin();
                 }
             }
         }

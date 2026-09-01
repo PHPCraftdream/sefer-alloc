@@ -14,7 +14,7 @@
 //! This reproduces, as a compile-fail oracle, the audit run-5 attack (its
 //! attempt A4, `p.store_next(1, 3)`, spliced a cycle and double-issued) that
 //! this closure makes UNEXPRESSIBLE. Pinned failing by
-//! `tests/compile_fail_hook_token_unconstructible.rs`.
+//! `tests/compile_fail.rs`.
 //!
 //! Note: the witness is `&Hook` (a reference), NOT an owned token — this is
 //! load-bearing. An owned non-Copy token could be stashed by a cooperating

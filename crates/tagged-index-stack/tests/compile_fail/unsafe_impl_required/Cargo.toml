@@ -1,5 +1,5 @@
 # P1-1 Group B compile-fail fixture — compiled ONLY by
-# tests/compile_fail_unsafe_impl_required.rs (never by the workspace: the
+# tests/compile_fail.rs (never by the workspace: the
 # detached [workspace] table below opts it out, and cargo does not
 # auto-discover nested test dirs). Deliberately dependency-free apart from
 # the path dep, so `cargo build --offline` needs no network.

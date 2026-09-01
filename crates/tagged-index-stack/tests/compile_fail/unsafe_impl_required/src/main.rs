@@ -12,7 +12,7 @@
 //! counterpart — a correct `unsafe impl` compiles and behaves correctly —
 //! is pinned by `vec_backed_storage_push_pop_round_trips` +
 //! `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. Pinned
-//! failing by `tests/compile_fail_unsafe_impl_required.rs`.
+//! failing by `tests/compile_fail.rs`.
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use tagged_index_stack::{Hook, StackHead, StackOps, StackStorage};

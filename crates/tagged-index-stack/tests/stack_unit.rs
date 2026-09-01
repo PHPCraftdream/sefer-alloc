@@ -3,6 +3,8 @@
 //! and the checked pack's acceptance/rejection boundaries — the 48-bit tag's
 //! `2^48` wrap now happens inside push via the crate-private truncating fast
 //! path and is pinned here at the boundary by rejection) and the
+//! wrap-boundary empty-sentinel sweep folded in from the retired
+//! `tests/regression_counter_wrap.rs`, plus the
 //! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the H-2
 //! empty transition observed single-threaded: drain to empty then refill,
 //! and confirm the tag keeps climbing).
@@ -217,7 +219,8 @@ fn width_12_partitions() {
 /// The `_CHECK_BITS` cap is now `1..=16`, so the coincidence is structurally
 /// impossible at EVERY legal width (`INDEX_MASK <= 0xFFFF`) — pinned here at
 /// the MAXIMUM legal width. The guard's panic path and its exact message
-/// remain pinned by `width_16_push_rejects_index_mask_itself` below, which
+/// remain pinned by `width_16_push_rejects_index_mask_itself` in
+/// `tests/push_guard_track_caller.rs`, which
 /// rejects the equally out-of-range `INDEX_MASK` itself.
 #[test]
 fn max_legal_width_index_mask_never_equals_tail() {
@@ -231,141 +234,103 @@ fn max_legal_width_index_mask_never_equals_tail() {
     );
 }
 
-// --- Panic-hook mutation machinery ----------------------------------------
-//
-// The panic Location of `push` is observable ONLY through a panic hook (the
-// caught payload carries the message, never the location), so this file must
-// mutate the process-global hook. Three disciplines make that safe under
-// libtest's default parallel test execution:
-//
-// 1. SERIALIZATION: `HOOK_SERIALIZE` ensures hook mutation is exclusive — two
-//    hook-swapping tests running concurrently could take each other's
-//    wrappers and interleave restore order. One test mutates the hook today;
-//    the mutex makes the discipline structural for the next one.
-// 2. GENUINE RESTORE: the ORIGINAL previous hook is retained in a shared slot
-//    and reinstalled by `RestorePanicHook`'s `Drop` — `take_hook()` alone
-//    would install the DEFAULT hook and permanently lose whatever hook was
-//    installed before this test (the bug this machinery guards against:
-//    permanently losing the previous hook).
-// 3. RAII: the guard restores the hook unconditionally, including when the
-//    test body panics unexpectedly or an assertion fails mid-test.
-//
-// The temporary wrapper still CHAINS to the original (read through the slot
-// per call), so any OTHER test panicking concurrently during the guarded
-// window gets exactly the handling it would have gotten without this test.
-type PanicHook = dyn for<'a, 'b> Fn(&'a std::panic::PanicHookInfo<'b>) + Send + Sync;
+/// 48-bit tag WRAP-boundary coverage for [`TaggedIndex`] (folded in from the
+/// retired `tests/regression_counter_wrap.rs`): pins the
+/// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag wrap at `2^48`.
+/// [`pack_unpack_round_trip_16`] and
+/// [`checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48`]
+/// above already pin the width facts and the checked pack's boundary
+/// behaviour (the older `split_is_16_48` and
+/// `tag_wraps_at_2_pow_48_and_index_survives` were removed as exact
+/// duplicates). What the two tests below provide is the coverage those do
+/// NOT: a parametrized sweep over multiple (index, tag) pairs confirming the
+/// empty sentinel is never confused with a live one, including the
+/// pool-cap-relevance argument, and a check that the empty sentinel stays
+/// unambiguous at multiple tags spanning the wrap boundary specifically.
+/// Non-vacuous: on a narrower tag (e.g. a 32-bit revert) the `2^48 - 1`
+/// maximum is unrepresentable, so these values cannot even be expressed
+/// pre-widening.
+#[test]
+fn empty_sentinel_never_collides_with_a_live_index() {
+    type T = TaggedIndex<16>;
+    let empty = T::empty();
+    assert!(T::is_empty(empty), "the empty sentinel reads as empty");
+    let (sentinel_idx, sentinel_tag) = T::unpack(empty);
+    assert_eq!(
+        sentinel_idx,
+        T::INDEX_MASK,
+        "empty sentinel index is INDEX_MASK"
+    );
+    assert_eq!(sentinel_tag, 0, "bootstrap empty sentinel tag is 0");
 
-static HOOK_SERIALIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // A representative pool cap: 4096. The sentinel (0xFFFF = 65535) is far
+    // above it, so it can never be a real slot index.
+    const CAP: u64 = 4096;
+    const _: () = assert!(
+        T::INDEX_MASK >= CAP,
+        "the empty sentinel index must be >= the pool cap so it is a non-index"
+    );
 
-struct RestorePanicHook {
-    previous: std::sync::Arc<std::sync::Mutex<Option<Box<PanicHook>>>>,
-}
-
-impl std::ops::Drop for RestorePanicHook {
-    fn drop(&mut self) {
-        if let Some(original) = self
-            .previous
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
-            std::panic::set_hook(original);
+    for &idx in &[0u64, 1, CAP - 1] {
+        for &tag in &[0u64, 1, (1u64 << T::TAG_BITS) - 1] {
+            let word = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
+            assert!(
+                !T::is_empty(word),
+                "valid index {idx} (tag {tag}) is not empty"
+            );
+            let (v, t) = T::unpack(word);
+            assert_eq!(v, idx, "index {idx} round-trips (tag {tag})");
+            assert_eq!(t, tag, "tag {tag} round-trips (index {idx})");
         }
     }
 }
 
-/// push's `index < INDEX_MASK` guard at a NON-degenerate width, where the two
-/// things the guard exists to reject are DIFFERENT values: at
-/// `INDEX_BITS = 16`, `INDEX_MASK` is `0xFFFF` (the reserved empty sentinel)
-/// while `TAIL` is `u32::MAX`. (At the old legal maximum `INDEX_BITS = 32`
-/// the two coincided and the guard's purposes collapsed into one; the
-/// `1..=16` cap has made that coincidence impossible — see
-/// `max_legal_width_index_mask_never_equals_tail` above — so this pins the
-/// guard's ordinary, out-of-range purpose in its own right.)
+/// The empty word carrying a NON-zero running tag (the H-2 shape) is still
+/// unambiguously empty, across the wrap boundary.
 #[test]
-fn width_16_push_rejects_index_mask_itself() {
+fn empty_word_with_running_tag_reads_empty_across_wrap() {
     type T = TaggedIndex<16>;
-    assert_ne!(
-        T::INDEX_MASK,
-        TAIL as u64,
-        "at width 16 INDEX_MASK (0xFFFF) and TAIL (u32::MAX) must differ — \
-         this test covers the guard's ordinary out-of-range case (no legal \
-         width has an INDEX_MASK/TAIL coincidence any more)"
-    );
+    for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1] {
+        let w =
+            T::pack(T::empty_index(), tag).expect("empty_index and every swept tag is in range");
+        assert!(
+            T::is_empty(w),
+            "empty_index packed with running tag {tag} must read empty (H-2)"
+        );
+    }
 
-    let stack = ArrayIndexStack::<16, 4>::new();
-    // 0xFFFF == INDEX_MASK at this width: an in-range-looking u32 that the
-    // guard must reject because it is the reserved empty sentinel. The full
-    // panic assertion (not a bare is_err()) means the message must name the
-    // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
-    // `ArrayLinks`) cannot satisfy this test.
-    //
-    // Also pins #[track_caller]'s effect: without it on both `push` and its
-    // `#[cold]` helper,
-    // this panic's Location would name lib.rs instead of this call site, and
-    // that regression would leave every OTHER assertion here green. The panic
-    // hook is process-global, so the mutation below is (a) SERIALIZED via
-    // `HOOK_SERIALIZE`, (b) genuinely RESTORED — an RAII guard reinstalls the
-    // ORIGINAL previous hook even if an assertion fails mid-test, rather than
-    // `take_hook()` alone, which would install the default hook and lose the
-    // previous one permanently — and (c) CHAINING: the temporary wrapper calls
-    // through to the original, so concurrent panics in other tests are
-    // unaffected; only a panic on THIS thread is inspected for its location.
-    let this_thread = std::thread::current().id();
-    let captured_file: std::sync::Arc<std::sync::Mutex<Option<String>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(None));
-    let captured_file_for_hook = std::sync::Arc::clone(&captured_file);
-    // Reverse declaration order: `_restore_hook` drops BEFORE `_serialize`, so
-    // the hook is restored before the serialized window closes.
-    let result = {
-        let _serialize = HOOK_SERIALIZE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let original_slot =
-            std::sync::Arc::new(std::sync::Mutex::new(Some(std::panic::take_hook())));
-        let _restore_hook = RestorePanicHook {
-            previous: std::sync::Arc::clone(&original_slot),
-        };
-        std::panic::set_hook(Box::new(move |info| {
-            if std::thread::current().id() == this_thread {
-                if let Some(loc) = info.location() {
-                    *captured_file_for_hook.lock().unwrap() = Some(loc.file().to_string());
-                }
-            }
-            if let Some(original) = original_slot
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .as_deref()
-            {
-                original(info);
-            }
-        }));
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            stack.push(T::INDEX_MASK as u32);
-        }))
-    };
-
-    let err = result.expect_err("pushing index == INDEX_MASK must panic");
-    let message = err
-        .downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| err.downcast_ref::<String>().cloned())
-        .expect("panic payload should be a string message");
-    assert!(
-        message.contains("index must be < INDEX_MASK"),
-        "panic message did not name the push guard's own contract (got: {message:?})"
+    // The wrap boundary itself, through the value the stack actually
+    // computes there: `push` bumps the observed tag via `wrapping_add(1)`,
+    // which at the all-ones tag is exactly `2^TAG_BITS`. The CHECKED pack
+    // now REJECTS that value instead of silently dropping
+    // its high bit; the wrap happens inside push, which packs through the
+    // crate-private truncating fast path (machine behaviour unchanged).
+    // Deriving the post-bump tag through the real bump sequence and
+    // confirming the checked pack refuses it is what remains testable at
+    // this boundary — a literal repeated `0` in the sweep above cannot
+    // show it, because a repeated `0` never crosses the boundary.
+    let max_tag = (1u64 << T::TAG_BITS) - 1;
+    let bumped_tag = max_tag.wrapping_add(1);
+    assert_eq!(
+        bumped_tag,
+        1u64 << T::TAG_BITS,
+        "wrapping_add(1) past the all-ones tag yields 2^TAG_BITS — the \
+         value `push` hands to its truncating pack after bumping the \
+         observed tag"
     );
     assert_eq!(
-        captured_file.lock().unwrap().as_deref(),
-        Some(file!()),
-        "push's #[track_caller] should report THIS file as the panic \
-         location, not lib.rs -- #[track_caller] regressed"
+        T::pack(T::empty_index(), bumped_tag),
+        None,
+        "the post-bump 2^TAG_BITS tag is out of range: the checked pack \
+         refuses it instead of silently wrapping (push's private \
+         truncating path performs the actual wrap)"
     );
 }
 
 /// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
 /// narrower bound — independent of `INDEX_BITS`). Unlike
-/// `width_16_push_rejects_index_mask_itself` above (which uses
+/// `width_16_push_rejects_index_mask_itself` in
+/// `tests/push_guard_track_caller.rs` (which uses
 /// `catch_unwind` plus an explicit message assertion), this is a plain
 /// `#[should_panic(expected = ...)]`: the expected substring is Rust's own
 /// slice-indexing panic text (`self.next[index as usize]` in
@@ -464,16 +429,16 @@ fn double_push_of_current_head_panics_on_first_pop() {
 
 // Compile-fail coverage: out-of-range `INDEX_BITS` IS
 // pinned by automated compile-fail regressions now --
-// `tests/compile_fail_index_bits_bounds.rs` builds the
+// `tests/compile_fail.rs` builds the
 // `tests/compile_fail/index_bits_zero/` (width 0) and
 // `tests/compile_fail/index_bits_seventeen/` (width 17) fixture crates
 // out-of-process and asserts each fails with `_CHECK_BITS`'s E0080 naming the
 // `1..=16` range requirement, and
-// `tests/compile_fail_loom_cfg_without_feature.rs` likewise pins the
+// `tests/compile_fail.rs` likewise pins the
 // cfg-without-feature fast-fail (build fails with ONLY the
 // named `compile_error!`, no secondary name-resolution error). The mechanism
 // is this crate's established hand-rolled alternative to `trybuild`
-// (`tests/compile_fail_two_backings.rs` -- see its doc comment for the full
+// (`tests/compile_fail.rs` -- see its doc comment for the full
 // rationale; this workspace's standing convention is to decline a `trybuild`
 // dependency in favor of hand-rolled compile-fail tests, each decision
 // documented in-source where it was made -- find the notes with

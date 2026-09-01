@@ -1,5 +1,5 @@
 # INDEX_BITS=17 compile-fail fixture — compiled ONLY by
-# tests/compile_fail_index_bits_bounds.rs (never by the workspace: the detached
+# tests/compile_fail.rs (never by the workspace: the detached
 # [workspace] table below opts it out, and cargo does not auto-discover nested
 # test dirs). Deliberately dependency-free apart from the path dep, so
 # `cargo build --offline` needs no network.

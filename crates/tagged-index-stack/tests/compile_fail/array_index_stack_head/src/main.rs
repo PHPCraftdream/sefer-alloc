@@ -7,7 +7,7 @@
 //! nor reachable via any generic over `StackStorage` (no impl to satisfy). What
 //! used to be a compiling, double-issuing runtime demonstration is now
 //! UNEXPRESSIBLE in safe code; the compile errors below ARE the structural fix.
-//! Pinned failing by `tests/compile_fail_array_index_stack_head.rs`.
+//! Pinned failing by `tests/compile_fail.rs`.
 use tagged_index_stack::{ArrayIndexStack, StackHead, StackStorage};
 
 fn steal_head<S: StackStorage<16>>(s: &S) -> &StackHead<16> {

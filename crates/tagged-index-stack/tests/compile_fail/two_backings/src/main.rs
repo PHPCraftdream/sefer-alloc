@@ -11,7 +11,7 @@
 //! doc's hazard inventory; pinned by
 //! `two_implementor_values_sharing_one_head_still_double_issue` in
 //! `tests/custom_storage_impl.rs`). Pinned failing by
-//! `tests/compile_fail_two_backings.rs`.
+//! `tests/compile_fail.rs`.
 use tagged_index_stack::{ArrayLinks, StackHead};
 
 fn main() {

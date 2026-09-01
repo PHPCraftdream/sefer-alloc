@@ -57,7 +57,7 @@
 //! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index),
 //! never the three hooks directly). That the `unsafe impl` keyword itself
 //! is compiler-forced (a plain `impl` is E0200) is pinned by
-//! `tests/compile_fail_unsafe_impl_required.rs`. UNSAFE-IMPL-WITH-VIOLATION
+//! `tests/compile_fail.rs`. UNSAFE-IMPL-WITH-VIOLATION
 //! side, each hazard moved into the unsafe contract rather than eliminated:
 //! `two_implementor_values_sharing_one_head_still_double_issue` (clause 1;
 //! guard fires), `hand_crafted_acyclic_forgery_still_double_issues`

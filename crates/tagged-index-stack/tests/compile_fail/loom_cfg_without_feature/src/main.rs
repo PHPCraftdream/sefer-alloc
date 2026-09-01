@@ -5,5 +5,5 @@
 //! configuration. This file deliberately references NO crate items: the
 //! fixture declares the dependency (so the crate compiles), and the crate's
 //! `compile_error!` is the only diagnostic expected. Pinned failing by
-//! `tests/compile_fail_loom_cfg_without_feature.rs`.
+//! `tests/compile_fail.rs`.
 fn main() {}
