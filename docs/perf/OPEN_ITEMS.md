@@ -2252,71 +2252,32 @@ for completeness.
     now unmonitored — the nightly gate that found it was red for 13 nights
     and has been switched off.** (Filed 2026-08-18, task #1090.)
 
-    - **Status:** OPEN. The gate's automatic triggers were commented out in
-      `.github/workflows/perf-gate.yml` by owner decision — no automatic perf
-      runs on GitHub. `workflow_dispatch` remains the only trigger (a human
-      must press "Run workflow"); it is kept because Actions rejects an `on:`
-      block with no trigger at all. **The regression itself was NOT
-      investigated and is NOT fixed** — only the alarm was silenced.
-    - **Current-number-or-verdict:** run `32098094538` (2026-08-18) reported
-      21 of 85 benches over the `Ir=10` limit, worst `large_alloc_free_cycle`
-      +29.00%, with most churn arms clustered at +10…+13.8%. **Read these as
-      a 13-day CUMULATIVE delta against a stale baseline, not a per-night
-      regression** — see the self-lock below. Corroborating the frozen-base
-      model: the count sat at exactly "60 without regressions; 25 regressed"
-      on 08-08, 08-14, 08-16 and 08-17, moving only on 08-18.
-    - **The self-lock (why it could never recover):** `IAI_CALLGRIND_REGRESSION`
-      is set at workflow `env:` level, so it applies to the nightly
-      `--save-baseline=main` run too — contradicting that step's own comment
-      ("A main-branch / scheduled / dispatched run instead (re)RECORDS the
-      baseline"). When the bench step exits non-zero, the next step
-      `Save the main iai baseline` is SKIPPED (it has no `if: always()`;
-      verified in run `32098094538`'s step list, where the sibling
-      `Upload Callgrind artifacts` — which does have it — succeeded). So a
-      failing run never records a new baseline, and the baseline is frozen at
-      `42d8d223` (last green: run `30980354559`, 2026-08-05).
-    - **Retracted hypothesis (do not re-derive):** an rustc bump was proposed
-      as the cause, on the observation that mimalloc's C-compiled rows held or
-      improved (`mimalloc_bootstrap_proxy` −3.55% `Ir`) while every Rust row
-      rose. **Falsified by direct check** — `rustc 1.97.1 (8bab26f4f
-      2026-07-14)` in BOTH the last green (`30980354559`) and the red
-      (`32098094538`). The toolchain never moved; the regression is code, and
-      the mimalloc observation now reads the opposite way (our code changed,
-      the build environment did not).
-    - **Local gate cannot substitute:** `npm run check`'s iai step asserts
-      only that Ir was produced (`[iai] PASS — 85 bench(es) produced Ir`); the
-      `Ir=10` threshold lives solely in the workflow `env:`. A 29% regression
-      passes the local gate green. With the workflow off, **nothing anywhere
-      now enforces an instruction-count threshold.**
-    - **Next trigger:** any decision to attribute or fix the regression (task
-      #1091 owns this); any move to re-enable a trigger (which must fix the
-      self-lock first, or it reproduces the same red streak). Note the trap:
-      fixing the self-lock by adding `if: always()` OVERWRITES the frozen
-      baseline and destroys the only remaining reference point.
-    - **CORRECTION — this is NOT GitHub-dependent and NOT deadline-bound.**
-      An earlier draft of this card (and task #1090's notes) claimed
-      attribution needs either the 30-day Callgrind artifacts or "a bisect on
-      Linux+Valgrind, and this host is Windows". **That is false.**
-      `scripts/iai.mjs` — the `npm run iai` judge already wired into
-      `npm run check` — drives the whole `perf_gate_iai` bench through **WSL +
-      Valgrind/Callgrind**, with its own Linux target dir (`/tmp/sefer-iai`)
-      and the runner version pinned to `Cargo.toml`'s `^0.14`. Verified on
-      this host: `valgrind-3.22.0`, cargo present in WSL, 16 cores. So both
-      endpoints AND every bisect midpoint are measurable locally, offline,
-      deterministically (Callgrind `Ir` is contention-independent), with no
-      GitHub involvement at all — which also matches the owner's directive to
-      stop loading GitHub with perf runs. The archived artifacts
-      (`perf-gate-callgrind-30980354559`, expiring ~2026-09-04) are now only a
-      convenience shortcut, not the critical path.
-    - **Suspect range:** `42d8d223..42d42061`, 153 commits (the R34
-      release-readiness remediation waves, which landed densely). Unread
-      first-glance candidate by subject only, NOT a code-level conclusion:
-      `3d57a26 fix(perf): close F1 — HeapCore stack-pressure budget didn't
-      cover production medium-classes` — a stack-pressure budget sits on every
-      alloc/dealloc path, which fits the near-uniform spread across churn arms.
-    - **Evidence:** `.github/workflows/perf-gate.yml`'s own DISABLED header
-      block; GitHub runs `30980354559` (green), `32098094538` (red);
-      13 consecutive scheduled failures 2026-08-06 … 2026-08-18.
+    - **Status:** CLOSED (RESOLVED 2026-09-01, task #1091). Fully attributed
+      by dual bisect + counterfactual + 2N decomposition against committed
+      raw logs: `5df56d3` (repr(C) PerClass, one-time +759 Ir/`HeapCore`,
+      zero per-op) + `5289c66` (OWN_CACHE_SIZE, whose +3/`contains_base`-call
+      residual is the gate's own `bench-internals`-gated Tier-1 counters —
+      a measurement artifact, compiled out of plain production). Verdict:
+      outcome (b) accepted-cost + (c) measurement-artifact; NO production
+      regression to fix. Full report + asserted summary CSV:
+      `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md` /
+      `R56_ITEM56_IR_REGRESSION_ATTRIBUTION_summary.csv`
+      (`scripts/item56_report_summary.mjs`).
+    - **Next trigger:** none for the regression itself. The separately-tracked
+      gate decisions remain open elsewhere: any re-enable of a nightly
+      trigger must first fix the workflow self-lock recorded in the archived
+      card below; the owner decision on keeping `bench-internals` out of the
+      judge's feature set is recommendation (ii) of the report.
+    - **Evidence:** the committed `_raw_item56_*` log set (endpoints, 8+7
+      bisect steps, 2 counterfactuals), the endpoint CSV, and the report
+      above; historical narrative archived at
+      `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure
+      trail".
+
+    Full history (the complete 2026-08-18 card, including the self-lock
+    analysis and the retracted rustc-bump hypothesis, is archived at
+    `docs/perf/OPEN_ITEMS_ARCHIVE.md` § "Recently resolved — full closure
+    trail", item 56).
 
 57. **[A] `aligned-vmem` third-audit perf candidates (P1/P3) — owners assigned,
     nothing measured yet; P2 has no separate owner (absorbed into #1180).**
@@ -2927,6 +2888,7 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F10 [P3] — R32-3 is the round's only `perf(runtime)` shipping change with no gate report, no CSV, no raw log (verdict-resting numbers existed only in the commit message).** Closed by R33-12 (task #517, commit `96ae245`) — backfilled `docs/perf/R32_3_REALLOC_REDUNDANT_CONTAINS_BASE_GATE.md` + `_summary.csv` + two `_raw_*.log` files + checked derive script; reproduces the original commit message's numbers exactly (−120 Ir `realloc_grow`, four kill-gates byte-exact at 0 delta). NOTE: the CSV's `doc_commit` column was initially the PARENT of the landing commit (R33-8's `git rev-parse HEAD` fallback, see item 41); corrected to `96ae245` in R34-2.
 - **F11 [P2] — Round 32 has no `### Round 32` heading in CHANGELOG.md; a bolded "Runtime improvements this round: 0" sits directly above eight runtime improvements.** Closed (PARTIALLY) by R33-7 (task #512, commit `182b222`) — split Round 32's runtime improvements into their own `#### Runtime improvements` subsection with an accurate "Runtime improvements this round: 7" line. RESIDUAL (Round-33 review G6 [P3]): Round 31's section still carries the same collision shape ("Runtime improvements this round: 0" two lines above a heading listing R31-10's promoted runtime improvement), and Rounds 31/32 are out of section order (`grep -n "^### Round"` gives 33, 31, 32, 30…). The residual is filed in `docs/CORRECTNESS_OPEN_ITEMS.md` (reporting-honesty/process scope).
 - **Item 32 — the "wrong allocator layer" defect class: a gate report must name the exact entry point under test and why that layer is decision-relevant (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).** CLOSED — codified as a standing CLAUDE.md rule (see "Active rules"), not a pending remeasurement; moved here by task #1143 (2026-08-19) per R34-24 — the card's own Status already read "CLOSED this round" with "Next trigger: none" but had been left sitting in the `[D]` tier (a tier defined as "implement only if trigger/victim materializes", which does not describe a rule-codification with no further action) with no "Recently resolved" pointer, the exact stale-tier-placement defect the R34-24 rule targets. Third instance of one meta-pattern: R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this rule) — R30-3 (task #452) satisfied every rule that existed at the time, including R30-8's own path-activation oracle, and still shipped a wrong NO-GO verdict because it measured `AllocCore::alloc_zeroed` (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s `#[global_allocator]` actually uses, retaining virginity across a magazine refill via `PerClass::virgin_mask`). Caught and reopened in R31-0 (task #471, commit `dece4a7`; see this file's item 25). See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
+- **Item 56 — the unexplained ~10-13% Ir regression (range `42d8d223..42d42061`).** CLOSED (RESOLVED 2026-09-01, task #1091) — attributed by dual bisect to `5df56d3` (repr(C) PerClass, one-time +759 Ir/`HeapCore`, zero per-op cost, 15.49 Ir/PerClass) + `5289c66` (OWN_CACHE_SIZE 16, whose +3/`contains_base`-call residual is the gate's own `bench-internals`-gated Tier-1 hit/miss counters — a measurement artifact compiled out of plain production); counterfactuals A/A' confirm nothing else in the 153-commit range contributed beyond jitter; verdict (b) accepted-cost + (c) measurement-artifact, no production fix. See `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md` (+ its asserted summary CSV and derive script).
 
 ### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
 

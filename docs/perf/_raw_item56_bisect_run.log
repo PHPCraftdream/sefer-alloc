@@ -1,0 +1,127 @@
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=4140 green=3308 pct=25.15 | small_churn_16b ir=9045 green=8051 pct=12.35 -> BAD
+Bisecting: 37 revisions left to test after this (roughly 5 steps)
+[e3d01b25030465de7aa25387cbed0fa5d9ab0034] docs: update CHANGELOG.md for Round 32 (tasks #486-505); commit session checkpoints
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=4140 green=3308 pct=25.15 | small_churn_16b ir=9045 green=8051 pct=12.35 -> BAD
+Bisecting: 18 revisions left to test after this (roughly 4 steps)
+[2dfeaa30944fb73dedd2365bb90c41ff4c198c5d] docs(perf): F1b dual-bitmap merge -- implemented, measured, honest REJECT (task #497)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=4080 green=3308 pct=23.34 | small_churn_16b ir=8810 green=8051 pct=9.43 -> BAD
+Bisecting: 9 revisions left to test after this (roughly 3 steps)
+[e6bbc6acbc3f01b649d70b02bd41b4f664dc822e] fix(alloc): trim_current_thread passive no-bind resolver + cost gate (R32-1, task #492)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=3312 green=3308 pct=0.12 | small_churn_16b ir=8055 green=8051 pct=0.05 -> GOOD
+Bisecting: 4 revisions left to test after this (roughly 2 steps)
+[5d72bc633193938181e2d06f8c584617ebaecf42] perf(runtime): realloc move leg + try_promote_to_large skip redundant base recompute (R32-3, task #494)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=3312 green=3308 pct=0.12 | small_churn_16b ir=8055 green=8051 pct=0.05 -> GOOD
+Bisecting: 2 revisions left to test after this (roughly 1 step)
+[62e217fa1ca599d5903fb519c16ab9f0af55a7e0] docs(perf): fill R32-4's landing-commit SHA placeholder (task #495 follow-up)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=3312 green=3308 pct=0.12 | small_churn_16b ir=8055 green=8051 pct=0.05 -> GOOD
+Bisecting: 0 revisions left to test after this (roughly 1 step)
+[03a6c55fe4489ed6e84501375edcd3238dddf867] docs(perf): fill R32-5's landing-commit SHA placeholder (task #496 follow-up)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=4080 green=3308 pct=23.34 | small_churn_16b ir=8810 green=8051 pct=9.43 -> BAD
+Bisecting: 0 revisions left to test after this (roughly 0 steps)
+[5df56d376735933b3fb6c0097f5984771afab276] fix(perf): PerClass gains #[repr(C)]; restores documented one-cache-line magazine layout (R32-5, task #496)
+running 'node' 'D:/dev/rust/item56_predicate_scratch.mjs'
+PROBE large_alloc_free_cycle ir=4080 green=3308 pct=23.34 | small_churn_16b ir=8810 green=8051 pct=9.43 -> BAD
+5df56d376735933b3fb6c0097f5984771afab276 is the first bad commit
+commit 5df56d376735933b3fb6c0097f5984771afab276
+Author: Marat K <phpcraftdream@gmail.com>
+Date:   Sun Aug 2 11:55:20 2026 +0200
+
+    fix(perf): PerClass gains #[repr(C)]; restores documented one-cache-line magazine layout (R32-5, task #496)
+    
+    PerClass (src/registry/tcache.rs -- the per-size-class magazine: count +
+    slots, and virgin_mask under virgin-zero-skip) had no #[repr(C)], so it
+    used Rust's unspecified default layout. Its own doc comment (PERF-PASS-5,
+    task #53) claims count sits "directly adjacent to (in front of)" slots so
+    a magazine push/pop touches one 64-byte cache line instead of two.
+    
+    Independently re-verified via a scratch rustc -O + std::mem::offset_of!
+    probe (not trusting the F4 survey finding blindly): rustc's default
+    field-reordering heuristic put the 8-aligned slots array FIRST and count
+    LAST -- offset_of(count) == 128, offset_of(slots) == 0 (136, with
+    virgin-zero-skip: count at 130, virgin_mask at 128). For the documented
+    common case (shallow magazine, count 1-3), count and slots[0] were always
+    in different 64-byte lines. The claimed optimization was not in effect.
+    
+    Fix: added #[repr(C)] and reordered the DECLARED fields to count,
+    virgin_mask (cfg-gated), slots -- under repr(C)'s declaration-order
+    guarantee this puts the small fields first and pads slots to its own
+    8-byte alignment right after them. Pinned with three compile-time
+    const _: () = assert!(core::mem::offset_of!(...) == N, ...) checks
+    (mirroring the file's existing TCACHE_CAP <= 16 assert) so a future field
+    reorder or an accidental repr(C) removal fails the build instead of
+    silently regressing the documented locality claim again.
+    
+    Post-fix: offset_of(count) == 0, offset_of(virgin_mask) == 2 (when
+    present), offset_of(slots) == 8, in both feature configurations. Struct
+    size unchanged at 136 bytes either way. count now shares a 64-byte line
+    with slots[0..6] for 7 of every 8 classes, versus 0 of 8 before.
+    
+    Measurement (WSL/callgrind, isolated git worktree at this task's base
+    commit 62e217fa1ca599d5903fb519c16ab9f0af55a7e0 for BEFORE, no bench-file
+    changes needed -- the pre-existing alloc_magazine_prefill_only_16b /
+    _hit_only_16b and alloc_zeroed_magazine_prefill_only_16b / _hit_only_16b
+    pairs already isolate exactly the magazine hit/push path):
+    
+      isolated 16-hit magazine-pop delta (plain alloc, production):        0 Ir
+      isolated 16-hit magazine-pop delta (alloc_zeroed, virgin-zero-skip):  0 Ir
+    
+    Exactly matches the F4 survey entry's own prediction ("expect 0 Ir delta
+    -- same instructions, different addresses"). Every SeferAlloc-side
+    absolute Ir number (small_churn_16b, churn_256b, aligned_churn_640b_a128)
+    also moved by a uniform +755/+804 Ir (production/virgin-zero-skip) --
+    investigated and attributed to the one-time HeapCore::new() zero-init
+    codegen shift (PerClass::new() x 49 classes), not a per-op cost: three
+    structurally different churn benches move by the EXACT SAME constant
+    within each feature set (asserted by the derive script), and mimalloc's
+    own benches in the same log runs are byte-identical between BEFORE/AFTER.
+    
+    This lands on documentation-correctness grounds (restores an
+    already-decided task #53 invariant at zero size/Ir cost, now enforced by
+    compile-time assert instead of aspirational), not a measured speedup --
+    hence fix(perf), not perf(runtime)/perf(opt-in), per CLAUDE.md's
+    commit-prefix taxonomy.
+    
+    Correctness: cargo test --features production (full tree) and cargo test
+    --features "production,virgin-zero-skip" (full tree) both green. cargo
+    fmt --check clean. cargo clippy --lib --tests --benches -D warnings clean
+    under production, production+virgin-zero-skip, and --all-features.
+    virgin-zero-skip alone (no alloc-global) cannot build the integration
+    test tree (needs alloc-global for SeferAlloc/registry) -- confirmed
+    pre-existing, unrelated to this diff.
+    
+    Raw logs + checked-script-derived (self-asserting) summary CSV:
+    docs/perf/_raw_r496_repr_c_{before,after}_{production,virginzeroskip}.log,
+    docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv,
+    scripts/r496_perclass_repr_c_summary.mjs. Full writeup:
+    docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE.md. Closes F4 in
+    docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md; entry added to
+    docs/perf/OPEN_ITEMS.md's "Recently resolved" (opened and resolved
+    same-round).
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+ docs/perf/OPEN_ITEMS.md                            |   1 +
+ docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE.md | 295 +++++++++
+ ...496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv |  15 +
+ docs/perf/_raw_r496_repr_c_after_production.log    | 723 +++++++++++++++++++++
+ .../perf/_raw_r496_repr_c_after_virginzeroskip.log | 718 ++++++++++++++++++++
+ docs/perf/_raw_r496_repr_c_before_production.log   | 723 +++++++++++++++++++++
+ .../_raw_r496_repr_c_before_virginzeroskip.log     | 718 ++++++++++++++++++++
+ scripts/r496_perclass_repr_c_summary.mjs           | 281 ++++++++
+ src/registry/tcache.rs                             |  54 +-
+ 9 files changed, 3525 insertions(+), 3 deletions(-)
+ create mode 100644 docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE.md
+ create mode 100644 docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv
+ create mode 100644 docs/perf/_raw_r496_repr_c_after_production.log
+ create mode 100644 docs/perf/_raw_r496_repr_c_after_virginzeroskip.log
+ create mode 100644 docs/perf/_raw_r496_repr_c_before_production.log
+ create mode 100644 docs/perf/_raw_r496_repr_c_before_virginzeroskip.log
+ create mode 100644 scripts/r496_perclass_repr_c_summary.mjs
+bisect found first bad commit

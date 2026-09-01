@@ -1,0 +1,130 @@
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9035 good<=8900 bad>=8980 -> BAD (pct=12.22 vs green 8051)
+Bisecting: 33 revisions left to test after this (roughly 5 steps)
+[454149e8b9b83916f61000dcecdc8395757c8bb1] docs(perf): add R29-6 exemption note for R32-10 §5.2 isolate arm's unrecoverable scratch edit (R33-9, task #514)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9045 good<=8900 bad>=8980 -> BAD (pct=12.35 vs green 8051)
+Bisecting: 16 revisions left to test after this (roughly 4 steps)
+[f6c3a61e1e0ac06916327a1f41162f0bed908c93] bench(perf): Windows-native reserve/commit decomposition gate (F11, task #504)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9045 good<=8900 bad>=8980 -> BAD (pct=12.35 vs green 8051)
+Bisecting: 8 revisions left to test after this (roughly 3 steps)
+[ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4] docs(perf): fill R32-9's landing-commit SHA placeholder (task #500 follow-up)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=8810 good<=8900 bad>=8980 -> GOOD (pct=9.43 vs green 8051)
+Bisecting: 4 revisions left to test after this (roughly 2 steps)
+[c9a3570bfa4393c4a8383be25c3654e1421c7671] docs(perf): fill R32-10 addendum's landing-commit SHA placeholder (task #501 follow-up)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9037 good<=8900 bad>=8980 -> BAD (pct=12.25 vs green 8051)
+Bisecting: 1 revision left to test after this (roughly 1 step)
+[a3e3e18dda7da34a04f691ca0d62e0e4d968cb5f] docs(perf): fill R32-10's landing-commit SHA placeholder (task #501 follow-up)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9037 good<=8900 bad>=8980 -> BAD (pct=12.25 vs green 8051)
+Bisecting: 0 revisions left to test after this (roughly 0 steps)
+[5289c661877462f3caf6c4e136ad3c163f6fe15b] perf(runtime): OWN_CACHE_SIZE 4->16 + Tier-1 hit/miss counter (F2, task #501)
+running 'node' 'D:/dev/rust/item56_predicate2_scratch.mjs'
+PROBE2 small_churn_16b ir=9037 good<=8900 bad>=8980 -> BAD (pct=12.25 vs green 8051)
+5289c661877462f3caf6c4e136ad3c163f6fe15b is the first bad commit
+commit 5289c661877462f3caf6c4e136ad3c163f6fe15b
+Author: Marat K <phpcraftdream@gmail.com>
+Date:   Sun Aug 2 18:48:11 2026 +0200
+
+    perf(runtime): OWN_CACHE_SIZE 4->16 + Tier-1 hit/miss counter (F2, task #501)
+    
+    Built the missing path-activation oracle for SegmentTable::contains_base's
+    Tier-1 direct-mapped own_cache (CONTAINS_BASE_TIER1_HITS/_MISSES,
+    bench-internals-gated, src/alloc_core/alloc_core.rs +
+    src/alloc_core/segment_table.rs), then a Large-heavy workload
+    (examples/r32_10_own_cache_tier1_thrash_gate.rs) to drive it -- exactly the
+    instrument docs/perf/OPEN_ITEMS.md item 1's own text left open ("Tier-2-
+    hash-probe-heavy workloads might show contains_base > 8.8%, open, not a
+    proven floor") and R23-3 said could not be built "portably" (a benchmark
+    cannot predict which OS-assigned addresses collide; this counter observes
+    the resulting hit rate after the fact instead).
+    
+    Two false-start workload designs, both self-caught by the harness's own
+    path-activation oracles before any wrong number was published:
+    1. Free+realloc rotation at fixed K=64: measured exactly 50.00% hit rate,
+       bit-identical at OWN_CACHE_SIZE=4 and =16 -- a redundant SECOND
+       contains_base call inside AllocCore::dealloc's Large fallthrough
+       (pre-existing, F6-shaped, out of this task's scope) always turns into a
+       guaranteed hit, masking any real signal.
+    2. K-sweep with the same free+realloc shape: still exactly 50.00% at EVERY
+       K including K=4 -- every Large free unconditionally calls unregister,
+       which evicts the base's OWN cache slot at the end of the very call that
+       warmed it, so a repeatedly-freed base's cache entry can never survive to
+       its next visit regardless of cache size.
+    
+    Correct shape: repeated in-place realloc (same size, no free, no
+    unregister) rotating across K concurrently-LIVE Large objects, K swept over
+    {4,8,16,24,32,48,64}, through HeapCore::realloc (the real
+    #[global_allocator] entry point). Measured: 0.00% Tier-1 hit rate at
+    OWN_CACHE_SIZE=4 for EVERY tested K including K=4 (even the smallest
+    rotation fully thrashed the old cache); 99.99% at OWN_CACHE_SIZE=16 for
+    K in {4,8}; K>=16 still thrashes at cache=16 (direct-mapped, not
+    associative -- K==cache-size does not guarantee distinct buckets).
+    
+    Shipped OWN_CACHE_SIZE 4->16 plus a new compile-time power-of-two pin
+    (cache_index's masking arithmetic requires it; none existed before).
+    
+    Latency (ns/op) delta is an HONEST NULL -- both before/after arms sit in
+    the same ~24-29 ns/op noise band despite the dramatic hit-rate delta,
+    consistent with item 1's own ~4 Ir component pricing (Tier-1 hit ~8.2 Ir
+    vs Tier-2 miss ~12.0 Ir) being small against realloc's whole cost. No
+    latency win is claimed.
+    
+    perf(runtime): alloc-xthread (which makes contains_base the always-on
+    ownership check on every own-thread free/in-place-realloc) is in
+    production's default feature set.
+    
+    Standing +/-10 raw-Ir churn kill gate NOT run (no Linux/Valgrind on this
+    dev host, same constraint task #500 documented) -- argued, not measured,
+    to stay flat (the change is a per-heap struct-size constant plus
+    bench-internals-gated counter increments only, compiled out of a plain
+    production build).
+    
+    Updated docs/perf/OPEN_ITEMS.md: closed F2, answered item 1's own open
+    clause in place (struck through with an ANSWERED note), and corrected
+    item 34's text (which had wrongly predicted this task would reuse task
+    #500's macro_multiseg_steady_state harness -- that harness's churn step
+    frees only ONE Large object per round, structurally unable to exercise
+    OWN_CACHE_SIZE thrashing; a separate purpose-built K-sweep harness was
+    needed instead).
+    
+    Fixed a pre-existing doc-hygiene test (architecture_test_file_count_
+    matches_reality) that needed docs/ARCHITECTURE.md's tests/*.rs count
+    updated 232->233 for this task's one new test file.
+    
+    See docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md for the full sweep,
+    both false-start designs, raw logs, and the checked summary-CSV script
+    (scripts/r32_10_own_cache_tier1_summary.mjs, headline claims asserted
+    in-script per CLAUDE.md's derived-not-hand-typed rule).
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+ Cargo.toml                                         |  14 +
+ docs/ARCHITECTURE.md                               |   2 +-
+ docs/perf/OPEN_ITEMS.md                            |  25 +-
+ docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md    | 445 ++++++++++++
+ .../R32_10_OWN_CACHE_TIER1_THRASH_GATE_summary.csv |  15 +
+ docs/perf/_raw_r32_10_own_cache16_after.log        | 806 +++++++++++++++++++++
+ docs/perf/_raw_r32_10_own_cache32_exploratory.log  | 582 +++++++++++++++
+ docs/perf/_raw_r32_10_own_cache4_before.log        | 806 +++++++++++++++++++++
+ examples/r32_10_own_cache_tier1_thrash_gate.rs     | 477 ++++++++++++
+ scripts/r32_10_own_cache_tier1_summary.mjs         | 208 ++++++
+ src/alloc_core/alloc_core.rs                       |  36 +
+ src/alloc_core/alloc_core_core_diag.rs             |  41 ++
+ src/alloc_core/segment_table.rs                    |  60 +-
+ src/registry/heap_core_diag.rs                     |  36 +
+ .../segment_table_contains_base_tier1_counters.rs  | 154 ++++
+ 15 files changed, 3701 insertions(+), 6 deletions(-)
+ create mode 100644 docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md
+ create mode 100644 docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE_summary.csv
+ create mode 100644 docs/perf/_raw_r32_10_own_cache16_after.log
+ create mode 100644 docs/perf/_raw_r32_10_own_cache32_exploratory.log
+ create mode 100644 docs/perf/_raw_r32_10_own_cache4_before.log
+ create mode 100644 examples/r32_10_own_cache_tier1_thrash_gate.rs
+ create mode 100644 scripts/r32_10_own_cache_tier1_summary.mjs
+ create mode 100644 tests/segment_table_contains_base_tier1_counters.rs
+bisect found first bad commit

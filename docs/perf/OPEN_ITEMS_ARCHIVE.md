@@ -1883,3 +1883,135 @@ lived inline).*
     **Why the lint cannot catch this class (considered and rejected, not omitted):** flagging `a828ebc`'s mislabel mechanically would require (1) cfg-context analysis of each `src/` hunk — which `#[cfg(feature = ...)]` block encloses the change, not derivable from the `git show --name-only` output the lint parses; (2) a Cargo.toml feature-graph lookup at that revision, to learn `large-reserved-capacity` is not in `production`; and (3) the human judgement call between `perf(opt-in)` (observable change) and `fix(perf)` (invariant restore, no observable change) — the exact distinction R30-12 leaves to judgement. The cheap heuristic ("bare `fix:`/`feat:` on any commit touching `src/` → WARN") fires on every ordinary memory-safety/correctness fix in `src/`, which the taxonomy legitimately allows as plain `fix` — a wall of false positives that would train readers to ignore the lint. This card is the instrument instead: the round-start read of this index surfaces the precedent exactly when a future round writes its next perf-family subject line.
 
     **Closure note (OH3 wave, finding L5, 2026-08-18):** the entry above was filed as item 57 in the `[L]` tier with `Status: RECORDED` and `Next trigger: none mechanical` — i.e. closed in substance from the moment it was filed, since by its own text nothing further would ever happen to it. That is the exact structural defect CLAUDE.md's R34-24 rule names: a card that reads as active while being closed, re-presented as an open `[L]` item at every future round-start read. Remediation is the R34-24 move itself: Status updated to CLOSED, the full narrative relocated here, and the main index keeping only the one-line pointer in its "Recently resolved" section. The instrument sentence above still holds in its new home — the round-start read is end-to-end (this index's own header rule 1), so the pointer line still surfaces the precedent when a future round writes its next perf-family subject; the full reasoning is one hop away, here.
+
+- **Item 56 — an unexplained ~10-13% Ir regression, unattributed and unmonitored (nightly gate red 13 nights, then switched off) — `docs/perf/OPEN_ITEMS.md`'s own former item 56.** Filed 2026-08-18 (task #1090); resolved 2026-09-01 by task #1091 — attributed by dual bisect + counterfactual + 2N decomposition against committed raw logs. Verdict: outcome (b) accepted-cost for the bulk + (c) measurement-artifact for the per-op residual; NO production regression to fix. Full report: `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md`; asserted summary CSV `R56_ITEM56_IR_REGRESSION_ATTRIBUTION_summary.csv` via `scripts/item56_report_summary.mjs`.
+
+  **Original card (2026-08-18, task #1090) — archived verbatim:**
+
+    - **Status:** OPEN. The gate's automatic triggers were commented out in
+      `.github/workflows/perf-gate.yml` by owner decision — no automatic perf
+      runs on GitHub. `workflow_dispatch` remains the only trigger (a human
+      must press "Run workflow"); it is kept because Actions rejects an `on:`
+      block with no trigger at all. **The regression itself was NOT
+      investigated and is NOT fixed** — only the alarm was silenced.
+    - **Current-number-or-verdict:** run `32098094538` (2026-08-18) reported
+      21 of 85 benches over the `Ir=10` limit, worst `large_alloc_free_cycle`
+      +29.00%, with most churn arms clustered at +10…+13.8%. **Read these as
+      a 13-day CUMULATIVE delta against a stale baseline, not a per-night
+      regression** — see the self-lock below. Corroborating the frozen-base
+      model: the count sat at exactly "60 without regressions; 25 regressed"
+      on 08-08, 08-14, 08-16 and 08-17, moving only on 08-18.
+    - **The self-lock (why it could never recover):** `IAI_CALLGRIND_REGRESSION`
+      is set at workflow `env:` level, so it applies to the nightly
+      `--save-baseline=main` run too — contradicting that step's own comment
+      ("A main-branch / scheduled / dispatched run instead (re)RECORDS the
+      baseline"). When the bench step exits non-zero, the next step
+      `Save the main iai baseline` is SKIPPED (it has no `if: always()`;
+      verified in run `32098094538`'s step list, where the sibling
+      `Upload Callgrind artifacts` — which does have it — succeeded). So a
+      failing run never records a new baseline, and the baseline is frozen at
+      `42d8d223` (last green: run `30980354559`, 2026-08-05).
+    - **Retracted hypothesis (do not re-derive):** an rustc bump was proposed
+      as the cause, on the observation that mimalloc's C-compiled rows held or
+      improved (`mimalloc_bootstrap_proxy` −3.55% `Ir`) while every Rust row
+      rose. **Falsified by direct check** — `rustc 1.97.1 (8bab26f4f
+      2026-07-14)` in BOTH the last green (`30980354559`) and the red
+      (`32098094538`). The toolchain never moved; the regression is code, and
+      the mimalloc observation now reads the opposite way (our code changed,
+      the build environment did not).
+    - **Local gate cannot substitute:** `npm run check`'s iai step asserts
+      only that Ir was produced (`[iai] PASS — 85 bench(es) produced Ir`); the
+      `Ir=10` threshold lives solely in the workflow `env:`. A 29% regression
+      passes the local gate green. With the workflow off, **nothing anywhere
+      now enforces an instruction-count threshold.**
+    - **Next trigger:** any decision to attribute or fix the regression (task
+      #1091 owns this); any move to re-enable a trigger (which must fix the
+      self-lock first, or it reproduces the same red streak). Note the trap:
+      fixing the self-lock by adding `if: always()` OVERWRITES the frozen
+      baseline and destroys the only remaining reference point.
+    - **CORRECTION — this is NOT GitHub-dependent and NOT deadline-bound.**
+      An earlier draft of this card (and task #1090's notes) claimed
+      attribution needs either the 30-day Callgrind artifacts or "a bisect on
+      Linux+Valgrind, and this host is Windows". **That is false.**
+      `scripts/iai.mjs` — the `npm run iai` judge already wired into
+      `npm run check` — drives the whole `perf_gate_iai` bench through **WSL +
+      Valgrind/Callgrind**, with its own Linux target dir (`/tmp/sefer-iai`)
+      and the runner version pinned to `Cargo.toml`'s `^0.14`. Verified on
+      this host: `valgrind-3.22.0`, cargo present in WSL, 16 cores. So both
+      endpoints AND every bisect midpoint are measurable locally, offline,
+      deterministically (Callgrind `Ir` is contention-independent), with no
+      GitHub involvement at all — which also matches the owner's directive to
+      stop loading GitHub with perf runs. The archived artifacts
+      (`perf-gate-callgrind-30980354559`, expiring ~2026-09-04) are now only a
+      convenience shortcut, not the critical path.
+    - **Suspect range:** `42d8d223..42d42061`, 153 commits (the R34
+      release-readiness remediation waves, which landed densely). Unread
+      first-glance candidate by subject only, NOT a code-level conclusion:
+      `3d57a26 fix(perf): close F1 — HeapCore stack-pressure budget didn't
+      cover production medium-classes` — a stack-pressure budget sits on every
+      alloc/dealloc path, which fits the near-uniform spread across churn arms.
+    - **Evidence:** `.github/workflows/perf-gate.yml`'s own DISABLED header
+      block; GitHub runs `30980354559` (green), `32098094538` (red);
+      13 consecutive scheduled failures 2026-08-06 … 2026-08-18.
+
+  **Closure findings (task #1091, 2026-09-01) — see the report for full detail; every number below is script-asserted against the committed raw logs:**
+
+  - **Endpoints (WSL callgrind, `scripts/iai.mjs`, local rustc
+    1.98.0-nightly bd08c9e71 2026-06-25; CI's rustc 1.97.1 codegen denominator
+    explains CI's slightly larger headline pcts, +29.00%/+13.8% vs local
+    +24.91%/+12.22% on the same arms):** `large_alloc_free_cycle` 3,308 →
+    4,132 (+824/3,308 = +24.91%); `small_churn_16b` 8,051 → 9,035
+    (+984/8,051 = +12.22%); 25 of 79 compared arms > +10%; every `mimalloc_*`
+    arm exactly 0.00% (the control); 6 red-only arms (`large_cache_*`/
+    `alloc_zeroed_magazine_*`, added in-range). The green endpoint is
+    byte-identical to the recorded R22-15 baseline section of
+    `IAI_BASELINE.md` (16,629 / 13,050 / 3,308 / 74.1 Ir-op / 1.326).
+  - **Bisect 1** (predicate: BAD iff either probe ≥ green+5%): first bad
+    commit **`5df56d3`** ("fix(perf): PerClass gains #[repr(C)]", R32-5,
+    task #496) — trace 8,055/3,312 (GOOD at `62e217f`) → 8,810/4,080 (BAD at
+    `03a6c55`/`5df56d3`).
+  - **Bisect 2** (residual, threshold band GOOD ≤ 8,900 / BAD ≥ 8,980): first
+    bad commit **`5289c66`** ("perf(runtime): OWN_CACHE_SIZE 4->16 + Tier-1
+    hit/miss counter", R32-10, task #501) — 8,810 (GOOD at `ce3f44d`) → 9,037
+    (BAD at `c9a3570`/`a3e3e18`/`5289c66`).
+  - **Decomposition.** At `5df56d3`: churn +759 fixed per process (13,226 −
+    8,810 = 4,416 = green's 12,467 − 8,051 2n-delta → zero per-op cost);
+    759/49 = 15.49 Ir/PerClass; large +772. At `5289c66`: 2n-delta 4,608 =
+    +192 over 64 extra pairs = +3.0 Ir/pair; fixed part +35..47
+    (`own_cache [*mut u8; 16]` vs `[*mut u8; 4]` zero-init);
+    `dealloc_contains_base_probe_only_16b` +239 vs
+    `dealloc_hash_contains_only_probe_16b` (Tier-2 called DIRECTLY, bypassing
+    `contains_base`) +47 fixed-only → the per-call cost sits INSIDE
+    `contains_base` and is `5289c66`'s `#[cfg(feature = "bench-internals")]`
+    `CONTAINS_BASE_TIER1_HITS`/`_MISSES` `AtomicU64::fetch_add` — and
+    `scripts/iai.mjs` builds WITH `bench-internals`, so the gate's own
+    instrument was compiled into the measured binary. Red endpoint ≡
+    `5289c66` on all four regression-signal arms within ±11 Ir (2/11/2/8);
+    honest scoping: green-present full-arm max dev +79 (`decomp_full_cycle_8x`,
+    ~0.8%, jitter class, NOT fully attributed), red-only `large_cache_hit_`
+    /`_prefill_only_4mib` +262/+232 attributed to the post-`5289c66`
+    large-cache commits `eb2463a`/`e88390b` reshaping those paths.
+  - **Counterfactuals.** A (tcache.rs reverted at `5df56d3`): 8,055 / 3,312 /
+    4,343 — every arm within +4..5 Ir of green, 0 arms > +10%. A' (the four
+    `5289c66` src files reverted): every arm byte-identical to the `5df56d3`
+    level (max dev 1 Ir; `contains_base` probe 9,491 → 9,492).
+  - **Mechanisms.** repr(C): standalone probe (`/tmp/probe_reprc/`) shows the
+    `[PerClass;49]` array construction is memcpy-lowered differently under the
+    two layouts (415,075 vs 560,560 Ir; delta in `__memcpy_avx_unaligned_erms`)
+    — mechanism CLASS only (probe amplifies to ~2,969 Ir/element vs the real
+    ~15.5 because its `black_box` forces a full copy per construction).
+    Own-cache: asm A/B probe shows `OWN_CACHE_SIZE` 4 vs 16 emits an IDENTICAL
+    7-instruction hit path (only `and $0x3` vs `and $0xf` differs) — the
+    +3/call is purely the bench-internals counters (gate-only artifact).
+    `5df56d3`'s own message SAW the +755 and attributed it to the
+    `HeapCore::new()` init shift while quoting "0 Ir delta" from isolation
+    arms; `5289c66` explicitly skipped the standing ±10 raw-Ir gate ("argued,
+    not measured").
+  - **Decision + follow-ups.** Accept the +759 (option for a future
+    owner-approved micro-fix, NOT landed, untested: const-fold
+    `[PerClass::new(); SMALL_CLASS_COUNT]` into a `const` item); owner decision
+    on excluding `bench-internals` from the judge's feature set or gating the
+    counters differently (report recommendation ii, tied to the separate
+    threshold-restore/self-lock decision); process lessons recorded in report
+    §9-iii. The nightly-trigger re-enable decision remains gated on fixing the
+    workflow self-lock documented in the archived card above.

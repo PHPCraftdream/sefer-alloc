@@ -1,0 +1,819 @@
+[iai] wsl: /mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56
+[iai] features: production bench-internals internals | target: /tmp/sefer-iai
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling zmij v1.0.21
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.52
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling getrandom v0.3.4
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling crossbeam-epoch v0.9.20
+   Compiling linux-raw-sys v0.12.1
+   Compiling num-traits v0.2.19
+   Compiling shlex v2.0.1
+   Compiling bitflags v2.13.0
+   Compiling version_check v0.9.5
+   Compiling find-msvc-tools v0.1.9
+   Compiling regex-syntax v0.8.11
+   Compiling once_cell v1.21.4
+   Compiling fastrand v2.4.1
+   Compiling either v1.16.0
+   Compiling rayon-core v1.13.0
+   Compiling cc v1.2.65
+   Compiling slotmap v1.1.1
+   Compiling bit-vec v0.8.0
+   Compiling quick-error v1.2.3
+   Compiling itoa v1.0.18
+   Compiling anstyle v1.0.14
+   Compiling fnv v1.0.7
+   Compiling plotters-backend v0.3.7
+   Compiling memchr v2.8.2
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling syn v2.0.118
+   Compiling ciborium-io v0.2.2
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling clap_lex v1.1.0
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.0
+   Compiling bit-set v0.8.0
+   Compiling itertools v0.10.5
+   Compiling iai-callgrind v0.14.2
+   Compiling unarray v0.1.4
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling plotters v0.3.7
+   Compiling tagged-index-stack v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/tagged-index-stack)
+   Compiling wait-timeout v0.2.1
+   Compiling sefer-region v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/region)
+   Compiling rand_core v0.9.5
+   Compiling rayon v1.12.0
+   Compiling is-terminal v0.4.17
+   Compiling oorandom v11.1.5
+   Compiling pin-project-lite v0.2.17
+   Compiling size-classes v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/size-classes)
+   Compiling libmimalloc-sys v0.1.49
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.4
+   Compiling aligned-vmem v0.2.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/vmem)
+   Compiling proc-memstat v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/proc-memstat)
+   Compiling racy-ptr-cell v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/racy-ptr-cell)
+   Compiling anes v0.1.6
+   Compiling proc-probe v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/proc-probe)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56)
+   Compiling malloc-bench-rs v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/malloc-bench)
+   Compiling tempfile v3.27.0
+   Compiling rusty-fork v0.3.1
+   Compiling regex-automata v0.4.14
+   Compiling criterion-plot v0.5.0
+   Compiling clap v4.6.1
+   Compiling regex v1.12.4
+   Compiling proc-macro-error2 v2.0.1
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling derive_more-impl v2.1.1
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling mimalloc v0.1.52
+   Compiling derive_more v2.1.1
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling tinytemplate v1.2.1
+   Compiling bincode v1.3.3
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/worktrees/perf-regress-item56/crates/globalalloc-model)
+    Finished `bench` profile [optimized] target(s) in 3m 18s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/perf_gate_iai.rs (/tmp/sefer-iai/release/deps/perf_gate_iai-2cf9ab36cb7c2e31)
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                        9045|N/A                  (*********)
+  L1 Hits:                            12037|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                             287|N/A                  (*********)
+  Total read+write:                   12422|N/A                  (*********)
+  Estimated Cycles:                   22572|N/A                  (*********)
+perf_gate_iai::perf_gate::small_churn_16b_2n
+  Instructions:                       13653|N/A                  (*********)
+  L1 Hits:                            17925|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                             287|N/A                  (*********)
+  Total read+write:                   18310|N/A                  (*********)
+  Estimated Cycles:                   28460|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_prealloc_only_16b
+  Instructions:                        8444|N/A                  (*********)
+  L1 Hits:                            11176|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             377|N/A                  (*********)
+  Total read+write:                   11642|N/A                  (*********)
+  Estimated Cycles:                   24816|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b
+  Instructions:                       14564|N/A                  (*********)
+  L1 Hits:                            18838|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             423|N/A                  (*********)
+  Total read+write:                   19350|N/A                  (*********)
+  Estimated Cycles:                   34088|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_contains_base_probe_only_16b
+  Instructions:                        9737|N/A                  (*********)
+  L1 Hits:                            12791|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             380|N/A                  (*********)
+  Total read+write:                   13260|N/A                  (*********)
+  Estimated Cycles:                   26536|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_segment_base_of_ptr_probe_only_16b
+  Instructions:                        9022|N/A                  (*********)
+  L1 Hits:                            11881|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             378|N/A                  (*********)
+  Total read+write:                   12348|N/A                  (*********)
+  Estimated Cycles:                   25556|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_magazine_prefill_only_16b
+  Instructions:                        9056|N/A                  (*********)
+  L1 Hits:                            12142|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             382|N/A                  (*********)
+  Total read+write:                   12613|N/A                  (*********)
+  Estimated Cycles:                   25957|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_magazine_hit_only_16b
+  Instructions:                        9414|N/A                  (*********)
+  L1 Hits:                            12579|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             384|N/A                  (*********)
+  Total read+write:                   13052|N/A                  (*********)
+  Estimated Cycles:                   26464|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_magazine_prefill_only_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_magazine_hit_only_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_hash_contains_only_probe_16b
+  Instructions:                        9790|N/A                  (*********)
+  L1 Hits:                            12776|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             379|N/A                  (*********)
+  Total read+write:                   13244|N/A                  (*********)
+  Estimated Cycles:                   26486|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_own_thread_body_only_16b
+  Instructions:                       13912|N/A                  (*********)
+  L1 Hits:                            17980|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             419|N/A                  (*********)
+  Total read+write:                   18488|N/A                  (*********)
+  Estimated Cycles:                   33090|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n1
+  Instructions:                        8500|N/A                  (*********)
+  L1 Hits:                            11248|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             382|N/A                  (*********)
+  Total read+write:                   11719|N/A                  (*********)
+  Estimated Cycles:                   25063|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n8
+  Instructions:                        8824|N/A                  (*********)
+  L1 Hits:                            11663|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             384|N/A                  (*********)
+  Total read+write:                   12136|N/A                  (*********)
+  Estimated Cycles:                   25548|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n9
+  Instructions:                        8869|N/A                  (*********)
+  L1 Hits:                            11719|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             386|N/A                  (*********)
+  Total read+write:                   12194|N/A                  (*********)
+  Estimated Cycles:                   25674|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n16
+  Instructions:                        9184|N/A                  (*********)
+  L1 Hits:                            12125|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             386|N/A                  (*********)
+  Total read+write:                   12600|N/A                  (*********)
+  Estimated Cycles:                   26080|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n17
+  Instructions:                        9769|N/A                  (*********)
+  L1 Hits:                            12820|N/A                  (*********)
+  L2 Hits:                               91|N/A                  (*********)
+  RAM Hits:                             413|N/A                  (*********)
+  Total read+write:                   13324|N/A                  (*********)
+  Estimated Cycles:                   27730|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n32
+  Instructions:                       10980|N/A                  (*********)
+  L1 Hits:                            14348|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             416|N/A                  (*********)
+  Total read+write:                   14854|N/A                  (*********)
+  Estimated Cycles:                   29358|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_flush_class_only_16b_prefix
+  Instructions:                        5381|N/A                  (*********)
+  L1 Hits:                             7466|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             400|N/A                  (*********)
+  Total read+write:                    7955|N/A                  (*********)
+  Estimated Cycles:                   21911|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_flush_class_only_16b
+  Instructions:                        5830|N/A                  (*********)
+  L1 Hits:                             7992|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             421|N/A                  (*********)
+  Total read+write:                    8502|N/A                  (*********)
+  Estimated Cycles:                   23172|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_clear_magazine_only_16b_prefix
+  Instructions:                        5794|N/A                  (*********)
+  L1 Hits:                             8004|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             380|N/A                  (*********)
+  Total read+write:                    8474|N/A                  (*********)
+  Estimated Cycles:                   21754|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_clear_magazine_only_16b
+  Instructions:                        5989|N/A                  (*********)
+  L1 Hits:                             8221|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             391|N/A                  (*********)
+  Total read+write:                    8702|N/A                  (*********)
+  Estimated Cycles:                   22356|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_virgin_64k_prefix
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_virgin_64k
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_recycled_64k_prefix
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_recycled_64k
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_prealloc_only_1088_16b
+  Instructions:                       88479|N/A                  (*********)
+  L1 Hits:                           115105|N/A                  (*********)
+  L2 Hits:                              110|N/A                  (*********)
+  RAM Hits:                             508|N/A                  (*********)
+  Total read+write:                  115723|N/A                  (*********)
+  Estimated Cycles:                  133435|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n17
+  Instructions:                       89803|N/A                  (*********)
+  L1 Hits:                           116748|N/A                  (*********)
+  L2 Hits:                              113|N/A                  (*********)
+  RAM Hits:                             543|N/A                  (*********)
+  Total read+write:                  117404|N/A                  (*********)
+  Estimated Cycles:                  136318|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n32
+  Instructions:                       91014|N/A                  (*********)
+  L1 Hits:                           118276|N/A                  (*********)
+  L2 Hits:                              113|N/A                  (*********)
+  RAM Hits:                             545|N/A                  (*********)
+  Total read+write:                  118934|N/A                  (*********)
+  Estimated Cycles:                  137916|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n64
+  Instructions:                       94598|N/A                  (*********)
+  L1 Hits:                           122764|N/A                  (*********)
+  L2 Hits:                              113|N/A                  (*********)
+  RAM Hits:                             553|N/A                  (*********)
+  Total read+write:                  123430|N/A                  (*********)
+  Estimated Cycles:                  142684|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n256
+  Instructions:                      116102|N/A                  (*********)
+  L1 Hits:                           149691|N/A                  (*********)
+  L2 Hits:                              113|N/A                  (*********)
+  RAM Hits:                             602|N/A                  (*********)
+  Total read+write:                  150406|N/A                  (*********)
+  Estimated Cycles:                  171326|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n1024
+  Instructions:                      202118|N/A                  (*********)
+  L1 Hits:                           257398|N/A                  (*********)
+  L2 Hits:                              116|N/A                  (*********)
+  RAM Hits:                             796|N/A                  (*********)
+  Total read+write:                  258310|N/A                  (*********)
+  Estimated Cycles:                  285838|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_realloc_burst_1088_16b_n17
+  Instructions:                       91099|N/A                  (*********)
+  L1 Hits:                           118393|N/A                  (*********)
+  L2 Hits:                              113|N/A                  (*********)
+  RAM Hits:                             551|N/A                  (*********)
+  Total read+write:                  119057|N/A                  (*********)
+  Estimated Cycles:                  138243|N/A                  (*********)
+perf_gate_iai::perf_gate::oscillating_live_set_16b
+  Instructions:                       27821|N/A                  (*********)
+  L1 Hits:                            35836|N/A                  (*********)
+  L2 Hits:                               89|N/A                  (*********)
+  RAM Hits:                             421|N/A                  (*********)
+  Total read+write:                   36346|N/A                  (*********)
+  Estimated Cycles:                   51016|N/A                  (*********)
+perf_gate_iai::perf_gate::carve_batch_only_16b
+  Instructions:                       68321|N/A                  (*********)
+  L1 Hits:                           133217|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                            1054|N/A                  (*********)
+  Total read+write:                  134369|N/A                  (*********)
+  Estimated Cycles:                  170597|N/A                  (*********)
+perf_gate_iai::perf_gate::carve_batch_only_16b_2n
+  Instructions:                       74229|N/A                  (*********)
+  L1 Hits:                           143253|N/A                  (*********)
+  L2 Hits:                               99|N/A                  (*********)
+  RAM Hits:                            1086|N/A                  (*********)
+  Total read+write:                  144438|N/A                  (*********)
+  Estimated Cycles:                  181758|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_16_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_64_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_80_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_81_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_128_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_200_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_512_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_1024_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_0_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_1_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_8_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_17_16b
+  Instructions:                           3|N/A                  (*********)
+  L1 Hits:                                4|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                               1|N/A                  (*********)
+  Total read+write:                       5|N/A                  (*********)
+  Estimated Cycles:                      39|N/A                  (*********)
+perf_gate_iai::perf_gate::medium_class_dealloc_churn_16b
+  Instructions:                        9045|N/A                  (*********)
+  L1 Hits:                            12038|N/A                  (*********)
+  L2 Hits:                               96|N/A                  (*********)
+  RAM Hits:                             288|N/A                  (*********)
+  Total read+write:                   12422|N/A                  (*********)
+  Estimated Cycles:                   22598|N/A                  (*********)
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                        8981|N/A                  (*********)
+  L1 Hits:                            11975|N/A                  (*********)
+  L2 Hits:                               96|N/A                  (*********)
+  RAM Hits:                             287|N/A                  (*********)
+  Total read+write:                   12358|N/A                  (*********)
+  Estimated Cycles:                   22500|N/A                  (*********)
+perf_gate_iai::perf_gate::large_alloc_free_cycle
+  Instructions:                        4140|N/A                  (*********)
+  L1 Hits:                             5914|N/A                  (*********)
+  L2 Hits:                               96|N/A                  (*********)
+  RAM Hits:                             286|N/A                  (*********)
+  Total read+write:                    6296|N/A                  (*********)
+  Estimated Cycles:                   16404|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_prefill_only_4mib
+  Instructions:                        6938|N/A                  (*********)
+  L1 Hits:                            10134|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             379|N/A                  (*********)
+  Total read+write:                   10603|N/A                  (*********)
+  Estimated Cycles:                   23849|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_hit_only_4mib
+  Instructions:                        7296|N/A                  (*********)
+  L1 Hits:                            10663|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             384|N/A                  (*********)
+  Total read+write:                   11137|N/A                  (*********)
+  Estimated Cycles:                   24553|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_prefill_only
+  Instructions:                        7962|N/A                  (*********)
+  L1 Hits:                            11580|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             411|N/A                  (*********)
+  Total read+write:                   12081|N/A                  (*********)
+  Estimated Cycles:                   26415|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_cycle_only
+  Instructions:                       11043|N/A                  (*********)
+  L1 Hits:                            16115|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             420|N/A                  (*********)
+  Total read+write:                   16625|N/A                  (*********)
+  Estimated Cycles:                   31265|N/A                  (*********)
+perf_gate_iai::perf_gate::realloc_grow
+  Instructions:                      493379|N/A                  (*********)
+  L1 Hits:                          1047916|N/A                  (*********)
+  L2 Hits:                             3862|N/A                  (*********)
+  RAM Hits:                           70178|N/A                  (*********)
+  Total read+write:                 1121956|N/A                  (*********)
+  Estimated Cycles:                 3523456|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       51555|N/A                  (*********)
+  L1 Hits:                            64407|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             407|N/A                  (*********)
+  Total read+write:                   64909|N/A                  (*********)
+  Estimated Cycles:                   79127|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b_2n
+  Instructions:                      104336|N/A                  (*********)
+  L1 Hits:                           132702|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                             503|N/A                  (*********)
+  Total read+write:                  133303|N/A                  (*********)
+  Estimated Cycles:                  150797|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b_4n
+  Instructions:                      206034|N/A                  (*********)
+  L1 Hits:                           261461|N/A                  (*********)
+  L2 Hits:                              106|N/A                  (*********)
+  RAM Hits:                             699|N/A                  (*********)
+  Total read+write:                  262266|N/A                  (*********)
+  Estimated Cycles:                  286456|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b
+  Instructions:                       22926|N/A                  (*********)
+  L1 Hits:                            28637|N/A                  (*********)
+  L2 Hits:                               94|N/A                  (*********)
+  RAM Hits:                             313|N/A                  (*********)
+  Total read+write:                   29044|N/A                  (*********)
+  Estimated Cycles:                   40062|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b_2n
+  Instructions:                       46027|N/A                  (*********)
+  L1 Hits:                            59845|N/A                  (*********)
+  L2 Hits:                               96|N/A                  (*********)
+  RAM Hits:                             345|N/A                  (*********)
+  Total read+write:                   60286|N/A                  (*********)
+  Estimated Cycles:                   72400|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b_4n
+  Instructions:                       88365|N/A                  (*********)
+  L1 Hits:                           114429|N/A                  (*********)
+  L2 Hits:                              106|N/A                  (*********)
+  RAM Hits:                             410|N/A                  (*********)
+  Total read+write:                  114945|N/A                  (*********)
+  Estimated Cycles:                  129309|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x64b
+  Instructions:                       51555|N/A                  (*********)
+  L1 Hits:                            64223|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             591|N/A                  (*********)
+  Total read+write:                   64909|N/A                  (*********)
+  Estimated Cycles:                   85383|N/A                  (*********)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      100764|N/A                  (*********)
+  L1 Hits:                           125274|N/A                  (*********)
+  L2 Hits:                               21|N/A                  (*********)
+  RAM Hits:                             521|N/A                  (*********)
+  Total read+write:                  125816|N/A                  (*********)
+  Estimated Cycles:                  143614|N/A                  (*********)
+perf_gate_iai::perf_gate::recycle_alloc_only_256x16b
+  Instructions:                       71536|N/A                  (*********)
+  L1 Hits:                            88317|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             415|N/A                  (*********)
+  Total read+write:                   88827|N/A                  (*********)
+  Estimated Cycles:                  103317|N/A                  (*********)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x64b
+  Instructions:                      100764|N/A                  (*********)
+  L1 Hits:                           125080|N/A                  (*********)
+  L2 Hits:                               22|N/A                  (*********)
+  RAM Hits:                             714|N/A                  (*********)
+  Total read+write:                  125816|N/A                  (*********)
+  Estimated Cycles:                  150180|N/A                  (*********)
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                        9045|N/A                  (*********)
+  L1 Hits:                            12036|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                             288|N/A                  (*********)
+  Total read+write:                   12422|N/A                  (*********)
+  Estimated Cycles:                   22606|N/A                  (*********)
+perf_gate_iai::perf_gate::churn_write_256b
+  Instructions:                        9301|N/A                  (*********)
+  L1 Hits:                            12420|N/A                  (*********)
+  L2 Hits:                               98|N/A                  (*********)
+  RAM Hits:                             288|N/A                  (*********)
+  Total read+write:                   12806|N/A                  (*********)
+  Estimated Cycles:                   22990|N/A                  (*********)
+perf_gate_iai::perf_gate::multiseg_cold_256k
+  Instructions:                       27257|N/A                  (*********)
+  L1 Hits:                            37097|N/A                  (*********)
+  L2 Hits:                               31|N/A                  (*********)
+  RAM Hits:                             587|N/A                  (*********)
+  Total read+write:                   37715|N/A                  (*********)
+  Estimated Cycles:                   57797|N/A                  (*********)
+perf_gate_iai::perf_gate::seg_cycle_decommit_256k
+  Instructions:                       64711|N/A                  (*********)
+  L1 Hits:                            87571|N/A                  (*********)
+  L2 Hits:                               84|N/A                  (*********)
+  RAM Hits:                             588|N/A                  (*********)
+  Total read+write:                   88243|N/A                  (*********)
+  Estimated Cycles:                  108571|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_small_churn_16b
+  Instructions:                       16629|N/A                  (*********)
+  L1 Hits:                            21427|N/A                  (*********)
+  L2 Hits:                               66|N/A                  (*********)
+  RAM Hits:                             505|N/A                  (*********)
+  Total read+write:                   21998|N/A                  (*********)
+  Estimated Cycles:                   39432|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_small_churn_16b_2n
+  Instructions:                       21557|N/A                  (*********)
+  L1 Hits:                            27891|N/A                  (*********)
+  L2 Hits:                               66|N/A                  (*********)
+  RAM Hits:                             505|N/A                  (*********)
+  Total read+write:                   28462|N/A                  (*********)
+  Estimated Cycles:                   45896|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_churn_256b
+  Instructions:                       16130|N/A                  (*********)
+  L1 Hits:                            20941|N/A                  (*********)
+  L2 Hits:                               67|N/A                  (*********)
+  RAM Hits:                             459|N/A                  (*********)
+  Total read+write:                   21467|N/A                  (*********)
+  Estimated Cycles:                   37341|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b
+  Instructions:                       32325|N/A                  (*********)
+  L1 Hits:                            41778|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             507|N/A                  (*********)
+  Total read+write:                   42375|N/A                  (*********)
+  Estimated Cycles:                   59973|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b_2n
+  Instructions:                       58389|N/A                  (*********)
+  L1 Hits:                            78267|N/A                  (*********)
+  L2 Hits:                              137|N/A                  (*********)
+  RAM Hits:                             587|N/A                  (*********)
+  Total read+write:                   78991|N/A                  (*********)
+  Estimated Cycles:                   99497|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b_4n
+  Instructions:                      106653|N/A                  (*********)
+  L1 Hits:                           143420|N/A                  (*********)
+  L2 Hits:                              214|N/A                  (*********)
+  RAM Hits:                             762|N/A                  (*********)
+  Total read+write:                  144396|N/A                  (*********)
+  Estimated Cycles:                  171160|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b
+  Instructions:                       24584|N/A                  (*********)
+  L1 Hits:                            30952|N/A                  (*********)
+  L2 Hits:                               91|N/A                  (*********)
+  RAM Hits:                             500|N/A                  (*********)
+  Total read+write:                   31543|N/A                  (*********)
+  Estimated Cycles:                   48907|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b_2n
+  Instructions:                       42968|N/A                  (*********)
+  L1 Hits:                            56691|N/A                  (*********)
+  L2 Hits:                              136|N/A                  (*********)
+  RAM Hits:                             580|N/A                  (*********)
+  Total read+write:                   57407|N/A                  (*********)
+  Estimated Cycles:                   77671|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b_4n
+  Instructions:                       75872|N/A                  (*********)
+  L1 Hits:                           100344|N/A                  (*********)
+  L2 Hits:                              209|N/A                  (*********)
+  RAM Hits:                             755|N/A                  (*********)
+  Total read+write:                  101308|N/A                  (*********)
+  Estimated Cycles:                  127814|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x64b
+  Instructions:                       33329|N/A                  (*********)
+  L1 Hits:                            42930|N/A                  (*********)
+  L2 Hits:                              104|N/A                  (*********)
+  RAM Hits:                             714|N/A                  (*********)
+  Total read+write:                   43748|N/A                  (*********)
+  Estimated Cycles:                   68440|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_recycle_alloc_free_256x16b
+  Instructions:                       53027|N/A                  (*********)
+  L1 Hits:                            68694|N/A                  (*********)
+  L2 Hits:                               90|N/A                  (*********)
+  RAM Hits:                             510|N/A                  (*********)
+  Total read+write:                   69294|N/A                  (*********)
+  Estimated Cycles:                   86994|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_recycle_alloc_free_256x64b
+  Instructions:                       54031|N/A                  (*********)
+  L1 Hits:                            69846|N/A                  (*********)
+  L2 Hits:                              104|N/A                  (*********)
+  RAM Hits:                             717|N/A                  (*********)
+  Total read+write:                   70667|N/A                  (*********)
+  Estimated Cycles:                   95461|N/A                  (*********)
+perf_gate_iai::perf_gate::mimalloc_bootstrap_proxy
+  Instructions:                       13050|N/A                  (*********)
+  L1 Hits:                            16714|N/A                  (*********)
+  L2 Hits:                               74|N/A                  (*********)
+  RAM Hits:                             517|N/A                  (*********)
+  Total read+write:                   17305|N/A                  (*********)
+  Estimated Cycles:                   35179|N/A                  (*********)
+perf_gate_iai::perf_gate::decomp_full_cycle_8x
+  Instructions:                        9407|N/A                  (*********)
+  L1 Hits:                            13796|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             505|N/A                  (*********)
+  Total read+write:                   14396|N/A                  (*********)
+  Estimated Cycles:                   31946|N/A                  (*********)
+perf_gate_iai::perf_gate::decomp_os_roundtrip_8x
+  Instructions:                        1410|N/A                  (*********)
+  L1 Hits:                             1870|N/A                  (*********)
+  L2 Hits:                                0|N/A                  (*********)
+  RAM Hits:                              21|N/A                  (*********)
+  Total read+write:                    1891|N/A                  (*********)
+  Estimated Cycles:                    2605|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 85 without regressions; 0 regressed; 85 benchmarks finished in 55.1638s
+
+  bench                                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  ------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                                    9,045        12,037            98           287        22,572          76.6
+  small_churn_16b_2n                                13,653        17,925            98           287        28,460             -
+  dealloc_prealloc_only_16b                          8,444        11,176            89           377        24,816             -
+  dealloc_free_only_16b                             14,564        18,838            89           423        34,088             -
+  dealloc_contains_base_probe_only_16b               9,737        12,791            89           380        26,536             -
+  dealloc_segment_base_of_ptr_probe_only_16b         9,022        11,881            89           378        25,556             -
+  alloc_magazine_prefill_only_16b                    9,056        12,142            89           382        25,957             -
+  alloc_magazine_hit_only_16b                        9,414        12,579            89           384        26,464             -
+  alloc_zeroed_magazine_prefill_only_16b                 3             4             0             1            39             -
+  alloc_zeroed_magazine_hit_only_16b                     3             4             0             1            39             -
+  dealloc_hash_contains_only_probe_16b               9,790        12,776            89           379        26,486             -
+  dealloc_own_thread_body_only_16b                  13,912        17,980            89           419        33,090             -
+  dealloc_free_only_16b_n1                           8,500        11,248            89           382        25,063             -
+  dealloc_free_only_16b_n8                           8,824        11,663            89           384        25,548             -
+  dealloc_free_only_16b_n9                           8,869        11,719            89           386        25,674             -
+  dealloc_free_only_16b_n16                          9,184        12,125            89           386        26,080             -
+  dealloc_free_only_16b_n17                          9,769        12,820            91           413        27,730             -
+  dealloc_free_only_16b_n32                         10,980        14,348            90           416        29,358             -
+  dealloc_flush_class_only_16b_prefix                5,381         7,466            89           400        21,911             -
+  dealloc_flush_class_only_16b                       5,830         7,992            89           421        23,172             -
+  alloc_clear_magazine_only_16b_prefix               5,794         8,004            90           380        21,754             -
+  alloc_clear_magazine_only_16b                      5,989         8,221            90           391        22,356             -
+  alloc_zeroed_calloc_virgin_64k_prefix                  3             4             0             1            39             -
+  alloc_zeroed_calloc_virgin_64k                         3             4             0             1            39             -
+  alloc_zeroed_calloc_recycled_64k_prefix                3             4             0             1            39             -
+  alloc_zeroed_calloc_recycled_64k                       3             4             0             1            39             -
+  dealloc_prealloc_only_1088_16b                    88,479       115,105           110           508       133,435             -
+  dealloc_free_only_1088_16b_n17                    89,803       116,748           113           543       136,318             -
+  dealloc_free_only_1088_16b_n32                    91,014       118,276           113           545       137,916             -
+  dealloc_free_only_1088_16b_n64                    94,598       122,764           113           553       142,684             -
+  dealloc_free_only_1088_16b_n256                  116,102       149,691           113           602       171,326             -
+  dealloc_free_only_1088_16b_n1024                 202,118       257,398           116           796       285,838             -
+  dealloc_realloc_burst_1088_16b_n17                91,099       118,393           113           551       138,243             -
+  oscillating_live_set_16b                          27,821        35,836            89           421        51,016             -
+  carve_batch_only_16b                              68,321       133,217            98         1,054       170,597             -
+  carve_batch_only_16b_2n                           74,229       143,253            99         1,086       181,758             -
+  dealloc_batch_fresh_16_16b                             3             4             0             1            39             -
+  dealloc_batch_fresh_64_16b                             3             4             0             1            39             -
+  dealloc_batch_fresh_80_16b                             3             4             0             1            39             -
+  dealloc_batch_fresh_81_16b                             3             4             0             1            39             -
+  dealloc_batch_fresh_128_16b                            3             4             0             1            39             -
+  dealloc_batch_fresh_200_16b                            3             4             0             1            39             -
+  dealloc_batch_fresh_512_16b                            3             4             0             1            39             -
+  dealloc_batch_fresh_1024_16b                           3             4             0             1            39             -
+  dealloc_batch_fresh_0_16b                              3             4             0             1            39             -
+  dealloc_batch_fresh_1_16b                              3             4             0             1            39             -
+  dealloc_batch_fresh_8_16b                              3             4             0             1            39             -
+  dealloc_batch_fresh_17_16b                             3             4             0             1            39             -
+  medium_class_dealloc_churn_16b                     9,045        12,038            96           288        22,598          76.6
+  aligned_churn_640b_a128                            8,981        11,975            96           287        22,500          75.6
+  large_alloc_free_cycle                             4,140         5,914            96           286        16,404             -
+  large_cache_prefill_only_4mib                      6,938        10,134            90           379        23,849             -
+  large_cache_hit_only_4mib                          7,296        10,663            90           384        24,553             -
+  large_cache_free_slot_search_prefill_only          7,962        11,580            90           411        26,415             -
+  large_cache_free_slot_search_cycle_only           11,043        16,115            90           420        31,265             -
+  realloc_grow                                     493,379     1,047,916         3,862        70,178     3,523,456      30,577.4
+  cold_alloc_free_256x16b                           51,555        64,407            95           407        79,127         185.2
+  cold_alloc_free_256x16b_2n                       104,336       132,702            98           503       150,797             -
+  cold_alloc_free_256x16b_4n                       206,034       261,461           106           699       286,456             -
+  cold_alloc_only_256x16b                           22,926        28,637            94           313        40,062             -
+  cold_alloc_only_256x16b_2n                        46,027        59,845            96           345        72,400             -
+  cold_alloc_only_256x16b_4n                        88,365       114,429           106           410       129,309             -
+  cold_alloc_free_256x64b                           51,555        64,223            95           591        85,383         185.2
+  recycle_alloc_free_256x16b                       100,764       125,274            21           521       143,614         188.7
+  recycle_alloc_only_256x16b                        71,536        88,317            95           415       103,317             -
+  recycle_alloc_free_256x64b                       100,764       125,080            22           714       150,180         188.7
+  churn_256b                                         9,045        12,036            98           288        22,606          76.6
+  churn_write_256b                                   9,301        12,420            98           288        22,990          80.6
+  multiseg_cold_256k                                27,257        37,097            31           587        57,797         340.0
+  seg_cycle_decommit_256k                           64,711        87,571            84           588       108,571         296.9
+  mimalloc_small_churn_16b                          16,629        21,427            66           505        39,432          55.9
+  mimalloc_small_churn_16b_2n                       21,557        27,891            66           505        45,896             -
+  mimalloc_churn_256b                               16,130        20,941            67           459        37,341          48.1
+  mimalloc_cold_alloc_free_256x16b                  32,325        41,778            90           507        59,973          75.3
+  mimalloc_cold_alloc_free_256x16b_2n               58,389        78,267           137           587        99,497             -
+  mimalloc_cold_alloc_free_256x16b_4n              106,653       143,420           214           762       171,160             -
+  mimalloc_cold_alloc_only_256x16b                  24,584        30,952            91           500        48,907             -
+  mimalloc_cold_alloc_only_256x16b_2n               42,968        56,691           136           580        77,671             -
+  mimalloc_cold_alloc_only_256x16b_4n               75,872       100,344           209           755       127,814             -
+  mimalloc_cold_alloc_free_256x64b                  33,329        42,930           104           714        68,440          79.2
+  mimalloc_recycle_alloc_free_256x16b               53,027        68,694            90           510        86,994          78.1
+  mimalloc_recycle_alloc_free_256x64b               54,031        69,846           104           717        95,461          80.0
+  mimalloc_bootstrap_proxy                          13,050        16,714            74           517        35,179             -
+  decomp_full_cycle_8x                               9,407        13,796            95           505        31,946             -
+  decomp_os_roundtrip_8x                             1,410         1,870             0            21         2,605             -
+
+  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with
+    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc
+    rows use large_alloc_free_cycle (B=4,140); mimalloc_* rows use
+    mimalloc_bootstrap_proxy (B=13,050) — the two allocators' bootstrap
+    constants are never mixed (R22-15/task #366). Comparable across benches
+    within the SAME arm; the honest unit for per-op thresholds (review finding
+    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.
+
+  Sefer/mimalloc marginal Ir/op ratio (workload-matched pairs):
+
+  workload                     Sefer Ir/op      mi Ir/op         ratio
+  --------------------------  ------------  ------------  ------------
+  small_churn_16b                     76.6          55.9         1.370
+  churn_256b                          76.6          48.1         1.593
+  cold_alloc_free_256x16b            185.2          75.3         2.459
+  cold_alloc_free_256x64b            185.2          79.2         2.338
+  recycle_alloc_free_256x16b         188.7          78.1         2.416
+  recycle_alloc_free_256x64b         188.7          80.0         2.359
+
+  ratio = Sefer Ir/op ÷ mimalloc Ir/op — > 1.000 means SeferAlloc retires MORE
+    instructions per op than mimalloc on that workload (i.e. mimalloc is
+    cheaper in Ir); < 1.000 means the reverse. "-" when a pair's row is
+    missing/filtered on either side.
+
+[iai] PASS — 85 bench(es) produced Ir
