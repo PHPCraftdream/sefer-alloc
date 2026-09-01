@@ -11,26 +11,42 @@
 //! It also pins the shared-storage hazard class and its current detection
 //! coverage. The canonical statement of that inventory is the
 //! [`StackStorage`] trait doc's "The shared-storage hazard class" section —
-//! this doc points there rather than re-deriving it. In file order: the two
-//! shared-head shapes (round-11/round-12 @oh findings, both flipped to
-//! `#[should_panic]` by round-13's self-loop detector), that detector's
+//! this doc points there rather than re-deriving it. In file order: the
+//! shared-head shape over CUSTOM implementors (round-11 @oh finding, flipped
+//! to `#[should_panic]` by round-13's self-loop detector; the former
+//! round-12 `ArrayIndexStack::head()` parasite test moved out as the
+//! compile-fail fixture `tests/compile_fail/array_index_stack_head/` once
+//! `ArrayIndexStack` stopped implementing `StackStorage`, so the shared-head
+//! shapes are covered here by
+//! `two_implementor_values_sharing_one_head_still_double_issue` only), that
+//! detector's
 //! LIMIT (a hand-crafted acyclic forgery still double-issues silently), and
 //! the shared-LINK-STORAGE variant, which no detector catches at all
 //! (round-13 P2-2). Round-15 adds three pins on shapes the inventory
 //! previously missed or never covered: the ONE-implementor
 //! internally-disagreeing-storage shape (inventory shape 1, which had NO
-//! automated coverage before round 15 — the two round-11/12 tests both pin
+//! automated coverage before round 15 — the round-11 test pins
 //! shape 2; round-15 P4-2), temporal rebinding of a live head into fresh
 //! links (inventory shape 4: first pop silently leaks, second pop panics;
-//! round-15 P3-3), and shape 3's ONE-value form — two different-width
-//! bindings over one backing inside a single implementor value (round-15
-//! P3-4).
+//! round-15 P3-3), and shape 3's ONE-value form — two
+//! different-width bindings over one backing inside a single implementor
+//! value (round-15 P3-4).
+//!
+//! Since the 2026-09-01 `unsafe trait` conversion, EVERY implementor in
+//! this file carries an `unsafe impl`: the five hazard tests pin the
+//! runtime guard's catch/miss boundary UNDER AN ACKNOWLEDGED-BROKEN
+//! CONTRACT (each `unsafe impl` names exactly which `# Safety` clause it
+//! violates), while `VecStorage` is the correct-implementor reference
+//! model. The compile-PASS side is pinned by
+//! `vec_backed_storage_push_pop_round_trips` +
+//! `push_pop_through_dyn_storage`: a correct `unsafe impl` compiles and
+//! behaves correctly.
 
 #![cfg(not(loom))]
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tagged_index_stack::{ArrayIndexStack, ArrayLinks, StackHead, StackOps, StackStorage, TAIL};
+use tagged_index_stack::{ArrayLinks, StackHead, StackOps, StackStorage, TAIL};
 
 /// A `Vec`-backed [`StackStorage`] implementation, deliberately NOT
 /// [`ArrayLinks`]: heap-allocated rather than an owned array, otherwise
@@ -49,7 +65,14 @@ impl VecStorage {
     }
 }
 
-impl StackStorage<16> for VecStorage {
+// SAFETY: upholds the whole contract (the reference model for a correct
+// implementor): the struct owns its StackHead privately (one binding per
+// head, no other route to it); load_next/store_next touch the same `next`
+// Vec cell per index for its whole life (stable 1:1 mapping, coherence
+// holds); no other binding exists over these cells; load_next answers only
+// what a push stored (TAIL or an in-range index) from a dedicated cell;
+// head() returns &self.head every call.
+unsafe impl StackStorage<16> for VecStorage {
     fn head(&self) -> &StackHead<16> {
         &self.head
     }
@@ -107,7 +130,10 @@ struct SharedHeadView<'a> {
     links: &'a ArrayLinks<64>,
 }
 
-impl StackStorage<16> for SharedHeadView<'_> {
+// SAFETY: DELIBERATE contract violation — clause 1 (one live binding per
+// head): the borrowed head is handed to TWO live implementor values with
+// different links.
+unsafe impl StackStorage<16> for SharedHeadView<'_> {
     fn head(&self) -> &StackHead<16> {
         self.head
     }
@@ -175,20 +201,26 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
     let _ = via_b.pop_index();
 }
 
-/// A second implementor around a head borrowed from the OWNED stack — the
-/// round-12 variant of the `SharedHeadView` shape above. There is no
-/// custom head-view struct here at all: the head reference comes straight
-/// out of `ArrayIndexStack::head()`, a public, safe, callable trait
-/// method (`StackStorage` is in scope), so the crate's own recommended
-/// "safe" type hands out the exact ingredient rule 1's hazard needs.
-struct Parasite<'a> {
-    head: &'a StackHead<16>,
+/// A self-sufficient implementor that OWNS its head and its links — the
+/// same shape a hand-rolled third-party `StackStorage` impl takes. The
+/// former round-12 variant borrowed its head out of
+/// `ArrayIndexStack::head()`; that extraction route is CLOSED
+/// (`ArrayIndexStack` no longer implements `StackStorage` — see the
+/// compile-fail fixture `tests/compile_fail/array_index_stack_head/`), so
+/// this struct now constructs its own `StackHead` like any other custom
+/// implementor.
+struct Parasite {
+    head: StackHead<16>,
     links: ArrayLinks<64>,
 }
 
-impl StackStorage<16> for Parasite<'_> {
+// SAFETY: DELIBERATE contract violation — clause 2 (load_next must observe
+// the most recent store_next the stack performed): the test overwrites the
+// backing behind the algorithm's back, so load_next answers values the
+// crate never stored.
+unsafe impl StackStorage<16> for Parasite {
     fn head(&self) -> &StackHead<16> {
-        self.head
+        &self.head
     }
 
     fn load_next(&self, index: u32) -> u32 {
@@ -200,57 +232,9 @@ impl StackStorage<16> for Parasite<'_> {
     }
 }
 
-/// KNOWN, INTENTIONAL limitation — round-12 @oh review, finding P2-1;
-/// FLIPPED by the round-13 @oh review, finding P2-1. Same register as the
-/// `SharedHeadView` test above, but with no custom head-view struct at
-/// all: the head reference comes straight out of
-/// [`ArrayIndexStack::head()`](ArrayIndexStack::head), a public, safe,
-/// callable trait method (`StackStorage` is in scope) — it is the
-/// VALUE-LEVEL escape hatch of rule 1's hazard even on the fused type.
-/// Owning the head-and-links pair binds them to each other; it does not
-/// stop a third party from calling `.head()` and building a second,
-/// competing implementor around the same borrowed head.
-///
-/// Mechanism: pushing through `owned` writes `owned`'s link for index 1,
-/// but the parasite's pops read the PARASITE's zero-initialised links,
-/// which answer every `load_next` with `0`. The first pop legitimately
-/// returns the real head index (`1`) — and it has ALREADY moved the shared
-/// head to a foreign `(0, tag)`. The second pop used to hand back the
-/// never-pushed `0` and let the owned stack double-issue `0` forever too;
-/// since round-13 it PANICS: popping index `0` through the parasite's
-/// zero-initialised links reads `next == 0 == index`, a self-loop, and
-/// `pop_index`'s release-active rule-4 guard fires before the second CAS
-/// can complete. The owned stack's further corruption becomes unobservable
-/// here, because the panic ends the test before it could be drained. What
-/// such a parasite can still do UNDETECTED is inventoried in the trait
-/// doc's "The shared-storage hazard class" section. If a future structural
-/// fix stops `head()` from handing out the head on the fused type (or
-/// stops this shape from compiling), this test breaks by design, and the
-/// `ArrayIndexStack` type doc and the trait doc's rule 1 must be updated
-/// with it.
-#[test]
-#[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
-fn array_index_stack_head_still_double_issue() {
-    let owned = ArrayIndexStack::<16, 64>::new();
-    let parasite = Parasite {
-        head: owned.head(),
-        links: ArrayLinks::<64>::new(),
-    };
-
-    owned.push(1);
-
-    // First pop through `parasite` is still the real head index.
-    assert_eq!(parasite.pop_index(), Some(1));
-    // Second pop: the parasite's zero-initialised links answer
-    // load_next(0) with 0 while the popped index IS 0 — self-loop; the
-    // round-13 guard panics. (Before it: silent phantom `0`, and the
-    // owned stack's own drain then double-issued `0` forever too.)
-    let _ = parasite.pop_index();
-}
-
 /// The round-13 self-loop detector's LIMIT — a hand-crafted ACYCLIC
 /// forgery still double-issues silently. KNOWN, INTENTIONAL limitation,
-/// same register as the two `#[should_panic]` tests above: this pins that
+/// same register as the `#[should_panic]` tests around it: this pins that
 /// `pop_index`'s rule-4 guard is a SHAPE detector (the
 /// zero-initialised-foreign-backing shape, whose `next == index` self-loop
 /// is unreachable for a contract-abiding chain), NOT a structural fix for
@@ -258,11 +242,20 @@ fn array_index_stack_head_still_double_issue() {
 /// "The shared-storage hazard class" section for the full catch/miss
 /// boundary.
 ///
-/// The parasite here forges its OWN links before popping —
-/// `links[1] = 0`, `links[0] = TAIL` — instead of accepting the
-/// zero-initialised default. The chain it hands `pop_index` is perfectly
-/// acyclic and numerically valid (`1 -> 0 -> TAIL`): the first pop
-/// legitimately returns the head index `1`, and the second pop returns
+/// The head no longer comes from `ArrayIndexStack::head()` — that
+/// extraction route is CLOSED (see the compile-fail fixture
+/// `tests/compile_fail/array_index_stack_head/`). What this test now
+/// demonstrates is the pure hand-forged-acyclic-backing shape: the
+/// implementor's backing is overwritten BEHIND the algorithm's back, so
+/// its `load_next` answers with values the crate never stored (a violation
+/// of rule 3's coherence clause) — and the acyclic forgery evades the
+/// round-13 self-loop detector. The detector's limit, unchanged.
+///
+/// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,
+/// head `(1, tag)`), then forges its own links before popping —
+/// `links[1] = 0`, `links[0] = TAIL`. The chain it hands `pop_index` is
+/// perfectly acyclic and numerically valid (`1 -> 0 -> TAIL`): the first
+/// pop legitimately returns the head index `1`, and the second pop returns
 /// the never-pushed `0` — a phantom index, in a parent allocator a second
 /// owner for a live slot — with NO panic, because no link ever points
 /// back to its own index. If a future structural fix detects
@@ -270,13 +263,13 @@ fn array_index_stack_head_still_double_issue() {
 /// `pop_index`'s `# Panics` must be updated with it.
 #[test]
 fn hand_crafted_acyclic_forgery_still_double_issues() {
-    let owned = ArrayIndexStack::<16, 64>::new();
     let parasite = Parasite {
-        head: owned.head(),
+        head: StackHead::<16>::new(),
         links: ArrayLinks::<64>::new(),
     };
 
-    owned.push(1);
+    // A REAL push through the implementor: links[1] = TAIL, head = (1, tag).
+    parasite.push_index(1);
 
     // Forge an acyclic chain in the parasite's own links BEFORE popping:
     // index 1 (the head) chains to 0, 0 chains to TAIL.
@@ -329,7 +322,10 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
         links: &'a ArrayLinks<64>,
     }
 
-    impl StackStorage<16> for SharedLinksView<'_> {
+    // SAFETY: DELIBERATE contract violation — clause 3 (no index reachable
+    // from two live bindings over shared cells): two live bindings, separate
+    // heads, same cells, overlapping reachability.
+    unsafe impl StackStorage<16> for SharedLinksView<'_> {
         fn head(&self) -> &StackHead<16> {
             &self.head
         }
@@ -410,7 +406,10 @@ fn internally_disagreeing_storage_still_double_issue() {
         write_links: ArrayLinks<64>,
     }
 
-    impl StackStorage<16> for DisagreeingStorage {
+    // SAFETY: DELIBERATE contract violation — clause 2 (one backing,
+    // consistently): load_next and store_next read and write DIFFERENT
+    // backings.
+    unsafe impl StackStorage<16> for DisagreeingStorage {
         fn head(&self) -> &StackHead<16> {
             &self.head
         }
@@ -459,7 +458,9 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
         links: ArrayLinks<64>,
     }
 
-    impl StackStorage<16> for Pool {
+    // SAFETY: DELIBERATE contract violation — clause 1's temporal half (a
+    // live head rebound to different links across time).
+    unsafe impl StackStorage<16> for Pool {
         fn head(&self) -> &StackHead<16> {
             &self.head
         }
@@ -525,7 +526,10 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
         links: ArrayLinks<64>,
     }
 
-    impl StackStorage<16> for DualWidth {
+    // SAFETY: DELIBERATE contract violation for BOTH impls below — clause 3
+    // (disjoint reachable-index populations across shared cells): two
+    // bindings over ONE backing inside one value.
+    unsafe impl StackStorage<16> for DualWidth {
         fn head(&self) -> &StackHead<16> {
             &self.wide_head
         }
@@ -539,7 +543,7 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
         }
     }
 
-    impl StackStorage<12> for DualWidth {
+    unsafe impl StackStorage<12> for DualWidth {
         fn head(&self) -> &StackHead<12> {
             &self.narrow_head
         }

@@ -1,0 +1,14 @@
+# P1-1 compile-fail fixture — compiled ONLY by tests/compile_fail_array_index_stack_head.rs
+# (never by the workspace: the detached [workspace] table below opts it out, and
+# cargo does not auto-discover nested test dirs). Deliberately dependency-free
+# apart from the path dep, so `cargo build --offline` needs no network.
+[workspace]
+
+[package]
+name = "tis_compile_fail_array_index_stack_head"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tagged-index-stack = { path = "../../.." }

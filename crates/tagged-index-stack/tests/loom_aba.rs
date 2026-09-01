@@ -106,7 +106,7 @@ use loom::sync::atomic::{AtomicU32, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
-use tagged_index_stack::{ArrayIndexStack, StackStorage, TaggedIndex, TAIL};
+use tagged_index_stack::{ArrayIndexStack, TaggedIndex, TAIL};
 
 /// Serializes every test in this file that drives the REAL `push` or `pop`
 /// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/imp.rs`)
@@ -232,7 +232,7 @@ fn aba_repush_keeps_free_list_conservation() {
             let head = stack_a.raw_head();
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = stack_a.load_next(idx);
+            let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
@@ -446,7 +446,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             }
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = stack_a.load_next(idx);
+            let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
@@ -557,7 +557,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
         let head = stack.raw_head();
         let (idx_v, tag) = Tag::unpack(head);
         let idx = idx_v as u32;
-        let next = stack.load_next(idx);
+        let next = stack.load_next_for_test(idx);
         // NOTE: this branch on `preserve_tag_on_drain` computes `new_head` --
         // the value A's CAS would WRITE on success -- but a
         // `compare_exchange`'s success/failure depends only on `current`
@@ -608,7 +608,7 @@ fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
         }
         let (idx_v, tag) = Tag::unpack(head);
         let idx = idx_v as u32;
-        let next = stack.load_next(idx);
+        let next = stack.load_next_for_test(idx);
         let new_head = if next == TAIL {
             Tag::empty() // BUG: hardcoded tag 0 on the empty transition.
         } else {
@@ -736,7 +736,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             let mut head = stack_a.raw_head();
             let (idx_v, tag) = Tag::unpack(head);
             let idx = idx_v as u32;
-            let next = stack_a.load_next(idx);
+            let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
@@ -760,7 +760,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             head = result.unwrap_err();
             let (idx_v2, tag2) = Tag::unpack(head);
             let idx2 = idx_v2 as u32;
-            let next2 = stack_a.load_next(idx2);
+            let next2 = stack_a.load_next_for_test(idx2);
             // Both candidate heads pack the tag actually observed off the
             // head (`tag` / `tag2`), mirroring the real `pop`'s H-2
             // tag-preservation rule exactly — the running tag is kept

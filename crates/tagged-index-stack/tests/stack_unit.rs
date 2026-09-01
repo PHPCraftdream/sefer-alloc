@@ -412,7 +412,11 @@ struct AlwaysInvalidStorage {
     head: StackHead<16>,
 }
 
-impl StackStorage<16> for AlwaysInvalidStorage {
+// SAFETY: DELIBERATE contract violation — clause 4 (load_next must return
+// only TAIL or a currently-valid index): this implementor deliberately
+// answers INDEX_MASK, an out-of-range value, to fire pop_index's rule-4
+// guard.
+unsafe impl StackStorage<16> for AlwaysInvalidStorage {
     fn head(&self) -> &StackHead<16> {
         &self.head
     }
@@ -564,7 +568,7 @@ fn links_are_lazy() {
     let stack = ArrayIndexStack::<16, 4>::new();
     // Never push index 3 in this test.
     assert_eq!(
-        stack.load_next(3),
+        stack.load_next_for_test(3),
         0,
         "a never-pushed index's link is the zero value straight after construction"
     );
@@ -574,7 +578,7 @@ fn links_are_lazy() {
     stack.push(0);
     assert_eq!(stack.pop(), Some(0));
     assert_eq!(
-        stack.load_next(3),
+        stack.load_next_for_test(3),
         0,
         "push/pop of other indices never writes a never-pushed index's link"
     );
