@@ -547,6 +547,12 @@ pub(crate) mod loom_shim {
         }
     }
 
+    // Deliberately NOT converted to an `unsafe trait`: this mirror is
+    // `pub(crate)`, used only under `--cfg loom`, and never a public
+    // extension point — the 2026-09-01 unsafe-trait decision on the real
+    // `tagged_index_stack::StackStorage` does not reach it. It stays a
+    // plain, safe trait, while the REAL impl in `heap_registry.rs` is an
+    // `unsafe impl` of the real trait.
     /// Mirror of the real `tagged_index_stack::StackStorage` trait: one
     /// implementor owns the head↔links binding.
     pub(crate) trait StackStorage<const INDEX_BITS: u32> {

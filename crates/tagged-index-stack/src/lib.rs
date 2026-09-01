@@ -15,7 +15,9 @@
 //! residual risk is part of the caller's contract. Lock-freedom here describes
 //! the stack's own CAS loops; end-to-end it additionally requires a
 //! non-blocking [`StackStorage`] implementation.
-//! Allocation-free, `no_std`, `#![forbid(unsafe_code)]`.
+//! Allocation-free, `no_std`; `#![deny(unsafe_code)]` with exactly ONE
+//! audited `unsafe` token — the `unsafe trait StackStorage` declaration
+//! (see ["Where unsafe lives"](#where-unsafe-lives) below).
 //!
 //! This is the "recycle a small integer id" primitive that slab allocators,
 //! object pools, entity-component stores, and connection tables all reinvent —
@@ -46,7 +48,8 @@
 //! [`head`](StackStorage::head). This is what lets a production allocator
 //! keep its links **slot-resident** (an `AtomicU32` field inside each slot it
 //! already owns) instead of paying for a second array; the crate provides
-//! [`ArrayIndexStack`]`<INDEX_BITS, N>` for standalone use. Slot-resident does
+//! [`ArrayIndexStack`]`<INDEX_BITS, N>` for standalone use. The trait is
+//! `unsafe` to implement — see its `# Safety` section. Slot-resident does
 //! not mean payload-aliased — see the [`StackStorage`] trait doc's "Storage
 //! requirement" section (violating it defeats
 //! [`pop_index`](StackOps::pop_index)'s corruption-detection guard; see its
@@ -220,6 +223,39 @@
 //! counterfactuals prove the harness is non-vacuous. See
 //! `tests/loom_aba.rs`'s own module doc for the per-model breakdown.
 //!
+//! # Where unsafe lives
+//!
+//! This crate contains exactly ONE `unsafe` token: the `unsafe trait
+//! StackStorage` declaration in `src/imp.rs`, under an item-scoped
+//! `#[allow(unsafe_code)]` (tier 2 of this workspace's two-tier
+//! unsafe-inventory convention). There are ZERO `unsafe` functions and ZERO
+//! `unsafe` blocks anywhere in the crate, pinned by `#![deny(unsafe_code)]`:
+//! unlike `forbid`, `deny` can be locally relaxed — but only at the one
+//! audited declaration — so every OTHER `unsafe` token anywhere in the crate
+//! remains a hard compile error. The inventory is self-verifying:
+//!
+//! ```text
+//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/
+//! ```
+//!
+//! which returns exactly one hit in this crate (the trait declaration).
+//!
+//! WHY: allocator consumers rely on [`StackStorage`]'s exclusive-issuance
+//! contract for their own memory safety — sefer-alloc's registry free-list
+//! today; any third-party unsafe allocator built on this crate after
+//! publication. The moment unsafe code depends on a trait's contract, that
+//! trait is in the same category as
+//! [`core::alloc::GlobalAlloc`](https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html)
+//! and `std::alloc::Allocator` (unstable) — both `unsafe trait` for the
+//! identical reason. Marking the trait `unsafe` does not make the compiler
+//! verify the value-level binding invariant (unobservable to the type
+//! system); it moves the unchecked promise into Rust's unsafe-contract
+//! system, where responsibility for a violation is formally assigned to
+//! whichever `unsafe impl` asserted a contract it did not uphold. The
+//! methods stay safe `fn` because every known hazard is implementor-side,
+//! never caller-side — see the [`StackStorage`] trait doc's `# Safety` and
+//! `# Stability` sections.
+//!
 //! # Portability limit — requires 64-bit atomics
 //!
 //! The stack head is a single `AtomicU64` (the packed `(index | tag)` word —
@@ -240,7 +276,16 @@
 //! produce.
 
 #![no_std]
-#![forbid(unsafe_code)]
+// `deny`, not `forbid`: the crate now contains exactly ONE audited `unsafe`
+// token — the `unsafe trait StackStorage` declaration in src/imp.rs, under an
+// item-scoped `#[allow(unsafe_code)]` (tier 2 of this workspace's two-tier
+// unsafe-inventory convention). A `forbid` lint cannot be locally relaxed by
+// any inner `#[allow]`, so it would reject that single audited declaration;
+// `deny` keeps every OTHER `unsafe` token anywhere in the crate a hard error.
+// The self-verifying inventory command (see the crate docs' "Where unsafe
+// lives" section) — `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+// — returns exactly one hit.
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 // The stack head is one AtomicU64 (see the crate-doc "Portability limit"

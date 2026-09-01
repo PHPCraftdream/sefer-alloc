@@ -21,15 +21,16 @@ the observation window past it; accepting that residual risk is part of the
 caller's contract. (The tag is not strictly monotonic — a strictly monotonic
 counter never repeats a value, and this one wraps — it just does not repeat
 until a full `2^TAG_BITS` pushes have elapsed, days of continuously
-saturated operation at every permitted width.) Allocation-free, `no_std`,
-`#![forbid(unsafe_code)]`.
+saturated operation at every permitted width.) Allocation-free, `no_std`;
+`#![deny(unsafe_code)]` with exactly ONE audited `unsafe` token — the
+`unsafe trait StackStorage` declaration (see the crate documentation's
+"Where unsafe lives" section for the self-verifying inventory).
 
 This is the canonical "recycle a small integer id" primitive that slab
 allocators, object pools, entity-component stores, id allocators, and connection
 tables all reinvent — and routinely reinvent *wrong*. Crates like `sharded-slab`
 embed one privately; this ships it as a standalone primitive **with an
-exhaustive loom exploration of the bounded scenarios in the loom section
-below, run against the real type**.
+exhaustive loom model-check run against the real type**.
 
 ## The packed word
 
@@ -54,14 +55,10 @@ every `StackStorage` implementor), so the CAS-loop bodies cannot be
 overridden downstream. The old per-call repro — two independent calls, each
 supplying a different link array against one head and double-issuing an
 index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
-implementor/caller discipline: a head must be reachable through exactly ONE
-live implementor value at a time (the trait doc's rule 1), and an index must
-not already be REACHABLE from any head↔links binding that reads and writes
-the same link cells this stack touches. Cell sharing PER SE is harmless — two
-stacks over the same cells with disjoint index populations coexist correctly,
-because each link access touches only its own cell; the hazard is one index
-REACHABLE from two bindings over the same cells (the trait doc's rule 3 — a
-reachability invariant, not a cell-ownership one). Discharged by construction, not by reading any single
+implementor/caller discipline at the VALUE level: a head must be reachable
+through exactly ONE live implementor value at a time (the trait doc's rule 1),
+and link cells must not be shared between stacks meant to be independent (the
+trait doc's rule 3). Discharged by construction, not by reading any single
 impl block — and owning the storage object is not, by itself, the discharge:
 `head()` is a plain safe method on every implementor, including the owned
 `ArrayIndexStack`, so anyone who can read a live stack can take its `.head()`
@@ -80,16 +77,9 @@ backing, with plain `push`/`pop` methods.
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
-first bytes (the classic free-block-header idiom) is not supported: a
-popper's stale re-read of a popped slot can then observe arbitrary
-consumer-written payload instead of a link value. `pop_index`'s
-release-active corruption-detection guard narrows the blast radius rather
-than closing it: it panics on exactly TWO value shapes — a read that is
-neither the empty sentinel nor a valid in-range index, and a self-loop where
-the stale read equals the popped index — while a corrupted but in-range,
-acyclic value (a length, a refcount, a small enum discriminant) passes the
-guard silently and is packed as the new head. The `StackStorage` trait doc's
-"Storage requirement" section has the full reasoning.
+first bytes (the classic free-block-header idiom) is not supported and defeats
+`pop_index`'s own corruption-detection guard, which panics unconditionally
+(release-active, not debug-only) on a backing that violates it.
 
 `StackHead::is_empty()` (also reachable through `ArrayIndexStack::is_empty()`)
 is an advisory, `Relaxed` emptiness check —
@@ -119,11 +109,10 @@ authoritative empty check.
 
 - **No double-push (caller-enforced).** An index must NOT already be reachable
   from ANY stack that reads and writes the same link cells this stack's
-  `load_next`/`store_next` touch — not merely from this one stack (two stacks
-  with separate heads over the same cells are a distinct hazard shape, and
-  harmless while their index populations stay disjoint — see the
-  `StackStorage` trait doc's rule 3 and its "The shared-storage hazard class"
-  section). `push_index` overwrites the pushed
+  `load_next`/`store_next` touch — not merely from this one stack (link cells
+  shared between two stacks with completely separate heads are a separate
+  hazard; see the `StackStorage` trait doc's rule 3 and its "The
+  shared-storage hazard class" section). `push_index` overwrites the pushed
   index's link with the current head, so re-pushing a live index closes a
   cycle in the link chain: if the re-pushed index was deeper in the chain
   than the head, `pop_index` stops returning `None` and hands the same index
@@ -214,8 +203,9 @@ protection on top of this crate.
 A wider packed word — a 128-bit CAS, e.g. via `portable-atomic` or a nightly
 intrinsic — was considered and explicitly rejected for this crate's default
 primitive. It would drop loom's coverage of the real type (`loom` has no
-`AtomicU128`), add an unsafe dependency to a crate that is currently
-`#![forbid(unsafe_code)]`, and likely turn `pop`'s currently read-only head
+`AtomicU128`), add an unsafe THIRD-PARTY dependency to a crate whose own
+code holds exactly one audited `unsafe` token (`#![deny(unsafe_code)]` — see
+"Where unsafe lives"), and likely turn `pop`'s currently read-only head
 observation into an RMW on targets without a guaranteed native 128-bit CAS
 (`cmpxchg16b` is not in the x86-64 baseline). A genuine future need for more
 than 65535 indices in one pool would be better served by a separate, explicitly
@@ -332,16 +322,10 @@ assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 
 ## MSRV
 
-Rust 1.79 — the floor of the PUBLISHED LIBRARY surface only (dev-only
-test/bench code is deliberately out of scope: a library consumer never
-builds this crate's dev-dependencies). Measured, not assumed: the library
-compiles clean at 1.79 (default build and `--features test-internals`),
-and 1.78 fails with `error[E0658]: inline-const is experimental` at the
-inline `const` block in `ArrayLinks::new`'s link array (`src/imp.rs`) —
-inline-const, stabilized in Rust 1.79, is the newest API `src/` uses. The
-test suite cannot run at 1.79 regardless: its dev-dependency graph
-(`proptest` -> `getrandom 0.4.3`) requires edition2024 manifests, which
-cargo only understands from ~1.85.
+Rust 1.81 (the library alone checks clean at 1.80, but this crate's own
+`cargo clippy --all-targets` gate additionally covers `tests/`, and
+`tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since 1.81 —
+1.81 is the real floor across the full target set that gate checks).
 
 ## License
 

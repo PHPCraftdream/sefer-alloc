@@ -578,14 +578,48 @@ use tagged_index_stack::StackOps as _;
 /// `--cfg loom`, `Registry::free_slots` is the const-capable loom shim
 /// (`bootstrap::loom_shim::StackHead`), whose `StackStorage` mirrors the real
 /// trait's shape — so the bodies must stay in lockstep with each other.
+/// The cfg-gating is no longer symmetric in KIND: the real (non-loom) impl
+/// below is an `unsafe impl` of the real trait (which is `unsafe` as of the
+/// 2026-09-01 conversion — see the crate's "Where unsafe lives" docs),
+/// carrying the `// SAFETY:` justification above the impl; the `--cfg loom`
+/// mirror impl stays a PLAIN impl of the loom shim's own `pub(crate)`
+/// mirror trait, deliberately NOT converted (see the note at its declaration
+/// in `bootstrap.rs`). The bodies remain in lockstep.
 const _: () = assert!(
     NEXT_FREE_TAIL == tagged_index_stack::TAIL,
     "the registry's tail sentinel must equal the crate's TAIL so slot links \
      round-trip through the tagged stack unchanged"
 );
 
+// SAFETY: `Registry` upholds every clause of the real
+// `tagged_index_stack::StackStorage` `# Safety` contract:
+// 1. One live binding per head, for the head's whole life — `Registry` is a
+//    process singleton (`static REGISTRY: Registry = Registry::new()` in
+//    `src/registry/bootstrap.rs`; `Registry::new` is a private `const fn`;
+//    sole access via `bootstrap::ensure() -> &'static Registry`), and
+//    `free_slots` is `pub(crate)` whose ONLY reference ever handed out is
+//    this impl's `head()` (the cfg(loom) mirror below under loom), consumed
+//    only by the crate's push/pop CAS loops.
+// 2. One backing, consistently — `load_next`/`store_next` both resolve the
+//    index through `Registry::slot` (the single index→slot path) onto the
+//    SAME slot-resident `next_free: AtomicU32` cell; slots are `&'static`,
+//    chunks materialise exactly once, so the index↔cell mapping is stable
+//    for the process life.
+// 3. Disjoint reachable-index populations — the only non-doc references to
+//    `next_free` in the crate are the two cfg-gated impls' load/store pairs
+//    plus the field declaration in `heap_slot.rs`, so no second binding over
+//    the cells exists.
+// 4. Valid answers, dedicated cells — `next_free` is a dedicated per-slot
+//    link field, never payload-aliased; every pushed index is `< MAX_HEAPS =
+//    4096` (minted by `bump_count`, which returns `None` at `>= MAX_HEAPS`,
+//    or a previously minted/recycled one re-pushed only through
+//    `push_free_slot`, whose `debug_assert!` enforces the bound) and
+//    `MAX_HEAPS (4096) < INDEX_MASK (0xFFFF at INDEX_BITS = 16)`, the empty
+//    sentinel reserved above the cap.
+// 5. Same logical head every call — `head()` returns `&self.free_slots`, a
+//    fixed field.
 #[cfg(not(loom))]
-impl tagged_index_stack::StackStorage<16> for Registry {
+unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     #[inline]
     fn head(&self) -> &tagged_index_stack::StackHead<16> {
         &self.free_slots

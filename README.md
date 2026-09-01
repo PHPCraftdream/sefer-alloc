@@ -600,7 +600,7 @@ the line to begin with the attribute, not a `//` prefix.
 | `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
 | `sefer-region` | `crates/sefer-region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s core owns the generational layout (no version-scoped audit record for `slotmap` is tracked by this project — see `crates/sefer-region/README.md` "## Safety") |
 | `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
-| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![forbid(unsafe_code)]` — lock-free via a single packed `AtomicUsize` head word; ABA tag in the high bits, no raw-pointer derefs |
+| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![deny(unsafe_code)]` — exactly ONE audited `unsafe` token: the `unsafe trait StackStorage` declaration (item-scoped tier-2 allow, counted in the tier-2 table below); zero `unsafe` fns/blocks; implementor obligations live in the trait's `# Safety` doc (allocator consumers rely on its exclusive-issuance contract — `GlobalAlloc` category). Lock-free via a single packed `AtomicU64` head word; ABA tag in the high bits, no raw-pointer derefs |
 | `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** — any `unsafe` token
@@ -640,7 +640,7 @@ independently-auditable `numa-shim` crate since task #1306 removed the
 test-only `bind_segment` seam. `experimental` opens the older research-tier
 concurrent seam (now deprecated); the production build does not pull it in.
 
-**Internal sefer-alloc item-scoped allows — tier 2 (task #101 / R4-9).**
+**Internal sefer-alloc item-scoped allows — tier 2 (task #101 / R4-9), plus the one extracted-crate tier-2 site (tagged-index-stack, 2026-09-01).**
 Each is a single `#[allow(unsafe_code)]` on an `unsafe fn` declaration (or on
 the `unsafe {}` block at its internal call site) inside a file that is
 otherwise safe code. Unlike tier 1 (where `unsafe` is permitted anywhere in
@@ -669,9 +669,10 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 6 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` (R32-3/task #494: `realloc`'s move leg and `try_promote_to_large` now call the safe `dealloc_own_thread[_with_base]` bodies directly with their already-proven `base` instead of routing back through `HeapCore::dealloc`, which cost this file its one `try_promote_to_large` item-scoped site — the other, `realloc`'s move leg, was never separately counted here: it was an inner `unsafe {}` block already covered by `realloc`'s own `unsafe fn` boundary) |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
+| [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 1 | The `unsafe trait StackStorage` declaration itself (2026-09-01 owner-approved conversion, ADR `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`) — this extracted crate's single audited `unsafe` token, under an item-scoped allow; the crate is otherwise `#![deny(unsafe_code)]` with zero unsafe fns/blocks; the contract an `unsafe impl` must uphold is the trait's `# Safety` doc |
 
 That's the full list (both tiers): **18** tier-1 module-level seams (12 in
-`src/`, 6 in `crates/`) plus **73** tier-2 item-scoped allows across **18**
+`src/`, 6 in `crates/`) plus **74** tier-2 item-scoped allows across **19**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
