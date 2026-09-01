@@ -252,15 +252,31 @@ before it.
   now state the real throughput-vs-fairness axis instead of the old
   unmeasured low-contention-latency claim.
 - **`push`/`pop` are lock-free but NOT starvation-free** — the shipped cap
-  trades a few very large outlier pops (worse ONLY at the extreme maximum)
-  for better latency at every percentile through p99.9 and ~4-5x better
-  aggregate throughput (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4).
+  trades worse pops on TWO axes where disabling the backoff wins: the
+  absolute extreme-maximum pop time at every thread count tested (8
+  threads: 41-60 ms under the cap vs 0.6-24 ms disabled; 16 threads:
+  130-173 ms vs 40-46 ms), and — at 8 threads specifically — the entire
+  slow-pop tail-count band (>1 ms: 60-86 pops per run under the cap vs
+  0-8 disabled; >10 ms: 26-34 vs 0-2), in exchange for better latency
+  at every percentile through p99.9, a LOWER over-1-ms tail count at 16
+  threads specifically (249-285 pops vs 553-661 — the tail-count axis
+  is thread-count-dependent, not uniform), and ~4-5x better aggregate
+  throughput (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4).
 - **One speculative perf change evaluated and declined** (unrelated to the
   backoff above): both `push`'s and `pop`'s CAS loops are
   `compare_exchange_weak` candidates, but any difference is specific to
   non-LSE AArch64 and similar `ldxr`/`stxr`-style architectures, and this
   repository has no AArch64 wall-clock/perf-gate harness to measure it.
-  Revisit when one exists.
+  Revisit when one exists. A further candidate in the same class,
+  considered and NOT changed this round (unmeasured, same standard as the
+  sibling candidates here): `pop_index`'s CAS SUCCESS ordering
+  (`Ordering::Acquire` today) as a `Relaxed` candidate, by the same style
+  of argument as the push-side weakening candidates already listed in this
+  section — on success the CAS reads no new value: the matched `head` is
+  already held locally, Acquire-loaded either by `pop`'s initial head load
+  or by the previous failed iteration's Acquire failure ordering, so the
+  synchronizes-with edge already exists without the success ordering
+  itself being `Acquire`/`AcqRel`.
 - **`push`'s initial head load uses `Ordering::Relaxed`** (push never follows
   a link through the observed word, so no ordering burden applies — the
   proof is in `push_index`'s source comment and `StackStorage`'s

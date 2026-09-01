@@ -63,9 +63,13 @@
 //! independent calls, each supplying a different backing against one head —
 //! no longer compiles (pinned by a compile-fail regression test). The
 //! obligation moved rather than vanished, and the part that stayed live is
-//! VALUE-level implementor/caller discipline: one live implementor value
-//! per head (trait rule 1) and one link-cell population per stack (trait
-//! rule 3) — obligations about VALUES, invisible to any per-impl audit.
+//! implementor/caller discipline: one implementor value per head, for the
+//! head's WHOLE life (trait rule 1), and disjoint index populations per
+//! binding over any shared link-cell population — not "one link-cell
+//! population per stack": cell sharing per se is harmless, only a
+//! REACHABLE index across two bindings is the hazard (trait rule 3,
+//! round-15 @oh review, P3-2) — obligations about head↔links BINDINGS,
+//! invisible to any per-impl audit.
 //! The [`StackStorage`] trait doc's "The shared-storage hazard class"
 //! section is the single source of truth for that hazard inventory and for
 //! what the runtime does and does not detect; this doc does not re-derive
@@ -181,15 +185,22 @@
 //! never block on a lock — a losing CAS retries — but lock-freedom is not
 //! starvation-freedom: a call can lose arbitrarily many CASes in a row, and
 //! the exponential backoff deliberately makes an unlucky call wait longer
-//! between retries. The measured trade is a small number of very large
-//! outliers in exchange for better latency at every percentile through p99.9
-//! and better aggregate throughput — not "tail latency for throughput" in
-//! general. Sizing figure: on a 64-element `ArrayLinks` at 8 threads ×
-//! 200,000 pop-then-repush iterations, the single worst `pop` blocked
-//! 41-60 ms across three runs under the shipped backoff cap (0.6-24 ms with
-//! the backoff disabled). A consumer recycling a slot on a latency-sensitive
-//! request path should size its tolerance for those rare outliers, not fear
-//! a broad tail. Full measurements and the derivation are in
+//! between retries. The measured trade is not single-axis: the backoff-free
+//! build (cap 0) wins the absolute worst single `pop` at every thread count
+//! tested — on a 64-element `ArrayLinks` at 200,000 pop-then-repush
+//! iterations, 41-60 ms across three runs under the shipped backoff cap vs
+//! 0.6-24 ms disabled at 8 threads, and 130-173 ms vs 40-46 ms at 16 — AND,
+//! at 8 threads specifically, the whole slow-pop tail-count band (pops
+//! slower than 1 ms: 60-86 per run under the cap vs 0-8 disabled; slower
+//! than 10 ms: 26-34 vs 0-2). In exchange the shipped cap wins every
+//! percentile through p99.9,
+//! the >1 ms tail-count band at 16 threads specifically (249-285 pops vs
+//! 553-661 — the tail-count axis is genuinely thread-count-dependent, not
+//! uniform), and roughly 4-5x aggregate wall-clock throughput. A consumer
+//! recycling a slot on a latency-sensitive request path should size its
+//! tolerance for the extreme outliers AND the thread-count-dependent
+//! tail-count band at its own thread count, not assume either single
+//! thread count's story. Full measurements and the derivation are in
 //! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
 //! — a repository file (not
 //! part of the published package), measured with

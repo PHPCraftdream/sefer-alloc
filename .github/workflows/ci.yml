@@ -2102,7 +2102,7 @@ jobs:
       #
       # One sub-claim of the same review is REFUTED and recorded here so
       # the bench is never later "silenced" for a warning this gate does
-      # not emit: it predicted the two `black_box(stack.pop(&links));`
+      # not emit: it predicted the two `black_box(stack.pop());`
       # discards in the bench would trip `unused_must_use` under this
       # exact gate. They don't -- `pop` IS `#[must_use]`, but its result
       # is consumed in argument position by `black_box` (itself not

@@ -158,9 +158,13 @@ the single-threaded `churn` rows in
 `docs/perf/_raw_tis_backoff_cap_sweep_run1.log` — a file in this crate's
 repository
 (<https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log>),
-not in the published package (11th Gen Intel Core
-i7-11800H, rustc 1.97.0, 2026-08-31) — e.g. 53.89 ns/pair in that log's
-first arm, its 20 such samples spanning 51.41-64.72 ns/pair; re-run
+not in the published package (rustc 1.97.0, 2026-08-31; that log records
+only a MINGW64 uname string and `logical_cpus: 16`, not a CPU model — the
+11th Gen Intel Core i7-11800H identification comes from the paired-A/B run
+metadata's `cpu_info` field, e.g.
+`docs/perf/paired_ab_runs/2026-08-04T16-42-31-023Z.json`) — e.g. 53.89
+ns/pair in that log's first arm, its 20 such samples spanning 51.41-64.72
+ns/pair; re-run
 `cargo bench -p tagged-index-stack --bench tagged_index_stack_bench` for a
 fresh sample — the bound below only needs the order of magnitude, not the
 exact figure.
@@ -209,21 +213,28 @@ opt-in type gated behind a feature flag — not by changing this default.
 `push_index`/`pop_index` never block on a lock — a losing CAS retries — but lock-freedom
 is not starvation-freedom: a call can lose arbitrarily many CASes in a row,
 and the exponential backoff deliberately makes an unlucky call wait longer
-between retries. The measured trade is a SMALL NUMBER OF VERY LARGE OUTLIERS
-in exchange for better latency at every percentile through p99.9 AND better
-aggregate throughput — not "tail latency for throughput" in general. On a
-64-element `ArrayLinks` under this crate's own contention discipline (8
-threads x 200k pop-then-repush iterations, `--release`): the single worst
-`pop` blocked 41-60 ms across three runs under the shipped backoff cap, vs
-0.6-24 ms with the backoff disabled — a handful of extreme outliers is the
-one axis where disabling the backoff wins — while the same workload finished
-~4.9x faster in aggregate under the cap, every percentile through p99.9 was
-1-2 orders of magnitude better under the cap (p99.9 ≈ 1 µs vs 54-182 µs at
-8-16 threads), and at 16 threads the backoff-free build produced ~2.4x
-MORE pops over 1 ms median-to-median (1.9-2.6x across rep pairings). A
-consumer recycling a slot on a latency-sensitive
-request path should size its tolerance for those rare outliers, not fear a
-broad tail; the full table is
+between retries. The measured trade, on a 64-element `ArrayLinks` under
+this crate's own contention discipline (4/8/16 threads x 20k-200k
+pop-then-repush iterations, `--release`, 3 runs per cell), is NOT
+single-axis: the backoff-free build (cap 0) wins TWO axes outright — the
+absolute worst single `pop` at every thread count tested (8 threads: 0.6-24
+ms across three runs vs the shipped cap's 41-60 ms; 16 threads: 40-46 ms vs
+130-173 ms), AND — at 8 threads specifically — the entire slow-pop
+tail-COUNT band (pops >1 ms: 0-8 per run vs the shipped cap's 60-86;
+pops >10 ms: 0-2 vs 26-34 — dozens of mid-band outliers per run, not a
+handful of extremes). In exchange the shipped cap wins every percentile
+through p99.9 by 1-2 orders of magnitude (p99.9 ≈ 1 µs vs 54-182 µs at
+8-16 threads), the >1 ms tail-count band at 16 threads SPECIFICALLY — the
+inverse of the 8-thread result: the tail-count axis is genuinely
+thread-count-dependent, not uniform (the backoff-free build produced ~2.4x
+more pops slower than 1 ms median-to-median, 1.9-2.6x across rep pairings)
+— and roughly 4-5x aggregate wall-clock throughput (median wall speedup
+4.85x at 8 threads, 4.05x at 16). A consumer recycling a slot on a
+latency-sensitive request path should therefore size its tolerance BOTH
+for the rare extreme outlier AND for the thread-count-dependent
+slow-pop tail-count band (>1 ms / >10 ms), measured at its own thread
+count — neither
+thread count's story generalizes alone; the full table is
 [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
 — a file in this crate's repository, not in the published package.
 
