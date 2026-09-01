@@ -28,7 +28,8 @@ This is the canonical "recycle a small integer id" primitive that slab
 allocators, object pools, entity-component stores, id allocators, and connection
 tables all reinvent — and routinely reinvent *wrong*. Crates like `sharded-slab`
 embed one privately; this ships it as a standalone primitive **with an
-exhaustive loom model-check run against the real type**.
+exhaustive loom exploration of the bounded scenarios in the loom section
+below, run against the real type**.
 
 ## The packed word
 
@@ -53,10 +54,14 @@ every `StackStorage` implementor), so the CAS-loop bodies cannot be
 overridden downstream. The old per-call repro — two independent calls, each
 supplying a different link array against one head and double-issuing an
 index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
-implementor/caller discipline at the VALUE level: a head must be reachable
-through exactly ONE live implementor value at a time (the trait doc's rule 1),
-and link cells must not be shared between stacks meant to be independent (the
-trait doc's rule 3). Discharged by construction, not by reading any single
+implementor/caller discipline: a head must be reachable through exactly ONE
+live implementor value at a time (the trait doc's rule 1), and an index must
+not already be REACHABLE from any head↔links binding that reads and writes
+the same link cells this stack touches. Cell sharing PER SE is harmless — two
+stacks over the same cells with disjoint index populations coexist correctly,
+because each link access touches only its own cell; the hazard is one index
+REACHABLE from two bindings over the same cells (the trait doc's rule 3 — a
+reachability invariant, not a cell-ownership one). Discharged by construction, not by reading any single
 impl block — and owning the storage object is not, by itself, the discharge:
 `head()` is a plain safe method on every implementor, including the owned
 `ArrayIndexStack`, so anyone who can read a live stack can take its `.head()`
@@ -75,9 +80,16 @@ backing, with plain `push`/`pop` methods.
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
-first bytes (the classic free-block-header idiom) is not supported and defeats
-`pop_index`'s own corruption-detection guard, which panics unconditionally
-(release-active, not debug-only) on a backing that violates it.
+first bytes (the classic free-block-header idiom) is not supported: a
+popper's stale re-read of a popped slot can then observe arbitrary
+consumer-written payload instead of a link value. `pop_index`'s
+release-active corruption-detection guard narrows the blast radius rather
+than closing it: it panics on exactly TWO value shapes — a read that is
+neither the empty sentinel nor a valid in-range index, and a self-loop where
+the stale read equals the popped index — while a corrupted but in-range,
+acyclic value (a length, a refcount, a small enum discriminant) passes the
+guard silently and is packed as the new head. The `StackStorage` trait doc's
+"Storage requirement" section has the full reasoning.
 
 `StackHead::is_empty()` (also reachable through `ArrayIndexStack::is_empty()`)
 is an advisory, `Relaxed` emptiness check —
@@ -107,10 +119,11 @@ authoritative empty check.
 
 - **No double-push (caller-enforced).** An index must NOT already be reachable
   from ANY stack that reads and writes the same link cells this stack's
-  `load_next`/`store_next` touch — not merely from this one stack (link cells
-  shared between two stacks with completely separate heads are a separate
-  hazard; see the `StackStorage` trait doc's rule 3 and its "The
-  shared-storage hazard class" section). `push_index` overwrites the pushed
+  `load_next`/`store_next` touch — not merely from this one stack (two stacks
+  with separate heads over the same cells are a distinct hazard shape, and
+  harmless while their index populations stay disjoint — see the
+  `StackStorage` trait doc's rule 3 and its "The shared-storage hazard class"
+  section). `push_index` overwrites the pushed
   index's link with the current head, so re-pushing a live index closes a
   cycle in the link chain: if the re-pushed index was deeper in the chain
   than the head, `pop_index` stops returning `None` and hands the same index
