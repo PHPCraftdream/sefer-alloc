@@ -31,11 +31,15 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 pub const TAIL: u32 = u32::MAX;
 
 /// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: the
-/// Kth lost CAS within one call, counting from 0, spins
-/// `1 << K.min(BACKOFF_SPIN_CAP)` times via [`core::hint::spin_loop`] before
-/// retrying — the 1st lost CAS (K = 0) spins once, the 2nd (K = 1) spins
-/// twice, and so on up to the cap (the 7th and every later lost CAS, K >= 6,
-/// spin 64 times). `K` is a per-call local, reset on every fresh
+/// Kth lost CAS within one call, counting from 0, spins `1 << K` times via
+/// [`core::hint::spin_loop`] before retrying — the 1st lost CAS (K = 0) spins
+/// once, the 2nd (K = 1) spins twice, and so on up to the cap (the 7th and
+/// every later lost CAS spin 64 times). The cap is ENFORCED by the explicit
+/// increment guard each retry arm runs below its spin loop (`if spins
+/// < BACKOFF_SPIN_CAP`), which saturates `K` — it can never exceed the cap —
+/// so the `spins.min(BACKOFF_SPIN_CAP)` in the shift expression is
+/// belt-and-braces, not the enforcement mechanism. `K` is a per-call local,
+/// reset on every fresh
 /// `push_index`/`pop_index` — this backs off within one call's retry loop,
 /// never across calls. Not unconditional: `pop_index` skips the backoff when
 /// the lost CAS reveals the stack just went empty (documented at
@@ -259,9 +263,11 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 
 /// The head word of a tagged Treiber free-list: a single `AtomicU64` packing an
 /// `(index | tag)` pair (see [`TaggedIndex`]). Owned by exactly ONE
-/// [`StackStorage`] implementor VALUE at a time — the binding between this
-/// head and its links is established by that impl, not re-asserted per call;
-/// sharing one head between implementor values is rule 1's hazard — see the
+/// [`StackStorage`] implementor VALUE at a time, and bound to ONE link
+/// backing for its WHOLE life — the binding between this head and its links
+/// is established by that impl, not re-asserted per call; sharing one head
+/// between implementor values (rule 1) or rebinding a live head across time
+/// (inventory shape 4) are hazards — see the
 /// [`StackStorage`] trait doc's "The shared-storage hazard class" section
 /// for the full inventory. The stack operations themselves live
 /// on [`StackOps`] (blanket-implemented by the crate), not here; this type
@@ -550,7 +556,10 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    two implementor VALUES of possibly the SAME impl sharing one head,
 ///    not multiple impl blocks existing, and the values are individually
 ///    correct, so no per-impl audit can see the combination. Discharge it
-///    by construction — one implementor value per head — and note the
+///    by construction — one implementor value per head, for the head's
+///    WHOLE life (one-live-value-at-a-time is not enough: shape 4 below
+///    rebinds a live head across time while every moment still has
+///    exactly one live value) — and note the
 ///    discharge is convention, not something the owned
 ///    [`ArrayIndexStack`] shape enforces: [`head`](Self::head) is a plain,
 ///    safe method on every implementor, so an owned stack stays discharged
@@ -608,20 +617,31 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    [`store_next`](Self::store_next) of `(i, _)` the crate itself performed
 ///    on this implementor. The Acquire/Release ordering contract above
 ///    guarantees THIS for a single, stable implementor.
-///    The rule also carries a VALUE-level clause, parallel to rule 1's
-///    instance-level obligation: the
-///    link CELLS themselves must not be shared between two implementor
-///    values whose stacks are meant to be independent. Two stacks over the
-///    same cells — even with two completely separate, individually
-///    correct heads — overwrite each other's links on every push, so one
-///    index can be chained into BOTH stacks at once, and each stack then
-///    hands it out: double-issue with every per-implementor rule
-///    individually satisfied and rule 4's guard silent (the shared chain
-///    stays acyclic — pinned by
+///    The rule also carries a BINDING-level clause, parallel to rule 1's
+///    instance-level obligation — and it is a REACHABILITY invariant,
+///    not a cell-ownership one: an index must not already be REACHABLE
+///    from any head↔links binding that reads and writes the same link
+///    cells this implementor's
+///    [`load_next`](Self::load_next)/[`store_next`](Self::store_next)
+///    touch (the same invariant
+///    [`push_index`](StackOps::push_index)'s `# Caller contract` states
+///    from the caller's side). Cell sharing PER SE is harmless: two
+///    stacks over the same cells with DISJOINT index populations (e.g.
+///    `{0, 2, 4, 6}` and `{1, 3, 5, 7}`) coexist correctly, because each
+///    `store_next(i, _)`/`load_next(i)` touches only cell `i` — the
+///    earlier "the link CELLS themselves must not be shared" framing was
+///    FALSE as stated (round-15 @oh review, P3-2). The hazard fires when
+///    one index is reachable from two bindings over the same cells: the
+///    second binding's push overwrites a link the first still chains
+///    through, one index ends up chained into BOTH stacks, and each
+///    stack then hands it out — double-issue with every per-implementor
+///    rule individually satisfied and rule 4's guard silent (the shared
+///    chain stays acyclic — pinned by
 ///    `two_stacks_sharing_link_storage_still_double_issue` in
-///    `tests/custom_storage_impl.rs`). Discharge it by construction — one
-///    link-cell population per stack, the same one-value-per-head
-///    discipline rule 1 demands for heads.
+///    `tests/custom_storage_impl.rs`). Discharge it by construction —
+///    disjoint index populations per binding over any shared cell
+///    population, the same one-binding-per-head discipline rule 1
+///    demands for heads.
 /// 4. **`load_next` must return only [`TAIL`] or a currently-valid index** for
 ///    the implementor in use. This rule STAYS a live runtime obligation:
 ///    an implementation returning an arbitrary, stale, or foreign value
@@ -631,14 +651,14 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    [`pop_index`](StackOps::pop_index)'s compare-exchange
 ///    `current -> current` succeeds trivially). That self-loop sub-shape
 ///    is one of the two value shapes this rule's release-active guard
-///    catches — detection of shapes, not structural prevention; the same
-///    self-loop arm also fires, on the FIRST pop, for a plain double-push
-///    of the index that is already the current head (a caller-contract
-///    violation outside this implementor contract entirely — the
-///    no-double-push rule of [`push_index`](StackOps::push_index)'s
-///    `# Caller contract`; see "Detection coverage" below for the full
-///    statement); every other rule-4-violating value that is in range and
-///    not the popped index itself still passes silently (see
+///    catches — detection of shapes, not structural prevention. (The
+///    same self-loop arm also fires for caller-contract violations
+///    outside this implementor contract entirely — cross-referenced
+///    with "Detection coverage" below; the full two-cause disjunction
+///    of what a self-loop proves is kept in ONE place,
+///    [`pop_index`](StackOps::pop_index)'s `# Panics`.) Every other
+///    rule-4-violating value that is in range and not the popped index
+///    itself still passes silently (see
 ///    [`pop_index`](StackOps::pop_index)'s `# Panics` for the guard
 ///    itself, and "The shared-storage hazard class" below for the
 ///    class-wide catch/miss boundary). An out-of-range return is a
@@ -664,9 +684,17 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// each supplying a different backing for the same head — does not compile
 /// against this API (pinned by `tests/compile_fail_two_backings.rs`). What
 /// does NOT carry over is the REST of the shared-storage hazard class:
-/// THREE surviving shapes, none of them the only gap the others leave, all
-/// expressible in safe Rust with every per-implementor rule individually
-/// satisfied. THIS section is the source of truth for that inventory and
+/// FOUR surviving shapes, none of them the only gap the others leave, all
+/// expressible in safe Rust. Exactly ONE of them — shape 1 — VIOLATES
+/// per-implementor rules (rules 3 and 4 oblige the implementor to prevent
+/// it): implementor-enforced, not structurally impossible, and auditable
+/// inside one impl block, unlike the binding-level shapes 2, 3, and 4,
+/// which ARE reachable with every per-implementor rule individually
+/// satisfied — their subject is a head↔links BINDING (how many live
+/// bindings exist over a given head or cell population, and across how
+/// much time), not the state of any single implementor, so no
+/// per-implementor rule can even name them. THIS section is the source of
+/// truth for that inventory and
 /// for what the runtime currently detects; the crate-root docs, the README,
 /// the type and method docs, and the pinning tests point here rather than
 /// re-deriving it (the same pattern `tests/loom_aba.rs`'s module doc
@@ -677,51 +705,104 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    [`store_next`](Self::store_next) read and write different backings
 ///    behind one head. Rules 3 and 4 oblige the implementor to prevent it:
 ///    implementor-enforced, not structurally impossible — and auditable
-///    inside one impl block, unlike the two value-level shapes below.
-/// 2. **Shared head, different links** — two implementor VALUES whose
-///    [`head`](Self::head) methods return the SAME [`StackHead`] while
-///    their links differ (rule 1's instance-level obligation above; the
-///    completeness note there shows the value-level route cannot be
-///    sealed).
+///    inside one impl block, unlike the three binding-level shapes below.
+/// 2. **Shared head, different links** — TWO head↔links bindings whose
+///    [`head`](Self::head) methods return the SAME [`StackHead`] VALUE
+///    while their links differ (rule 1's instance-level obligation above;
+///    the completeness note there shows the reference-sharing route
+///    cannot be sealed). In practice the two bindings are two implementor
+///    values — coherence allows only ONE `impl StackStorage<B>` per type,
+///    so a single value cannot carry two live same-width bindings — but
+///    the inventory's unit is the BINDING, not the value, because shapes
+///    3 and 4 below are reachable within a single value (shape 3) or
+///    across time with never more than one live value (shape 4).
 /// 3. **Separate heads, shared link cells** — link STORAGE (the cells
-///    `load_next`/`store_next` touch) shared between two implementor
-///    values whose heads are completely SEPARATE (rule 3's value-level
-///    clause): pushes overwrite each other's cells, one index can be
-///    chained into BOTH stacks, and the shared chain stays perfectly
-///    acyclic.
+///    `load_next`/`store_next` touch) shared between TWO head↔links
+///    bindings with completely SEPARATE heads (rule 3's binding-level
+///    clause). NOT "the cells are clobbered on every push": with DISJOINT
+///    index populations two stacks over the same cells coexist correctly,
+///    because each `store_next(i, _)`/`load_next(i)` touches only cell
+///    `i` (`{0, 2, 4, 6}` and `{1, 3, 5, 7}` interleaved over one
+///    `ArrayLinks` each drain exactly their own multiset). The hazard
+///    fires when one index is REACHABLE from more than one binding over
+///    the same cells: the second binding's push overwrites a link the
+///    first still chains through, one index ends up chained into BOTH
+///    stacks, and the shared chain stays perfectly acyclic. Reachable
+///    with the two bindings in two implementor values AND — round-15 @oh
+///    review, P3-4 — inside ONE value carrying two different-width heads
+///    with a `StackStorage` impl at each width over the same backing
+///    (push 1, 2 at width 16; push 3, re-push 1 at width 12; the width-16
+///    drain yields `2, 1, 3` and the width-12 drain `1, 3` — indices 1
+///    and 3 each issued twice, ONE implementor value the whole time;
+///    pinned by
+///    `one_value_two_bindings_shared_backing_still_double_issue` in
+///    `tests/custom_storage_impl.rs`).
 ///
-///    (This inventory counts only SHARED-storage shapes — one head or
-///    one link-cell population reaching two implementor values. A
-///    fourth expressible shape, ONE implementor whose
-///    [`head`](Self::head) returns different heads across calls, is
-///    excluded here by construction: it is not a shared-storage
-///    hazard, and it is covered by its own section above,
-///    "Mechanical requirement on `head()`".)
+/// 4. **Temporal rebinding — a live head moved into fresh links** — ONE
+///    head↔links binding replaced, mid-life, by a second binding over
+///    the SAME [`StackHead`] VALUE with DIFFERENT links (round-15 @oh
+///    review, P3-3): `let grown = Pool { head: old.head, links:
+///    ArrayLinks::new() }` where `old` is a rule-abiding implementor
+///    with a non-empty stack. The move consumes `old`, so NO reference
+///    is ever shared and there is never more than ONE live implementor
+///    value — rule 1's instance-level obligation ("exactly ONE live
+///    implementor VALUE at a time") holds as stated, its completeness
+///    note sees nothing (no `&StackHead` route is involved — the head
+///    moves by VALUE, not by reference), and the scoping parenthetical
+///    below counts no second live value: only rule 1's HEADLINE — one
+///    backing for the whole life of a non-empty stack — covers this
+///    shape, in spirit. Effect: the fresh (zero-initialised) backing
+///    answers every `load_next` with `0`; the FIRST pop hands back the
+///    real head index from a backing that no longer describes the chain
+///    (every deeper index silently LEAKED — unreachable, never issued),
+///    and the SECOND pop panics through the self-loop detector (pinned
+///    by `head_moved_into_fresh_links_leaks_and_then_panics` in
+///    `tests/custom_storage_impl.rs`).
+///
+///    (This inventory counts head↔links BINDINGS, not implementor
+///    values: a shape qualifies when a head or a link-cell population
+///    reaches two live bindings at once (shapes 2 and 3), or when one
+///    live binding is replaced across time by another binding over the
+///    same head with different links (shape 4). One expressible shape
+///    is still excluded here by construction: ONE implementor whose
+///    [`head`](Self::head) returns different heads across calls is not
+///    a shared-or-rebound-binding hazard, and it is covered by its own
+///    section above, "Mechanical requirement on `head()`".)
 ///
 /// Detection coverage, stated once: [`pop_index`](StackOps::pop_index)'s
-/// release-active rule-4 guard (see its `# Panics`) is a VALUE-shape
-/// detector — it panics on an out-of-range answer (before its two
-/// truncation corruptions) and on a self-loop
+/// release-active rule-4 guard (see its `# Panics`, which also holds the
+/// full two-cause disjunction of what a self-loop proves — this section
+/// covers only the shared-storage/rebinding half of the class) is a
+/// VALUE-shape detector — it panics on an out-of-range answer (before its
+/// two truncation corruptions) and on a self-loop
 /// (`next == index`, unreachable for a contract-abiding chain because a
 /// push stores the PREVIOUS head into `next[index]`, which is trivially
-/// already reachable). That catches the zero-initialised-foreign-backing
-/// sub-shape of shapes 1 and 2 — on its SECOND pop, where the foreign `0`
-/// answers coincide with the popped index (pinned by the two
-/// `#[should_panic]` tests in `tests/custom_storage_impl.rs`). The same
-/// self-loop arm ALSO catches a shape OUTSIDE this hazard class entirely,
-/// and on the FIRST pop: a plain double-push of the index that is already
-/// the current head — a violation of this crate's separate, older
-/// no-double-push rule ([`push_index`](StackOps::push_index)'s
-/// `# Caller contract`), which writes `next[index] = index` directly with
-/// no foreign writer and no shared storage involved (pinned by
-/// `double_push_of_current_head_panics_on_first_pop` in
-/// `tests/stack_unit.rs`). Everything
-/// else still double-issues SILENTLY: a hand-crafted acyclic link forgery
-/// (pinned by `hand_crafted_acyclic_forgery_still_double_issues`) and ALL
-/// of shape 3 (pinned by
-/// `two_stacks_sharing_link_storage_still_double_issue`). Shape 3 has no
+/// already reachable). That catches the zero-initialised sub-shapes of
+/// shapes 1, 2, and 4 — on the SECOND pop, where the foreign `0` answers
+/// coincide with the popped index (pinned by the three `#[should_panic]`
+/// tests in `tests/custom_storage_impl.rs`:
+/// `internally_disagreeing_storage_still_double_issue` for shape 1 —
+/// which had NO automated coverage before round 15, round-15 @oh review
+/// P4-2 — plus `two_implementor_values_sharing_one_head_still_double_issue`
+/// and `array_index_stack_head_still_double_issue` for shape 2). The same
+/// self-loop arm ALSO fires for a caller-contract violation OUTSIDE this
+/// hazard class entirely — a plain double-push of the index that is
+/// already the current head, this crate's separate, older no-double-push
+/// rule ([`push_index`](StackOps::push_index)'s `# Caller contract`;
+/// pinned by `double_push_of_current_head_panics_on_first_pop` in
+/// `tests/stack_unit.rs`; see `pop_index`'s `# Panics` for the full
+/// two-cause disjunction — not restated here). Everything else still
+/// corrupts SILENTLY, at least at first: a hand-crafted acyclic link
+/// forgery (pinned by `hand_crafted_acyclic_forgery_still_double_issues`),
+/// ALL of shape 3 (pinned by
+/// `two_stacks_sharing_link_storage_still_double_issue`), and shape 4's
+/// FIRST pop — the stale head index is returned from a backing that no
+/// longer describes the chain and every deeper index leaks BEFORE the
+/// self-loop detector makes the rebinding loud on the second pop, one
+/// index too late (pinned by
+/// `head_moved_into_fresh_links_leaks_and_then_panics`). Shape 3 has no
 /// detector at all, because every link value stays numerically valid and
-/// the chain acyclic — documented, not detected. None of the three shapes
+/// the chain acyclic — documented, not detected. None of the four shapes
 /// is a compiler-enforced impossibility; all are implementor/caller-
 /// enforced obligations.
 ///
@@ -748,9 +829,16 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// valid TAIL-or-index value and the CAS is guaranteed to fail. With
 /// payload-aliased storage the same read can observe arbitrary
 /// consumer-written user data — not link-shaped at all — defeating that
-/// reasoning AND making [`pop_index`](StackOps::pop_index)'s rule-4 guard
-/// (release-active — see its `# Panics`) panic on every ordinary benign race
-/// in every build profile. Use a DEDICATED link field per slot (as
+/// reasoning. What [`pop_index`](StackOps::pop_index)'s rule-4 guard
+/// (release-active — see its `# Panics`) then does is NARROW the blast
+/// radius, not close it: an out-of-range stale read panics, and so does
+/// the self-loop coincidence where the stale read equals the popped
+/// index — but a payload whose first four bytes decode as a small
+/// IN-RANGE value other than the popped index (a length, a refcount, a
+/// tag, a small enum discriminant — all common) passes the guard
+/// SILENTLY and is packed as the new head: a phantom index handed to a
+/// second owner, with NO panic, in every build profile. Use a DEDICATED
+/// link field per slot (as
 /// [`ArrayLinks`] does, and as this crate's own downstream production
 /// consumers do), not payload overlay.
 ///
@@ -850,7 +938,7 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///
     /// The obligation is stated over LINK CELLS, not over "the stack":
     /// link cells shared between two
-    /// stacks with completely separate heads are rule 3's value-level
+    /// stacks with completely separate heads are rule 3's binding-level
     /// hazard — see the [`StackStorage`] trait doc's "The shared-storage
     /// hazard class" section for the full inventory (this shape has no
     /// runtime detector); pinned by
@@ -952,8 +1040,10 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// [`push_index`](StackOps::push_index)'s `# Caller contract`; the guard
     /// fires on the FIRST pop through it). The other: a writer other than a
     /// contract-abiding push answering for this index — in practice a
-    /// zero-initialised backing shared with another implementor value (on
-    /// the second pop through it), or a direct, out-of-contract
+    /// zero-initialised foreign backing (one shared with another implementor
+    /// value, or a live head moved into fresh links — shape 4 of the
+    /// [`StackStorage`] trait doc's hazard inventory; both fire on the
+    /// second pop through them), or a direct, out-of-contract
     /// [`store_next`](StackStorage::store_next) hook call writing the
     /// index's own link. What this guard
     /// still does NOT catch — hand-crafted acyclic link tables, link cells
@@ -1122,21 +1212,13 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
             // truncate a bad value to a wrong (possibly still-live) index or
             // to the empty sentinel. Measured ≈ free next to the head CAS —
             // see `# Panics` above and CHANGELOG.md.
-            // The `next == index` arm is a DETECTOR for one corruption
-            // shape, not a structural fix for the shared-storage hazard
-            // class: a contract-abiding chain can never link an index to
-            // itself (push stores the PREVIOUS head into next[index], and
-            // that head is trivially already reachable), so a self-loop
-            // proves a caller-contract violation — most simply a double-push of the
-            // index that is already the current head (push then writes
-            // next[index] = index itself; no foreign writer, no shared storage),
-            // otherwise a writer other than a contract-abiding push
-            // (foreign backing, direct hook misuse) answering for this
-            // index.
-            // The exact catch/miss boundary (acyclic forgeries and shared
-            // link cells still evade it) is inventoried once in
-            // `pop_index`'s `# Panics` and StackStorage's "The
-            // shared-storage hazard class" section — not restated here.
+            // The `next == index` arm is a self-loop DETECTOR (a
+            // contract-abiding chain can never link an index to itself,
+            // so the loop proves a caller-contract violation): see
+            // `# Panics` above for the full two-cause disjunction it
+            // proves, and StackStorage's "The shared-storage hazard
+            // class" section for the exact catch/miss boundary — not
+            // restated here.
             let mask = TaggedIndex::<B>::INDEX_MASK;
             if next != TAIL && ((next as u64) >= mask || next == index) {
                 pop_link_out_of_range(index, next, mask);
@@ -1214,13 +1296,10 @@ fn push_index_out_of_range(index: u32, mask: u64) -> ! {
 /// `#[track_caller]` shape and caller-location-chaining rationale as
 /// [`push_index_out_of_range`] above. Reports which of the three caught
 /// shapes the caller's [`load_next`](StackStorage::load_next) answer has
-/// (see `# Panics` on [`StackOps::pop_index`]): a self-loop
-/// (`next == index` — a caller-contract violation: most simply a
-/// double-push of the already-current head; otherwise a writer other
-/// than a contract-abiding push — a foreign/zero-initialised backing,
-/// or direct hook misuse — answering for the popped index),
-/// or one of the two truncation outcomes an over-wide value
-/// would silently produce.
+/// — a self-loop (`next == index`; see `# Panics` on
+/// [`StackOps::pop_index`] for the full two-cause disjunction it proves,
+/// not restated here) or one of the two truncation outcomes an over-wide
+/// value would silently produce.
 #[cold]
 #[inline(never)]
 #[track_caller]
