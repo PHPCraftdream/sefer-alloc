@@ -30,11 +30,16 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 /// coincidence between them.
 pub const TAIL: u32 = u32::MAX;
 
-/// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: on
-/// the Nth lost CAS within one call, spin `1 << N.min(BACKOFF_SPIN_CAP)` times
-/// via [`core::hint::spin_loop`] before retrying. `N` is a per-call local,
-/// reset on every fresh `push_index`/`pop_index` — this backs off within one
-/// call's retry loop, never across calls.
+/// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: the
+/// Kth lost CAS within one call, counting from 0, spins
+/// `1 << K.min(BACKOFF_SPIN_CAP)` times via [`core::hint::spin_loop`] before
+/// retrying — the 1st lost CAS (K = 0) spins once, the 2nd (K = 1) spins
+/// twice, and so on up to the cap (the 7th and every later lost CAS, K >= 6,
+/// spin 64 times). `K` is a per-call local, reset on every fresh
+/// `push_index`/`pop_index` — this backs off within one call's retry loop,
+/// never across calls. Not unconditional: `pop_index` skips the backoff when
+/// the lost CAS reveals the stack just went empty (documented at
+/// [`pop_index`](StackOps::pop_index)).
 ///
 /// **The cap is 6 — a deliberate fairness-vs-throughput compromise, not a
 /// low-contention optimum.** Caps 8/10 give more aggregate throughput under
