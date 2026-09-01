@@ -1,0 +1,34 @@
+// Codegen-forcing wrapper for the P3 A/B codegen mode.
+//
+// Why this file exists: `rustc --emit=asm --crate-type=lib` on the bare
+// `lib.rs` monomorphizes NOTHING — every interesting function in the crate
+// (`push_index`/`pop_index`/`ArrayLinks::load_next`/`store_next` and the
+// stack's push/pop entry points) is generic (over the storage type or const
+// parameters), so without a concrete use LLVM emits only the panic-path
+// helpers and the extraction finds no function blocks. This wrapper forces
+// exactly one monomorphization of each function we study by taking its
+// address as a concrete fn pointer (fn-pointer calls cannot be inlined away,
+// so real out-of-line bodies are emitted with extractable labels).
+//
+// The lib.rs/imp.rs pair next to this file is a VERBATIM copy of the crate
+// sources (or the variant substitution applied to imp.rs); this wrapper is
+// only the instantiation vehicle and contributes no logic of its own.
+
+#[path = "lib.rs"]
+pub mod tis;
+
+use core::hint::black_box;
+
+pub fn instantiate() {
+    let stack: tis::ArrayIndexStack<16, 256> = tis::ArrayIndexStack::new();
+    let push: fn(&tis::ArrayIndexStack<16, 256>, u32) = tis::ArrayIndexStack::push;
+    let pop: fn(&tis::ArrayIndexStack<16, 256>) -> Option<u32> = tis::ArrayIndexStack::pop;
+    black_box(push)(black_box(&stack), black_box(1u32));
+    black_box(pop)(black_box(&stack));
+
+    let links = tis::ArrayLinks::<256>::new();
+    let load: fn(&tis::ArrayLinks<256>, u32) -> u32 = tis::ArrayLinks::load_next;
+    let store: fn(&tis::ArrayLinks<256>, u32, u32) = tis::ArrayLinks::store_next;
+    black_box(load)(black_box(&links), black_box(0u32));
+    black_box(store)(black_box(&links), black_box(0u32), black_box(1u32));
+}

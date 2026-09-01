@@ -2841,12 +2841,55 @@ for completeness.
       store is a real instruction. An elision guard would add its own
       branch to the same hot path, so the trade is not obviously positive
       even on paper.
-    - **Next trigger:** the same missing-harness blocker as this crate's
-      link-ordering/weak-CAS candidates (tagged-index-stack CHANGELOG 0.1.0
-      Performance section, Sol-codex run-3 P3-1/P3-3): a dedicated
-      x86-64 + weakly-ordered-target (e.g. AArch64) wall-clock A/B with a
-      per-arm path-activation oracle. Per CLAUDE.md, no hot-path runtime
-      change lands without a gate report.
+    - **Next trigger:** the shared measurement harness this blocker cited
+      NOW EXISTS (Sol-codex run-4 P3-1 = link-cell ordering / P3-2 =
+      strong-vs-weak CAS — run 4 renumbered run-3's findings): driver
+      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`, gate report
+      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, plus a
+      workflow_dispatch-only arm64 wall-clock CI job
+      (`tis-weak-memory-wallclock-gate`, ubuntu-24.04-arm) authored but not
+      yet run. Item 61's own elision idea is therefore no longer blocked by
+      missing infrastructure — it is blocked only by the same pending ARM
+      wall-clock RUN (see item 62).
+      Per CLAUDE.md, no hot-path runtime change lands without a gate report.
+    - **Evidence:** `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`;
+      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
+
+62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B on a
+    real weak-memory target — static codegen legs measured, arm64 wall-clock
+    authored and pending its first runner run.** (Filed 2026-09-01 from
+    Sol-codex review run 4 P3-1/P3-2, branch tis-sol4-w3-perf Wave 3.)
+
+    - **Status:** OPEN — measurement-only. Nothing changed in
+      `crates/tagged-index-stack/src/`; the P3-1 Relaxed change is NOT
+      landed (no measured wall-clock win exists).
+    - **Current-number-or-verdict:** x86-64 codegen identity — all four
+      studied functions (`ArrayLinks::load_next`/`store_next`,
+      `push_index_impl`, `pop_index_impl`) are sha-identical across
+      base / links-Relaxed / CAS-weak variants, so the ordering and CAS
+      candidates cost nothing on x86 (TSO) either way. aarch64 (rustc
+      1.97.0 / LLVM 22) static delta is REAL: link-cell Acquire/Release is
+      visible at the ISA level (per pop one extra `ldar` link load; per
+      push one-two `stlr` link stores; `load_next`/`store_next` each carry
+      exactly one `ldar`/`stlr`), removable under Relaxed (pop's head
+      Acquire load correctly remains; magnitudes: `load_next`/`store_next`
+      13→12 instructions); whether that instruction delta is a wall-clock
+      win on real silicon is UNMEASURED. P3-2 (weak-vs-strong CAS)
+      measured NULL on this toolchain — `compare_exchange_weak` is
+      sha-identical to `compare_exchange` under BOTH lowerings (default:
+      outlined `__aarch64_cas8_{acq,rel}` helper calls, no inline
+      ldaxr/stlxr anywhere; `+lse`: single `casl`/`casa`), and the driver's
+      oracle asserts that identity so a future toolchain reintroducing an
+      inline-LL/SC lowering where weak differs fails loudly
+      ("P3-2 REOPENED").
+    - **Next trigger:** dispatch the `tis-weak-memory-wallclock-gate` CI
+      job (workflow_dispatch-only, ubuntu-24.04-arm, free for public repos)
+      and file the resulting wall-clock A/B; then decide P3-1 (land
+      Relaxed + loom model + counterfactual ONLY if a measured win exists;
+      otherwise record the wall-clock NULL) and update the crate
+      CHANGELOG's Performance section again.
+    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` + its
+      committed CSVs + `_raw_tis_p3_ab_*` logs.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

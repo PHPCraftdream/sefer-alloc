@@ -1,0 +1,13 @@
+target,features,function,variant,sha256_16,instr_count,ldar,stlr,ldaxr,stlxr,cmpxchg,cas,cas8,identical_to_base
+x86_64-unknown-linux-gnu,default,load_next,base,1821380ada9f7f95,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,load_next,links_relaxed,1821380ada9f7f95,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,load_next,cas_weak,1821380ada9f7f95,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,store_next,base,ab75145a1d29d654,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,store_next,links_relaxed,ab75145a1d29d654,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,store_next,cas_weak,ab75145a1d29d654,10,0,0,0,0,0,0,0,true
+x86_64-unknown-linux-gnu,default,push_index_impl,base,b609f094b9c5928b,51,0,0,0,0,2,0,0,true
+x86_64-unknown-linux-gnu,default,push_index_impl,links_relaxed,b609f094b9c5928b,51,0,0,0,0,2,0,0,true
+x86_64-unknown-linux-gnu,default,push_index_impl,cas_weak,b609f094b9c5928b,51,0,0,0,0,2,0,0,true
+x86_64-unknown-linux-gnu,default,pop_index_impl,base,0f0d1b99ddeaa2fd,58,0,0,0,0,2,0,0,true
+x86_64-unknown-linux-gnu,default,pop_index_impl,links_relaxed,0f0d1b99ddeaa2fd,58,0,0,0,0,2,0,0,true
+x86_64-unknown-linux-gnu,default,pop_index_impl,cas_weak,0f0d1b99ddeaa2fd,58,0,0,0,0,2,0,0,true

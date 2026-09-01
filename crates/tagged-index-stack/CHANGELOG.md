@@ -265,9 +265,19 @@ before it.
 - **One speculative perf change evaluated and declined** (unrelated to the
   backoff above): both `push`'s and `pop`'s CAS loops are
   `compare_exchange_weak` candidates, but any difference is specific to
-  non-LSE AArch64 and similar `ldxr`/`stxr`-style architectures, and this
-  repository has no AArch64 wall-clock/perf-gate harness to measure it.
-  Revisit when one exists. A further candidate in the same class,
+  non-LSE AArch64 and similar `ldxr`/`stxr`-style architectures. The
+  measurement harness cited below now exists
+  (`scripts/tis_p3_ab_runner.mjs`, plus a workflow_dispatch-only arm64 CI
+  gate `tis-weak-memory-wallclock-gate`), and its static codegen leg
+  (rustc 1.97.0/LLVM 22) measured the weak-vs-strong CAS candidate as
+  codegen-IDENTICAL on aarch64 under both the outlined-atomics default and
+  the LSE lowerings — the once-hypothesized weak-CAS win does not exist on
+  this toolchain (an oracle re-arms the question automatically if a
+  toolchain change reintroduces an inline-LL/SC lowering). The wall-clock
+  A/B on real arm64 silicon is still pending; until it runs, no
+  ordering/CAS change is made (details: `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`,
+  a repository file, not part of the published package). A further
+  candidate in the same class,
   considered and NOT changed this round (unmeasured, same standard as the
   sibling candidates here): `pop_index`'s CAS SUCCESS ordering
   (`Ordering::Acquire` today) as a `Relaxed` candidate, by the same style
@@ -282,8 +292,14 @@ before it.
   proof is in `push_index`'s source comment and `StackStorage`'s
   "Ordering contract" docs; expected benefit on weakly-ordered targets,
   unmeasured). `ArrayLinks`' link `Acquire`/`Release` and both CAS loops'
-  strong `compare_exchange` stay as deliberate defence-in-depth pending a
-  real multi-target measurement, and the contention harness times every
+  strong `compare_exchange` remain in place: the static codegen gate
+  (`scripts/tis_p3_ab_runner.mjs`, same toolchain as above) confirmed the
+  link ordering is REAL at the ISA level on aarch64 (one acquire link load
+  per pop, release link store(s) per push — `ldar`/`stlr`), while all
+  variants are codegen-identical on x86-64, so keeping the ordering costs
+  nothing there. These stay as deliberate defence-in-depth until the
+  pending arm64 wall-clock run shows a measured win, and the contention
+  harness times every
   worker against one shared `[timed_start, deadline)` window with an
   uncounted warm-up.
 

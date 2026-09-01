@@ -1,0 +1,7 @@
+target,variant,threads,window_ms,sample,ops_total,elapsed_ms,ops_per_sec,push_retries,pop_retries
+x86_64-pc-windows-msvc,base,4,100,1,1670784,100,16707840,19445,32744
+x86_64-pc-windows-msvc,links_relaxed,4,100,1,1657408,100,16574080,9618,41002
+x86_64-pc-windows-msvc,cas_weak,4,100,1,1652864,100,16528640,14248,38363
+x86_64-pc-windows-msvc,base,SUMMARY,median_ops_per_sec=16707840.00,ratio_vs_base=1.0,push_retries=19445,pop_retries=32744
+x86_64-pc-windows-msvc,links_relaxed,SUMMARY,median_ops_per_sec=16574080.00,ratio_vs_base=0.992,push_retries=9618,pop_retries=41002
+x86_64-pc-windows-msvc,cas_weak,SUMMARY,median_ops_per_sec=16528640.00,ratio_vs_base=0.989,push_retries=14248,pop_retries=38363

@@ -1,0 +1,37 @@
+[package]
+name = "{{CRATE_NAME}}"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.79"
+
+# Detach from the parent workspace: this scratch crate must build with its
+# own target/ and its own (empty) feature set, without dragging in the
+# real workspace's members or lockfile.
+[workspace]
+
+# The retry-count oracle accessors (`retry_counts_for_test`) in the
+# substituted copy of `tagged-index-stack/src/imp.rs` are gated on
+# `feature = "test-internals"`, so the harness can observe CAS-retry
+# activity. Default-on HERE ONLY — this is a scratch measurement crate,
+# never the real crate.
+[features]
+default = ["test-internals"]
+test-internals = []
+
+# imp.rs lives next to lib.rs at the crate root (the driver writes both
+# there), mirroring `crates/tagged-index-stack/src/{lib,imp}.rs`.
+[lib]
+path = "lib.rs"
+
+# The verbatim-copied lib.rs/imp.rs use `cfg(loom)` (a `--cfg` flag the real
+# crate sets from its dev-dependency machinery); silence the check-cfg lint
+# in this scratch crate — it is measurement-only and never shipped.
+[lints.rust]
+unexpected_cfgs = { level = "allow" }
+
+[[bin]]
+name = "harness"
+path = "src/bin/harness.rs"
+
+# Deliberately NO [dependencies]: the real crate is zero-non-std-dep, and
+# this measurement crate must stay that way too.

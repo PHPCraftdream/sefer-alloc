@@ -3083,6 +3083,76 @@ jobs:
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features "production internals"
 
+  tis-weak-memory-wallclock-gate:
+    # The weak-memory wall-clock/perf-gate harness that
+    # `crates/tagged-index-stack/CHANGELOG.md`'s 0.1.0 Performance section
+    # explicitly said did not exist ("Revisit when one exists") and that the
+    # Sol-codex review run 4 (2026-09-01, findings P3-1 link-cell ordering /
+    # P3-2 compare_exchange vs compare_exchange_weak,
+    # `docs/reviews/2026-09-01-124216-tagged-index-stack-review-Sol-codex-run-4.md`)
+    # prescribed.  Gate report: `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`;
+    # driver: `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`.
+    #
+    # Why NATIVE arm64 and not QEMU/cross: QEMU-user TCG on an x86 host does
+    # not reproduce weak-memory TIMING (acquire/release lowering effects are
+    # invisible under TCG), so it is usable for correctness only — and the
+    # aarch64 CORRECTNESS coverage already exists in the `multi-arch` job
+    # above (workspace-wide `cross test` rows).  This job adds the TIMING
+    # axis, which requires real hardware: `ubuntu-24.04-arm` is a free
+    # standard hosted runner for public repositories (this repo is public).
+    #
+    # workflow_dispatch-ONLY (measurement job, ~5 min arm64 minutes per run,
+    # on-demand only) — the same cadence rationale as the feature-powerset
+    # job, which additionally allows `schedule`; this one is dispatch-only
+    # because it is an evidence-gathering gate, not a standing regression
+    # check.
+    #
+    # What the two steps assert: step 1 re-verifies the static codegen
+    # oracles on the runner's own toolchain — including the DELIBERATE
+    # `cas_weak` sha-identity asserts that FAIL LOUDLY (message contains
+    # "P3-2 REOPENED") if a future toolchain reintroduces an inline-LL/SC
+    # lowering where `compare_exchange_weak` differs from
+    # `compare_exchange` — the identity measured on rustc 1.97.0/LLVM 22
+    # (see `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`).  Step 2 runs the
+    # contended pop-then-repush wall-clock A/B (published-window protocol,
+    # 3 variants x 3 samples x 1 s) whose retry-counter oracle proves the
+    # CAS-retry path was actually exercised (per CLAUDE.md's
+    # path-activation-oracle rule).
+    #
+    # Provenance: authored on branch `tis-sol4-w3-perf` (Wave 3) WITHOUT ever
+    # being executed from that sandboxed environment (no push); the first
+    # `workflow_dispatch` run is its validation.
+    name: tagged-index-stack weak-memory wall-clock A/B gate (arm64)
+    runs-on: ubuntu-24.04-arm
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Static codegen A/B (identity + delta oracles)
+        run: |
+          node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen.log"
+          grep -F "codegen mode OK" "$RUNNER_TEMP/tis-p3-codegen.log"
+        shell: bash
+      - name: Contended wall-clock A/B (retry-counter oracle)
+        run: |
+          node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
+          grep -F "wallclock mode OK" "$RUNNER_TEMP/tis-p3-wallclock.log"
+        shell: bash
+      # `if: always()` is deliberate: a failed oracle run still uploads its
+      # raw logs so the failure can be diagnosed offline.
+      - name: Upload raw artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tis-p3-ab-aarch64-artifacts
+          path: |
+            docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.log
+            docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.s.all
+            docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_wallclock.log
+            docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_aarch64-unknown-linux-gnu.csv
+            docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_aarch64-unknown-linux-gnu.csv
+          if-no-files-found: error
+
   numa-shim-mock:
     # NUMA Phase 1: verify wrapping logic on every CI run without real
     # multi-NUMA hardware.  Runs on Linux; the mock is platform-agnostic
