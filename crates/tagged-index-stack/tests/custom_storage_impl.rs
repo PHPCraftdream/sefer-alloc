@@ -8,31 +8,15 @@
 //! same storage driven through `&dyn StackStorage<16>` to pin the blanket
 //! impl's `?Sized` coverage.
 //!
-//! Since the round-11 @oh review (finding P2-1) it also pins — as a
-//! documented, intentional, caller/implementor-enforced limitation — the
-//! shared-head shape [`StackStorage`]'s rule 1 forbids: two implementor
-//! values returning the same [`StackHead`] over different link storage
-//! still compile; since the round-13 @oh review (finding P2-1) its
-//! zero-initialised-links repro no longer double-issues SILENTLY — the
-//! second pop trips `pop_index`'s self-loop detector and panics, so the
-//! two shared-head tests below now pin the GUARD FIRING (silent corruption
-//! made loud) under `#[should_panic]`.
-//!
-//! Since the round-12 @oh review (finding P2-1) it also pins the third
-//! variant of the same hazard: the escape hatch is not a custom
-//! implementor at all — [`ArrayIndexStack`]'s own `head()` (a public,
-//! safe, callable trait method on the crate's recommended "safe" type)
-//! hands the head reference to any caller, so a second implementor built
-//! around it corrupts the OWNED stack too, not just the parasite's view.
-//! Since round-13, that parasite's second pop also panics via the same
-//! self-loop detector instead of silently double-issuing and corrupting
-//! the owned stack's drain.
-//!
-//! Since the round-13 @oh review (finding P2-1) it also pins the self-loop
-//! detector's LIMIT — a hand-crafted acyclic link forgery that still
-//! double-issues silently — and (round-13 P2-2) the shared-LINK-STORAGE
-//! variant, where two stacks with completely separate heads share one
-//! link array.
+//! It also pins the shared-storage hazard class and its current detection
+//! coverage. The canonical statement of that inventory is the
+//! [`StackStorage`] trait doc's "The shared-storage hazard class" section —
+//! this doc points there rather than re-deriving it. In file order: the two
+//! shared-head shapes (round-11/round-12 @oh findings, both flipped to
+//! `#[should_panic]` by round-13's self-loop detector), that detector's
+//! LIMIT (a hand-crafted acyclic forgery still double-issues silently), and
+//! the shared-LINK-STORAGE variant, which no detector catches at all
+//! (round-13 P2-2).
 
 #![cfg(not(loom))]
 
@@ -130,7 +114,8 @@ impl StackStorage<16> for SharedHeadView<'_> {
 }
 
 /// KNOWN, INTENTIONAL limitation — caller/implementor-enforced, NOT
-/// compiler-enforced. Round-11 @oh review, finding P2-1; FLIPPED by the
+/// compiler-enforced (the [`StackStorage`] trait doc's rule 1). Round-11
+/// @oh review, finding P2-1; FLIPPED by the
 /// round-13 @oh review, finding P2-1.
 ///
 /// The hazard: two separately constructed, individually rule-coherent
@@ -145,17 +130,14 @@ impl StackStorage<16> for SharedHeadView<'_> {
 /// Since round-13 the second pop PANICS instead: `via_b`'s
 /// zero-initialised links answer `load_next(0)` with `0` while the popped
 /// index IS `0` — a self-loop a contract-abiding chain can never contain —
-/// and `pop_index`'s release-active rule-4 guard fires. This test now pins
-/// the GUARD FIRING (the strict improvement from silent corruption to a
-/// loud panic), not the corruption going undetected. It does NOT pin the
-/// hazard class closed: a hand-crafted acyclic backing evades the detector
-/// (`hand_crafted_acyclic_forgery_still_double_issues` below), and link
-/// cells shared between two independent stacks stay acyclic too
-/// (`two_stacks_sharing_link_storage_still_double_issue`, round-13 P2-2).
-/// The name keeps the round-11 finding's shape description; only the
-/// pinned behavior changed. If a future structural fix stops this shape
-/// from compiling, this test breaks by design and the trait doc's rule 1
-/// must be updated with it.
+/// and `pop_index`'s release-active rule-4 guard fires. This test pins the
+/// GUARD FIRING (the strict improvement from silent corruption to a loud
+/// panic), not the hazard class closing: what such a shape still evades is
+/// inventoried in the trait doc's "The shared-storage hazard class"
+/// section, and pinned by the two tests below. The name keeps the round-11
+/// finding's shape description; only the pinned behavior changed. If a
+/// future structural fix stops this shape from compiling, this test breaks
+/// by design and the trait doc's rule 1 must be updated with it.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn two_implementor_values_sharing_one_head_still_double_issue() {
@@ -211,35 +193,33 @@ impl StackStorage<16> for Parasite<'_> {
 }
 
 /// KNOWN, INTENTIONAL limitation — round-12 @oh review, finding P2-1;
-/// FLIPPED by the round-13 @oh review, finding P2-1. Runnable
-/// demonstration in the same register as the `SharedHeadView` test above:
-/// it pins that [`ArrayIndexStack::head()`](ArrayIndexStack::head) is the
-/// VALUE-LEVEL escape hatch of rule 1's hazard even on the fused type —
-/// owning the head-and-links pair binds them to each other; it does not
+/// FLIPPED by the round-13 @oh review, finding P2-1. Same register as the
+/// `SharedHeadView` test above, but with no custom head-view struct at
+/// all: the head reference comes straight out of
+/// [`ArrayIndexStack::head()`](ArrayIndexStack::head), a public, safe,
+/// callable trait method (`StackStorage` is in scope) — it is the
+/// VALUE-LEVEL escape hatch of rule 1's hazard even on the fused type.
+/// Owning the head-and-links pair binds them to each other; it does not
 /// stop a third party from calling `.head()` and building a second,
 /// competing implementor around the same borrowed head.
 ///
-/// The mechanism: pushing through `owned` writes `owned`'s link for index
-/// 1, but the parasite's pops read the PARASITE's links, whose
-/// zero-initialised storage answers every `load_next` with `0`. The first
-/// pop legitimately returns the real head index (`1`) — and it has
-/// ALREADY moved the shared head to a foreign `(0, tag)`. The second pop
-/// used to hand back the never-pushed `0` and let the owned stack
-/// double-issue `0` forever too; since round-13 it PANICS: popping index
-/// `0` through the parasite's zero-initialised links reads
-/// `next == 0 == index`, a self-loop, and `pop_index`'s release-active
-/// rule-4 guard fires before the second CAS can complete. This test now
-/// pins the GUARD FIRING (silent corruption made loud), not the corruption
-/// going undetected — and the owned stack's further corruption becomes
-/// unobservable here, because the panic ends the test before it could be
-/// drained. It does NOT pin the hazard class closed: `head()` is still a
-/// public escape hatch, and a parasite with hand-crafted acyclic links
-/// still evades the detector (see
-/// `hand_crafted_acyclic_forgery_still_double_issues` below). If a future
-/// structural fix stops `head()` from handing out the head on the fused
-/// type (or stops this shape from compiling), this test breaks by design,
-/// and the `ArrayIndexStack` type doc and the trait doc's rule 1 must be
-/// updated with it.
+/// Mechanism: pushing through `owned` writes `owned`'s link for index 1,
+/// but the parasite's pops read the PARASITE's zero-initialised links,
+/// which answer every `load_next` with `0`. The first pop legitimately
+/// returns the real head index (`1`) — and it has ALREADY moved the shared
+/// head to a foreign `(0, tag)`. The second pop used to hand back the
+/// never-pushed `0` and let the owned stack double-issue `0` forever too;
+/// since round-13 it PANICS: popping index `0` through the parasite's
+/// zero-initialised links reads `next == 0 == index`, a self-loop, and
+/// `pop_index`'s release-active rule-4 guard fires before the second CAS
+/// can complete. The owned stack's further corruption becomes unobservable
+/// here, because the panic ends the test before it could be drained. What
+/// such a parasite can still do UNDETECTED is inventoried in the trait
+/// doc's "The shared-storage hazard class" section. If a future structural
+/// fix stops `head()` from handing out the head on the fused type (or
+/// stops this shape from compiling), this test breaks by design, and the
+/// `ArrayIndexStack` type doc and the trait doc's rule 1 must be updated
+/// with it.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn array_index_stack_head_still_double_issue() {
@@ -266,7 +246,9 @@ fn array_index_stack_head_still_double_issue() {
 /// `pop_index`'s rule-4 guard is a SHAPE detector (the
 /// zero-initialised-foreign-backing shape, whose `next == index` self-loop
 /// is unreachable for a contract-abiding chain), NOT a structural fix for
-/// the shared-storage hazard class.
+/// the shared-storage hazard class — see the [`StackStorage`] trait doc's
+/// "The shared-storage hazard class" section for the full catch/miss
+/// boundary.
 ///
 /// The parasite here forges its OWN links before popping —
 /// `links[1] = 0`, `links[0] = TAIL` — instead of accepting the
@@ -303,7 +285,9 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 /// the fourth variant of the double-issue family, and the first that does
 /// NOT involve a shared head at all. KNOWN, INTENTIONAL limitation —
 /// round-13 @oh review, finding P2-2 — documented, not detected: no cheap
-/// runtime detector exists for this shape.
+/// runtime detector exists for this shape (the [`StackStorage`] trait
+/// doc's rule 3 value-level clause; the trait doc's hazard inventory lists
+/// it as the one shape with no detection at all).
 ///
 /// The hazard: TWO stacks built over the SAME link cells — each with a
 /// completely separate, freshly constructed, individually rule-coherent
@@ -315,20 +299,16 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 /// draining `b` yields `1, 3` — indices 1 AND 3 are each handed out
 /// TWICE, across two stacks that appear individually correct by every
 /// existing rule. In a parent allocator that is two live slots with two
-/// owners each.
-///
-/// Why nothing catches it: every link value is numerically valid and the
-/// shared chain stays perfectly ACYCLIC, so `pop_index`'s rule-4 guard —
-/// including round-13's self-loop detector — cannot fire; rule 1 is about
-/// heads and is satisfied (the heads are separate); rules 2, 4 and 5 are
-/// per-implementor and each value satisfies them on its own. Only rule
-/// 3's VALUE-level clause (link-cell exclusivity, round-13) NAMES this
-/// obligation — implementor/caller discipline, not something the type
-/// system, the blanket impl, or a runtime guard enforces. Discharge it by
-/// construction: one link-cell population per stack. If a future revision
-/// adds a detector for cross-stack cell sharing (or stops this shape from
-/// compiling), this test breaks by design and the trait doc's rule 3 must
-/// be updated with it.
+/// owners each. Every link value stays numerically valid and the shared
+/// chain stays perfectly ACYCLIC, so `pop_index`'s rule-4 guard —
+/// including round-13's self-loop detector — cannot fire; only rule 3's
+/// VALUE-level clause NAMES the obligation — implementor/caller
+/// discipline, not something the type system, the blanket impl, or a
+/// runtime guard enforces. Discharge it by construction: one link-cell
+/// population per stack. If a future revision adds a detector for
+/// cross-stack cell sharing (or stops this shape from compiling), this
+/// test breaks by design and the trait doc's rule 3 must be updated with
+/// it.
 #[test]
 fn two_stacks_sharing_link_storage_still_double_issue() {
     struct SharedLinksView<'a> {
