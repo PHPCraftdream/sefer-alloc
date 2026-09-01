@@ -3128,15 +3128,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # No `grep -F "<marker>" <log>` postcondition here on purpose: GitHub
+      # Actions' default `shell: bash` already runs with `-eo pipefail`, so
+      # this step already fails on the script's own exit code through the
+      # `tee` pipe (`node ...`'s exit status propagates, not `tee`'s) — a
+      # separate grep would be redundant AND would collide with this repo's
+      # `scripts/verify-ci-sentinels.mjs` marker-sentinel convention, which
+      # resolves a bare-literal `grep -F` against a Rust `println!` inside a
+      # `tests/*.rs` file; the runner's own "... mode OK" text is a Node.js
+      # `console.log`, not a Rust test oracle, so it can never resolve there.
       - name: Static codegen A/B (identity + delta oracles)
-        run: |
-          node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen.log"
-          grep -F "codegen mode OK" "$RUNNER_TEMP/tis-p3-codegen.log"
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen.log"
         shell: bash
       - name: Contended wall-clock A/B (retry-counter oracle)
-        run: |
-          node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
-          grep -F "wallclock mode OK" "$RUNNER_TEMP/tis-p3-wallclock.log"
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
         shell: bash
       # `if: always()` is deliberate: a failed oracle run still uploads its
       # raw logs so the failure can be diagnosed offline.
