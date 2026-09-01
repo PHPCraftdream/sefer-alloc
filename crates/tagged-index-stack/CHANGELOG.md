@@ -13,7 +13,8 @@ before it.
 
 - **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` +
   `ArrayIndexStack<INDEX_BITS, N>`** — an allocation-free, `no_std`,
-  `#![forbid(unsafe_code)]` lock-free LIFO free-list of small **indices** (a
+  `#![deny(unsafe_code)]` (one audited `unsafe` token; see `### Changed`
+  below) lock-free LIFO free-list of small **indices** (a
   slot recycler): the "recycle a small integer id" primitive that
   slab allocators, object pools, entity-component stores, and connection
   tables reinvent. `StackHead` is the tagged head word; custom storage

@@ -62,11 +62,14 @@ link-cell population — cell sharing per se is harmless (two stacks over the
 same cells with disjoint populations coexist correctly); the hazard is one
 index reachable from two bindings (the trait doc's rule 3). These are
 obligations about head↔links BINDINGS — invisible to any audit of a single
-impl block, discharged by construction. `head()` is NOT a plain safe method
-on every implementor: the owned `ArrayIndexStack` stopped implementing the
-trait (its `head` field is private, no trait impl hands it out), and a
-competing binding around a standalone `ArrayIndexStack` does not COMPILE
-(pinned by the compile-fail fixture `tests/compile_fail/array_index_stack_head/`).
+impl block, discharged by construction. `head()` is not reachable from
+outside this crate on ANY implementor: all three `StackStorage` hooks are
+witness-gated (each takes a `Hook` witness no code outside this crate can
+construct), and the owned `ArrayIndexStack` additionally does not implement
+the trait at all (its `head` field is private, no trait impl hands it out),
+so a competing binding around a standalone `ArrayIndexStack` does not
+COMPILE (pinned by the compile-fail fixture
+`tests/compile_fail/array_index_stack_head/`).
 For CUSTOM implementors the shared-head shape remains expressible — only
 behind an `unsafe impl` asserting the very `# Safety` clause it violates. The
 `StackStorage` trait doc's "The shared-storage hazard class" section is the

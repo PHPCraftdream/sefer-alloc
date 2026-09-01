@@ -239,10 +239,11 @@
 //! remains a hard compile error. The inventory is self-verifying:
 //!
 //! ```text
-//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/
+//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/
 //! ```
 //!
-//! which returns exactly one hit in this crate (the trait declaration).
+//! which — run from the workspace root — returns exactly one hit in this
+//! crate (the trait declaration).
 //!
 //! WHY: allocator consumers rely on [`StackStorage`]'s exclusive-issuance
 //! contract for their own memory safety — sefer-alloc's registry free-list
@@ -288,7 +289,8 @@
 // any inner `#[allow]`, so it would reject that single audited declaration;
 // `deny` keeps every OTHER `unsafe` token anywhere in the crate a hard error.
 // The self-verifying inventory command (see the crate docs' "Where unsafe
-// lives" section) — `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+// lives" section) — run from the workspace root:
+// `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`
 // — returns exactly one hit.
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

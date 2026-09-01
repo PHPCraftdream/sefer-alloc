@@ -23,11 +23,13 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 ///
 /// Note this is distinct from the "stack empty" head sentinel
 /// ([`TaggedIndex::empty_index`]): `TAIL` marks a per-slot link's end-of-chain,
-/// while the empty sentinel marks the HEAD word as carrying no index at all. The
-/// two mappings are kept spelled out separately in
+/// while the empty sentinel marks the HEAD word as carrying no index at all
+/// (their low bits do agree — `TAIL & INDEX_MASK == INDEX_MASK` is a
+/// mathematical identity at every legal width, all-ones AND
+/// all-ones-low-bits — but their ROLES are distinct). The two mappings are
+/// kept spelled out separately in
 /// [`push_index`](StackOps::push_index) /
-/// [`pop_index`](StackOps::pop_index) so the invariant never rests on a numeric
-/// coincidence between them.
+/// [`pop_index`](StackOps::pop_index) purely for readability.
 pub const TAIL: u32 = u32::MAX;
 
 /// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: the
@@ -194,10 +196,13 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// are in range, use [`pack`](Self::pack), which rejects instead.
     ///
     /// Crate-private precisely so the sharp edges stay in-crate: the only
-    /// callers are [`push_index`](StackOps::push_index) and
-    /// [`pop_index`](StackOps::pop_index), whose inputs are guaranteed in
-    /// range by their own guards (`push_index`'s `index < INDEX_MASK`
-    /// panic guard, `pop_index`'s rule-4 guard on the link it read) — with
+    /// callers are [`push_index`](StackOps::push_index),
+    /// [`pop_index`](StackOps::pop_index), and [`empty`](Self::empty)
+    /// (whose arguments are the compile-time constants `INDEX_MASK, 0`,
+    /// in range by construction); the two hot-path callers' inputs are
+    /// guaranteed in range by their own guards (`push_index`'s `index <
+    /// INDEX_MASK` panic guard, `pop_index`'s rule-4 guard on the link it
+    /// read) — with
     /// ONE deliberate exception: `push_index` hands this helper
     /// `tag.wrapping_add(1)`, which at the ABA wrap boundary is exactly
     /// `2^TAG_BITS`, whose shifted-out high bit RESTARTS THE TAG AT 0
@@ -1198,8 +1203,13 @@ pub(crate) trait SealedStorage<const B: u32> {
 
 /// Bridge: every public [`StackStorage`] implementor is also a
 /// [`SealedStorage`], so the crate-internal algorithm serves the public
-/// [`StackOps`] blanket impl. Fully-qualified calls below avoid infinite
-/// recursion into this very impl.
+/// [`StackOps`] blanket impl. The calls below are fully qualified to name
+/// the trait each body delegates to — not for recursion avoidance and not
+/// against E0034: a bare `self.head(&HOOK)` compiles fine today, because
+/// the `&Hook` witness argument exists only on [`StackStorage`]'s `head`,
+/// so arity alone resolves it to [`StackStorage::head`], never back into
+/// this impl. The qualifier pins the callee instead of relying on that
+/// signature accident.
 impl<const B: u32, S: StackStorage<B> + ?Sized> SealedStorage<B> for S {
     fn head(&self) -> &StackHead<B> {
         StackStorage::head(self, &HOOK)
@@ -1245,8 +1255,9 @@ pub(crate) fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S,
         // The link this index chains to: the current head's index, or TAIL
         // if the stack is empty. The empty sentinel packs INDEX_MASK, which
         // is <= 0xFFFF at every legal width per `_CHECK_BITS`, so it can no
-        // longer equal TAIL; we still spell the mapping out so the
-        // invariant never rests on a numeric coincidence.
+        // longer equal TAIL; and `TAIL & INDEX_MASK == INDEX_MASK` is a
+        // mathematical identity (all-ones AND all-ones-low-bits), not a
+        // coincidence. The branch is kept explicit purely for readability.
         let next_link = if TaggedIndex::<B>::is_empty(head) {
             TAIL
         } else {
@@ -1275,12 +1286,19 @@ pub(crate) fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S,
         // every later head RMW (see the `head` field's INVARIANT) — never
         // by anything push's failed-CAS reads observe.
         // Strong `compare_exchange`, deliberately NOT
-        // `compare_exchange_weak`: the two are equivalent on x86-64, but
-        // on LL/SC targets `weak` could avoid the hardware's hidden
-        // spurious-failure retries and let THIS loop's measured backoff
-        // govern them instead. That win is real but unmeasured — no
-        // multi-target harness — so the strong form is kept; revisit with
-        // real A/B data.
+        // `compare_exchange_weak`. Measured, not unmeasured: the two are
+        // equivalent on x86-64, and this crate's multi-target A/B harness
+        // (`scripts/tis_p3_ab_runner.mjs`) found `weak` codegen-IDENTICAL
+        // to strong on aarch64 under both the outlined-atomics default and
+        // the `+lse` lowerings — the hypothesized inline-LL/SC
+        // spurious-failure win does not exist on this toolchain, so the
+        // strong form is kept for NO LL/SC benefit, not because the
+        // question is unmeasured. See
+        // `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` §0 (P3-2: NULL;
+        // the driver asserts the identity, so a toolchain change fails
+        // loudly and reopens the question). This concerns the CAS KIND
+        // only; the separate LINK-ordering relaxation remains unmeasured —
+        // see `StackStorage`'s "Ordering contract".
         match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
             Ok(_) => return,
             Err(actual) => {
@@ -1377,7 +1395,8 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
         // INVARIANT on the `head` field — a plain `store` there would
         // sever that sequence and make this ordering unsound.
         // Strong CAS, deliberately kept over `compare_exchange_weak` —
-        // see push's identical note.
+        // see push's identical note (measured NULL on aarch64:
+        // `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` §0).
         match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {
             Ok(_) => return Some(index),
             Err(actual) => {
