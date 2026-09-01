@@ -44,7 +44,8 @@
 //! on top (which may be another thread's index, under real contention) and
 //! immediately re-pushes EXACTLY that value — never a locally invented index.
 //! Re-pushing anything else violates `push_index`'s documented caller contract
-//! ("index must NOT already be reachable from the stack") and would corrupt
+//! ("index must NOT already be reachable from ANY stack that reads and
+//! writes the same link cells") and would corrupt
 //! the free-list independent of any bug this test exists to catch.
 //!
 //! Not a loom model (`#![cfg(not(loom))]`) — this is a normal `cargo test`
