@@ -2285,7 +2285,9 @@ jobs:
       # so its `tests/` (proptest + `std::thread::scope`) and its
       # `bench-scale-tool`-based bench were never compiled on the pinned 1.88
       # toolchain by anything in this job before these rows — and this is the
-      # crate about to publish with `rust-version = "1.88"`. No
+      # crate about to publish with `rust-version = "1.80"` (re-derived from
+      # the workspace-inherited 1.88 — round-13 @oh review P3-3; see the
+      # crate-local 1.80 floor rows at the bottom of this job). No
       # `--all-features` here: the crate's feature map holds the implicit
       # `loom` optional-dependency feature and the explicit `test-internals`
       # instrumentation gate (round-9 review P3-4; name features, never
@@ -2302,6 +2304,23 @@ jobs:
       # the only thing in this job that type-checks
       # `benches/tagged_index_stack_bench.rs` on the pinned 1.88 toolchain.
       - run: cargo bench -p tagged-index-stack --no-run
+      # tagged-index-stack MSRV-FLOOR rows (round-13 @oh review P3-3): the
+      # crate's `rust-version` was the workspace-inherited 1.88, re-derived to
+      # 1.80 — the oldest toolchain on which the crate both compiles AND its
+      # crate-local `[lints.rust] unexpected_cfgs.check-cfg` cfg(loom)
+      # allowlist is honored. Evidence (all run locally on the pinned
+      # toolchains before this row landed): `cargo +1.80 check` is clean; 1.79
+      # also compiles but reports the check-cfg key as `unused manifest key`
+      # (the cfg(loom) allowlist silently inert); 1.74 cannot read the
+      # workspace's v4 Cargo.lock at all. Check-only at 1.80: the locked
+      # dev-dependency graph (proptest -> getrandom 0.4.3) requires cargo's
+      # edition2024 support, so `test --no-run`/`bench --no-run` cannot build
+      # on this toolchain — the 1.88 rows above keep the tests+bench compile
+      # coverage. This step installs 1.80 and switches the default toolchain
+      # for the remaining (last) steps of this job only.
+      - uses: dtolnay/rust-toolchain@1.80
+      - run: cargo check -p tagged-index-stack
+      - run: cargo check -p tagged-index-stack --features test-internals
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +

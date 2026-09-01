@@ -309,7 +309,7 @@ assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 
 ## MSRV
 
-Rust 1.88.
+Rust 1.80.
 
 ## License
 
