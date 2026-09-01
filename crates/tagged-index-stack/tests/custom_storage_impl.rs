@@ -13,12 +13,19 @@
 //! shared-head shape [`StackStorage`]'s rule 1 forbids: two implementor
 //! values returning the same [`StackHead`] over different link storage
 //! still compile and still double-issue.
+//!
+//! Since the round-12 @oh review (finding P2-1) it also pins the third
+//! variant of the same hazard: the escape hatch is not a custom
+//! implementor at all — [`ArrayIndexStack`]'s own `head()` (a public,
+//! safe, callable trait method on the crate's recommended "safe" type)
+//! hands the head reference to any caller, so a second implementor built
+//! around it corrupts the OWNED stack too, not just the parasite's view.
 
 #![cfg(not(loom))]
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tagged_index_stack::{ArrayLinks, StackHead, StackOps, StackStorage};
+use tagged_index_stack::{ArrayIndexStack, ArrayLinks, StackHead, StackOps, StackStorage};
 
 /// A `Vec`-backed [`StackStorage`] implementation, deliberately NOT
 /// [`ArrayLinks`]: heap-allocated rather than an owned array, otherwise
@@ -131,11 +138,13 @@ impl StackStorage<16> for SharedHeadView<'_> {
 /// This is the same category of caller discipline as `push_index`'s
 /// no-double-push liveness rule (see that method's `# Caller contract`):
 /// real, documented, and unenforceable at acceptable cost. Discharge it by
-/// construction — one implementor value per head, which is exactly what the
-/// owned `ArrayIndexStack` shape gives you. If a future revision makes this
-/// shape stop compiling or stop double-issuing (a structural fix), this
-/// test breaks by design and the trait doc's rule 1 must be updated with
-/// it.
+/// construction — one implementor value per head, keeping the head
+/// reference private to that one value. (Round-12 correction: the owned
+/// `ArrayIndexStack` shape fuses head and links but is NOT by itself the
+/// discharge — its `head()` remains a public escape hatch; see the test
+/// below.) If a future revision makes this shape stop compiling or stop
+/// double-issuing (a structural fix), this test breaks by design and the
+/// trait doc's rule 1 must be updated with it.
 #[test]
 fn two_implementor_values_sharing_one_head_still_double_issue() {
     let head = StackHead::<16>::new();
@@ -171,4 +180,93 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
     // It does not stop, either: the head is now (0, tag), and the
     // (0, tag) -> (0, tag) compare_exchange succeeds trivially.
     assert_eq!(via_b.pop_index(), Some(0));
+}
+
+/// A second implementor around a head borrowed from the OWNED stack — the
+/// round-12 variant of the `SharedHeadView` shape above. There is no
+/// custom head-view struct here at all: the head reference comes straight
+/// out of `ArrayIndexStack::head()`, a public, safe, callable trait
+/// method (`StackStorage` is in scope), so the crate's own recommended
+/// "safe" type hands out the exact ingredient rule 1's hazard needs.
+struct Parasite<'a> {
+    head: &'a StackHead<16>,
+    links: ArrayLinks<64>,
+}
+
+impl StackStorage<16> for Parasite<'_> {
+    fn head(&self) -> &StackHead<16> {
+        self.head
+    }
+
+    fn load_next(&self, index: u32) -> u32 {
+        self.links.load_next(index)
+    }
+
+    fn store_next(&self, index: u32, next: u32) {
+        self.links.store_next(index, next)
+    }
+}
+
+/// KNOWN, INTENTIONAL limitation — round-12 @oh review, finding P2-1.
+/// Runnable demonstration, not a correctness check, same register as the
+/// `SharedHeadView` test above: it pins that `ArrayIndexStack::head()` is
+/// the VALUE-LEVEL escape hatch of rule 1's hazard even on the fused
+/// type — owning the head-and-links pair binds them to each other; it
+/// does not stop a third party from calling `.head()` and building a
+/// second, competing implementor around the same borrowed head.
+///
+/// The mechanism, and why it is WORSE than the `SharedHeadView` shape:
+/// pushing through `owned` writes `owned`'s link for index 1, but the
+/// parasite's pops read the PARASITE's links, whose zero-initialised
+/// storage answers every `load_next` with `0`. The first pop legitimately
+/// returns the real head index (`1`); every pop after it hands back `0`,
+/// which was never pushed through ANY implementor. Worse still, the
+/// corruption propagates BACK into the owned stack: the parasite's pops
+/// leave the shared head at `(0, tag)`, and `owned`'s own `links[0]` is
+/// still `0`, so `owned`'s `(0, tag) -> (0, tag)` compare_exchange
+/// succeeds trivially and the owned stack double-issues `0` forever too.
+///
+/// Nothing fires to catch it: the trait rules are worded per implementor
+/// and each value is individually coherent, and `pop_index`'s
+/// release-active guard only rejects link values that are neither `TAIL`
+/// nor a valid index — `0` is valid. If a future structural fix stops
+/// `head()` from handing out the head on the fused type (or stops this
+/// shape from compiling or double-issuing), this test breaks by design,
+/// and the `ArrayIndexStack` type doc and the trait doc's rule 1 must be
+/// updated with it.
+#[test]
+fn array_index_stack_head_still_double_issue() {
+    let owned = ArrayIndexStack::<16, 64>::new();
+    let parasite = Parasite {
+        head: owned.head(),
+        links: ArrayLinks::<64>::new(),
+    };
+
+    owned.push(1);
+
+    // Pop through `parasite` — a DIFFERENT implementor value over the
+    // owned stack's head. First pop: the real head index; every pop
+    // after it: the never-pushed `0`.
+    let mut popped = Vec::new();
+    for _ in 0..5 {
+        if let Some(i) = parasite.pop_index() {
+            popped.push(i);
+        }
+    }
+    assert_eq!(
+        popped,
+        vec![1, 0, 0, 0, 0],
+        "index 0 was never pushed through any implementor; the parasite's \
+         own zero-initialised links answer every load_next with 0"
+    );
+
+    // The owned stack is corrupted too: the shared head now reads
+    // (0, tag), and `owned`'s own links[0] is still 0, so its CAS
+    // succeeds trivially.
+    assert!(
+        !owned.is_empty(),
+        "the parasite's pops left the shared head at a non-empty (0, tag)"
+    );
+    assert_eq!(owned.pop(), Some(0));
+    assert_eq!(owned.pop(), Some(0));
 }

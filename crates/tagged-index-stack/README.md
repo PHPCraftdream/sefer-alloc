@@ -61,9 +61,17 @@ differ. Each value is individually coherent, yet the combination
 double-issues indices exactly like the old repro, and nothing in the
 compiler or the runtime guard catches it. A head must be reachable through
 exactly ONE live implementor value at a time (the trait doc's rule 1) — an
-implementor/caller obligation, discharged by construction (one storage
-object per head), not by auditing impl blocks, which cannot see the
-combination.
+implementor/caller obligation discharged by construction (one implementor
+value per head), not by reading any single impl block: the hazard is two
+VALUES of possibly the SAME impl sharing one head, and the values are
+individually correct, so per-impl audit cannot see the combination.
+Discharging by construction means keeping the head private to one
+implementor value — owning the storage object is not, by itself, the
+discharge: `head()` is a plain safe method on every implementor, including
+the owned `ArrayIndexStack`, so anyone who can read a live stack can take
+its `.head()` and build a second, competing implementor around the same
+borrowed head (pinned by `array_index_stack_head_still_double_issue` in
+`tests/custom_storage_impl.rs`).
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
@@ -261,11 +269,14 @@ Under default features: `StackHead::raw_head` (also reachable through
 `ArrayIndexStack`'s `#[doc(hidden)]` forwarder) is a test-only probe,
 used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
 test-only — it is used internally by this crate's bootstrap path
-(`StackHead::new` / `ArrayIndexStack::new`) and by the production allocator
-this crate ships alongside (`sefer-alloc`, whose registry bootstrap free-list
-is built on this crate's head) for the same purpose (a const-capable
-bootstrap-empty head word), so it is not freely
-removable, but do not depend on it either.
+(`StackHead::new` / `ArrayIndexStack::new`), and its one out-of-crate
+consumer is `sefer-alloc`'s registry bootstrap — but through that crate's
+`#[cfg(loom)]` `bootstrap::loom_shim` TEST shim (its mirrored
+const-capable `StackHead::new`, which keeps the const `REGISTRY` static
+compiling under loom and is never on a modeled interleaving); a production
+`sefer-alloc` build takes the real `StackHead` type directly and never
+calls `empty()` itself. So it is not freely removable, but do not depend
+on it either.
 
 Under the `test-internals` feature (off by default — a default build of the
 crate carries no instrumentation at all): `retry_counts_for_test` reads both
