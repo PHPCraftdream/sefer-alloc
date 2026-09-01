@@ -35,6 +35,14 @@
 //! `two_implementor_values_sharing_one_head_still_double_issue` in
 //! `tests/custom_storage_impl.rs`.
 //!
+//! # The seal does not rest on this fixture alone
+//!
+//! This fixture pins ONE instantiation (`<16, 64>`), but the guarantee is
+//! instantiation-independent and held by COHERENCE: any in-crate
+//! `impl StackStorage<B> for ArrayIndexStack<B, N>` fails with **E0119**
+//! (it would overlap the `pub(crate)` `SealedStorage` blanket), and any
+//! out-of-crate attempt fails with **E0117** (orphan rule).
+//!
 //! The fixture's `Cargo.toml`, child-build mechanics, published-package skip
 //! guard and RUSTFLAGS stripping are identical to
 //! `tests/compile_fail_two_backings.rs` — see that driver's module doc for the

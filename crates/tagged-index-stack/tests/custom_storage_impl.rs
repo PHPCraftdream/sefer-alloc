@@ -77,7 +77,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tagged_index_stack::{ArrayLinks, StackHead, StackOps, StackStorage, TAIL};
+use tagged_index_stack::{ArrayLinks, Hook, StackHead, StackOps, StackStorage, TAIL};
 
 /// A `Vec`-backed [`StackStorage`] implementation, deliberately NOT
 /// [`ArrayLinks`]: heap-allocated rather than an owned array, otherwise
@@ -104,15 +104,15 @@ impl VecStorage {
 // what a push stored (TAIL or an in-range index) from a dedicated cell;
 // head() returns &self.head every call.
 unsafe impl StackStorage<16> for VecStorage {
-    fn head(&self) -> &StackHead<16> {
+    fn head(&self, _: &Hook) -> &StackHead<16> {
         &self.head
     }
 
-    fn load_next(&self, index: u32) -> u32 {
+    fn load_next(&self, _: &Hook, index: u32) -> u32 {
         self.next[index as usize].load(Ordering::Acquire)
     }
 
-    fn store_next(&self, index: u32, next: u32) {
+    fn store_next(&self, _: &Hook, index: u32, next: u32) {
         self.next[index as usize].store(next, Ordering::Release);
     }
 }
@@ -170,15 +170,15 @@ struct SharedHeadView<'a> {
 // head): the borrowed head is handed to TWO live implementor values with
 // different links.
 unsafe impl StackStorage<16> for SharedHeadView<'_> {
-    fn head(&self) -> &StackHead<16> {
+    fn head(&self, _: &Hook) -> &StackHead<16> {
         self.head
     }
 
-    fn load_next(&self, index: u32) -> u32 {
+    fn load_next(&self, _: &Hook, index: u32) -> u32 {
         self.links.load_next(index)
     }
 
-    fn store_next(&self, index: u32, next: u32) {
+    fn store_next(&self, _: &Hook, index: u32, next: u32) {
         self.links.store_next(index, next)
     }
 }
@@ -251,15 +251,15 @@ struct Parasite {
 // backing behind the algorithm's back, so load_next answers values the
 // crate never stored.
 unsafe impl StackStorage<16> for Parasite {
-    fn head(&self) -> &StackHead<16> {
+    fn head(&self, _: &Hook) -> &StackHead<16> {
         &self.head
     }
 
-    fn load_next(&self, index: u32) -> u32 {
+    fn load_next(&self, _: &Hook, index: u32) -> u32 {
         self.links.load_next(index)
     }
 
-    fn store_next(&self, index: u32, next: u32) {
+    fn store_next(&self, _: &Hook, index: u32, next: u32) {
         self.links.store_next(index, next)
     }
 }
@@ -359,15 +359,15 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
     // from two live bindings over shared cells): two live bindings, separate
     // heads, same cells, overlapping reachability.
     unsafe impl StackStorage<16> for SharedLinksView<'_> {
-        fn head(&self) -> &StackHead<16> {
+        fn head(&self, _: &Hook) -> &StackHead<16> {
             &self.head
         }
 
-        fn load_next(&self, index: u32) -> u32 {
+        fn load_next(&self, _: &Hook, index: u32) -> u32 {
             self.links.load_next(index)
         }
 
-        fn store_next(&self, index: u32, next: u32) {
+        fn store_next(&self, _: &Hook, index: u32, next: u32) {
             self.links.store_next(index, next)
         }
     }
@@ -442,15 +442,15 @@ fn internally_disagreeing_storage_still_double_issue() {
     // consistently): load_next and store_next read and write DIFFERENT
     // backings.
     unsafe impl StackStorage<16> for DisagreeingStorage {
-        fn head(&self) -> &StackHead<16> {
+        fn head(&self, _: &Hook) -> &StackHead<16> {
             &self.head
         }
 
-        fn load_next(&self, index: u32) -> u32 {
+        fn load_next(&self, _: &Hook, index: u32) -> u32 {
             self.read_links.load_next(index)
         }
 
-        fn store_next(&self, index: u32, next: u32) {
+        fn store_next(&self, _: &Hook, index: u32, next: u32) {
             self.write_links.store_next(index, next)
         }
     }
@@ -493,15 +493,15 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
     // SAFETY: DELIBERATE contract violation — clause 1's temporal half (a
     // live head rebound to different links across time).
     unsafe impl StackStorage<16> for Pool {
-        fn head(&self) -> &StackHead<16> {
+        fn head(&self, _: &Hook) -> &StackHead<16> {
             &self.head
         }
 
-        fn load_next(&self, index: u32) -> u32 {
+        fn load_next(&self, _: &Hook, index: u32) -> u32 {
             self.links.load_next(index)
         }
 
-        fn store_next(&self, index: u32, next: u32) {
+        fn store_next(&self, _: &Hook, index: u32, next: u32) {
             self.links.store_next(index, next)
         }
     }
@@ -562,29 +562,29 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
     // (disjoint reachable-index populations across shared cells): two
     // bindings over ONE backing inside one value.
     unsafe impl StackStorage<16> for DualWidth {
-        fn head(&self) -> &StackHead<16> {
+        fn head(&self, _: &Hook) -> &StackHead<16> {
             &self.wide_head
         }
 
-        fn load_next(&self, index: u32) -> u32 {
+        fn load_next(&self, _: &Hook, index: u32) -> u32 {
             self.links.load_next(index)
         }
 
-        fn store_next(&self, index: u32, next: u32) {
+        fn store_next(&self, _: &Hook, index: u32, next: u32) {
             self.links.store_next(index, next)
         }
     }
 
     unsafe impl StackStorage<12> for DualWidth {
-        fn head(&self) -> &StackHead<12> {
+        fn head(&self, _: &Hook) -> &StackHead<12> {
             &self.narrow_head
         }
 
-        fn load_next(&self, index: u32) -> u32 {
+        fn load_next(&self, _: &Hook, index: u32) -> u32 {
             self.links.load_next(index)
         }
 
-        fn store_next(&self, index: u32, next: u32) {
+        fn store_next(&self, _: &Hook, index: u32, next: u32) {
             self.links.store_next(index, next)
         }
     }

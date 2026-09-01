@@ -78,3 +78,23 @@ Option 2 (remove the seam) was rejected on the same reasoning already in this AD
 ## What #1808 must still verify regardless of the plan above
 
 Each of the six demonstrating tests gets an explicit, documented post-change status in #1808's own summary — no longer compiles (test #1, Group A), or now requires `unsafe impl` with a named violated clause (tests #2–#6, Group B) — stated plainly, not folded back into prose. #1808 must also confirm the compile-PASS side: a correct `unsafe impl` (the reference model referenced in step 5 above) compiles and its stack still behaves correctly end-to-end (push/pop round-trip, no spurious panics) — closing a hazard by breaking every legitimate implementor too is exactly the failure mode #1809's task description already warns against.
+
+## Addendum (2026-09-01, later the same day): run-4's P1-1 item 3 — the unconstructible hook-access token — is now implemented
+
+**What it closes.** This ADR's decision (via `@fh`) kept the three `StackStorage` hooks safe `fn`, on the rationale at line ~63 above ("every Group B hazard is implementor-side ... never caller-side misuse of an otherwise-safe method call"). The full external re-audit (run 5) **falsified that rationale**: in a `#![forbid(unsafe_code)]` crate, against a CORRECT downstream `unsafe impl`, the plain safe call `p.store_next(1, 3)` spliced a free-list cycle and made `alloc()` hand out the same index twice (attempt A4). This is finding P2-1 of `docs/reviews/2026-09-01-tagged-index-stack-full-audit-run5-fxx.md`; the run-4 review's P1-1 "what to fix" item 3 (an unconstructible access token) — which this ADR neither implemented nor explicitly rejected — is the item now implemented.
+
+**The decision.** Owner approved the structural closure (the `Hook` witness), with the same recorded framing as this ADR's original decision: "we strive for perfection and are willing to break backward compatibility for it". The crate is still unpublished 0.1.0, so this is the cheapest this breaking change will ever be.
+
+**What was implemented.**
+
+- `pub struct Hook(())` — public type, PRIVATE field, no derives — unconstructible outside the crate by any spelling (tuple-struct `Hook(())` → E0423; struct-literal `Hook { 0: () }` → E0451).
+- The three hooks now each take `_: &Hook`; a crate-private `const HOOK: Hook = Hook(());` is passed by the internal `pub(crate)` `SealedStorage` bridge.
+- `SealedStorage` itself, `ArrayIndexStack`, and the root crate's `--cfg loom` mirror trait (a separate `pub(crate)` trait, never a public extension point) are unchanged.
+- All downstream implementor signatures updated mechanically (incl. `sefer-alloc`'s `Registry`).
+- Landing commits on branch `tis-audit-p2-1`: `142ec09` (trait + signatures), `dc13902` (the compile-fail fixture pair `tests/compile_fail/hook_token_unconstructible/` + `tests/compile_fail_hook_token_unconstructible.rs`).
+
+**Why `&Hook`, not an owned token.** An owned non-Copy token could be stashed by a cooperating implementor into a `Cell<Option<Hook>>` and re-exposed through that implementor's own safe method, silently reopening the hole; the reference form makes the stash a lifetime error, and demanding `'static` instead would be E0308 against the trait's elided-lifetime signature — the audit report §P2-1 ("Recommended closure") holds the finding and the one-line rationale; the two stashing failure modes were verified by compiling the adversarial shapes (once before implementation, and re-attempted fresh against the landed implementation from a `#![forbid(unsafe_code)]` scratch workspace: `Cell<Option<&'a Hook>>` stash → "lifetime may not live long enough"; `&'static Hook` demand → E0308 "method not compatible with trait").
+
+**Proof obligations met.** The fixture pins both forgery spellings: bare call → E0061 "this method takes 3 arguments but 2 arguments were supplied" with "argument #1 of type `&Hook` is missing"; forged witness → E0423 "cannot initialize a tuple struct which contains private fields"; the struct-literal spelling separately confirmed as E0451. The pre-implementation design was compiled and verified independently twice (audit run 5; the second-opinion review of the design). One `# Safety` consequence: clause 2 ("a `load_next` must observe the most recent `store_next` THE STACK ITSELF performed") is now dischargeable as written — no external party can perform a `store_next` at all, which was exactly P2-1's complaint against the old contract.
+
+**Rationale status.** The line-63 form ("never caller-side") is superseded: it is true of the post-witness design only BECAUSE the witness makes the hooks unreachable from outside the crate. This addendum supersedes it on record.

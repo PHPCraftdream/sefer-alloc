@@ -256,8 +256,9 @@
 //! system); it moves the unchecked promise into Rust's unsafe-contract
 //! system, where responsibility for a violation is formally assigned to
 //! whichever `unsafe impl` asserted a contract it did not uphold. The
-//! methods stay safe `fn` because every known hazard is implementor-side,
-//! never caller-side — see the [`StackStorage`] trait doc's `# Safety` and
+//! methods stay safe `fn` because they are witness-gated (crate-private
+//! [`Hook`]) and therefore unreachable from outside the crate; see the
+//! [`StackStorage`] trait doc's witness-gating section, `# Safety`, and
 //! `# Stability` sections.
 //!
 //! # Portability limit — requires 64-bit atomics

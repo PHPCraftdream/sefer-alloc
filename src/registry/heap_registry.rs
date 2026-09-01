@@ -621,12 +621,12 @@ const _: () = assert!(
 #[cfg(not(loom))]
 unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     #[inline]
-    fn head(&self) -> &tagged_index_stack::StackHead<16> {
+    fn head(&self, _: &tagged_index_stack::Hook) -> &tagged_index_stack::StackHead<16> {
         &self.free_slots
     }
 
     #[inline]
-    fn load_next(&self, index: u32) -> u32 {
+    fn load_next(&self, _: &tagged_index_stack::Hook, index: u32) -> u32 {
         // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
         // holds indices that `push_free_slot` put there, and those are valid
         // slot indices); `slot()` resolves it through the chunked slot array.
@@ -640,7 +640,7 @@ unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     }
 
     #[inline]
-    fn store_next(&self, index: u32, next: u32) {
+    fn store_next(&self, _: &tagged_index_stack::Hook, index: u32, next: u32) {
         self.slot(index as usize)
             .next_free
             .store(next, Ordering::Release);

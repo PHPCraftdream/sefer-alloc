@@ -13,7 +13,7 @@
 #![cfg(not(loom))]
 
 use tagged_index_stack::{
-    ArrayIndexStack, ArrayLinks, StackHead, StackOps, StackStorage, TaggedIndex, TAIL,
+    ArrayIndexStack, ArrayLinks, Hook, StackHead, StackOps, StackStorage, TaggedIndex, TAIL,
 };
 
 // Compile-time pin: all three public types must stay auto-`Send +
@@ -418,17 +418,17 @@ struct AlwaysInvalidStorage {
 // answers INDEX_MASK, an out-of-range value, to fire pop_index's rule-4
 // guard.
 unsafe impl StackStorage<16> for AlwaysInvalidStorage {
-    fn head(&self) -> &StackHead<16> {
+    fn head(&self, _: &Hook) -> &StackHead<16> {
         &self.head
     }
 
-    fn load_next(&self, _index: u32) -> u32 {
+    fn load_next(&self, _: &Hook, _index: u32) -> u32 {
         // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
         // exactly the shape pop_index's rule-4 guard exists to catch.
         TaggedIndex::<16>::INDEX_MASK as u32
     }
 
-    fn store_next(&self, _index: u32, _next: u32) {}
+    fn store_next(&self, _: &Hook, _index: u32, _next: u32) {}
 }
 
 #[test]
