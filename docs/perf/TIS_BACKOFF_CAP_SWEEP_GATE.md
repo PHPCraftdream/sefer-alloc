@@ -565,6 +565,15 @@ today.
   worst-pop ratio spreads (P2-2/P3-2/P4-7); §3.4's source identity was
   re-cited (P3-3); this section's loom count was refreshed (P4-5).
 
+- Round-13 addition (P4-3): §6's "Fixed in both places" no longer describes
+  the current tree — the citation was later dropped entirely: commit
+  `db8bb77` moved the implementation (citation included) from `src/lib.rs`
+  into `src/imp.rs`, and commit `ad65fa5` ("docs(tis): compress doc comments
+  to load-bearing invariants") removed it from `src/imp.rs` and the crate
+  CHANGELOG. A grep of the current tree finds no `[profile.bench]` /
+  `[profile.release]` citation in the crate's src/, README.md, CHANGELOG.md,
+  benches/, examples/, or the root CHANGELOG.md/README.md.
+
 (Exact command output for the items above is reported in this task's commit
 message / accompanying session report, not duplicated here — this report's
 own scope is the cap-sweep measurement and decision.)
