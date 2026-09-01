@@ -309,7 +309,10 @@ assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 
 ## MSRV
 
-Rust 1.80.
+Rust 1.81 (the library alone checks clean at 1.80, but this crate's own
+`cargo clippy --all-targets` gate additionally covers `tests/`, and
+`tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since 1.81 —
+1.81 is the real floor across the full target set that gate checks).
 
 ## License
 

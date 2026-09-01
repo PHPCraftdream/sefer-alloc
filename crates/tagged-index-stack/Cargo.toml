@@ -2,13 +2,19 @@
 name = "tagged-index-stack"
 version = "0.1.0"
 edition = "2021"
-# Derived floor, not workspace-inherited (round-13 @oh review P3-3): verified
-# `cargo +1.80 check` green. Below 1.80 the crate-local `[lints.rust]
-# unexpected_cfgs.check-cfg` cfg(loom) allowlist configured below silently
-# degrades to an `unused manifest key` warning (verified on 1.79), and 1.74
-# cannot read the workspace's v4 Cargo.lock — 1.80 is where both the code
-# compiles and this manifest means what it says.
-rust-version = "1.80"
+# Derived floor, not workspace-inherited (round-13 @oh review P3-3, corrected
+# during zero-trust merge verification): the library alone checks clean at
+# 1.80 (below which the crate-local `[lints.rust]
+# unexpected_cfgs.check-cfg` cfg(loom) allowlist degrades to an `unused
+# manifest key` warning, verified on 1.79; 1.74 cannot read the workspace's
+# v4 Cargo.lock at all) -- but this project's own gate runs
+# `cargo clippy --all-targets -D warnings`, and clippy's `incompatible_msrv`
+# lint checks EVERY target (tests included) against the declared floor:
+# `tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since
+# 1.81.0, so 1.80 fails that gate even though the library itself needs
+# nothing past 1.80. 1.81 is the real floor across the full target set this
+# repo's own clippy convention checks.
+rust-version = "1.81"
 license = "MIT OR Apache-2.0"
 description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with an ABA-mitigating tag packed into one atomic word."
 readme = "README.md"
