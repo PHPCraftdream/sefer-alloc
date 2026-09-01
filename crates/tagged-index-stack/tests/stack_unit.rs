@@ -436,6 +436,27 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
     let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }
 
+/// The self-loop guard's SIMPLEST real-world trigger, pinned without any
+/// custom implementor, shared storage, or foreign backing: a plain
+/// [`ArrayIndexStack`] whose CURRENT head is double-pushed. [`push_index`]
+/// writes the current head's index into `next[index]` before its CAS, so
+/// re-pushing the live head writes the index's own link back to itself, and
+/// [`pop_index`]'s rule-4 guard panics on the FIRST pop — unlike the
+/// zero-initialised-foreign-backing shapes in
+/// `tests/custom_storage_impl.rs`, which fire on the second. This pins the
+/// guard against a caller-contract violation OUTSIDE the shared-storage
+/// hazard class entirely, so a future narrowing of the detector to that
+/// class's specific sub-shape (e.g. only a zero-initialised backing) fails
+/// here too. See `StackStorage`'s "Detection coverage" section.
+#[test]
+#[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
+fn double_push_of_current_head_panics_on_first_pop() {
+    let stack = ArrayIndexStack::<16, 64>::new();
+    stack.push(1);
+    stack.push(1); // re-push the CURRENT head: writes next[1] = 1
+    let _ = stack.pop(); // first pop: self-loop -> panic
+}
+
 // Compile-fail coverage (Sol-codex run-3 P3-6): out-of-range `INDEX_BITS` IS
 // pinned by automated compile-fail regressions now --
 // `tests/compile_fail_index_bits_bounds.rs` builds the

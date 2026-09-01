@@ -21,12 +21,16 @@ before it.
   crate-owned `StackOps` blanket-impl Treiber CAS loops over that
   implementor's single `AtomicU64` head; `ArrayIndexStack` (owned standalone)
   exposes plain `push`/`pop` forwarders. Caller contract for
-  `push_index`: an index still reachable from the stack must never be pushed
-  again — the push overwrites that index's link with the current head,
+  `push_index`: an index still reachable from ANY stack that reads and writes
+  the same link cells must never be pushed again — the push overwrites that
+  index's link with the current head,
   closing a link-cycle that makes `pop_index` hand the same index to two
   callers — and `push_index` cannot check liveness cheaply (it would cost an
   O(n) chain walk per push), so it enforces only the `index < INDEX_MASK`
-  range bound; liveness is the caller's obligation.
+  range bound; liveness is the caller's obligation. (Consequence description
+  since corrected: when the re-pushed index IS the current head, the cycle is
+  a self-referential link and `pop_index`'s self-loop detector panics on the
+  first pop rather than looping; see the `### Fixed` bullet below.)
 - **`StackHead::is_empty()`** (also exposed via `ArrayIndexStack::is_empty()`)
   — an advisory emptiness check: a
   `Relaxed` peek at the head word's index half. Concurrent pushes/pops can
@@ -275,7 +279,15 @@ before it.
   @oh review, findings P2-1/P2-2). A contract-abiding chain can never
   link an index to itself — `push_index` stores the PREVIOUS head into
   `next[index]`, and that head is trivially already reachable — so a
-  self-loop proves a foreign writer answered for the popped index: in
+  self-loop proves a caller-contract violation, of two possible causes
+  (round-14 correction: the original text here concluded "proves a foreign
+  writer answered", which is not the honest disjunction — the simplest
+  cause needs no foreign writer at all). By far the simpler and more
+  likely cause: a double-push of the index that is ALREADY the current
+  head — the pushed index IS the head, so `push_index` itself writes
+  `next[index] = index`; this needs no foreign writer and no shared
+  storage, and the guard fires on the FIRST pop. The other: a writer
+  other than a contract-abiding push answering for the popped index — in
   practice the zero-initialised backing of a second implementor value
   shared with (or stolen via `head()` from) another stack, whose `0`
   answers coincide with the popped index on the SECOND pop through it.

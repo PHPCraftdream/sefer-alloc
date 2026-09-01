@@ -68,8 +68,8 @@ fn main() {
     // The push-onto-empty shape is load-bearing: pushing without first
     // popping would re-push index 1 while it is still the live head -- a
     // violation of push_index's documented caller contract ("index must NOT
-    // already be reachable from the stack") that also writes a
-    // self-referential link (link[1] = 1).
+    // already be reachable from ANY stack that reads and writes the same
+    // link cells") that also writes a self-referential link (link[1] = 1).
     {
         let stack = Stack::new();
         let index = 1u32;

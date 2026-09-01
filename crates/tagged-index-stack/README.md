@@ -105,15 +105,21 @@ authoritative empty check.
 
 ### The rule that is NOT one of the two: no double-push (caller-enforced)
 
-- **No double-push (caller-enforced).** An index that is still reachable from
-  the stack must never be pushed again: `push_index` overwrites the pushed
-  index's link with the current head, so re-pushing a live index closes a cycle
-  in the link chain — `pop_index` stops returning `None` and hands the same
-  index to two callers. Checking liveness would cost an O(n) chain walk on
-  every push, so the crate cannot enforce this (unlike H-2 and RAD-1);
-  `push_index` checks only the `index < INDEX_MASK` bound. Every live index
-  comes from exactly one `push_index` and is re-pushed only after the matching
-  `pop_index`.
+- **No double-push (caller-enforced).** An index must NOT already be reachable
+  from ANY stack that reads and writes the same link cells this stack's
+  `load_next`/`store_next` touch — not merely from this one stack (link cells
+  shared between two stacks with completely separate heads are a separate
+  hazard; see the `StackStorage` trait doc's rule 3 and its "The
+  shared-storage hazard class" section). `push_index` overwrites the pushed
+  index's link with the current head, so re-pushing a live index closes a
+  cycle in the link chain: if the re-pushed index was deeper in the chain
+  than the head, `pop_index` stops returning `None` and hands the same index
+  to two callers; if it IS the current head, the cycle is a self-referential
+  link and `pop_index`'s self-loop detector panics on the first pop through
+  it. Checking liveness would cost an O(n) chain walk on every push, so the
+  crate cannot enforce this (unlike H-2 and RAD-1); `push_index` checks only
+  the `index < INDEX_MASK` bound. Every live index comes from exactly one
+  `push_index` and is re-pushed only after the matching `pop_index`.
 
 ## Tag-width budget
 
