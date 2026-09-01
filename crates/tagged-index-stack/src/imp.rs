@@ -561,12 +561,15 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    on a later call (the per-call-`&L` repro does not compile — pinned by
 ///    `tests/compile_fail_two_backings.rs`). What NOTHING enforces — not
 ///    the type system, not the [`StackOps`] blanket impl, not rule 4's
-///    release-active guard — is the instance-level half: a given
+///    release-active guard, and not even the `unsafe impl` acknowledgment
+///    (which forces every implementor to ASSERT the contract but detects no
+///    violation) — is the instance-level half: a given
 ///    [`StackHead`] value must be reachable through exactly ONE live
 ///    implementor VALUE at a time. Two SEPARATE, individually coherent
 ///    implementor values can each return a reference to the SAME
 ///    [`StackHead`] while reading and writing DIFFERENT link storage —
-///    that compiles, and it reproduces this crate's original
+///    that still compiles (behind an `unsafe impl` asserting the contract
+///    it violates), and it reproduces this crate's original
 ///    release-blocking double-issue hazard. No rule's wording catches it:
 ///    every rule here is stated per implementor, and each of the two
 ///    values satisfies the rules on its own terms; rule 4's runtime guard
@@ -739,10 +742,18 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///
 /// The old API's two-backings-one-head swap trap — two independent calls,
 /// each supplying a different backing for the same head — does not compile
-/// against this API (pinned by `tests/compile_fail_two_backings.rs`). What
-/// does NOT carry over is the REST of the shared-storage hazard class:
-/// FOUR surviving shapes, none of them the only gap the others leave, all
-/// expressible in safe Rust. Exactly ONE of them — shape 1 — VIOLATES
+/// against this API. That is the API REMOVAL, not a safety invariant: the
+/// per-call calling convention itself is gone
+/// (`tests/compile_fail_two_backings.rs` pins exactly that), and the trap's
+/// hazard content — one head, two backings — survives as shape 2 below.
+/// What does NOT carry over is the REST of the shared-storage hazard class:
+/// FOUR surviving shapes, none of them the only gap the others leave. Since
+/// the 2026-09-01 `unsafe trait` conversion, none of them is expressible in
+/// plain safe code: each requires an `unsafe impl StackStorage` — a
+/// compiler-forced acknowledgment, at the impl site, of the very `# Safety`
+/// contract the shape then violates. Still expressible, in other words —
+/// closed only by the unsafe-impl contract, NOT by the type system.
+/// Exactly ONE of them — shape 1 — VIOLATES
 /// per-implementor rules (rules 3 and 4 oblige the implementor to prevent
 /// it): implementor-enforced, not structurally impossible, and auditable
 /// inside one impl block, unlike the binding-level shapes 2, 3, and 4,
@@ -863,8 +874,11 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// `head_moved_into_fresh_links_leaks_and_then_panics`). Shape 3 has no
 /// detector at all, because every link value stays numerically valid and
 /// the chain acyclic — documented, not detected. None of the four shapes
-/// is a compiler-enforced impossibility; all are implementor/caller-
-/// enforced obligations.
+/// is a compiler-enforced impossibility; all remain implementor/caller-
+/// enforced obligations — since the 2026-09-01 `unsafe trait` conversion
+/// each is reachable only behind an `unsafe impl` that asserts the
+/// `# Safety` contract the shape violates: the acknowledgment is
+/// compiler-forced, the contract still is not checked.
 ///
 /// # Mechanical requirement on `head()`
 ///

@@ -34,13 +34,15 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
-# The four compile-fail fixture crates under
-# tests/compile_fail/ each have their own Cargo.toml, so cargo's nested-
-# manifest packaging rule already auto-excludes them — this states that
-# EXPLICITLY so the published .crate does not silently depend on that
-# default. The three compile_fail_*.rs driver files are plain .rs files
-# directly under tests/ and DO ship; each documents (and implements) its
-# own skip-when-fixture-absent behavior for the packaged suite.
+# The compile-fail fixture crates under tests/compile_fail/ (count drifts as
+# new hazards get pinned — re-derive via `ls tests/compile_fail/ | wc -l`,
+# do not trust a number quoted here) each have their own Cargo.toml, so
+# cargo's nested-manifest packaging rule already auto-excludes them — this
+# states that EXPLICITLY so the published .crate does not silently depend
+# on that default. The compile_fail_*.rs driver files (`ls tests/ | grep
+# ^compile_fail_ | wc -l`) are plain .rs files directly under tests/ and DO
+# ship; each documents (and implements) its own skip-when-fixture-absent
+# behavior for the packaged suite.
 exclude = ["tests/compile_fail/"]
 
 # A crate-local `unexpected_cfgs` declaration, deliberately NOT the

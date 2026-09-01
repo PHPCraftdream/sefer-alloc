@@ -2,8 +2,13 @@
 //! implementation" (slot-resident links in caller-owned storage is the whole
 //! design point), and the crate blanket-implements [`StackOps`] for every
 //! `S: StackStorage<B> + ?Sized` — precisely so `&dyn StackStorage` works.
-//! Every other test in this crate exercises only [`ArrayIndexStack`], so
-//! neither claim was ever exercised by a real second implementor. This file
+//! Every other test in this crate exercises only [`ArrayIndexStack`] (the
+//! exceptions are not working implementors: `stack_unit.rs`'s
+//! `AlwaysInvalidStorage` deliberately violates the contract to fire
+//! [`pop_index`](StackOps::pop_index)'s rule-4 guard, and
+//! `tests/compile_fail/unsafe_impl_required/` deliberately fails to
+//! compile), so this file is where those claims are exercised by a real,
+//! WORKING second implementor. This file
 //! pins both: a small `Vec`-backed `StackStorage` impl used directly, and the
 //! same storage driven through `&dyn StackStorage<16>` to pin the blanket
 //! impl's `?Sized` coverage.
@@ -33,14 +38,42 @@
 //! value (round-15 P3-4).
 //!
 //! Since the 2026-09-01 `unsafe trait` conversion, EVERY implementor in
-//! this file carries an `unsafe impl`: the five hazard tests pin the
-//! runtime guard's catch/miss boundary UNDER AN ACKNOWLEDGED-BROKEN
-//! CONTRACT (each `unsafe impl` names exactly which `# Safety` clause it
-//! violates), while `VecStorage` is the correct-implementor reference
-//! model. The compile-PASS side is pinned by
+//! this file carries an `unsafe impl` — seven types, eight impl sites
+//! (`DualWidth` implements the trait at both widths) — and NO test was
+//! removed by the conversion: every shape this file demonstrated remained
+//! expressible, so each test kept pinning its shape, now UNDER AN
+//! ACKNOWLEDGED-BROKEN CONTRACT (each `unsafe impl` names exactly which
+//! `# Safety` clause it violates). The one test the conversion DID retire
+//! from this file is `array_index_stack_head_still_double_issue`: Group A
+//! made its extraction route unexpressible, and it lives on as the
+//! compile-fail fixture `tests/compile_fail/array_index_stack_head/`
+//! (cross-referenced in the round-11 test's doc below).
+//!
+//! Per-test status, explicitly. COMPILE-PASS side:
 //! `vec_backed_storage_push_pop_round_trips` +
-//! `push_pop_through_dyn_storage`: a correct `unsafe impl` compiles and
-//! behaves correctly.
+//! `push_pop_through_dyn_storage` — a correct `unsafe impl` from a
+//! separate test crate compiles and behaves correctly; `VecStorage` is the
+//! reference model for a correct implementor and the in-crate stand-in for
+//! the real external consumer (`sefer-alloc`'s `Registry`: implements the
+//! trait, drives the stack only through
+//! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index),
+//! never the three hooks directly). That the `unsafe impl` keyword itself
+//! is compiler-forced (a plain `impl` is E0200) is pinned by
+//! `tests/compile_fail_unsafe_impl_required.rs`. UNSAFE-IMPL-WITH-VIOLATION
+//! side, each hazard moved into the unsafe contract rather than eliminated:
+//! `two_implementor_values_sharing_one_head_still_double_issue` (clause 1;
+//! guard fires), `hand_crafted_acyclic_forgery_still_double_issues`
+//! (clause 2; silent), `two_stacks_sharing_link_storage_still_double_issue`
+//! (clause 3; silent), `internally_disagreeing_storage_still_double_issue`
+//! (clause 2; guard fires), `head_moved_into_fresh_links_leaks_and_then_panics`
+//! (clause 1's temporal half; guard fires one index late), and
+//! `one_value_two_bindings_shared_backing_still_double_issue` (clause 3 at
+//! both widths; silent).
+//!
+//! `stack_unit.rs`'s `AlwaysInvalidStorage` (clause 4, guard fires) and
+//! `double_push_of_current_head_panics_on_first_pop` (no custom implementor
+//! — a caller-contract violation through [`ArrayIndexStack`]'s inherent
+//! API) complete the crate-level picture there.
 
 #![cfg(not(loom))]
 
@@ -88,6 +121,11 @@ unsafe impl StackStorage<16> for VecStorage {
 
 /// An external, non-`ArrayLinks` [`StackStorage`] implementor works exactly
 /// like the owned-array type does: push/pop round-trips and LIFO order hold.
+/// (This is the compile-PASS side of the 2026-09-01 `unsafe trait`
+/// conversion — see the module doc's per-test status list; `VecStorage`
+/// mirrors the real external consumer's shape: `sefer-alloc`'s `Registry`
+/// implements the trait and calls only
+/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index).)
 #[test]
 fn vec_backed_storage_push_pop_round_trips() {
     let storage = VecStorage::new(8);
@@ -248,7 +286,8 @@ unsafe impl StackStorage<16> for Parasite {
 /// demonstrates is the pure hand-forged-acyclic-backing shape: the
 /// implementor's backing is overwritten BEHIND the algorithm's back, so
 /// its `load_next` answers with values the crate never stored (a violation
-/// of rule 3's coherence clause) — and the acyclic forgery evades the
+/// of `# Safety` clause 2 — the coherence obligation the explanatory rules
+/// list as rule 3) — and the acyclic forgery evades the
 /// round-13 self-loop detector. The detector's limit, unchanged.
 ///
 /// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,

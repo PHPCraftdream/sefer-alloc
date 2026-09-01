@@ -19,4 +19,11 @@ fn main() {
     owned.push(1); // the inherent push/pop API still works
     let _head = steal_head(&owned); // ERROR: E0277 — StackStorage not implemented
     let _direct = owned.head(); // ERROR: E0599 — no method named `head`
+
+    // Third route a competing binding would need: coercion to the trait
+    // object (same bound, same E0277). With no public impl, no route to a
+    // &StackHead<16> — generic, inherent, or dyn — exists from this type,
+    // so no StackOps-callable competing binding can be built around its
+    // head.
+    let _dyn: &dyn StackStorage<16> = &owned; // ERROR: E0277 — same unsatisfied bound
 }

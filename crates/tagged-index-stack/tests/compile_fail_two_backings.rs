@@ -1,20 +1,35 @@
-//! P1-1 negative compile-fail regression (Sol-codex run-3): the review's
-//! minimal safe-Rust double-issue repro — TWO
-//! `ArrayLinks` instances used against ONE `StackHead` — must NOT compile
-//! against the post-redesign API.
+//! P1-1 API-REMOVAL regression (Sol-codex run-3): the review's minimal
+//! two-`ArrayLinks`-backings + one-`StackHead` repro must NOT compile against
+//! the post-redesign API — because the OLD unsafe-free-form API it used no
+//! longer EXISTS. This is an API-removal regression test, NOT a
+//! safety-invariant proof: it pins that `StackHead` (the head word alone) has
+//! no external `push(&links, idx)` / `pop(&links)` methods and no
+//! caller-supplied-backing calling convention. A fixture that compiled would
+//! mean that old API resurfaced.
+//!
+//! The hazard CLASS itself — one head, two backings — is NOT closed by this
+//! test and is NOT closed by the type system: since the 2026-09-01 `unsafe
+//! trait` conversion (`unsafe trait StackStorage`) it is re-expressible
+//! through a custom `unsafe impl` that asserts the trait's `# Safety`
+//! contract and then violates it (inventory shape 2; pinned at runtime by
+//! `two_implementor_values_sharing_one_head_still_double_issue` in
+//! `tests/custom_storage_impl.rs`). The structural closure that DOES exist —
+//! no route from a shipped [`ArrayIndexStack`] to a `&StackHead`, so no
+//! competing binding around its head — is proven by the Group A compile-fail
+//! oracle `tests/compile_fail_array_index_stack_head.rs` (+ its fixture under
+//! `tests/compile_fail/array_index_stack_head/`); go THERE for the real
+//! safety-invariant proof. (Earlier drafts of this doc called the E0599 here
+//! "the structural fix itself" and the repro "UNEXPRESSIBLE" — an overclaim
+//! that misled rounds 10-15 of this campaign's own review history; see
+//! `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` for
+//! what was actually decided and why.)
 //!
 //! The fixture at `tests/compile_fail/two_backings/src/main.rs` is exactly
-//! that repro, adapted to the post-redesign type names: two independent
+//! the old repro, adapted to the post-redesign type names: two independent
 //! `ArrayLinks` backings (`a`, `b`) plus one `StackHead<16>`, with the
-//! stack's `push`/`pop` called externally against each. Before the redesign
-//! (`StackHead` + per-call `&L: Links` parameters) this compiled and silently
-//! double-issued an index from `pop`. The redesign makes the repro
-//! UNEXPRESSIBLE: `StackHead` is the head word ONLY — it has no `push`/`pop`
-//! methods (those live on `StackOps`, blanket-implemented by the crate for
-//! every `StackStorage` implementor, and an implementor owns head AND links
-//! in ONE place) — so the fixture must fail to compile with **E0599**
-//! ("no method named `push` / `pop` found for struct `StackHead`"). That
-//! compile error IS the structural fix itself, not a runtime panic.
+//! stack's `push`/`pop` called externally against each. It must fail with
+//! **E0599** ("no method named `push` / `pop` found for struct
+//! `StackHead<16>`").
 //!
 //! # Published-package behavior (round-10 @oh review, P2-1)
 //!
@@ -141,8 +156,9 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 
     assert!(
         !output.status.success(),
-        "the P1-1 double-issue repro COMPILED — the redesign's structural fix \
-         regressed (StackHead must have no push/pop):\n{context}"
+        "the P1-1 two-backings repro COMPILED — the old per-call API (external \
+         push/pop with a caller-supplied backing) has resurfaced; `StackHead` \
+         must have no push/pop:\n{context}"
     );
     assert!(
         stderr.contains("E0599"),

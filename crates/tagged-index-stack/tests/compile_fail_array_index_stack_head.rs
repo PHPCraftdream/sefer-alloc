@@ -12,9 +12,28 @@
 //! The fixture at `tests/compile_fail/array_index_stack_head/src/main.rs` tries
 //! both routes: a generic `fn steal_head<S: StackStorage<16>>` (must fail with
 //! **E0277**, the trait bound `ArrayIndexStack<16, 64>: StackStorage<16>` not
-//! satisfied) and a direct `owned.head()` method call (must fail with **E0599**,
-//! `no method named 'head'`). Those compile errors ARE the structural fix
-//! itself, not a runtime panic.
+//! satisfied), a direct `owned.head()` method call (must fail with **E0599**,
+//! `no method named 'head'`), and a `&dyn StackStorage` coercion (must fail
+//! with **E0277**, the same unsatisfied bound). Those compile errors ARE the
+//! structural fix itself, not a runtime panic.
+//!
+//! # Why the "competing binding" angle needs no separate fixture
+//!
+//! A competing binding (a second `StackOps`-callable value sharing this
+//! head) has exactly ONE prerequisite expressible against a shipped
+//! `ArrayIndexStack`: obtaining its `&StackHead`. Every route to that
+//! reference requires the public `StackStorage` impl Group A removed — the
+//! generic-bound route (E0277), the inherent-method route (E0599), and the
+//! `&dyn StackStorage` coercion route (E0277, third statement in the
+//! fixture's `main`) — and the fixture asserts all of them fail. The
+//! downstream construction (pairing a stolen head with fresh links under a
+//! custom impl) adds no independent signal: its only live ingredient IS the
+//! stolen head, which already fails to compile here. A competing binding
+//! that does NOT involve this type — own a `StackHead`, hand it to two
+//! custom `unsafe impl` values — remains expressible by Group B's deliberate
+//! design and is pinned at runtime by
+//! `two_implementor_values_sharing_one_head_still_double_issue` in
+//! `tests/custom_storage_impl.rs`.
 //!
 //! The fixture's `Cargo.toml`, child-build mechanics, published-package skip
 //! guard and RUSTFLAGS stripping are identical to
