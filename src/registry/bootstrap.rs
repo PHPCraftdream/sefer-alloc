@@ -463,8 +463,9 @@ pub(crate) mod loom_shim {
     // loom-agnostic, so the shim reuses the REAL crate types for them and
     // only re-implements the `AtomicU64` head on `core` atomics. The shim
     // replicates the crate's `StackOps` push_index/pop_index HEAD PROTOCOL (same
-    // H-2 running-tag empty transition, same Acquire/Release/Relaxed orderings,
-    // same RAD-1 lazy links — `store_next` only ever fires inside `push_index`)
+    // H-2 running-tag empty transition, the same CAS orderings with ONE
+    // deliberate divergence (note 6 below), same RAD-1 lazy links —
+    // `store_next` only ever fires inside `push_index`)
     // but is NOT a byte-for-byte replica of the shipped type. Deliberate
     // divergences, each irrelevant to what the shim is FOR — model-checking
     // free_slots' head protocol in the root crate's loom CI jobs (deliberately
@@ -504,6 +505,18 @@ pub(crate) mod loom_shim {
     //      in-range caller guarantees explicit; an `expect` firing would
     //      be a model bug, and it adds no atomic ops for loom to
     //      interleave.
+    //   6. the shim's `push_index` loads the head with `Acquire` where the
+    //      shipped `push_index_impl` loads it `Relaxed` (that load's own
+    //      comment in the crate proves `Relaxed` sufficient: push uses the
+    //      observed word ONLY as `(index, tag)` values, never to follow a
+    //      link). Stronger, not weaker, so the shim cannot exhibit a
+    //      weaker-memory-order behaviour the shipped code lacks; the REAL
+    //      verification of the shipped ordering is the crate's own loom
+    //      suite (`crates/tagged-index-stack/tests/loom_aba.rs`), and this
+    //      shim is never on a modeled interleaving anyway (see the
+    //      `loom_shim` note at its `use` site below). All other orderings
+    //      (push's Release/Relaxed CAS, pop's Acquire/Acquire CAS and
+    //      Acquire initial head load) are replicated exactly.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
     use tagged_index_stack::{TaggedIndex, TAIL};
@@ -569,6 +582,8 @@ pub(crate) mod loom_shim {
         /// caller-contract guard — see the module comment above).
         fn push_index(&self, index: u32) {
             let head_ref = self.head();
+            // Divergence note 6: deliberately STRONGER than the shipped
+            // `push_index_impl`'s `Relaxed` initial head load.
             let mut head = head_ref.load(Ordering::Acquire);
             loop {
                 let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {

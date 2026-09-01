@@ -164,10 +164,12 @@
 //     alignment classifier. no_std, zero-dependency, no raw pointers anywhere.
 //     sefer's size_classes.rs is a thin shim over it. Pulled in under `alloc-core`.
 //
-//   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![forbid(unsafe_code)]
-//     ABA-tagged Treiber free-index stack via a single packed AtomicUsize head
-//     word (monotonic tag in the high bits). no_std, no raw-pointer derefs.
-//     sefer's registry free_slots uses it. Pulled in under `alloc-global`.
+//   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![deny(unsafe_code)]
+//     ABA-tagged Treiber free-index stack via a single packed AtomicU64 head
+//     word (monotonic tag in the high bits). no_std, no raw-pointer derefs;
+//     the ONE audited unsafe token is the `unsafe trait StackStorage`
+//     declaration (item-scoped `#[allow(unsafe_code)]`). sefer's registry
+//     free_slots uses it. Pulled in under `alloc-global`.
 //
 //   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
 //     The RESULT key=value stdout protocol + a re-export of proc-memstat's

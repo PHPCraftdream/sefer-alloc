@@ -483,7 +483,17 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 /// `recycle`'s defensive shape and keep `state`'s only mutator discipline
 /// uniform across the module.
 fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
-    let _ = slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed);
+    // Run-5 audit P4-3: the "expected to always succeed" contract documented
+    // above is a debug-asserted invariant, not a discarded value — a future
+    // caller reaching this function with an already-FREE slot would
+    // otherwise silently double-push `idx` onto `free_slots` (compare
+    // `recycle`'s explicit already-FREE no-op). Release behaviour is
+    // unchanged: the push stays unconditional.
+    let cas = slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed);
+    debug_assert!(
+        cas.is_ok(),
+        "push_back_after_oom: slot was not LIVE; pushing it again would double-push"
+    );
     push_free_slot(reg, idx);
 }
 
@@ -514,7 +524,10 @@ fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
 /// during the unwind — the guard is therefore "armed iff not yet forgotten".
 ///
 /// **Panic-safety of `Drop` itself:** `Drop` only runs a CAS and
-/// `push_free_slot` (both atomic; neither panics), and the `&'static`
+/// `push_free_slot` (both atomic; neither panics in release — the P4-3
+/// `debug_assert!` inside `push_back_after_oom` can panic in debug builds,
+/// but only on the already-violated sole-writer invariant, where aborting is
+/// the acceptable outcome), and the `&'static`
 /// slot/registry references it holds remain valid for the entire unwind, so
 /// there is no double-panic/abort risk and no `catch_unwind` /
 /// `AssertUnwindSafe` is needed at the source level — the guard drops during
@@ -596,10 +609,19 @@ const _: () = assert!(
 // 1. One live binding per head, for the head's whole life — `Registry` is a
 //    process singleton (`static REGISTRY: Registry = Registry::new()` in
 //    `src/registry/bootstrap.rs`; `Registry::new` is a private `const fn`;
-//    sole access via `bootstrap::ensure() -> &'static Registry`), and
+//    sole in-crate access via `bootstrap::ensure() -> &'static Registry`), and
 //    `free_slots` is `pub(crate)` whose ONLY reference ever handed out is
 //    this impl's `head()` (the cfg(loom) mirror below under loom), consumed
 //    only by the crate's push/pop CAS loops.
+//    ACKNOWLEDGED EXPOSURE (run-5 audit P3-1): under
+//    `alloc-global + internals`, `sefer_alloc::registry` is a
+//    `#[doc(hidden)] pub` module, so `ensure()` hands `&'static Registry` to
+//    EXTERNAL safe code, and the crate's `StackOps` blanket impl drives
+//    `push_index`/`pop_index` — which, unlike the three raw hooks, take no
+//    `Hook` witness (the P2-1 fix gates only the hooks) — through this
+//    binding from outside the crate. This clause's obligation (exactly one
+//    binding) still holds; the exposure is an availability hazard, not a
+//    soundness one — see clause 3's bound.
 // 2. One backing, consistently — `load_next`/`store_next` both resolve the
 //    index through `Registry::slot` (the single index→slot path) onto the
 //    SAME slot-resident `next_free: AtomicU32` cell; slots are `&'static`,
@@ -608,7 +630,17 @@ const _: () = assert!(
 // 3. Disjoint reachable-index populations — the only non-doc references to
 //    `next_free` in the crate are the two cfg-gated impls' load/store pairs
 //    plus the field declaration in `heap_slot.rs`, so no second binding over
-//    the cells exists.
+//    the cells exists. (The clause-1 `internals` exposure adds no second
+//    binding either — external code reaches the cells only through THIS
+//    impl's load/store pairs, inside the crate's own push/pop loops — but it
+//    can drive those loops with adversarial indices. The slot-state CAS is
+//    the defence that bounds the consequence: every index the stack hands to
+//    a heap owner must additionally win that slot's `FREE → LIVE` CAS in
+//    `claim`/`claim_with_config`, and every push-back is preceded by the
+//    winner's `LIVE → FREE` CAS — so an adversarial external caller can
+//    steal a FREE slot off the list (a leak), livelock `claim`, or trip the
+//    pop-side rule-4 panic: availability failures, never double ownership
+//    of a `HeapCore`.)
 // 4. Valid answers, dedicated cells — `next_free` is a dedicated per-slot
 //    link field, never payload-aliased; every pushed index is `< MAX_HEAPS =
 //    4096` (minted by `bump_count`, which returns `None` at `>= MAX_HEAPS`,
