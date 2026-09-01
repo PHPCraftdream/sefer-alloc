@@ -332,10 +332,16 @@ assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 
 ## MSRV
 
-Rust 1.81 (the library alone checks clean at 1.80, but this crate's own
-`cargo clippy --all-targets` gate additionally covers `tests/`, and
-`tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since 1.81 —
-1.81 is the real floor across the full target set that gate checks).
+Rust 1.79 — the floor of the PUBLISHED LIBRARY surface only (dev-only
+test/bench code is deliberately out of scope: a library consumer never
+builds this crate's dev-dependencies). Measured, not assumed: the library
+compiles clean at 1.79 (default build and `--features test-internals`),
+and 1.78 fails with `error[E0658]: inline-const is experimental` at the
+inline `const` block in `ArrayLinks::new`'s link array (`src/imp.rs`) —
+inline-const, stabilized in Rust 1.79, is the newest API `src/` uses. The
+test suite cannot run at 1.79 regardless: its dev-dependency graph
+(`proptest` -> `getrandom 0.4.3`) requires edition2024 manifests, which
+cargo only understands from ~1.85.
 
 ## License
 

@@ -2285,9 +2285,10 @@ jobs:
       # so its `tests/` (proptest + `std::thread::scope`) and its
       # `bench-scale-tool`-based bench were never compiled on the pinned 1.88
       # toolchain by anything in this job before these rows — and this is the
-      # crate about to publish with `rust-version = "1.81"` (re-derived from
-      # the workspace-inherited 1.88 — round-13 @oh review P3-3; see the
-      # crate-local 1.81 floor rows at the bottom of this job). No
+      # crate about to publish with `rust-version = "1.79"` (its measured
+      # library-surface floor — round-13 @oh review P3-3, policy corrected
+      # by Sol-codex run-4 review P2-3; see the crate-local 1.79 floor rows
+      # at the bottom of this job). No
       # `--all-features` here: the crate's feature map holds the implicit
       # `loom` optional-dependency feature and the explicit `test-internals`
       # instrumentation gate (round-9 review P3-4; name features, never
@@ -2304,41 +2305,44 @@ jobs:
       # the only thing in this job that type-checks
       # `benches/tagged_index_stack_bench.rs` on the pinned 1.88 toolchain.
       - run: cargo bench -p tagged-index-stack --no-run
-      # tagged-index-stack MSRV-FLOOR rows (round-13 @oh review P3-3, corrected
-      # during zero-trust merge verification): the crate's `rust-version` was
-      # the workspace-inherited 1.88. The LIBRARY alone checks clean as low as
-      # 1.80 — below which the crate-local `[lints.rust]
-      # unexpected_cfgs.check-cfg` cfg(loom) allowlist degrades to an `unused
-      # manifest key` warning (verified on 1.79), and 1.74 cannot read the
-      # workspace's v4 Cargo.lock at all — but this repo's own
-      # `cargo clippy -p tagged-index-stack --all-targets -D warnings` gate
-      # (run under the default/stable toolchain elsewhere in this job, NOT
-      # this pinned-toolchain block: clippy's `incompatible_msrv` lint checks
-      # the DECLARED `rust-version` against a stabilization table regardless
-      # of which rustc is actually compiling, so it does not need to run
-      # under the literal 1.81 toolchain to catch this) checks every target
-      # including `tests/`, and `tests/stack_unit.rs` uses
-      # `std::panic::PanicHookInfo`, stable since 1.81.0: at a declared floor
-      # of 1.80 that lint fails even though the library itself needs nothing
-      # past 1.80. 1.81 is therefore the real floor across the FULL target
-      # set this repo's own clippy convention checks, and what `rust-version`
-      # now declares. Verified `cargo +1.81 check` clean for both feature
-      # combinations below (library-only — no dev-dependencies, so this
-      # toolchain switch does not hit the edition2024 blocker). Deliberately
-      # NOT adding a `+1.81 clippy --all-targets`/`test --no-run` row here:
-      # `cargo +1.81 clippy --all-targets` cannot even DOWNLOAD its dev-
-      # dependency graph — `proptest -> getrandom 0.4.3` requires cargo's own
-      # edition2024 manifest support, which 1.81's cargo binary does not have
-      # (verified locally: "the package requires the Cargo feature called
-      # `edition2024`, but that feature is not stabilized in this version of
-      # Cargo (1.81.0)") — this is a hard, toolchain-version block
-      # independent of caching, not something a `test --no-run` variant could
-      # route around; the 1.88 rows above already keep the tests+bench
-      # compile coverage, and the default-toolchain clippy gate elsewhere in
-      # this job already covers `--all-targets -D warnings` against the
-      # (now-1.81) declared floor. This step installs 1.81 and switches the
-      # default toolchain for the remaining (last) steps of this job only.
-      - uses: dtolnay/rust-toolchain@1.81
+      # tagged-index-stack MSRV-FLOOR rows (round-13 @oh review P3-3; number,
+      # citation and policy corrected by Sol-codex run-4 review P2-3): the
+      # crate's `rust-version` was the workspace-inherited 1.88, then 1.81
+      # justified by test-only `PanicHookInfo` in `tests/stack_unit.rs` —
+      # while THESE rows could only ever check the library at the pinned
+      # version, the exact contradiction P2-3 flagged. Policy NOW: the
+      # declared MSRV covers the PUBLISHED LIBRARY surface only, never the
+      # dev-dependency/test target set — a library consumer never builds
+      # dev-dependencies, so dev-only API usage must not raise the floor.
+      # MEASURED floor: 1.79. `cargo +1.79 check` (both feature combinations
+      # below) compiles the library clean; `cargo +1.78 check` fails
+      # `error[E0658]: inline-const is experimental` at the inline `const`
+      # block in `ArrayLinks::new`'s link array (`src/imp.rs`) —
+      # inline-const, stabilized in Rust 1.79, is the newest API `src/` uses
+      # and the API that justifies the number. (Below 1.80 cargo also emits
+      # an `unused manifest key` warning for the crate-local `[lints.rust]
+      # unexpected_cfgs` entry — cosmetic; the build succeeds. The
+      # default-toolchain clippy gate elsewhere in this job is a LINT gate
+      # over `--all-targets`, compiled against the LOCAL toolchain's std —
+      # it compiles tests against today's std, not the declared floor, so it
+      # is not an MSRV oracle.) Deliberately NOT adding a `+1.79 clippy
+      # --all-targets`/`test --no-run` row here: `cargo +1.79 test --no-run`
+      # cannot even RESOLVE the dev-dependency graph — `proptest ->
+      # getrandom 0.4.3` requires cargo's own edition2024 manifest support,
+      # which 1.79's cargo binary does not have (verified live: "the package
+      # requires the Cargo feature called `edition2024`, but that feature is
+      # not stabilized in this version of Cargo (1.79.0)") — a hard,
+      # toolchain-version block independent of caching, so this
+      # library-only check is the floor's oracle exactly as the
+      # library-surface policy intends; the 1.88 rows above already keep the
+      # tests+bench compile coverage. The `--cfg loom` build is likewise not
+      # checked at this floor: at 1.79 it is blocked by loom's THIRD-PARTY
+      # Windows transitive `windows-result 0.4.1` (`#[expect]`, stable 1.81)
+      # before this crate's code is reached; loom coverage stays with the
+      # `loom-alloc-global` job on stable. This step installs 1.79 and
+      # switches the default toolchain for the remaining (last) steps of
+      # this job only.
+      - uses: dtolnay/rust-toolchain@1.79
       - run: cargo check -p tagged-index-stack
       - run: cargo check -p tagged-index-stack --features test-internals
 

@@ -343,8 +343,30 @@ before it.
 
 ### MSRV
 
-- Rust 1.81 (round-13 @oh review, finding P3-3 — re-derived from the
-  workspace-inherited 1.88; the library alone needs only 1.80, but
-  `tests/stack_unit.rs`'s use of `std::panic::PanicHookInfo`, stable since
-  1.81, is the real floor across the full target set this crate's own
-  `cargo clippy --all-targets` gate checks).
+- Rust 1.79 — corrected from 1.81 (Sol-codex review run 4, finding P2-3):
+  the previous 1.81 citation justified the floor with test-only
+  `std::panic::PanicHookInfo` (`tests/stack_unit.rs`), while CI's own msrv
+  job could never compile that test at 1.81 — the dev-dependency graph is
+  unresolvable below ~1.85 (`proptest` -> `getrandom 0.4.3` requires
+  edition2024), so the declared number's own justification cited code no
+  gate at that version could build. Policy chosen: the MSRV covers the
+  PUBLISHED LIBRARY surface only, not the dev-dependency/test target set —
+  a library consumer never builds this crate's dev-dependencies, so
+  dev-only API usage must not raise the floor. Measured floor:
+  `cargo +1.79 check -p tagged-index-stack` compiles the library clean
+  (default and `--features test-internals`); `cargo +1.78 check` fails
+  with `error[E0658]: inline-const is experimental` at the inline `const`
+  block in `ArrayLinks::new`'s link array (`src/imp.rs`) — inline-const,
+  stabilized in Rust 1.79, is the newest API `src/` uses and the API that
+  now justifies the number (not `PanicHookInfo`). CI's msrv job checks the
+  library only at 1.79: no test/clippy row is possible at the floor (the
+  edition2024 dev-dep block above, verified live at 1.79), and the
+  `--cfg loom` build is blocked at 1.79 by loom's third-party Windows
+  transitive `windows-result 0.4.1` (`#[expect]`, stable 1.81), so loom
+  remains a stable-only configuration. Companion change: crate-local
+  `[lints.clippy] incompatible-msrv = "allow"` — the lint checks every
+  target (tests included) against the declared floor, so at the measured
+  library value it fires on the test-only `PanicHookInfo` under this
+  repo's `cargo clippy --all-targets -D warnings` convention; the pinned
+  `+1.79` check rows, a hard toolchain boundary, remain the floor's
+  oracle.

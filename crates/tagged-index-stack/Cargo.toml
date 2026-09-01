@@ -2,19 +2,30 @@
 name = "tagged-index-stack"
 version = "0.1.0"
 edition = "2021"
-# Derived floor, not workspace-inherited (round-13 @oh review P3-3, corrected
-# during zero-trust merge verification): the library alone checks clean at
-# 1.80 (below which the crate-local `[lints.rust]
-# unexpected_cfgs.check-cfg` cfg(loom) allowlist degrades to an `unused
-# manifest key` warning, verified on 1.79; 1.74 cannot read the workspace's
-# v4 Cargo.lock at all) -- but this project's own gate runs
-# `cargo clippy --all-targets -D warnings`, and clippy's `incompatible_msrv`
-# lint checks EVERY target (tests included) against the declared floor:
-# `tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since
-# 1.81.0, so 1.80 fails that gate even though the library itself needs
-# nothing past 1.80. 1.81 is the real floor across the full target set this
-# repo's own clippy convention checks.
-rust-version = "1.81"
+# LIBRARY-SURFACE floor (Sol-codex review run 4, finding P2-3): the MSRV
+# covers the PUBLISHED LIBRARY only, never the dev-dependency/test target
+# set — a library consumer never builds this crate's dev-dependencies, so
+# dev-only API usage must not raise the floor. MEASURED, not assumed:
+# `cargo +1.79 check -p tagged-index-stack` (default AND `--features
+# test-internals`) compiles the library clean; `cargo +1.78 check` fails
+# `error[E0658]: inline-const is experimental` at the ONE post-1.78 API in
+# `src/`: the inline `const` block in the array-repeat of `ArrayLinks::new`
+# (`next: [const { AtomicU32::new(0) }; N]`, `src/imp.rs` — inline-const
+# stabilized in Rust 1.79, rust-lang/rust#76001). Every other API the
+# library uses is older (`compare_exchange` 1.53, `spin_loop` 1.49, const
+# generics 1.51, const `assert!` 1.57, inline format-args 1.58,
+# `core::array::from_fn` 1.63; the `target_has_atomic` cfg evaluates fine
+# at 1.78/1.79). Two measured, out-of-library caveats, for honesty: below
+# 1.80 cargo emits an `unused manifest key` warning for the crate-local
+# `[lints.rust] unexpected_cfgs` entry (cosmetic; the build succeeds); and
+# NEITHER the test/clippy target set (dev-dep graph hard-blocked by
+# `proptest -> getrandom 0.4.3` edition2024, verified live at 1.79) NOR the
+# `--cfg loom` build (blocked by loom's third-party Windows transitive
+# `windows-result 0.4.1` using `#[expect]`, stable 1.81) can run at this
+# floor — which is why CI's msrv job oracle's this floor with a
+# library-only check. The crate-local `[lints.clippy] incompatible-msrv`
+# allow below is part of this same policy — see its comment.
+rust-version = "1.79"
 license = "MIT OR Apache-2.0"
 description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with an ABA-mitigating tag packed into one atomic word."
 readme = "README.md"
@@ -41,6 +52,21 @@ exclude = ["tests/compile_fail/"]
 # (same pattern as `crates/aligned-vmem/Cargo.toml`'s `[lints.rust]` table).
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+# `incompatible_msrv` reads the DECLARED `rust-version` against a
+# stabilization table for EVERY target — `tests/` included — so with the
+# floor declared at its measured LIBRARY value above, this repo's
+# `cargo clippy --all-targets -D warnings` convention fires the lint on
+# `tests/stack_unit.rs`'s `std::panic::PanicHookInfo` (stable 1.81):
+# dev-only code a library consumer never builds, which the library-surface
+# MSRV policy (see `rust-version` above; Sol-codex review run 4, finding
+# P2-3) refuses to let raise the floor. The floor's real oracle is the msrv
+# job's pinned `cargo +1.79 check` rows in `.github/workflows/ci.yml` — a
+# hard toolchain boundary, strictly stronger than this stabilization-table
+# lint — so the lint is allowed instead of holding the declared number
+# hostage to dev-only API usage.
+[lints.clippy]
+incompatible-msrv = "allow"
 
 [dependencies]
 # Zero non-std deps in a NORMAL build — enforced by Cargo's RESOLVER, not just
