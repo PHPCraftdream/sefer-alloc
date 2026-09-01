@@ -2891,6 +2891,48 @@ for completeness.
     - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` + its
       committed CSVs + `_raw_tis_p3_ab_*` logs.
 
+63. **[D] `tagged-index-stack` `pop_index`'s CAS SUCCESS ordering (Acquire
+    today) as a `Relaxed` candidate — a THIRD ordering-weakening candidate
+    named in the crate CHANGELOG but tracked in neither item 61 nor 62 nor
+    the A/B driver's variant list.** (Filed 2026-09-01 from the @fh
+    quality/perf review of `tagged-index-stack` §1.6 [process note] —
+    indexed here per CLAUDE.md's round-start rule so the candidate is not
+    lost.)
+
+    - **Status:** OPEN — unmeasured, not landed. Explicitly considered
+      and NOT changed per the crate CHANGELOG entry, pending measurement.
+    - **Current-number-or-verdict:** no measurement exists yet. The
+      candidate: `pop_index`'s CAS SUCCESS ordering, currently
+      `Ordering::Acquire`, weakened to `Ordering::Relaxed` — source
+      `crates/tagged-index-stack/CHANGELOG.md:283-292`. The CHANGELOG's
+      own on-paper soundness argument (PROSE REASONING, NOT A MEASUREMENT
+      — the item stays OPEN regardless of how plausible the argument
+      reads): on success the CAS reads no new value, because the matched
+      `head` is already held locally, Acquire-loaded either by `pop`'s
+      initial head load or by the previous failed iteration's Acquire
+      failure ordering, so the synchronizes-with edge already exists
+      without the success ordering itself being `Acquire`/`AcqRel`.
+    - **Next trigger:** the measurement infrastructure items 61/62 cite
+      NOW EXISTS — driver
+      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs` plus the
+      workflow_dispatch-only arm64 CI job
+      (`tis-weak-memory-wallclock-gate`, ubuntu-24.04-arm,
+      `.github/workflows/ci.yml`). This candidate is NOT among the
+      driver's variants (`VARIANTS = ['base', 'links_relaxed',
+      'cas_weak']`, `tis_p3_ab_runner.mjs:39`), so acting on it first
+      requires adding a FOURTH variant to that list. The natural trigger
+      is the pending arm64 wall-clock run for items 61/62: add the
+      variant BEFORE that dispatch so one run measures all three
+      candidates; otherwise the item simply stays open until someone
+      adds the variant sooner. Per CLAUDE.md, no hot-path runtime change
+      lands without a gate report.
+    - **Evidence:** `crates/tagged-index-stack/CHANGELOG.md:283-292`
+      (the source of the candidate);
+      `docs/reviews/2026-09-01-fh-quality-perf-review-tagged-index-stack.md`
+      §1.6 (the flag that it was tracked nowhere); sibling items 61/62
+      (the shared infrastructure — same driver, same CI job, same
+      pending-run blocker).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
