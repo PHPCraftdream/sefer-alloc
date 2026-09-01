@@ -68,7 +68,7 @@ used, but `[profile.bench]` is the technically correct citation for a
 **Reproduction.** The sweep is NOT a permanent harness — `BACKOFF_SPIN_CAP`
 is a `const`, not a runtime/feature knob, by design (see §5's discussion of
 why this stays a `const`). To reproduce a cell: edit
-`crates/tagged-index-stack/src/lib.rs`'s `const BACKOFF_SPIN_CAP: u32 = 6;`
+`crates/tagged-index-stack/src/imp.rs`'s `const BACKOFF_SPIN_CAP: u32 = 6;`
 to the desired cap value, and temporarily replace
 `benches/tagged_index_stack_bench.rs`'s hardcoded
 `.min(8) // Cap at 8 for consistent benchmarking across machines` thread cap
@@ -76,7 +76,7 @@ with an env-var override (`TIS_SWEEP_THREADS`) to reach thread counts above
 8 — the exact one-line diffs this task's own sweep driver applied are:
 
 ```text
-# src/lib.rs, one-line substitution per cap value:
+# src/imp.rs, one-line substitution per cap value:
 -const BACKOFF_SPIN_CAP: u32 = 6;
 +const BACKOFF_SPIN_CAP: u32 = <CAP>;
 
@@ -508,7 +508,7 @@ shows it explicitly is not, at any thread count tested. It ALSO does not
 mean cap 6 is the fairness optimum of the sweep — §3.2 shows caps 0 and 4
 are fairer still (cap 0's `min/mean` beats cap 6's in 7 of 8 arms and ties
 the eighth; cap 4's beats it in 6 of 8). The corrected rationale (round 8;
-now in `src/lib.rs`'s doc comment and `CHANGELOG.md`) is: **cap 6 is a
+now in `src/imp.rs`'s doc comment and `CHANGELOG.md`) is: **cap 6 is a
 deliberate COMPROMISE on the five-point sweep curve — fairer than caps
 8/10, less fair than caps 0/4, and in aggregate 1.60x-9.50x cap 0's
 throughput — with the per-call tail cost of that fairness gap made explicit

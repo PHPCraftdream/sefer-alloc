@@ -120,7 +120,10 @@ before it.
   The guard is release-active by measurement, not assumption: an out-of-tree
   A/B of this exact check on the single-threaded `churn` bench (the
   pop-heaviest row) measured the guarded arm *faster* at the median (50.58
-  vs 51.60 ns/op debug-only), i.e. the cost sits below the harness's noise
+  vs 51.60 ns/op debug-only; source:
+  `docs/reviews/2026-08-31-100751-tagged-index-stack-review-round7-oh.md`,
+  finding P3-1's interleaved A/B table), i.e. the cost sits below the
+  harness's noise
   floor next to the two `lock cmpxchg`/iteration already on the hot path —
   and the failure mode (silent free-list corruption) is the same class
   `push_index`'s guard already treats as unconditional. The one in-workspace

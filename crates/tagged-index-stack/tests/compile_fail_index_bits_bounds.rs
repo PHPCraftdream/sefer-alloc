@@ -105,6 +105,12 @@ fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
         .env("CARGO_TARGET_DIR", &child_target)
         .env_remove("RUSTFLAGS")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        // CI's workflow-level CARGO_TERM_COLOR=always is inherited all the
+        // way down to this child build; force plain-text rustc diagnostics
+        // so the substring assertions below match the same text in CI as
+        // locally (same class as the round-11 CI bug fixed in fcae3ad with
+        // --color=never).
+        .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("failed to spawn cargo for the compile-fail fixture");
 
