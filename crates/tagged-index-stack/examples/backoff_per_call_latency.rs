@@ -60,14 +60,52 @@ type Stack = ArrayIndexStack<16, { LINKS_SIZE as usize }>;
 /// tail is the tail of the documented use case (a 64-slot free-list).
 const LINKS_SIZE: u32 = 64;
 
+/// Fail fast at the argument-parsing boundary: a misconfigured probe run must
+/// exit with a message naming the parameter, the value received, and the valid
+/// range — not surface later as a mid-run panic that looks like a crate bug,
+/// or as empty output.
+fn die(msg: String) -> ! {
+    eprintln!("error: {msg}");
+    std::process::exit(2);
+}
+
 /// Parsed from `TIS_SHAPES` (default `"4x20000,8x200000,16x200000"`):
 /// `(threads, pop-then-repush iterations per thread)` pairs.
+/// Validation: each entry must be `<threads>x<iters>` with `threads` a usize
+/// in `1..=LINKS_SIZE` (only LINKS_SIZE indices are prefilled, so more threads
+/// than that makes `pop()` legitimately return `None` mid-run) and `iters` a
+/// u32 `>= 1` (zero iterations produce no samples).
 fn parse_shapes(spec: &str) -> Vec<(usize, u32)> {
     spec.split(',')
         .map(|s| {
-            let (t, i) = s.split_once('x').expect("shape must be <threads>x<iters>");
-            let threads: usize = t.parse().expect("threads must be a usize");
-            let iters: u32 = i.parse().expect("iters must be a u32");
+            let Some((t, i)) = s.split_once('x') else {
+                die(format!(
+                    "TIS_SHAPES entry {s:?}: expected <threads>x<iters>"
+                ))
+            };
+            let threads: usize = match t.parse() {
+                Ok(v) => v,
+                Err(_) => die(format!(
+                    "TIS_SHAPES entry {s:?}: threads {t:?} must be a usize"
+                )),
+            };
+            let iters: u32 = match i.parse() {
+                Ok(v) => v,
+                Err(_) => die(format!("TIS_SHAPES entry {s:?}: iters {i:?} must be a u32")),
+            };
+            if threads < 1 || threads > LINKS_SIZE as usize {
+                die(format!(
+                    "TIS_SHAPES entry {s:?}: threads {threads} must be in 1..=64 (LINKS_SIZE) -- \
+                     only LINKS_SIZE indices are prefilled, so more threads than that makes \
+                     pop() legitimately return None mid-run"
+                ));
+            }
+            if iters < 1 {
+                die(format!(
+                    "TIS_SHAPES entry {s:?}: iters {iters} must be >= 1 -- zero iterations \
+                     produce no samples"
+                ));
+            }
             (threads, iters)
         })
         .collect()
@@ -88,10 +126,18 @@ fn main() {
     let shapes = parse_shapes(
         &std::env::var("TIS_SHAPES").unwrap_or_else(|_| "4x20000,8x200000,16x200000".to_string()),
     );
-    let reps: usize = std::env::var("TIS_REPS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
+    let reps: usize = match std::env::var("TIS_REPS") {
+        Ok(raw) => raw
+            .parse()
+            .unwrap_or_else(|_| die(format!("TIS_REPS={raw:?} must be a usize"))),
+        Err(_) => 3,
+    };
+    if reps == 0 {
+        die(
+            "TIS_REPS=0 is invalid: reps must be >= 1 (zero reps produce no result rows)"
+                .to_string(),
+        );
+    }
 
     let mut run_clamp_saturated: u64 = 0;
 
