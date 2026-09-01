@@ -23,6 +23,35 @@ type Stack = ArrayIndexStack<16, LINKS_SIZE>;
 /// Must be > 0 and < 2^16 (the usable range at INDEX_BITS=16).
 const LINKS_SIZE: usize = 256;
 
+/// Fairness signal printed after each contention benchmark: the round-7
+/// cap-sweep investigation (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found
+/// per-thread throughput skew is where the interesting signal hides, and
+/// nothing printed it as a number before now. max/min is the spread across
+/// all threads (a true ratio, hence the `x`); min/mean is the worst thread's
+/// SHARE of an even split (1.0 = perfectly fair), printed as a percentage —
+/// no `x` suffix, which would invite reading 0.38 as "0.38 times worse"
+/// rather than "38% of a fair share" (round-9 review P4-10a).
+fn print_fairness(ops_per_thread: &[u64]) {
+    let max = *ops_per_thread.iter().max().unwrap() as f64;
+    let min = *ops_per_thread.iter().min().unwrap() as f64;
+    let mean = ops_per_thread.iter().sum::<u64>() as f64 / ops_per_thread.len() as f64;
+    // A thread starved to zero ops (single-run outliers of exactly this
+    // shape appear in the committed cap-sweep data at higher backoff caps)
+    // makes max/min infinite -- print an explicit degenerate-cell marker
+    // instead of computing the division.
+    if min == 0.0 {
+        println!(
+            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed)\n"
+        );
+    } else {
+        println!(
+            "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
+            max / min,
+            100.0 * min / mean
+        );
+    }
+}
+
 fn main() {
     let mut h = Harness::new("tagged_index_stack_bench", env!("CARGO_MANIFEST_DIR"));
 
@@ -309,32 +338,7 @@ fn main() {
         total_ops_per_sec, num_threads, DURATION_SECS, elapsed
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
-    // Fairness signal: the round-7 cap-sweep investigation
-    // (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found per-thread throughput
-    // skew is where the interesting signal hides, and nothing printed it as
-    // a number before now. max/min is the spread across all threads (a true
-    // ratio, hence the `x`); min/mean is the worst thread's SHARE of an
-    // even split (1.0 = perfectly fair), printed as a percentage — no `x`
-    // suffix, which would invite reading 0.38 as "0.38 times worse" rather
-    // than "38% of a fair share" (round-9 review P4-10a).
-    let max = *ops_per_thread.iter().max().unwrap() as f64;
-    let min = *ops_per_thread.iter().min().unwrap() as f64;
-    let mean = total_ops as f64 / ops_per_thread.len() as f64;
-    // A thread starved to zero ops (single-run outliers of exactly this
-    // shape appear in the committed cap-sweep data at higher backoff caps)
-    // makes max/min infinite -- print an explicit degenerate-cell marker
-    // instead of computing the division.
-    if min == 0.0 {
-        println!(
-            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed)\n"
-        );
-    } else {
-        println!(
-            "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
-            max / min,
-            100.0 * min / mean
-        );
-    }
+    print_fairness(&ops_per_thread);
 
     // contention/churn: all threads do steady-state churn (pop then re-push).
     // This measures throughput under contention with a always-nonempty stack.
@@ -451,26 +455,7 @@ fn main() {
         total_ops_per_sec, num_threads, DURATION_SECS, elapsed, prefill_count
     );
     println!("  Per-thread breakdown: {:?}\n", ops_per_thread);
-    // Fairness signal -- see contention/push_pop's identical printout above
-    // for the rationale.
-    let max = *ops_per_thread.iter().max().unwrap() as f64;
-    let min = *ops_per_thread.iter().min().unwrap() as f64;
-    let mean = total_ops as f64 / ops_per_thread.len() as f64;
-    // A thread starved to zero ops (single-run outliers of exactly this
-    // shape appear in the committed cap-sweep data at higher backoff caps)
-    // makes max/min infinite -- print an explicit degenerate-cell marker
-    // instead of computing the division.
-    if min == 0.0 {
-        println!(
-            "  Fairness: DEGENERATE -- one thread completed zero ops, so max/min is undefined (not computed)\n"
-        );
-    } else {
-        println!(
-            "  Fairness: max/min = {:.2}x spread, min/mean = {:.1}% of the even split (100% = fair)\n",
-            max / min,
-            100.0 * min / mean
-        );
-    }
+    print_fairness(&ops_per_thread);
 
     println!("=== All contention benchmarks complete ===");
 }
