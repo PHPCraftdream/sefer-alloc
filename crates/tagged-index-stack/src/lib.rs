@@ -70,8 +70,7 @@
 //! head's WHOLE life (trait rule 1), and disjoint index populations per
 //! binding over any shared link-cell population — not "one link-cell
 //! population per stack": cell sharing per se is harmless, only a
-//! REACHABLE index across two bindings is the hazard (trait rule 3,
-//! round-15 @oh review, P3-2) — obligations about head↔links BINDINGS,
+//! REACHABLE index across two bindings is the hazard (trait rule 3) — obligations about head↔links BINDINGS,
 //! invisible to any per-impl audit.
 //! The [`StackStorage`] trait doc's "The shared-storage hazard class"
 //! section is the single source of truth for that hazard inventory and for
@@ -132,7 +131,9 @@
 //! A tag defends against ABA only while it does not recur: a stale CAS can
 //! succeed again only if the head word returns to the exact `(index, tag)`
 //! pair the victim is holding, which takes a full tag wrap — `2^TAG_BITS`
-//! successful pushes anywhere in the stack. The time a wrap takes is
+//! successful pushes anywhere in the stack — the last of them re-pushing the
+//! victim's own index, since the head must read exactly `(index, tag)` again,
+//! not merely reach the tag again. The time a wrap takes is
 //!
 //! ```text
 //! wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
@@ -173,7 +174,10 @@
 //! — a repository file, not part of the published package; re-run `cargo
 //! bench -p tagged-index-stack --bench tagged_index_stack_bench` for a fresh
 //! sample) — the bound needs only the order of magnitude, not the exact
-//! figure.
+//! figure. The same receipts also bound the UNCONTENDED regime: the
+//! single-threaded `churn` rows measure ~`2 × 10^7` successful pushes/sec (a
+//! pop+push pair per iteration, so the push-only rate is somewhat higher) —
+//! an order of magnitude under the working ceiling above.
 //!
 //! Read this section as what it is: a bound on the recurrence window — the
 //! minimum time a victim thread must stay parked, at saturated push rates,

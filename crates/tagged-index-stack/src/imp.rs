@@ -645,26 +645,14 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    and `ArrayIndexStack`'s own `pub(crate)` accessor (unreachable from
 ///    outside the crate). This enumeration is falsifiable,
 ///    not an assertion — re-verify it mechanically before relying on it:
-///    `grep -n "^impl" crates/tagged-index-stack/src/imp.rs` (read every
-///    impl block it lists — today ten, none adding a PUBLIC `&StackHead`
-///    accessor beyond the one named above; the `^` anchor cannot match
-///    this doc comment's own lines, so no filter is needed), `grep -n
-///    "derive(" crates/tagged-index-stack/src/imp.rs | grep -v "///"`
-///    (today three hits, all `Debug`), and `grep -nE -- "-> &.*StackHead"
-///    crates/tagged-index-stack/src/imp.rs | grep -v "///"` (today FOUR
-///    hits: [`head`](Self::head)'s declaration, and — in the
-///    crate-internal `pub(crate)` `SealedStorage` plumbing that replaced
-///    `ArrayIndexStack`'s former public trait impl — the sealed trait's
-///    own accessor, the blanket bridge impl's, and `ArrayIndexStack`'s
-///    direct impl; ALL of the latter three are `pub(crate)`-reachable
-///    only, so no PUBLIC signature returning `&StackHead` exists beyond
-///    the declaration;
-///    the `.*` keeps the pattern matching if a lifetime is ever annotated
-///    between `&` and the type, though a signature rustfmt wraps so the
-///    return type lands on the next line still evades it — the fallback
-///    is reading the impl list above). The `grep -v "///"` filters
-///    exclude this doc comment's own quoted copies of the patterns from
-///    the counts. Earlier adversarial reviews each found "a new way" to
+///    list every `impl` block and every signature in this file returning
+///    `&StackHead` (grep recipes and the dated 2026-09-01 census are
+///    recorded in the repository ADR
+///    `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+///    — a repository file, not part of the published package; note a
+///    signature rustfmt wraps so the return type lands on the next line
+///    evades a naive signature grep, so read the impl list too). Earlier
+///    adversarial reviews each found "a new way" to
 ///    reach a `&StackHead`; a full enumeration of this trait module's
 ///    entire public surface found nothing beyond the two routes above. A
 ///    reviewer who finds a third route has falsified THIS paragraph and
@@ -690,7 +678,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    `{0, 2, 4, 6}` and `{1, 3, 5, 7}`) coexist correctly, because each
 ///    `store_next(i, _)`/`load_next(i)` touches only cell `i` — the
 ///    earlier "the link CELLS themselves must not be shared" framing was
-///    FALSE as stated (round-15 @oh review, P3-2). The hazard fires when
+///    FALSE as stated. The hazard fires when
 ///    one index is reachable from two bindings over the same cells: the
 ///    second binding's push overwrites a link the first still chains
 ///    through, one index ends up chained into BOTH stacks, and each
@@ -796,8 +784,8 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    the same cells: the second binding's push overwrites a link the
 ///    first still chains through, one index ends up chained into BOTH
 ///    stacks, and the shared chain stays perfectly acyclic. Reachable
-///    with the two bindings in two implementor values AND — round-15 @oh
-///    review, P3-4 — inside ONE value carrying two different-width heads
+///    with the two bindings in two implementor values AND inside ONE value
+///    carrying two different-width heads
 ///    with a `StackStorage` impl at each width over the same backing
 ///    (push 1, 2 at width 16; push 3, re-push 1 at width 12; the width-16
 ///    drain yields `2, 1, 3` and the width-12 drain `1, 3` — indices 1
@@ -808,8 +796,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///
 /// 4. **Temporal rebinding — a live head moved into fresh links** — ONE
 ///    head↔links binding replaced, mid-life, by a second binding over
-///    the SAME [`StackHead`] VALUE with DIFFERENT links (round-15 @oh
-///    review, P3-3): `let grown = Pool { head: old.head, links:
+///    the SAME [`StackHead`] VALUE with DIFFERENT links: `let grown = Pool { head: old.head, links:
 ///    ArrayLinks::new() }` where `old` is a rule-abiding implementor
 ///    with a non-empty stack. The move consumes `old`, so NO reference
 ///    is ever shared and there is never more than ONE live implementor
@@ -849,9 +836,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// shapes 1, 2, and 4 — on the SECOND pop, where the foreign `0` answers
 /// coincide with the popped index (pinned by the three `#[should_panic]`
 /// tests in `tests/custom_storage_impl.rs`:
-/// `internally_disagreeing_storage_still_double_issue` for shape 1 —
-/// which had NO automated coverage before round 15, round-15 @oh review
-/// P4-2 — plus
+/// `internally_disagreeing_storage_still_double_issue` for shape 1, plus
 /// `two_implementor_values_sharing_one_head_still_double_issue` for shape 2
 /// in its custom-implementor form; shape 2 against the owned standalone
 /// type no longer compiles at all, pinned by
@@ -924,37 +909,22 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// added with default bodies (or via a major version bump); this trait is not
 /// sealed.
 ///
-/// Converting this trait to an `unsafe trait` was REVERSED on 2026-09-01
-/// (owner-approved): this trait IS now an `unsafe trait`. The earlier
-/// decline was a statement about the then-`#![forbid(unsafe_code)]` lint
-/// policy (which made even the annotation-only form a compile error —
-/// `error: declaration of an `unsafe` trait``), and `forbid` is precisely
-/// the policy the owner chose to spend: the crate now ships
-/// `#![deny(unsafe_code)]` with exactly one audited allow on the
-/// declaration (see the crate docs' "Where unsafe lives" section). The
-/// reversal's reason: this crate's own release review found that a safe
-/// trait whose contract downstream unsafe code relies on for memory safety
-/// cannot honestly stay safe — the moment unsafe code depends on exclusive
-/// index issuance (sefer-alloc's registry free-list today; any third-party
-/// unsafe allocator after publication) the trait is in
-/// [`core::alloc::GlobalAlloc`] / `std::alloc::Allocator` territory, and
-/// marking it `unsafe` assigns responsibility for a violation to whichever
-/// `unsafe impl` asserted a contract it did not uphold.
-///
-/// The NARROWER alternative — annotating only the accessor, `unsafe fn
-/// head(&self) -> &StackHead<INDEX_BITS>` — remains REJECTED on its own
-/// design merits (the compiler errors it produced under `forbid` no longer
-/// apply; the argument does): every known hazard is IMPLEMENTOR-side,
-/// never caller-side. `unsafe fn` would force implementors to
-/// signature-match `unsafe fn head()` with no contract acknowledgment at
-/// the `impl` site (the actual thing that needs forcing), falsely imply
-/// that *calling* [`head`](Self::head) is the dangerous act (it isn't —
-/// building on the returned reference is), and reopen `unsafe` blocks
-/// inside the [`StackOps`] plumbing for no gain. Whole-trait `unsafe` with
-/// safe methods leaves exactly ONE `unsafe` token in the crate and ZERO
-/// `unsafe` blocks, and every
-/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
-/// caller (including sefer-alloc's registry) is untouched.
+/// This trait IS an `unsafe trait` (owner-approved decision, 2026-09-01);
+/// the earlier decline was a consequence of the then-`#![forbid(unsafe_code)]`
+/// policy, which the owner chose to spend (the crate now ships
+/// `#![deny(unsafe_code)]` with exactly one audited allow on this
+/// declaration — see the crate docs' "Where unsafe lives" section). Why:
+/// allocator consumers rely on the exclusive-issuance contract for memory
+/// safety (the [`core::alloc::GlobalAlloc`] / `std::alloc::Allocator`
+/// category), and marking the trait `unsafe` assigns responsibility for a
+/// violation to whichever `unsafe impl` asserted a contract it did not
+/// uphold. The methods stay safe `fn` because every known hazard is
+/// IMPLEMENTOR-side, never caller-side — the full design rationale for
+/// rejecting the `unsafe fn head()` alternative is recorded in the
+/// repository ADRs
+/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` and
+/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+/// (repository files, not part of the published package).
 ///
 /// The trait's `# Safety` contract now carries the implementor obligations
 /// normatively; what remains caller-side discipline is
@@ -1050,10 +1020,7 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// allocator. If the re-pushed index IS the current head, the cycle is
     /// a self-referential link, and [`pop_index`](StackOps::pop_index)'s
     /// self-loop detector PANICS on the first pop through it instead of
-    /// looping. (The old per-call "ONE
-    /// `Links` backing for the whole life of a non-empty stack" rules have
-    /// moved to the [`StackStorage`] implementor contract — the binding is now
-    /// structural.)
+    /// looping.
     ///
     /// # Panics
     ///

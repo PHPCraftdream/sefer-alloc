@@ -1,4 +1,4 @@
-//! Group B compile-fail fixture (Sol-codex run-4 P1-1, ADR
+//! Group B compile-fail fixture (ADR
 //! docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md): a
 //! storage whose three hook bodies are CORRECT (the impl below upholds every
 //! `# Safety` clause — this is NOT a contract-violation repro) but whose

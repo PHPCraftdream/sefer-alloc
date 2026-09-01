@@ -1,4 +1,4 @@
-//! Sol-codex run-3 P3-6 negative oracle, upper bound: `INDEX_BITS = 17` must
+//! Negative oracle, upper bound: `INDEX_BITS = 17` must
 //! NOT compile. This file MUST FAIL TO COMPILE with the `_CHECK_BITS`
 //! assertion (E0080) naming the `1..=16` range requirement — the 16 cap is
 //! what guarantees every legal configuration at least the documented

@@ -1,5 +1,5 @@
-//! P1-1 negative compile-fail regression, Group A (Sol-codex run-4; ADR
-//! `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
+//! Negative compile-fail regression, Group A of the storage-binding closure
+//! (ADR `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
 //! competing binding built around a standalone [`ArrayIndexStack`]'s head must
 //! NOT compile. This driver is the REPLACEMENT of the deleted runtime test
 //! `array_index_stack_head_still_double_issue` in
@@ -54,9 +54,8 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
         .join("compile_fail")
         .join("array_index_stack_head")
         .join("Cargo.toml");
-    // Same packaged-skip guard as `tests/compile_fail_two_backings.rs`
-    // (round-10/round-11 @oh review P2-1/P2-2): the fixture crates are
-    // excluded from the published .crate, so the skip fires ONLY where
+    // Same packaged-skip guard as `tests/compile_fail_two_backings.rs`:
+    // the fixture crates are excluded from the published .crate, so the skip fires ONLY where
     // `Cargo.toml.orig` proves a packaged context; in a real checkout a
     // missing fixture fails loud.
     let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -1,4 +1,4 @@
-//! P1-1 API-REMOVAL regression (Sol-codex run-3): the review's minimal
+//! API-REMOVAL regression: the pre-redesign API's minimal
 //! two-`ArrayLinks`-backings + one-`StackHead` repro must NOT compile against
 //! the post-redesign API — because the OLD unsafe-free-form API it used no
 //! longer EXISTS. This is an API-removal regression test, NOT a
@@ -20,7 +20,7 @@
 //! `tests/compile_fail/array_index_stack_head/`); go THERE for the real
 //! safety-invariant proof. (Earlier drafts of this doc called the E0599 here
 //! "the structural fix itself" and the repro "UNEXPRESSIBLE" — an overclaim
-//! that misled rounds 10-15 of this campaign's own review history; see
+//! that misled later rounds of this campaign's own review history; see
 //! `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` for
 //! what was actually decided and why.)
 //!
@@ -31,7 +31,7 @@
 //! **E0599** ("no method named `push` / `pop` found for struct
 //! `StackHead<16>`").
 //!
-//! # Published-package behavior (round-10 @oh review, P2-1)
+//! # Published-package behavior
 //!
 //! The fixture crates under `tests/compile_fail/` are git-checkout-only
 //! test infrastructure: each has its own `Cargo.toml`, so cargo's
@@ -43,7 +43,7 @@
 //! there. The skip fires ONLY in a packaged context — detected via the
 //! `Cargo.toml.orig` `cargo package` writes into every extracted package
 //! (absent from any git checkout) — so a fixture that goes missing from a
-//! real checkout FAILS LOUD instead (round-11 @oh review, P2-2: a bare
+//! real checkout FAILS LOUD instead (a bare
 //! `manifest.exists()` guard silently skipped the test in a checkout whose
 //! fixture directory had been renamed away, reporting a false `ok`).
 //!
@@ -99,8 +99,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
         .join("compile_fail")
         .join("two_backings")
         .join("Cargo.toml");
-    // P2-1 (round-10 @oh review), skip-guard hardened by round-11 @oh review
-    // P2-2: the fixture crates are excluded from the published .crate
+    // The fixture crates are excluded from the published .crate
     // (cargo's nested-manifest rule; see the `[package]` `exclude` in
     // Cargo.toml), so in a downloaded package the manifest is legitimately
     // absent — report and skip rather than fail the packaged suite. The skip
@@ -140,8 +139,8 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
         // CI's workflow-level CARGO_TERM_COLOR=always is inherited all the
         // way down to this child build; force plain-text rustc diagnostics
         // so the substring assertions below match the same text in CI as
-        // locally (same class as the round-11 CI bug fixed in fcae3ad with
-        // --color=never).
+        // locally (same class as the earlier CI color bug fixed in fcae3ad
+        // with --color=never).
         .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("failed to spawn cargo for the compile-fail fixture");

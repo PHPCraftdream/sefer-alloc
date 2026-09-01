@@ -57,16 +57,22 @@ supplying a different link array against one head and double-issuing an
 index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
 implementor/caller discipline at the VALUE level: a head must be reachable
 through exactly ONE live implementor value at a time (the trait doc's rule 1),
-and link cells must not be shared between stacks meant to be independent (the
-trait doc's rule 3). Discharged by construction, not by reading any single
-impl block — and owning the storage object is not, by itself, the discharge:
-`head()` is a plain safe method on every implementor, including the owned
-`ArrayIndexStack`, so anyone who can read a live stack can take its `.head()`
-and build a second, competing implementor around the same borrowed head. The
+and disjoint REACHABLE-index populations per binding over any shared
+link-cell population — cell sharing per se is harmless (two stacks over the
+same cells with disjoint populations coexist correctly); the hazard is one
+index reachable from two bindings (the trait doc's rule 3). These are
+obligations about head↔links BINDINGS — invisible to any audit of a single
+impl block, discharged by construction. `head()` is NOT a plain safe method
+on every implementor: the owned `ArrayIndexStack` stopped implementing the
+trait (its `head` field is private, no trait impl hands it out), and a
+competing binding around a standalone `ArrayIndexStack` does not COMPILE
+(pinned by the compile-fail fixture `tests/compile_fail/array_index_stack_head/`).
+For CUSTOM implementors the shared-head shape remains expressible — only
+behind an `unsafe impl` asserting the very `# Safety` clause it violates. The
 `StackStorage` trait doc's "The shared-storage hazard class" section is the
 single source of truth for the full inventory and for what the runtime does
-and does not detect (pinned by `array_index_stack_head_still_double_issue`
-and the other tests in `tests/custom_storage_impl.rs`).
+and does not detect (pinned by that compile-fail fixture and the pinning
+tests in `tests/custom_storage_impl.rs`).
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
@@ -77,9 +83,12 @@ backing, with plain `push`/`pop` methods.
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
-first bytes (the classic free-block-header idiom) is not supported and defeats
-`pop_index`'s own corruption-detection guard, which panics unconditionally
-(release-active, not debug-only) on a backing that violates it.
+first bytes (the classic free-block-header idiom) is not supported. `pop_index`'s
+corruption-detection guard panics (release-active, not debug-only) on TWO
+value shapes — an out-of-range link and a self-loop (`next == index`) — so a
+corrupted-but-in-range ACYCLIC backing still passes silently; see the
+[`StackStorage`] trait doc's "Storage requirement" and "The shared-storage
+hazard class" sections for the exact catch/miss boundary.
 
 `StackHead::is_empty()` (also reachable through `ArrayIndexStack::is_empty()`)
 is an advisory, `Relaxed` emptiness check —
@@ -109,137 +118,68 @@ authoritative empty check.
 
 - **No double-push (caller-enforced).** An index must NOT already be reachable
   from ANY stack that reads and writes the same link cells this stack's
-  `load_next`/`store_next` touch — not merely from this one stack (link cells
-  shared between two stacks with completely separate heads are a separate
-  hazard; see the `StackStorage` trait doc's rule 3 and its "The
-  shared-storage hazard class" section). `push_index` overwrites the pushed
-  index's link with the current head, so re-pushing a live index closes a
-  cycle in the link chain: if the re-pushed index was deeper in the chain
-  than the head, `pop_index` stops returning `None` and hands the same index
-  to two callers; if it IS the current head, the cycle is a self-referential
-  link and `pop_index`'s self-loop detector panics on the first pop through
-  it. Checking liveness would cost an O(n) chain walk on every push, so the
-  crate cannot enforce this (unlike H-2 and RAD-1); `push_index` checks only
-  the `index < INDEX_MASK` bound. Every live index comes from exactly one
-  `push_index` and is re-pushed only after the matching `pop_index`.
+  `load_next`/`store_next` touch. Consequence: re-pushing a live index closes
+  a cycle in the link chain — a deeper-than-head loop silently hands one
+  index to two callers; re-pushing the current head trips `pop_index`'s
+  self-loop detector on the first pop. Checking liveness would cost an O(n)
+  chain walk per push, so `push_index` checks only `index < INDEX_MASK`.
+  Full contract and consequences: `push_index`'s "# Caller contract"
+  (crate docs).
 
 ## Tag-width budget
 
-A tag defends against ABA only while it does not recur: a stale CAS can succeed
-again only if the head word returns to the exact `(index, tag)` pair the victim
-is holding, which takes a FULL tag wrap — `2^TAG_BITS` successful pushes
-anywhere in the stack, the last of them re-pushing the victim's own index. The
-time a wrap takes is
+A tag defends against ABA only while it does not recur: a stale CAS succeeds
+again only after a FULL tag wrap — `2^TAG_BITS` successful pushes anywhere on
+the stack. The time a wrap takes is
 
 ```text
 wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
 ```
 
-and the rate term is bounded by HARDWARE, not by the workload. The tag is
-GLOBAL to the whole stack, not per-slot: every successful push — of any index,
-from any thread — is a compare-exchange (a locked RMW) on the ONE `AtomicU64`
-head word, so the rate in the formula is the stack's AGGREGATE successful-push
-rate across ALL slots, and every one of those pushes serializes on a single
-cache line whose exclusive ownership must transfer between cores. That
-transfer cost caps the aggregate rate at roughly `10^8` to `10^9` RMWs/sec no
-matter how many threads contend — more contention only makes the line's
-ownership transfers slower, never faster. That argument covers the CONTENDED
-regime; the other bound to check is its opposite — the UNCONTENDED
-single-threaded case, where the head line stays resident and exclusive in one
-core's L1 and no cross-core ownership transfer ever happens — a regime
-governed not by coherence transfer but by the latency of the bare RMW
-instruction itself (`lock cmpxchg` on x86-64, or the target's equivalent CAS
-instruction): materially faster, but still bounded. The wrap-time conclusion
-survives both regimes: this crate's own single-threaded `churn` bench row
-measures ~`2 × 10^7` successful pushes/sec in that uncontended regime (a
-pop+push pair per iteration, so one successful push per pair — a push-only
-rate would run faster still, but the pair rate is already an order of
-magnitude under the working ceiling the next paragraph adopts, so the
-argument does not need the tighter push-only number). Committed receipt:
-the single-threaded `churn` rows in
-`docs/perf/_raw_tis_backoff_cap_sweep_run1.log` — a file in this crate's
-repository
-(<https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log>),
-not in the published package (rustc 1.97.0, 2026-08-31; that log records
-only a MINGW64 uname string and `logical_cpus: 16`, not a CPU model — the
-11th Gen Intel Core i7-11800H identification comes from the paired-A/B run
-metadata's `cpu_info` field, e.g.
-`docs/perf/paired_ab_runs/2026-08-04T16-42-31-023Z.json`) — e.g. 53.89
-ns/pair in that log's first arm, its 20 such samples spanning 51.41-64.72
-ns/pair; re-run
-`cargo bench -p tagged-index-stack --bench tagged_index_stack_bench` for a
-fresh sample — the bound below only needs the order of magnitude, not the
-exact figure.
-
-Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling: the
+with the rate bounded by HARDWARE, not by the workload. Headline facts: the
 enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
-tag of at least **48 bits** — at the widest permitted `INDEX_BITS = 16`
-(65535 usable indices with the `0xFFFF` empty sentinel reserved above them),
-the tag wraps at `2^48 ≈ 2.8 × 10^14` and a wrap takes
-`2^48 / (2 × 10^8) ≈ 16` days; even at the optimistic top of the hardware
-range it is still `2^48 / 10^9 ≈ 3.3` days. And a wrap is only the
-PRECONDITION for a collision: cashing one in further requires that the head
-line stay saturated at the coherence ceiling continuously for the entire span
-AND that one specific victim thread sit parked, motionless, holding its stale
-snapshot the whole time. This bound is why `INDEX_BITS > 16` is REJECTED at
-compile time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged: at
-`INDEX_BITS = 24` the tag would be 40 bits, `2^40 / (2 × 10^8) ≈ 92` minutes
-at the same ceiling — a long debugger pause or OS scheduling delay defeats
-that — and the pre-cap `INDEX_BITS = 32` maximum gave only
-`2^32 / (2 × 10^8) ≈ 21` seconds, within reach of ordinary scheduling jitter.
-Within the permitted range a caller still trades index range against tag
-headroom, but never below the 48-bit floor.
-
-This derivation bounds the RECURRENCE window — the minimum time a victim
-thread must stay parked, at saturated push rates, before its exact
-`(index, tag)` snapshot can recur. It does not prove recurrence impossible:
-the tag turns ABA into a quantified, engineering-manageable risk, and a
-deployment whose threads can be parked indefinitely (debuggers,
-stop-the-world pauses, extreme starvation) needs its own hazard/epoch-style
-protection on top of this crate.
+tag of at least **48 bits** at the widest permitted width; at a `2 × 10^8`
+pushes/sec working ceiling a wrap takes ≈ 16 days (≈ 3.3 days even at `10^9`
+pushes/sec). This bound is why `INDEX_BITS > 16` is compile-time REJECTED
+(`TaggedIndex::_CHECK_BITS`), not merely discouraged: width 24 would give a
+40-bit tag (≈ 92 minutes at the same ceiling) and the old width-32 cap only
+≈ 21 seconds — within reach of ordinary scheduling jitter. The floor is a
+risk-reduction argument, not a proof of impossibility: a debugger pause,
+stop-the-world pause, or extreme starvation can stretch the observation
+window past it, and accepting that residual risk is part of the caller's
+contract. Full derivation — the hardware rate bound across contended and
+uncontended regimes, the uncontended ~`2 × 10^7` pushes/sec bench receipt,
+and the fresh-sample command — is the crate docs' "Tag-width budget"
+section.
 
 ### Why the default is not a wider packed word (128-bit CAS)
 
-A wider packed word — a 128-bit CAS, e.g. via `portable-atomic` or a nightly
-intrinsic — was considered and explicitly rejected for this crate's default
-primitive. It would drop loom's coverage of the real type (`loom` has no
-`AtomicU128`), add an unsafe THIRD-PARTY dependency to a crate whose own
-code holds exactly one audited `unsafe` token (`#![deny(unsafe_code)]` — see
-"Where unsafe lives"), and likely turn `pop`'s currently read-only head
-observation into an RMW on targets without a guaranteed native 128-bit CAS
-(`cmpxchg16b` is not in the x86-64 baseline). A genuine future need for more
-than 65535 indices in one pool would be better served by a separate, explicitly
-opt-in type gated behind a feature flag — not by changing this default.
+A 128-bit packed word was considered and explicitly rejected: `loom` has no
+`AtomicU128`, so the real type would lose its model-check; it would add an
+unsafe third-party dependency; and `cmpxchg16b` is not in the x86-64
+baseline. Full rationale in the repository ADR
+`docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+(repository file, not part of the published package). A genuine future need
+for >65535 indices should be a separate opt-in, feature-gated type — not a
+change to this default.
 
 ## Lock-freedom and starvation
 
-`push_index`/`pop_index` never block on a lock — a losing CAS retries — but lock-freedom
-is not starvation-freedom: a call can lose arbitrarily many CASes in a row,
-and the exponential backoff deliberately makes an unlucky call wait longer
-between retries. The measured trade, on a 64-element `ArrayLinks` under
-this crate's own contention discipline (4/8/16 threads x 20k-200k
-pop-then-repush iterations, `--release`, 3 runs per cell), is NOT
-single-axis: the backoff-free build (cap 0) wins TWO axes outright — the
-absolute worst single `pop` at every thread count tested (8 threads: 0.6-24
-ms across three runs vs the shipped cap's 41-60 ms; 16 threads: 40-46 ms vs
-130-173 ms), AND — at 8 threads specifically — the entire slow-pop
-tail-COUNT band (pops >1 ms: 0-8 per run vs the shipped cap's 60-86;
-pops >10 ms: 0-2 vs 26-34 — dozens of mid-band outliers per run, not a
-handful of extremes). In exchange the shipped cap wins every percentile
-through p99.9 by 1-2 orders of magnitude (p99.9 ≈ 1 µs vs 54-182 µs at
-8-16 threads), the >1 ms tail-count band at 16 threads SPECIFICALLY — the
-inverse of the 8-thread result: the tail-count axis is genuinely
-thread-count-dependent, not uniform (the backoff-free build produced ~2.4x
-more pops slower than 1 ms median-to-median, 1.9-2.6x across rep pairings)
-— and roughly 4-5x aggregate wall-clock throughput (median wall speedup
-4.85x at 8 threads, 4.05x at 16). A consumer recycling a slot on a
-latency-sensitive request path should therefore size its tolerance BOTH
-for the rare extreme outlier AND for the thread-count-dependent
-slow-pop tail-count band (>1 ms / >10 ms), measured at its own thread
-count — neither
-thread count's story generalizes alone; the full table is
+`push_index`/`pop_index` never block on a lock — a losing CAS retries — but
+lock-freedom is not starvation-freedom: a call can lose arbitrarily many
+CASes in a row, and the exponential backoff deliberately makes an unlucky
+call wait longer between retries. The shipped backoff cap trades worse
+extreme outliers AND a thread-count-dependent slow-pop tail-COUNT band for
+better latency through p99.9 (by 1-2 orders of magnitude: p99.9 ≈ 1 µs vs
+54-182 µs at 8-16 threads) and roughly 4-5x aggregate wall-clock throughput
+(median speedup 4.85x at 8 threads, 4.05x at 16; the backoff-free build
+produced ~2.4x more pops slower than 1 ms median-to-median, 1.9-2.6x across
+rep pairings). A latency-sensitive consumer must size its tolerance at ITS
+OWN thread count — neither single thread count's story generalizes. Full
+per-thread-count tables: the crate docs' "Lock-freedom and starvation"
+section and
 [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
-— a file in this crate's repository, not in the published package.
+(repository file, not in the published package).
 
 ## Portability limit — requires 64-bit atomics
 
@@ -322,10 +262,13 @@ assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 
 ## MSRV
 
-Rust 1.81 (the library alone checks clean at 1.80, but this crate's own
-`cargo clippy --all-targets` gate additionally covers `tests/`, and
-`tests/stack_unit.rs` uses `std::panic::PanicHookInfo`, stable since 1.81 —
-1.81 is the real floor across the full target set that gate checks).
+Rust 1.79 — the measured LIBRARY-surface floor (the newest API the published
+library itself uses is the inline `const` block in `ArrayLinks::new`'s array
+repeat, stable in 1.79; verified with `cargo +1.79 check`, default and
+`--features test-internals`). The crate's own test/clippy target set needs
+newer toolchains (dev-dependency graph, `std::panic::PanicHookInfo` at 1.81)
+— dev-only needs do not raise the floor a library consumer pays. Details:
+the `rust-version` comment in this crate's `Cargo.toml`.
 
 ## License
 

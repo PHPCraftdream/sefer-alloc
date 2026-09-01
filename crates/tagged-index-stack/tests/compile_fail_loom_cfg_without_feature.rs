@@ -1,10 +1,9 @@
-//! P2-4 negative compile-fail regression (Sol-codex run-3, task
-//! tis-sc3-Group4 #1770): the crate promises that a `--cfg loom` build
+//! Negative compile-fail regression: the crate promises that a `--cfg loom` build
 //! WITHOUT its `loom` feature fails fast with ONLY the crate's own named
 //! `compile_error!` — `building with --cfg loom requires --features loom
 //! (loom is now an optional dependency)`.
 //!
-//! Since P2-4's fix, the implementation module is cfg'd out entirely under
+//! The implementation module is cfg'd out entirely under
 //! that invalid configuration, so NO secondary name-resolution error may
 //! appear alongside the named one. This fixture pins BOTH halves:
 //!
@@ -12,7 +11,7 @@
 //! 2. no secondary error (specifically `error[E0433]: cannot find module or
 //!    crate \`loom\`` from the loom-aliasing `use`) IS present.
 //!
-//! That second half is exactly the regression P2-4 reports: before the fix,
+//! That second half is exactly the regression class this file pins: before the fix,
 //! the build also produced the E0433 unresolved-crate error on top of the
 //! `compile_error!`.
 //!
@@ -21,7 +20,7 @@
 //! dependency (so the crate compiles) and its `fn main() {}` is empty — the
 //! dependency's `compile_error!` is the only diagnostic expected.
 //!
-//! # Published-package behavior (round-10 @oh review, P2-1)
+//! # Published-package behavior
 //!
 //! The fixture crates under `tests/compile_fail/` are git-checkout-only
 //! test infrastructure: each has its own `Cargo.toml`, so cargo's
@@ -33,7 +32,7 @@
 //! there. The skip fires ONLY in a packaged context — detected via the
 //! `Cargo.toml.orig` `cargo package` writes into every extracted package
 //! (absent from any git checkout) — so a fixture that goes missing from a
-//! real checkout FAILS LOUD instead (round-11 @oh review, P2-2: a bare
+//! real checkout FAILS LOUD instead (a bare
 //! `manifest.exists()` guard silently skipped the test in a checkout whose
 //! fixture directory had been renamed away, reporting a false `ok`).
 //!
@@ -69,8 +68,7 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
         .join("compile_fail")
         .join("loom_cfg_without_feature")
         .join("Cargo.toml");
-    // P2-1 (round-10 @oh review), skip-guard hardened by round-11 @oh review
-    // P2-2: the fixture crates are excluded from the published .crate
+    // The fixture crates are excluded from the published .crate
     // (cargo's nested-manifest rule; see the `[package]` `exclude` in
     // Cargo.toml), so in a downloaded package the manifest is legitimately
     // absent — report and skip rather than fail the packaged suite. The skip
@@ -115,8 +113,8 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
         // CI's workflow-level CARGO_TERM_COLOR=always is inherited down to
         // this child build, and this file's NEGATIVE assertions
         // (!stderr.contains("E0433")) would go vacuously true if color codes
-        // ever shifted a substring match — force plain text (round-11 CI bug
-        // class, fixed in fcae3ad with --color=never).
+        // ever shifted a substring match — force plain text (an earlier CI
+        // color bug, fixed in fcae3ad with --color=never).
         .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("failed to spawn cargo for the compile-fail fixture");

@@ -17,25 +17,21 @@
 //! coverage. The canonical statement of that inventory is the
 //! [`StackStorage`] trait doc's "The shared-storage hazard class" section —
 //! this doc points there rather than re-deriving it. In file order: the
-//! shared-head shape over CUSTOM implementors (round-11 @oh finding, flipped
-//! to `#[should_panic]` by round-13's self-loop detector; the former
-//! round-12 `ArrayIndexStack::head()` parasite test moved out as the
-//! compile-fail fixture `tests/compile_fail/array_index_stack_head/` once
-//! `ArrayIndexStack` stopped implementing `StackStorage`, so the shared-head
-//! shapes are covered here by
+//! shared-head shape over CUSTOM implementors (pinned `#[should_panic]`: the
+//! self-loop detector catches its zero-initialised sub-shape on the second
+//! pop; the one variant that went through [`ArrayIndexStack`] itself left
+//! this file when that type stopped implementing `StackStorage` and lives on
+//! as the compile-fail fixture `tests/compile_fail/array_index_stack_head/`,
+//! so the shared-head shapes are covered here by
 //! `two_implementor_values_sharing_one_head_still_double_issue` only), that
-//! detector's
-//! LIMIT (a hand-crafted acyclic forgery still double-issues silently), and
-//! the shared-LINK-STORAGE variant, which no detector catches at all
-//! (round-13 P2-2). Round-15 adds three pins on shapes the inventory
-//! previously missed or never covered: the ONE-implementor
-//! internally-disagreeing-storage shape (inventory shape 1, which had NO
-//! automated coverage before round 15 — the round-11 test pins
-//! shape 2; round-15 P4-2), temporal rebinding of a live head into fresh
-//! links (inventory shape 4: first pop silently leaks, second pop panics;
-//! round-15 P3-3), and shape 3's ONE-value form — two
+//! detector's LIMIT (a hand-crafted acyclic forgery still double-issues
+//! silently), and the shared-LINK-STORAGE variant, which no detector catches
+//! at all. Three further pins: the ONE-implementor
+//! internally-disagreeing-storage shape (inventory shape 1), temporal
+//! rebinding of a live head into fresh links (inventory shape 4: first pop
+//! silently leaks, second pop panics), and shape 3's ONE-value form — two
 //! different-width bindings over one backing inside a single implementor
-//! value (round-15 P3-4).
+//! value.
 //!
 //! Since the 2026-09-01 `unsafe trait` conversion, EVERY implementor in
 //! this file carries an `unsafe impl` — seven types, eight impl sites
@@ -47,9 +43,11 @@
 //! from this file is `array_index_stack_head_still_double_issue`: Group A
 //! made its extraction route unexpressible, and it lives on as the
 //! compile-fail fixture `tests/compile_fail/array_index_stack_head/`
-//! (cross-referenced in the round-11 test's doc below).
+//! (cross-referenced in the shared-head test's doc below).
 //!
-//! Per-test status, explicitly. COMPILE-PASS side:
+//! Per-test status, explicitly — this module doc is the source of truth for
+//! that per-test status list (the same pattern tests/loom_aba.rs's module
+//! doc establishes for its per-model breakdown). COMPILE-PASS side:
 //! `vec_backed_storage_push_pop_round_trips` +
 //! `push_pop_through_dyn_storage` — a correct `unsafe impl` from a
 //! separate test crate compiles and behaves correctly; `VecStorage` is the
@@ -186,9 +184,7 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 }
 
 /// KNOWN, INTENTIONAL limitation — caller/implementor-enforced, NOT
-/// compiler-enforced (the [`StackStorage`] trait doc's rule 1). Round-11
-/// @oh review, finding P2-1; FLIPPED by the
-/// round-13 @oh review, finding P2-1.
+/// compiler-enforced (the [`StackStorage`] trait doc's rule 1).
 ///
 /// The hazard: two separately constructed, individually rule-coherent
 /// `StackStorage` values whose `head()` methods return the SAME
@@ -199,15 +195,14 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 /// answer — `0`, which was never pushed through ANY implementor —
 /// silently, forever.
 ///
-/// Since round-13 the second pop PANICS instead: `via_b`'s
+/// The second pop PANICS instead: `via_b`'s
 /// zero-initialised links answer `load_next(0)` with `0` while the popped
 /// index IS `0` — a self-loop a contract-abiding chain can never contain —
 /// and `pop_index`'s release-active rule-4 guard fires. This test pins the
 /// GUARD FIRING (the strict improvement from silent corruption to a loud
 /// panic), not the hazard class closing: what such a shape still evades is
 /// inventoried in the trait doc's "The shared-storage hazard class"
-/// section, and pinned by the two tests below. The name keeps the round-11
-/// finding's shape description; only the pinned behavior changed. If a
+/// section, and pinned by the two tests below. If a
 /// future structural fix stops this shape from compiling, this test breaks
 /// by design and the trait doc's rule 1 must be updated with it.
 #[test]
@@ -233,15 +228,14 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
     // zero-initialised `load_next(0)` answer coincides with the popped
     // index itself.
     assert_eq!(via_b.pop_index(), Some(1));
-    // Second pop: self-loop (next == index == 0) — panics under the
-    // round-13 guard; before it, this silently returned the phantom `0`
-    // forever.
+    // Second pop: self-loop (next == index == 0) — the guard panics here;
+    // without it this pop would silently return the phantom `0` forever.
     let _ = via_b.pop_index();
 }
 
 /// A self-sufficient implementor that OWNS its head and its links — the
-/// same shape a hand-rolled third-party `StackStorage` impl takes. The
-/// former round-12 variant borrowed its head out of
+/// same shape a hand-rolled third-party `StackStorage` impl takes. An
+/// earlier variant of this test borrowed its head out of
 /// `ArrayIndexStack::head()`; that extraction route is CLOSED
 /// (`ArrayIndexStack` no longer implements `StackStorage` — see the
 /// compile-fail fixture `tests/compile_fail/array_index_stack_head/`), so
@@ -270,7 +264,7 @@ unsafe impl StackStorage<16> for Parasite {
     }
 }
 
-/// The round-13 self-loop detector's LIMIT — a hand-crafted ACYCLIC
+/// The self-loop detector's LIMIT — a hand-crafted ACYCLIC
 /// forgery still double-issues silently. KNOWN, INTENTIONAL limitation,
 /// same register as the `#[should_panic]` tests around it: this pins that
 /// `pop_index`'s rule-4 guard is a SHAPE detector (the
@@ -288,7 +282,7 @@ unsafe impl StackStorage<16> for Parasite {
 /// its `load_next` answers with values the crate never stored (a violation
 /// of `# Safety` clause 2 — the coherence obligation the explanatory rules
 /// list as rule 3) — and the acyclic forgery evades the
-/// round-13 self-loop detector. The detector's limit, unchanged.
+/// self-loop detector. The detector's limit, unchanged.
 ///
 /// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,
 /// head `(1, tag)`), then forges its own links before popping —
@@ -317,14 +311,14 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 
     assert_eq!(parasite.pop_index(), Some(1));
     // The never-pushed 0, handed out silently — no self-loop anywhere in
-    // 1 -> 0 -> TAIL, so the round-13 detector stays quiet.
+    // 1 -> 0 -> TAIL, so the detector stays quiet.
     assert_eq!(parasite.pop_index(), Some(0));
 }
 
 /// A borrowed-LINKS [`StackStorage`] implementor with its OWN head value:
 /// the fourth variant of the double-issue family, and the first that does
 /// NOT involve a shared head at all. KNOWN, INTENTIONAL limitation —
-/// round-13 @oh review, finding P2-2 — documented, not detected: no cheap
+/// documented, not detected: no cheap
 /// runtime detector exists for this shape (the [`StackStorage`] trait
 /// doc's rule 3 binding-level clause; the trait doc's hazard inventory lists
 /// it as the one shape with no detection at all).
@@ -345,7 +339,7 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 /// existing rule. In a parent allocator that is two live slots with two
 /// owners each. Every link value stays numerically valid and the shared
 /// chain stays perfectly ACYCLIC, so `pop_index`'s rule-4 guard —
-/// including round-13's self-loop detector — cannot fire; only rule 3's
+/// including the self-loop detector — cannot fire; only rule 3's
 /// binding-level clause NAMES the obligation — implementor/caller
 /// discipline, not something the type system, the blanket impl, or a
 /// runtime guard enforces. Discharge it by construction: disjoint index
@@ -424,17 +418,16 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// backings behind one head. KNOWN, INTENTIONAL limitation —
 /// implementor-enforced (the [`StackStorage`] trait doc's rules 3 and 4),
 /// not structurally impossible, auditable only inside the one impl block.
-/// This is shape 1's first automated coverage: the two round-11/12
-/// `#[should_panic]` tests above both pin shape 2, so before round 15
-/// shape 1 had NO pinning test at all (round-15 @oh review, P4-2).
+/// The two `#[should_panic]` tests above pin shape 2; this test pins
+/// shape 1.
 ///
 /// Mechanism (the zero-initialised sub-shape): pushing 1 stores
 /// `write_links[1] = TAIL`, but every pop READS `read_links`, which
 /// answers `0` for every index. The first pop legitimately returns the
 /// head index `1` — and it has ALREADY moved the head to a phantom
 /// `(0, tag)`. The second pop reads `read_links[0] == 0 == index`: a
-/// self-loop a contract-abiding chain can never contain, so the round-13
-/// rule-4 guard panics — one pop later than the corruption it names. See
+/// self-loop a contract-abiding chain can never contain, so the rule-4
+/// guard panics — one pop later than the corruption it names. See
 /// the trait doc's "Detection coverage" for the catch/miss boundary.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
@@ -481,7 +474,7 @@ fn internally_disagreeing_storage_still_double_issue() {
 
 /// Inventory shape 4 — temporal rebinding: a LIVE [`StackHead`] VALUE moved
 /// into FRESH links, one head↔links binding replaced across time by another
-/// over the same head (round-15 @oh review, P3-3). Not covered by rule 1's
+/// over the same head. Not covered by rule 1's
 /// elaboration (no `&StackHead` reference is ever shared — the head moves
 /// by value, and `old` is consumed, so there is never more than ONE live
 /// implementor value) nor by the inventory's old two-live-values scoping;
@@ -538,7 +531,7 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
     let _ = grown.pop_index();
 }
 
-/// Inventory shape 3's ONE-value form (round-15 @oh review, P3-4): TWO
+/// Inventory shape 3's ONE-value form: TWO
 /// head↔links bindings over ONE shared backing, both inside a SINGLE
 /// implementor value via two `StackStorage` impls at different widths —
 /// falsifying "two implementor values" as the inventory's counting unit

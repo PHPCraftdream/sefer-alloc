@@ -1,4 +1,4 @@
-//! P1-1 API-removal regression fixture (Sol-codex run-3), adapted to the
+//! API-removal regression fixture, adapted to the
 //! post-redesign type names. This file MUST FAIL TO COMPILE: `StackHead` is
 //! the head word ONLY — it has no `push`/`pop`, and no public API accepts a
 //! caller-supplied links backing per call. The operations live on

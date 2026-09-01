@@ -1,4 +1,4 @@
-//! Sol-codex run-3 P3-6 negative oracle, lower bound: `INDEX_BITS = 0` must
+//! Negative oracle, lower bound: `INDEX_BITS = 0` must
 //! NOT compile. This file MUST FAIL TO COMPILE with the `_CHECK_BITS`
 //! assertion (E0080) naming the `1..=16` range requirement — the guard that
 //! carries the documented minimum-48-bit-tag argument. Pinned failing by

@@ -1,5 +1,5 @@
-//! P1-1 negative compile-fail regression, Group B (Sol-codex run-4; ADR
-//! `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
+//! Negative compile-fail regression, Group B of the storage-binding closure
+//! (ADR `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
 //! storage impl whose hook bodies are CORRECT but whose declaration omits the
 //! `unsafe` keyword must NOT compile. This pins Group B's actual mechanism —
 //! the compiler-forced per-impl-site acknowledgment: `StackStorage` is an
@@ -34,9 +34,8 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
         .join("compile_fail")
         .join("unsafe_impl_required")
         .join("Cargo.toml");
-    // Same packaged-skip guard as `tests/compile_fail_array_index_stack_head.rs`
-    // (round-10/round-11 @oh review P2-1/P2-2): the fixture crates are
-    // excluded from the published .crate, so the skip fires ONLY where
+    // Same packaged-skip guard as `tests/compile_fail_array_index_stack_head.rs`:
+    // the fixture crates are excluded from the published .crate, so the skip fires ONLY where
     // `Cargo.toml.orig` proves a packaged context; in a real checkout a
     // missing fixture fails loud.
     let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

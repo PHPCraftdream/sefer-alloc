@@ -1,4 +1,4 @@
-//! Sol-codex run-3 P2-4 negative oracle: building `tagged-index-stack` with
+//! Negative oracle: building `tagged-index-stack` with
 //! `--cfg loom` but WITHOUT its `loom` feature must fail with ONLY the
 //! crate's own named `compile_error!` — no secondary unresolved-import
 //! errors, because the entire implementation module is gated off under that

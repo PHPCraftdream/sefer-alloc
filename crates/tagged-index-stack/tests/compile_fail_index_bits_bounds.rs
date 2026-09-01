@@ -1,5 +1,4 @@
-//! P3-6 negative compile-fail regression (Sol-codex run-3, task
-//! tis-sc3-Group4 #1774): `TaggedIndex`'s `INDEX_BITS` const-generic
+//! Negative compile-fail regression: `TaggedIndex`'s `INDEX_BITS` const-generic
 //! bounds must stay enforced — a `TaggedIndex<0>` and a `TaggedIndex<17>`
 //! must NOT compile.
 //!
@@ -11,7 +10,7 @@
 //! at least 48 bits ...` (the `_CHECK_BITS` assert's minimum-48-bit-tag /
 //! sentinel argument).
 //!
-//! # Published-package behavior (round-10 @oh review, P2-1)
+//! # Published-package behavior
 //!
 //! The fixture crates under `tests/compile_fail/` are git-checkout-only
 //! test infrastructure: each has its own `Cargo.toml`, so cargo's
@@ -23,7 +22,7 @@
 //! there. The skip fires ONLY in a packaged context — detected via the
 //! `Cargo.toml.orig` `cargo package` writes into every extracted package
 //! (absent from any git checkout) — so a fixture that goes missing from a
-//! real checkout FAILS LOUD instead (round-11 @oh review, P2-2: a bare
+//! real checkout FAILS LOUD instead (a bare
 //! `manifest.exists()` guard silently skipped the test in a checkout whose
 //! fixture directory had been renamed away, reporting a false `ok`).
 //!
@@ -42,8 +41,7 @@
 //! rationale in `tests/compile_fail_two_backings.rs` ("Why hand-rolled and
 //! not `trybuild`"). This runner follows the same established alternative: an
 //! out-of-process `cargo build` of a deliberately-broken fixture, asserted
-//! to FAIL with a SPECIFIC error. (Sol-codex run-3 P3-6, task
-//! tis-sc3-Group4 #1774.)
+//! to FAIL with a SPECIFIC error.
 //!
 //! # RUSTFLAGS stripping
 //!
@@ -67,8 +65,7 @@ fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
         .join("compile_fail")
         .join(fixture_dir)
         .join("Cargo.toml");
-    // P2-1 (round-10 @oh review), skip-guard hardened by round-11 @oh review
-    // P2-2: the fixture crates are excluded from the published .crate
+    // The fixture crates are excluded from the published .crate
     // (cargo's nested-manifest rule; see the `[package]` `exclude` in
     // Cargo.toml), so in a downloaded package the manifest is legitimately
     // absent — report and skip rather than fail the packaged suite. The skip
@@ -108,8 +105,8 @@ fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
         // CI's workflow-level CARGO_TERM_COLOR=always is inherited all the
         // way down to this child build; force plain-text rustc diagnostics
         // so the substring assertions below match the same text in CI as
-        // locally (same class as the round-11 CI bug fixed in fcae3ad with
-        // --color=never).
+        // locally (same class as the earlier CI color bug fixed in fcae3ad
+        // with --color=never).
         .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("failed to spawn cargo for the compile-fail fixture");

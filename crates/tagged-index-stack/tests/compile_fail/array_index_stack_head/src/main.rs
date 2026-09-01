@@ -1,5 +1,5 @@
 //! Compile-fail successor of the former `array_index_stack_head_still_double_issue`
-//! runtime test (Sol-codex run-4 P1-1, Group A of
+//! runtime test (Group A of
 //! docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md): building a
 //! competing binding around a standalone `ArrayIndexStack`'s head MUST NOT compile.
 //! The type deliberately does not implement the public `StackStorage` trait — the

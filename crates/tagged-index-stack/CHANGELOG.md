@@ -111,7 +111,10 @@ before it.
   their links differ still compile and still double-issue; that shape is
   now a named implementor/caller obligation (the `StackStorage` trait
   doc's rule 1), pinned by an assert-based demonstration in
-  `tests/custom_storage_impl.rs`. **`ArrayLinks<N>`** remains a public links
+  `tests/custom_storage_impl.rs`. [Superseded 2026-09-01: since the
+  `unsafe trait` conversion — see `### Changed` — these shapes compile only
+  behind an `unsafe impl` that asserts the `# Safety` contract they violate;
+  the class remains closed by contract, not by the type system.] **`ArrayLinks<N>`** remains a public links
   building block (inherent Acquire `load_next` / Release `store_next`); it is
   what `ArrayIndexStack` composes internally. The link storage must be a
   DEDICATED cell, never
@@ -343,36 +346,60 @@ before it.
   (`pop_link_out_of_range`) now dispatches THREE cases (self-loop;
   masked-to-empty-sentinel; masked-to-live-index). The added arm is a
   single `|| next == index` on the already-cold, release-active path; a
-  real-contention audit over the actual `StackOps` code path (8 threads ×
-  200,000 pop-then-repush iterations through an auditing `StackStorage`
-  wrapper, mirroring `tests/threaded_conservation.rs`'s shape) observed
+  real-contention audit over the actual `StackOps` code path observed
   1,670,492 `load_next` calls and ZERO self-loops — no false-positive
   risk under contract-abiding contention — and the loom suite stayed
-  11/11 green. HONEST LIMITS, stated in the guard's own comment,
-  `pop_index`'s `# Panics`, and pinned by two new tests: (a) a
-  hand-crafted ACYCLIC link forgery (`links[1] = 0`, `links[0] = TAIL`)
-  still double-issues silently
-  (`hand_crafted_acyclic_forgery_still_double_issues`) — the guard is a
-  DETECTOR for one shape, not a structural fix for the shared-storage
-  hazard class; (b) SHARED LINK STORAGE between two independent stacks —
-  two SEPARATE heads over one link array — double-issues with no
-  detection at all (`two_stacks_sharing_link_storage_still_double_issue`:
-  `b`'s push of an index chains it into both stacks; the shared chain
-  stays acyclic). For (b) the fix is documentation: `push_index`'s
-  `# Caller contract` now states the liveness obligation over LINK CELLS
-  ("reachable from ANY stack that reads and writes the same link cells",
-  not merely "the stack"), and the `StackStorage` trait's rule 3 gained
-  a value-level clause — link cells must not be shared between
-  implementor values whose stacks are meant to be independent — parallel
-  to rule 1's instance-level one-value-per-head clause. Rule 1's
-  abbreviated shape description and the trait doc's "what does NOT carry
-  over" hazard-class inventory were updated to match the new behavior
-  (three surviving hazard shapes, one of them now partially detected).
+  11/11 green. The canonical two-cause disjunction (double-push of the
+  current head vs. a foreign writer) and the full catch/miss boundary
+  live in `pop_index`'s `# Panics` and the `StackStorage` trait doc's
+  hazard-class section; this entry records the change, not the contract.
+  The round-14 correction note stands as history: the original text here
+  concluded a self-loop "proves a foreign writer answered", which is not
+  the honest disjunction — the simplest cause needs no foreign writer at
+  all. HONEST LIMITS, each pinned by a test: (a) a hand-crafted ACYCLIC
+  link forgery still double-issues silently
+  (`hand_crafted_acyclic_forgery_still_double_issues`); (b) SHARED LINK
+  STORAGE between two independent stacks double-issues with no detection
+  at all (`two_stacks_sharing_link_storage_still_double_issue`).
+  [Superseded 2026-09-01: rule 3
+  was subsequently restated as a REACHABILITY invariant — cell sharing
+  per se is harmless with disjoint index populations; the hazard is an
+  index reachable from two bindings — and the inventory extended to four
+  binding-level shapes. Canonical statement: the `StackStorage` trait
+  doc's rule 3 and its "The shared-storage hazard class" section.]
+
+### Documentation
+
+- **Doc-only consolidation, 2026-09-01 — no code or behavior change.**
+  Rustdoc across `src/` trimmed to the exact current contract, with ONE
+  canonical statement per narrative and short pointers elsewhere: the
+  shared-storage hazard inventory + `# Safety` clauses + ordering contract
+  → the `StackStorage` trait doc; the no-double-push rule → `push_index`'s
+  `# Caller contract`; the self-loop two-cause disjunction → `pop_index`'s
+  `# Panics`; the loom per-model breakdown → `tests/loom_aba.rs`'s module
+  doc; the per-test status list → `tests/custom_storage_impl.rs`'s module
+  doc. Internal review-round identifiers removed from all long-lived source
+  text (src, README, test module docs) — kept here in this CHANGELOG, where
+  they are history. README drift fixed to current behavior: rule-3
+  reachability framing; `ArrayIndexStack`'s head unextractable since the
+  Group-A sealing; the rule-4 guard's two-shape accuracy; a stale
+  deleted-test citation replaced; MSRV 1.79. README's duplicated
+  derivations compressed to pointers. Decision history extracted to
+  `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+  (with `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`,
+  the Wave-2 ADR for the storage-binding decision); the zero-fact-loss
+  ledger of everything the trims removed lives in that ADR.
 
 ### MSRV
 
-- Rust 1.81 (round-13 @oh review, finding P3-3 — re-derived from the
-  workspace-inherited 1.88; the library alone needs only 1.80, but
-  `tests/stack_unit.rs`'s use of `std::panic::PanicHookInfo`, stable since
-  1.81, is the real floor across the full target set this crate's own
-  `cargo clippy --all-targets` gate checks).
+- Rust **1.79** — the DECLARED, MEASURED floor of the PUBLISHED LIBRARY
+  surface (Sol-codex run-4, finding P2-3: the MSRV policy covers the
+  library only; dev/test tooling does not raise it). Re-derived from the
+  workspace-inherited 1.88 through 1.80/1.81 along the way (round-13 @oh
+  review, finding P3-3), then corrected to the measured 1.79 by the run-4
+  policy change. `cargo +1.79 check` compiles the library clean, both
+  default and `--features test-internals`; the newest library API is the
+  inline `const` in `ArrayLinks::new`'s array repeat expression, stable
+  since 1.79. Dev/test code needs newer toolchains (the dev-dependency
+  graph; `tests/stack_unit.rs`'s `std::panic::PanicHookInfo`, stable
+  1.81) and is code a library consumer never builds.

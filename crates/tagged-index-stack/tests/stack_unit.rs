@@ -16,7 +16,7 @@ use tagged_index_stack::{
     ArrayIndexStack, ArrayLinks, StackHead, StackOps, StackStorage, TaggedIndex, TAIL,
 };
 
-// Compile-time pin (P4-12c): all three public types must stay auto-`Send +
+// Compile-time pin: all three public types must stay auto-`Send +
 // Sync`. Every field of all three is an atomic today, so they derive the
 // traits for free — but their entire purpose is lock-free CROSS-THREAD
 // sharing, and a future non-auto field (a `Cell`, a raw pointer, ...) would
@@ -58,8 +58,8 @@ fn pack_unpack_round_trip_16() {
 }
 
 /// The checked `pack` REJECTS an over-wide index with `None` — the
-/// fail-closed replacement for the pre-P2-1 truncating `pack`, whose
-/// silent masking turned `0x1_FFFF` into the EMPTY SENTINEL (its low 16
+/// fail-closed checked `pack` (it replaced an earlier truncating `pack`
+/// whose silent masking turned `0x1_FFFF` into the EMPTY SENTINEL (its low 16
 /// bits equal `INDEX_MASK`) and `0x1_0001` into the unrelated live index
 /// `1`. The truncating behaviour survives only as the crate-private
 /// `pack_truncating` fast path used by `push_index`/`pop_index`, whose
@@ -159,8 +159,8 @@ fn empty_sentinel_16() {
 
 /// The 48-bit tag reaches its maximum (`2^48 - 1`) and still packs; the
 /// bump PAST it (`2^48`, what `push`'s `wrapping_add(1)` produces at the
-/// boundary) is REJECTED by the checked `pack` — the fail-closed P2-1
-/// contract. The wrap itself (the bumped tag restarting at 0 with the
+/// boundary) is REJECTED by the checked `pack` — the fail-closed checked
+/// pack contract. The wrap itself (the bumped tag restarting at 0 with the
 /// index intact) is unchanged machine behaviour inside `push`, which
 /// packs through the crate-private truncating fast path whose shift drops
 /// the `2^TAG_BITS` high bit; it is no longer reachable through any
@@ -231,7 +231,7 @@ fn max_legal_width_index_mask_never_equals_tail() {
     );
 }
 
-// --- Panic-hook mutation machinery (Sol-codex run-3 P2-3) ------------------
+// --- Panic-hook mutation machinery ----------------------------------------
 //
 // The panic Location of `push` is observable ONLY through a panic hook (the
 // caught payload carries the message, never the location), so this file must
@@ -245,7 +245,8 @@ fn max_legal_width_index_mask_never_equals_tail() {
 // 2. GENUINE RESTORE: the ORIGINAL previous hook is retained in a shared slot
 //    and reinstalled by `RestorePanicHook`'s `Drop` — `take_hook()` alone
 //    would install the DEFAULT hook and permanently lose whatever hook was
-//    installed before this test (the bug P2-3 reports).
+//    installed before this test (the bug this machinery guards against:
+//    permanently losing the previous hook).
 // 3. RAII: the guard restores the hook unconditionally, including when the
 //    test body panics unexpectedly or an assertion fails mid-test.
 //
@@ -299,8 +300,8 @@ fn width_16_push_rejects_index_mask_itself() {
     // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
     // `ArrayLinks`) cannot satisfy this test.
     //
-    // Also pins #[track_caller]'s effect (Sol-codex run-3 P2-3, originally
-    // review-round6 P3-6): without it on both `push` and its `#[cold]` helper,
+    // Also pins #[track_caller]'s effect: without it on both `push` and its
+    // `#[cold]` helper,
     // this panic's Location would name lib.rs instead of this call site, and
     // that regression would leave every OTHER assertion here green. The panic
     // hook is process-global, so the mutation below is (a) SERIALIZED via
@@ -399,7 +400,7 @@ fn array_links_store_next_panics_on_index_out_of_range() {
 /// custom implementor whose `load_next` always answers `INDEX_MASK` (a value
 /// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
 ///
-/// Release-active (round 7, P3-1): promoted from `debug_assert!` to an
+/// Release-active: promoted from `debug_assert!` to an
 /// unconditional `#[cold]` panic helper mirroring
 /// [`push_index`]'s own `index < INDEX_MASK` guard, once an out-of-tree A/B
 /// measured the release-active cost at ≈ 0 ns (see CHANGELOG.md). Unlike its
@@ -461,15 +462,15 @@ fn double_push_of_current_head_panics_on_first_pop() {
     let _ = stack.pop(); // first pop: self-loop -> panic
 }
 
-// Compile-fail coverage (Sol-codex run-3 P3-6): out-of-range `INDEX_BITS` IS
+// Compile-fail coverage: out-of-range `INDEX_BITS` IS
 // pinned by automated compile-fail regressions now --
 // `tests/compile_fail_index_bits_bounds.rs` builds the
 // `tests/compile_fail/index_bits_zero/` (width 0) and
 // `tests/compile_fail/index_bits_seventeen/` (width 17) fixture crates
 // out-of-process and asserts each fails with `_CHECK_BITS`'s E0080 naming the
 // `1..=16` range requirement, and
-// `tests/compile_fail_loom_cfg_without_feature.rs` likewise pins P2-4's
-// `--cfg loom`-without-`loom`-feature diagnostic (build fails with ONLY the
+// `tests/compile_fail_loom_cfg_without_feature.rs` likewise pins the
+// cfg-without-feature fast-fail (build fails with ONLY the
 // named `compile_error!`, no secondary name-resolution error). The mechanism
 // is this crate's established hand-rolled alternative to `trybuild`
 // (`tests/compile_fail_two_backings.rs` -- see its doc comment for the full
@@ -630,7 +631,7 @@ fn default_array_index_stack_behaves_like_new() {
 /// empty-index sentinel with tag 0 — reading empty through the advisory
 /// `is_empty`. This is the one `Default` impl a custom-storage implementor
 /// reaches directly (`StackHead` is the head half of the `StackStorage`
-/// extension point); round-10 review P3-3: previously pinned by nothing —
+/// extension point); it was previously pinned by nothing —
 /// the CHANGELOG cited a test name that did not exist.
 #[test]
 fn default_stack_head_behaves_like_new() {

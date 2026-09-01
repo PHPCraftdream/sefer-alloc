@@ -18,26 +18,24 @@
 //! both the pop and push counters advanced after it, so a regression that
 //! makes the retry PATH unreachable fails loudly instead of passing
 //! vacuously — but that level alone cannot distinguish 1 retry from
-//! thousands. Second (round-9 P3-1), it does the same with the
+//! thousands. Second, it does the same with the
 //! backoff-cap-reach counters (`backoff_cap_reached_for_test()`), which
 //! count only retries whose spin loop ran at FULL depth (`spins` saturated
 //! at `BACKOFF_SPIN_CAP`), so a regression that caps `spins` at 0, resets
 //! it per iteration, or moves its increment off the reachable path —
 //! leaving the documented backoff silently inert while every retry counter
 //! still advances — fails loudly too. The counters compile only under the
-//! crate's `test-internals` feature (round-9 P3-4 — a default build of the
+//! crate's `test-internals` feature (a default build of the
 //! crate carries no instrumentation), so WITHOUT that feature this file
 //! still runs its conservation and drain checks but the oracle assertions
 //! compile out; run
 //! `cargo test -p tagged-index-stack --features test-internals` for the
-//! full-strength oracle. This is the
-//! committed replacement
-//! for the throwaway ad hoc probe cited in the round-6 backoff commit
-//! (`069d187`): "8 threads x 200,000 contention-shaped pop/push iterations
-//! under the backoff, then drained and confirmed the exact multiset 0..64
-//! came back" — never committed. This file now runs at that probe's exact
-//! 8 x 200,000 shape. See round-7 review finding P2-2
-//! (`docs/reviews/2026-08-31-100751-tagged-index-stack-review-round7-oh.md`).
+//! full-strength oracle. This is the committed replacement for the
+//! throwaway ad hoc probe that originally measured the backoff —
+//! "8 threads x 200,000 contention-shaped pop/push iterations under the
+//! backoff, then drained and confirmed the exact multiset 0..64 came back",
+//! a probe that was never committed. This file runs at that exact
+//! 8 x 200,000 shape.
 //!
 //! Discipline mirrors `benches/tagged_index_stack_bench.rs`'s
 //! `contention/churn` phase exactly: every thread pops WHATEVER is currently
@@ -98,7 +96,9 @@ fn conservation_under_real_thread_contention() {
         stack.push(i);
     }
 
-    // Activation oracle (round-7 P2-2; round-9 P3-1/P3-4): the whole point
+    // Activation oracle (the first committed multi-threaded oracle for real
+    // contention; the instrumentation counters exist only under the
+    // `test-internals` feature): the whole point
     // of this file over `loom_aba.rs` is real-contention retry activation,
     // so ASSERT it at two levels — the retry counters prove the retry arms
     // are REACHED, the backoff-cap-reach counters prove `spins` genuinely

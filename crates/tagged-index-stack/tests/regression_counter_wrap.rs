@@ -5,7 +5,7 @@
 //! `checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48`
 //! already pin the width facts and the checked pack's boundary behaviour
 //! this file used to duplicate (`split_is_16_48` and `tag_wraps_at_2_pow_48_and_index_survives`
-//! were removed as exact duplicates — round-4 review P4-8). What remains
+//! were removed as exact duplicates). What remains
 //! here is the coverage those two tests do NOT provide: a parametrized sweep
 //! over multiple (index, tag) pairs confirming the empty sentinel is never
 //! confused with a live one, including the pool-cap-relevance argument, and
@@ -70,13 +70,13 @@ fn empty_word_with_running_tag_reads_empty_across_wrap() {
     // The wrap boundary itself, through the value the stack actually
     // computes there: `push` bumps the observed tag via `wrapping_add(1)`,
     // which at the all-ones tag is exactly `2^TAG_BITS`. The CHECKED pack
-    // (review P2-1) now REJECTS that value instead of silently dropping
+    // now REJECTS that value instead of silently dropping
     // its high bit; the wrap happens inside push, which packs through the
     // crate-private truncating fast path (machine behaviour unchanged).
     // Deriving the post-bump tag through the real bump sequence and
     // confirming the checked pack refuses it is what remains testable at
     // this boundary — a literal repeated `0` in the sweep above cannot
-    // show it (round-9 review P4-10).
+    // show it, because a repeated `0` never crosses the boundary.
     let max_tag = (1u64 << T::TAG_BITS) - 1;
     let bumped_tag = max_tag.wrapping_add(1);
     assert_eq!(
