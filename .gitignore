@@ -72,3 +72,5 @@
 # `cargo package` from running without --allow-dirty during release-gap
 # verification this session.
 /.claude/
+# /wrush task worktrees — always created here, in-tree (see .claude/skills/wrush).
+/worktrees/
