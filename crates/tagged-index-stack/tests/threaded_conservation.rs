@@ -117,10 +117,34 @@ fn conservation_under_real_thread_contention() {
     #[cfg(feature = "test-internals")]
     let (pop_cap_before, push_cap_before) = tagged_index_stack::backoff_cap_reached_for_test();
 
+    // Start-rendezvous barrier: without it, `s.spawn()` merely SCHEDULES a
+    // thread, it does not synchronize its start against its siblings. On a
+    // CI runner with few real cores (observed live: GitHub Actions'
+    // `ubuntu-latest`), thread creation can be slow enough relative to this
+    // loop's tiny per-iteration cost that early threads run a large chunk of
+    // their 200,000 iterations before a later thread is even scheduled for
+    // the first time -- collapsing what should be 8-way real contention into
+    // several near-sequential runs with little to no overlap. That is
+    // exactly what happened in CI run 33508623598 (job 99858613637,
+    // 2026-09-01): `push`'s CAS-retry branch fired ZERO times across all
+    // 1.6M iterations (before=0, after=0) -- the activation oracle below
+    // caught it as designed, because a staggered start against a shared
+    // stack still conserves the free-list (no thread ever needs a SECOND
+    // concurrent writer to stay correct), so only the oracle -- not the
+    // conservation check -- can tell "ran without contention" apart from
+    // "the retry path is broken". `NUM_THREADS + 1` participants (the
+    // workers plus this scope's own thread) release everyone into the
+    // contended loop at approximately the same instant, the same fix shape
+    // `benches/tagged_index_stack_bench.rs`'s contention phases already use
+    // for their own published-timing-window rendezvous.
+    let start_barrier = std::sync::Barrier::new(NUM_THREADS + 1);
+
     thread::scope(|s| {
         let stack = &stack;
+        let start_barrier = &start_barrier;
         for _ in 0..NUM_THREADS {
             s.spawn(move || {
+                start_barrier.wait();
                 for _ in 0..ITERS_PER_THREAD {
                     // Pop whatever is currently on top (may belong to any
                     // thread under contention) and immediately re-push
@@ -135,6 +159,10 @@ fn conservation_under_real_thread_contention() {
                 }
             });
         }
+        // Release all NUM_THREADS workers into their contended loop at
+        // approximately the same instant (see the barrier's own doc comment
+        // above for why this rendezvous is load-bearing, not cosmetic).
+        start_barrier.wait();
     });
 
     #[cfg(feature = "test-internals")]
