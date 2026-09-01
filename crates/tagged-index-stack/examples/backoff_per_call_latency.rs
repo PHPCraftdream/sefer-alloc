@@ -32,7 +32,10 @@
 //! ```
 //!
 //! Output: a small header block, then one JSON object per line per
-//! (shape, rep). Timing note: the two `Instant::now()` clock reads sit
+//! (shape, rep) — each carries a `pop_clamp_saturated` count of samples that
+//! hit the `u32::MAX`-ns (~4295 ms) recording ceiling, and a final summary
+//! line totals it across the run. Timing note: the two `Instant::now()` clock
+//! reads sit
 //! OUTSIDE the timed `pop`, are identical in every arm, so cap-to-cap
 //! comparisons stay apples-to-apples; absolute fast-path numbers are
 //! inflated by roughly two clock reads. Percentiles are nearest-rank over
@@ -90,6 +93,8 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
 
+    let mut run_clamp_saturated: u64 = 0;
+
     println!("=== tagged-index-stack per-call pop latency probe ===");
     println!("cap_label: {cap_label} (informational only; resolved-cap evidence is the captured const line in the raw log)");
     println!(
@@ -123,6 +128,10 @@ fn main() {
                 for _ in 0..threads {
                     handles.push(s.spawn(move || {
                         let mut samples: Vec<u32> = Vec::with_capacity(iters as usize);
+                        // Samples that hit the u32::MAX-ns recording ceiling below —
+                        // counted, never silent: a saturated sample is recorded at
+                        // exactly ~4295 ms, which is a floor, not a measurement.
+                        let mut clamp_saturated: u64 = 0;
                         barrier.wait();
                         for _ in 0..iters {
                             let t0 = Instant::now();
@@ -130,23 +139,28 @@ fn main() {
                                 "per-call latency probe: stack drained -- invariant violated \
                                  (64 prefilled, at most `threads` indices in flight)",
                             );
-                            let d = t0.elapsed();
+                            let nanos = t0.elapsed().as_nanos();
+                            if nanos > u32::MAX as u128 {
+                                clamp_saturated += 1;
+                            }
                             black_box(idx);
-                            samples.push(d.as_nanos().min(u32::MAX as u128) as u32);
+                            samples.push(nanos.min(u32::MAX as u128) as u32);
                             stack.push(idx);
                         }
-                        samples
+                        (samples, clamp_saturated)
                     }));
                 }
                 barrier.wait();
                 let start = Instant::now();
-                let per_thread: Vec<Vec<u32>> =
+                let per_thread: Vec<(Vec<u32>, u64)> =
                     handles.into_iter().map(|h| h.join().unwrap()).collect();
                 (per_thread, start.elapsed())
             });
 
-            let pop_samples: usize = per_thread.iter().map(|v| v.len()).sum();
-            let mut all: Vec<u32> = per_thread.into_iter().flatten().collect();
+            let pop_samples: usize = per_thread.iter().map(|(v, _)| v.len()).sum();
+            let clamp_saturated: u64 = per_thread.iter().map(|(_, c)| c).sum();
+            run_clamp_saturated += clamp_saturated;
+            let mut all: Vec<u32> = per_thread.into_iter().flat_map(|(v, _)| v).collect();
             all.sort_unstable();
             let p50 = percentile_ms(&all, 0.50);
             let p90 = percentile_ms(&all, 0.90);
@@ -163,8 +177,17 @@ fn main() {
                  \"pop_samples\":{pop_samples},\"pop_p50_ms\":{p50:.3},\"pop_p90_ms\":{p90:.3},\
                  \"pop_p99_ms\":{p99:.3},\"pop_p999_ms\":{p999:.3},\"pop_max_ms\":{max_ms:.3},\
                  \"pop_over_1ms\":{over_1ms},\"pop_over_10ms\":{over_10ms},\"pop_over_100ms\":{over_100ms},\
-                 \"wall_ms\":{wall_ms:.1}}}"
+                 \"pop_clamp_saturated\":{clamp_saturated},\"wall_ms\":{wall_ms:.1}}}"
             );
         }
+    }
+
+    println!(
+        "=== clamp-saturation: {run_clamp_saturated} pop sample(s) hit the u32::MAX ns (~4295 ms) recording ceiling ==="
+    );
+    if run_clamp_saturated > 0 {
+        println!(
+            "    NON-ZERO: affected rows' pop_p999_ms/pop_max_ms are the floor value, not genuine timings."
+        );
     }
 }
