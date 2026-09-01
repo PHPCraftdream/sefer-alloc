@@ -218,9 +218,12 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// there reopens the ABA window (the crate docs' H-2 note).
     ///
     /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
-    /// rationale. This item also has a real in-workspace consumer outside
-    /// this crate, so it is not freely removable in a future 0.2 without
-    /// checking that caller first.
+    /// rationale. This item also has one real in-workspace consumer outside
+    /// this crate — `sefer-alloc`'s `#[cfg(loom)]` `bootstrap::loom_shim`
+    /// (its mirrored const-capable `StackHead::new`; a loom-test-only shim
+    /// that exists to keep a const static compiling under loom, never a
+    /// production code path) — so it is not freely removable in a future
+    /// 0.2 without checking that caller first.
     #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
@@ -475,6 +478,15 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// (or [`ArrayIndexStack`]'s `push`/`pop` forwarders); the three hooks
 /// belong inside the implementor's `impl` block.
 ///
+/// [`head`](Self::head) alone — a pure read that mutates nothing — is
+/// sufficient to rebuild rule 1's shared-head hazard against ANY
+/// [`StackStorage`] implementor, INCLUDING the owned [`ArrayIndexStack`]:
+/// the reference it returns can be adopted as the head of a second,
+/// independently-linked implementor value, and pops through that value
+/// double-issue indices exactly as in rule 1's abbreviated shape. This is
+/// not limited to custom implementors; it is a property of
+/// [`head`](Self::head) being a plain, safe, callable trait method at all.
+///
 /// # The binding: what is structural, what is not
 ///
 /// The caller-side obligation the old per-call-`&L` API could only document
@@ -525,12 +537,19 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///
 ///    The binding is therefore structural only at the type level (one impl
 ///    establishes the head↔links pairing for a type) and a LIVE
-///    implementor/caller obligation at the value level. Discharge it by
-///    construction — one implementor value per head (the owned
-///    [`ArrayIndexStack`] shape, or one storage object reached through one
-///    accessor) — not by auditing impl blocks: each block in the
-///    shared-head shape is individually correct, so per-impl audit cannot
-///    see the combination. An implementor whose
+///    implementor/caller obligation at the value level. One value per head
+///    is not enforceable by reading any single impl block — the hazard is
+///    two implementor VALUES of possibly the SAME impl sharing one head,
+///    not multiple impl blocks existing, and the values are individually
+///    correct, so no per-impl audit can see the combination. Discharge it
+///    by construction — one implementor value per head — and note the
+///    discharge is convention, not something the owned
+///    [`ArrayIndexStack`] shape enforces: [`head`](Self::head) is a plain,
+///    safe method on every implementor, so an owned stack stays discharged
+///    only while its value (and the head reference it hands out) stays
+///    private to one owner; anything that can call `.head()` can rebuild
+///    the shape (pinned by `array_index_stack_head_still_double_issue` in
+///    `tests/custom_storage_impl.rs`). An implementor whose
 ///    `load_next`/`store_next` internally touch different storage still
 ///    compiles too, and violates rules 3 and 4 below — live implementor
 ///    obligations, not structural impossibilities.
@@ -1013,9 +1032,18 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
     );
 }
 
-/// An owned standalone stack: head and links fused into ONE object, so there is
-/// no external backing to mis-bind — the [`StackStorage`] impl below IS the
-/// binding. A lock-free LIFO free-list of indices with a wrapping generation
+/// An owned standalone stack: head and links fused into ONE object — the
+/// [`StackStorage`] impl below IS the binding between them. Fusion is a
+/// layout property, NOT a safety guarantee: the shared-head hazard of
+/// [`StackStorage`]'s rule 1 applies to this type too, because
+/// [`head`](StackStorage::head) is a plain, safe, callable trait method on
+/// every implementor — a third party can call `.head()` on an owned stack
+/// and build a second, competing implementor value around the same
+/// borrowed head (owning the head-and-links pair binds them to each other;
+/// it does not stop anyone from adopting the head — pinned by
+/// `array_index_stack_head_still_double_issue` in
+/// `tests/custom_storage_impl.rs`). A lock-free LIFO free-list of indices
+/// with a wrapping generation
 /// tag packed into the head word mitigating ABA at every permitted
 /// `INDEX_BITS` (the tag defeats the ordinary short-window pattern; the
 /// residual wrap bound is derived in the crate-root docs' "Tag-width budget"

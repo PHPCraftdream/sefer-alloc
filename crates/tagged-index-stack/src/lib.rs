@@ -68,11 +68,12 @@
 //! the [`StackStorage`] trait doc's rules 3 and 4) are auditable inside one
 //! impl block, yet the instance-level obligation — a [`StackHead`]
 //! reachable through exactly ONE live implementor VALUE at a time (trait
-//! rule 1) — spans impl blocks and stays implementor/caller discipline:
-//! two separately-coherent implementor values sharing one borrowed head
-//! over different link storage still compile and still double-issue
-//! indices, and auditing each impl block in isolation cannot see the
-//! combination.
+//! rule 1) — is about VALUES, not impl blocks, and stays
+//! implementor/caller discipline: the hazard is two separately-coherent
+//! implementor values of possibly the SAME impl sharing one borrowed head
+//! over different link storage — that still compiles and still
+//! double-issues indices, and because each value is individually correct,
+//! one value per head is not enforceable by reading any single impl block.
 //!
 //! [`store_next`](StackStorage::store_next) is the only write the stack ever
 //! makes to a link, and it happens during
