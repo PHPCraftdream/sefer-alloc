@@ -2043,12 +2043,18 @@ jobs:
       # tests/compile_fail_loom_cfg_without_feature.rs. This row asserts the
       # error SHAPE on a genuinely atomic-less target — the build must fail
       # with exactly the one named compile_error! and zero numbered
-      # (`error[E...]`) cascade lines — not merely "it fails". Verified
-      # locally against this exact command: exit 101, 1 named error, 0
-      # cascade lines.
+      # (`error[E...]`) cascade lines — not merely "it fails". `--color=never`
+      # is load-bearing, not cosmetic: this workflow sets `CARGO_TERM_COLOR:
+      # always` at the top level, which wraps "error:" in ANSI escape codes
+      # (e.g. `\x1b[91merror\x1b[0m:`) so the line no longer starts with the
+      # literal string the greps below match on -- verified this broke the
+      # step on the real GitHub Actions runner (all three counters silently
+      # read 0, tripping the "expected exactly one" failure branch) even
+      # though the identical command's plain-text output passed a local
+      # check outside this colorized CI environment.
       - name: tagged-index-stack unsupported-target guard emits exactly ONE named error (no cascade)
         run: |
-          if cargo check -p tagged-index-stack --target thumbv6m-none-eabi > /tmp/tis_thumbv6m_check.log 2>&1; then
+          if cargo check -p tagged-index-stack --target thumbv6m-none-eabi --color=never > /tmp/tis_thumbv6m_check.log 2>&1; then
             echo "FAIL: thumbv6m-none-eabi build unexpectedly succeeded (the crate requires 64-bit atomics)"
             exit 1
           fi
