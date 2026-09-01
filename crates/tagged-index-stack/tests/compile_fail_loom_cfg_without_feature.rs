@@ -111,6 +111,13 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
         // encoded variable must go or it silently cancels the override.
         .env("RUSTFLAGS", "--cfg loom")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        // Same color-neutralization as the other two compile-fail runners:
+        // CI's workflow-level CARGO_TERM_COLOR=always is inherited down to
+        // this child build, and this file's NEGATIVE assertions
+        // (!stderr.contains("E0433")) would go vacuously true if color codes
+        // ever shifted a substring match — force plain text (round-11 CI bug
+        // class, fixed in fcae3ad with --color=never).
+        .env("CARGO_TERM_COLOR", "never")
         .output()
         .expect("failed to spawn cargo for the compile-fail fixture");
 
