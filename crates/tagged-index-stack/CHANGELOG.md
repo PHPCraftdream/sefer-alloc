@@ -315,4 +315,8 @@ before it.
 
 ### MSRV
 
-- Rust 1.88.
+- Rust 1.81 (round-13 @oh review, finding P3-3 — re-derived from the
+  workspace-inherited 1.88; the library alone needs only 1.80, but
+  `tests/stack_unit.rs`'s use of `std::panic::PanicHookInfo`, stable since
+  1.81, is the real floor across the full target set this crate's own
+  `cargo clippy --all-targets` gate checks).

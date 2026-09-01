@@ -62,18 +62,14 @@
 //! downstream override impossible. The old repro's per-call shape — two
 //! independent calls, each supplying a different backing against one head —
 //! no longer compiles (pinned by a compile-fail regression test). The
-//! obligation moved rather than vanished, but it is not discharged once per
-//! impl and done: the per-implementor hazards (an impl whose own
-//! `load_next`/`store_next` internally read and write different backings —
-//! the [`StackStorage`] trait doc's rules 3 and 4) are auditable inside one
-//! impl block, yet the instance-level obligation — a [`StackHead`]
-//! reachable through exactly ONE live implementor VALUE at a time (trait
-//! rule 1) — is about VALUES, not impl blocks, and stays
-//! implementor/caller discipline: the hazard is two separately-coherent
-//! implementor values of possibly the SAME impl sharing one borrowed head
-//! over different link storage — that still compiles and still
-//! double-issues indices, and because each value is individually correct,
-//! one value per head is not enforceable by reading any single impl block.
+//! obligation moved rather than vanished, and the part that stayed live is
+//! VALUE-level implementor/caller discipline: one live implementor value
+//! per head (trait rule 1) and one link-cell population per stack (trait
+//! rule 3) — obligations about VALUES, invisible to any per-impl audit.
+//! The [`StackStorage`] trait doc's "The shared-storage hazard class"
+//! section is the single source of truth for that hazard inventory and for
+//! what the runtime does and does not detect; this doc does not re-derive
+//! it.
 //!
 //! [`store_next`](StackStorage::store_next) is the only write the stack ever
 //! makes to a link, and it happens during

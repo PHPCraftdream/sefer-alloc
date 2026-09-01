@@ -52,26 +52,19 @@ binding is expressed once, in that impl, rather than re-asserted per call.
 every `StackStorage` implementor), so the CAS-loop bodies cannot be
 overridden downstream. The old per-call repro — two independent calls, each
 supplying a different link array against one head and double-issuing an
-index — no longer compiles. The obligation moved rather than vanished, and
-part of it stayed live: an implementor whose own `load_next`/`store_next`
-read and write different backings is still expressible in safe Rust (the
-trait doc's rules 3 and 4), and so is a subtler shape — two implementor
-values whose `head()` methods return the SAME `StackHead` while their links
-differ. Each value is individually coherent, yet the combination
-double-issues indices exactly like the old repro, and nothing in the
-compiler or the runtime guard catches it. A head must be reachable through
-exactly ONE live implementor value at a time (the trait doc's rule 1) — an
-implementor/caller obligation discharged by construction (one implementor
-value per head), not by reading any single impl block: the hazard is two
-VALUES of possibly the SAME impl sharing one head, and the values are
-individually correct, so per-impl audit cannot see the combination.
-Discharging by construction means keeping the head private to one
-implementor value — owning the storage object is not, by itself, the
-discharge: `head()` is a plain safe method on every implementor, including
-the owned `ArrayIndexStack`, so anyone who can read a live stack can take
-its `.head()` and build a second, competing implementor around the same
-borrowed head (pinned by `array_index_stack_head_still_double_issue` in
-`tests/custom_storage_impl.rs`).
+index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
+implementor/caller discipline at the VALUE level: a head must be reachable
+through exactly ONE live implementor value at a time (the trait doc's rule 1),
+and link cells must not be shared between stacks meant to be independent (the
+trait doc's rule 3). Discharged by construction, not by reading any single
+impl block — and owning the storage object is not, by itself, the discharge:
+`head()` is a plain safe method on every implementor, including the owned
+`ArrayIndexStack`, so anyone who can read a live stack can take its `.head()`
+and build a second, competing implementor around the same borrowed head. The
+`StackStorage` trait doc's "The shared-storage hazard class" section is the
+single source of truth for the full inventory and for what the runtime does
+and does not detect (pinned by `array_index_stack_head_still_double_issue`
+and the other tests in `tests/custom_storage_impl.rs`).
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
