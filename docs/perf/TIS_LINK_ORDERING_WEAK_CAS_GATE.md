@@ -14,7 +14,11 @@ inline.
   x86-64 codegen is identical across base/links-Relaxed (zero cost either
   way, §3.1); the aarch64 static delta is real (link `ldar`/`stlr` present
   in base, removable under `Relaxed`, §3.2); but wall-clock on real
-  weak-memory silicon is UNMEASURED. Per CLAUDE.md and the review's own
+  weak-memory silicon is UNMEASURED. (Status clarified 2026-09-02, review
+  run 6 P3-1: the STATIC multi-target A/B codegen comparison is COMPLETE —
+  this report is its result; the only measurement still open is the NATIVE
+  aarch64 WALL-CLOCK timing leg — §5, OPEN_ITEMS item 62.) Per CLAUDE.md
+  and the review's own
   instruction ("do not change ordering blindly"), no ordering change lands
   without a measured wall-clock win.
 - **P3-2 (`compare_exchange` → `compare_exchange_weak` candidate):

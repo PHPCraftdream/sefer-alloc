@@ -512,8 +512,9 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///
 /// # Ordering contract
 ///
-/// Implementations MUST use `Acquire` on [`load_next`](Self::load_next) and
-/// `Release` on [`store_next`](Self::store_next). The load-bearing
+/// Implementations MUST use `Acquire` (or a stronger ordering) on
+/// [`load_next`](Self::load_next) and `Release` (or a stronger ordering) on
+/// [`store_next`](Self::store_next). The load-bearing
 /// `Acquire` for the stack's own proof is the head observation itself — the
 /// initial `Acquire` load of the head, or (on a retry) the PREVIOUS
 /// iteration's `Acquire`-ordered CAS-failure read — which happens before the
@@ -528,9 +529,16 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// part in making that link visible.
 ///
 /// The full link-level `Acquire`/`Release` pairing is therefore mandated as
-/// deliberate change-resilience, retained at a real but unmeasured cost on
-/// weakly-ordered targets; relaxing to `Relaxed` was considered and deferred
-/// pending a multi-target A/B measurement. This keeps a [`StackStorage`]
+/// deliberate change-resilience. Its cost on weakly-ordered targets is real
+/// and STATICALLY measured — the multi-target A/B codegen comparison
+/// (`docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`) is DONE and confirmed a
+/// real AArch64 delta: the link `ldar`/`stlr` of the shipped
+/// `Acquire`/`Release` lowering disappear under `Relaxed` (x86-64 is
+/// TSO-identical either way) — but its NATIVE AArch64 WALL-CLOCK cost on
+/// real weak-memory silicon is not yet measured. Relaxing to `Relaxed` was
+/// considered and deferred pending exactly that native wall-clock timing
+/// measurement — not another x86-64 sample and not a speculative ordering
+/// change. This keeps a [`StackStorage`]
 /// implementation correct on its own terms rather than coupled to the
 /// stack's internal head orderings — an implementation detail that could
 /// change. On weakly-ordered targets, where `Acquire`/`Release` cost real
@@ -1383,8 +1391,10 @@ pub(crate) fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S,
         // toolchain. See `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`
         // §0 (P3-2: NULL; the driver asserts the identity, so a toolchain
         // change fails loudly and reopens the question). This concerns the
-        // CAS KIND only; the separate LINK-ordering relaxation remains
-        // unmeasured — see `StackStorage`'s "Ordering contract".
+        // CAS KIND only; the separate LINK-ordering relaxation's native
+        // AArch64 wall-clock cost remains unmeasured — its static
+        // multi-target A/B codegen comparison IS done (a real `ldar`/`stlr`
+        // delta exists) — see `StackStorage`'s "Ordering contract".
         match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
             Ok(_) => return,
             Err(actual) => {
