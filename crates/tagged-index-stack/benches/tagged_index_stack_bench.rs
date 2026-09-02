@@ -257,7 +257,7 @@ fn main() {
 
         h.bench("push_pop/single_thread", move || {
             // SAFETY: index 1 is in-domain and was popped at the end of the previous iteration, so not live.
-            unsafe { stack.push(black_box(index)) };
+            unsafe { stack.push(black_box(index)) }.expect("bounded bench run never nears TAG_MAX");
             black_box(stack.pop());
         });
     }
@@ -296,13 +296,13 @@ fn main() {
         let stack = Stack::new();
         for i in 0..8u32 {
             // SAFETY: fresh stack (domain 0..8); each index is in-domain and pushed exactly once.
-            unsafe { stack.push(i) };
+            unsafe { stack.push(i) }.expect("fresh head has tag budget");
         }
 
         h.bench("churn", move || {
             let idx = stack.pop().unwrap();
             // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-            unsafe { stack.push(idx) };
+            unsafe { stack.push(idx) }.expect("bounded bench run never nears TAG_MAX");
         });
     }
 
@@ -416,7 +416,8 @@ fn main() {
             // result, so it can never collide with a value
             // still live elsewhere in the stack.
             // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-            unsafe { shared_stack.push(black_box(idx)) };
+            unsafe { shared_stack.push(black_box(idx)) }
+                .expect("bounded bench run never nears TAG_MAX");
             2
         } else {
             0
@@ -429,6 +430,7 @@ fn main() {
         |thread_id| {
             // SAFETY: fresh empty stack (domain 0..LINKS_SIZE); each thread's seed index is distinct and pushed once.
             unsafe { shared_stack.push((thread_id * LINKS_SIZE / num_threads) as u32) }
+                .expect("fresh head has tag budget")
         },
         iteration,
     );
@@ -463,7 +465,7 @@ fn main() {
     // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
         // SAFETY: stack provably drained above; each index 0..prefill_count is in-domain and pushed exactly once.
-        unsafe { shared_stack.push(i) };
+        unsafe { shared_stack.push(i) }.expect("freshly-drained head has tag budget");
     }
 
     // With `prefill_count` unique indices prefilled and at most
@@ -491,7 +493,7 @@ fn main() {
                 .expect("contention/churn: stack drained -- invariant violated (see prefill_count/num_threads assert above)");
             // Immediately re-push (steady-state churn).
             // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-            unsafe { shared_stack.push(idx) };
+            unsafe { shared_stack.push(idx) }.expect("bounded bench run never nears TAG_MAX");
             2
         },
     );

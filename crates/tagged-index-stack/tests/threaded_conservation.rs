@@ -94,7 +94,7 @@ fn conservation_under_real_thread_contention() {
     // `Stack::new()` starts empty (RAD-1 lazy links).
     for i in 0..LINKS_SIZE {
         // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is in-domain and pushed exactly once.
-        unsafe { stack.push(i) };
+        unsafe { stack.push(i) }.expect("fresh head has tag budget");
     }
 
     // Activation oracle (the first committed multi-threaded oracle for real
@@ -157,7 +157,11 @@ fn conservation_under_real_thread_contention() {
                          LINKS_SIZE - NUM_THREADS elements",
                     );
                     // SAFETY: idx was JUST returned by pop, so it is not live; in-domain by construction.
-                    unsafe { stack.push(idx) };
+                    // 1.6M total pop/push pairs is far below the 48-bit tag's
+                    // 2^48-1 budget, so this never legitimately hits
+                    // TagExhausted — `.expect` is a real assertion, not a
+                    // shrug.
+                    unsafe { stack.push(idx) }.expect("tag budget not exhausted at this scale");
                 }
             });
         }

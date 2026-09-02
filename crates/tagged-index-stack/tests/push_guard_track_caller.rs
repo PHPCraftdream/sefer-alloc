@@ -69,7 +69,9 @@ fn width_16_push_rejects_index_mask_itself() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // SAFETY: DELIBERATE contract violation under test — INDEX_MASK is the reserved empty
             // sentinel, never a legal index; the guard panic this triggers is the test's subject.
-            unsafe { stack.push(T::INDEX_MASK as u32) };
+            // Result discarded: the index-range guard panics before
+            // push_index_impl would ever return a value here.
+            let _ = unsafe { stack.push(T::INDEX_MASK as u32) };
         }));
         std::panic::set_hook(original);
         result

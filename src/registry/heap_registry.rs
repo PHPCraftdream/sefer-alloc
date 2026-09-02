@@ -19,20 +19,29 @@
 //!
 //! ## ABA defence
 //!
-//! The [`Registry::free_slots`] Treiber stack carries a monotonic tag in the
-//! high bits of its `AtomicU64` head (48 bits — the low 16 hold the slot
-//! index, task W7a), bumped on every push. This defeats the classic ABA
-//! (pop-X, re-push-X while a racer is parked with head=X): the re-push bumps
-//! the tag, so the racer's CAS on `(X, old_tag)` fails. The stack itself — the
-//! tagged head, the ABA guard, the H-2 empty-transition tag preservation, the
-//! RAD-1 lazy links, and the tag-width-vs-churn budget analysis (a `2^48` tag
-//! wrap takes ~89 years at 100k pops/s, but only ~16 days at the crate's
-//! documented `2 × 10^8` RMW/s working ceiling — and ~3.3 days at the `10^9`
-//! top of the hardware range) —
+//! The [`Registry::free_slots`] Treiber stack carries a STRICTLY MONOTONIC
+//! tag in the high bits of its `AtomicU64` head (48 bits — the low 16 hold
+//! the slot index, task W7a), bumped on every push and never wrapped: a push
+//! that would bump the tag past `TaggedIndex::TAG_MAX` is refused
+//! (`Err(TagExhausted)`) instead, sealing that head. This ELIMINATES the
+//! classic ABA (pop-X, re-push-X while a racer is parked with head=X), not
+//! merely mitigates it — the re-push bumps the tag, so the racer's CAS on
+//! `(X, old_tag)` fails, and because the tag can never recur, no amount of
+//! further churn can ever reinstate `(X, old_tag)` (closes P1-1: a full tag
+//! wrap used to be able to reproduce a stale head word exactly; it no longer
+//! can, by construction). The stack itself — the tagged head, the seal, the
+//! H-2 empty-transition tag preservation, the RAD-1 lazy links, and the
+//! tag-width-vs-churn budget analysis (a `2^48`-push lifetime takes ~89
+//! years at 100k pushes/s, but only ~16 days at the crate's documented
+//! `2 × 10^8` RMW/s working ceiling — and ~3.3 days at the `10^9` top of the
+//! hardware range, after which `free_slots` seals rather than corrupts) —
 //! lives in the `tagged-index-stack` crate (CRATE-P7); `free_slots` is a
 //! `tagged_index_stack::StackHead<16>` and `pop_free_slot` /
 //! `push_free_slot` below delegate to it through `Registry`'s own
 //! `tagged_index_stack::StackStorage<16>` impl (the slot-resident links).
+//! `push_free_slot`'s handling of the (astronomically rare, but no longer
+//! merely "improbable") sealed case is documented at its own definition
+//! below.
 //!
 //! (The abandoned-segments intrusive Treiber stack that previously also lived
 //! here was removed — task #97 / R4-5. It was unreachable on the production
@@ -739,11 +748,43 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
 /// Push a slot index onto the `free_slots` stack.
 ///
 /// Delegates to [`tagged_index_stack::StackOps::push_index`] (now an
-/// `unsafe fn`) through `Registry`'s own `StackStorage` impl (the
-/// slot-resident links): the crate writes this slot's `next_free` link (via
-/// the impl's `store_next`) and bumps the ABA tag on the CAS. `idx <
-/// MAX_HEAPS` (the caller derived it from a valid heap pointer), so it fits
-/// the 16-bit index half with room below the empty sentinel.
+/// `unsafe fn` returning `Result<(), TagExhausted>` — the P1-1 seal fix)
+/// through `Registry`'s own `StackStorage` impl (the slot-resident links):
+/// the crate writes this slot's `next_free` link (via the impl's
+/// `store_next`) and bumps the ABA tag on the CAS. `idx < MAX_HEAPS` (the
+/// caller derived it from a valid heap pointer), so it fits the 16-bit index
+/// half with room below the empty sentinel.
+///
+/// # `Err(TagExhausted)` handling — an intentional, documented one-slot leak
+///
+/// `free_slots`' tag is strictly monotonic (never wraps — see this module's
+/// "ABA defence" section) and SEALS once it reaches
+/// `tagged_index_stack::TaggedIndex::TAG_MAX`: every push through this ONE
+/// head thereafter returns `Err(TagExhausted)`, permanently (pops are
+/// unaffected). Reaching that point needs `>= 2^48 - 1` successful pushes
+/// onto `free_slots` over this process's whole lifetime — this module's ABA
+/// defence section's own budget analysis puts that at a MINIMUM of ~3.3 days
+/// of continuously saturated pushes at the crate's documented hardware
+/// ceiling, realistically far longer for an actual workload — astronomically
+/// rare, but no longer merely "improbable" the way a wrap-based ABA
+/// collision used to be: this crate's contract now makes it a real, though
+/// vanishingly unlikely, terminal event, not a probabilistic risk. On that
+/// `Err`, the caller has ALREADY performed the `LIVE → FREE` slot-state CAS
+/// (in `recycle` / `push_back_after_oom`), so `idx`'s slot is genuinely
+/// `FREE` — but the index itself never rejoins `free_slots`: it is dropped
+/// here, leaking exactly ONE slot out of `MAX_HEAPS` (never reclaimed,
+/// silently unavailable to future `claim`s). This is the deliberate
+/// trade-off, not an oversight: panicking in an allocator's free path (an
+/// abort-equivalent failure mode) is worse than losing one slot once, this
+/// deep into the tag's lifetime, and propagating the error up through
+/// `recycle`'s `pub unsafe fn` (a `GlobalAlloc`-adjacent deallocation path
+/// with no natural place to surface a `Result`) would force every caller —
+/// realistically forever unreachable — to handle a case with no actionable
+/// recovery. Once `free_slots` is sealed, every SUBSEQUENT recycle leaks one
+/// more slot the same way — a slow-motion, terminal exhaustion of the free
+/// list, not a single one-off loss — matching `StackHead`'s own documented
+/// "Sealing is permanent — no reset" posture (`tagged-index-stack`'s
+/// crate docs): no reset/rotation API exists or is planned, by design.
 fn push_free_slot(reg: &Registry, idx: u32) {
     debug_assert!(
         (idx as usize) < MAX_HEAPS,
@@ -777,17 +818,25 @@ fn push_free_slot(reg: &Registry, idx: u32) {
     //   LIVE` winner can put it back there); the `LIVE → FREE` CAS in this
     //   path is defensive shape whose success is debug-asserted only (run-5
     //   P4-3). In both paths the slot-state machine guarantees at most one
-    //   owner, so the index is never simultaneously reachable and re-pushed.
+    //   owner, so the index is never simultaneously reachable and re-pushed —
+    //   and (P1-1 fix) this liveness argument is now UNCONDITIONALLY sound,
+    //   not conditionally-safe-modulo-wrap: previously a lost-CAS observer
+    //   parked across a full tag wrap could reinstall a stale expectation
+    //   regardless of the slot-state machine; since the tag can no longer
+    //   wrap (it seals instead — see `push_index`'s `# Errors`), no amount of
+    //   further churn can ever reinstate a stale `(index, tag)` pair, so this
+    //   argument holds for the head's ENTIRE lifetime, not just "until an
+    //   astronomically distant wrap".
     // Under loom the mirror `StackOps::push_index` (bootstrap.rs loom_shim)
     // is a SAFE fn (divergence note 7), so the unsafe block is cfg-gated.
     #[cfg(not(loom))]
-    unsafe {
-        reg.push_index(idx)
-    }
+    let result = unsafe { reg.push_index(idx) };
     #[cfg(loom)]
-    {
-        reg.push_index(idx);
-    }
+    let result = reg.push_index(idx);
+
+    // See this function's own doc ("`Err(TagExhausted)` handling") for why
+    // this is an intentional no-op leak, not a panic or a propagated error.
+    let _ = result;
 }
 
 /// Mint a fresh slot by bumping `count`. Returns the new slot's index, or

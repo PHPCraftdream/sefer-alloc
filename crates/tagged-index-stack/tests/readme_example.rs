@@ -24,7 +24,7 @@ fn readme_example_compiles_and_runs() {
     let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
     // SAFETY: fresh stack (domain 0..1024); index 7 is in-domain and this is its first push ("recycle").
-    unsafe { stack.push(7) }; // recycle index 7
+    unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
     assert_eq!(stack.pop(), Some(7)); // recycled index comes back out
 
     assert_eq!(

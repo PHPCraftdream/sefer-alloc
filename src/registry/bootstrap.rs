@@ -497,14 +497,19 @@ pub(crate) mod loom_shim {
     //   5. the shipped `push_index`/`pop_index` now pack through the
     //      crate-PRIVATE truncating fast path (`pack_truncating`); this
     //      shim cannot name that private item, so it packs through the
-    //      checked public `pack` (which returns `Option`) — with push's
-    //      tag-wrap mask applied explicitly at the call site (the real
-    //      push's `wrapping_add(1)` legitimately produces `2^TAG_BITS` at
-    //      the ABA wrap boundary, which the checked pack rejects and the
-    //      private helper truncates). The `.expect`s below make the shim's
-    //      in-range caller guarantees explicit; an `expect` firing would
-    //      be a model bug, and it adds no atomic ops for loom to
-    //      interleave.
+    //      checked public `pack` (which returns `Option`) instead. Since
+    //      the P1-1 seal fix (below) this needs no special-casing: the real
+    //      `push_index_impl` refuses instead of wrapping once the tag
+    //      reaches `TaggedIndex::TAG_MAX`, so the tag this shim ever hands
+    //      to `pack` is always `<= TAG_MAX` — always in range — and the
+    //      `.expect`s below make the shim's in-range caller guarantees
+    //      explicit; an `expect` firing would be a model bug, and it adds
+    //      no atomic ops for loom to interleave. (Pre-P1-1-fix this note
+    //      described an explicit tag-wrap mask at the push call site,
+    //      because the real code's `wrapping_add(1)` could legitimately
+    //      produce `2^TAG_BITS` at the old wrap boundary, which the checked
+    //      `pack` rejects; that boundary no longer exists in the real code
+    //      or this shim.)
     //   6. the shim's `push_index` loads the head with `Acquire` where the
     //      shipped `push_index_impl` loads it `Relaxed` (that load's own
     //      comment in the crate proves `Relaxed` sufficient: push uses the
@@ -525,10 +530,15 @@ pub(crate) mod loom_shim {
     //      shim, not lockstep drift: the loom model checks the head protocol,
     //      not the `unsafe` boundary, and the shim's callers are the same
     //      registry paths whose SAFETY proofs (see `heap_registry.rs`'s
-    //      `push_free_slot`) discharge the real contract.
+    //      `push_free_slot`) discharge the real contract. The P1-1 seal
+    //      (`-> Result<(), TagExhausted>`, refusing once the tag reaches
+    //      `TaggedIndex::TAG_MAX`) is now part of the real protocol this
+    //      shim mirrors, so it is NOT listed as a divergence — see the shim's
+    //      `push_index` body below, which matches `push_index_impl`'s
+    //      seal-check placement (before any side effect) exactly.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
-    use tagged_index_stack::{TaggedIndex, TAIL};
+    use tagged_index_stack::{TagExhausted, TaggedIndex, TAIL};
 
     /// Const-capable stand-in for the tagged free-list head
     /// (`tagged_index_stack::StackHead<16>`) + StackStorage/StackOps binding,
@@ -587,34 +597,41 @@ pub(crate) mod loom_shim {
     /// for every `StackStorage` implementor (same shape as the crate).
     pub(crate) trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
         /// Head-protocol replica of `StackOps::push_index` (Release CAS, tag
-        /// bump, RAD-1 lazy link write inside push only; no backoff and no
-        /// caller-contract guard — see the module comment above).
+        /// bump, RAD-1 lazy link write inside push only, P1-1 seal at the
+        /// tag ceiling; no backoff and no link-domain/liveness caller-contract
+        /// guard — see the module comment above).
         /// Divergence note 7: this is a safe `fn`, while the real crate's
         /// `StackOps::push_index` is now an `unsafe fn` with a caller-side
         /// link-domain + liveness contract — an intentional, documented shim
-        /// divergence, not lockstep drift.
-        fn push_index(&self, index: u32) {
+        /// divergence, not lockstep drift. The `Result<(), TagExhausted>`
+        /// return type and the seal check below are NOT a divergence: they
+        /// mirror the real protocol exactly.
+        fn push_index(&self, index: u32) -> Result<(), TagExhausted> {
             let head_ref = self.head();
             // Divergence note 6: deliberately STRONGER than the shipped
             // `push_index_impl`'s `Relaxed` initial head load.
             let mut head = head_ref.load(Ordering::Acquire);
             loop {
+                let (cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+                // P1-1 seal: mirrors `push_index_impl`'s check exactly —
+                // same placement (after unpack, before any side effect), so
+                // a first-attempt refusal here has no observable effect
+                // either.
+                if tag == TaggedIndex::<INDEX_BITS>::TAG_MAX {
+                    return Err(TagExhausted);
+                }
                 let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                     TAIL
                 } else {
-                    let (cur_idx, _tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                     cur_idx
                 };
                 self.store_next(index, next_link);
-                let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
-                // Explicit tag-wrap mask (divergence note 5): the real push
-                // hands wrapping_add(1)'s possible 2^TAG_BITS to its private
-                // truncating pack, whose shift drops the high bit; the
-                // checked pack this shim must use would REJECT that value.
-                let new_tag =
-                    (tag.wrapping_add(1)) & ((1u64 << TaggedIndex::<INDEX_BITS>::TAG_BITS) - 1);
+                // In range by construction: `tag < TAG_MAX` (checked above),
+                // so `tag + 1 <= TAG_MAX` — no wrap, no mask needed (see
+                // divergence note 5).
+                let new_tag = tag + 1;
                 let new_head = TaggedIndex::<INDEX_BITS>::pack(index, new_tag).expect(
-                    "shim halves in range: slot index < INDEX_MASK (divergence note 2), tag masked above",
+                    "shim halves in range: slot index < INDEX_MASK (divergence note 2), tag <= TAG_MAX (checked above)",
                 );
                 match head_ref.compare_exchange(
                     head,
@@ -622,7 +639,7 @@ pub(crate) mod loom_shim {
                     Ordering::Release,
                     Ordering::Relaxed,
                 ) {
-                    Ok(_) => return,
+                    Ok(_) => return Ok(()),
                     Err(actual) => head = actual,
                 }
             }

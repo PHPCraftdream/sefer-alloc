@@ -175,11 +175,27 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         (1u32 << INDEX_BITS) - 1
     };
 
-    /// Number of bits carrying the tag (`64 - INDEX_BITS`). The tag wraps at
-    /// `2^TAG_BITS`.
+    /// Number of bits carrying the tag (`64 - INDEX_BITS`). The tag is
+    /// strictly monotonic and SEALS at [`TAG_MAX`](Self::TAG_MAX) — it does
+    /// not wrap.
     pub const TAG_BITS: u32 = {
         let () = Self::_CHECK_BITS;
         64 - INDEX_BITS
+    };
+
+    /// Largest tag a head word can carry: `2^TAG_BITS - 1`. A push that
+    /// observes this tag on the current head is refused
+    /// (`Err(`[`TagExhausted`]`)`) instead of bumping it to `2^TAG_BITS`,
+    /// which would wrap back to 0 and re-issue a `(index, tag)` head word
+    /// that a popper parked since the previous cycle may still hold as its
+    /// stale CAS expectation — see
+    /// [`push_index`](StackOps::push_index)'s `# Errors` section and the
+    /// crate-root docs' "The tag is strictly monotonic" section.
+    /// [`pack`](Self::pack)`(_, TAG_MAX)` is `Some`; `pack(_, TAG_MAX + 1)`
+    /// is `None`.
+    pub const TAG_MAX: u64 = {
+        let () = Self::_CHECK_BITS;
+        (1u64 << Self::TAG_BITS) - 1
     };
 
     /// Pack `(index, tag)` into one `u64`, CHECKED: `Some(word)` for an
@@ -308,6 +324,35 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     }
 }
 
+/// A push was refused because the head's running tag is already
+/// [`TaggedIndex::TAG_MAX`]: bumping it would wrap to 0 and re-issue a
+/// `(index, tag)` head word that a popper parked since the previous cycle
+/// may still hold as its CAS expectation — the exact stale-CAS double-issue
+/// the tag exists to prevent (see the crate-root docs' "The tag is strictly
+/// monotonic" section). The stack is now SEALED: every further
+/// [`push_index`](StackOps::push_index) is refused the same way,
+/// permanently; [`pop_index`](StackOps::pop_index) is unaffected and drains
+/// the remaining chain normally. The refused index was never published and
+/// remains owned by the caller — nothing leaked by this error alone.
+///
+/// No `core::error::Error` impl: this crate's declared MSRV
+/// (`Cargo.toml`'s `rust-version`) is 1.79, and `core::error::Error`
+/// stabilized in 1.81. Deferred, not silently skipped — add the impl in a
+/// future change once the MSRV floor moves past 1.81.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TagExhausted;
+
+impl core::fmt::Display for TagExhausted {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "tagged-index-stack: push refused, the head's tag has reached \
+             TaggedIndex::TAG_MAX; the stack is sealed (pops still work, \
+             pushes are refused permanently)"
+        )
+    }
+}
+
 /// The head word of a tagged Treiber free-list: a single `AtomicU64` packing an
 /// `(index | tag)` pair (see [`TaggedIndex`]). Owned by exactly one
 /// [`StackStorage`] implementor value at a time, and bound to one link
@@ -332,6 +377,22 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 /// this stack in a `#[repr(align(64))]` newtype or interpose padding — rather
 /// than paying for blanket alignment inside the crate, which would waste most
 /// of a cache line for every embedder that does not need the isolation.
+///
+/// # Sealing is permanent — no reset
+///
+/// Once [`pushes_remaining`](Self::pushes_remaining) reaches 0 (the tag is
+/// [`TaggedIndex::TAG_MAX`]), this head is sealed and stays sealed: there is
+/// no reset/rotation API, and none will be added. An in-place reset would be
+/// a plain `store` on `head` — breaking the release-sequence invariant
+/// documented on the private field below — AND would restore tag 0,
+/// reintroducing the exact full-wrap collision this seal exists to close
+/// (see the crate-root docs' H-2 note on why a naive tag reset is unsound in
+/// general). A sealed head cannot be reset. A replacement must be a
+/// distinct [`StackHead`] object; if it reuses the same link cells and index
+/// population, the sealed head must first be fully drained
+/// ([`pop_index`](StackOps::pop_index) → `None` repeatedly until empty) and
+/// must outlive every popper that may still reference it — for a `'static`
+/// head, forever.
 #[derive(Debug)]
 pub struct StackHead<const INDEX_BITS: u32> {
     /// INVARIANT (release sequence): every modification of `head` MUST be a
@@ -412,6 +473,44 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         TaggedIndex::<INDEX_BITS>::is_empty(self.head.load(Ordering::Relaxed))
+    }
+
+    /// Successful pushes this head can still accept before
+    /// [`push_index`](StackOps::push_index) starts refusing with
+    /// `Err(`[`TagExhausted`]`)`: `TaggedIndex::TAG_MAX - tag`. `0` means
+    /// sealed — every future push is refused (see "Sealing is permanent"
+    /// above).
+    ///
+    /// Advisory `Relaxed` load, same posture as [`is_empty`](Self::is_empty):
+    /// a concurrent push can make this stale the instant it returns. A
+    /// plain load touches nothing, so the release-sequence invariant on the
+    /// private `head` field (see its doc) is untouched.
+    #[must_use]
+    pub fn pushes_remaining(&self) -> u64 {
+        let (_, tag) = TaggedIndex::<INDEX_BITS>::unpack(self.head.load(Ordering::Relaxed));
+        TaggedIndex::<INDEX_BITS>::TAG_MAX - tag
+    }
+
+    /// **test-only** constructor seeding a specific tag, for a tiny-tag
+    /// regression oracle at the REAL tag width — never via a
+    /// `TAG_BITS`-reducing cfg (this crate's Option-4 tiny-tag oracle
+    /// convention). Builds fresh atomic storage directly
+    /// (`AtomicU64::new(..)`): this is INITIALISATION, not a plain `store`
+    /// on a live head, so the release-sequence invariant documented on the
+    /// private `head` field is untouched.
+    ///
+    /// `#[doc(hidden)]` + gated: same test-only-forwarder convention as
+    /// [`raw_head`](Self::raw_head) — see its rationale.
+    #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
+    #[must_use]
+    pub fn with_tag_for_test(tag: u64) -> Self {
+        Self {
+            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::pack_truncating(
+                TaggedIndex::<INDEX_BITS>::empty_index(),
+                tag,
+            )),
+        }
     }
 
     /// The raw packed head word (`Acquire`) — for this crate's own diagnostics
@@ -1069,6 +1168,12 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///    it before the head CAS publishes `index`). Do not read this
     ///    clause as forbidding a lost-CAS observer.
     ///
+    ///    This sub-clause is sound precisely because the tag never wraps
+    ///    (see the crate-root docs' "The tag is strictly monotonic"
+    ///    section): the lost-CAS observer's `(index, tag)` expectation can
+    ///    never be reinstalled, so its CAS is guaranteed to fail regardless
+    ///    of what this push does.
+    ///
     /// The obligation is stated over LINK CELLS, not over "the stack":
     /// link cells shared between two
     /// stacks with completely separate heads are clause 3's binding-level
@@ -1099,16 +1204,38 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// self-loop detector PANICS on the first pop through it instead of
     /// looping.
     ///
+    /// # Errors
+    ///
+    /// Returns `Err(`[`TagExhausted`]`)` — publishing nothing — when the
+    /// head's running tag is already [`TaggedIndex::TAG_MAX`]: bumping it
+    /// would wrap to 0, and a wrapped tag re-issues a `(index, tag)` head
+    /// word that a popper parked since the previous cycle may still hold as
+    /// its CAS expectation — the exact stale-CAS double-issue the tag
+    /// exists to prevent. The stack is then sealed: every subsequent
+    /// [`push_index`](Self::push_index) returns the same error,
+    /// permanently; [`pop_index`](Self::pop_index) is unaffected and drains
+    /// the remaining chain. The refused `index` remains the caller's. A
+    /// refusal on a CAS retry may have left stale content in `index`'s link
+    /// cell from an earlier iteration of the retry loop — the RAD-1
+    /// discipline already makes that irrelevant (the next successful push
+    /// of `index` overwrites it before publishing); a refusal on the FIRST
+    /// attempt has no side effect at all, since the check runs before the
+    /// link write, but this distinction does not matter to a caller — the
+    /// refused index is unaffected either way. This is legitimate resource
+    /// exhaustion, not a caller-contract violation — unlike the panics
+    /// below, hence `Err`, not a panic.
+    ///
     /// # Panics
     ///
     /// Panics if `index >= INDEX_MASK` (the empty sentinel is reserved), in
-    /// both debug and release builds — this is a caller-contract violation
-    /// checked unconditionally, not a `debug_assert!`, because the failure
-    /// mode is silent free-list corruption rather than a merely-suboptimal
-    /// fallback. The formatted panic payload is allocated through the global
-    /// allocator, so a consumer running this stack inside its own
-    /// `#[global_allocator]` allocation path should treat this guard firing
-    /// as abort-equivalent, not catchable-and-recoverable.
+    /// both debug and release builds — this IS a caller-contract violation
+    /// (unlike tag exhaustion above), checked unconditionally, not a
+    /// `debug_assert!`, because the failure mode is silent free-list
+    /// corruption rather than a merely-suboptimal fallback. The formatted
+    /// panic payload is allocated through the global allocator, so a
+    /// consumer running this stack inside its own `#[global_allocator]`
+    /// allocation path should treat this guard firing as abort-equivalent,
+    /// not catchable-and-recoverable.
     ///
     /// That guard is the only bound this method itself checks, and it
     /// depends on `INDEX_BITS` alone. The [`StackStorage`] implementation's
@@ -1125,7 +1252,7 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     // the `core::alloc::GlobalAlloc::dealloc` analogue — relied on for
     // memory safety by allocator consumers; see the `# Safety` section
     // above.
-    unsafe fn push_index(&self, index: u32);
+    unsafe fn push_index(&self, index: u32) -> Result<(), TagExhausted>;
 
     /// Pop the top index off the stack (classic Treiber pop), or `None` if
     /// empty.
@@ -1134,9 +1261,12 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// link with the same tag (a pop never bumps the tag). The tag in the high
     /// bits is the ABA defence: if a concurrent thread pops-then-repushes the
     /// same index between our load and our CAS, the tag advances and our CAS
-    /// fails. (The residual hazard is a full tag wrap while this thread stays
-    /// parked the whole time — bounded, see the crate docs' "Tag-width budget"
-    /// section.)
+    /// fails. The tag is strictly monotonic (see the crate-root docs' "The
+    /// tag is strictly monotonic" section) —
+    /// [`push_index`](Self::push_index) refuses instead of wrapping once the
+    /// tag reaches [`TaggedIndex::TAG_MAX`] (`Err(`[`TagExhausted`]`)`), so
+    /// this defence cannot be defeated by a full tag cycle no matter how
+    /// long a thread stays parked: ABA is eliminated, not merely mitigated.
     ///
     /// **H-2 empty transition:** when the popped element is the last one
     /// (`next == TAIL`), the new head packs the empty sentinel's index with the
@@ -1328,7 +1458,7 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> SealedStorage<B> for S {
 pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(
     s: &S,
     index: u32,
-) {
+) -> Result<(), TagExhausted> {
     let mask = TaggedIndex::<B>::INDEX_MASK;
     if u64::from(index) >= mask {
         push_index_out_of_range(index, mask);
@@ -1349,6 +1479,18 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // Unpack the current head once: the index half chains this push to
         // the top of the stack (below), the tag half feeds the ABA bump.
         let (cur_idx, tag) = TaggedIndex::<B>::unpack(head);
+        // Seal check (P1-1 fix): bumping this tag would wrap it to 0,
+        // re-issuing a (index, tag) head word a parked popper may still
+        // hold as its stale CAS expectation. Refuse instead of wrapping —
+        // BEFORE any side effect (store_next below): a first-attempt
+        // refusal touches nothing; a refusal on a CAS retry may leave
+        // stale content in `index`'s link cell from an earlier iteration
+        // of this same retry loop, which the RAD-1 discipline already
+        // makes irrelevant (the next successful push overwrites it before
+        // publishing) — see `StackOps::push_index`'s `# Errors`.
+        if tag == TaggedIndex::<B>::TAG_MAX {
+            return Err(TagExhausted);
+        }
         // The link this index chains to: the current head's index, or TAIL
         // if the stack is empty. The empty sentinel packs INDEX_MASK, which
         // is <= 0xFFFF at every legal width per `_CHECK_BITS`, so it can no
@@ -1405,7 +1547,7 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // multi-target A/B codegen comparison IS done (a real `ldar`/`stlr`
         // delta exists) — see `StackStorage`'s "Ordering contract".
         match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
-            Ok(_) => return,
+            Ok(_) => return Ok(()),
             Err(actual) => {
                 // Retry-counter oracle (see `PUSH_RETRY_COUNT` below): a
                 // REAL core atomic, so counts survive loom re-runs;
@@ -1513,7 +1655,7 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
 #[allow(unsafe_code)]
 impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
     #[track_caller]
-    unsafe fn push_index(&self, index: u32) {
+    unsafe fn push_index(&self, index: u32) -> Result<(), TagExhausted> {
         push_index_impl::<B, S>(self, index)
     }
 
@@ -1648,6 +1790,10 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     ///
     /// Same contract as [`StackOps::push_index`]'s `# Safety` — see there
     /// (one normative location; this crate cross-references it).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`StackOps::push_index`]'s `# Errors` — see there.
     // `#[track_caller]` chains the caller location through the forwarder down
     // to `push_index_impl` and its `#[cold]` panic helper, so diagnostics through
     // the owned type name the user's call site exactly as the trait method does.
@@ -1656,7 +1802,7 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     // Single documented reason to hold `unsafe`: forwards
     // `StackOps::push_index`'s caller-side unsafe contract (link domain +
     // liveness) to the shared body `push_index_impl`.
-    pub unsafe fn push(&self, index: u32) {
+    pub unsafe fn push(&self, index: u32) -> Result<(), TagExhausted> {
         push_index_impl::<B, _>(self, index)
     }
 
@@ -1681,6 +1827,14 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.head.is_empty()
+    }
+
+    /// Successful pushes this head can still accept before `push` starts
+    /// refusing with `Err(`[`TagExhausted`]`)` — forwarder to
+    /// [`StackHead::pushes_remaining`].
+    #[must_use]
+    pub fn pushes_remaining(&self) -> u64 {
+        self.head.pushes_remaining()
     }
 
     /// The raw packed head word (`Acquire`) — forwarder to
@@ -1731,6 +1885,39 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     #[cfg(any(feature = "test-internals", loom))]
     pub fn load_next_for_test(&self, index: u32) -> u32 {
         self.links.load_next(index)
+    }
+
+    /// **test-only** write-side twin of [`load_next_for_test`] — stores
+    /// `next` into `index`'s link cell directly
+    /// ([`ArrayLinks::store_next`], `Release`), bypassing the stack
+    /// algorithm entirely. Needed for a hand-inlined counterfactual that
+    /// reproduces the OLD (pre-seal) wrapping behaviour without going
+    /// through the real, now-sealing, [`push`](Self::push) — see
+    /// `tests/loom_aba.rs`'s tiny-tag counterfactual.
+    ///
+    /// `#[doc(hidden)]` per this crate's established test-only-forwarder
+    /// rationale (see [`raw_head`]). Gated: same `test-internals`/loom gate
+    /// as [`load_next_for_test`] — it does not exist in a default build.
+    #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
+    pub fn store_next_for_test(&self, index: u32, next: u32) {
+        self.links.store_next(index, next);
+    }
+
+    /// **test-only** constructor seeding a specific tag, for a tiny-tag
+    /// regression oracle at the REAL tag width — forwarder to
+    /// [`StackHead::with_tag_for_test`]; see its doc.
+    ///
+    /// `#[doc(hidden)]` + gated: same test-only-forwarder convention as
+    /// [`raw_head`].
+    #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
+    #[must_use]
+    pub fn with_tag_for_test(tag: u64) -> Self {
+        Self {
+            head: StackHead::with_tag_for_test(tag),
+            links: ArrayLinks::new(),
+        }
     }
 }
 

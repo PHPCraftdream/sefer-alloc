@@ -367,7 +367,9 @@ fn array_links_store_next_panics_on_index_out_of_range() {
     let stack = ArrayIndexStack::<16, 4>::new();
     // SAFETY: DELIBERATE contract violation under test — index 5 is outside the ArrayLinks<4> domain
     // (0..4); the links-layer panic it triggers is this test's subject.
-    unsafe { stack.push(5) }; // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
+    // Result discarded: the ArrayLinks bound panics before push_index_impl
+    // would ever return a value here.
+    let _ = unsafe { stack.push(5) }; // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
 }
 
 /// [`pop_index`]'s clause-4 guard fires when a [`StackStorage`] implementor
@@ -415,7 +417,7 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
         head: StackHead::new(),
     };
     // SAFETY: no-op backing, fresh (empty head); index 0 is not live and this storage has no link domain bound to breach.
-    unsafe { storage.push_index(0) }; // real push, so the head is non-empty
+    unsafe { storage.push_index(0) }.expect("fresh head has tag budget"); // real push, so the head is non-empty
     let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }
 
@@ -436,10 +438,10 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
 fn double_push_of_current_head_panics_on_first_pop() {
     let stack = ArrayIndexStack::<16, 64>::new();
     // SAFETY: fresh stack (domain 0..64); index 1 is in-domain and this is its first push.
-    unsafe { stack.push(1) };
+    unsafe { stack.push(1) }.expect("fresh head has tag budget");
     // SAFETY: DELIBERATE contract violation under test — index 1 is the CURRENT head (live); the
     // self-loop the re-push writes is what the following pop's guard fires on.
-    unsafe { stack.push(1) }; // re-push the CURRENT head: writes next[1] = 1
+    unsafe { stack.push(1) }.expect("fresh head has tag budget"); // re-push the CURRENT head: writes next[1] = 1
     let _ = stack.pop(); // first pop: self-loop -> panic
 }
 
@@ -470,7 +472,7 @@ fn push_pop_is_lifo() {
     let stack = ArrayIndexStack::<16, 8>::new();
     for i in 0..5u32 {
         // SAFETY: fresh stack (domain 0..8); each index 0..5 is in-domain and pushed exactly once.
-        unsafe { stack.push(i) };
+        unsafe { stack.push(i) }.expect("fresh head has tag budget");
     }
     let mut got = Vec::new();
     while let Some(i) = stack.pop() {
@@ -492,7 +494,7 @@ fn width_1_stack_push_pop_round_trips_its_sole_index() {
     let stack = ArrayIndexStack::<1, 1>::new();
     assert!(stack.is_empty(), "a fresh (lazy-link) stack is empty");
     // SAFETY: fresh stack (sole in-domain index 0); not yet pushed.
-    unsafe { stack.push(0) };
+    unsafe { stack.push(0) }.expect("fresh head has tag budget");
     assert!(!stack.is_empty(), "the sole index is on the stack");
     assert_eq!(stack.pop(), Some(0));
     assert!(stack.is_empty(), "drained back to empty");
@@ -510,7 +512,7 @@ fn empty_transition_preserves_running_tag() {
     let stack = ArrayIndexStack::<16, 4>::new();
 
     // SAFETY: fresh stack (domain 0..4); index 0 is in-domain and this is its first push.
-    unsafe { stack.push(0) }; // tag 0 -> 1
+    unsafe { stack.push(0) }.expect("fresh head has tag budget"); // tag 0 -> 1
     let (_v, tag_after_push1) = T::unpack(stack.raw_head());
     assert_eq!(tag_after_push1, 1);
 
@@ -527,7 +529,7 @@ fn empty_transition_preserves_running_tag() {
 
     // Refill the same index: the push reads the running tag (1) and bumps to 2.
     // SAFETY: index 0 was just popped (drained to empty), so it is not live; in-domain by construction.
-    unsafe { stack.push(0) };
+    unsafe { stack.push(0) }.expect("fresh head has tag budget");
     let (_v2, tag_after_push2) = T::unpack(stack.raw_head());
     assert_eq!(
         tag_after_push2, 2,
@@ -559,7 +561,7 @@ fn links_are_lazy() {
     // have touched index 3's link (a pop never writes a link, a push writes
     // only the pushed index's own link).
     // SAFETY: fresh stack (domain 0..4); index 0 is in-domain and this is its first push.
-    unsafe { stack.push(0) };
+    unsafe { stack.push(0) }.expect("fresh head has tag budget");
     assert_eq!(stack.pop(), Some(0));
     assert_eq!(
         stack.load_next_for_test(3),
@@ -605,7 +607,7 @@ fn default_array_index_stack_behaves_like_new() {
         "Default == new: the lazy-link stack starts empty"
     );
     // SAFETY: fresh default stack (domain 0..8); index 7 is in-domain and this is its first push.
-    unsafe { stack.push(7) };
+    unsafe { stack.push(7) }.expect("fresh head has tag budget");
     assert!(!stack.is_empty());
     assert_eq!(stack.pop(), Some(7));
 }

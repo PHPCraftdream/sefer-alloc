@@ -47,8 +47,8 @@ fn main() {
     let owned: ArrayIndexStack<16, 8> = ArrayIndexStack::new();
     // SAFETY: fresh stacks (domain 0..8); indices 1 and 2 are in-domain and
     // pushed exactly once on each binding.
-    unsafe { pool.push_index(1) };
-    unsafe { owned.push(2) };
+    unsafe { pool.push_index(1) }.expect("fresh head has tag budget");
+    unsafe { owned.push(2) }.expect("fresh head has tag budget");
     // Index 0 is in each binding's 0..8 domain and was never pushed through
     // either, so the ONLY compile errors are the unsafe-call errors themselves.
     // Bare call outside an `unsafe` block. ERROR: E0133 — call to unsafe

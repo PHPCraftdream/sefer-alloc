@@ -1,20 +1,37 @@
 //! `tagged-index-stack` — a lock-free LIFO free-list of small **indices** (a
 //! *slot recycler*) whose head is a single atomic word packing an
-//! `(index | tag)` pair, where a wrapping generation **tag** in the high bits
-//! mitigates the ABA problem: the tag defeats the ordinary short-window ABA
-//! pattern, but it is finite and demonstrably wraps, so ABA is reduced to a
-//! quantified recurrence risk, not eliminated. A collision requires a full tag
-//! wrap — `2^TAG_BITS` successful pushes anywhere on the stack — occurring
-//! while one specific victim thread stays parked holding its stale snapshot
-//! for that entire span; until both conditions hold, the stale CAS fails and
-//! retries. The enforced `1..=16` cap on `INDEX_BITS` guarantees every legal
-//! configuration a tag of at least 48 bits; the "Tag-width budget" section
-//! below derives the hardware-bounded floor on that recurrence window. The
-//! floor is a risk-reduction argument, not a proof of impossibility:
-//! suspending a thread is outside the crate's control, and accepting that
-//! residual risk is part of the caller's contract. Lock-freedom here describes
-//! the stack's own CAS loops; end-to-end it additionally requires a
-//! non-blocking [`StackStorage`] implementation.
+//! `(index | tag)` pair, where a STRICTLY MONOTONIC generation **tag** in the
+//! high bits eliminates the ABA problem outright — it never wraps. Every
+//! successful push installs a tag exactly one greater than the one it
+//! observed, and a push that observes the ceiling
+//! ([`TaggedIndex::TAG_MAX`]) is refused (`Err(`[`TagExhausted`]`)`) instead
+//! of wrapping back to 0 — see [`push_index`](StackOps::push_index)'s
+//! `# Errors` section. Consequently every `(index, tag)` head word occurs in
+//! at most one contiguous interval of the head's history, so a stale CAS can
+//! never be reinstated by a later cycle: ABA is eliminated, not merely
+//! mitigated (see "The tag is strictly monotonic" below). The enforced
+//! `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a tag of
+//! at least 48 bits, so a head accepts at least `2^48 - 1` successful pushes
+//! before it seals; the "Tag-width budget" section below derives the
+//! hardware-bounded floor on that LIFETIME (pushes are refused thereafter,
+//! permanently — pops are unaffected and keep draining the remaining chain).
+//! Lock-freedom here describes the stack's own CAS loops; end-to-end it
+//! additionally requires a non-blocking [`StackStorage`] implementation.
+//!
+//! # The tag is strictly monotonic — it never wraps
+//!
+//! Every successful push installs a tag exactly one greater than the one it
+//! observed, and a push that observes [`TaggedIndex::TAG_MAX`] is refused
+//! (`Err(`[`TagExhausted`]`)`) instead of wrapping to 0. Consequently every
+//! `(index, tag)` head word occurs in at most one contiguous interval of the
+//! head's history — from the push that installed it until the pop that
+//! removes `index` — so a popper's CAS expecting `(index, tag)` can succeed
+//! only while `index` is still the head it observed, and the link it read is
+//! the link that push wrote. ABA is eliminated, not mitigated. The price is
+//! a finite lifetime of `2^TAG_BITS - 1` successful pushes per head — at
+//! least `2^48 - 1` at every legal width — after which the stack is sealed
+//! (pops continue; pushes are refused). See [`StackHead`]'s "Sealing is
+//! permanent" section: there is no reset API, by design.
 //! Allocation-free, `no_std`; the production library source (`src/`) is
 //! `#![deny(unsafe_code)]` with exactly EIGHT audited `unsafe` sites, all
 //! item-scoped `#[allow(unsafe_code)]`, all in `src/imp.rs`: the `unsafe
@@ -136,17 +153,20 @@
 //! free from the start pushes `0..N` itself, or mints fresh indices via a
 //! separate monotonic counter and pushes only recycled ones here.)
 //!
-//! # Tag-width budget — the wrap-time bound behind the ABA mitigation
+//! # Tag-width budget — the pushes-until-sealed lifetime
 //!
-//! A tag defends against ABA only while it does not recur: a stale CAS can
-//! succeed again only if the head word returns to the exact `(index, tag)`
-//! pair the victim is holding, which takes a full tag wrap — `2^TAG_BITS`
-//! successful pushes anywhere in the stack — the last of them re-pushing the
-//! victim's own index, since the head must read exactly `(index, tag)` again,
-//! not merely reach the tag again. The time a wrap takes is
+//! Because the tag is strictly monotonic, it does not wrap — it SEALS: a
+//! head accepts successful pushes until its tag reaches
+//! [`TaggedIndex::TAG_MAX`] (`2^TAG_BITS - 1`), and the next push is refused
+//! (`Err(`[`TagExhausted`]`)`) rather than wrapping the tag back to 0. This
+//! is a LIFETIME bound, not a risk bound: once a head seals, pushes stop —
+//! loudly, via `Err`, never silently — because the tag never recurs, so
+//! there is no collision to reason about. This section derives how many
+//! successful pushes, and how much wall time at a hardware-bounded rate
+//! ceiling, a head's tag budget affords before that seal is reached:
 //!
 //! ```text
-//! wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
+//! seal_time = 2^TAG_BITS / aggregate_successful_push_rate
 //! ```
 //!
 //! and the rate term is bounded by hardware, not by the workload. The tag is
@@ -163,20 +183,21 @@
 //! Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling:
 //! at `INDEX_BITS = 16` — the widest permitted index half, 65535 usable
 //! indices with the `0xFFFF` empty sentinel reserved above them — the tag
-//! gets the other **48 bits**, wrapping at `2^48 ≈ 2.8 × 10^14`, and a wrap
-//! takes `2^48 / (2 × 10^8) ≈ 16` days; even at the optimistic top of the
-//! hardware range it is still `2^48 / 10^9 ≈ 3.3` days. And a wrap is only
-//! the precondition for a collision: cashing one in further requires that
-//! the head line stay saturated at the coherence ceiling continuously for
-//! the entire span and that one specific victim thread sit parked holding
-//! its stale snapshot the whole time. This bound is why `INDEX_BITS > 16` is
+//! gets the other **48 bits**, sealing after
+//! `2^48 - 1 ≈ 2.8 × 10^14` successful pushes, which takes
+//! `2^48 / (2 × 10^8) ≈ 16` days at the working ceiling; even at the
+//! optimistic top of the hardware range it is still `2^48 / 10^9 ≈ 3.3`
+//! days before a head this width seals — at which point pushes are refused
+//! (not corrupted), never silently. This bound is why `INDEX_BITS > 16` is
 //! rejected at compile time (`TaggedIndex::_CHECK_BITS`) rather than merely
 //! discouraged: at `INDEX_BITS = 24` the tag would be 40 bits,
-//! `2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling — a long debugger
-//! pause or OS scheduling delay defeats that — and the pre-cap `INDEX_BITS =
-//! 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21` seconds, within reach of
-//! ordinary scheduling jitter. Within the permitted range a caller still
-//! trades index range against tag headroom, but never below the 48-bit floor.
+//! `2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling — sealing a hot
+//! free-list within a single long-running process's ordinary lifetime is a
+//! real availability concern, not merely a debugger-pause hazard — and the
+//! pre-cap `INDEX_BITS = 32` maximum gave only `2^32 / (2 × 10^8) ≈ 21`
+//! seconds, well within reach of a single benchmark run. Within the
+//! permitted range a caller still trades index range against tag headroom,
+//! but never below the 48-bit floor.
 //!
 //! The rate assumption's order of magnitude is confirmed by this repository's
 //! own bench receipts
@@ -189,12 +210,20 @@
 //! pop+push pair per iteration, so the push-only rate is somewhat higher) —
 //! an order of magnitude under the working ceiling above.
 //!
-//! Read this section as what it is: a bound on the recurrence window — the
-//! minimum time a victim thread must stay parked, at saturated push rates,
-//! before its exact `(index, tag)` snapshot can recur. It does not prove
-//! recurrence impossible; a caller whose threads can be parked indefinitely
-//! (debuggers, stop-the-world pauses, extreme starvation) needs its own
-//! hazard/epoch-style protection on top.
+//! Read this section as what it is: a bound on how long — in pushes, and in
+//! wall time at a hardware-bounded rate ceiling — a head's tag budget lasts
+//! before [`push_index`](StackOps::push_index) starts refusing with
+//! `Err(`[`TagExhausted`]`)`. It is NOT a bound on a residual ABA risk: the
+//! seal makes tag recurrence impossible regardless of how long any thread
+//! stays parked (see "The tag is strictly monotonic" above) — a caller does
+//! not need its own hazard/epoch-style protection on top for correctness.
+//! What it DOES need, for AVAILABILITY, is either enough tag headroom for
+//! its expected process lifetime at this rate ceiling, or a plan for what
+//! happens once a head seals: drain and replace it with a distinct
+//! [`StackHead`] object (see [`StackHead`]'s "Sealing is permanent" section
+//! — there is no reset). A caller needing a longer lifetime trades index
+//! range for tag headroom via a narrower `INDEX_BITS` (see
+//! [`TaggedIndex::TAG_BITS`]).
 //!
 //! # Lock-freedom and starvation
 //!

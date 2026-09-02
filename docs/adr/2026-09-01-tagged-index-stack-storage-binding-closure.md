@@ -171,3 +171,138 @@ Each of the six demonstrating tests gets an explicit, documented post-change sta
 **One change closes both findings.** Review run-7's P1-1 AND P2-1 are closed by this ONE change: P1-1 — the bridge could not prove a backing cell exists for a narrower storage — now the caller proves domain membership compiler-checkably before the call; P2-1 — the liveness rule was prose-only on a safe fn — now clause 2 of a real unsafe contract.
 
 **What shipped.** `src/imp.rs`: `push_index`/`ArrayIndexStack::push`/`push_index_impl`/`SealedStorage::store_next` signature + contract change; ~52 test/bench call-site wraps with per-site SAFETY comments; the root `Registry` consumer (`push_free_slot`) unsafe-wrapped citing only release-active guards + the ACKNOWLEDGED EXPOSURE narrowing (external safe code can now only reach `pop_index`); the loom shim stays safe with divergence note 7; new compile-fail fixture `push_index_requires_unsafe` and miri unchecked-storage oracle `tests/narrow_domain_unchecked_storage.rs`; crate docs/README unsafe-site inventory updated 2→8.
+
+## Addendum (2026-09-02, third same-day): the tag stops wrapping — a strictly monotonic tag with a stateless seal at the ceiling (task #1839)
+
+**The decision.** Owner approved (2026-09-02, second-opinion architecture consult run before this task started) closing P1-1 from run-8's review
+(`docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md`)
+with Option 2 in a specific shape — a strictly monotonic tag with a
+stateless seal at the ceiling — plus Option 4 (a tiny-tag regression oracle
+implemented by seeding the tag near the ceiling at the REAL tag width, not a
+reduced-width cfg). `TaggedIndex::TAG_MAX` names the ceiling
+(`2^TAG_BITS - 1`); `push_index`/`ArrayIndexStack::push` now return
+`Result<(), TagExhausted>` instead of `()`, refusing a push that observes
+`TAG_MAX` rather than bumping it to `2^TAG_BITS` (which the old code
+truncated back to 0 via `pack_truncating`'s shift-discard — the wrap
+mechanism this closes). Once refused, the head is SEALED: every later push
+returns the same error, permanently; `pop_index` is unaffected and drains
+the remaining chain. No reset/rotation API exists or is planned — see
+`StackHead`'s "Sealing is permanent" doc section.
+
+**The counterexample this closes, restated from the review.** Let head =
+`(A, t)` with chain `A -> B -> TAIL`. Thread P begins a safe `pop_index`:
+reads `(A, t)`, then `next[A] = B`, and stalls before its CAS. Thread Q
+legitimately pops A then B (stack empty, same tag `t`); Q holds B. Q then
+does `2^TAG_BITS - 1` cycles of `push(A); pop(A)` (each a genuine
+in-domain, not-currently-live push — the precision sub-clause of clause 2
+above explicitly permits re-pushing after a stale-observer's lost CAS), then
+one final `push(A)` without popping. Every single push in that sequence is
+individually contract-compliant under BOTH of `push_index`'s existing
+clauses — neither the link-domain clause nor the liveness clause is ever
+violated — yet after exactly `2^TAG_BITS` total pushes the head reads `(A,
+t)` again: numerically IDENTICAL to what P captured before it ever stalled.
+P's stale CAS then succeeds, handing P index A while B — still legitimately
+Q's — becomes reachable through the corrupted chain, exposed to a second
+`pop_index` winner. This is a genuine violation of the exclusive-issuance
+promise `StackStorage`'s `# Safety` section makes to allocator consumers,
+reachable without either caller-side clause being broken — the finding this
+task exists to close.
+
+**Why Option 2 in this shape, not Option 1 or Option 3 (second-opinion
+rationale, recorded for this task's own record).** Option 1
+(hazard/epoch-style reclamation folded into the protocol) was rejected as
+architecturally wrong for this crate: `no_std`, allocation-free, and
+const-generic over index width, with no clean way to provide per-thread
+announcement slots; it would additionally add a fence/RMW to every `pop` to
+guard against an event that (pre-fix) needed a full tag cycle to become
+reachable at all, and it makes the tag mechanism itself redundant once
+quiescence is enforced structurally. Option 3 (downgrade the promise to a
+documented probabilistic risk, unchanged behaviour) was rejected because "no
+pop stays in-flight across a full tag cycle" is a timing property no caller
+can bound or discharge with a real `// SAFETY:` proof — it would have moved
+the review's NO-GO from a soundness gap to an unenforceable caller
+obligation, not closed it. Option 2 loses ZERO sound behaviour: every
+execution that was sound before this change stays byte-identical after it
+(the tag bump, the CAS orderings, H-2, and RAD-1 are all untouched) — the
+ONLY executions that change are ones that were CURRENTLY undefined
+behaviour under the old contract. Precedent cited during the consult:
+`Arc::clone` aborts at `isize::MAX` for the identical reason — a wrapped
+refcount is a use-after-free, so std chose terminal-and-loud over
+reclamation there too; this crate's seal is the `Result`-returning
+(non-aborting) analogue, appropriate because a stack push already has a
+natural place to surface a `Result` that `Arc::clone` does not.
+
+**Check placement and its RAD-1 interaction.** The `tag == TAG_MAX` check
+runs immediately after `unpack`, BEFORE `store_next` — so a first-attempt
+refusal has no side effect at all. A refusal on a CAS *retry* may leave
+stale content sitting in `index`'s link cell from an earlier iteration of
+that same retry loop; the existing RAD-1 discipline already covers this (a
+link cell is meaningless until a successful push republishes it), so this
+is not a new hazard the seal introduces — see `push_index`'s `# Errors`
+section, which states this explicitly rather than overclaiming "refusal has
+zero side effects in all cases."
+
+**`TAG_MAX` off-by-one, pinned two ways.** `TaggedIndex::pack(_, TAG_MAX)` is
+`Some`; `pack(_, TAG_MAX + 1)` is `None` — asserted directly in
+`tests/tag_seal.rs`'s `tag_max_is_the_exact_pack_ceiling`, alongside a
+`const _: () = assert!(TAG_MAX == (1u64 << TAG_BITS) - 1)` compile-time pin.
+
+**Option 4: the tiny-tag oracle seeds near the ceiling, never reduces
+`TAG_BITS`.** New `#[doc(hidden)]`, `test-internals`/loom-gated
+constructors — `StackHead::with_tag_for_test(tag)` (built via
+`AtomicU64::new(pack_truncating(..))`, i.e. INITIALISATION, not a live-head
+mutation, so the release-sequence invariant on `head` is untouched),
+`ArrayIndexStack::with_tag_for_test(tag)`, and the write-side twin of the
+existing `load_next_for_test` — `ArrayIndexStack::store_next_for_test`.
+`tests/tag_seal.rs` pins the single-threaded `Ok, Ok, Err` sequence at the
+ceiling, `pushes_remaining()`'s readback, a byte-identical `raw_head()`
+across a first-attempt refusal, that pops keep draining after a seal, and
+that the seal survives a full drain (permanent, no reset).
+`tests/loom_aba.rs`'s new "(h) Tiny-tag seal" section replays the review's
+exact stale-observer-plus-churn schedule at the REAL 48-bit-plus tag width,
+seeded a handful of pushes short of `TAG_MAX`: the FIXED test
+(`tiny_tag_seal_rejects_stale_cas_at_the_real_width`) drives Q's churn
+through the real, sealing `push` and confirms both that the seal engages
+(`Err(TagExhausted)`) and that P's stale CAS is rejected; the counterfactual
+(`counterfactual_bypassed_seal_lets_stale_cas_double_issue`, `#[should_panic]`)
+hand-inlines what the OLD wrapping `push` would have installed for Q's one
+final step — via `store_next_for_test` + a raw `cas_head_for_test`,
+bypassing the `TAG_MAX` check entirely — and proves P's stale CAS then
+SUCCEEDS and the free-list conservation check FAILS, the load-bearing proof
+that the seal (not just the tag bump) is what closes P1-1. That
+counterfactual's raw CAS installs the EXACT tag P observed, not a literal
+`(index, 0)`: a single real `wrapping_add(1)` past `TAG_MAX` truncates to
+tag 0 (see `pack_truncating`'s doc), but reaching P's stale tag again
+through real pushes needs an entire `2^TAG_BITS`-push lap — the actual
+arithmetic content of "wrap" is "returns to the exact starting tag after one
+full cycle," which the raw CAS installs directly, collapsing the
+infeasible-to-run lap into its end state.
+
+**Consumer update: `sefer-alloc::Registry`.** `push_free_slot`
+(`src/registry/heap_registry.rs`) now matches on `push_index`'s `Result`;
+on `Err(TagExhausted)` the slot is already `FREE` (the state CAS already
+ran) but the index never rejoins `free_slots` — an intentional, documented
+leak of exactly ONE slot, not a panic and not propagated as an error,
+because panicking in an allocator's free path is worse than losing one slot
+this deep into a `2^48`-push tag lifetime (this module's own "ABA defence"
+budget analysis puts the earliest reachable point at ~3.3 days of
+continuously saturated pushes onto ONE `free_slots` head). The loom shim
+(`src/registry/bootstrap.rs`'s `loom_shim::StackOps::push_index`) mirrors
+the real seal check exactly (same placement, same `Result` signature) — NOT
+listed as a new divergence note, because it isn't one; divergence note 5
+(the checked-vs-private-truncating `pack`) is updated to note the tag-wrap
+mask it used to need is now dead code, since the real protocol itself never
+produces an out-of-range tag anymore.
+
+**What shipped.** `crates/tagged-index-stack/src/imp.rs`: `TaggedIndex::TAG_MAX`,
+`TagExhausted`, `StackHead::pushes_remaining`/`with_tag_for_test`,
+`ArrayIndexStack::with_tag_for_test`/`store_next_for_test`, the seal check in
+`push_index_impl`, and the `Result`-returning signature change propagated
+through `StackOps::push_index`/`ArrayIndexStack::push`; `src/lib.rs` and
+`README.md`'s wrap-risk framing rewritten as a strictly-monotonic-tag /
+pushes-until-sealed-lifetime framing; new `tests/tag_seal.rs`; new "(h)"
+section in `tests/loom_aba.rs`; every in-workspace call site (root
+`sefer-alloc`'s `Registry::push_free_slot` + its loom shim, and every
+tagged-index-stack test/bench/example) updated to handle the `Result` in the
+same change; `CHANGELOG.md` (crate-local) gains a new `BREAKING (unpublished
+0.1.0)` bullet under `### Changed`.

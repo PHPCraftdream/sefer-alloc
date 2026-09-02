@@ -1,27 +1,23 @@
 # tagged-index-stack
 
 A lock-free LIFO free-list of small **indices** — a *slot recycler* — whose head
-is a single atomic word packing an `(index | tag)` pair, where a wrapping
-generation **tag** in the high bits mitigates the ABA problem for every
-permitted `INDEX_BITS`: the tag defeats the ordinary short-window ABA
-pattern, but it is finite and demonstrably wraps, so ABA is reduced to a
-quantified recurrence risk, not eliminated. A collision requires a FULL tag
-wrap — `2^TAG_BITS` successful pushes anywhere on the stack — occurring WHILE
-one specific victim thread stays parked holding its stale snapshot for that
-entire span. The mitigation is a derived, quantified bound: the enforced
-`INDEX_BITS` cap guarantees every legal configuration a large tag, and the
-crate docs' "Tag-width budget" section derives, from cache-coherence
-throughput on the single head cache line, a hardware-bounded floor
-of days of continuously saturated pushes at the widest permitted width on
-that recurrence window. The floor is an engineering risk-reduction
-argument, not a proof of impossibility:
-suspending a thread is outside the crate's control (a debugger pause, a
-stop-the-world pause, extreme starvation, instrumentation) and can stretch
-the observation window past it; accepting that residual risk is part of the
-caller's contract. (The tag is not strictly monotonic — a strictly monotonic
-counter never repeats a value, and this one wraps — it just does not repeat
-until a full `2^TAG_BITS` pushes have elapsed, days of continuously
-saturated operation at every permitted width.) Allocation-free, `no_std`;
+is a single atomic word packing an `(index | tag)` pair, where a STRICTLY
+MONOTONIC generation **tag** in the high bits eliminates the ABA problem
+outright, for every permitted `INDEX_BITS` — it never wraps. Every successful
+push installs a tag exactly one greater than the one it observed, and a push
+that observes the ceiling (`TaggedIndex::TAG_MAX`) is refused
+(`Err(TagExhausted)`) instead of wrapping back to 0, sealing the stack
+(pops are unaffected and keep draining). Consequently every `(index, tag)`
+head word occurs in at most one contiguous interval of the head's history, so
+a stale CAS can never be reinstated by a later cycle. The enforced
+`INDEX_BITS` cap guarantees every legal configuration a large tag — the crate
+docs' "Tag-width budget" section derives, from cache-coherence throughput on
+the single head cache line, a hardware-bounded floor of days of continuously
+saturated pushes at the widest permitted width before a head this width
+seals. That is a LIFETIME bound, not a risk bound: because the tag never
+recurs, there is no collision to reason about at any point in that lifetime
+or beyond it — a head just stops accepting pushes, loudly, once its budget is
+spent. Allocation-free, `no_std`;
 the production library source (`src/`) is `#![deny(unsafe_code)]` with
 exactly EIGHT audited `unsafe` sites, all in `src/imp.rs` — the `unsafe
 trait StackStorage` declaration (whose three hooks are `unsafe fn`) plus the
@@ -151,15 +147,19 @@ authoritative empty check.
 
 ## Tag-width budget
 
-A tag defends against ABA only while it does not recur: a stale CAS succeeds
-again only after a full tag wrap, and the time a wrap takes is bounded by
+The tag never recurs, so it does not defend against ABA "while" some window
+holds — it SEALS: a head accepts successful pushes until its tag reaches
+`TaggedIndex::TAG_MAX`, then `push_index` refuses (`Err(TagExhausted)`)
+rather than wrapping. The time a head's tag budget lasts is bounded by
 hardware (cache-coherence throughput on the single head cache line), not by
 the workload. This bound is why `INDEX_BITS > 16` is compile-time rejected
-(`TaggedIndex::_CHECK_BITS`), not merely discouraged — a risk-reduction
-argument, not a proof of impossibility. The derivation and the figures
-(hardware rate bound across contended and uncontended regimes, wrap times at
-each permitted width, the uncontended bench receipt, and the fresh-sample
-command) are in the crate docs' "Tag-width budget" section.
+(`TaggedIndex::_CHECK_BITS`), not merely discouraged — an availability floor
+(enough pushes-until-sealed lifetime for ordinary long-running use), not a
+soundness floor: sealing is safe at any width, just impractically frequent
+below it. The derivation and the figures (hardware rate bound across
+contended and uncontended regimes, seal times at each permitted width, the
+uncontended bench receipt, and the fresh-sample command) are in the crate
+docs' "Tag-width budget" section.
 
 ### Why the default is not a wider packed word (128-bit CAS)
 
@@ -265,7 +265,7 @@ use tagged_index_stack::ArrayIndexStack;
 let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
 // SAFETY: 7 is a fresh index in this stack's 0..1024 domain, never pushed before.
-unsafe { stack.push(7) };                // recycle index 7
+unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
 assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 ```
 

@@ -231,6 +231,25 @@ First release. Everything below is new in this version; nothing has shipped befo
   could never legitimately need more than 32 bits; the type now carries that invariant directly. No
   runtime/algorithmic behavior changed — same bit patterns, same packing arithmetic, only the
   parameter/return type narrows to match the value's real range.
+- **BREAKING (unpublished 0.1.0): the tag is now strictly monotonic — it never wraps — and
+  `push_index`/`ArrayIndexStack::push` return `Result<(), TagExhausted>` instead of `()`.** Closes
+  P1-1 from run-8's review (`docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md`):
+  a fully contract-compliant sequence of pushes/pops could previously wrap the tag counter back to
+  its starting value, letting a stale CAS from an earlier-observed head succeed and hand out an
+  index a different, concurrent thread still legitimately owned — an exclusive-issuance violation
+  reachable without breaking either of `push_index`'s two documented `# Safety` clauses. Every
+  successful push now installs a tag exactly one greater than the one it observed; a push that
+  observes the ceiling (new `TaggedIndex::TAG_MAX`) is refused (`Err(TagExhausted)`) instead of
+  wrapping to 0, sealing that head permanently (pops are unaffected and keep draining). New public
+  surface: `TaggedIndex::TAG_MAX`, `TagExhausted` (the refusal error — no `core::error::Error` impl
+  yet, deferred past this crate's 1.79 MSRV floor to a future MSRV bump past 1.81), and
+  `StackHead::pushes_remaining()` (an advisory `Relaxed` readback of the remaining push budget). No
+  reset/rotation API exists or is planned — a sealed head cannot be reset (see `StackHead`'s
+  "Sealing is permanent" doc section); a replacement must be a distinct `StackHead`, fully drained
+  first. Every in-workspace call site (root `sefer-alloc`'s `Registry::push_free_slot` and its loom
+  shim, plus every test/bench/example in this crate) is updated in the same change. Chosen
+  architecture and the counterexample this closes are recorded in an addendum to
+  `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`.
 
 ### Fixed
 

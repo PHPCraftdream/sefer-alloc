@@ -49,6 +49,6 @@ fn main() {
         next: [const { AtomicU32::new(0) }; 8],
     };
     // SAFETY: fresh storage (domain 0..8); index 1 is in-domain and this is its first push.
-    unsafe { storage.push_index(1) };
+    unsafe { storage.push_index(1) }.expect("fresh head has tag budget");
     assert_eq!(storage.pop_index(), Some(1));
 }

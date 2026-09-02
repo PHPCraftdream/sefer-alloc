@@ -233,7 +233,7 @@ fn main() {
             for i in 0..LINKS_SIZE {
                 // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is
                 // in-domain and pushed exactly once.
-                unsafe { stack.push(i) };
+                unsafe { stack.push(i) }.expect("fresh head has tag budget");
             }
 
             // Published-window protocol, same shape as the contention phases of
@@ -285,7 +285,8 @@ fn main() {
                             samples.push(nanos.min(u32::MAX as u128) as u32);
                             // SAFETY: idx was just returned by pop, so it is
                             // not live; in-domain by construction.
-                            unsafe { stack.push(idx) };
+                            unsafe { stack.push(idx) }
+                                .expect("bounded example run never nears TAG_MAX");
                         }
                         (samples, clamp_saturated)
                     }));

@@ -144,7 +144,7 @@ fn narrow_domain_unchecked_storage_seed_interleave_drain_conserves() {
     for i in 0..8u32 {
         // SAFETY: `i` is in the pool's declared domain 0..8 and has never
         // been pushed (fresh pool) — both caller-side clauses discharged.
-        unsafe { pool.push_index(i) };
+        unsafe { pool.push_index(i) }.expect("fresh head has tag budget");
     }
 
     // Interleave: pop three, re-push each exactly once (returned ⇒ not
@@ -153,7 +153,7 @@ fn narrow_domain_unchecked_storage_seed_interleave_drain_conserves() {
         let idx = pool.pop_index().expect("stack holds all eight seeds");
         // SAFETY: `idx` was just RETURNED by `pop_index`, so it is not
         // live and it is in-domain — both caller-side clauses discharged.
-        unsafe { pool.push_index(idx) };
+        unsafe { pool.push_index(idx) }.expect("fresh head has tag budget");
     }
     let stayed_out = pool.pop_index().expect("stack non-empty");
     assert_eq!(
@@ -194,7 +194,7 @@ fn narrow_domain_unchecked_storage_round_trips_end_to_end() {
 
     for i in 0..5u32 {
         // SAFETY: `i` is in-domain (0..8) and never yet pushed.
-        unsafe { pool.push_index(i) };
+        unsafe { pool.push_index(i) }.expect("fresh head has tag budget");
     }
     let mut got = Vec::new();
     while let Some(i) = pool.pop_index() {

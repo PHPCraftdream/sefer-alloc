@@ -3,18 +3,22 @@
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
 //! code that ships. How much of each model calls the shipped `push`/`pop`
-//! directly varies and is stated per model below: **four** models
+//! directly varies and is stated per model below: **five** models
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 //! `push_push_conservation`, `pop_pop_conservation`,
-//! `pop_pop_single_element_loser_sees_empty_actual`) run end-to-end through
-//! ArrayIndexStack's shipped `push`/`pop`, most of the rest hand-inline one side of an
-//! interaction through `cas_head_for_test` (real head atomic, real packing)
-//! to pin an interleaving — the one exception is the untagged-ABA
-//! counterfactual, which drives a locally-defined buggy stand-in stack
-//! instead of the real type, to prove the harness non-vacuous. This module
-//! doc is the source of truth for this per-model breakdown; other published
-//! copies (crate-root rustdoc, README.md, CHANGELOG.md) point back here
-//! rather than repeating a specific count.
+//! `pop_pop_single_element_loser_sees_empty_actual`,
+//! `tiny_tag_seal_rejects_stale_cas_at_the_real_width`) run end-to-end through
+//! ArrayIndexStack's shipped `push`/`pop` for their whole schedule (the
+//! sixth, `counterfactual_bypassed_seal_lets_stale_cas_double_issue`, runs
+//! the shipped `push`/`pop` for everything except its one deliberately
+//! bypassed final step — see section (h)); most of the rest hand-inline one
+//! side of an interaction through `cas_head_for_test` (real head atomic,
+//! real packing) to pin an interleaving — the one exception is the
+//! untagged-ABA counterfactual, which drives a locally-defined buggy
+//! stand-in stack instead of the real type, to prove the harness
+//! non-vacuous. This module doc is the source of truth for this per-model
+//! breakdown; other published copies (crate-root rustdoc, README.md,
+//! CHANGELOG.md) point back here rather than repeating a specific count.
 //!
 //! # What loom covers
 //!
@@ -77,6 +81,22 @@
 //!     only head transition this model admits is `(0, t) -> (empty, t)`, so
 //!     its `POP_RETRY_COUNT` delta is provably an empty-`actual` retry —
 //!     a path no other shipped model or test reaches.
+//! (h) **Tiny-tag seal (P1-1 fix):** the review's exact stale-observer
+//!     counterexample (P observes a stale head and pauses; Q pops both
+//!     chained indices, churns one of them through a real push/pop cycle,
+//!     then attempts a final push) replayed at the REAL 48-bit-plus tag
+//!     width by seeding the head's tag `TINY_SEAL_MARGIN` pushes short of
+//!     [`TaggedIndex::TAG_MAX`] — never by reducing `TAG_BITS` via a cfg.
+//!     `tiny_tag_seal_rejects_stale_cas_at_the_real_width` drives Q's final
+//!     step through the REAL, sealing `push` (asserts it returns
+//!     `Err(TagExhausted)` and that P's stale CAS is rejected);
+//!     `counterfactual_bypassed_seal_lets_stale_cas_double_issue`
+//!     hand-inlines what the OLD wrapping `push` would have installed for
+//!     that one step (bypassing the `TAG_MAX` check with
+//!     `store_next_for_test` + a raw `cas_head_for_test`) and proves P's
+//!     stale CAS then SUCCEEDS and the free-list conservation check FAILS —
+//!     the load-bearing proof that the seal, not just the tag bump, is what
+//!     closes P1-1.
 //!
 //! # How to run
 //!
@@ -106,7 +126,7 @@ use loom::sync::atomic::{AtomicU32, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
-use tagged_index_stack::{ArrayIndexStack, TaggedIndex, TAIL};
+use tagged_index_stack::{ArrayIndexStack, TagExhausted, TaggedIndex, TAIL};
 
 /// Serializes every test in this file that drives the REAL `push` or `pop`
 /// under contention. `POP_RETRY_COUNT` / `PUSH_RETRY_COUNT` (`src/imp.rs`)
@@ -209,8 +229,8 @@ const N: usize = 2;
 fn both_free() -> Arc<ArrayIndexStack<16, N>> {
     let stack = Arc::new(ArrayIndexStack::<16, N>::new());
     // SAFETY: fresh stack (domain 0..2); indices 1 and 0 are each in-domain and pushed exactly once.
-    unsafe { stack.push(1) };
-    unsafe { stack.push(0) };
+    unsafe { stack.push(1) }.expect("fresh head has tag budget");
+    unsafe { stack.push(0) }.expect("fresh head has tag budget");
     stack
 }
 
@@ -248,7 +268,7 @@ fn aba_repush_keeps_free_list_conservation() {
         let tb = thread::spawn(move || {
             if let Some(idx) = stack_b.pop() {
                 // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-                unsafe { stack_b.push(idx) };
+                unsafe { stack_b.push(idx) }.expect("tiny loom model never nears TAG_MAX");
             }
         });
 
@@ -471,7 +491,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             let held = stack_b.pop();
             if let Some(idx) = first {
                 // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-                unsafe { stack_b.push(idx) };
+                unsafe { stack_b.push(idx) }.expect("tiny loom model never nears TAG_MAX");
             }
             held
         });
@@ -528,7 +548,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
         // drain.
         let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
         // SAFETY: fresh stack (sole in-domain index 0); this is its first push.
-        unsafe { stack.push(0) };
+        unsafe { stack.push(0) }.expect("fresh head has tag budget");
         let a_loaded = Arc::new(AtomicU32::new(0));
         let b_done = Arc::new(AtomicU32::new(0));
 
@@ -549,7 +569,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
             };
             if let Some(idx) = popped {
                 // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
-                unsafe { stack_b.push(idx) };
+                unsafe { stack_b.push(idx) }.expect("tiny loom model never nears TAG_MAX");
             }
             b_done_b.store(1, Ordering::Release);
         });
@@ -674,7 +694,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
         || {
             let stack = Arc::new(ArrayIndexStack::<16, N>::new());
             // SAFETY: fresh stack (domain 0..2); index 1 is in-domain and this is its first push.
-            unsafe { stack.push(1) };
+            unsafe { stack.push(1) }.expect("fresh head has tag budget");
 
             let stack_a = Arc::clone(&stack);
             let ta = thread::spawn(move || stack_a.pop());
@@ -682,7 +702,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
             let stack_b = Arc::clone(&stack);
             let tb = thread::spawn(move || {
                 // SAFETY: index 0 is in-domain and was never pushed, so not live.
-                unsafe { stack_b.push(0) };
+                unsafe { stack_b.push(0) }.expect("tiny loom model never nears TAG_MAX");
             });
 
             let a_result = ta.join().unwrap();
@@ -727,7 +747,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
         // Start with slot 1 only on stack (not slot 0).
         let stack = Arc::new(ArrayIndexStack::<16, N>::new());
         // SAFETY: fresh stack (domain 0..2); index 1 is in-domain and this is its first push.
-        unsafe { stack.push(1) };
+        unsafe { stack.push(1) }.expect("fresh head has tag budget");
 
         let stack_a = Arc::clone(&stack);
         let stack_b = Arc::clone(&stack);
@@ -786,7 +806,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
         // Thread B: pushes slot 0 (changing head, bumping tag).
         let tb = thread::spawn(move || {
             // SAFETY: index 0 is in-domain and was never pushed, so not live.
-            unsafe { stack_b.push(0) };
+            unsafe { stack_b.push(0) }.expect("tiny loom model never nears TAG_MAX");
         });
 
         let a_result = ta.join().unwrap();
@@ -860,14 +880,14 @@ fn push_push_conservation() {
             let ta = thread::spawn(move || {
                 // SAFETY: fresh stack (domain 0..2); index 0 is in-domain, never pushed, and
                 // distinct from B's index 1, so it is never live elsewhere.
-                unsafe { stack_a.push(0) };
+                unsafe { stack_a.push(0) }.expect("fresh head has tag budget");
             });
 
             let stack_b = Arc::clone(&stack);
             let tb = thread::spawn(move || {
                 // SAFETY: fresh stack (domain 0..2); index 1 is in-domain, never pushed, and
                 // distinct from A's index 0, so it is never live elsewhere.
-                unsafe { stack_b.push(1) };
+                unsafe { stack_b.push(1) }.expect("fresh head has tag budget");
             });
 
             ta.join().unwrap();
@@ -1024,7 +1044,7 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
             // stack via the REAL push — running tag ends at exactly 1.
             let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
             // SAFETY: fresh stack (sole in-domain index 0); this is its first push.
-            unsafe { stack.push(0) };
+            unsafe { stack.push(0) }.expect("fresh head has tag budget");
 
             let stack_a = Arc::clone(&stack);
             let ta = thread::spawn(move || stack_a.pop());
@@ -1068,4 +1088,224 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
             );
         },
     );
+}
+
+// ============================================================================
+// (h) Tiny-tag seal (P1-1 fix). See the module doc's "(h)" entry for the
+// full description. Seeded at the REAL tag width (never a TAG_BITS-reducing
+// cfg) a handful of pushes short of TaggedIndex::TAG_MAX, so the schedule
+// stays loom-tractable while every arithmetic operation exercised is the
+// crate's actual production packing.
+// ============================================================================
+
+/// How many successful pushes short of [`TaggedIndex::TAG_MAX`] the seeded
+/// EMPTY head starts: the two chain-building pushes below consume 2, one
+/// real push/pop "churn" cycle (mirroring the review's "Q re-pushes the
+/// same index and pops it again" step) consumes 1 more, landing exactly on
+/// the ceiling before the final step — see [`run_tiny_tag_seal`]'s
+/// walk-through comments for the exact arithmetic. Chosen small purely so
+/// the two-thread interleaving space loom must explore stays a "handful of
+/// ops" (this crate's speed convention), not because a larger margin would
+/// be unsound — the fix holds at any seed.
+const TINY_SEAL_MARGIN: u64 = 3;
+
+/// Shared harness for the two `(h)` tests. `bypass_seal == false` is the
+/// FIXED path: Q's final step goes through the real, sealing
+/// [`ArrayIndexStack::push`], which must return `Err(TagExhausted)` instead
+/// of wrapping — P's stale CAS, captured before Q's churn began, is then
+/// asserted to fail (the tag has moved past — never back to — P's stale
+/// snapshot). `bypass_seal == true` is the counterfactual: Q's final step
+/// instead hand-inlines what the OLD (pre-fix) wrapping `push` would have
+/// done, using [`ArrayIndexStack::store_next_for_test`] +
+/// [`ArrayIndexStack::cas_head_for_test`] — bypassing the `TAG_MAX` check
+/// entirely — to install the exact head word a COMPLETED
+/// `2^TAG_BITS`-push wrap-around would produce: `(q_a, p_stale_tag)`, i.e.
+/// EXACTLY the stale word P is still holding. This is deliberately NOT a
+/// literal `(index, 0)` raw CAS: a single real `wrapping_add(1)` past
+/// `TAG_MAX` truncates to tag 0 (see `TaggedIndex::pack_truncating`'s doc),
+/// but reaching `p_stale_tag` again through real pushes needs an entire
+/// `2^TAG_BITS`-push lap — the actual arithmetic content of "wrap" is
+/// "returns to the exact starting tag after one full cycle", which is what
+/// this raw CAS installs directly, collapsing the infeasible-to-run lap
+/// into its end state rather than replaying it.
+fn run_tiny_tag_seal(bypass_seal: bool) {
+    model(move || {
+        // Seed the EMPTY head TINY_SEAL_MARGIN pushes short of the ceiling.
+        // `with_tag_for_test` is INITIALISATION (fresh atomic storage), not
+        // a live-head mutation — see its own doc: the release-sequence
+        // invariant on `head` is untouched.
+        let seed_tag = Tag::TAG_MAX - TINY_SEAL_MARGIN;
+        let stack = Arc::new(ArrayIndexStack::<16, N>::with_tag_for_test(seed_tag));
+
+        // Build the A -> B -> TAIL chain with two REAL pushes — exactly
+        // `both_free()`'s shape, just starting from the seeded near-ceiling
+        // tag instead of a fresh tag-0 head. Consumes 2 of the margin: tag
+        // goes seed_tag -> seed_tag+1 (B=1 pushed) -> seed_tag+2 (A=0
+        // pushed).
+        // SAFETY: freshly-seeded empty head (domain 0..2); indices 1 and 0
+        // are each in-domain and pushed exactly once.
+        unsafe { stack.push(1) }.expect("2 pushes remain within the seeded margin"); // B
+        unsafe { stack.push(0) }.expect("1 push remains within the seeded margin"); // A
+        let p_stale_tag = seed_tag + 2;
+        assert_eq!(
+            stack.pushes_remaining(),
+            TINY_SEAL_MARGIN - 2,
+            "chain-building pushes must consume exactly 2 of the seeded margin"
+        );
+
+        let p_loaded = Arc::new(AtomicU32::new(0));
+        let q_done = Arc::new(AtomicU32::new(0));
+
+        // Thread Q: the review's exact churn shape — pop A, pop B (holding
+        // B), one real push(A)/pop(A) churn cycle, then a final step
+        // exactly at the tag ceiling — using the REAL push/pop entry
+        // points throughout except the counterfactual's one bypassed final
+        // step.
+        let stack_q = Arc::clone(&stack);
+        let p_loaded_q = Arc::clone(&p_loaded);
+        let q_done_q = Arc::clone(&q_done);
+        let tq = thread::spawn(move || {
+            while p_loaded_q.load(Ordering::Acquire) == 0 {
+                thread::yield_now();
+            }
+            let q_a = stack_q.pop().expect("A is on top after the chain build");
+            let q_b = stack_q.pop().expect("B is chained beneath A");
+            // SAFETY: q_a was just returned by pop, so it is not live; in-domain by construction.
+            unsafe { stack_q.push(q_a) }.expect("the churn cycle stays within the seeded margin");
+            let q_a_again = stack_q
+                .pop()
+                .expect("the churn cycle's own push just re-published q_a");
+            assert_eq!(
+                q_a_again, q_a,
+                "the churn cycle re-pops the exact index it just re-pushed"
+            );
+            assert_eq!(
+                stack_q.pushes_remaining(),
+                0,
+                "the seed margin is exhausted by exactly the chain build (2) \
+                 plus the one churn cycle (1) — TINY_SEAL_MARGIN pushes total"
+            );
+
+            let final_result: Result<(), TagExhausted> = if bypass_seal {
+                // Counterfactual bypass — see run_tiny_tag_seal's own doc
+                // for why the installed tag is p_stale_tag, not literal 0.
+                // RAD-1: write the link the way a real push into an EMPTY
+                // stack would (next[q_a] = TAIL) before publishing.
+                stack_q.store_next_for_test(q_a, TAIL);
+                let current = stack_q.raw_head();
+                let wrapped_head = tag_pack(q_a, p_stale_tag);
+                stack_q
+                    .cas_head_for_test(current, wrapped_head, Ordering::Release, Ordering::Relaxed)
+                    .expect("no concurrent writer exists between Q's own sequential steps");
+                Ok(())
+            } else {
+                // Fixed: the real, sealing push — expected to return
+                // Err(TagExhausted), confirming the seal engages under
+                // this exact adversarial schedule.
+                // SAFETY: q_a was just returned by pop, so it is not live; in-domain by construction.
+                unsafe { stack_q.push(q_a) }
+            };
+
+            q_done_q.store(1, Ordering::Release);
+            (q_a, q_b, final_result)
+        });
+
+        // Thread "P" (inline on the model thread, mirroring run_h2's
+        // thread A): observes the stale head BEFORE Q's churn, pauses,
+        // then fires its single-shot CAS only after Q's full sequence
+        // (including the final step) completes.
+        let p_head = stack.raw_head();
+        let (p_idx, p_tag) = Tag::unpack(p_head);
+        assert_eq!(
+            p_tag, p_stale_tag,
+            "P must observe the exact post-chain-build tag"
+        );
+        let p_next = stack.load_next_for_test(p_idx);
+        p_loaded.store(1, Ordering::Release);
+        while q_done.load(Ordering::Acquire) == 0 {
+            thread::yield_now();
+        }
+        let p_new_head = if p_next == TAIL {
+            tag_pack(Tag::empty_index(), p_tag)
+        } else {
+            tag_pack(p_next, p_tag)
+        };
+        let p_result = stack
+            .cas_head_for_test(p_head, p_new_head, Ordering::Acquire, Ordering::Acquire)
+            .map(|_| p_idx);
+
+        let (q_a, q_b, final_result) = tq.join().unwrap();
+
+        if bypass_seal {
+            // Counterfactual: P's stale CAS is expected to SUCCEED (the bug
+            // this seal closes) — q_a is back in circulation (Q gave it up
+            // via the bypassed final step), so it is NOT added to the
+            // held-index set here; only q_b (never re-published) is.
+            let mut multiset: Vec<u32> = Vec::new();
+            if let Ok(idx) = p_result {
+                multiset.push(idx);
+            }
+            multiset.push(q_b);
+            while let Some(idx) = stack.pop() {
+                multiset.push(idx);
+            }
+            multiset.sort_unstable();
+            assert_eq!(
+                multiset,
+                vec![0, 1],
+                "free-list corrupted (lost or duplicated index) after Q's \
+                 bypassed-seal final step let P's stale CAS succeed: {multiset:?}"
+            );
+        } else {
+            assert!(
+                final_result.is_err(),
+                "the seal did not engage: Q's real final push at the tag \
+                 ceiling returned Ok, expected Err(TagExhausted)"
+            );
+            assert!(
+                p_result.is_err(),
+                "P's stale CAS succeeded even though the tag never wrapped \
+                 back to P's stale snapshot — the seal should make this \
+                 structurally impossible"
+            );
+            // q_a is still Q's: the churn cycle's final push was refused,
+            // so per push_index's `# Errors` the refused index remains the
+            // caller's. q_b is still Q's: never re-published since the
+            // very first pop.
+            let mut multiset: Vec<u32> = Vec::new();
+            if let Ok(idx) = p_result {
+                multiset.push(idx);
+            }
+            multiset.push(q_a);
+            multiset.push(q_b);
+            while let Some(idx) = stack.pop() {
+                multiset.push(idx);
+            }
+            multiset.sort_unstable();
+            assert_eq!(
+                multiset,
+                vec![0, 1],
+                "free-list conservation violated even though the seal \
+                 correctly engaged: {multiset:?}"
+            );
+        }
+    });
+}
+
+/// **Fixed:** confirms the seal engages under the review's exact adversarial
+/// schedule replayed at the real tag width, and that P's stale CAS —
+/// captured before Q's churn — is rejected.
+#[test]
+fn tiny_tag_seal_rejects_stale_cas_at_the_real_width() {
+    run_tiny_tag_seal(false);
+}
+
+/// **Counterfactual (non-vacuousness):** bypassing the `TAG_MAX` check for
+/// Q's one final step lets P's stale CAS succeed and the free-list
+/// conservation check fail — proving the seal, not just the tag bump, is
+/// what closes P1-1.
+#[test]
+#[should_panic(expected = "corrupted")]
+fn counterfactual_bypassed_seal_lets_stale_cas_double_issue() {
+    run_tiny_tag_seal(true);
 }
