@@ -14,8 +14,9 @@ request, hot-segment) runs are:
   inventory of every such counter.**
 
 Honest framing: after **W7a** (widen `HeapSlot::generation` → `AtomicU64`;
-repack `TaggedPtr` to `index:16 | tag:48`) and **W7b** (ring cursor wrap made
-explicit + pinned), **none of these is a live bug today** — with ONE
+repack the `free_slots` ABA tag to `index:16 | tag:48` — now
+`TaggedIndex<16>` in the `tagged-index-stack` crate) and **W7b** (ring cursor
+wrap made explicit + pinned), **none of these is a live bug today** — with ONE
 documented, accepted exception: the **X7 per-granule generation counter**
 (hardened-only, `u8`) wraps at 256 by design (plan §2.5), an accepted residual
 of the cross-thread double-free defence, NOT a bug to fix. The purpose of this
@@ -26,11 +27,11 @@ enforce the rule in the last section.
 
 | counter | file:line | width | class | boundary reachable? (arithmetic) | verdict | covered by |
 |---|---|---|---|---|---|---|
-| `RemoteFreeRing::head` / `tail` | `src/alloc_core/remote_free_ring.rs:345`,`350` | `u32` (per segment) | monotonic wrapping | **YES** — 2^32 cross-thread frees on one hot long-lived segment | wrap-safe by design: occupancy `tail.wrapping_sub(head)`, index `i % RING_CAP`, `RING_CAP` power-of-two so `2^32 % RING_CAP == 0` (continuous across wrap) | `tests/regression_ring_cursor_wrap.rs` (W7b) + const-assert `remote_free_ring.rs:167` |
+| `RemoteFreeRing::head` / `tail` | `src/alloc_core/remote_free_ring.rs:345`,`350` | `u32` (per segment) | monotonic wrapping | **YES** — 2^32 cross-thread frees on one hot long-lived segment | wrap-safe by design: occupancy `tail.wrapping_sub(head)`, index `i % RING_CAP`, `RING_CAP` power-of-two so `2^32 % RING_CAP == 0` (continuous across wrap) | `tests/regression_ring_cursor_wrap.rs` (W7b) + const-assert `remote_free_ring.rs:439` |
 | `RemoteFreeRing::overflow` | `src/alloc_core/remote_free_ring.rs:356` | `u32` (per segment) | wrapping (diagnostic) | 2^32 overflow events on one segment | not correctness-load-bearing (diagnostic only; a wrap loses an overflow *count*, never a block) | `tests/regression_ring_overflow_counter.rs` |
 | `DBG_RING_OVERFLOW` | `src/alloc_core/remote_free_ring.rs:138` | `AtomicU64` (process-wide) | wrapping (diagnostic) | 2^64 — unreachable | not correctness-load-bearing | `tests/regression_ring_overflow_counter.rs` |
 | `HeapSlot::generation` | `src/registry/heap_slot.rs:102` | `AtomicU64` (was `u32`) | monotonic | 2^64 recycles (thread-deaths) — unreachable (was 2^32, reachable over weeks) | **widened (W7a)**. NOTE: consumed only by the `new_gen == 1` first-materialise gate — there is **no cached-generation compare**; the stale-TLS hazard is guarded by the `TORN` sentinel (`global::tls_heap`), so the old `u32` wrap was defence-in-depth, not a live bug | `tests/regression_counter_wrap.rs::generation_crosses_u32_boundary_as_u64` |
-| `TaggedPtr` tag (`free_slots` ABA) | `src/registry/tagged_ptr.rs:77` (`INDEX_BITS=16`) | 48-bit tag in a `u64` (was 32) | monotonic wrapping | 2^48 ≈ 2.8×10¹⁴ pops ≈ **89 years @ 100k pops/s** — effectively unreachable | **repacked (W7a)** `index:16 | tag:48`; `MAX_HEAPS=4096` fits 16 bits with the `0xFFFF` empty sentinel above it | `tests/regression_counter_wrap.rs` (tag-wrap counterfactual) + const-assert `tagged_ptr.rs:90` (`MAX_HEAPS <= INDEX_MASK`) |
+| `TaggedIndex` tag (`free_slots` ABA) | `crates/tagged-index-stack/src/imp.rs:124` (`TaggedIndex<INDEX_BITS>`; the registry pins `INDEX_BITS=16` via `StackHead<16>`) | 48-bit tag in a `u64` (was 32) | monotonic wrapping | 2^48 ≈ 2.8×10¹⁴ pops ≈ **89 years @ 100k pops/s** — effectively unreachable | **repacked (W7a)** `index:16 | tag:48`; `MAX_HEAPS=4096` fits 16 bits with the `0xFFFF` empty sentinel above it | `crates/tagged-index-stack/tests/stack_unit.rs` (tag-wrap counterfactual, folded in from the retired crate-side `tests/regression_counter_wrap.rs`: `empty_sentinel_never_collides_with_a_live_index` + `empty_word_with_running_tag_reads_empty_across_wrap`) + const-assert `TaggedIndex::_CHECK_BITS` (`crates/tagged-index-stack/src/imp.rs:149`, `INDEX_BITS` in `1..=16`) |
 | `abandoned_segs` tag | `src/registry/bootstrap.rs:181` (`ABANDON_TAG_BITS = ABANDON_SEG_SHIFT = 22`) | 22-bit tag in the low `SEGMENT`-alignment bits of a `u64` base | monotonic wrapping | 2^22 ≈ 4.2M pushes — reachable in principle | **dead-path**: the abandoned-segments stack is unused on production paths since Phase 12.5 (cross-thread free routes through `RemoteFreeRing`, not abandon/adopt). Documented residual: any future reactivation must widen this tag or accept the 4.2M-push ABA window. Reactivation guidance already carries a ⚠️ (`heap_registry.rs` ~245–275) | none (dead path) — reactivation MUST add a boundary test |
 | `large_cache_seq` / `CachedLarge::seq` | `src/alloc_core/alloc_core.rs:292`,`185` | `u64` | monotonic wrapping (`wrapping_add`) | 2^64 large-cache deposits — unreachable | bounded-by-width (FIFO-oldest picked by `min_by_key(seq)`; a 2^64 wrap is not reachable in any process) | `tests/regression_large_cache_multi_size_cycle.rs` (FIFO order) |
 | `SegmentHeader::live_count` | `src/alloc_core/segment_header.rs:285` | `u32`, **saturating** (`add_live`/`sub_live` sat) | saturating | blocks-per-segment = `SEGMENT/MIN_BLOCK` = 4 MiB/16 = 262144 ≪ 2^32 — cannot overflow | bounded (saturating is pure defence-in-depth) | `tests/regression_carve_batch.rs`, `regression_batch_flush.rs` |
@@ -92,9 +93,12 @@ BOTH:
        `u32::MAX`, drive the real ring across, with a non-vacuity counterfactual
        (`t - h` instead of `t.wrapping_sub(h)` fails; non-power-of-two `RING_CAP`
        fails to compile).
-     - `tests/regression_counter_wrap.rs` (W7a) — preset generation near `2^32`
-       and the tag at `2^48 − 1`, cross the boundary, assert no truncation. Each
-       assertion fails if the widening is reverted (non-vacuous).
+     - `tests/regression_counter_wrap.rs` (W7a) — preset generation near
+       `2^32`, cross the boundary, assert no truncation. Each assertion fails
+       if the widening is reverted (non-vacuous). The W7a tag half (preset the
+       tag near `2^48 − 1`) lives in the extracted crate now —
+       `crates/tagged-index-stack/tests/stack_unit.rs` (folded in from the
+       retired crate-side `tests/regression_counter_wrap.rs`).
      - `tests/regression_gen_wrap_boundary.rs` (X7-Ф5) — pins the EXACT 256-
        modulus of the hardened gen counter's wrap: the drain's
        `stamped_gen == current_gen` compare is TRUE at k=256 bumps (the accepted
@@ -106,13 +110,15 @@ BOTH:
    - *Compile-time bound assert* (for structurally-bounded counters): pin the
      bound so a future config bump fails to compile rather than silently wrapping.
      Templates: `const _: () = assert!(RING_CAP.is_power_of_two(), …)`
-     (`remote_free_ring.rs:167`); `const _: () = assert!(MAX_HEAPS <= INDEX_MASK, …)`
-     (`tagged_ptr.rs:90`).
+     (`remote_free_ring.rs:439`); `TaggedIndex`'s
+     `const _CHECK_BITS: () = assert!(INDEX_BITS >= 1 && INDEX_BITS <= 16, …)`
+     (`crates/tagged-index-stack/src/imp.rs:149` — pins the ≥48-bit tag floor
+     for every width a caller can compile).
 
 ## Widening must be Ir-neutral (W1 judge)
 
 Before widening any counter, **prove zero hot-path cost**. Precedent: the W7a
-widenings (`generation` → `AtomicU64`, `TaggedPtr` repack) were judged
+widenings (`generation` → `AtomicU64`, `TaggedIndex` tag repack) were judged
 Ir-neutral by the W1 instruction-retired judge — **−4 Ir on the cold path,
 byte-identical hot path** (both fields live on the cold registry-protocol path,
 off every hot alloc/dealloc path; `pack`/`unpack` are the same two shifts/masks

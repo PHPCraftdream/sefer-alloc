@@ -25,7 +25,10 @@
 //! (pop-X, re-push-X while a racer is parked with head=X): the re-push bumps
 //! the tag, so the racer's CAS on `(X, old_tag)` fails. The stack itself — the
 //! tagged head, the ABA guard, the H-2 empty-transition tag preservation, the
-//! RAD-1 lazy links, and the tag-width-vs-churn (~89-year) budget analysis —
+//! RAD-1 lazy links, and the tag-width-vs-churn budget analysis (a `2^48` tag
+//! wrap takes ~89 years at 100k pops/s, but only ~16 days at the crate's
+//! documented `2 × 10^8` RMW/s working ceiling — and ~3.3 days at the `10^9`
+//! top of the hardware range) —
 //! lives in the `tagged-index-stack` crate (CRATE-P7); `free_slots` is a
 //! `tagged_index_stack::StackHead<16>` and `pop_free_slot` /
 //! `push_free_slot` below delegate to it through `Registry`'s own
