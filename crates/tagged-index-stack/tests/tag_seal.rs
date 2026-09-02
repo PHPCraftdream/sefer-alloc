@@ -19,7 +19,9 @@
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::{ArrayIndexStack, TagExhausted, TaggedIndex};
+use tagged_index_stack::TaggedIndex;
+#[cfg(any(feature = "test-internals", loom))]
+use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 
 type T = TaggedIndex<16>;
 
