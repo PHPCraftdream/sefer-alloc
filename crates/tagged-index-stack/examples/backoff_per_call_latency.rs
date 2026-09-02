@@ -16,7 +16,13 @@
 //! protocol): workers rendezvous at the ready barrier, the coordinator records
 //! the wall-clock start, and only then does the window barrier release them
 //! into the counted work — no counted pop can precede the start the `wall_ms`
-//! denominator is derived from. Every `pop` is individually timed.
+//! denominator is derived from. `wall_ms` is nonetheless a
+//! coordinator-to-last-join ENVELOPE, not a tight pure-work time: the second
+//! barrier only prevents counted work from STARTING before the start timestamp,
+//! while the denominator still includes each worker's own release overhead, its
+//! last iteration's tail, the final `.join()` wait, and any OS-scheduling
+//! overshoot past the nominal deadline — an upper bound with real but bounded
+//! slack. Every `pop` is individually timed.
 //!
 //! The backoff cap itself is a private `const` in
 //! `crates/tagged-index-stack/src/imp.rs`, so an arm at a non-shipped cap is
@@ -41,12 +47,32 @@
 //! Output: a small header block, then one JSON object per line per
 //! (shape, rep) — each carries a `pop_clamp_saturated` count of samples that
 //! hit the `u32::MAX`-ns (~4295 ms) recording ceiling, and a final summary
-//! line totals it across the run. Timing note: the two `Instant::now()` clock
-//! reads sit
-//! OUTSIDE the timed `pop`, are identical in every arm, so cap-to-cap
-//! comparisons stay apples-to-apples; absolute fast-path numbers are
-//! inflated by roughly two clock reads. Percentiles are nearest-rank over
-//! ALL pops in the run. Numbers published from this probe are derived, with
+//! line totals it across the run. Timing note: each `pop` is timed by
+//! bracketing it DIRECTLY — `t0 = Instant::now()` immediately before the call,
+//! `t0.elapsed()` immediately after — so the timer pair IS the timed region's
+//! boundaries, not something outside it, and parts of the two clock reads' own
+//! call overhead are unavoidably counted inside every sample. Because that
+//! identical bracketing pattern applies to every arm, cap-to-cap comparisons
+//! stay apples-to-apples; the ABSOLUTE fast-path numbers carry the bracket
+//! overhead on top of the true `pop` cost. This probe does not assert a
+//! correction factor: each row instead publishes an empty-bracket baseline
+//! (`bracket_baseline_p50_ns` / `bracket_baseline_p99_ns` /
+//! `bracket_baseline_max_ns`) measured the same way — `Instant::now()` and
+//! `elapsed()` back to back with NO `pop`/`push` between the reads, same thread
+//! count, nearest-rank percentiles over the baseline samples through the same
+//! statistical machinery (`percentile_ns`, which `percentile_ms` delegates
+//! to) — so a reader can judge the absolute-number
+//! overhead magnitude for themselves. The baseline is published alongside,
+//! never subtracted from, the pop percentiles. The baseline fields are integer
+//! NANOSECONDS, not the row's 3-decimal milliseconds: the bracket floor is tens
+//! of ns, far below the 0.001 ms at which a `_ms` field stops reading as
+//! 0.000.
+//! A baseline percentile of 0 is a genuine reading, not a defect: where the
+//! host clock's granularity is coarser than the bracket floor (e.g. a 10 MHz
+//! QPC tick = 100 ns), sub-tick brackets quantize to 0 or one tick, and
+//! p99/max then bound the floor at about one tick.
+//! Percentiles are nearest-rank over ALL pops in the run. Numbers published
+//! from this probe are derived, with
 //! in-script assertions, by
 //! `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (a repository
 //! script, not part of the published package).
@@ -66,6 +92,14 @@ type Stack = ArrayIndexStack<16, { LINKS_SIZE as usize }>;
 /// 64-element shape as `tests/threaded_conservation.rs`, so the measured
 /// tail is the tail of the documented use case (a 64-slot free-list).
 const LINKS_SIZE: u32 = 64;
+
+/// Per-thread sample count for the empty-bracket baseline each row carries:
+/// large enough that nearest-rank p99 over the pooled samples is
+/// well-resolved, small enough that the baseline phase adds only
+/// milliseconds per row. Measured with the same two-clock-read bracket and
+/// the same thread count as the row's pop samples; never subtracted from
+/// them (see the module-level timing note).
+const BASELINE_ITERS_PER_THREAD: u32 = 20_000;
 
 /// Fail fast at the argument-parsing boundary: a misconfigured probe run must
 /// exit with a message naming the parameter, the value received, and the valid
@@ -118,15 +152,21 @@ fn parse_shapes(spec: &str) -> Vec<(usize, u32)> {
         .collect()
 }
 
-/// Nearest-rank percentile of an ascending-sorted sample slice. Samples are
-/// per-call latencies in NANOSECONDS; the returned value is that percentile
-/// converted to MILLISECONDS (`nanos / 1e6`). `q` must be in `(0, 1]`.
-fn percentile_ms(sorted: &[u32], q: f64) -> f64 {
+/// Nearest-rank percentile of an ascending-sorted sample slice, in the
+/// samples' own unit (NANOSECONDS). `q` must be in `(0, 1]`.
+fn percentile_ns(sorted: &[u32], q: f64) -> u64 {
     assert!(q > 0.0 && q <= 1.0, "q must be in (0, 1]");
     let n = sorted.len();
     assert!(n > 0, "no samples");
     let rank = ((q * n as f64).ceil() as usize).clamp(1, n);
-    sorted[rank - 1] as f64 / 1e6
+    sorted[rank - 1] as u64
+}
+
+/// Nearest-rank percentile of an ascending-sorted sample slice. Samples are
+/// per-call latencies in NANOSECONDS; the returned value is that percentile
+/// converted to MILLISECONDS (`nanos / 1e6`). `q` must be in `(0, 1]`.
+fn percentile_ms(sorted: &[u32], q: f64) -> f64 {
+    percentile_ns(sorted, q) as f64 / 1e6
 }
 
 fn main() {
@@ -204,6 +244,15 @@ fn main() {
             // the `wall_ms` denominator derives from. The old single barrier let
             // work begin before the coordinator timestamped the run, shortening
             // `wall_ms`.
+            //
+            // `wall_ms` is a coordinator-to-last-join ENVELOPE, not a tight
+            // measurement of pure work time: the second barrier prevents
+            // counted work from starting before `start` is taken, but the
+            // elapsed denominator still includes each worker's own release
+            // overhead past the window barrier, that worker's last
+            // iteration's tail, the final `.join()` wait, and any
+            // OS-scheduling overshoot past the nominal deadline — an upper
+            // bound with real but bounded slack.
             let barrier_ready = Barrier::new(threads + 1);
             let barrier_window = Barrier::new(threads + 1);
             let (per_thread, wall) = std::thread::scope(|s| {
@@ -245,6 +294,36 @@ fn main() {
                 (per_thread, start.elapsed())
             });
 
+            // Empty-bracket baseline (review P3-2): the same two-clock-read
+            // bracket as the pop samples, with NO `pop`/`push` between the
+            // reads, same thread count, so the row carries its own
+            // calibration of how much of a sample can be pure bracket
+            // overhead. Published alongside the pop percentiles, never
+            // subtracted from them.
+            let mut baseline: Vec<u32> = std::thread::scope(|s| {
+                let mut handles = Vec::with_capacity(threads);
+                for _ in 0..threads {
+                    handles.push(s.spawn(move || {
+                        let mut samples: Vec<u32> =
+                            Vec::with_capacity(BASELINE_ITERS_PER_THREAD as usize);
+                        for _ in 0..BASELINE_ITERS_PER_THREAD {
+                            let t0 = Instant::now();
+                            let nanos = t0.elapsed().as_nanos();
+                            samples.push(nanos.min(u32::MAX as u128) as u32);
+                        }
+                        samples
+                    }));
+                }
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().unwrap())
+                    .collect()
+            });
+            baseline.sort_unstable();
+            let baseline_p50 = percentile_ns(&baseline, 0.50);
+            let baseline_p99 = percentile_ns(&baseline, 0.99);
+            let baseline_max_ns = *baseline.last().expect("no baseline samples") as u64;
+
             let pop_samples: usize = per_thread.iter().map(|(v, _)| v.len()).sum();
             let clamp_saturated: u64 = per_thread.iter().map(|(_, c)| c).sum();
             run_clamp_saturated += clamp_saturated;
@@ -265,7 +344,9 @@ fn main() {
                  \"pop_samples\":{pop_samples},\"pop_p50_ms\":{p50:.3},\"pop_p90_ms\":{p90:.3},\
                  \"pop_p99_ms\":{p99:.3},\"pop_p999_ms\":{p999:.3},\"pop_max_ms\":{max_ms:.3},\
                  \"pop_over_1ms\":{over_1ms},\"pop_over_10ms\":{over_10ms},\"pop_over_100ms\":{over_100ms},\
-                 \"pop_clamp_saturated\":{clamp_saturated},\"wall_ms\":{wall_ms:.1}}}"
+                 \"pop_clamp_saturated\":{clamp_saturated},\
+                 \"bracket_baseline_p50_ns\":{baseline_p50},\"bracket_baseline_p99_ns\":{baseline_p99},\
+                 \"bracket_baseline_max_ns\":{baseline_max_ns},\"wall_ms\":{wall_ms:.1}}}"
             );
         }
     }
