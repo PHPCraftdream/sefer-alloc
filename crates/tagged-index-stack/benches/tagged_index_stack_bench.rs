@@ -256,7 +256,8 @@ fn main() {
         let index = 1u32;
 
         h.bench("push_pop/single_thread", move || {
-            stack.push(black_box(index));
+            // SAFETY: index 1 is in-domain and was popped at the end of the previous iteration, so not live.
+            unsafe { stack.push(black_box(index)) };
             black_box(stack.pop());
         });
     }
@@ -294,12 +295,14 @@ fn main() {
     {
         let stack = Stack::new();
         for i in 0..8u32 {
-            stack.push(i);
+            // SAFETY: fresh stack (domain 0..8); each index is in-domain and pushed exactly once.
+            unsafe { stack.push(i) };
         }
 
         h.bench("churn", move || {
             let idx = stack.pop().unwrap();
-            stack.push(idx);
+            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            unsafe { stack.push(idx) };
         });
     }
 
@@ -364,7 +367,7 @@ fn main() {
     // somewhere else in the shared stack -- a double-push of a
     // not-yet-retrieved index, which silently corrupts the free-list's
     // link structure (documented as an explicit caller contract in push_index's
-    // "# Caller contract" section in the crate docs, which also notes the
+    // "# Safety" section in the crate docs, which also notes the
     // only bound push_index itself checks is INDEX_MASK -- not "is this index
     // already live", since a liveness check would cost an O(n) chain walk
     // per push). Always re-pushing exactly the value pop() returned (the
@@ -412,7 +415,8 @@ fn main() {
             // this thread invented independently of pop()'s
             // result, so it can never collide with a value
             // still live elsewhere in the stack.
-            shared_stack.push(black_box(idx));
+            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            unsafe { shared_stack.push(black_box(idx)) };
             2
         } else {
             0
@@ -422,7 +426,10 @@ fn main() {
         "contention/push_pop",
         "",
         num_threads,
-        |thread_id| shared_stack.push((thread_id * LINKS_SIZE / num_threads) as u32),
+        |thread_id| {
+            // SAFETY: fresh empty stack (domain 0..LINKS_SIZE); each thread's seed index is distinct and pushed once.
+            unsafe { shared_stack.push((thread_id * LINKS_SIZE / num_threads) as u32) }
+        },
         iteration,
     );
 
@@ -455,7 +462,8 @@ fn main() {
 
     // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
-        shared_stack.push(i);
+        // SAFETY: stack provably drained above; each index 0..prefill_count is in-domain and pushed exactly once.
+        unsafe { shared_stack.push(i) };
     }
 
     // With `prefill_count` unique indices prefilled and at most
@@ -482,7 +490,8 @@ fn main() {
                 .pop()
                 .expect("contention/churn: stack drained -- invariant violated (see prefill_count/num_threads assert above)");
             // Immediately re-push (steady-state churn).
-            shared_stack.push(idx);
+            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            unsafe { shared_stack.push(idx) };
             2
         },
     );

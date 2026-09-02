@@ -1,4 +1,4 @@
-//! Consolidated compile-fail driver for `tagged-index-stack`: seven
+//! Consolidated compile-fail driver for `tagged-index-stack`: eight
 //! negative-regression tests, each building a deliberately-broken fixture
 //! crate under `tests/compile_fail/<fixture>/` in an out-of-process
 //! `cargo build` and asserting it fails with SPECIFIC errors. The shared
@@ -59,10 +59,10 @@
 //! make a fixture fail for the WRONG reason: the crate's own `--cfg
 //! loom`-without-feature `compile_error!` (see `src/lib.rs`) fires before
 //! any method resolution or bounds check, so assertions would pass even if
-//! the regression under test had resurfaced. For six of the seven fixtures
+//! the regression under test had resurfaced. For seven of the eight fixtures
 //! the child env therefore REMOVES `RUSTFLAGS` (and
 //! `CARGO_ENCODED_RUSTFLAGS`, which cargo prefers) so the fixture fails for
-//! the RIGHT reason. The seventh — the loom-cfg fixture below — is the
+//! the RIGHT reason. The eighth — the loom-cfg fixture below — is the
 //! INVERSE: the `--cfg loom` configuration is the whole point, so its child
 //! env SETS `RUSTFLAGS` to the literal `--cfg loom` (still removing
 //! `CARGO_ENCODED_RUSTFLAGS`).
@@ -458,5 +458,80 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
         stderr.contains("PlainStorage"),
         "expected the error to name THIS impl site (`PlainStorage`), not \
          some unrelated error:\n{context}"
+    );
+}
+
+/// Negative compile-fail regression: the two push entry points — the
+/// blanket-impl [`StackOps::push_index`] and the owned type's inherent
+/// [`ArrayIndexStack::push`] — are `unsafe fn` carrying the two-clause
+/// caller-side contract (link domain + liveness), so a bare push outside an
+/// `unsafe` block must NOT compile, with **E0133** ("call to unsafe function
+/// `X` is unsafe and requires unsafe function or block") naming EACH entry
+/// point. This pins the 2026-09-02 boundary move that made `push_index` (and
+/// `push`) join the three `StackStorage` hooks on the compiler-checked
+/// caller-side `unsafe` surface.
+///
+/// # This fixture does NOT stand alone
+///
+/// The compile-PASS counterpart — in-domain, live-free pushes issued from
+/// `unsafe` blocks — is pinned everywhere else in the suite: the fixture's
+/// own setup pushes compile (properly wrapped, with SAFETY comments), and
+/// `vec_backed_storage_push_pop_round_trips` +
+/// `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs` drive
+/// wrapped pushes end-to-end. The `unsafe fn` boundary is a barrier to
+/// MISUSE, not to legitimate use.
+///
+/// The fixture's implementor (`Pool`) is itself CORRECT — the only defects
+/// are its two bare, unsafe-context-free push calls in `main`, one through
+/// each entry point — so the ONLY errors are the two E0133s, each naming
+/// the called function (`push_index` and `push`). (E0133 names the
+/// function, not the type; the fixture-specific anchors below are the
+/// source snippets of each call against the fixture's own bindings
+/// `pool` and `owned`.)
+#[test]
+fn push_index_requires_unsafe_block() {
+    let Some(output) = build_fixture("push_index_requires_unsafe", None) else {
+        return; // packaged package: fixtures absent, skip.
+    };
+    let manifest = fixture_manifest("push_index_requires_unsafe");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let context = failure_context(&manifest, &output);
+
+    assert!(
+        !output.status.success(),
+        "the unsafe-push fixture COMPILED — the push entry points became \
+         callable from safe code (the caller-side `unsafe fn` boundary on \
+         `push_index`/`push` regressed):\n{context}"
+    );
+    assert!(
+        stderr.contains("E0133"),
+        "expected E0133 (call to unsafe function is unsafe) in the fixture's \
+         compile errors — it failed for some OTHER reason:\n{context}"
+    );
+    assert!(
+        stderr.contains("is unsafe and requires unsafe function or block"),
+        "expected the exact E0133 wording `is unsafe and requires unsafe \
+         function or block`:\n{context}"
+    );
+    assert!(
+        stderr.contains("call to unsafe function `push_index`"),
+        "expected an E0133 naming the `push_index` entry point:\n{context}"
+    );
+    assert!(
+        stderr.contains("call to unsafe function `ArrayIndexStack::<B, N>::push`"),
+        "expected an E0133 naming the owned type's `push` entry point (rustc \
+         qualifies inherent unsafe methods as `Type::push`):\n{context}"
+    );
+    assert!(
+        stderr.contains("pool.push_index(0)"),
+        "expected the fixture's own implementor binding (`pool`, a `Pool`) \
+         in the E0133 source snippets — the errors must come from THIS fixture's \
+         calls, not an unrelated site:\n{context}"
+    );
+    assert!(
+        stderr.contains("owned.push(0)"),
+        "expected the fixture's own owned-type binding (`owned`) in the \
+         E0133 source snippets — the errors must come from THIS fixture's \
+         calls, not an unrelated site:\n{context}"
     );
 }

@@ -50,8 +50,9 @@ fn main() {
         head: StackHead::new(),
         next: [const { AtomicU32::new(0) }; 8],
     };
-    pool.push_index(1);
-    pool.push_index(2);
+    // SAFETY: fresh pool (domain 0..8); indices 1 and 2 are in-domain and pushed exactly once.
+    unsafe { pool.push_index(1) };
+    unsafe { pool.push_index(2) };
     // Each call below is contract-shaped (index 2 was pushed through this
     // binding), so the ONLY compile error is the unsafe-call error itself.
     // Bare call outside an `unsafe` block. ERROR: E0133 — call to unsafe

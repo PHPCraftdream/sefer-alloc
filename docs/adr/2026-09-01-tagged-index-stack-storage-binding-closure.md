@@ -118,3 +118,56 @@ Each of the six demonstrating tests gets an explicit, documented post-change sta
 **TERMINAL shape.** This is intended as the TERMINAL shape for this boundary: no further Rust-type-system mechanism reaches further onto the caller side than `unsafe fn` does — a caller-side `# Safety` contract on an `unsafe fn` is the outermost caller-facing mechanism the language offers; the only stronger closure left would be removing the external seam entirely, which the original decision already rejected (it retires the crate's reason to exist). A future round should NOT reopen this axis a third time without NEW information (e.g., a language-level mechanism that does not exist today); documentation-only "closures" of the witness-fabrication class are precisely what this addendum rules out.
 
 **What shipped.** This change set (crate `src/imp.rs` + docs); all `unsafe impl` implementor signatures updated, including `sefer-alloc`'s `Registry`; crate unsafe-count claims updated 1→2 sites; CHANGELOG supersedes the witness bullet.
+
+## Addendum (2026-09-02, second same-day): `push_index` joins the unsafe boundary (task #1834)
+
+**The decision.** Owner approved (2026-09-02, second-opinion consultation with `@fh`, the same "strive for perfection, willing to break compatibility" framing as both prior decisions in this ADR): `StackOps::push_index`, `ArrayIndexStack::push`, and the internal `push_index_impl` become `unsafe fn`; and the crate-private `SealedStorage::store_next` (trait + both impls) becomes `unsafe fn` too — so the bridge is a verbatim forwarder and the actual safety proof lives at the algorithm's call site inside `push_index_impl` ("my only caller is push_index_impl" is a privacy argument, not a proof). `pop_index`/`ArrayIndexStack::pop` stay safe. Source finding: review run 7 (`docs/reviews/2026-09-02-132254-tagged-index-stack-review-Sol-codex-run-7.md`), blocking P1-1 + grouped P2-1.
+
+**NOT a third reversal on the hook axis.** `head`/`load_next`/`store_next`'s hook status, signatures, and caller-side contracts are unchanged from the previous addendum; `push_index` is a NEW member joining the unsafe boundary, not a re-litigation of the hooks. The previous addendum's TERMINAL-shape clause concerned the hook boundary and stands.
+
+**The two-axis contract.** The new caller-side contract carries two clauses: (i) **DOMAIN** — the index has a real backing cell in the implementor's declared link domain (narrower, routinely, than the numeric range the `index < INDEX_MASK` guard admits — that guard is necessary for the head-word encoding but never sufficient proof of domain membership); (ii) **LIVENESS** — the index is not currently reachable (never pushed, or its most recent push was followed by a pop that actually returned it). The review's alternatives were rejected on posture coherence, not diff size. Model 1 (keep push safe; require memory-safety over the FULL numeric range): leaves `store_next` an `unsafe fn` resting on nothing memory-related — incoherent, and it unravels the hook decision the TERMINAL clause protects. Model 2 (a `contains_index`/`capacity` query): redundant once the caller already proves in-domain as part of the unsafe contract — a second, weaker copy of the same proof, plus an awkward checked-vs-unchecked cost decision pushed onto implementors. Model 3's "safe wrapper where the type can check" cannot exist generically for the crate's own blanket impl (no way to discharge liveness at all); the only safe push a caller can have is a downstream newtype privately owning every push call site — a documented recipe, not shipped API.
+
+**The naming/scoping principle.** Push is unsafe because it is the exact analogue of `core::alloc::GlobalAlloc::dealloc` — "this index was issued to you (or is fresh, in-domain) and has not been handed back since"; dealloc is unsafe for precisely this reason. Pop is safe because an unauthorized pop can only LEAK an index, never double-issue one — it has no caller contract to carry.
+
+**The normative contract, verbatim from the landed `src/imp.rs`** (`StackOps::push_index`'s `# Safety` section — two clauses plus frame sentence plus precision sub-clause):
+
+> This is the caller-side unsafe contract, in two clauses; violating
+> either is a soundness violation attributable to the caller — the
+> same posture as [`core::alloc::GlobalAlloc::dealloc`], whose
+> exclusive-issuance contract unsafe allocator code relies on.
+>
+> 1. **Link domain.** `index` must be in `self`'s LINK DOMAIN — the
+>    set of indices for which this implementor owns a dedicated
+>    backing cell, as the implementor documents it
+>    ([`ArrayIndexStack<B, N>`](ArrayIndexStack)'s/[`ArrayLinks`]'s
+>    domain is `0..N`; `sefer-alloc::Registry`'s is `0..MAX_HEAPS`).
+>    The method's own `index < INDEX_MASK` guard (see `# Panics`) is
+>    necessary for the head-word ENCODING and stays release-active
+>    (same rationale as [`pop_index`](Self::pop_index)'s existing
+>    clause-4 guard), but it is NEVER sufficient proof of domain
+>    membership — a storage's domain may be (and routinely is)
+>    narrower than the numeric range `INDEX_MASK` admits; the guard
+>    observes only the numeric width. Do not conflate the numeric
+>    guard with the domain obligation.
+> 2. **Liveness (no double push).** `index` must NOT currently be
+>    reachable through the head of any binding whose hooks touch the
+>    same link cells as `self`'s: either `index` was never pushed
+>    through such a binding, or its most recent push was followed by
+>    a [`pop_index`](Self::pop_index) that actually RETURNED it, and
+>    it has not been pushed again since. Precision sub-clause: a
+>    concurrent popper that OBSERVED `index` as head but LOST its
+>    CAS did NOT pop it and did not take ownership of it — such a
+>    stale observer imposes no obligation on this push, and stale
+>    content sitting in `index`'s link cell from an earlier push
+>    cycle is irrelevant (the lazy-link/RAD-1 discipline: this
+>    push's own [`store_next`](StackStorage::store_next) overwrites
+>    it before the head CAS publishes `index`). Do not read this
+>    clause as forbidding a lost-CAS observer.
+
+**New trait clause 7 (atomic cells).** The trait `# Safety` contract gained a clause 7: a `store_next(i, ..)` can race with a stale popper's `load_next(i)` that will go on to lose its CAS, so a non-atomic implementor is UB even with every other clause honoured — previously only implied by the ordering contract.
+
+**Allow-site inventory: EIGHT item-scoped tier-2 allows, all in `src/imp.rs`.** Verified with the crate's self-verifying grep (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`): exactly eight hits, all `src/imp.rs` (lines 1050, 1232, 1357, 1386, 1434, 1624, 1766, 1859). Form choice: EIGHT item-scoped allows, NOT a single tier-1 seam module — consistent with the crate's existing two-site convention (each allow adjacent to its audited declaration with its own one-line reason), and appropriate because the boundary spans several distinct declarations — trait decls, impls, a free fn, an inherent method — that no single module naturally contains. The workspace's two-tier inventory and CLAUDE.md's self-verifying grep carry over unchanged.
+
+**One change closes both findings.** Review run-7's P1-1 AND P2-1 are closed by this ONE change: P1-1 — the bridge could not prove a backing cell exists for a narrower storage — now the caller proves domain membership compiler-checkably before the call; P2-1 — the liveness rule was prose-only on a safe fn — now clause 2 of a real unsafe contract.
+
+**What shipped.** `src/imp.rs`: `push_index`/`ArrayIndexStack::push`/`push_index_impl`/`SealedStorage::store_next` signature + contract change; ~52 test/bench call-site wraps with per-site SAFETY comments; the root `Registry` consumer (`push_free_slot`) unsafe-wrapped citing only release-active guards + the ACKNOWLEDGED EXPOSURE narrowing (external safe code can now only reach `pop_index`); the loom shim stays safe with divergence note 7; new compile-fail fixture `push_index_requires_unsafe` and miri unchecked-storage oracle `tests/narrow_domain_unchecked_storage.rs`; crate docs/README unsafe-site inventory updated 2→8.

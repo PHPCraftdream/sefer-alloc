@@ -16,10 +16,16 @@
 //! the stack's own CAS loops; end-to-end it additionally requires a
 //! non-blocking [`StackStorage`] implementation.
 //! Allocation-free, `no_std`; the production library source (`src/`) is
-//! `#![deny(unsafe_code)]` with exactly TWO audited `unsafe` sites — the
-//! `unsafe trait StackStorage` declaration (whose three hooks are `unsafe
-//! fn`) and the crate-private bridge impl that is their sole call site (see
-//! ["Where unsafe lives"](#where-unsafe-lives) below; this repository's
+//! `#![deny(unsafe_code)]` with exactly EIGHT audited `unsafe` sites, all
+//! item-scoped `#[allow(unsafe_code)]`, all in `src/imp.rs`: the `unsafe
+//! trait StackStorage` declaration (whose three hooks are `unsafe fn`), the
+//! caller-facing unsafe boundary (`StackOps::push_index` — trait method
+//! declaration and its blanket impl — plus the owned [`ArrayIndexStack::push`]
+//! and the shared internal `push_index_impl`, all carrying the two-clause
+//! link-domain + liveness caller contract), and the sealed `SealedStorage`
+//! surface (its `store_next` hook, the blanket bridge impl that is the
+//! `StackStorage` hooks' sole call site, and the owned type's own impl)
+//! (see ["Where unsafe lives"](#where-unsafe-lives) below; this repository's
 //! integration tests are separate crate targets that carry additional,
 //! intentional `unsafe impl StackStorage` test fixtures OUTSIDE that
 //! `src/`-scoped deny — see the same section).
@@ -236,19 +242,37 @@
 //!
 //! # Where unsafe lives
 //!
-//! The production library source (`src/`) contains exactly TWO audited
-//! `unsafe` sites, both item-scoped `#[allow(unsafe_code)]`, both in
+//! The production library source (`src/`) contains exactly EIGHT audited
+//! `unsafe` sites, all item-scoped `#[allow(unsafe_code)]`, all in
 //! `src/imp.rs` (tier 2 of this workspace's two-tier unsafe-inventory
-//! convention): (1) the `unsafe trait StackStorage` declaration — whose allow
-//! also covers its three `unsafe fn` hook declarations (lint levels are
-//! inherited by nested items) — and (2) the crate-private `SealedStorage`
-//! blanket-impl bridge, the SOLE call site of the three hooks, holding their
-//! three `unsafe {}` blocks with per-call `// SAFETY:` proofs. Exactly three
-//! `unsafe fn` declarations and exactly three `unsafe` blocks exist in
-//! `src/` — no other unsafe syntax in the library target, pinned by
-//! `#![deny(unsafe_code)]`: unlike `forbid`, `deny` can be locally relaxed —
-//! but only at those two audited sites — so every OTHER `unsafe` token in
-//! the library target remains a hard compile error.
+//! convention). Grouped by role:
+//!
+//! 1. the `unsafe trait StackStorage` declaration — its allow also covers its
+//!    three `unsafe fn` hook declarations (`head`, `load_next`, `store_next`;
+//!    lint levels are inherited by nested items);
+//! 2. the crate-private `SealedStorage` trait declaration — a safe `pub(crate)`
+//!    trait whose one `store_next` member is an `unsafe fn` (the allow covers
+//!    that declaration);
+//! 3. the caller-facing boundary `StackOps::push_index`'s trait-method
+//!    declaration;
+//! 4. the blanket [`StackOps`] impl's `push_index` body;
+//! 5. the shared internal `push_index_impl`;
+//! 6. the owned type's [`ArrayIndexStack::push`];
+//! 7. the crate-private `SealedStorage` blanket-impl bridge — the SOLE call
+//!    site of the three `StackStorage` hooks, holding their three `unsafe {}`
+//!    blocks with per-call `// SAFETY:` proofs;
+//! 8. the owned type's `SealedStorage` impl block (its `store_next` body).
+//!
+//! Exactly ten `unsafe fn` declarations and exactly three `unsafe` blocks
+//! exist in `src/` (ten = `StackStorage`'s three hook declarations (`head`,
+//! `load_next`, `store_next`), `SealedStorage`'s `store_next` declaration,
+//! `StackOps::push_index`'s declaration, the blanket impl's `push_index`,
+//! `push_index_impl`, `ArrayIndexStack::push`, the bridge impl's `store_next`,
+//! and the owned type's `SealedStorage` impl's `store_next`; three = the
+//! bridge's per-hook `unsafe {}` calls) — no other unsafe syntax in the library target,
+//! pinned by `#![deny(unsafe_code)]`: unlike `forbid`, `deny` can be locally
+//! relaxed — but only at those eight audited sites — so every OTHER `unsafe`
+//! token in the library target remains a hard compile error.
 //!
 //! A separate inventory, deliberately NOT folded into the production claim
 //! above: this repository's integration tests are separate crate targets
@@ -271,8 +295,8 @@
 //! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/
 //! ```
 //!
-//! which — run from the workspace root — returns exactly two hits in this
-//! crate, both in `src/imp.rs` (the trait declaration; the bridge impl). The
+//! which — run from the workspace root — returns exactly eight hits in this
+//! crate, ALL in `src/imp.rs`. The
 //! whole-crate-directory scope of that command additionally confirms zero
 //! `#[allow(unsafe_code)]` attributes in
 //! `tests/` — the fixtures' `unsafe impl`s need no per-site allow, because
@@ -290,10 +314,13 @@
 //! system); it moves the unchecked promise into Rust's unsafe-contract
 //! system, where responsibility for a violation is formally assigned to
 //! whichever `unsafe impl` asserted a contract it did not uphold. The three
-//! implementor hooks are `unsafe fn` — a call from safe code is E0133, and
-//! an `unsafe`-block call takes on the hook's own caller-side `# Safety`
-//! contract; see the [`StackStorage`] trait doc's unsafe-fn hooks, `# Safety`,
-//! and `# Stability` sections.
+//! implementor hooks AND the caller-facing push surface are `unsafe fn` — a
+//! bare call from safe code is E0133, and an `unsafe`-block call takes on the
+//! callee's own caller-side `# Safety` contract (`push_index`'s is the
+//! two-clause link-domain + liveness contract); `pop_index` deliberately
+//! stays safe, because an unauthorized pop can only LEAK an index, never
+//! double-issue one. See the [`StackStorage`] trait doc's unsafe-fn hooks,
+//! `# Safety`, and `# Stability` sections.
 //!
 //! # Portability limit — requires 64-bit atomics
 //!
@@ -315,22 +342,27 @@
 //! produce.
 
 #![no_std]
-// `deny`, not `forbid`: the library target (`src/`) now contains exactly TWO
-// audited `unsafe` sites, both item-scoped `#[allow(unsafe_code)]`, both in
+// `deny`, not `forbid`: the library target (`src/`) now contains exactly EIGHT
+// audited `unsafe` sites, all item-scoped `#[allow(unsafe_code)]`, all in
 // src/imp.rs (tier 2 of this workspace's two-tier unsafe-inventory
 // convention): the `unsafe trait StackStorage` declaration (whose allow also
-// covers its three `unsafe fn` hooks) and the crate-private `SealedStorage`
-// bridge impl — their sole call site, holding their three `unsafe {}` blocks.
+// covers its three `unsafe fn` hooks), the crate-private `SealedStorage`
+// trait declaration (a safe trait whose `store_next` member is an `unsafe fn`),
+// the caller-facing `StackOps::push_index`
+// declaration, the blanket impl's `push_index`, the shared `push_index_impl`,
+// `ArrayIndexStack::push`, the `SealedStorage` blanket-bridge impl — the
+// `StackStorage` hooks' sole call site, holding their three `unsafe {}`
+// blocks — and the owned type's `SealedStorage` impl.
 // A `forbid` lint cannot be locally relaxed by any inner `#[allow]`, so it
-// would reject both audited declarations; `deny` keeps every OTHER `unsafe`
-// token in the library target a hard error. (Integration tests are separate
-// crate targets that do not inherit this attribute and intentionally carry
-// additional `unsafe impl` test fixtures — see the crate docs' "Where unsafe
-// lives" section.)
+// would reject all eight audited declarations; `deny` keeps every OTHER
+// `unsafe` token in the library target a hard error. (Integration tests are
+// separate crate targets that do not inherit this attribute and intentionally
+// carry additional `unsafe impl` test fixtures — see the crate docs' "Where
+// unsafe lives" section.)
 // The self-verifying inventory command (see the crate docs' "Where unsafe
 // lives" section) — run from the workspace root:
 // `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`
-// — returns exactly two hits, both in src/imp.rs.
+// — returns exactly eight hits, all in src/imp.rs.
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 

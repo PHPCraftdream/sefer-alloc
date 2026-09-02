@@ -48,6 +48,7 @@ fn main() {
         head: StackHead::new(),
         next: [const { AtomicU32::new(0) }; 8],
     };
-    storage.push_index(1);
+    // SAFETY: fresh storage (domain 0..8); index 1 is in-domain and this is its first push.
+    unsafe { storage.push_index(1) };
     assert_eq!(storage.pop_index(), Some(1));
 }

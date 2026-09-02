@@ -129,7 +129,8 @@ fn vec_backed_storage_push_pop_round_trips() {
     let storage = VecStorage::new(8);
 
     for i in 0..4u32 {
-        storage.push_index(i);
+        // SAFETY: fresh storage (domain 0..8); each index 0..4 is in-domain and pushed exactly once.
+        unsafe { storage.push_index(i) };
     }
     let mut got = Vec::new();
     while let Some(i) = storage.pop_index() {
@@ -151,7 +152,8 @@ fn push_pop_through_dyn_storage() {
     let vec_storage = VecStorage::new(4);
     let storage_dyn: &dyn StackStorage<16> = &vec_storage;
 
-    storage_dyn.push_index(2);
+    // SAFETY: fresh storage with domain 0..16; index 2 is in-domain and not yet pushed.
+    unsafe { storage_dyn.push_index(2) };
     assert_eq!(storage_dyn.pop_index(), Some(2));
     assert_eq!(storage_dyn.pop_index(), None);
 }
@@ -221,7 +223,8 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
         links: &links_b,
     };
 
-    via_a.push_index(1);
+    // SAFETY: fresh `via_a` (links_a domain 0..64); index 1 is in-domain and not yet pushed.
+    unsafe { via_a.push_index(1) };
 
     // First pop through `via_b` is still legitimate: it IS the head. The
     // guard only fires on the SECOND pop, when the wrong backing's
@@ -301,7 +304,8 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
     };
 
     // A REAL push through the implementor: links[1] = TAIL, head = (1, tag).
-    parasite.push_index(1);
+    // SAFETY: fresh parasite links (domain 0..64); index 1 is in-domain and this is its first push.
+    unsafe { parasite.push_index(1) };
 
     // Forge an acyclic chain in the parasite's own links BEFORE popping:
     // index 1 (the head) chains to 0, 0 chains to TAIL.
@@ -381,12 +385,16 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
         links: &links,
     };
 
-    a.push_index(1);
-    a.push_index(2);
+    // SAFETY: fresh shared links (domain 0..64); indices 1 and 2 are each pushed exactly once, in-domain.
+    unsafe { a.push_index(1) };
+    unsafe { a.push_index(2) };
     // `b`'s push of 1 clobbers `links[1]` — the TAIL `a` stored there —
     // with 3, splicing `a`'s chain onto `b`'s tail.
-    b.push_index(3);
-    b.push_index(1);
+    // SAFETY: index 3 is in-domain and not yet pushed.
+    unsafe { b.push_index(3) };
+    // SAFETY: DELIBERATE contract violation under test — index 1 is still live (pushed via `a`); the
+    // resulting shared-links corruption is this test's subject.
+    unsafe { b.push_index(1) };
 
     let mut from_a = Vec::new();
     while let Some(i) = a.pop_index() {
@@ -460,7 +468,8 @@ fn internally_disagreeing_storage_still_double_issue() {
         write_links: ArrayLinks::<64>::new(),
     };
 
-    storage.push_index(1);
+    // SAFETY: fresh storage (domain 0..16); index 1 is in-domain and this is its first push.
+    unsafe { storage.push_index(1) };
 
     // First pop: reads the FOREIGN `read_links` (0 — in range and != 1),
     // so the guard stays silent while the head moves to a phantom
@@ -509,8 +518,9 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
         head: StackHead::new(),
         links: ArrayLinks::<64>::new(),
     };
-    old.push_index(1);
-    old.push_index(2);
+    // SAFETY: fresh Pool (domain 0..16); indices 1 and 2 are each in-domain and pushed exactly once.
+    unsafe { old.push_index(1) };
+    unsafe { old.push_index(2) };
 
     // Rebind: move the LIVE head into a fresh, zero-initialised backing.
     // `old.head` moves by value — no reference is shared, `old` is
@@ -596,13 +606,17 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
     let wide: &dyn StackStorage<16> = &dual;
     let narrow: &dyn StackStorage<12> = &dual;
 
-    wide.push_index(1);
-    wide.push_index(2);
-    narrow.push_index(3);
+    // SAFETY: fresh dual (links domain 0..16); indices 1 and 2 are in-domain, pushed once via `wide`.
+    unsafe { wide.push_index(1) };
+    unsafe { wide.push_index(2) };
+    // SAFETY: fresh narrow binding; index 3 is in-domain and not yet pushed on this binding.
+    unsafe { narrow.push_index(3) };
     // The narrow re-push of 1 clobbers links[1] — the TAIL the wide
     // binding stored there — with 3, splicing the wide chain onto the
     // narrow tail.
-    narrow.push_index(1);
+    // SAFETY: DELIBERATE contract violation under test — index 1 is still live via `wide`; the
+    // cross-width splice this causes is this test's subject.
+    unsafe { narrow.push_index(1) };
 
     let mut from_wide = Vec::new();
     while let Some(i) = wide.pop_index() {

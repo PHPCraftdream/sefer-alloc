@@ -231,7 +231,9 @@ fn main() {
         for rep in 1..=reps {
             let stack = Stack::new();
             for i in 0..LINKS_SIZE {
-                stack.push(i);
+                // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is
+                // in-domain and pushed exactly once.
+                unsafe { stack.push(i) };
             }
 
             // Published-window protocol, same shape as the contention phases of
@@ -281,7 +283,9 @@ fn main() {
                             }
                             black_box(idx);
                             samples.push(nanos.min(u32::MAX as u128) as u32);
-                            stack.push(idx);
+                            // SAFETY: idx was just returned by pop, so it is
+                            // not live; in-domain by construction.
+                            unsafe { stack.push(idx) };
                         }
                         (samples, clamp_saturated)
                     }));

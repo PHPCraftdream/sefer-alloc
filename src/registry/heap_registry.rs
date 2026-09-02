@@ -620,13 +620,16 @@ const _: () = assert!(
 //    `alloc-global + internals`, `sefer_alloc::registry` is a
 //    `#[doc(hidden)] pub` module, so `ensure()` hands `&'static Registry` to
 //    EXTERNAL safe code, and the crate's `StackOps` blanket impl drives
-//    `push_index`/`pop_index` — which, unlike the three raw hooks (now
-//    `unsafe fn` with caller-side `# Safety` contracts: a direct external
-//    call outside an `unsafe` block is E0133), are safe `fn`s taking no
-//    witness — through this
-//    binding from outside the crate. This clause's obligation (exactly one
-//    binding) still holds; the exposure is an availability hazard, not a
-//    soundness one — see clause 3's bound.
+//    `pop_index` — a safe `fn` taking no witness — through this binding from
+//    outside the crate. `push_index`, by contrast, is now an `unsafe fn`
+//    carrying the crate's two-clause caller contract (link domain + liveness),
+//    so external SAFE code cannot drive it (E0133): any external push must be
+//    an `unsafe` call whose author takes on that contract. The remaining
+//    safe-code surface (`pop_index`, and the impl's load/store pairs via the
+//    push/pop loops with adversarial indices) bounds the exposure to an
+//    AVAILABILITY hazard — an unauthorized pop can only leak/livelock, never
+//    double-issue a slot (the slot-state CAS remains the defence; see clause
+//    3's bound) — not a soundness one.
 // 2. One backing, consistently — `load_next`/`store_next` both resolve the
 //    index through `Registry::slot` (the single index→slot path) onto the
 //    SAME slot-resident `next_free: AtomicU32` cell; slots are `&'static`,
@@ -655,6 +658,15 @@ const _: () = assert!(
 //    sentinel reserved above the cap.
 // 5. Same logical head every call — `head()` returns `&self.free_slots`, a
 //    fixed field.
+// 6. Declared link domain — `Registry`'s domain is `0..MAX_HEAPS` (4096),
+//    documented here and fixed for the process life: the chunked slot
+//    array's allocation policy guarantees every index in that domain has a
+//    materialised backing cell. `load_next`/`store_next` resolve indices
+//    through the CHECKED `slot()` accessor, so they are memory-safe for
+//    every in-domain index (indeed for any index — no unchecked access is
+//    used anywhere in the impl).
+// 7. Atomic cells — the link cells are `AtomicU32` fields (`next_free`),
+//    accessed only through atomic `load`/`store` with `Acquire`/`Release`.
 #[cfg(not(loom))]
 unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     #[inline]
@@ -726,18 +738,56 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
 
 /// Push a slot index onto the `free_slots` stack.
 ///
-/// Delegates to [`tagged_index_stack::StackOps::push_index`] through
-/// `Registry`'s own `StackStorage` impl (the slot-resident links): the crate
-/// writes this slot's `next_free` link (via the impl's `store_next`) and bumps
-/// the ABA tag on the CAS. `idx < MAX_HEAPS`
-/// (the caller derived it from a valid heap pointer), so it fits the 16-bit
-/// index half with room below the empty sentinel.
+/// Delegates to [`tagged_index_stack::StackOps::push_index`] (now an
+/// `unsafe fn`) through `Registry`'s own `StackStorage` impl (the
+/// slot-resident links): the crate writes this slot's `next_free` link (via
+/// the impl's `store_next`) and bumps the ABA tag on the CAS. `idx <
+/// MAX_HEAPS` (the caller derived it from a valid heap pointer), so it fits
+/// the 16-bit index half with room below the empty sentinel.
 fn push_free_slot(reg: &Registry, idx: u32) {
     debug_assert!(
         (idx as usize) < MAX_HEAPS,
         "push_free_slot given an out-of-range slot index"
     );
-    reg.push_index(idx);
+    // NOTE: the `debug_assert!` above is NOT part of this proof — it compiles
+    // out under `--release` and cannot be relied on for a safety argument.
+    // SAFETY: `StackOps::push_index`'s two-clause caller contract, upheld for
+    // all three callers of `push_free_slot` (`recycle`, `push_back_after_oom`,
+    // and `ConflictRollback::drop` → `push_back_after_oom`):
+    // - LINK DOMAIN: every index reaching here is `< MAX_HEAPS` release-actively
+    //   — recycled indices via `recycle`'s `if idx >= MAX_HEAPS { return; }`
+    //   early return (~line 356), freshly-minted indices via `bump_count`'s
+    //   `None`-at-`>= MAX_HEAPS` cap (~line 751) — and
+    //   `MAX_HEAPS (4096) < INDEX_MASK (0xFFFF)`, so `idx` is inside
+    //   `Registry`'s declared link domain `0..MAX_HEAPS` (slot-resident
+    //   `next_free` cells; the chunked slot array guarantees the cell exists
+    //   for every in-domain index — `unsafe impl` SAFETY clause 6 above).
+    // - LIVENESS: `idx` is not currently reachable through the head. A
+    //   fresh-minted index has never been pushed. A recycled index reaches the
+    //   push by one of two paths: (a) `recycle` — the push is gated on THIS
+    //   caller's release-active `LIVE → FREE` CAS win (~line 368); an
+    //   already-FREE slot loses that CAS and early-returns without pushing, so
+    //   a slot still on the free list can never reach the push; (b)
+    //   `push_back_after_oom` (also via `ConflictRollback::drop`) — here the
+    //   liveness leg is the documented sole-writer invariant, NOT a
+    //   release-active gate: the caller won the slot's `FREE → LIVE` CAS in
+    //   `claim`/`claim_with_config` and is its sole writer until the push, so
+    //   the slot is `LIVE` — by construction not on the free list (a slot is
+    //   only ever pushed after leaving `LIVE`, and only `claim`'s `FREE →
+    //   LIVE` winner can put it back there); the `LIVE → FREE` CAS in this
+    //   path is defensive shape whose success is debug-asserted only (run-5
+    //   P4-3). In both paths the slot-state machine guarantees at most one
+    //   owner, so the index is never simultaneously reachable and re-pushed.
+    // Under loom the mirror `StackOps::push_index` (bootstrap.rs loom_shim)
+    // is a SAFE fn (divergence note 7), so the unsafe block is cfg-gated.
+    #[cfg(not(loom))]
+    unsafe {
+        reg.push_index(idx)
+    }
+    #[cfg(loom)]
+    {
+        reg.push_index(idx);
+    }
 }
 
 /// Mint a fresh slot by bumping `count`. Returns the new slot's index, or

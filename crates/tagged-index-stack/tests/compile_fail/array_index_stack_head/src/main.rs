@@ -16,7 +16,8 @@ fn steal_head<S: StackStorage<16>>(s: &S) -> &StackHead<16> {
 
 fn main() {
     let owned = ArrayIndexStack::<16, 64>::new();
-    owned.push(1); // the inherent push/pop API still works
+    // SAFETY: fresh stack (domain 0..64); index 1 is in-domain and this is its first push.
+    unsafe { owned.push(1) }; // the inherent push/pop API still works (push now requires unsafe)
     let _head = steal_head(&owned); // ERROR: E0277 — StackStorage not implemented
     let _direct = owned.head(); // ERROR: E0599 — no method named `head`
 

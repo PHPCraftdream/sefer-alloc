@@ -208,8 +208,9 @@ const N: usize = 2;
 /// production does), leaving a running tag of 2.
 fn both_free() -> Arc<ArrayIndexStack<16, N>> {
     let stack = Arc::new(ArrayIndexStack::<16, N>::new());
-    stack.push(1);
-    stack.push(0);
+    // SAFETY: fresh stack (domain 0..2); indices 1 and 0 are each in-domain and pushed exactly once.
+    unsafe { stack.push(1) };
+    unsafe { stack.push(0) };
     stack
 }
 
@@ -246,7 +247,8 @@ fn aba_repush_keeps_free_list_conservation() {
         let stack_b = Arc::clone(&stack);
         let tb = thread::spawn(move || {
             if let Some(idx) = stack_b.pop() {
-                stack_b.push(idx);
+                // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+                unsafe { stack_b.push(idx) };
             }
         });
 
@@ -468,7 +470,8 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             let first = stack_b.pop();
             let held = stack_b.pop();
             if let Some(idx) = first {
-                stack_b.push(idx);
+                // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+                unsafe { stack_b.push(idx) };
             }
             held
         });
@@ -524,7 +527,8 @@ fn run_h2(preserve_tag_on_drain: bool) {
         // that tag 1 — no higher seeded tag can ever recur through this
         // drain.
         let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
-        stack.push(0);
+        // SAFETY: fresh stack (sole in-domain index 0); this is its first push.
+        unsafe { stack.push(0) };
         let a_loaded = Arc::new(AtomicU32::new(0));
         let b_done = Arc::new(AtomicU32::new(0));
 
@@ -544,7 +548,8 @@ fn run_h2(preserve_tag_on_drain: bool) {
                 bug_pop_drain_to_empty(&stack_b)
             };
             if let Some(idx) = popped {
-                stack_b.push(idx);
+                // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+                unsafe { stack_b.push(idx) };
             }
             b_done_b.store(1, Ordering::Release);
         });
@@ -668,14 +673,16 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
         tagged_index_stack::pop_retry_count_for_test,
         || {
             let stack = Arc::new(ArrayIndexStack::<16, N>::new());
-            stack.push(1);
+            // SAFETY: fresh stack (domain 0..2); index 1 is in-domain and this is its first push.
+            unsafe { stack.push(1) };
 
             let stack_a = Arc::clone(&stack);
             let ta = thread::spawn(move || stack_a.pop());
 
             let stack_b = Arc::clone(&stack);
             let tb = thread::spawn(move || {
-                stack_b.push(0);
+                // SAFETY: index 0 is in-domain and was never pushed, so not live.
+                unsafe { stack_b.push(0) };
             });
 
             let a_result = ta.join().unwrap();
@@ -719,7 +726,8 @@ fn run_cas_retry(failure_ordering: Ordering) {
     model(move || {
         // Start with slot 1 only on stack (not slot 0).
         let stack = Arc::new(ArrayIndexStack::<16, N>::new());
-        stack.push(1);
+        // SAFETY: fresh stack (domain 0..2); index 1 is in-domain and this is its first push.
+        unsafe { stack.push(1) };
 
         let stack_a = Arc::clone(&stack);
         let stack_b = Arc::clone(&stack);
@@ -777,7 +785,8 @@ fn run_cas_retry(failure_ordering: Ordering) {
 
         // Thread B: pushes slot 0 (changing head, bumping tag).
         let tb = thread::spawn(move || {
-            stack_b.push(0);
+            // SAFETY: index 0 is in-domain and was never pushed, so not live.
+            unsafe { stack_b.push(0) };
         });
 
         let a_result = ta.join().unwrap();
@@ -849,12 +858,16 @@ fn push_push_conservation() {
 
             let stack_a = Arc::clone(&stack);
             let ta = thread::spawn(move || {
-                stack_a.push(0);
+                // SAFETY: fresh stack (domain 0..2); index 0 is in-domain, never pushed, and
+                // distinct from B's index 1, so it is never live elsewhere.
+                unsafe { stack_a.push(0) };
             });
 
             let stack_b = Arc::clone(&stack);
             let tb = thread::spawn(move || {
-                stack_b.push(1);
+                // SAFETY: fresh stack (domain 0..2); index 1 is in-domain, never pushed, and
+                // distinct from A's index 0, so it is never live elsewhere.
+                unsafe { stack_b.push(1) };
             });
 
             ta.join().unwrap();
@@ -1010,7 +1023,8 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
             // Seed exactly ONE element: slot 0 on a fresh (lazy, empty)
             // stack via the REAL push — running tag ends at exactly 1.
             let stack = Arc::new(ArrayIndexStack::<16, 1>::new());
-            stack.push(0);
+            // SAFETY: fresh stack (sole in-domain index 0); this is its first push.
+            unsafe { stack.push(0) };
 
             let stack_a = Arc::clone(&stack);
             let ta = thread::spawn(move || stack_a.pop());

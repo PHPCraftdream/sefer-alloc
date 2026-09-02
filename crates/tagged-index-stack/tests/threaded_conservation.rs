@@ -93,7 +93,8 @@ fn conservation_under_real_thread_contention() {
     // bench's `contention/churn` prefill discipline. No drain-first needed:
     // `Stack::new()` starts empty (RAD-1 lazy links).
     for i in 0..LINKS_SIZE {
-        stack.push(i);
+        // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is in-domain and pushed exactly once.
+        unsafe { stack.push(i) };
     }
 
     // Activation oracle (the first committed multi-threaded oracle for real
@@ -155,7 +156,8 @@ fn conservation_under_real_thread_contention() {
                          once, the stack can never observe fewer than \
                          LINKS_SIZE - NUM_THREADS elements",
                     );
-                    stack.push(idx);
+                    // SAFETY: idx was JUST returned by pop, so it is not live; in-domain by construction.
+                    unsafe { stack.push(idx) };
                 }
             });
         }

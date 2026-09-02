@@ -23,9 +23,11 @@ counter never repeats a value, and this one wraps — it just does not repeat
 until a full `2^TAG_BITS` pushes have elapsed, days of continuously
 saturated operation at every permitted width.) Allocation-free, `no_std`;
 the production library source (`src/`) is `#![deny(unsafe_code)]` with
-exactly TWO audited `unsafe` sites — the `unsafe trait StackStorage`
-declaration (whose three hooks are `unsafe fn`) and the crate-private bridge
-impl that is their sole call site. The repository's integration tests are
+exactly EIGHT audited `unsafe` sites, all in `src/imp.rs` — the `unsafe
+trait StackStorage` declaration (whose three hooks are `unsafe fn`) plus the
+sealed `SealedStorage` trait/bridge surface, and the caller-facing push
+boundary (`push_index` and `ArrayIndexStack::push`, both `unsafe fn` under a
+two-clause link-domain + liveness contract). The repository's integration tests are
 separate crate targets outside that deny and intentionally carry additional
 `unsafe impl StackStorage` test fixtures (correct implementor examples plus
 deliberately-broken compile-fail fixtures). See the crate documentation's
@@ -91,7 +93,8 @@ A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
 custom `StackStorage` impl. For standalone use, `ArrayIndexStack<INDEX_BITS,
 N>` is the owned standalone stack that fuses the head and an `ArrayLinks<N>`
-backing, with plain `push`/`pop` methods.
+backing, with `push`/`pop` methods — `push` is `unsafe fn` (the caller
+upholds the link-domain + liveness contract, see below); `pop` stays safe.
 
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
@@ -127,17 +130,24 @@ authoritative empty check.
   slot's page, and the SLOTS are what total ~16 MiB, not the link array
   itself.) A fresh stack is therefore EMPTY.
 
-### No double-push — caller-enforced, and not one of the two
+### No double-push — compiler-checked caller contract, still not runtime-checked
 
-- **No double-push (caller-enforced).** An index must NOT already be reachable
-  from ANY stack that reads and writes the same link cells this stack's
-  `load_next`/`store_next` touch. Consequence: re-pushing a live index closes
-  a cycle in the link chain — a deeper-than-head loop silently hands one
-  index to two callers; re-pushing the current head trips `pop_index`'s
-  self-loop detector on the first pop. Checking liveness would cost an O(n)
-  chain walk per push, so `push_index` checks only `index < INDEX_MASK`.
-  Full contract and consequences: `push_index`'s "# Caller contract"
-  (crate docs).
+- **No double-push (caller-side `# Safety` clause).** An index must NOT
+  already be reachable from ANY stack that reads and writes the same link
+  cells this stack's `load_next`/`store_next` touch. This rule is no longer
+  prose-only caller discipline: it is clause 2 of `push_index`'s
+  compiler-checked caller-side `# Safety` contract — `push_index` is an
+  `unsafe fn`, so a bare call from safe code is a compile error (E0133) —
+  though it is STILL not runtime-checked: no detector exists. Consequence:
+  re-pushing a live index closes a cycle in the link chain — a
+  deeper-than-head loop silently hands one index to two callers; re-pushing
+  the current head trips `pop_index`'s self-loop detector on the first pop.
+  Checking liveness would cost an O(n) chain walk per push, so `push_index`'s
+  own unconditional check is only `index < INDEX_MASK` — necessary for the
+  head-word encoding, but never sufficient proof of the implementor's
+  (typically narrower) link domain.
+  Full contract and consequences: `push_index`'s `# Safety` section (crate
+  docs).
 
 ## Tag-width budget
 
@@ -254,7 +264,8 @@ use tagged_index_stack::ArrayIndexStack;
 
 let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
-stack.push(7);                            // recycle index 7
+// SAFETY: 7 is a fresh index in this stack's 0..1024 domain, never pushed before.
+unsafe { stack.push(7) };                // recycle index 7
 assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 ```
 

@@ -252,6 +252,18 @@ First release. Everything below is new in this version; nothing has shipped befo
   could never legitimately need more than 32 bits; the type now carries that invariant directly. No
   runtime/algorithmic behavior changed — same bit patterns, same packing arithmetic, only the
   parameter/return type narrows to match the value's real range.
+- **BREAKING (unpublished 0.1.0): `push_index` (`StackOps` trait method),
+  `ArrayIndexStack::push`, and the internal push path (`push_index_impl`) are now
+  `unsafe fn` carrying a two-clause caller contract (LINK DOMAIN + LIVENESS/no
+  double push); the crate-private `SealedStorage::store_next` surface (trait +
+  both impls) is `unsafe fn` with the safety proof moved to the algorithm's call
+  site inside `push_index_impl`; `pop_index`/`ArrayIndexStack::pop` deliberately
+  stay safe (an unauthorized pop can only leak an index, never double-issue
+  one); the `index < INDEX_MASK` guard stays release-active and is now
+  documented as necessary-but-NEVER-sufficient for link-domain membership. The
+  crate's audited unsafe-site count is now EIGHT, all in `src/imp.rs`. Source:
+  review run 7 (P1-1 + P2-1) and the storage-binding ADR's 2026-09-02
+  (second same-day) addendum.**
 
 ### Fixed
 

@@ -517,6 +517,15 @@ pub(crate) mod loom_shim {
     //      `loom_shim` note at its `use` site below). All other orderings
     //      (push's Release/Relaxed CAS, pop's Acquire/Acquire CAS and
     //      Acquire initial head load) are replicated exactly.
+    //   7. the shim's `push_index` is a SAFE `fn`; the real crate's
+    //      `StackOps::push_index` is now an `unsafe fn` carrying a caller-side
+    //      two-clause contract (the pushed index must be in the implementor's
+    //      declared link domain, and must not currently be reachable through the
+    //      head). This is an intentional, documented divergence of the test
+    //      shim, not lockstep drift: the loom model checks the head protocol,
+    //      not the `unsafe` boundary, and the shim's callers are the same
+    //      registry paths whose SAFETY proofs (see `heap_registry.rs`'s
+    //      `push_free_slot`) discharge the real contract.
     // Keeping the shim minimal is deliberate: every shipped feature copied into
     // it doubles the surface that can silently drift from the real type.
     use tagged_index_stack::{TaggedIndex, TAIL};
@@ -580,6 +589,10 @@ pub(crate) mod loom_shim {
         /// Head-protocol replica of `StackOps::push_index` (Release CAS, tag
         /// bump, RAD-1 lazy link write inside push only; no backoff and no
         /// caller-contract guard — see the module comment above).
+        /// Divergence note 7: this is a safe `fn`, while the real crate's
+        /// `StackOps::push_index` is now an `unsafe fn` with a caller-side
+        /// link-domain + liveness contract — an intentional, documented shim
+        /// divergence, not lockstep drift.
         fn push_index(&self, index: u32) {
             let head_ref = self.head();
             // Divergence note 6: deliberately STRONGER than the shipped
