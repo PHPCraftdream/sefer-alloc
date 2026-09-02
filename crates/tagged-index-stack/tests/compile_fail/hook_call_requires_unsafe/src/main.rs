@@ -10,7 +10,9 @@
 //! design was removed because fabricating a witness value involved no unsafe
 //! operation, so its prose-only closure was unenforceable; `unsafe fn` is the
 //! `GlobalAlloc` shape — `unsafe trait` + `unsafe fn` — and gives a
-//! compiler-checked caller-side contract.
+//! compiler-enforced acknowledgement of the caller-side contract, not a
+//! compiler-checked one: the compiler only forces the `unsafe {}` wrapper,
+//! the contract's substance is still verified by the human writing the call.
 //!
 //! The compile-PASS counterpart: the hooks are a barrier to MISUSE, not to
 //! legitimate use — a correct `unsafe impl` driven only through the safe

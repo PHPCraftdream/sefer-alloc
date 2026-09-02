@@ -636,9 +636,13 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    `Acquire`/`Release` orderings are the same requirement restated as
 ///    orderings; this clause states it plainly.)
 ///
-/// The sections below — "The binding: what is structural, what is not"
-/// and "The shared-storage hazard class" — remain the explanatory
-/// appendix to this contract, not a replacement for it.
+/// The sections below — "The binding: structural vs. value-level
+/// obligations" and "The shared-storage hazard class: detection boundary"
+/// — remain the explanatory appendix to this contract, not a replacement
+/// for it; the full design/audit detail beneath their compact summaries is
+/// archived in the repository ADR
+/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+/// (a repository file, not part of the published package).
 ///
 /// # Ordering contract
 ///
@@ -675,9 +679,9 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// the [`store_next`](Self::store_next) the stack performed, *given* that
 /// every call reaches the same implementor. Under this API that "given" is
 /// structural only at the type level and a live obligation at the value
-/// level: see "The binding: what is structural, what is not" below.
+/// level: see "The binding: structural vs. value-level obligations" below.
 ///
-/// # The three hooks are unsafe fn — compiler-checked caller-side contracts
+/// # The three hooks are unsafe fn — a compiler-enforced unsafe boundary
 ///
 /// [`head`](Self::head), [`load_next`](Self::load_next), and
 /// [`store_next`](Self::store_next) are the STORAGE IMPLEMENTOR's hooks —
@@ -686,7 +690,10 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// carrying its own caller-side `# Safety` clause stating what the CALLER
 /// must uphold to invoke it soundly (see each method's docs). A call to
 /// any hook outside an `unsafe` block is a compile error (E0133, "call to
-/// unsafe function is unsafe"), and every hook invocation anywhere must
+/// unsafe function is unsafe") — the compiler enforces only that an
+/// `unsafe` context exists, not the clause's substance (link domain,
+/// liveness, or any other semantic precondition), which the human writing
+/// the call must verify by hand — and every hook invocation anywhere must
 /// discharge the callee's caller-side contract inside an `unsafe {}` with a
 /// `// SAFETY:` proof. The crate's own sole call site is that bridge, inside
 /// the [`push_index`](StackOps::push_index)/
@@ -705,275 +712,135 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// built around the returned reference. Against the crate's shipped
 /// standalone type ([`ArrayIndexStack`]) even this route is closed — the
 /// type does not implement this trait and hands out no head reference (see
-/// its own doc).
+/// its own doc). This `unsafe fn` boundary gates the crate's OWN hooks,
+/// NOT an implementor's own storage: an implementor that exposes its own
+/// head through its own inherent (non-trait) API can still have a
+/// competing binding rebuilt against it that way, so one-value-per-head
+/// stays a convention the implementor upholds by construction — asserted
+/// formally by every `unsafe impl`, not detected by it.
 ///
-/// # The binding: what is structural, what is not
+/// # The binding: structural vs. value-level obligations
 ///
 /// The caller-side obligation the old per-call-`&L` API could only document
 /// (same logical backing on every call) is now an OBLIGATION OF THE
-/// IMPLEMENTOR — but it is only PARTLY discharged by the compiler. The
-/// paragraphs below key each explanation to the `# Safety` clauses by name.
-///
-/// **The one-live-binding-per-head obligation (`# Safety` clause 1) is
-/// structural only at the type level; at the value level it is a live
-/// implementor obligation.** A [`StackStorage`] implementor IS the backing:
-/// the [`head`](Self::head) it returns and the cells its
-/// `load_next`/`store_next` touch are bound through one `impl` block on one
-/// object. What the compiler enforces is the CALLING convention — a caller
-/// cannot hand a second, different backing ARGUMENT to
+/// IMPLEMENTOR — but it is only PARTLY discharged by the compiler. What the
+/// compiler enforces is the CALLING convention: a caller cannot hand a
+/// second, different storage ARGUMENT to
 /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
-/// on a later call (the two-backings-one-head call shape does not compile —
-/// pinned by `tests/compile_fail.rs`; see the hazard-class inventory's
-/// intro below). What NOTHING enforces — not the type system, not the
-/// [`StackOps`] blanket impl, not clause 4's release-active guard, and not
-/// even the `unsafe impl` acknowledgment (which forces every implementor to
-/// ASSERT the contract but detects no violation) — is the instance-level
-/// half: a given [`StackHead`] value must be reachable through exactly one
-/// live implementor VALUE at a time. Two SEPARATE, individually coherent
-/// implementor values can each return a reference to the same [`StackHead`]
-/// while reading and writing DIFFERENT link storage — that still compiles
-/// (behind an `unsafe impl` asserting the contract it violates), and it
-/// reproduces this crate's original release-blocking double-issue hazard.
-/// No clause's wording catches it: every clause is stated per implementor,
-/// and each of the two values satisfies the clauses on its own terms. The
-/// hazard is two implementor values of possibly the same impl sharing one
-/// head — not multiple impl blocks existing — and the values are
-/// individually correct, so no per-impl audit can see the combination.
-/// Discharge it by construction — one implementor value per head, for the
-/// head's WHOLE life (one-live-value-at-a-time is not enough: shape 4 in
-/// the inventory below rebinds a live head across time while every moment
-/// still has exactly one live value). Inventory shape 2 below holds this
-/// shape's canonical statement, detection boundary, and pinned test.
+/// on a later call — the two-backings-one-head call shape does not compile
+/// (pinned by `tests/compile_fail.rs`). What NOTHING enforces — not the
+/// type system, not the [`StackOps`] blanket impl, not clause 4's
+/// release-active guard, and not even the `unsafe impl` acknowledgment
+/// itself (which forces every implementor to ASSERT the contract but
+/// detects no violation) — is the INSTANCE-level half of clause 1 (a given
+/// [`StackHead`] value reachable through exactly one live implementor VALUE
+/// at a time, for the head's whole life) and the BINDING-level half of
+/// clause 3 (no index reachable from two live bindings sharing link
+/// cells). Two separate, individually coherent implementor values, each
+/// satisfying every clause on ITS OWN terms, can still violate the
+/// contract together — no per-implementor audit sees the combination.
+/// Discharge both by construction: one implementor value per head, for the
+/// head's WHOLE life (one-live-value-AT-A-TIME is not enough — clause 1's
+/// body already forbids rebinding a live head to different links across
+/// time even with never more than one live value at any instant, see
+/// hazard shape 4 below); disjoint reachable-index populations per binding
+/// over any shared cell population. Clause 1's whole-life half also binds
+/// the backing: the implementor and its cells must remain alive and keep
+/// their identity for as long as the stack's head can reference them — in
+/// practice, for the implementor's own lifetime. Clause 2's mapping half
+/// (every valid index maps to the same link cell for the implementor's
+/// whole lifetime) and its coherence half (a `load_next` of index `i`
+/// observes the most recent `store_next` of `(i, _)` the crate itself
+/// performed) are both guaranteed by the Acquire/Release ordering contract
+/// above, for a single, stable implementor.
 ///
-/// The `unsafe fn` boundary gates the crate's hooks, NOT the implementor's
-/// own storage: an implementor that exposes its own head through its own
-/// inherent API can still have the shape rebuilt against it, so
-/// one-value-per-head stays a convention the implementor upholds (asserted
-/// formally by every `unsafe impl` — see the `# Safety` section above). An
-/// implementor whose `load_next`/`store_next` internally touch different
-/// storage still compiles too — inventory shape 1; it violates `# Safety`
-/// clauses 3 and 4. The crate's own fused type, [`ArrayIndexStack`], does
-/// not implement this trait at all, so a competing binding against a
+/// Clause 1's coverage of the shared-head hazard is EXHAUSTIVE: there are
+/// exactly two routes to a `&StackHead<INDEX_BITS>` from safe code (own a
+/// [`StackHead`] value directly, or call the `unsafe fn`
+/// [`head`](Self::head) hook — itself closed to outside callers except
+/// through an implementor's own storage/API, see "The three hooks are
+/// unsafe fn" above), so clause 1's obligation stays over VALUES, not over
+/// types. The crate's own fused type, [`ArrayIndexStack`], does not
+/// implement this trait at all, so a competing binding against a
 /// standalone [`ArrayIndexStack`] is UNEXPRESSIBLE (compile-fail pinned —
-/// see [`ArrayIndexStack`]'s own doc).
-///
-/// **Completeness of clause 1's coverage.** Clause 1's obligation — "any
-/// implementor value that can produce a [`StackHead`] reference matching
-/// another implementor's" — covers the shared-head hazard EXHAUSTIVELY.
-/// There are exactly TWO routes to a `&StackHead<INDEX_BITS>` from safe
-/// code as of this writing: (1) own a [`StackHead`] value directly —
-/// [`new`](StackHead::new) / `Default::default()` are the only public
-/// constructors — and hand `&` it to multiple implementor values; (2) call
-/// the trait's [`head`](Self::head) hook — an `unsafe fn`, so a safe-code
-/// call is E0133 and an `unsafe`-block call takes on
-/// [`head`](Self::head)'s caller-side `# Safety` contract (see "The three
-/// hooks are unsafe fn" above; compile-fail pinned by
-/// `tests/compile_fail/hook_call_requires_unsafe/`). The hook survives
-/// only (a) inside the crate, where the stack algorithm itself is the sole
-/// caller, and (b) through an implementor's OWN storage/API, which is
-/// route 1's implementor-side obligation, not a trait surface. From
-/// outside this crate exactly one route to a `&StackHead` therefore
-/// remains: owning a [`StackHead`] value directly — which is why clause
-/// 1's obligation stays over VALUES, not over types. No third route exists
-/// as of this writing; the supporting census (impl list, derives, private
-/// fields, every signature returning `&StackHead`) is falsifiable, not an
-/// assertion — re-verify it mechanically before relying on it: the grep
-/// recipes, the known falsification limits, and the dated census snapshot
-/// are recorded in the repository ADR
+/// see [`ArrayIndexStack`]'s own doc). The dated census proving no third
+/// route exists, its grep recipes, and its known falsification limits are
+/// archived in the repository ADR
 /// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
-/// (a repository file, not part of the published package). A third route
-/// would falsify this paragraph and clause 1's coverage claim — update
-/// both in the same change.
+/// (a repository file, not part of the published package) — re-verify it
+/// mechanically before relying on it.
 ///
-/// **Clause 1's whole-life half also binds the backing.** The implementor
-/// and its cells must remain alive and keep their identity for as long as
-/// the stack's head can reference them — in practice, for the
-/// implementor's own lifetime.
+/// Clause 4 (valid answers, dedicated cells) stays a live RUNTIME
+/// obligation nothing here structurally prevents: an implementation
+/// returning an arbitrary, stale, or foreign value corrupts the free-list
+/// with no adversarial intent required. What the runtime catches of this,
+/// and what it still misses, is "Detection boundary" in the hazard-class
+/// section below; the release-active guard itself, the exact
+/// zero-initialised-backing and out-of-range corruption mechanisms, and
+/// the two-cause disjunction of what a self-loop proves, are canonically
+/// in [`pop_index`](StackOps::pop_index)'s `# Panics` — not restated here.
+/// See "Storage requirement" below for why payload-aliased link storage
+/// always violates this clause. The full per-clause elaboration this
+/// section summarizes is archived in the same repository ADR's P3-4
+/// addendum, for readers who want the worked examples rather than the
+/// operative conclusion.
 ///
-/// **The one-backing-consistently obligation (`# Safety` clause 2) has two
-/// halves.** The mapping half: every valid index must map to the same
-/// link cell for the implementor's whole lifetime. The coherence half: a
-/// [`load_next`](Self::load_next) of index `i` must observe the most recent
-/// [`store_next`](Self::store_next) of `(i, _)` the crate itself performed
-/// on this implementor. The Acquire/Release ordering contract above
-/// guarantees this for a single, stable implementor.
-///
-/// **The disjoint-reachable-populations obligation (`# Safety` clause 3)
-/// is a REACHABILITY invariant, not a cell-ownership one, and it is
-/// binding-level — parallel to clause 1's instance-level obligation.** An
-/// index must not already be REACHABLE from any head↔links binding that
-/// reads and writes the same link cells this implementor's
-/// [`load_next`](Self::load_next)/[`store_next`](Self::store_next) touch
-/// (the same invariant
-/// [`push_index`](StackOps::push_index)'s `# Safety` section states from
-/// the caller's side). Cell sharing PER SE is harmless: two stacks over
-/// the same cells with DISJOINT index populations coexist correctly — the
-/// hazard fires only when one index is reachable from two bindings over
-/// the same cells. Discharge it by construction — disjoint index
-/// populations per binding over any shared cell population, the same
-/// one-binding-per-head discipline clause 1 demands for heads. Inventory
-/// shape 3 below holds the canonical mechanism, the disjoint-populations
-/// example, the detection boundary, and the pinned test.
-///
-/// **The valid-answers-from-dedicated-cells obligation (`# Safety`
-/// clause 4) stays a live runtime obligation.** An implementation
-/// returning an arbitrary, stale, or foreign value corrupts the
-/// free-list with no adversarial intent: a zero-initialised
-/// [`ArrayLinks`] "coincidentally" returns `0` for every index, and if
-/// that equals the live head's own index,
-/// [`pop_index`](StackOps::pop_index)'s compare-exchange
-/// `current -> current` succeeds trivially. That self-loop sub-shape is
-/// one of the two value shapes clause 4's release-active guard catches —
-/// detection of shapes, not structural prevention; every other
-/// clause-4-violating value that is in range and not the popped index
-/// itself still passes silently.
-///
-/// An out-of-range return is a second, silent hazard:
-/// [`pop_index`](StackOps::pop_index) packs the value it read with its
-/// crate-private truncating fast path (`pack_truncating` — the public
-/// [`pack`](TaggedIndex::pack) is checked and rejects), which masks an
-/// over-wide value to its low `INDEX_BITS` bits — either to a LIVE index
-/// (e.g. `0x1_0000` at `INDEX_BITS = 16` packs as index `0`, which may
-/// still be owned elsewhere in the free-list: a double-issue), or to the
-/// EMPTY sentinel (low bits all ones), so the stack silently reports
-/// itself drained and leaks every remaining index in the chain. What the
-/// runtime catches of all this, and what it still misses, is "Detection
-/// coverage" in the hazard-class section below; the release-active guard
-/// itself, and the two-cause disjunction of what a self-loop proves, are
-/// in [`pop_index`](StackOps::pop_index)'s `# Panics`. See "Storage
-/// requirement" below for why payload-aliased link storage always
-/// violates this clause.
-///
-/// # The shared-storage hazard class: inventory and detection coverage
+/// # The shared-storage hazard class: detection boundary
 ///
 /// The caller-facing calling convention makes the two-backings-one-head
 /// swap trap — two independent calls, each supplying a different backing
 /// for the same head — uncompilable (`tests/compile_fail.rs` pins exactly
 /// that). What remains expressible is the REST of the shared-storage
-/// hazard class: FOUR shapes, none of them the only gap the others leave.
-/// Since the `unsafe trait` conversion, none of them is expressible in
-/// plain safe code: each requires an `unsafe impl StackStorage` — a
+/// hazard class: FOUR shapes, none of them the only gap the others leave,
+/// each still expressible only behind an `unsafe impl StackStorage` — a
 /// compiler-forced acknowledgment, at the impl site, of the very `#
-/// Safety` contract the shape then violates. Still expressible, in other
-/// words — closed only by the unsafe-impl contract, NOT by the type
-/// system. Exactly one of them — shape 1 — VIOLATES per-implementor
-/// clauses (clauses 3 and 4 oblige the implementor to prevent it):
-/// implementor-enforced, not structurally impossible, and auditable
-/// inside one impl block, unlike the binding-level shapes 2, 3, and 4,
-/// which ARE reachable with every per-implementor clause individually
-/// satisfied — their subject is a head↔links BINDING (how many live
-/// bindings exist over a given head or cell population, and across how
-/// much time), not the state of any single implementor, so no
-/// per-implementor clause can even name them. This section is the source
-/// of truth for that inventory and for what the runtime currently
-/// detects; the crate-root docs, the README, the type and method docs,
-/// and the pinning tests point here rather than re-deriving it (the same
-/// pattern `tests/loom_aba.rs`'s module doc establishes for the loom
-/// per-model breakdown):
+/// Safety` contract the shape then violates. Shape 1 VIOLATES
+/// per-implementor clauses (3 and 4): implementor-enforced, not
+/// structurally impossible, and auditable inside one impl block. Shapes
+/// 2-4 are BINDING-level: their subject is a head↔links BINDING (how many
+/// live bindings exist over a given head or cell population, and across
+/// how much time), not the state of any single implementor, so no
+/// per-implementor clause can even name them — each is reachable with
+/// every per-implementor clause individually satisfied. This section is
+/// the source of truth for the inventory and for what the runtime
+/// currently detects; the crate-root docs, README, type/method docs, and
+/// pinning tests point here rather than re-deriving it (the same pattern
+/// `tests/loom_aba.rs`'s module doc establishes for the loom per-model
+/// breakdown).
 ///
-/// 1. **One implementor, internally disagreeing storage** — a SINGLE
-///    implementor whose [`load_next`](Self::load_next)/
-///    [`store_next`](Self::store_next) read and write different backings
-///    behind one head. Clauses 3 and 4 oblige the implementor to prevent it:
-///    implementor-enforced, not structurally impossible — and auditable
-///    inside one impl block, unlike the three binding-level shapes below.
-/// 2. **Shared head, different links** — TWO head↔links bindings whose
-///    [`head`](Self::head) methods return the same [`StackHead`] value
-///    while their links differ (clause 1's instance-level obligation above;
-///    the completeness note there shows the reference-sharing route
-///    cannot be sealed). In practice the two bindings are two implementor
-///    values — coherence allows only one `impl StackStorage<B>` per type,
-///    so a single value cannot carry two live same-width bindings — but
-///    the inventory's unit is the BINDING, not the value, because shapes
-///    3 and 4 below are reachable within a single value (shape 3) or
-///    across time with never more than one live value (shape 4).
-/// 3. **Separate heads, shared link cells** — link STORAGE (the cells
-///    `load_next`/`store_next` touch) shared between TWO head↔links
-///    bindings with completely SEPARATE heads (clause 3's binding-level
-///    invariant). NOT "the cells are clobbered on every push": with DISJOINT
-///    index populations two stacks over the same cells coexist correctly,
-///    because each `store_next(i, _)`/`load_next(i)` touches only cell
-///    `i` (`{0, 2, 4, 6}` and `{1, 3, 5, 7}` interleaved over one
-///    `ArrayLinks` each drain exactly their own multiset). The hazard
-///    fires when one index is REACHABLE from more than one binding over
-///    the same cells: the second binding's push overwrites a link the
-///    first still chains through, one index ends up chained into BOTH
-///    stacks, and the shared chain stays perfectly acyclic. Reachable
-///    with the two bindings in two implementor values AND inside one value
-///    carrying two different-width heads
-///    with a `StackStorage` impl at each width over the same backing
-///    (push 1, 2 at width 16; push 3, re-push 1 at width 12; the width-16
-///    drain yields `2, 1, 3` and the width-12 drain `1, 3` — indices 1
-///    and 3 each issued twice, one implementor value the whole time;
-///    pinned by
-///    `one_value_two_bindings_shared_backing_still_double_issue` in
-///    `tests/custom_storage_impl.rs`).
-///
-/// 4. **Temporal rebinding — a live head moved into fresh links** — one
-///    head↔links binding replaced, mid-life, by a second binding over
-///    the same [`StackHead`] value with different links: `let grown = Pool { head: old.head, links:
-///    ArrayLinks::new() }` where `old` is a contract-abiding implementor
-///    with a non-empty stack. The move consumes `old`, so NO reference
-///    is ever shared and there is never more than one live implementor
-///    value — clause 1's instance-level obligation ("exactly one live
-///    implementor VALUE at a time") holds as stated, its completeness
-///    note sees nothing (no `&StackHead` route is involved — the head
-///    moves by VALUE, not by reference), and the scoping parenthetical
-///    below counts no second live value: only clause 1's HEADLINE — one
-///    live binding per head, for the head's whole life — covers this
-///    shape, in spirit. Effect: the fresh (zero-initialised) backing
-///    answers every `load_next` with `0`; the FIRST pop hands back the
-///    real head index from a backing that no longer describes the chain
-///    (every deeper index silently LEAKED — unreachable, never issued),
-///    and the SECOND pop panics through the self-loop detector (pinned
-///    by `head_moved_into_fresh_links_leaks_and_then_panics` in
-///    `tests/custom_storage_impl.rs`).
-///
-///    (This inventory counts head↔links BINDINGS, not implementor
-///    values: a shape qualifies when a head or a link-cell population
-///    reaches two live bindings at once (shapes 2 and 3), or when one
-///    live binding is replaced across time by another binding over the
-///    same head with different links (shape 4). One expressible shape
-///    is still excluded here by construction: one implementor whose
-///    [`head`](Self::head) returns different heads across calls is not
-///    a shared-or-rebound-binding hazard, and it is covered by its own
-///    section above, "Mechanical requirement on `head()`".)
+/// | Shape | Hazard | Runtime detection |
+/// |---|---|---|
+/// | 1. Internally disagreeing storage | one implementor's [`load_next`](Self::load_next)/[`store_next`](Self::store_next) read and write different backings behind one head | zero-init sub-shape: 2nd-pop self-loop panic; otherwise silent |
+/// | 2. Shared head, different links | two bindings' [`head`](Self::head) return the same [`StackHead`] value over different link cells | zero-init sub-shape: 2nd-pop self-loop panic; against the owned standalone [`ArrayIndexStack`] the shape is UNEXPRESSIBLE (compile-fail); otherwise silent |
+/// | 3. Separate heads, shared link cells | one index REACHABLE from two bindings sharing link cells (disjoint reachable populations over shared cells are harmless — the hazard is reachability, not sharing) | no detector at all — the chain stays acyclic; always silent |
+/// | 4. Temporal rebinding | a live head moved BY VALUE into fresh links, mid-life — never more than one live implementor value at any instant, but clause 1's body forbids rebinding across time regardless (see "The binding" above) | 1st pop: silent leak of every deeper index; 2nd pop: self-loop panic |
 ///
 /// Detection coverage, stated once: [`pop_index`](StackOps::pop_index)'s
 /// release-active clause-4 guard (see its `# Panics`, which also holds the
-/// full two-cause disjunction of what a self-loop proves — this section
-/// covers only the shared-storage/rebinding half of the class) is a
-/// VALUE-shape detector — it panics on an out-of-range answer (before its
-/// two truncation corruptions) and on a self-loop
-/// (`next == index`, unreachable for a contract-abiding chain because a
-/// push stores the PREVIOUS head into `next[index]`, which is trivially
-/// already reachable). That catches the zero-initialised sub-shapes of
-/// shapes 1, 2, and 4 — on the SECOND pop, where the foreign `0` answers
-/// coincide with the popped index (pinned by the three `#[should_panic]`
-/// tests in `tests/custom_storage_impl.rs`:
-/// `internally_disagreeing_storage_still_double_issue` for shape 1, plus
-/// `two_implementor_values_sharing_one_head_still_double_issue` for shape 2
-/// in its custom-implementor form; shape 2 against the owned standalone
-/// type no longer compiles at all, pinned by
-/// `tests/compile_fail/array_index_stack_head/`). The same
-/// self-loop arm ALSO fires for a caller-contract violation OUTSIDE this
-/// hazard class entirely — a plain double-push of the index that is
-/// already the current head, this crate's separate, older no-double-push
-/// rule ([`push_index`](StackOps::push_index)'s `# Safety` section;
-/// pinned by `double_push_of_current_head_panics_on_first_pop` in
-/// `tests/stack_unit.rs`; see `pop_index`'s `# Panics` for the full
-/// two-cause disjunction — not restated here). Everything else still
-/// corrupts SILENTLY, at least at first: a hand-crafted acyclic link
-/// forgery (pinned by `hand_crafted_acyclic_forgery_still_double_issues`),
-/// all of shape 3 (pinned by
-/// `two_stacks_sharing_link_storage_still_double_issue`), and shape 4's
-/// FIRST pop — the stale head index is returned from a backing that no
-/// longer describes the chain and every deeper index leaks before the
-/// self-loop detector makes the rebinding loud on the second pop, one
-/// index too late (pinned by
-/// `head_moved_into_fresh_links_leaks_and_then_panics`). Shape 3 has no
+/// full two-cause disjunction of what a self-loop proves — a self-loop
+/// ALSO fires for an unrelated caller-contract violation outside this
+/// hazard class, a plain double-push of the current head) is a VALUE-shape
+/// detector, not a structural fix — it panics on an out-of-range answer or
+/// a self-loop (`next == index`), which catches only the zero-initialised
+/// sub-shapes of shapes 1, 2, and 4, one pop too late. Shape 3 has no
 /// detector at all, because every link value stays numerically valid and
-/// the chain acyclic — documented, not detected.
+/// the chain acyclic — documented, not detected. The full shape-by-shape
+/// walkthroughs (worked examples, exact corruption mechanisms) and the
+/// per-test status list (which test pins which shape, guard fires vs.
+/// silent) are archived in the repository ADR
+/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`'s
+/// P3-4 addendum and in `tests/custom_storage_impl.rs`'s own module doc
+/// respectively (both repository files/locations, per this crate's
+/// existing single-sourcing convention).
+///
+/// (This inventory counts head↔links BINDINGS, not implementor values: a
+/// shape qualifies when a head or a link-cell population reaches two live
+/// bindings at once (shapes 2 and 3), or when one live binding is replaced
+/// across time by another binding over the same head with different links
+/// (shape 4). One expressible shape is excluded here by construction: one
+/// implementor whose [`head`](Self::head) returns different heads across
+/// calls is not a shared-or-rebound-binding hazard, and it is covered by
+/// its own section above, "Mechanical requirement on `head()`".)
 ///
 /// # Mechanical requirement on `head()`
 ///
@@ -1045,8 +912,9 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 // comment above) are relied on for memory safety by allocator consumers
 // and cannot be expressed in the type system, so the trait is declared
 // `unsafe` — the same category as `core::alloc::GlobalAlloc` — and its
-// hooks expose that boundary to callers as compiler-checked `unsafe fn`
-// contracts. Crate-wide `#![deny(unsafe_code)]` keeps every OTHER `unsafe`
+// hooks expose that boundary to callers as `unsafe fn`: a compiler-enforced
+// acknowledgement that a caller-side contract applies, not a compiler-checked
+// contract. Crate-wide `#![deny(unsafe_code)]` keeps every OTHER `unsafe`
 // token a hard error; this allow is confined to this one declaration.
 pub unsafe trait StackStorage<const INDEX_BITS: u32> {
     /// The stack's head word. Must return the same logical head for every
@@ -1186,9 +1054,10 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// this method cannot catch — and cannot even check cheaply, because
     /// liveness is a property of the whole link chain and verifying it would
     /// cost an O(n) walk on every push. (Unlike the crate-root docs' H-2 and
-    /// RAD-1 subtleties, this one is part of this compiler-checked
-    /// `unsafe fn` contract — a bare call from safe code is E0133 — though
-    /// it is still not runtime-CHECKED: the method cannot detect a
+    /// RAD-1 subtleties, this one is part of this method's caller-side
+    /// `unsafe fn` contract, behind a compiler-enforced unsafe boundary — a
+    /// bare call from safe code is E0133 — though the clause's substance is
+    /// still not runtime-CHECKED: the method cannot detect a
     /// violation.) What `push_index` DOES check unconditionally is the
     /// `index < INDEX_MASK` range bound (see `# Panics`) — which observes only
     /// the index's numeric width, never whether it is already live.
@@ -1292,7 +1161,13 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// `pop_index`'s crate-private truncating fast path (`pack_truncating`)
     /// would otherwise silently truncate into a wrong (possibly still-live)
     /// index or into the empty sentinel (clause 4 of the [`StackStorage`]
-    /// implementor contract — see that section for the two corruption modes).
+    /// implementor contract). Two corruption modes this guard prevents: an
+    /// out-of-range answer packs — via `pack_truncating`, not the public
+    /// checked [`pack`](TaggedIndex::pack) — to its low `INDEX_BITS` bits,
+    /// landing on either a LIVE index elsewhere in the free-list (e.g.
+    /// `0x1_0000` at `INDEX_BITS = 16` packs as index `0`: a double-issue)
+    /// or the EMPTY sentinel (low bits all ones), silently reporting the
+    /// stack drained and leaking every remaining chained index.
     ///
     /// The self-loop arm (`next == index`) is a DETECTOR for one shape, not
     /// a structural fix for the shared-storage hazard class: a

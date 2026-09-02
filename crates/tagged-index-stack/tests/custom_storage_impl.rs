@@ -484,12 +484,14 @@ fn internally_disagreeing_storage_still_double_issue() {
 
 /// Inventory shape 4 — temporal rebinding: a LIVE [`StackHead`] VALUE moved
 /// into FRESH links, one head↔links binding replaced across time by another
-/// over the same head. Not covered by clause 1's
-/// elaboration (no `&StackHead` reference is ever shared — the head moves
-/// by value, and `old` is consumed, so there is never more than ONE live
-/// implementor value) nor by the inventory's old two-live-values scoping;
-/// only clause 1's HEADLINE ("one live binding per head, for the head's
-/// whole life") covers it, in spirit. A deliberate, documented limitation:
+/// over the same head. Not covered by clause 1's completeness note (no
+/// `&StackHead` reference is ever shared — the head moves by value, and
+/// `old` is consumed, so there is never more than ONE live implementor
+/// value) nor by the inventory's two-live-values scoping; clause 1's BODY
+/// covers it directly — "never rebound to different link storage across
+/// time (even with never more than one live value at any instant)" is
+/// written for exactly this single-value, rebound-across-time case, not
+/// just its headline in spirit. A deliberate, documented limitation:
 /// the FIRST pop is a silent leak, and only the second pop's self-loop
 /// makes the rebinding loud — one index too late.
 #[test]

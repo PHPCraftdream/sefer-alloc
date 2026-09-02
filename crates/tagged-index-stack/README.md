@@ -126,15 +126,17 @@ authoritative empty check.
   slot's page, and the SLOTS are what total ~16 MiB, not the link array
   itself.) A fresh stack is therefore EMPTY.
 
-### No double-push — compiler-checked caller contract, still not runtime-checked
+### No double-push — compiler-enforced unsafe boundary, still not runtime-checked
 
 - **No double-push (caller-side `# Safety` clause).** An index must NOT
   already be reachable from ANY stack that reads and writes the same link
   cells this stack's `load_next`/`store_next` touch. This rule is no longer
-  prose-only caller discipline: it is clause 2 of `push_index`'s
-  compiler-checked caller-side `# Safety` contract — `push_index` is an
-  `unsafe fn`, so a bare call from safe code is a compile error (E0133) —
-  though it is STILL not runtime-checked: no detector exists. Consequence:
+  prose-only caller discipline: it is clause 2 of `push_index`'s caller-side
+  `# Safety` contract, behind a compiler-enforced unsafe boundary —
+  `push_index` is an `unsafe fn`, so a bare call from safe code is a compile
+  error (E0133) — but the compiler checks only that an `unsafe` context
+  exists, not the clause's substance: it is STILL not runtime-checked, no
+  detector exists. Consequence:
   re-pushing a live index closes a cycle in the link chain — a
   deeper-than-head loop silently hands one index to two callers; re-pushing
   the current head trips `pop_index`'s self-loop detector on the first pop.

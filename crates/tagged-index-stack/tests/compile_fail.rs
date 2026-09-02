@@ -228,9 +228,10 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 /// Supersession history: audit finding P2-1's caller-side forgery was first
 /// closed by the `&Hook` witness — since removed, because fabricating a
 /// witness value was not an unsafe operation, so that closure was prose-only
-/// and unenforceable; the `unsafe fn` design is the compiler-checked
-/// replacement and the literal `GlobalAlloc` shape (`unsafe trait` +
-/// `unsafe fn`).
+/// and unenforceable; the `unsafe fn` design replaces it with a
+/// compiler-enforced unsafe boundary — the literal `GlobalAlloc` shape
+/// (`unsafe trait` + `unsafe fn`) — not a compiler-checked contract: the
+/// compiler only forces the `unsafe {}` acknowledgement.
 ///
 /// # This fixture does NOT stand alone
 ///
@@ -468,7 +469,7 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
 /// `unsafe` block must NOT compile, with **E0133** ("call to unsafe function
 /// `X` is unsafe and requires unsafe function or block") naming EACH entry
 /// point. This pins the 2026-09-02 boundary move that made `push_index` (and
-/// `push`) join the three `StackStorage` hooks on the compiler-checked
+/// `push`) join the three `StackStorage` hooks on the compiler-enforced
 /// caller-side `unsafe` surface.
 ///
 /// # This fixture does NOT stand alone
