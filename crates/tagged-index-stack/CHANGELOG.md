@@ -11,7 +11,7 @@ First release. Everything below is new in this version; nothing has shipped befo
 ### Added
 
 - **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` + `ArrayIndexStack<INDEX_BITS, N>`** —
-  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (two audited `unsafe` sites; see
+  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (two audited `unsafe` sites in `src/`; see
   `### Changed`) lock-free LIFO free-list of small **indices** (a slot recycler): the "recycle a
   small integer id" primitive that slab allocators, object pools, entity-component stores, and
   connection tables reinvent. `StackHead` is the tagged head word; custom storage implementors
@@ -32,7 +32,7 @@ First release. Everything below is new in this version; nothing has shipped befo
 - **`TaggedIndex<INDEX_BITS>`** — the packed head word: low `INDEX_BITS` bits carry a slot index,
   the high `64 - INDEX_BITS` bits a wrapping generation **tag** bumped on every successful push,
   the ABA mitigation for every permitted width (a pop-then-re-push of the same index bumps the tag, so a parked CAS on the stale `(index, tag)` pair fails and retries; only a full tag wrap under a thread parked across that entire span can recur the stale pair — see the "Tag-width budget analysis" bullet below). `INDEX_BITS` is a const generic capped at `1..=16` at
-  compile time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged: the cap keeps both halves non-empty, every valid index inside the `u32` that `push` takes, every legal configuration a tag of at least 48 bits, and `INDEX_MASK` below the `TAIL` link sentinel (`u32::MAX`) at every legal width (the historical `INDEX_MASK == TAIL` coincidence at the former width-32 cap is now structurally impossible); helpers `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn` (`empty` alone is additionally `#[doc(hidden)]` — callable but carrying no semver stability guarantee, like `raw_head()` below; the other four are ordinary documented API). The index half's all-ones value is the reserved "stack empty" sentinel.
+  compile time (`TaggedIndex::_CHECK_BITS`) rather than merely discouraged: the cap keeps both halves non-empty, every valid index inside the `u32` that `push` takes, every legal configuration a tag of at least 48 bits, and `INDEX_MASK` below the `TAIL` link sentinel (`u32::MAX`) at every legal width (the historical `INDEX_MASK == TAIL` coincidence at the former width-32 cap is now structurally impossible); helpers `pack`/`unpack`/`empty`/`empty_index`/`is_empty`, all `const fn` (`empty` alone is additionally `#[doc(hidden)]` — hidden from rustdoc navigation while remaining callable, since its consumers include this crate's own bootstrap constructors; the other four are ordinary documented API). The index half's all-ones value is the reserved "stack empty" sentinel.
 - **`TaggedIndex::pack(index, tag)` is CHECKED**: it returns `Option<u64>`: `Some(word)` for an in-range `(index, tag)` pair, `None` instead of a silently truncated word when the index is `>= 2^INDEX_BITS` (masking would yield a different, possibly empty-sentinel, index) or the tag is `>= 2^TAG_BITS` (whose high bits a shift would silently drop). The stack's own `push_index`/`pop_index` are behaviourally unchanged: they pack through a crate-private truncating fast path (`pack_truncating`), their inputs already guaranteed in range by their own guards, so the hot path pays no new branch and the ABA tag wrap at `2^TAG_BITS` still happens exactly as before.
 - **ABA-mitigating empty transition (the H-2 rule)** — when a `pop` drains the last element, the
   empty sentinel is packed with the **running tag** the draining pop observed, not reset to `0`: a tag reset would reopen the ABA window for a popper parked across a drain-and-refill. The shipped loom counterfactual `counterfactual_empty_transition_tag_reset_lets_aba_recur` proves this is load-bearing — with the tag reset restored, loom finds the collision.
@@ -104,10 +104,13 @@ First release. Everything below is new in this version; nothing has shipped befo
   compiled code, which is the weaker guarantee a non-optional `cfg(loom)` dependency gives (Cargo's
   resolver locks normal target-cfg dependencies regardless of their cfg). Running the loom suite
   requires BOTH `RUSTFLAGS="--cfg loom"` and `--features loom`.
-- **`StackHead::raw_head()`** — a `#[doc(hidden)]` test-probe accessor for the packed head word
-  (also reachable through `ArrayIndexStack`'s `#[doc(hidden)]` forwarder); the attribute only
-  excludes it from rustdoc's rendered navigation (it remains publicly callable), it carries no
-  semver stability guarantee, and it exists for this crate's own `tests/`.
+- **`StackHead::raw_head()`** — a `#[doc(hidden)]`, `test-internals`/loom-gated test-probe accessor
+  for the packed head word (also reachable through `ArrayIndexStack`'s gated forwarder); it
+  compiles only under the crate's off-by-default `test-internals` Cargo feature or a `--cfg loom`
+  build, so a default published build — and its docs.rs render — does not contain it at all (not
+  merely hidden from rustdoc navigation), and it exists for this crate's own `tests/` with no
+  semver stability guarantee. `ArrayIndexStack::load_next_for_test`, the read-only link probe its
+  tests use, carries the same gate.
 - **`retry_counts_for_test()`** and **`backoff_cap_reached_for_test()`** — `#[doc(hidden)]`
   test-support accessors, each reading a `(pop, push)` tuple of counters (process-global,
   cumulative, never reset by this crate — snapshot and diff is the caller's job).
@@ -128,7 +131,8 @@ First release. Everything below is new in this version; nothing has shipped befo
 - **`Default` for `StackHead`, `ArrayIndexStack`, and `ArrayLinks`** — all forward to `new()`;
   pinned by `default_stack_head_behaves_like_new` /
   `default_array_index_stack_behaves_like_new` / `default_array_links_behaves_like_new`
-  (`tests/stack_unit.rs`).
+  (`tests/stack_unit.rs`; `default_stack_head_behaves_like_new` is itself
+  `test-internals`/loom-gated — it reads the raw head word — while the other two stay ungated).
 - **`Debug` derived on `StackHead`, `ArrayIndexStack`, and `ArrayLinks`.**
 
 ### Performance

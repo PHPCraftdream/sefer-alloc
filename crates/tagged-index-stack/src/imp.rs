@@ -266,13 +266,19 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// running tag — see [`empty_index`](Self::empty_index); resetting to 0
     /// there reopens the ABA window (the crate docs' H-2 note).
     ///
-    /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
-    /// rationale. This item also has one real in-workspace consumer outside
-    /// this crate — `sefer-alloc`'s `#[cfg(loom)]` `bootstrap::loom_shim`
-    /// (its mirrored const-capable `StackHead::new`; a loom-test-only shim
-    /// that exists to keep a const static compiling under loom, never a
-    /// production code path) — so it is not freely removable in a future
-    /// 0.2 without checking that caller first.
+    /// `#[doc(hidden)]`: part of this crate's test-only-forwarder
+    /// convention — hidden from rustdoc's rendered navigation while staying
+    /// callable; see the crate README's "Notes" section for the per-item
+    /// breakdown. This is the only `#[doc(hidden)]` item that remains in a
+    /// default build: unlike the test probes it is NOT feature-gated,
+    /// because the crate's own bootstrap constructors
+    /// ([`StackHead::new`] / [`ArrayIndexStack::new`]) call it. It also has
+    /// one real in-workspace consumer outside this crate — `sefer-alloc`'s
+    /// `#[cfg(loom)]` `bootstrap::loom_shim` (its mirrored const-capable
+    /// `StackHead::new`; a loom-test-only shim that exists to keep a const
+    /// static compiling under loom, never a production code path) — so it is
+    /// not freely removable in a future 0.2 without checking that caller
+    /// first.
     #[doc(hidden)]
     #[must_use]
     pub const fn empty() -> u64 {
@@ -414,16 +420,18 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// open the ABA window) still forms the same happens-before edge the real
     /// `pop_index`'s `Acquire` head load does.
     ///
-    /// `#[doc(hidden)]` (this project's established test-only-forwarder
+    /// `#[doc(hidden)]` + gated (this project's established test-only surface
     /// convention — every other `#[doc(hidden)]` item in this crate points
     /// here for the generic rationale): this is a `pub` item solely so
     /// `tests/` — an external crate from this crate's own perspective — can
-    /// reach it. The attribute hides it from rustdoc's rendered navigation
-    /// ONLY; it stays a fully callable `pub` item from any downstream crate,
-    /// nothing in the language or this crate enforces non-callability. It is
-    /// not exercised by any production caller and carries no semver
-    /// stability guarantee.
+    /// reach it. Gated: compiled ONLY under the `test-internals` feature or a
+    /// loom build — a default build (a downstream consumer, the docs.rs
+    /// render) does not contain this item at all, so unlike `#[doc(hidden)]`
+    /// alone the gate makes it genuinely unnameable from safe downstream
+    /// code, not merely hidden from rustdoc navigation. It is not exercised
+    /// by any production caller.
     #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
         self.head.load(Ordering::Acquire)
@@ -436,8 +444,9 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// NOT part of the public API: it is compiled only under `--cfg loom`.
     ///
     /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
-    /// rationale. This item is additionally `#[cfg(loom)]`-gated, so unlike
-    /// `raw_head` it does not exist at all outside a `--cfg loom` build.
+    /// rationale. This item carries the strictly narrower `#[cfg(loom)]`
+    /// gate (vs `raw_head`'s `test-internals`-or-loom), so it does not exist
+    /// at all outside a `--cfg loom` build.
     ///
     /// # Errors
     ///
@@ -1661,7 +1670,11 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
 
     /// The raw packed head word (`Acquire`) — forwarder to
     /// [`StackHead::raw_head`] (tests/loom suite need it).
+    ///
+    /// Gated: same `test-internals`/loom gate as [`StackHead::raw_head`] —
+    /// it does not exist in a default build.
     #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
         self.head.raw_head()
@@ -1695,9 +1708,12 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// deliberately does not implement the public [`StackStorage`] trait.
     /// `#[doc(hidden)]` per the crate's established test-only-forwarder
     /// rationale (see [`raw_head`] and [`cas_head_for_test`]): not public
-    /// API, no semver guarantee. Read-only — it exposes no `&StackHead` and
-    /// no link write, so it reopens none of the sealed hazard.
+    /// API. Gated: same `test-internals`/loom gate as [`StackHead::raw_head`]
+    /// — it does not exist in a default build. Read-only — it exposes no
+    /// `&StackHead` and no link write, so it reopens none of the sealed
+    /// hazard.
     #[doc(hidden)]
+    #[cfg(any(feature = "test-internals", loom))]
     pub fn load_next_for_test(&self, index: u32) -> u32 {
         self.links.load_next(index)
     }

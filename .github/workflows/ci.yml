@@ -1773,10 +1773,12 @@ jobs:
     #      `once-ptr-cell` (debug + release, task #773 F1) — `cargo test`
     #      proper, since steps 4-5's cross-builds compile no test target.
     #   10. `tagged-index-stack` — `--features test-internals` in --release
-    #      (the `threaded_conservation` file only) plus a matching
-    #      test-internals clippy row (Sol-codex run-3 review P2-2, task
-    #      tis-sc3-Group3 #1768): steps 2's default-feature runs compile the
-    #      file's retry/backoff activation-oracle assertions out entirely.
+    #      (the `threaded_conservation` file, plus the three gated white-box
+    #      probes in `stack_unit.rs` since Sol-codex run-6 P2-1, task #1828)
+    #      plus a matching test-internals clippy row (Sol-codex run-3 review
+    #      P2-2, task tis-sc3-Group3 #1768): steps 2's default-feature runs
+    #      compile the retry/backoff activation-oracle assertions and the
+    #      gated raw head/link probes out entirely.
     name: test workspace members
     runs-on: ubuntu-latest
     steps:
@@ -1836,6 +1838,18 @@ jobs:
       # without the feature, then passed again after the restore — the
       # oracle is feature-activated, not vacuous.
       - run: cargo test -p tagged-index-stack --release --features test-internals --test threaded_conservation
+      # tis-sol6 review (Sol-codex run-6, P2-1, task #1828): P2-1 gated
+      # `StackHead::raw_head` / `ArrayIndexStack::raw_head` /
+      # `ArrayIndexStack::load_next_for_test` behind
+      # `#[cfg(any(feature = "test-internals", loom))]`, and the three
+      # white-box probes in `tests/stack_unit.rs` that read through them
+      # (`empty_transition_preserves_running_tag`, `links_are_lazy`,
+      # `default_stack_head_behaves_like_new`) carry the same gate — so the
+      # two default-feature rows above compile them out entirely. Same
+      # per-file shape and same rationale as the `threaded_conservation` row
+      # just above (its precedent, task tis-sc3-Group3 #1768): run the file
+      # with the feature on so its gated probes still execute in CI.
+      - run: cargo test -p tagged-index-stack --release --features test-internals --test stack_unit
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,

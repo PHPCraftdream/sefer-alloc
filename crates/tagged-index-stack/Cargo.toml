@@ -85,9 +85,12 @@ bench-scale-tool = "0.1"
 
 [features]
 # Gates the crate's CAS-retry/backoff activation counters (`POP_RETRY_COUNT`,
-# `PUSH_RETRY_COUNT`, the two backoff-cap-reach counters) and their
+# `PUSH_RETRY_COUNT`, the two backoff-cap-reach counters), their
 # `#[doc(hidden)]` accessors (`retry_counts_for_test`,
-# `backoff_cap_reached_for_test`): instrumentation with no production caller,
+# `backoff_cap_reached_for_test`), and the test-only raw probes
+# (`StackHead::raw_head`, `ArrayIndexStack::raw_head`,
+# `ArrayIndexStack::load_next_for_test` — Sol-codex run-6 review P2-1):
+# instrumentation with no production caller,
 # so per this crate's minimality pitch ("allocation-free, no_std") it must
 # not ride the default build (an earlier revision compiled all of it
 # unconditionally into every published build). Off by

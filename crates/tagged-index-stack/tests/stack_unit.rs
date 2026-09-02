@@ -11,6 +11,16 @@
 //!
 //! These do NOT run under `--cfg loom` (the loom real-type concurrency proof is
 //! `tests/loom_aba.rs`); they are the ordinary `cargo test` conformance smoke.
+//!
+//! Three white-box probes below (`empty_transition_preserves_running_tag`,
+//! `links_are_lazy`, `default_stack_head_behaves_like_new`) read through the
+//! `test-internals`/loom-gated raw accessors (`raw_head` /
+//! `load_next_for_test`) and carry the same
+//! `#[cfg(any(feature = "test-internals", loom))]` gate, so plain
+//! default-feature `cargo test` runs compile them out; CI runs this file
+//! under `--features test-internals` to execute them (the same per-file row
+//! shape `tests/threaded_conservation.rs`'s activation-oracle assertions
+//! already use).
 
 #![cfg(not(loom))]
 
@@ -482,7 +492,10 @@ fn width_1_stack_push_pop_round_trips_its_sole_index() {
 }
 
 /// Drain to empty then refill the SAME index: the tag must have advanced across
-/// the empty transition (H-2), NOT reset to 0. Observed via `raw_head`.
+/// the empty transition (H-2), NOT reset to 0. Observed via `raw_head` — a
+/// `test-internals`/loom-gated accessor, so this probe carries the same gate
+/// (see the module doc).
+#[cfg(any(feature = "test-internals", loom))]
 #[test]
 fn empty_transition_preserves_running_tag() {
     type T = TaggedIndex<16>;
@@ -520,6 +533,9 @@ fn empty_transition_preserves_running_tag() {
 /// link-chaining pass (at construction or on the first push) fails here.
 /// (`fresh_stack_is_empty` alone cannot distinguish lazy links from an
 /// eagerly-chained-but-empty-headed stack.)
+/// Gated like the accessor it reads through (`load_next_for_test`) — see the
+/// module doc.
+#[cfg(any(feature = "test-internals", loom))]
 #[test]
 fn links_are_lazy() {
     let stack = ArrayIndexStack::<16, 4>::new();
@@ -589,6 +605,11 @@ fn default_array_index_stack_behaves_like_new() {
 /// reaches directly (`StackHead` is the head half of the `StackStorage`
 /// extension point); it was previously pinned by nothing —
 /// the CHANGELOG cited a test name that did not exist.
+/// Gated like the accessor it reads through (`raw_head`) — see the module
+/// doc. (The sibling `default_array_links_behaves_like_new` /
+/// `default_array_index_stack_behaves_like_new` stay ungated: they read only
+/// through public API.)
+#[cfg(any(feature = "test-internals", loom))]
 #[test]
 fn default_stack_head_behaves_like_new() {
     let default_head = StackHead::<16>::default();

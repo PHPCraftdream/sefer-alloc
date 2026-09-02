@@ -15,11 +15,14 @@
 //! residual risk is part of the caller's contract. Lock-freedom here describes
 //! the stack's own CAS loops; end-to-end it additionally requires a
 //! non-blocking [`StackStorage`] implementation.
-//! Allocation-free, `no_std`; `#![deny(unsafe_code)]` with exactly TWO
-//! audited `unsafe` sites — the `unsafe trait StackStorage` declaration
-//! (whose three hooks are `unsafe fn`) and the crate-private bridge impl that
-//! is their sole call site (see ["Where unsafe lives"](#where-unsafe-lives)
-//! below).
+//! Allocation-free, `no_std`; the production library source (`src/`) is
+//! `#![deny(unsafe_code)]` with exactly TWO audited `unsafe` sites — the
+//! `unsafe trait StackStorage` declaration (whose three hooks are `unsafe
+//! fn`) and the crate-private bridge impl that is their sole call site (see
+//! ["Where unsafe lives"](#where-unsafe-lives) below; this repository's
+//! integration tests are separate crate targets that carry additional,
+//! intentional `unsafe impl StackStorage` test fixtures OUTSIDE that
+//! `src/`-scoped deny — see the same section).
 //!
 //! Slab allocators, object pools, entity-component stores, and connection
 //! tables all need to recycle small integer ids, and commonly get two details
@@ -233,26 +236,47 @@
 //!
 //! # Where unsafe lives
 //!
-//! This crate contains exactly TWO audited `unsafe` sites, both item-scoped
-//! `#[allow(unsafe_code)]`, both in `src/imp.rs` (tier 2 of this workspace's
-//! two-tier unsafe-inventory convention): (1) the `unsafe trait StackStorage`
-//! declaration — whose allow also covers its three `unsafe fn` hook
-//! declarations (lint levels are inherited by nested items) — and (2) the
-//! crate-private `SealedStorage` blanket-impl bridge, the SOLE call site of
-//! the three hooks, holding their three `unsafe {}` blocks with per-call
-//! `// SAFETY:` proofs. Exactly three `unsafe fn` declarations and exactly
-//! three `unsafe` blocks exist in the crate — no other unsafe syntax
-//! anywhere, pinned by `#![deny(unsafe_code)]`: unlike `forbid`, `deny` can
-//! be locally relaxed — but only at those two audited sites — so every OTHER
-//! `unsafe` token anywhere in the crate remains a hard compile error. The
-//! inventory is self-verifying:
+//! The production library source (`src/`) contains exactly TWO audited
+//! `unsafe` sites, both item-scoped `#[allow(unsafe_code)]`, both in
+//! `src/imp.rs` (tier 2 of this workspace's two-tier unsafe-inventory
+//! convention): (1) the `unsafe trait StackStorage` declaration — whose allow
+//! also covers its three `unsafe fn` hook declarations (lint levels are
+//! inherited by nested items) — and (2) the crate-private `SealedStorage`
+//! blanket-impl bridge, the SOLE call site of the three hooks, holding their
+//! three `unsafe {}` blocks with per-call `// SAFETY:` proofs. Exactly three
+//! `unsafe fn` declarations and exactly three `unsafe` blocks exist in
+//! `src/` — no other unsafe syntax in the library target, pinned by
+//! `#![deny(unsafe_code)]`: unlike `forbid`, `deny` can be locally relaxed —
+//! but only at those two audited sites — so every OTHER `unsafe` token in
+//! the library target remains a hard compile error.
+//!
+//! A separate inventory, deliberately NOT folded into the production claim
+//! above: this repository's integration tests are separate crate targets
+//! that do NOT inherit the library root's `#![deny(unsafe_code)]`, and
+//! `tests/` intentionally contains additional `unsafe impl StackStorage`
+//! blocks as test infrastructure — correct implementor fixtures
+//! (`tests/custom_storage_impl.rs`) and deliberately-broken compile-fail
+//! fixtures (`tests/compile_fail/`). Those are expected, audited test
+//! fixtures outside the `src/` count, not a violation of it.
+//!
+//! The `src/` inventory is self-verifying: the command below counts
+//! `#[allow(unsafe_code)]` attributes, and counting allows is equivalent to
+//! counting unsafe sites here PRECISELY BECAUSE of the deny — the command
+//! does not grep for `unsafe` tokens itself; given that the library target
+//! compiles, the deny has already turned every un-allowed unsafe token into
+//! a hard compile error, so exactly-N allows can only mean exactly-N unsafe
+//! sites:
 //!
 //! ```text
 //! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/
 //! ```
 //!
 //! which — run from the workspace root — returns exactly two hits in this
-//! crate, both in `src/imp.rs` (the trait declaration; the bridge impl).
+//! crate, both in `src/imp.rs` (the trait declaration; the bridge impl). The
+//! whole-crate-directory scope of that command additionally confirms zero
+//! `#[allow(unsafe_code)]` attributes in
+//! `tests/` — the fixtures' `unsafe impl`s need no per-site allow, because
+//! their crate targets never carry the library's deny.
 //!
 //! WHY: because allocator consumers rely on [`StackStorage`]'s exclusive-issuance
 //! contract for their own memory safety — sefer-alloc's registry free-list
@@ -291,15 +315,18 @@
 //! produce.
 
 #![no_std]
-// `deny`, not `forbid`: the crate now contains exactly TWO audited `unsafe`
-// sites, both item-scoped `#[allow(unsafe_code)]`, both in src/imp.rs (tier 2
-// of this workspace's two-tier unsafe-inventory convention): the `unsafe
-// trait StackStorage` declaration (whose allow also covers its three `unsafe
-// fn` hooks) and the crate-private `SealedStorage` bridge impl — their sole
-// call site, holding their three `unsafe {}` blocks. A `forbid` lint cannot
-// be locally relaxed by any inner `#[allow]`, so it would reject both audited
-// declarations; `deny` keeps every OTHER `unsafe` token anywhere in the crate
-// a hard error.
+// `deny`, not `forbid`: the library target (`src/`) now contains exactly TWO
+// audited `unsafe` sites, both item-scoped `#[allow(unsafe_code)]`, both in
+// src/imp.rs (tier 2 of this workspace's two-tier unsafe-inventory
+// convention): the `unsafe trait StackStorage` declaration (whose allow also
+// covers its three `unsafe fn` hooks) and the crate-private `SealedStorage`
+// bridge impl — their sole call site, holding their three `unsafe {}` blocks.
+// A `forbid` lint cannot be locally relaxed by any inner `#[allow]`, so it
+// would reject both audited declarations; `deny` keeps every OTHER `unsafe`
+// token in the library target a hard error. (Integration tests are separate
+// crate targets that do not inherit this attribute and intentionally carry
+// additional `unsafe impl` test fixtures — see the crate docs' "Where unsafe
+// lives" section.)
 // The self-verifying inventory command (see the crate docs' "Where unsafe
 // lives" section) — run from the workspace root:
 // `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`

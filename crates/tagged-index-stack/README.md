@@ -22,11 +22,14 @@ caller's contract. (The tag is not strictly monotonic — a strictly monotonic
 counter never repeats a value, and this one wraps — it just does not repeat
 until a full `2^TAG_BITS` pushes have elapsed, days of continuously
 saturated operation at every permitted width.) Allocation-free, `no_std`;
-`#![deny(unsafe_code)]` with exactly TWO audited `unsafe` sites — the
-`unsafe trait StackStorage` declaration (whose three hooks are `unsafe fn`)
-and the crate-private bridge impl that is their sole call site (see the
-crate documentation's "Where unsafe lives" section for the self-verifying
-inventory).
+the production library source (`src/`) is `#![deny(unsafe_code)]` with
+exactly TWO audited `unsafe` sites — the `unsafe trait StackStorage`
+declaration (whose three hooks are `unsafe fn`) and the crate-private bridge
+impl that is their sole call site. The repository's integration tests are
+separate crate targets outside that deny and intentionally carry additional
+`unsafe impl StackStorage` test fixtures (correct implementor examples plus
+deliberately-broken compile-fail fixtures). See the crate documentation's
+"Where unsafe lives" section for the self-verifying inventory.
 
 Slab allocators, object pools, entity-component stores, id allocators, and
 connection tables all need to recycle small integer ids. Crates like
@@ -201,42 +204,44 @@ RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loo
 
 ## Notes
 
-This crate has several `#[doc(hidden)]` `pub` items — some under default
-features, more under `--cfg loom` (see below). In every case the attribute
-only hides the item from rustdoc's rendered navigation — the item remains
-publicly callable, carries no semver stability guarantee, and should not be
-depended on.
+This crate's test-only surface is feature- and cfg-gated, not merely
+`#[doc(hidden)]`: under DEFAULT features none of the test probes below
+exists at all — a downstream consumer cannot name them, and a default
+`cargo doc` render (docs.rs included) does not contain them. (The attribute
+alone only hides an item from rustdoc's rendered navigation while it stays
+publicly callable; the gate is what makes it genuinely absent, and each
+gated item additionally carries no semver stability guarantee.)
 
-Under default features: `StackHead::raw_head` (also reachable through
-`ArrayIndexStack`'s `#[doc(hidden)]` forwarder) is a test-only probe,
-used only by this crate's own `tests/`. `TaggedIndex::empty()` is not
-test-only — it is used internally by this crate's bootstrap path
-(`StackHead::new` / `ArrayIndexStack::new`), and its one out-of-crate
-consumer is `sefer-alloc`'s registry bootstrap — but through that crate's
-`#[cfg(loom)]` `bootstrap::loom_shim` TEST shim (its mirrored
+The ONE `#[doc(hidden)]` item that remains in a default build is
+`TaggedIndex::empty()` — not test-only: it is used internally by this
+crate's bootstrap path (`StackHead::new` / `ArrayIndexStack::new`), and its
+one out-of-crate consumer is `sefer-alloc`'s registry bootstrap — through
+that crate's `#[cfg(loom)]` `bootstrap::loom_shim` TEST shim (its mirrored
 const-capable `StackHead::new`, which keeps the const `REGISTRY` static
 compiling under loom and is never on a modeled interleaving); a production
 `sefer-alloc` build takes the real `StackHead` type directly and never
-calls `empty()` itself. So it is not freely removable, but do not depend
-on it either.
+calls `empty()` itself. So it is not freely removable, but do not depend on
+it either.
 
 Under the `test-internals` feature (off by default — a default build of the
-crate carries no instrumentation at all): `retry_counts_for_test` reads both
-CAS-retry counters in one call, and `backoff_cap_reached_for_test` reads the
-matching backoff-depth counters (non-zero only when a retry's spin loop ran
-at full backoff depth). These are the non-loom twins of the loom-only
+crate carries no instrumentation at all) or a `--cfg loom` build:
+`StackHead::raw_head` (also reachable through `ArrayIndexStack`'s gated
+forwarder) is a test-only probe of the packed head word, used only by this
+crate's own `tests/`; `ArrayIndexStack::load_next_for_test` is the matching
+read-only link probe; `retry_counts_for_test` reads both CAS-retry counters
+in one call; and `backoff_cap_reached_for_test` reads the matching
+backoff-depth counters (non-zero only when a retry's spin loop ran at full
+backoff depth) — these last two are the non-loom twins of the loom-only
 accessors below and are what `tests/threaded_conservation.rs` uses as its
 two-level activation oracle under real OS threads.
 
-Under `--cfg loom` (not present in a normal build or on docs.rs):
+Under `--cfg loom` only (not present in a normal build or on docs.rs):
 `StackHead::cas_head_for_test` (also reachable through `ArrayIndexStack`'s
-`#[doc(hidden)]` forwarder) is a raw CAS on the head word that the
-shipped loom proof (`tests/loom_aba.rs`) uses to split a pop's head-load from
-its CAS and drive ABA counterfactuals;
-`pop_retry_count_for_test`/`push_retry_count_for_test` are loom-only
-accessors over the same retry-activation counters (which themselves compile
-only under the `test-internals` feature or a loom build) that the same suite
-asserts against.
+gated forwarder) is a raw CAS on the head word that the shipped loom proof
+(`tests/loom_aba.rs`) uses to split a pop's head-load from its CAS and drive
+ABA counterfactuals; `pop_retry_count_for_test`/`push_retry_count_for_test`
+are loom-only accessors over the same retry-activation counters that the
+same suite asserts against.
 
 ## Example
 
