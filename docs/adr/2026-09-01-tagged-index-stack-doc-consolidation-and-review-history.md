@@ -59,9 +59,9 @@ For rounds 10-15 the reconstruction evidence in the table is commit subjects (wh
 **2. Canonical-location map (single source of truth per narrative; every other mention is a short pointer).** Reviewer checklist — grep each location, expect the full statement there and nowhere else:
 
 - a. Shared-storage hazard inventory (4 binding-level shapes) + detection coverage → `crates/tagged-index-stack/src/imp.rs`, `StackStorage` trait doc, section "The shared-storage hazard class".
-- b. `# Safety` clauses (the five implementor obligations) → same trait doc's `# Safety` section.
+- b. `# Safety` clauses (the implementor obligations — seven as of the storage-binding ADR's `push_index` addendum, which added clauses 6/7; five when this row was first written) → same trait doc's `# Safety` section.
 - c. Link ordering contract/proof → same trait doc's "Ordering contract" section; implementation-side ordering comments in `push_index_impl`/`pop_index_impl` cover the crate's own atomics and cross-reference it.
-- d. No-double-push caller contract → `StackOps::push_index`'s "# Caller contract".
+- d. No-double-push caller contract → `StackOps::push_index`'s `# Safety` section (clause 2 — this superseded the "# Caller contract" heading name once `push_index` itself joined the unsafe boundary; see the storage-binding ADR's `push_index` addendum).
 - e. Self-loop two-cause disjunction → `StackOps::pop_index`'s "# Panics".
 - f. loom per-model breakdown → `tests/loom_aba.rs` module doc.
 - g. Per-test status list (which test pins which shape/clause; guard fires vs. silent) → `tests/custom_storage_impl.rs` module doc.

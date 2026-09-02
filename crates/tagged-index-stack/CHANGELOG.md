@@ -260,9 +260,10 @@ First release. Everything below is new in this version; nothing has shipped befo
 
 - **Rustdoc carries ONE canonical statement per narrative, with short pointers elsewhere**: the
   shared-storage hazard inventory + `# Safety` clauses + ordering contract → the `StackStorage`
-  trait doc; the no-double-push rule → `push_index`'s `# Caller contract`; the self-loop two-cause
-  disjunction → `pop_index`'s `# Panics`; the loom per-model breakdown → `tests/loom_aba.rs`'s
-  module doc; the per-test status list → `tests/custom_storage_impl.rs`'s module doc.
+  trait doc; the no-double-push rule → `push_index`'s `# Safety` section (clause 2, the caller-side
+  unsafe contract); the self-loop two-cause disjunction → `pop_index`'s `# Panics`; the loom
+  per-model breakdown → `tests/loom_aba.rs`'s module doc; the per-test status list →
+  `tests/custom_storage_impl.rs`'s module doc.
 - **Decision history**: the found-and-fixed development history lives in
   `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md` and
   `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` (repository files, not part
