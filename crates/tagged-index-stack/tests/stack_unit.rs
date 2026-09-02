@@ -48,7 +48,7 @@ fn pack_unpack_round_trip_16() {
     type T = TaggedIndex<16>;
     assert_eq!(T::INDEX_MASK, 0xFFFF);
     assert_eq!(T::TAG_BITS, 48);
-    for &idx in &[0u64, 1, 2748, 0xFFFE] {
+    for &idx in &[0u32, 1, 2748, 0xFFFE] {
         for &tag in &[0u64, 1, 12345, (1u64 << 48) - 1] {
             let w = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
             let (v, t) = T::unpack(w);
@@ -87,7 +87,7 @@ fn pack_rejects_an_over_wide_index_instead_of_truncating_it() {
         None,
         "an over-wide index must be rejected, not truncated to its low bits"
     );
-    assert_eq!(T::pack(u64::MAX, tag), None, "far out-of-range index");
+    assert_eq!(T::pack(u32::MAX, tag), None, "far out-of-range index");
 }
 
 /// The CHECKED `pack`'s boundary behaviour, pinned with literal expected
@@ -105,10 +105,10 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
     type T = TaggedIndex<16>;
 
     for &(idx, tag, word) in &[
-        (0u64, 0u64, 0u64),
+        (0u32, 0u64, 0u64),
         (1, 1, (1u64 << 16) | 1),
         (2748, 42, (42u64 << 16) | 2748),
-        (T::INDEX_MASK, 7, (7u64 << 16) | T::INDEX_MASK),
+        (T::INDEX_MASK as u32, 7, (7u64 << 16) | T::INDEX_MASK),
         (
             0xFFFE,
             (1u64 << T::TAG_BITS) - 1,
@@ -124,10 +124,10 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
 
     // First out-of-range index: exactly `1 << INDEX_BITS` — the value the
     // old truncating pack masked to 0, a DIFFERENT valid index.
-    assert_eq!(T::pack(1u64 << 16, 7), None, "first invalid index");
+    assert_eq!(T::pack(1u32 << 16, 7), None, "first invalid index");
     // Farther out of range, including the value whose low bits are all
     // ones (the old pack truncated it to the empty sentinel).
-    assert_eq!(T::pack(u64::MAX, 7), None, "far out-of-range index");
+    assert_eq!(T::pack(u32::MAX, 7), None, "far out-of-range index");
     assert_eq!(
         T::pack(0x1_FFFF, 7),
         None,
@@ -175,7 +175,7 @@ fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
         max_tag > u32::MAX as u64,
         "48-bit tag exceeds the old 32-bit range"
     );
-    let idx = 0x0ABCu64;
+    let idx = 0x0ABCu32;
     let at_max = T::pack(idx, max_tag).expect("2^48 - 1 is the last valid tag");
     let (v0, t0) = T::unpack(at_max);
     assert_eq!(v0, idx);
@@ -208,7 +208,7 @@ fn width_12_partitions() {
     assert_eq!(t, 7);
     assert!(T::is_empty(T::empty()));
     // TAIL (u32::MAX) differs from this width's empty_index (0xFFF).
-    assert_ne!(T::empty_index() as u32, TAIL);
+    assert_ne!(T::empty_index(), TAIL);
 }
 
 /// The old legal maximum `INDEX_BITS = 32` made `INDEX_MASK` numerically
@@ -258,20 +258,20 @@ fn empty_sentinel_never_collides_with_a_live_index() {
     let (sentinel_idx, sentinel_tag) = T::unpack(empty);
     assert_eq!(
         sentinel_idx,
-        T::INDEX_MASK,
+        T::INDEX_MASK as u32,
         "empty sentinel index is INDEX_MASK"
     );
     assert_eq!(sentinel_tag, 0, "bootstrap empty sentinel tag is 0");
 
     // A representative pool cap: 4096. The sentinel (0xFFFF = 65535) is far
     // above it, so it can never be a real slot index.
-    const CAP: u64 = 4096;
+    const CAP: u32 = 4096;
     const _: () = assert!(
-        T::INDEX_MASK >= CAP,
+        T::INDEX_MASK >= CAP as u64,
         "the empty sentinel index must be >= the pool cap so it is a non-index"
     );
 
-    for &idx in &[0u64, 1, CAP - 1] {
+    for &idx in &[0u32, 1, CAP - 1] {
         for &tag in &[0u64, 1, (1u64 << T::TAG_BITS) - 1] {
             let word = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
             assert!(

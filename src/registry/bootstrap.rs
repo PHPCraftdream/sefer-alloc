@@ -590,7 +590,7 @@ pub(crate) mod loom_shim {
                     TAIL
                 } else {
                     let (cur_idx, _tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
-                    cur_idx as u32
+                    cur_idx
                 };
                 self.store_next(index, next_link);
                 let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
@@ -600,7 +600,7 @@ pub(crate) mod loom_shim {
                 // checked pack this shim must use would REJECT that value.
                 let new_tag =
                     (tag.wrapping_add(1)) & ((1u64 << TaggedIndex::<INDEX_BITS>::TAG_BITS) - 1);
-                let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag).expect(
+                let new_head = TaggedIndex::<INDEX_BITS>::pack(index, new_tag).expect(
                     "shim halves in range: slot index < INDEX_MASK (divergence note 2), tag masked above",
                 );
                 match head_ref.compare_exchange(
@@ -625,15 +625,14 @@ pub(crate) mod loom_shim {
                 if TaggedIndex::<INDEX_BITS>::is_empty(head) {
                     return None;
                 }
-                let (idx_v, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
-                let index = idx_v as u32;
+                let (index, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
                 let next = self.load_next(index);
                 let new_head = if next == TAIL {
                     // H-2: preserve the RUNNING tag across the empty transition.
                     TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
                         .expect("empty_index and the unpacked tag are both in range")
                 } else {
-                    TaggedIndex::<INDEX_BITS>::pack(next as u64, tag).expect(
+                    TaggedIndex::<INDEX_BITS>::pack(next, tag).expect(
                         "links hold only TAIL or admitted indices < INDEX_MASK (divergence note 3)",
                     )
                 };

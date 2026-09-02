@@ -194,7 +194,7 @@ type Tag = TaggedIndex<16>;
 /// checked public one. A `None` here would be a model bug — panicking is
 /// the right outcome, and the `expect` adds no atomic ops for loom to
 /// interleave.
-fn tag_pack(index: u64, tag: u64) -> u64 {
+fn tag_pack(index: u32, tag: u64) -> u64 {
     Tag::pack(index, tag).expect("mirror-model halves are in range by construction")
 }
 
@@ -230,13 +230,12 @@ fn aba_repush_keeps_free_list_conservation() {
         let stack_a = Arc::clone(&stack);
         let ta = thread::spawn(move || {
             let head = stack_a.raw_head();
-            let (idx_v, tag) = Tag::unpack(head);
-            let idx = idx_v as u32;
+            let (idx, tag) = Tag::unpack(head);
             let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
-                tag_pack(next as u64, tag)
+                tag_pack(next, tag)
             };
             stack_a
                 .cas_head_for_test(head, new_head, Ordering::Acquire, Ordering::Acquire)
@@ -444,13 +443,12 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
             if Tag::is_empty(head) {
                 return Err(head);
             }
-            let (idx_v, tag) = Tag::unpack(head);
-            let idx = idx_v as u32;
+            let (idx, tag) = Tag::unpack(head);
             let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
-                tag_pack(next as u64, tag)
+                tag_pack(next, tag)
             };
             stack_a
                 .cas_head_for_test(head, new_head, Ordering::Acquire, Ordering::Acquire)
@@ -555,8 +553,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
         // to compute its candidate, signals `a_loaded`, blocks on `b_done`, then
         // fires its CAS against the STALE captured head.
         let head = stack.raw_head();
-        let (idx_v, tag) = Tag::unpack(head);
-        let idx = idx_v as u32;
+        let (idx, tag) = Tag::unpack(head);
         let next = stack.load_next_for_test(idx);
         // NOTE: this branch on `preserve_tag_on_drain` computes `new_head` --
         // the value A's CAS would WRITE on success -- but a
@@ -575,7 +572,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
                 Tag::empty()
             }
         } else {
-            tag_pack(next as u64, tag)
+            tag_pack(next, tag)
         };
         a_loaded.store(1, Ordering::Release);
         while b_done.load(Ordering::Acquire) == 0 {
@@ -606,13 +603,12 @@ fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
         if Tag::is_empty(head) {
             return None;
         }
-        let (idx_v, tag) = Tag::unpack(head);
-        let idx = idx_v as u32;
+        let (idx, tag) = Tag::unpack(head);
         let next = stack.load_next_for_test(idx);
         let new_head = if next == TAIL {
             Tag::empty() // BUG: hardcoded tag 0 on the empty transition.
         } else {
-            tag_pack(next as u64, tag)
+            tag_pack(next, tag)
         };
         match stack.cas_head_for_test(head, new_head, Ordering::Acquire, Ordering::Relaxed) {
             Ok(_) => return Some(idx),
@@ -734,13 +730,12 @@ fn run_cas_retry(failure_ordering: Ordering) {
         let ta = thread::spawn(move || {
             // Iteration 1: load head, read link, compute candidate.
             let mut head = stack_a.raw_head();
-            let (idx_v, tag) = Tag::unpack(head);
-            let idx = idx_v as u32;
+            let (idx, tag) = Tag::unpack(head);
             let next = stack_a.load_next_for_test(idx);
             let new_head = if next == TAIL {
                 tag_pack(Tag::empty_index(), tag)
             } else {
-                tag_pack(next as u64, tag)
+                tag_pack(next, tag)
             };
 
             // CAS fails (B pushed in between). The CAS may succeed if B
@@ -758,8 +753,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
 
             // Iteration 2: RETRY with the actual head from the failure.
             head = result.unwrap_err();
-            let (idx_v2, tag2) = Tag::unpack(head);
-            let idx2 = idx_v2 as u32;
+            let (idx2, tag2) = Tag::unpack(head);
             let next2 = stack_a.load_next_for_test(idx2);
             // Both candidate heads pack the tag actually observed off the
             // head (`tag` / `tag2`), mirroring the real `pop`'s H-2
@@ -772,7 +766,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             let new_head2 = if next2 == TAIL {
                 tag_pack(Tag::empty_index(), tag2)
             } else {
-                tag_pack(next2 as u64, tag2)
+                tag_pack(next2, tag2)
             };
 
             // Second CAS must succeed.

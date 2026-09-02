@@ -2,29 +2,9 @@
 name = "tagged-index-stack"
 version = "0.1.0"
 edition = "2021"
-# LIBRARY-SURFACE floor (Sol-codex review run 4, finding P2-3): the MSRV
-# covers the PUBLISHED LIBRARY only, never the dev-dependency/test target
-# set — a library consumer never builds this crate's dev-dependencies, so
-# dev-only API usage must not raise the floor. MEASURED, not assumed:
-# `cargo +1.79 check -p tagged-index-stack` (default AND `--features
-# test-internals`) compiles the library clean; `cargo +1.78 check` fails
-# `error[E0658]: inline-const is experimental` at the ONE post-1.78 API in
-# `src/`: the inline `const` block in the array-repeat of `ArrayLinks::new`
-# (`next: [const { AtomicU32::new(0) }; N]`, `src/imp.rs` — inline-const
-# stabilized in Rust 1.79, rust-lang/rust#76001). Every other API the
-# library uses is older (`compare_exchange` 1.53, `spin_loop` 1.49, const
-# generics 1.51, const `assert!` 1.57, inline format-args 1.58,
-# `core::array::from_fn` 1.63; the `target_has_atomic` cfg evaluates fine
-# at 1.78/1.79). Two measured, out-of-library caveats, for honesty: below
-# 1.80 cargo emits an `unused manifest key` warning for the crate-local
-# `[lints.rust] unexpected_cfgs` entry (cosmetic; the build succeeds); and
-# NEITHER the test/clippy target set (dev-dep graph hard-blocked by
-# `proptest -> getrandom 0.4.3` edition2024, verified live at 1.79) NOR the
-# `--cfg loom` build (blocked by loom's third-party Windows transitive
-# `windows-result 0.4.1` using `#[expect]`, stable 1.81) can run at this
-# floor — which is why CI's msrv job oracle's this floor with a
-# library-only check. The crate-local `[lints.clippy] incompatible-msrv`
-# allow below is part of this same policy — see its comment.
+# MSRV is a LIBRARY-SURFACE floor (the published library's newest API, never
+# the dev-dependency graph's) — see README.md's "MSRV" section for the full
+# measured rationale.
 rust-version = "1.79"
 license = "MIT OR Apache-2.0"
 description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with an ABA-mitigating tag packed into one atomic word."
@@ -61,8 +41,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 # `cargo clippy --all-targets -D warnings` convention fires the lint on
 # `tests/stack_unit.rs`'s `std::panic::PanicHookInfo` (stable 1.81):
 # dev-only code a library consumer never builds, which the library-surface
-# MSRV policy (see `rust-version` above; Sol-codex review run 4, finding
-# P2-3) refuses to let raise the floor. The floor's real oracle is the msrv
+# MSRV policy (see `rust-version` above) refuses to let raise the floor. The floor's real oracle is the msrv
 # job's pinned `cargo +1.79 check` rows in `.github/workflows/ci.yml` — a
 # hard toolchain boundary, strictly stronger than this stabilization-table
 # lint — so the lint is allowed instead of holding the declared number
@@ -110,8 +89,8 @@ bench-scale-tool = "0.1"
 # `#[doc(hidden)]` accessors (`retry_counts_for_test`,
 # `backoff_cap_reached_for_test`): instrumentation with no production caller,
 # so per this crate's minimality pitch ("allocation-free, no_std") it must
-# not ride the default build (round-9 review P3-4: an earlier revision
-# compiled all of it unconditionally into every published build). Off by
+# not ride the default build (an earlier revision compiled all of it
+# unconditionally into every published build). Off by
 # default. The loom build does NOT need this feature: under `--cfg loom` the
 # same counters compile (the loom suite's `pop_retry_count_for_test` /
 # `push_retry_count_for_test` read them), so the documented loom invocation

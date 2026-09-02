@@ -111,8 +111,9 @@ fn parse_shapes(spec: &str) -> Vec<(usize, u32)> {
         .collect()
 }
 
-/// Nearest-rank percentile of an ascending-sorted sample slice, in
-/// milliseconds. `q` must be in `(0, 1]`.
+/// Nearest-rank percentile of an ascending-sorted sample slice. Samples are
+/// per-call latencies in NANOSECONDS; the returned value is that percentile
+/// converted to MILLISECONDS (`nanos / 1e6`). `q` must be in `(0, 1]`.
 fn percentile_ms(sorted: &[u32], q: f64) -> f64 {
     assert!(q > 0.0 && q <= 1.0, "q must be in (0, 1]");
     let n = sorted.len();

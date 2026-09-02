@@ -284,8 +284,8 @@ fn main() {
     // Seeded with 8 indices before the timed closure -- one iteration pops
     // the top (leaving >= 7 elements, so pop always takes the `next != TAIL`
     // branch, never the drain-to-empty H-2 branch) and immediately pushes it
-    // back onto a still-non-empty stack (so push always takes the
-    // `cur_idx as u32` branch, never the empty-sentinel branch). This is
+    // back onto a still-non-empty stack (so push always takes
+    // the head-index branch, never the empty-sentinel branch). This is
     // deliberately the complement of push_pop/single_thread above, which
     // measures exactly those two sentinel-transition branches -- churn never
     // touches the empty state at all, at any point during the loop.

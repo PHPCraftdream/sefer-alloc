@@ -27,7 +27,7 @@ proptest! {
         // At width 1, INDEX_MASK == 1, so `index` (0..1) only ever takes the
         // value 0 — this property exercises the TAG axis under the degenerate
         // 1-bit index half, not a randomized index.
-        index in 0u64..TaggedIndex::<1>::INDEX_MASK,
+        index in 0u32..((1u32 << 1) - 1),
         tag in 0u64..(1u64 << TaggedIndex::<1>::TAG_BITS),
     ) {
         type T = TaggedIndex<1>;
@@ -40,7 +40,7 @@ proptest! {
 
     #[test]
     fn round_trip_width_16(
-        index in 0u64..TaggedIndex::<16>::INDEX_MASK,
+        index in 0u32..((1u32 << 16) - 1),
         tag in 0u64..(1u64 << TaggedIndex::<16>::TAG_BITS),
     ) {
         type T = TaggedIndex<16>;
@@ -53,7 +53,7 @@ proptest! {
 
     #[test]
     fn round_trip_width_15(
-        index in 0u64..TaggedIndex::<15>::INDEX_MASK,
+        index in 0u32..((1u32 << 15) - 1),
         tag in 0u64..(1u64 << TaggedIndex::<15>::TAG_BITS),
     ) {
         type T = TaggedIndex<15>;
@@ -66,7 +66,7 @@ proptest! {
 
     #[test]
     fn round_trip_width_12(
-        index in 0u64..TaggedIndex::<12>::INDEX_MASK,
+        index in 0u32..((1u32 << 12) - 1),
         tag in 0u64..(1u64 << TaggedIndex::<12>::TAG_BITS),
     ) {
         type T = TaggedIndex<12>;
@@ -80,12 +80,12 @@ proptest! {
     #[test]
     fn rejects_out_of_range_index_width_16(
         // Strictly OUTSIDE the index half: the first invalid index
-        // (1 << INDEX_BITS) is the smallest possible reject, u64::MAX the
+        // (1 << INDEX_BITS) is the smallest possible reject, u32::MAX the
         // largest — the exact values the old truncating pack silently
         // masked into different valid-looking indices.
         // `INDEX_BITS` is the const generic parameter, not an associated
         // const, so the shift amount is spelled literally: width 16.
-        index in (1u64 << 16)..=u64::MAX,
+        index in (1u32 << 16)..=u32::MAX,
         tag in 0u64..(1u64 << TaggedIndex::<16>::TAG_BITS),
     ) {
         prop_assert_eq!(TaggedIndex::<16>::pack(index, tag), None);
@@ -93,7 +93,7 @@ proptest! {
 
     #[test]
     fn rejects_out_of_range_tag_width_16(
-        index in 0u64..TaggedIndex::<16>::INDEX_MASK,
+        index in 0u32..((1u32 << 16) - 1),
         // Strictly OUTSIDE the tag half: the first invalid tag
         // (1 << TAG_BITS) is the value whose high bit the old truncating
         // pack's shift silently dropped, wrapping the tag to 0.

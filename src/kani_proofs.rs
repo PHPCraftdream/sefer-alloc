@@ -190,8 +190,8 @@ mod pack_proofs {
     // high (64 - INDEX_BITS), pack then unpack recovers BOTH halves exactly.
     #[kani::proof]
     fn tagged_pack_unpack_roundtrip() {
-        let index_mask: u64 = (1u64 << INDEX_BITS) - 1;
-        let value: u64 = kani::any();
+        let index_mask: u32 = (1u32 << INDEX_BITS) - 1;
+        let value: u32 = kani::any();
         let tag: u64 = kani::any();
         // The caller's documented invariant: value fits the index half, tag
         // fits the remaining high bits.
@@ -211,7 +211,7 @@ mod pack_proofs {
     // tag is exactly the high bits, and re-packing them is the identity.
     #[kani::proof]
     fn tagged_unpack_is_clean_split() {
-        let index_mask: u64 = (1u64 << INDEX_BITS) - 1;
+        let index_mask: u32 = (1u32 << INDEX_BITS) - 1;
         let word: u64 = kani::any();
         let (value, tag) = Packed::unpack(word);
         // Halves never overlap: value occupies only the low bits.
