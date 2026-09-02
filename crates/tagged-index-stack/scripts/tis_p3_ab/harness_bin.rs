@@ -16,7 +16,13 @@
 //! snapshots deltas across the timed window by reading before/after values
 //! reported here.
 //!
-//! 100% safe code — public `push`/`pop` API only.
+//! Uses the public `push`/`pop` API only; `push` is `unsafe fn` (see
+//! `crates/tagged-index-stack/src/imp.rs`'s `StackOps::push_index` doc for
+//! the two-clause caller contract: link domain + liveness). The three call
+//! sites below each carry a `// SAFETY:` justification and a
+//! statement-scoped `#[allow(unsafe_code)]`; `#![deny(unsafe_code)]` below
+//! still covers every other line in this file — this is not a blanket
+//! "100% safe code" template anymore, since `3e83b1c` turned `push` unsafe.
 
 #![deny(unsafe_code)]
 
@@ -90,7 +96,15 @@ fn main() {
     // ── Stack prefill BEFORE any timing ────────────────────────────────────
     let stack = Stack::new();
     for i in 0..PREFILL {
-        stack.push(i);
+        // SAFETY: domain — `i` ranges over `0..PREFILL` (64), a strict
+        // subset of `Stack`'s link domain `0..LINKS` (256). Liveness —
+        // `stack` was just constructed by `Stack::new()` above and `i` has
+        // never been pushed on it before, so it cannot currently be
+        // reachable through any head sharing this stack's link cells.
+        #[allow(unsafe_code)]
+        unsafe {
+            stack.push(i);
+        }
     }
 
     // Retry counters are process-global and cumulative, never reset: the
@@ -128,7 +142,17 @@ fn main() {
                 let mut since_check = 0u32;
                 loop {
                     if let Some(idx) = stack.pop() {
-                        stack.push(idx);
+                        // SAFETY: domain — `idx` was just returned by this
+                        // stack's own `pop()`, so by the stack's invariant it
+                        // is already a valid member of `stack`'s link domain.
+                        // Liveness — `pop()` returning `Some(idx)` means this
+                        // thread's CAS actually removed `idx` from the head
+                        // chain, so it is not currently reachable through
+                        // `stack`'s head and has not been re-pushed since.
+                        #[allow(unsafe_code)]
+                        unsafe {
+                            stack.push(idx);
+                        }
                     }
                     since_check += 1;
                     if since_check >= DEADLINE_CHECK_INTERVAL {
@@ -145,7 +169,14 @@ fn main() {
                 since_check = 0;
                 loop {
                     if let Some(idx) = stack.pop() {
-                        stack.push(idx);
+                        // SAFETY: same argument as the warm-up loop above —
+                        // `idx` just came out of this stack's own `pop()`,
+                        // so it is both domain-valid and, because `pop()`
+                        // returned `Some`, not currently live anywhere else.
+                        #[allow(unsafe_code)]
+                        unsafe {
+                            stack.push(idx);
+                        }
                         ops += 1;
                     }
                     since_check += 1;

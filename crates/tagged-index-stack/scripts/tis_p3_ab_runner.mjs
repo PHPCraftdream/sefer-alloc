@@ -15,10 +15,22 @@
 //   --mode summary  — read the committed per-leg CSVs + the aarch64 raw log
 //                      header and emit the compact summary CSV companion for
 //                      the gate report. No build, no measurement.
+//   --mode build-check — materialize ONE scratch CARGO crate (the `base`
+//                      variant only — the push/pop API surface this checks
+//                      is identical across all three variants) from the
+//                      CURRENT src/{lib,imp}.rs and run a plain `cargo
+//                      build` against it. No timing, no docs/perf artifacts.
+//                      Exists so an API break in `push`/`pop` (e.g. the
+//                      `3e83b1c` unsafe-fn migration) fails regular per-PR
+//                      CI instead of staying invisible until the next
+//                      workflow_dispatch-only wallclock/codegen run — see
+//                      docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md
+//                      P2-2.
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
 // This script never modifies any tracked repository file: it writes only
-// under target/ (scratch) and docs/perf/ (artifacts).
+// under target/ (scratch) and docs/perf/ (artifacts) — build-check mode
+// writes only under target/ (no docs/perf output at all).
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -99,10 +111,12 @@ function parseArgs(argv) {
       default: fail(`unknown argument: ${a}`);
     }
   }
-  if (args.mode !== 'codegen' && args.mode !== 'wallclock' && args.mode !== 'summary') {
-    fail(`--mode must be "codegen", "wallclock" or "summary" (got ${JSON.stringify(args.mode)})`);
+  if (args.mode !== 'codegen' && args.mode !== 'wallclock' && args.mode !== 'summary' && args.mode !== 'build-check') {
+    fail(`--mode must be "codegen", "wallclock", "summary" or "build-check" (got ${JSON.stringify(args.mode)})`);
   }
-  if (args.mode !== 'summary' && (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target))) {
+  // build-check runs `cargo build` natively (no cross target); summary reads
+  // committed artifacts. Both skip the target-triple requirement.
+  if (args.mode !== 'summary' && args.mode !== 'build-check' && (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target))) {
     fail('--target must be a rust target triple');
   }
   return args;
@@ -819,6 +833,49 @@ function modeWallclock(args, header) {
   console.log(`wallclock mode OK: target=${args.target} scratch=${root} artifacts in docs/perf/`);
 }
 
+// ── Build-check mode ────────────────────────────────────────────────────────
+// Static regression gate, NOT a measurement: materializes the `base` variant
+// scratch crate exactly like wallclock mode does (same template files, same
+// substitution engine, zero anchors applied) and runs a plain `cargo build`
+// against it. This is deliberately the cheapest possible reuse of the real
+// materialization path — reusing it (rather than a hand-rolled shell check)
+// is the point: a drift-catching gate that exercises different code than the
+// real wallclock mode could itself go stale the same way the mode it guards
+// did. Only the `base` variant is built: the three VARIANT_ANCHORS differ
+// only in atomic Ordering/CAS-strength substitutions inside `imp.rs`, never
+// in the harness template's own `push`/`pop` call sites, so building all
+// three would be redundant compile cost for zero extra API-break coverage.
+function modeBuildCheck() {
+  const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
+  const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
+  const cargoTmpl = fs.readFileSync(path.join(tmplDir, 'scratch_Cargo.toml.tmpl'), 'utf8');
+  const harnessTmpl = fs.readFileSync(path.join(tmplDir, 'harness_bin.rs'), 'utf8');
+  verifyAllAnchorsOnce(impSrc);
+
+  const crateName = 'tis_p3ab_build_check';
+  const root = path.join(repoRoot, 'target', 'tis_p3_ab', 'build-check');
+  freshDir(root);
+  fs.writeFileSync(path.join(root, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
+  fs.mkdirSync(path.join(root, 'src', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'lib.rs'), libSrc);
+  fs.writeFileSync(path.join(root, 'imp.rs'), impSrc);
+  fs.writeFileSync(path.join(root, 'src', 'bin', 'harness.rs'), harnessTmpl.replaceAll('{{CRATE_NAME}}', crateName));
+
+  // Plain `cargo build` (dev profile): this gate only needs to prove the
+  // template still compiles against the current push/pop API, not produce a
+  // benchmarkable binary — no `--release` needed.
+  const build = spawnSync('cargo', ['build'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, CARGO_TARGET_DIR: path.join(root, 'target') },
+  });
+  if (build.status !== 0) {
+    process.stderr.write(build.stderr ?? '');
+    fail(`cargo build failed for the wall-clock harness template (build-check mode, cwd ${root})`);
+  }
+  console.log(`build-check mode OK: scratch=${root}`);
+}
+
 // ── Summary mode ────────────────────────────────────────────────────────────
 // Reads the committed per-leg CSVs and the aarch64 raw log header, emits the
 // one compact machine-readable companion CSV for the gate report. Fails
@@ -946,6 +1003,8 @@ function modeSummary() {
 const args = parseArgs(process.argv.slice(2));
 if (args.mode === 'summary') {
   modeSummary();
+} else if (args.mode === 'build-check') {
+  modeBuildCheck();
 } else {
   const header = captureHeader(args);
   if (args.mode === 'codegen') modeCodegen(args, header);

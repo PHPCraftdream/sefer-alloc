@@ -255,6 +255,20 @@ First release. Everything below is new in this version; nothing has shipped befo
   (`hand_crafted_acyclic_forgery_still_double_issues`); (b) SHARED LINK STORAGE between two
   independent stacks double-issues with no detection at all
   (`two_stacks_sharing_link_storage_still_double_issue`).
+- **The P3-1/P3-2 wall-clock harness template (`scripts/tis_p3_ab/harness_bin.rs`) failed to
+  compile (E0133) for a full round** after `push`/`push_index` became `unsafe fn` (see the
+  unsafe-boundary bullet in `### Changed` above): its only exerciser is the
+  `workflow_dispatch`-only `tis-weak-memory-wallclock-gate` CI job, and nothing in the regular
+  per-PR/push CI path ever built it, so the break went undetected (Sol-codex review run 8, P2-2).
+  Fixed: the three `stack.push(...)` call sites now carry local `unsafe` blocks, each with a
+  `// SAFETY:` comment arguing `push_index`'s two-clause contract (link domain + liveness) for
+  that specific call; the stale "100% safe code" module doc claim is removed
+  (`#![deny(unsafe_code)]` stays crate-wide, with a statement-scoped `#[allow(unsafe_code)]` at
+  each of the three sites); and a new `--mode build-check` mode in
+  `scripts/tis_p3_ab_runner.mjs`, wired into a step in the `tagged-index-stack-gates` CI job
+  (regular, non-manual), compiles the template on every push/PR — so a future `push`/`pop` API
+  break fails immediately instead of staying invisible until the next manually-dispatched arm64
+  run.
 
 ### Documentation
 

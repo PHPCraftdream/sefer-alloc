@@ -795,6 +795,23 @@ jobs:
           # packaging, a lost file — would surface only after publication.
           # Build it without running it, in the same extraction and target dir.
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo bench --no-run
+      # P2-2 (Sol-codex review run 8, task tis-sol8-GroupC,
+      # docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md):
+      # the P3-1/P3-2 weak-memory wall-clock A/B harness template
+      # (crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) went a
+      # full round undetected after `3e83b1c` turned `push`/`push_index`
+      # into `unsafe fn`, because its only consumer
+      # (`tis-weak-memory-wallclock-gate` below) is `workflow_dispatch`-only
+      # and nothing in the regular per-PR/push path ever built it. This step
+      # is that missing regular-CI signal: `--mode build-check` materializes
+      # the SAME template against the CURRENT src/{lib,imp}.rs through the
+      # real driver's own materialization path (not a hand-rolled duplicate
+      # check that could itself drift) and runs a plain `cargo build` — no
+      # timing, no docs/perf artifacts, just proof the template still
+      # compiles. No node setup step needed: same as
+      # `tis-weak-memory-wallclock-gate` below, ubuntu-latest ships Node.
+      - name: A/B wall-clock harness template still compiles (static gate)
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode build-check
 
   once-ptr-cell-miri:
     # Publication readiness review cycle 2 (claude/oh), F3, task #1375: this
@@ -3115,6 +3132,16 @@ jobs:
     # `docs/reviews/2026-09-01-124216-tagged-index-stack-review-Sol-codex-run-4.md`)
     # prescribed.  Gate report: `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`;
     # driver: `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`.
+    #
+    # P2-2 (Sol-codex review run 8): because this whole job is
+    # `workflow_dispatch`-only, an API break in the harness TEMPLATE this job
+    # materializes and builds (not this job's own measurement logic) can sit
+    # undetected for a full round — exactly what happened when `3e83b1c`
+    # turned `push`/`push_index` into `unsafe fn`. The `--mode build-check`
+    # step in `tagged-index-stack-gates` above runs on every regular push/PR
+    # and catches that class of break without needing arm64 hardware or a
+    # full measurement run; it does not replace this job's actual timing
+    # gate, only the "does the template still compile" precondition.
     #
     # Why NATIVE arm64 and not QEMU/cross: QEMU-user TCG on an x86 host does
     # not reproduce weak-memory TIMING (acquire/release lowering effects are
