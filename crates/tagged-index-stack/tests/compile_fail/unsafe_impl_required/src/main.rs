@@ -15,7 +15,7 @@
 //! failing by `tests/compile_fail.rs`.
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tagged_index_stack::{Hook, StackHead, StackOps, StackStorage};
+use tagged_index_stack::{StackHead, StackOps, StackStorage};
 
 struct PlainStorage {
     head: StackHead<16>,
@@ -27,15 +27,15 @@ struct PlainStorage {
 // missing `unsafe` on the declaration. ERROR: E0200 — the trait requires an
 // `unsafe impl` declaration.
 impl StackStorage<16> for PlainStorage {
-    fn head(&self, _: &Hook) -> &StackHead<16> {
+    unsafe fn head(&self) -> &StackHead<16> {
         &self.head
     }
 
-    fn load_next(&self, _: &Hook, index: u32) -> u32 {
+    unsafe fn load_next(&self, index: u32) -> u32 {
         self.next[index as usize].load(Ordering::Acquire)
     }
 
-    fn store_next(&self, _: &Hook, index: u32, next: u32) {
+    unsafe fn store_next(&self, index: u32, next: u32) {
         self.next[index as usize].store(next, Ordering::Release);
     }
 }

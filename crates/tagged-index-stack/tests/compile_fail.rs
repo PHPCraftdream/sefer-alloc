@@ -219,76 +219,76 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
     );
 }
 
-/// Negative compile-fail regression, audit finding P2-1 closure (hook-witness
-/// unconstructibility): the three `StackStorage` hooks each take a first
-/// `_: &Hook` witness parameter and `Hook` is `pub struct Hook(())` — public
-/// type, PRIVATE field — so no code outside this crate can obtain a witness.
-/// A correct downstream implementor must therefore be unable to call
-/// `head`/`load_next`/`store_next` from its own safe code. This pins BOTH
-/// forgery routes in one fixture build:
+/// Negative compile-fail regression: any of the three `StackStorage` hooks
+/// (`head` / `load_next` / `store_next` — each an `unsafe fn` with a
+/// per-method caller-side `# Safety` contract) called outside an `unsafe`
+/// block must NOT compile, with **E0133** ("call to unsafe function `X` is
+/// unsafe and requires unsafe function or block").
 ///
-/// - route (a), the bare call `pool.store_next(1, 3)`, omitted witness:
-///   **E0061** ("this method takes 3 arguments but 2 arguments were supplied",
-///   with "argument #1 of type `&Hook` is missing");
-/// - route (b), the tuple-struct forgery `pool.store_next(&Hook(()), 1, 3)`:
-///   **E0423** ("cannot initialize a tuple struct which contains private
-///   fields"). The struct-literal spelling `Hook { 0: () }` is the OTHER
-///   private-field code, **E0451** ("field `0` of struct `Hook` is private")
-///   — verified in a throwaway variant, not asserted here because main.rs
-///   pins only the tuple-struct spelling.
+/// Supersession history: audit finding P2-1's caller-side forgery was first
+/// closed by the `&Hook` witness — since removed, because fabricating a
+/// witness value was not an unsafe operation, so that closure was prose-only
+/// and unenforceable; the `unsafe fn` design is the compiler-checked
+/// replacement and the literal `GlobalAlloc` shape (`unsafe trait` +
+/// `unsafe fn`).
 ///
-/// Together these reproduce, as a compile-fail oracle, the audit run-5 attack
-/// (its attempt A4, `p.store_next(1, 3)`, spliced a cycle and double-issued)
-/// that this closure makes UNEXPRESSIBLE. Note `&Hook` (a reference, not an
-/// owned token) is load-bearing: an owned non-Copy token could be stashed by
-/// a cooperating implementor into a `Cell<Option<Hook>>` and re-exposed
-/// through the implementor's own safe method; the reference form makes that a
-/// lifetime error. Full rationale: the audit report + the repository ADR
-/// (both repository files, not published).
+/// # This fixture does NOT stand alone
+///
+/// The compile-PASS guarantee is equally load-bearing: the `unsafe fn` hooks
+/// remain usable by legitimate implementors — a correct `unsafe impl` driving
+/// the stack only through the safe `StackOps` API — and that is pinned by
+/// `vec_backed_storage_push_pop_round_trips` and
+/// `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. The
+/// hooks are a barrier to MISUSE, not to legitimate use.
+///
+/// The fixture's implementor (`Pool`) is itself CORRECT — the only defects
+/// are its three bare, unsafe-context-free hook calls in `main` — and the
+/// calls are contract-shaped (index 2 was pushed through the same binding),
+/// so the ONLY errors are the three E0133s, one per hook, each naming the
+/// called method. (E0133 names the method, not the implementor type; the
+/// fixture-specific type anchor below is the source snippet of each call
+/// against `pool`, the `Pool` binding.)
 #[test]
-fn hook_witness_is_unconstructible_outside_the_crate() {
-    let Some(output) = build_fixture("hook_token_unconstructible", None) else {
+fn hook_call_requires_unsafe_block() {
+    let Some(output) = build_fixture("hook_call_requires_unsafe", None) else {
         return; // packaged package: fixtures absent, skip.
     };
-    let manifest = fixture_manifest("hook_token_unconstructible");
+    let manifest = fixture_manifest("hook_call_requires_unsafe");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
 
     assert!(
         !output.status.success(),
-        "a crate calling `store_next` with either the witness omitted or a \
-         tuple-struct-forged `Hook` COMPILED — the witness became \
-         constructible outside the crate (P2-1 reopened; hook forgery \
-         against downstream implementors is expressible again):\n{context}"
-    );
-    // Route (a): omitted witness.
-    assert!(
-        stderr.contains("E0061"),
-        "expected E0061 (missing `&Hook` argument) in the fixture's compile \
-         errors — the arity guard regressed or the build failed for some \
-         OTHER reason:\n{context}"
+        "the unsafe-call fixture COMPILED — the hooks became callable from \
+         safe code (the caller-side `unsafe fn` boundary regressed):\n{context}"
     );
     assert!(
-        stderr.contains("this method takes 3 arguments but 2 arguments were supplied"),
-        "expected the exact E0061 wording `this method takes 3 arguments but \
-         2 arguments were supplied`:\n{context}"
-    );
-    // Route (b): forged witness.
-    assert!(
-        stderr.contains("E0423"),
-        "expected E0423 (tuple struct with private fields) in the fixture's \
-         compile errors — the witness became constructible outside the crate \
-         or the build failed for some OTHER reason:\n{context}"
+        stderr.contains("E0133"),
+        "expected E0133 (call to unsafe function is unsafe) in the fixture's \
+         compile errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("cannot initialize a tuple struct which contains private fields"),
-        "expected the exact E0423 wording `cannot initialize a tuple struct \
-         which contains private fields`:\n{context}"
+        stderr.contains("is unsafe and requires unsafe function or block"),
+        "expected the exact E0133 wording `is unsafe and requires unsafe \
+         function or block`:\n{context}"
     );
-    // Both routes attack the same hook.
     assert!(
-        stderr.contains("store_next"),
-        "expected the errors to name `store_next`, not some unrelated error:\n{context}"
+        stderr.contains("call to unsafe function `head`"),
+        "expected an E0133 naming the `head` hook:\n{context}"
+    );
+    assert!(
+        stderr.contains("call to unsafe function `load_next`"),
+        "expected an E0133 naming the `load_next` hook:\n{context}"
+    );
+    assert!(
+        stderr.contains("call to unsafe function `store_next`"),
+        "expected an E0133 naming the `store_next` hook:\n{context}"
+    );
+    assert!(
+        stderr.contains("pool.head()"),
+        "expected the fixture's own implementor binding (`pool`, a `Pool`) \
+         in the E0133 source snippets — the errors must come from THIS \
+         fixture's calls, not an unrelated site:\n{context}"
     );
 }
 

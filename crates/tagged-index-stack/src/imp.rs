@@ -461,30 +461,6 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
     }
 }
 
-/// The crate-private-constructible witness required by the three
-/// [`StackStorage`] implementor hooks ([`StackStorage::head`],
-/// [`StackStorage::load_next`], [`StackStorage::store_next`]).
-///
-/// The field is private, so no code outside this crate can construct a
-/// `Hook` value by any spelling — tuple-struct construction (`Hook(())`)
-/// and struct-literal construction (`Hook { 0: () }`) are both compile
-/// errors — and the hooks take `&Hook` (a reference, not an owned value),
-/// so an implementor cannot stash a token and re-expose it through its own
-/// safe methods. The hooks are therefore unreachable from outside this
-/// crate regardless of what is in scope; only this crate's own stack
-/// algorithm, driving the hooks through its `pub(crate)` internal bridge,
-/// can call them.
-///
-/// Pinned by the compile-fail fixture
-/// `tests/compile_fail/hook_token_unconstructible/` (repository test
-/// infrastructure, not part of the published package).
-pub struct Hook(());
-
-/// The single [`Hook`] witness value this crate drives all
-/// [`StackStorage`] hooks with (crate-private; each use of `&HOOK` is
-/// a promoted `'static` reference).
-const HOOK: Hook = Hook(());
-
 /// one implementor supplies both the stack head and the per-index link access —
 /// the head↔links binding is established once per impl instead of being
 /// re-asserted on every [`push_index`](StackOps::push_index)/
@@ -567,44 +543,51 @@ const HOOK: Hook = Hook(());
 /// structural only at the type level and a live obligation at the value
 /// level: see "The binding: what is structural, what is not" below.
 ///
-/// # The three hooks are witness-gated — unreachable from outside this crate
+/// # The three hooks are unsafe fn — compiler-checked caller-side contracts
 ///
 /// [`head`](Self::head), [`load_next`](Self::load_next), and
 /// [`store_next`](Self::store_next) are the STORAGE IMPLEMENTOR's hooks —
 /// the three surfaces this crate's own `pub(crate)` internal bridge
-/// (a [`StackOps`] blanket impl) drives — and each takes a first
-/// `&Hook` witness parameter. [`Hook`]'s field is private, so NO code
-/// outside this crate can construct a witness by any spelling:
-/// tuple-struct construction is E0423, the struct-literal spelling
-/// (`Hook { 0: () }`) is E0451, and omitting the argument is E0061 — no
-/// external caller can invoke the hooks regardless of what is in scope.
-/// The witness is a REFERENCE (`&Hook`), not an owned value, and that is
-/// load-bearing: an owned non-`Copy` token could be stashed by a
-/// cooperating implementor into a `Cell<Option<Hook>>` and re-exposed
-/// through that implementor's own safe method, silently reopening the
-/// route; the reference form makes such stashing a lifetime error. This
-/// closes the caller-side forgery route the pre-witness trait doc had to
-/// admit in prose (the audit that found it is a repository file:
-/// `docs/reviews/2026-09-01-tagged-index-stack-full-audit-run5-fxx.md`,
-/// finding P2-1). The closure is pinned by the compile-fail fixture
-/// `tests/compile_fail/hook_token_unconstructible/` (both the
-/// omitted-witness and forge-the-witness spellings fail; asserted by
-/// `tests/compile_fail.rs`). Callers drive a
+/// (the [`StackOps`] blanket impl) drives — and each is now an `unsafe fn`
+/// carrying its own caller-side `# Safety` clause stating what the CALLER
+/// must uphold to invoke it soundly (see each method's docs). A call to
+/// any hook outside an `unsafe` block is a compile error (E0133, "call to
+/// unsafe function is unsafe"), and every hook invocation anywhere must
+/// discharge the callee's caller-side contract inside an `unsafe {}` with a
+/// `// SAFETY:` proof. The crate's own sole call site is that bridge, inside
+/// the [`push_index`](StackOps::push_index)/
+/// [`pop_index`](StackOps::pop_index) CAS algorithms; callers drive a
 /// stack ONLY through
 /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 /// (or [`ArrayIndexStack`]'s inherent `push`/`pop`); the three hooks
-/// belong inside the implementor's `impl` block, and within it only this
-/// crate's stack algorithm ever supplies the witness.
+/// belong inside the implementor's impl block.
 ///
-/// Post-closure the trait's [`head`](Self::head) is witness-gated like the
-/// other two hooks and is NOT a route to a `&StackHead` from outside this
-/// crate. What remains is the IMPLEMENTOR-side half: an implementor's head
-/// field is its own storage, and if the implementor exposes it through its
-/// OWN inherent API, clause 1's obligation (one live implementor value per
-/// head) is what covers that — unchanged by this closure. Against the
-/// crate's shipped standalone type ([`ArrayIndexStack`]) the route is
-/// CLOSED — the type does not implement this trait, its `head` field is
-/// private, and no trait impl hands out its head (compile-fail pinned by
+/// Why this replaces the former `&Hook` witness (task #1822, since
+/// removed): a fabricated `Hook(())` value involved NO unsafe operation —
+/// an inhabited zero-sized type can be produced by `mem::zeroed` or
+/// `transmute` with zero unsafe-contract violation — so the witness's
+/// "do not fabricate" rule had no `unsafe` operation to attach itself to
+/// and was unenforceable by the compiler: prose-only closure. `unsafe fn`
+/// is the same shape as [`core::alloc::GlobalAlloc`] — the trait this
+/// crate's docs already compare itself to: `unsafe trait` + `unsafe fn`
+/// methods. The source finding is review run 6
+/// (`docs/reviews/2026-09-02-091847-tagged-index-stack-review-Sol-codex-run-6.md`,
+/// finding P1-1 — a repository file, not part of the published package);
+/// the decision and its supersession of the 2026-09-01 design are recorded
+/// in the storage-binding ADR's 2026-09-02 addendum
+/// (`docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`).
+///
+/// [`head`](Self::head) is no longer uncallable from outside this crate,
+/// but calling it from SAFE code is E0133, and calling it inside an
+/// `unsafe` block puts the CALLER under [`head`](Self::head)'s own
+/// `# Safety` contract — the clause forbidding a second, competing
+/// binding built around the returned reference. What remains unchanged:
+/// if the IMPLEMENTOR exposes its head through its OWN inherent API,
+/// trait `# Safety` clause 1 (one live implementor value per head) is
+/// what covers that. Against the crate's shipped standalone type
+/// ([`ArrayIndexStack`]) the route is still CLOSED — the type does not
+/// implement this trait, its `head` field is private, and no trait impl
+/// hands out its head (compile-fail pinned by
 /// `tests/compile_fail/array_index_stack_head/`) — see "The shared-storage
 /// hazard class" below.
 ///
@@ -681,8 +664,8 @@ const HOOK: Hook = Hook(());
 /// successor of the former
 /// `array_index_stack_head_still_double_issue` runtime demonstration);
 /// for every trait IMPLEMENTOR the discharge remains by construction —
-/// the witness gates the crate's hooks, NOT the implementor's own
-/// storage: an implementor that exposes its own head through its own
+/// the `unsafe fn` boundary gates the crate's hooks, NOT the implementor's
+/// own storage: an implementor that exposes its own head through its own
 /// inherent API can still have the shape rebuilt against it, so
 /// one-value-per-head stays a convention the implementor upholds
 /// (asserted formally by every `unsafe impl` — see the `# Safety`
@@ -699,10 +682,14 @@ const HOOK: Hook = Hook(());
 /// writing: (1) own a [`StackHead`] value directly —
 /// [`new`](StackHead::new) / `Default::default()` are the only public
 /// constructors — and hand `&` it to multiple implementor values;
-/// (2) call the trait's [`head`](Self::head) hook — now witness-gated
-/// and unreachable from OUTSIDE this crate (the witness cannot be
-/// constructed or obtained there; pinned by
-/// `tests/compile_fail/hook_token_unconstructible/`), surviving only
+/// (2) call the trait's [`head`](Self::head) hook — now an `unsafe fn`,
+/// so a call from SAFE code is E0133 ("call to unsafe function is
+/// unsafe"; pinned by
+/// `tests/compile_fail/hook_call_requires_unsafe/`, landing in this same
+/// change), and an `unsafe`-block call takes on
+/// [`head`](Self::head)'s caller-side `# Safety` contract (the clause
+/// forbidding a second, competing binding around the returned
+/// reference). The hook survives only
 /// (a) inside the crate, where the stack algorithm itself is the sole
 /// caller, and (b) through an implementor's OWN storage/API, which is
 /// route 1's implementor-side obligation, not a trait surface.
@@ -716,8 +703,8 @@ const HOOK: Hook = Hook(());
 /// every field of all three is private, and the only signatures
 /// returning `&StackHead` in the crate — [`head`](Self::head) itself
 /// and `ArrayIndexStack`'s own `pub(crate)` accessor — are both
-/// unreachable from outside the crate (`head` via the witness, the
-/// accessor via `pub(crate)`). This enumeration is falsifiable,
+/// unreachable from outside the crate (`head` via its unsafe-fn boundary,
+/// the accessor via `pub(crate)`). This enumeration is falsifiable,
 /// not an assertion — re-verify it mechanically before relying on it:
 /// list every `impl` block and every signature in this file returning
 /// `&StackHead` (grep recipes and the dated 2026-09-01 census are
@@ -993,58 +980,99 @@ const HOOK: Hook = Hook(());
 /// safety (the [`core::alloc::GlobalAlloc`] / `std::alloc::Allocator`
 /// category), and marking the trait `unsafe` assigns responsibility for a
 /// violation to whichever `unsafe impl` asserted a contract it did not
-/// uphold. The methods stay safe `fn` because the crate-private [`Hook`]
-/// witness makes them unreachable from outside this crate, so every
-/// remaining hazard is IMPLEMENTOR-side — the audit's caller-side forgery
-/// (repository file
-/// `docs/reviews/2026-09-01-tagged-index-stack-full-audit-run5-fxx.md`,
-/// finding P2-1) is what forced the witness into the design, and the
-/// storage-binding ADR's 2026-09-01 addendum records the decision; the
-/// full design rationale for rejecting the `unsafe fn head()` alternative
-/// is recorded in the repository ADRs
+/// uphold. The three hooks are now `unsafe fn` with per-method caller-side
+/// `# Safety` contracts (2026-09-02 owner decision, superseding both the
+/// original 2026-09-01 rejection of the `unsafe fn` shape and the interim
+/// `Hook`-witness design of the same date — see the storage-binding
+/// ADR's addenda; the witness was retired because fabricating an inhabited
+/// zero-sized witness value is not an unsafe operation, so its closure
+/// was prose-only, not compiler-enforced). The full design history is
+/// recorded in the repository ADRs
 /// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` and
 /// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
 /// (repository files, not part of the published package).
 ///
-/// The trait's `# Safety` contract now carries the implementor obligations
-/// normatively; what remains caller-side discipline is
-/// [`push_index`](StackOps::push_index)'s pre-existing, already-documented
-/// no-double-push liveness rule, which this crate has always accepted as
-/// caller discipline rather than a structural guarantee.
+/// The trait's `# Safety` contract carries the implementor obligations
+/// normatively; the three hooks additionally carry CALLER-side `# Safety`
+/// contracts, discharged at their one call site (the crate-internal
+/// `SealedStorage` bridge); [`push_index`](StackOps::push_index)'s
+/// pre-existing, already-documented no-double-push liveness rule remains
+/// caller discipline, as it has always been — accepted rather than
+/// structurally guaranteed.
 #[allow(unsafe_code)]
-// Tier-2 item-scoped allow — the one `unsafe` token in this crate (see the
-// crate docs' "Where unsafe lives"). Single documented reason to hold
-// `unsafe`: the trait's implementor obligations (the `# Safety` section in
-// the doc comment above) are relied on for memory safety by allocator
-// consumers and cannot be expressed in the type system, so the trait is
-// declared `unsafe` — the same category as `core::alloc::GlobalAlloc`.
-// Crate-wide `#![deny(unsafe_code)]` keeps every OTHER `unsafe` token a hard
-// error; this allow is confined to this one declaration.
+// Tier-2 item-scoped allow — the crate's FIRST audited `unsafe` site (see
+// the crate docs' "Where unsafe lives"; the second is the `SealedStorage`
+// bridge impl's own item-scoped allow). This allow covers the trait
+// declaration AND its three `unsafe fn` hook declarations (lint levels are
+// inherited by nested items). Single documented reason to hold `unsafe`:
+// the trait's implementor obligations (the `# Safety` section in the doc
+// comment above) are relied on for memory safety by allocator consumers
+// and cannot be expressed in the type system, so the trait is declared
+// `unsafe` — the same category as `core::alloc::GlobalAlloc` — and its
+// hooks expose that boundary to callers as compiler-checked `unsafe fn`
+// contracts. Crate-wide `#![deny(unsafe_code)]` keeps every OTHER `unsafe`
+// token a hard error; this allow is confined to this one declaration.
 pub unsafe trait StackStorage<const INDEX_BITS: u32> {
     /// The stack's head word. Must return the same logical head for every
     /// operation on this implementor — see the trait doc's "Mechanical
     /// requirement on `head()`".
     ///
-    /// Implementor hook — callable ONLY by this crate: requires the
-    /// crate-private [`Hook`] witness, which no code outside this crate can
-    /// construct (see the trait doc's witness-gating section).
-    fn head(&self, _: &Hook) -> &StackHead<INDEX_BITS>;
+    /// Implementor hook — callable only by upholding this caller-side
+    /// contract inside `unsafe` (see the trait doc's "The three hooks are
+    /// unsafe fn" section for the full picture).
+    ///
+    /// # Safety
+    ///
+    /// The caller must not build a second, competing head↔links binding
+    /// around the returned reference: the reference may be used only as
+    /// the head of the binding `self` implements, for that binding's
+    /// whole life. This is the caller-side twin of trait `# Safety`
+    /// clause 1 ("one live binding per head, for the head's whole
+    /// life") — see that clause rather than this one for the
+    /// implementor-side statement of the same obligation.
+    unsafe fn head(&self) -> &StackHead<INDEX_BITS>;
 
     /// Load the "next" link for `index` with `Acquire` ordering.
     ///
-    /// Implementor hook — callable ONLY by this crate: requires the
-    /// crate-private [`Hook`] witness, which no code outside this crate can
-    /// construct (see the trait doc's witness-gating section).
-    fn load_next(&self, _: &Hook, index: u32) -> u32;
+    /// Implementor hook — callable only by upholding this caller-side
+    /// contract inside `unsafe` (see the trait doc's "The three hooks are
+    /// unsafe fn" section for the full picture).
+    ///
+    /// # Safety
+    ///
+    /// The caller must invoke this only for an `index` that has been
+    /// PUSHED THROUGH THIS EXACT BINDING at least once — i.e. its link
+    /// cell was initialised by a prior
+    /// [`store_next`](Self::store_next) through this same storage
+    /// binding. Note deliberately: this does NOT require `index` to be
+    /// currently reachable or live. The crate's own pop algorithm calls
+    /// this on an index it observed as head, but a concurrent popper may
+    /// already have popped that same index before this caller's CAS
+    /// lands (this caller's CAS then fails and retries) — so a
+    /// "currently reachable" formulation would be a contract the crate's
+    /// own algorithm violates under contention. Do not "strengthen" this
+    /// clause back into that false claim.
+    unsafe fn load_next(&self, index: u32) -> u32;
 
     /// Store the "next" link for `index` with `Release` ordering. This is the
     /// ONLY write the stack makes to link storage, and only during a push — the
     /// lazy-link (RAD-1) discipline: link storage is never eagerly initialised.
     ///
-    /// Implementor hook — callable ONLY by this crate: requires the
-    /// crate-private [`Hook`] witness, which no code outside this crate can
-    /// construct (see the trait doc's witness-gating section).
-    fn store_next(&self, _: &Hook, index: u32, next: u32);
+    /// Implementor hook — callable only by upholding this caller-side
+    /// contract inside `unsafe` (see the trait doc's "The three hooks are
+    /// unsafe fn" section for the full picture).
+    ///
+    /// # Safety
+    ///
+    /// The caller must invoke this only in the stack algorithm's
+    /// CAS-valid push phase: `index` satisfies
+    /// [`push_index`](StackOps::push_index)'s caller contract (in range;
+    /// not currently reachable through any stack reading and writing the
+    /// same link cells — the no-double-push rule), `next` is [`TAIL`] or
+    /// an index observed as THIS binding's head, the call happens before
+    /// the head CAS that publishes `index`, and `self` is a binding that
+    /// owns the slot (trait `# Safety` clauses 1-3).
+    unsafe fn store_next(&self, index: u32, next: u32);
 }
 
 /// The stack operations — [`push_index`](Self::push_index) /
@@ -1240,21 +1268,50 @@ pub(crate) trait SealedStorage<const B: u32> {
 /// Bridge: every public [`StackStorage`] implementor is also a
 /// [`SealedStorage`], so the crate-internal algorithm serves the public
 /// [`StackOps`] blanket impl. The calls below are fully qualified to name
-/// the trait each body delegates to — not for recursion avoidance and not
-/// against E0034: a bare `self.head(&HOOK)` compiles fine today, because
-/// the `&Hook` witness argument exists only on [`StackStorage`]'s `head`,
-/// so arity alone resolves it to [`StackStorage::head`], never back into
-/// this impl. The qualifier pins the callee instead of relying on that
-/// signature accident.
+/// the trait each body delegates to — and the qualifier is now
+/// SEMANTICALLY LOAD-BEARING, not a style choice: after the `Hook`
+/// witness was removed, [`StackStorage::head`]/`load_next`/`store_next`
+/// and this impl's own [`SealedStorage`] methods have IDENTICAL `(&self)`
+/// arity and parameter shapes, so a bare `self.head()` inside this impl
+/// is genuinely ambiguous between two applicable trait methods (E0034,
+/// "multiple applicable items in scope"). The `StackStorage::` qualifier
+/// resolves that ambiguity and pins the callee.
+// Tier-2 item-scoped allow — the crate's SECOND audited `unsafe` site (see
+// the crate docs' "Where unsafe lives"). Single documented reason to hold
+// `unsafe`: this bridge is the SOLE call site of [`StackStorage`]'s three
+// `unsafe fn` hooks — the one place the implementor-side `unsafe impl`
+// contract and the hooks' caller-side `# Safety` contracts meet — and each
+// call below carries its own `// SAFETY:` proof.
+#[allow(unsafe_code)]
 impl<const B: u32, S: StackStorage<B> + ?Sized> SealedStorage<B> for S {
     fn head(&self) -> &StackHead<B> {
-        StackStorage::head(self, &HOOK)
+        // SAFETY: `S: StackStorage<B>` means an `unsafe impl` asserted the
+        // implementor contract for this binding. The stack algorithm calls
+        // `head()` exactly once per operation and uses the returned
+        // reference only as THIS binding's head — never building a second,
+        // competing binding around it — discharging
+        // [`StackStorage::head`]'s caller-side contract.
+        unsafe { StackStorage::head(self) }
     }
     fn load_next(&self, index: u32) -> u32 {
-        StackStorage::load_next(self, &HOOK, index)
+        // SAFETY: the pop algorithm calls this only on an index unpacked
+        // from a head word observed through THIS binding's `head()`; such
+        // an index was pushed through this binding at least once (the push
+        // that published it initialised its link cell via `store_next`),
+        // which is exactly [`StackStorage::load_next`]'s caller-side
+        // contract — it does NOT require the index to still be reachable,
+        // and it may not be (a concurrent popper can win the CAS first;
+        // this caller's CAS then fails and retries).
+        unsafe { StackStorage::load_next(self, index) }
     }
     fn store_next(&self, index: u32, next: u32) {
-        StackStorage::store_next(self, &HOOK, index, next)
+        // SAFETY: called only from the push algorithm's loop body, with
+        // `index` already past [`push_index`]'s in-range guard and subject
+        // to its no-double-push caller contract, `next` being [`TAIL`] or
+        // the observed head's index, immediately before the Release CAS
+        // that publishes `index` — the CAS-valid phase
+        // [`StackStorage::store_next`]'s caller-side contract names.
+        unsafe { StackStorage::store_next(self, index, next) }
     }
 }
 

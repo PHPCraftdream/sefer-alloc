@@ -22,9 +22,11 @@ caller's contract. (The tag is not strictly monotonic — a strictly monotonic
 counter never repeats a value, and this one wraps — it just does not repeat
 until a full `2^TAG_BITS` pushes have elapsed, days of continuously
 saturated operation at every permitted width.) Allocation-free, `no_std`;
-`#![deny(unsafe_code)]` with exactly ONE audited `unsafe` token — the
-`unsafe trait StackStorage` declaration (see the crate documentation's
-"Where unsafe lives" section for the self-verifying inventory).
+`#![deny(unsafe_code)]` with exactly TWO audited `unsafe` sites — the
+`unsafe trait StackStorage` declaration (whose three hooks are `unsafe fn`)
+and the crate-private bridge impl that is their sole call site (see the
+crate documentation's "Where unsafe lives" section for the self-verifying
+inventory).
 
 Slab allocators, object pools, entity-component stores, id allocators, and
 connection tables all need to recycle small integer ids. Crates like
@@ -61,13 +63,15 @@ link-cell population — cell sharing per se is harmless (two stacks over the
 same cells with disjoint populations coexist correctly); the hazard is one
 index reachable from two bindings (the trait doc's `# Safety` clause 3). These are
 obligations about head↔links BINDINGS — invisible to any audit of a single
-impl block, discharged by construction. `head()` is not reachable from
-outside this crate on ANY implementor: all three `StackStorage` hooks are
-witness-gated (each takes a `Hook` witness no code outside this crate can
-construct), and the owned `ArrayIndexStack` additionally does not implement
-the trait at all (its `head` field is private, no trait impl hands it out),
-so a competing binding around a standalone `ArrayIndexStack` does not
-COMPILE (pinned by the compile-fail fixture
+impl block, discharged by construction. All three `StackStorage` hooks are
+`unsafe fn` with per-method caller-side `# Safety` contracts — a call from
+safe code is a compile error (E0133), and an `unsafe`-block call puts the
+caller under the hook's own contract (for `head()`: no second, competing
+binding built around the returned reference) — and the owned
+`ArrayIndexStack` additionally does not implement the trait at all (its
+`head` field is private, no trait impl hands it out), so a competing
+binding around a standalone `ArrayIndexStack` still does not COMPILE
+(pinned by the compile-fail fixture
 `tests/compile_fail/array_index_stack_head/`).
 For CUSTOM implementors the shared-head shape remains expressible — only
 behind an `unsafe impl` asserting the very `# Safety` clause it violates. The

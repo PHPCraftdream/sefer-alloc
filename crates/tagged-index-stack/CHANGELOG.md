@@ -11,7 +11,7 @@ First release. Everything below is new in this version; nothing has shipped befo
 ### Added
 
 - **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` + `ArrayIndexStack<INDEX_BITS, N>`** —
-  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (one audited `unsafe` token; see
+  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (two audited `unsafe` sites; see
   `### Changed`) lock-free LIFO free-list of small **indices** (a slot recycler): the "recycle a
   small integer id" primitive that slab allocators, object pools, entity-component stores, and
   connection tables reinvent. `StackHead` is the tagged head word; custom storage implementors
@@ -203,7 +203,9 @@ First release. Everything below is new in this version; nothing has shipped befo
   pinned). External implementors add `unsafe impl` and uphold the contract;
   `push_index`/`pop_index` call sites are unchanged.
 - **BREAKING (unpublished 0.1.0): `StackStorage`'s three hooks (`head`, `load_next`, `store_next`)
-  each take a first `_: &Hook` witness parameter.** `Hook` is `pub struct Hook(())` — a public type
+  each take a first `_: &Hook` witness parameter.** **SUPERSEDED (same unreleased cycle) by the
+  next bullet: the witness was removed and replaced by `unsafe fn` hooks — kept below for the
+  historical record of what changed and why.** `Hook` is `pub struct Hook(())` — a public type
   with a private field, unconstructible outside this crate by any spelling (a bare tuple-struct
   call is `E0423`; the struct-literal `Hook { 0: () }` spelling is `E0451`) — so no code outside the
   crate can obtain a witness to call the hooks directly, even under `--features internals`. This
@@ -215,7 +217,31 @@ First release. Everything below is new in this version; nothing has shipped befo
   implementor's own safe method; the reference form makes that a lifetime error instead. Callers
   drive a stack only through `push_index`/`pop_index` (or `ArrayIndexStack`'s inherent `push`/`pop`),
   exactly as before — this change affects only custom `StackStorage` implementors' hook signatures.
-  Compile-fail pinned (`tests/compile_fail/hook_token_unconstructible/`).
+  Compile-fail pinned (`tests/compile_fail/hook_token_unconstructible/`; fixture since replaced —
+  see the superseding bullet below).
+- **BREAKING (unpublished 0.1.0): the `&Hook` witness is REMOVED; `StackStorage`'s three hooks
+  (`head`, `load_next`, `store_next`) are now `unsafe fn` with per-method caller-side `# Safety`
+  contracts.** This SUPERSEDES the bullet above within the same unreleased cycle — the witness
+  shipped and was retired before any release. Why: fabricating a `Hook(())` value is not an unsafe
+  operation — an inhabited zero-sized type — so the witness's unconstructibility closed only the
+  ordinary spellings E0423/E0451/E0061 and its "do not fabricate" rule was unenforceable prose;
+  `unsafe fn` gives every call a compiler-checked caller-side contract — E0133 outside an `unsafe`
+  block — the literal `core::alloc::GlobalAlloc` shape: `unsafe trait` + `unsafe fn` methods. The
+  crate remains `unsafe trait` for the implementor-side contract. The crate-private `SealedStorage`
+  bridge is the sole hook call site (three `unsafe` blocks under the crate's second audited
+  `#[allow(unsafe_code)]` — the crate's "Where unsafe lives" inventory now counts TWO audited sites,
+  not one). `unsafe impl` implementors drop the witness parameter and add the `unsafe fn` qualifier
+  to the three methods (bodies unchanged). `load_next`'s caller-side contract is "pushed through this
+  binding at least once", deliberately NOT "currently reachable" — the pop loop races a concurrent
+  popper (the CAS may lose after the load), so the stronger wording would be a contract the crate's
+  own algorithm violates. Callers driving stacks through `push_index`/`pop_index` (or
+  `ArrayIndexStack`'s inherent `push`/`pop`) are unaffected. Compile-fail pinned by
+  `tests/compile_fail/hook_call_requires_unsafe/` (replacing `hook_token_unconstructible/`); the
+  compile-PASS counterpart — a correct `unsafe impl` still works end-to-end through the safe
+  `StackOps` API — is pinned by `vec_backed_storage_push_pop_round_trips` +
+  `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. Source: review run 6 finding
+  P1-1 and the storage-binding ADR's 2026-09-02 addendum (repository files, not part of the
+  published package).
 - **BREAKING (unpublished 0.1.0): `TaggedIndex::pack`'s `index` parameter and `unpack`'s index half
   move from `u64` to `u32`.** `_CHECK_BITS` already guarantees every valid index fits in 16 bits, so
   the old `u64` signature forced callers into narrowing/widening casts purely to move a value that

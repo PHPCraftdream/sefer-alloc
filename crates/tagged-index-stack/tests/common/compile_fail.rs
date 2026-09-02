@@ -118,7 +118,7 @@ pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Option<Outpu
 
 /// The shared failure-context string every assertion message in
 /// `tests/compile_fail.rs` embeds: fixture path, exit status, and both
-/// output streams. Byte-identical format to the string the six pre-
+/// output streams. Byte-identical format to the string the seven pre-
 /// consolidation drivers each built by hand.
 pub fn failure_context(manifest: &Path, output: &Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);

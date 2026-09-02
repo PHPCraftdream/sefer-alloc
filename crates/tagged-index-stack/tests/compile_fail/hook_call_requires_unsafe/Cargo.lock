@@ -7,7 +7,7 @@ name = "tagged-index-stack"
 version = "0.1.0"
 
 [[package]]
-name = "tis_compile_fail_hook_token_unconstructible"
+name = "tis_compile_fail_hook_call_requires_unsafe"
 version = "0.0.0"
 dependencies = [
  "tagged-index-stack",

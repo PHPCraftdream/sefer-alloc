@@ -620,8 +620,10 @@ const _: () = assert!(
 //    `alloc-global + internals`, `sefer_alloc::registry` is a
 //    `#[doc(hidden)] pub` module, so `ensure()` hands `&'static Registry` to
 //    EXTERNAL safe code, and the crate's `StackOps` blanket impl drives
-//    `push_index`/`pop_index` — which, unlike the three raw hooks, take no
-//    `Hook` witness (the P2-1 fix gates only the hooks) — through this
+//    `push_index`/`pop_index` — which, unlike the three raw hooks (now
+//    `unsafe fn` with caller-side `# Safety` contracts: a direct external
+//    call outside an `unsafe` block is E0133), are safe `fn`s taking no
+//    witness — through this
 //    binding from outside the crate. This clause's obligation (exactly one
 //    binding) still holds; the exposure is an availability hazard, not a
 //    soundness one — see clause 3's bound.
@@ -656,12 +658,12 @@ const _: () = assert!(
 #[cfg(not(loom))]
 unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     #[inline]
-    fn head(&self, _: &tagged_index_stack::Hook) -> &tagged_index_stack::StackHead<16> {
+    unsafe fn head(&self) -> &tagged_index_stack::StackHead<16> {
         &self.free_slots
     }
 
     #[inline]
-    fn load_next(&self, _: &tagged_index_stack::Hook, index: u32) -> u32 {
+    unsafe fn load_next(&self, index: u32) -> u32 {
         // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
         // holds indices that `push_free_slot` put there, and those are valid
         // slot indices); `slot()` resolves it through the chunked slot array.
@@ -675,7 +677,7 @@ unsafe impl tagged_index_stack::StackStorage<16> for Registry {
     }
 
     #[inline]
-    fn store_next(&self, _: &tagged_index_stack::Hook, index: u32, next: u32) {
+    unsafe fn store_next(&self, index: u32, next: u32) {
         self.slot(index as usize)
             .next_free
             .store(next, Ordering::Release);

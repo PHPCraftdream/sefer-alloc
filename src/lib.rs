@@ -167,8 +167,10 @@
 //   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![deny(unsafe_code)]
 //     ABA-tagged Treiber free-index stack via a single packed AtomicU64 head
 //     word (monotonic tag in the high bits). no_std, no raw-pointer derefs;
-//     the ONE audited unsafe token is the `unsafe trait StackStorage`
-//     declaration (item-scoped `#[allow(unsafe_code)]`). sefer's registry
+//     the TWO audited unsafe sites are the `unsafe trait StackStorage`
+//     declaration (whose three hooks are `unsafe fn`) and the crate-private
+//     bridge impl that is their sole call site (both item-scoped
+//     `#[allow(unsafe_code)]`). sefer's registry
 //     free_slots uses it. Pulled in under `alloc-global`.
 //
 //   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
