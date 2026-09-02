@@ -52,8 +52,12 @@ features = ["production"]
 #                                             stack (a slot recycler): packed
 #                                             `index | tag` head word, const-generic
 #                                             INDEX_BITS, slot-resident OR owned links.
-#                                             #![forbid(unsafe_code)], no_std, real-type
-#                                             loom. sefer's registry `free_slots` uses it.
+#                                             #![deny(unsafe_code)] with a small audited
+#                                             #[allow(unsafe_code)] region set (not zero
+#                                             unsafe — see the crate's own "Where unsafe
+#                                             lives" docs for the exact count), no_std,
+#                                             real-type loom. sefer's registry
+#                                             `free_slots` uses it.
 #   - proc-memstat    (crates/proc-memstat) — same-instant RSS + commit-charge + peak-RSS
 #                                             self-probe (bytes, one snapshot call);
 #                                             #![allow(unsafe_code)] tier-1 seam (Windows

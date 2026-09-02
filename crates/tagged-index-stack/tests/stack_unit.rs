@@ -416,7 +416,17 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
     let storage = AlwaysInvalidStorage {
         head: StackHead::new(),
     };
-    // SAFETY: no-op backing, fresh (empty head); index 0 is not live and this storage has no link domain bound to breach.
+    // SAFETY: DELIBERATE double contract violation, both intentional to this
+    // fixture: (1) clause 4 (valid answers) — load_next always answers
+    // INDEX_MASK, neither TAIL nor a valid index, which is the guard this
+    // test targets; (2) clause 6 (declared link domain) — this storage
+    // declares NO domain at all (no backing cells; store_next is a no-op),
+    // and an UNDECLARED domain is not proof push_index's clause-1 (link
+    // domain) is discharged — clause 6 requires the implementor to define
+    // and document a domain it owns a dedicated cell for, so the absence of
+    // one is a second, separate violation this fixture also commits, not a
+    // vacuous non-issue. index 0 has never been pushed through this
+    // binding, so push_index's clause-2 (liveness) alone is honestly held.
     unsafe { storage.push_index(0) }.expect("fresh head has tag budget"); // real push, so the head is non-empty
     let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }

@@ -23,16 +23,25 @@
 //! safely demonstrable at runtime: by the time the out-of-domain
 //! `store_next` lands, the memory-safety question is already undefined
 //! behavior by assumption, and driving it deliberately would only
-//! demonstrate that UB is UB. The oracle proves the POSITIVE case: the
-//! legitimate unchecked implementor stays clean under miri across seed /
-//! interleave / drain cycles, so any contract-chain breakage that let SAFE
-//! code drive out-of-domain accesses through this impl (a widened numeric
-//! guard silently treated as a domain proof, a hook escaping its domain
-//! precondition, a lost caller-side `unsafe`) would surface HERE as a miri
-//! out-of-bounds report. The caller-side boundary itself — bare pushes are
-//! E0133 — is pinned separately by `tests/compile_fail.rs`
-//! (`push_index_requires_unsafe_block`); the in-domain/unwrapped-hook
-//! negative shapes are pinned by `tests/compile_fail/hook_call_requires_unsafe/`.
+//! demonstrate that UB is UB. The oracle proves only the POSITIVE case,
+//! narrowly: the legitimate unchecked implementor stays clean under miri
+//! across seed / interleave / drain cycles that push and pop only
+//! CONTRACT-COMPLIANT, in-domain indices — it demonstrates that THOSE
+//! specific cycles never walk outside the declared domain's 8 cells. It
+//! does NOT prove the broader claim that any contract-chain breakage
+//! letting SAFE code drive an out-of-domain access through this impl (a
+//! widened numeric guard silently treated as a domain proof, a hook
+//! escaping its domain precondition, a lost caller-side `unsafe`) would
+//! necessarily surface here — this file never exercises an out-of-domain
+//! index at all, so it says nothing about what happens if one is ever
+//! reached; that remains undemonstrated by any runtime test (see the
+//! section above for why it cannot safely be demonstrated at runtime
+//! either). The caller-side E0133 boundary is a SEPARATE concern, covered
+//! by a different oracle: `tests/compile_fail.rs`
+//! (`push_index_requires_unsafe_block`) pins that bare pushes fail to
+//! compile; `tests/compile_fail/hook_call_requires_unsafe/` pins the
+//! in-domain/unwrapped-hook negative shapes. Neither substitutes for a
+//! runtime out-of-domain proof, which this file also does not provide.
 //!
 //! # Invocation
 //!

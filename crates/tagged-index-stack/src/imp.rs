@@ -1515,7 +1515,14 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // come from [`StackOps::push_index`]'s caller-side `# Safety`
         // contract, which this function's own `# Safety` forwards — the
         // caller of `push_index_impl` proved them.
-        s.store_next(index, next_link);
+        //
+        // `#![deny(unsafe_op_in_unsafe_fn)]` requires this local block even
+        // though `push_index_impl` is itself an `unsafe fn` — edition 2021's
+        // ambient unsafe permission inside an `unsafe fn` body is exactly
+        // the implicit-unsafe-operation hazard that lint closes.
+        unsafe {
+            s.store_next(index, next_link);
+        }
         let new_tag = tag.wrapping_add(1);
         let new_head = TaggedIndex::<B>::pack_truncating(index, new_tag);
         // Release on success so a pop's Acquire sees the link we wrote.
@@ -1656,7 +1663,12 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
 impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
     #[track_caller]
     unsafe fn push_index(&self, index: u32) -> Result<(), TagExhausted> {
-        push_index_impl::<B, S>(self, index)
+        // SAFETY: this fn's own caller-side contract (link domain +
+        // liveness, `push_index`'s `# Safety` above) is forwarded verbatim
+        // to `push_index_impl`'s identical `# Safety` contract — not
+        // discharged locally, just passed through. `#![deny(unsafe_op_in_unsafe_fn)]`
+        // requires this local block even inside this `unsafe fn`'s own body.
+        unsafe { push_index_impl::<B, S>(self, index) }
     }
 
     #[track_caller]
@@ -1803,7 +1815,12 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     // `StackOps::push_index`'s caller-side unsafe contract (link domain +
     // liveness) to the shared body `push_index_impl`.
     pub unsafe fn push(&self, index: u32) -> Result<(), TagExhausted> {
-        push_index_impl::<B, _>(self, index)
+        // SAFETY: forwards this fn's own caller-side contract (link domain +
+        // liveness, same as `StackOps::push_index`'s `# Safety`) verbatim to
+        // `push_index_impl` — not discharged locally, just passed through.
+        // `#![deny(unsafe_op_in_unsafe_fn)]` requires this local block even
+        // inside this `unsafe fn`'s own body.
+        unsafe { push_index_impl::<B, _>(self, index) }
     }
 
     /// Pop the top index off the stack, or `None` if empty — driving the
