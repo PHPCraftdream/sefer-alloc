@@ -358,7 +358,7 @@ fn array_links_store_next_panics_on_index_out_of_range() {
     stack.push(5); // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
 }
 
-/// [`pop_index`]'s rule-4 guard fires when a [`StackStorage`] implementor
+/// [`pop_index`]'s clause-4 guard fires when a [`StackStorage`] implementor
 /// returns a `next` value that is neither `TAIL` nor a valid index — a
 /// caller-contract violation `pop_index` cannot otherwise detect (see the
 /// crate docs' "Storage requirement" section on `StackStorage`). A tiny
@@ -380,7 +380,7 @@ struct AlwaysInvalidStorage {
 
 // SAFETY: DELIBERATE contract violation — clause 4 (load_next must return
 // only TAIL or a currently-valid index): this implementor deliberately
-// answers INDEX_MASK, an out-of-range value, to fire pop_index's rule-4
+// answers INDEX_MASK, an out-of-range value, to fire pop_index's clause-4
 // guard.
 unsafe impl StackStorage<16> for AlwaysInvalidStorage {
     fn head(&self, _: &Hook) -> &StackHead<16> {
@@ -389,7 +389,7 @@ unsafe impl StackStorage<16> for AlwaysInvalidStorage {
 
     fn load_next(&self, _: &Hook, _index: u32) -> u32 {
         // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
-        // exactly the shape pop_index's rule-4 guard exists to catch.
+        // exactly the shape pop_index's clause-4 guard exists to catch.
         TaggedIndex::<16>::INDEX_MASK as u32
     }
 
@@ -411,7 +411,7 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
 /// [`ArrayIndexStack`] whose CURRENT head is double-pushed. [`push_index`]
 /// writes the current head's index into `next[index]` before its CAS, so
 /// re-pushing the live head writes the index's own link back to itself, and
-/// [`pop_index`]'s rule-4 guard panics on the FIRST pop — unlike the
+/// [`pop_index`]'s clause-4 guard panics on the FIRST pop — unlike the
 /// zero-initialised-foreign-backing shapes in
 /// `tests/custom_storage_impl.rs`, which fire on the second. This pins the
 /// guard against a caller-contract violation OUTSIDE the shared-storage
@@ -427,26 +427,17 @@ fn double_push_of_current_head_panics_on_first_pop() {
     let _ = stack.pop(); // first pop: self-loop -> panic
 }
 
-// Compile-fail coverage: out-of-range `INDEX_BITS` IS
-// pinned by automated compile-fail regressions now --
-// `tests/compile_fail.rs` builds the
-// `tests/compile_fail/index_bits_zero/` (width 0) and
-// `tests/compile_fail/index_bits_seventeen/` (width 17) fixture crates
-// out-of-process and asserts each fails with `_CHECK_BITS`'s E0080 naming the
-// `1..=16` range requirement, and
-// `tests/compile_fail.rs` likewise pins the
-// cfg-without-feature fast-fail (build fails with ONLY the
-// named `compile_error!`, no secondary name-resolution error). The mechanism
-// is this crate's established hand-rolled alternative to `trybuild`
-// (`tests/compile_fail.rs` -- see its doc comment for the full
-// rationale; this workspace's standing convention is to decline a `trybuild`
-// dependency in favor of hand-rolled compile-fail tests, each decision
-// documented in-source where it was made -- find the notes with
-// `grep -rn trybuild --include=*.rs .` from the workspace root rather than
-// trusting any count quoted in a comment). `compile_fail` doctests remain
-// unavailable in this repo (banned
-// outright, see CLAUDE.md's "No doctests" rule). Revisit only if
-// `_CHECK_BITS`'s const-evaluation routing is ever refactored.
+// Compile-fail coverage: out-of-range `INDEX_BITS` (the
+// `tests/compile_fail/index_bits_zero/` and `index_bits_seventeen/`
+// fixtures) and the cfg-without-feature fast-fail are pinned
+// out-of-process by `tests/compile_fail.rs`, which asserts each failure
+// is `_CHECK_BITS`'s E0080 / the named `compile_error!` with no secondary
+// name-resolution error. This hand-rolled setup is the workspace's
+// established alternative to `trybuild` (`compile_fail` doctests are
+// banned; find the notes with
+// `grep -rn trybuild --include=*.rs .` from the workspace root).
+// Revisit only if `_CHECK_BITS`'s const-evaluation routing is ever
+// refactored.
 
 // ---------------------------------------------------------------------------
 // ArrayIndexStack — fused head+links LIFO order + H-2 single-threaded.

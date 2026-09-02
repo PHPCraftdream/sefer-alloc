@@ -1,8 +1,8 @@
 //! Per-call `pop` tail-latency probe for `BACKOFF_SPIN_CAP`'s CAS-retry
 //! backoff — the axis the cap sweep
 //! (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` — a repository file, not part
-//! of the published package) did not originally measure
-//! (round-8 review finding P2-2: per-thread ops over a 1-second window cannot
+//! of the published package) did not originally measure: per-thread ops over
+//! a 1-second window cannot
 //! distinguish "one call starved for 100+ ms" from "every call uniformly 10x
 //! slow").
 //!

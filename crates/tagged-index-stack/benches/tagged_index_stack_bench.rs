@@ -23,14 +23,14 @@ type Stack = ArrayIndexStack<16, LINKS_SIZE>;
 /// Must be > 0 and < 2^16 (the usable range at INDEX_BITS=16).
 const LINKS_SIZE: usize = 256;
 
-/// Fairness signal printed after each contention benchmark: the round-7
+/// Fairness signal printed after each contention benchmark: the
 /// cap-sweep investigation (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found
 /// per-thread throughput skew is where the interesting signal hides, and
 /// nothing printed it as a number before now. max/min is the spread across
 /// all threads (a true ratio, hence the `x`); min/mean is the worst thread's
 /// SHARE of an even split (1.0 = perfectly fair), printed as a percentage —
 /// no `x` suffix, which would invite reading 0.38 as "0.38 times worse"
-/// rather than "38% of a fair share" (round-9 review P4-10a).
+/// rather than "38% of a fair share".
 fn print_fairness(ops_per_thread: &[u64]) {
     let max = *ops_per_thread.iter().max().unwrap() as f64;
     let min = *ops_per_thread.iter().min().unwrap() as f64;
@@ -93,7 +93,7 @@ const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
 // lead time (window computed before spawning) silently trusted
 // thread-spawn + rendezvous to finish within the lead; on a slow CI
 // runner or VM it could not, and part of the window was lost with no
-// signal (review finding P3-3). The window is now computed at/after
+// signal. The window is now computed at/after
 // full rendezvous, so there is no fixed spawn+rendezvous budget left to
 // exceed, and the only residual stall path -- a worker descheduled
 // between the rendezvous and its window entry -- is covered by the
@@ -382,7 +382,7 @@ fn main() {
     // denominator). The old fixed BARRIER_LEAD lead time (window computed
     // before spawning) silently trusted thread-spawn + rendezvous to finish
     // within the lead; on a slow CI runner or VM it could not, and part of
-    // the window was lost with no signal (review finding P3-3). The window
+    // the window was lost with no signal. The window
     // is now computed at/after full rendezvous, so there is no fixed
     // spawn+rendezvous budget left to exceed, and the only residual stall
     // path -- a worker descheduled between the rendezvous and its window

@@ -8,13 +8,13 @@ pattern, but it is finite and demonstrably wraps, so ABA is reduced to a
 quantified recurrence risk, not eliminated. A collision requires a FULL tag
 wrap — `2^TAG_BITS` successful pushes anywhere on the stack — occurring WHILE
 one specific victim thread stays parked holding its stale snapshot for that
-entire span. The mitigation is a derived, quantified bound, not a slogan: the
-enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
-tag of at least 48 bits, and the "Tag-width budget" section below derives,
-from cache-coherence throughput on the single head cache line, a
-hardware-bounded floor on that recurrence window — roughly 3.3-16 days of
-continuously saturated pushes at the widest permitted width. The floor is an
-engineering risk-reduction argument, not a proof of impossibility:
+entire span. The mitigation is a derived, quantified bound: the enforced
+`INDEX_BITS` cap guarantees every legal configuration a large tag, and the
+crate docs' "Tag-width budget" section derives, from cache-coherence
+throughput on the single head cache line, a hardware-bounded floor
+of days of continuously saturated pushes at the widest permitted width on
+that recurrence window. The floor is an engineering risk-reduction
+argument, not a proof of impossibility:
 suspending a thread is outside the crate's control (a debugger pause, a
 stop-the-world pause, extreme starvation, instrumentation) and can stretch
 the observation window past it; accepting that residual risk is part of the
@@ -26,11 +26,10 @@ saturated operation at every permitted width.) Allocation-free, `no_std`;
 `unsafe trait StackStorage` declaration (see the crate documentation's
 "Where unsafe lives" section for the self-verifying inventory).
 
-This is the canonical "recycle a small integer id" primitive that slab
-allocators, object pools, entity-component stores, id allocators, and connection
-tables all reinvent — and routinely reinvent *wrong*. Crates like `sharded-slab`
-embed one privately; this ships it as a standalone primitive **with an
-exhaustive loom model-check run against the real type**.
+Slab allocators, object pools, entity-component stores, id allocators, and
+connection tables all need to recycle small integer ids. Crates like
+`sharded-slab` embed one privately; this ships the primitive standalone, with
+an exhaustive loom model-check run against the real type.
 
 ## The packed word
 
@@ -56,11 +55,11 @@ overridden downstream. The old per-call repro — two independent calls, each
 supplying a different link array against one head and double-issuing an
 index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
 implementor/caller discipline at the VALUE level: a head must be reachable
-through exactly ONE live implementor value at a time (the trait doc's rule 1),
+through exactly ONE live implementor value at a time (the trait doc's `# Safety` clause 1),
 and disjoint REACHABLE-index populations per binding over any shared
 link-cell population — cell sharing per se is harmless (two stacks over the
 same cells with disjoint populations coexist correctly); the hazard is one
-index reachable from two bindings (the trait doc's rule 3). These are
+index reachable from two bindings (the trait doc's `# Safety` clause 3). These are
 obligations about head↔links BINDINGS — invisible to any audit of a single
 impl block, discharged by construction. `head()` is not reachable from
 outside this crate on ANY implementor: all three `StackStorage` hooks are
@@ -99,7 +98,7 @@ useful for diagnostics/monitoring, but a concurrent push or pop can make it
 stale the instant it returns, so `pop_index`'s `None` remains the only
 authoritative empty check.
 
-## The two hard-won subtleties (people get these wrong)
+## Two correctness-critical subtleties (H-2 and RAD-1)
 
 - **H-2 empty-transition tag preservation.** When a pop drains the LAST element,
   the head goes "empty". Packing the empty sentinel with **tag 0** reopens the
@@ -117,7 +116,7 @@ authoritative empty check.
   slot's page, and the SLOTS are what total ~16 MiB, not the link array
   itself.) A fresh stack is therefore EMPTY.
 
-### The rule that is NOT one of the two: no double-push (caller-enforced)
+### No double-push — caller-enforced, and not one of the two
 
 - **No double-push (caller-enforced).** An index must NOT already be reachable
   from ANY stack that reads and writes the same link cells this stack's
@@ -132,28 +131,14 @@ authoritative empty check.
 ## Tag-width budget
 
 A tag defends against ABA only while it does not recur: a stale CAS succeeds
-again only after a FULL tag wrap — `2^TAG_BITS` successful pushes anywhere on
-the stack. The time a wrap takes is
-
-```text
-wrap_time = 2^TAG_BITS / aggregate_successful_push_rate
-```
-
-with the rate bounded by HARDWARE, not by the workload. Headline facts: the
-enforced `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a
-tag of at least **48 bits** at the widest permitted width; at a `2 × 10^8`
-pushes/sec working ceiling a wrap takes ≈ 16 days (≈ 3.3 days even at `10^9`
-pushes/sec). This bound is why `INDEX_BITS > 16` is compile-time REJECTED
-(`TaggedIndex::_CHECK_BITS`), not merely discouraged: width 24 would give a
-40-bit tag (≈ 92 minutes at the same ceiling) and the old width-32 cap only
-≈ 21 seconds — within reach of ordinary scheduling jitter. The floor is a
-risk-reduction argument, not a proof of impossibility: a debugger pause,
-stop-the-world pause, or extreme starvation can stretch the observation
-window past it, and accepting that residual risk is part of the caller's
-contract. Full derivation — the hardware rate bound across contended and
-uncontended regimes, the uncontended ~`2 × 10^7` pushes/sec bench receipt,
-and the fresh-sample command — is the crate docs' "Tag-width budget"
-section.
+again only after a full tag wrap, and the time a wrap takes is bounded by
+hardware (cache-coherence throughput on the single head cache line), not by
+the workload. This bound is why `INDEX_BITS > 16` is compile-time rejected
+(`TaggedIndex::_CHECK_BITS`), not merely discouraged — a risk-reduction
+argument, not a proof of impossibility. The derivation and the figures
+(hardware rate bound across contended and uncontended regimes, wrap times at
+each permitted width, the uncontended bench receipt, and the fresh-sample
+command) are in the crate docs' "Tag-width budget" section.
 
 ### Why the default is not a wider packed word (128-bit CAS)
 
@@ -172,15 +157,12 @@ change to this default.
 lock-freedom is not starvation-freedom: a call can lose arbitrarily many
 CASes in a row, and the exponential backoff deliberately makes an unlucky
 call wait longer between retries. The shipped backoff cap trades worse
-extreme outliers AND a thread-count-dependent slow-pop tail-COUNT band for
-better latency through p99.9 (by 1-2 orders of magnitude: p99.9 ≈ 1 µs vs
-54-182 µs at 8-16 threads) and roughly 4-5x aggregate wall-clock throughput
-(median speedup 4.85x at 8 threads, 4.05x at 16; the backoff-free build
-produced ~2.4x more pops slower than 1 ms median-to-median, 1.9-2.6x across
-rep pairings). A latency-sensitive consumer must size its tolerance at ITS
-OWN thread count — neither single thread count's story generalizes. Full
-per-thread-count tables: the crate docs' "Lock-freedom and starvation"
-section and
+extreme outliers and a thread-count-dependent slow-pop tail-count band for
+better latency through p99.9 and roughly 4-5x aggregate wall-clock
+throughput. A latency-sensitive consumer must size its tolerance at its own
+thread count — neither single thread count's story generalizes. Full
+measurements and per-thread-count tables: the crate docs'
+"Lock-freedom and starvation" section and
 [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
 (repository file, not in the published package).
 

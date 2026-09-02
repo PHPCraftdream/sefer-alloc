@@ -1,4 +1,4 @@
-# P1-1 Group B compile-fail fixture — compiled ONLY by
+# Compile-fail fixture (the storage-binding ADR's Group B) — compiled ONLY by
 # tests/compile_fail.rs (never by the workspace: the
 # detached [workspace] table below opts it out, and cargo does not
 # auto-discover nested test dirs). Deliberately dependency-free apart from

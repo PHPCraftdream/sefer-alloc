@@ -1,4 +1,4 @@
-//! P2-1 compile-fail fixture (audit finding P2-1 — caller-side hook forgery
+//! Compile-fail fixture — caller-side hook forgery
 //! against a downstream implementor): the three `StackStorage` hooks each
 //! take a first `_: &Hook` witness parameter, and `Hook` is
 //! `pub struct Hook(())` — public type, PRIVATE field — so the witness can
@@ -11,9 +11,9 @@
 //!   the witness via tuple-struct construction (E0423-family private-field
 //!   error; the struct-literal spelling `Hook { 0: () }` is E0451).
 //!
-//! This reproduces, as a compile-fail oracle, the audit run-5 attack (its
-//! attempt A4, `p.store_next(1, 3)`, spliced a cycle and double-issued) that
-//! this closure makes UNEXPRESSIBLE. Pinned failing by
+//! This reproduces, as a compile-fail oracle, the attack this closure makes
+//! UNEXPRESSIBLE: a bare `p.store_next(1, 3)` splices a cycle and
+//! double-issues. Pinned failing by
 //! `tests/compile_fail.rs`.
 //!
 //! Note: the witness is `&Hook` (a reference), NOT an owned token — this is

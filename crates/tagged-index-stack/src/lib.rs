@@ -19,10 +19,9 @@
 //! audited `unsafe` token — the `unsafe trait StackStorage` declaration
 //! (see ["Where unsafe lives"](#where-unsafe-lives) below).
 //!
-//! This is the "recycle a small integer id" primitive that slab allocators,
-//! object pools, entity-component stores, and connection tables all reinvent —
-//! and routinely reinvent *wrong*. The two subtleties people get wrong
-//! (documented below) are the **H-2 empty-transition tag preservation** and
+//! Slab allocators, object pools, entity-component stores, and connection
+//! tables all need to recycle small integer ids, and commonly get two details
+//! wrong (documented below): the **H-2 empty-transition tag preservation** and
 //! the **lazy link discipline** (internally: RAD-1); both are structurally
 //! enforced here.
 //!
@@ -55,8 +54,8 @@
 //! [`pop_index`](StackOps::pop_index)'s corruption-detection guard; see its
 //! `# Panics`).
 //!
-//! And here is the genuine surprise: the head↔links binding is expressed in
-//! ONE place — the implementor's own single [`StackStorage`] impl, a trait
+//! The head↔links binding is expressed in ONE place — the implementor's own
+//! single [`StackStorage`] impl, a trait
 //! deliberately OPEN to external implementation (that is the extension
 //! point, not a crate-owned surface) — instead of being re-asserted per
 //! call via a per-call `&L: Links` parameter, as in the previous design.
@@ -67,10 +66,10 @@
 //! no longer compiles (pinned by a compile-fail regression test). The
 //! obligation moved rather than vanished, and the part that stayed live is
 //! implementor/caller discipline: one implementor value per head, for the
-//! head's WHOLE life (trait rule 1), and disjoint index populations per
+//! head's WHOLE life (trait clause 1), and disjoint index populations per
 //! binding over any shared link-cell population — not "one link-cell
 //! population per stack": cell sharing per se is harmless, only a
-//! REACHABLE index across two bindings is the hazard (trait rule 3) — obligations about head↔links BINDINGS,
+//! REACHABLE index across two bindings is the hazard (trait clause 3) — obligations about head↔links BINDINGS,
 //! invisible to any per-impl audit.
 //! The [`StackStorage`] trait doc's "The shared-storage hazard class"
 //! section is the single source of truth for that hazard inventory and for
@@ -87,7 +86,7 @@
 //! [`pop_index`](StackOps::pop_index)'s `None` remains the only authoritative
 //! empty check.
 //!
-//! # The two hard-won subtleties
+//! # Two correctness-critical subtleties (H-2 and RAD-1)
 //!
 //! ## H-2: the empty-transition tag MUST be preserved (not reset to 0)
 //!
@@ -200,10 +199,13 @@
 //! at 8 threads specifically, the whole slow-pop tail-count band (pops
 //! slower than 1 ms: 60-86 per run under the cap vs 0-8 disabled; slower
 //! than 10 ms: 26-34 vs 0-2). In exchange the shipped cap wins every
-//! percentile through p99.9,
+//! percentile through p99.9 (≈ 1 µs vs 54-182 µs at 8-16 threads),
 //! the >1 ms tail-count band at 16 threads specifically (249-285 pops vs
 //! 553-661 — the tail-count axis is genuinely thread-count-dependent, not
-//! uniform), and roughly 4-5x aggregate wall-clock throughput. A consumer
+//! uniform), and roughly 4-5x aggregate wall-clock throughput (median speedup
+//! 4.85x at 8 threads, 4.05x at 16; the backoff-free build produced ~2.4x
+//! more pops slower than 1 ms median-to-median, 1.9-2.6x across rep
+//! pairings). A consumer
 //! recycling a slot on a latency-sensitive request path should size its
 //! tolerance for the extreme outliers AND the thread-count-dependent
 //! tail-count band at its own thread count, not assume either single
@@ -245,7 +247,7 @@
 //! which — run from the workspace root — returns exactly one hit in this
 //! crate (the trait declaration).
 //!
-//! WHY: allocator consumers rely on [`StackStorage`]'s exclusive-issuance
+//! WHY: because allocator consumers rely on [`StackStorage`]'s exclusive-issuance
 //! contract for their own memory safety — sefer-alloc's registry free-list
 //! today; any third-party unsafe allocator built on this crate after
 //! publication. The moment unsafe code depends on a trait's contract, that

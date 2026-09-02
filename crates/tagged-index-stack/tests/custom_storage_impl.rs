@@ -5,7 +5,7 @@
 //! Every other test in this crate exercises only [`ArrayIndexStack`] (the
 //! exceptions are not working implementors: `stack_unit.rs`'s
 //! `AlwaysInvalidStorage` deliberately violates the contract to fire
-//! [`pop_index`](StackOps::pop_index)'s rule-4 guard, and
+//! [`pop_index`](StackOps::pop_index)'s clause-4 guard, and
 //! `tests/compile_fail/unsafe_impl_required/` deliberately fails to
 //! compile), so this file is where those claims are exercised by a real,
 //! WORKING second implementor. This file
@@ -159,7 +159,7 @@ fn push_pop_through_dyn_storage() {
 /// A borrowed-head [`StackStorage`] implementor: the head reference and the
 /// link array are supplied independently at construction, so TWO values can
 /// share one [`StackHead`] while each carries its OWN links — the exact
-/// shape the [`StackStorage`] trait doc's rule 1 forbids and nothing (the
+/// shape the [`StackStorage`] trait doc's clause 1 forbids and nothing (the
 /// type system, the blanket impl, or a runtime guard) prevents.
 struct SharedHeadView<'a> {
     head: &'a StackHead<16>,
@@ -183,10 +183,10 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
     }
 }
 
-/// KNOWN, INTENTIONAL limitation — caller/implementor-enforced, NOT
-/// compiler-enforced (the [`StackStorage`] trait doc's rule 1).
+/// A deliberate, documented limitation — caller/implementor-enforced, NOT
+/// compiler-enforced (the [`StackStorage`] trait doc's clause 1).
 ///
-/// The hazard: two separately constructed, individually rule-coherent
+/// The hazard: two separately constructed, individually contract-abiding
 /// `StackStorage` values whose `head()` methods return the SAME
 /// [`StackHead`] while their links differ compile without a single
 /// warning. Popping through the second value reads links from the WRONG
@@ -198,13 +198,13 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 /// The second pop PANICS instead: `via_b`'s
 /// zero-initialised links answer `load_next(0)` with `0` while the popped
 /// index IS `0` — a self-loop a contract-abiding chain can never contain —
-/// and `pop_index`'s release-active rule-4 guard fires. This test pins the
+/// and `pop_index`'s release-active clause-4 guard fires. This test pins the
 /// GUARD FIRING (the strict improvement from silent corruption to a loud
 /// panic), not the hazard class closing: what such a shape still evades is
 /// inventoried in the trait doc's "The shared-storage hazard class"
 /// section, and pinned by the two tests below. If a
 /// future structural fix stops this shape from compiling, this test breaks
-/// by design and the trait doc's rule 1 must be updated with it.
+/// by design and the trait doc's clause 1 must be updated with it.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn two_implementor_values_sharing_one_head_still_double_issue() {
@@ -267,7 +267,7 @@ unsafe impl StackStorage<16> for Parasite {
 /// The self-loop detector's LIMIT — a hand-crafted ACYCLIC
 /// forgery still double-issues silently. KNOWN, INTENTIONAL limitation,
 /// same register as the `#[should_panic]` tests around it: this pins that
-/// `pop_index`'s rule-4 guard is a SHAPE detector (the
+/// `pop_index`'s clause-4 guard is a SHAPE detector (the
 /// zero-initialised-foreign-backing shape, whose `next == index` self-loop
 /// is unreachable for a contract-abiding chain), NOT a structural fix for
 /// the shared-storage hazard class — see the [`StackStorage`] trait doc's
@@ -280,8 +280,7 @@ unsafe impl StackStorage<16> for Parasite {
 /// demonstrates is the pure hand-forged-acyclic-backing shape: the
 /// implementor's backing is overwritten BEHIND the algorithm's back, so
 /// its `load_next` answers with values the crate never stored (a violation
-/// of `# Safety` clause 2 — the coherence obligation the explanatory rules
-/// list as rule 3) — and the acyclic forgery evades the
+/// of `# Safety` clause 2 — the coherence obligation) — and the acyclic forgery evades the
 /// self-loop detector. The detector's limit, unchanged.
 ///
 /// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,
@@ -320,15 +319,15 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 /// NOT involve a shared head at all. KNOWN, INTENTIONAL limitation —
 /// documented, not detected: no cheap
 /// runtime detector exists for this shape (the [`StackStorage`] trait
-/// doc's rule 3 binding-level clause; the trait doc's hazard inventory lists
+/// doc's clause 3 binding-level invariant; the trait doc's hazard inventory lists
 /// it as the one shape with no detection at all).
 ///
 /// The hazard: TWO stacks built over the SAME link cells — each with a
-/// completely separate, freshly constructed, individually rule-coherent
+/// completely separate, freshly constructed, individually contract-abiding
 /// [`StackHead`] — where one index is REACHABLE from both (cell sharing
 /// per se is harmless with disjoint index populations — each
-/// `store_next`/`load_next` touches only its own cell — see rule 3's
-/// binding-level clause): the second stack's push of an index live in
+/// `store_next`/`load_next` touches only its own cell — see clause 3's
+/// binding-level invariant): the second stack's push of an index live in
 /// the first overwrites a link the first still chains through. Concretely:
 /// `a` pushes 1 then 2 (`links[1] = TAIL`, `links[2] = 1`); `b` pushes 3
 /// then 1 (`links[3] = TAIL`, then `links[1] = 3`, CLOBBERING the `TAIL`
@@ -336,17 +335,17 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
 /// TAIL` and `b`'s is `1 -> 3 -> TAIL`. Draining `a` yields `2, 1, 3`;
 /// draining `b` yields `1, 3` — indices 1 AND 3 are each handed out
 /// TWICE, across two stacks that appear individually correct by every
-/// existing rule. In a parent allocator that is two live slots with two
+/// clause. In a parent allocator that is two live slots with two
 /// owners each. Every link value stays numerically valid and the shared
-/// chain stays perfectly ACYCLIC, so `pop_index`'s rule-4 guard —
-/// including the self-loop detector — cannot fire; only rule 3's
-/// binding-level clause NAMES the obligation — implementor/caller
+/// chain stays perfectly ACYCLIC, so `pop_index`'s clause-4 guard —
+/// including the self-loop detector — cannot fire; only clause 3's
+/// binding-level invariant NAMES the obligation — implementor/caller
 /// discipline, not something the type system, the blanket impl, or a
 /// runtime guard enforces. Discharge it by construction: disjoint index
 /// populations per binding over any shared cell population. If a future
 /// revision adds a detector for
 /// cross-stack cell sharing (or stops this shape from compiling), this
-/// test breaks by design and the trait doc's rule 3 must be updated with
+/// test breaks by design and the trait doc's clause 3 must be updated with
 /// it.
 #[test]
 fn two_stacks_sharing_link_storage_still_double_issue() {
@@ -415,8 +414,8 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// Inventory shape 1 — ONE implementor whose
 /// [`load_next`](StackStorage::load_next)/
 /// [`store_next`](StackStorage::store_next) read and write DIFFERENT
-/// backings behind one head. KNOWN, INTENTIONAL limitation —
-/// implementor-enforced (the [`StackStorage`] trait doc's rules 3 and 4),
+/// backings behind one head — a deliberate, documented limitation:
+/// implementor-enforced (the [`StackStorage`] trait doc's `# Safety` clauses 3 and 4),
 /// not structurally impossible, auditable only inside the one impl block.
 /// The two `#[should_panic]` tests above pin shape 2; this test pins
 /// shape 1.
@@ -426,7 +425,7 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// answers `0` for every index. The first pop legitimately returns the
 /// head index `1` — and it has ALREADY moved the head to a phantom
 /// `(0, tag)`. The second pop reads `read_links[0] == 0 == index`: a
-/// self-loop a contract-abiding chain can never contain, so the rule-4
+/// self-loop a contract-abiding chain can never contain, so the clause-4
 /// guard panics — one pop later than the corruption it names. See
 /// the trait doc's "Detection coverage" for the catch/miss boundary.
 #[test]
@@ -474,12 +473,12 @@ fn internally_disagreeing_storage_still_double_issue() {
 
 /// Inventory shape 4 — temporal rebinding: a LIVE [`StackHead`] VALUE moved
 /// into FRESH links, one head↔links binding replaced across time by another
-/// over the same head. Not covered by rule 1's
+/// over the same head. Not covered by clause 1's
 /// elaboration (no `&StackHead` reference is ever shared — the head moves
 /// by value, and `old` is consumed, so there is never more than ONE live
 /// implementor value) nor by the inventory's old two-live-values scoping;
-/// only rule 1's HEADLINE ("one backing ... for the whole life of a
-/// non-empty stack") covers it, in spirit. KNOWN, INTENTIONAL limitation:
+/// only clause 1's HEADLINE ("one live binding per head, for the head's
+/// whole life") covers it, in spirit. A deliberate, documented limitation:
 /// the FIRST pop is a silent leak, and only the second pop's self-loop
 /// makes the rebinding loud — one index too late.
 #[test]
@@ -535,8 +534,8 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
 /// head↔links bindings over ONE shared backing, both inside a SINGLE
 /// implementor value via two `StackStorage` impls at different widths —
 /// falsifying "two implementor values" as the inventory's counting unit
-/// (the trait doc's inventory now counts BINDINGS). KNOWN, INTENTIONAL
-/// limitation, same register as
+/// (the trait doc's inventory now counts BINDINGS). Implementor-enforced,
+/// not structurally impossible, like
 /// `two_stacks_sharing_link_storage_still_double_issue`: every link value
 /// stays numerically valid and the shared chain stays perfectly ACYCLIC,
 /// so no detector fires.
