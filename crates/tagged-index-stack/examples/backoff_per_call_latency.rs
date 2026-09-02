@@ -12,14 +12,21 @@
 //! `tests/threaded_conservation.rs` and the bench's contention rows exactly:
 //! N threads x M iterations of pop-then-repush-exactly-what-you-popped
 //! against a shared `ArrayIndexStack<16, 64>` prefilled with `0..64`, started
-//! from a shared barrier. Every `pop` is individually timed.
+//! through a ready/window barrier pair (the bench's published-window
+//! protocol): workers rendezvous at the ready barrier, the coordinator records
+//! the wall-clock start, and only then does the window barrier release them
+//! into the counted work — no counted pop can precede the start the `wall_ms`
+//! denominator is derived from. Every `pop` is individually timed.
 //!
 //! The backoff cap itself is a private `const` in
 //! `crates/tagged-index-stack/src/imp.rs`, so an arm at a non-shipped cap is
 //! produced by temporarily editing that one line and rebuilding — the same
 //! documented substitution the cap sweep used (report §1). This binary cannot
 //! observe that const; the `cap_label` it prints comes from `TIS_CAP_LABEL`
-//! and is INFORMATIONAL ONLY. The resolved-cap evidence for a run is the
+//! and is INFORMATIONAL ONLY; because it is interpolated into the JSON lines
+//! unescaped, it is validated at read time against the non-empty
+//! `[A-Za-z0-9_.-]+` alphabet, and any other value aborts with exit code 2
+//! before any output. The resolved-cap evidence for a run is the
 //! captured `const BACKOFF_SPIN_CAP: u32 = ...;` source line taken
 //! immediately before each build (see the raw log this probe's output is
 //! appended to, `docs/perf/_raw_tis_backoff_per_call_latency.log` — a
@@ -123,7 +130,27 @@ fn percentile_ms(sorted: &[u32], q: f64) -> f64 {
 }
 
 fn main() {
-    let cap_label = std::env::var("TIS_CAP_LABEL").unwrap_or_else(|_| "unlabeled".to_string());
+    // The label is interpolated into the JSONL lines without escaping, so it is
+    // restricted to this allowlist and anything else aborts via `die` before any
+    // output; the label is INFORMATIONAL ONLY so this costs nothing.
+    let cap_label = match std::env::var("TIS_CAP_LABEL") {
+        Ok(raw) => {
+            if !raw.is_empty()
+                && raw
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+            {
+                raw
+            } else {
+                die(format!(
+                    "TIS_CAP_LABEL={raw:?}: label must be non-empty and match [A-Za-z0-9_.-] -- \
+                     it is interpolated into the JSON output unescaped, so any other character \
+                     could produce invalid JSONL"
+                ))
+            }
+        }
+        Err(_) => "unlabeled".to_string(),
+    };
     let shapes = parse_shapes(
         &std::env::var("TIS_SHAPES").unwrap_or_else(|_| "4x20000,8x200000,16x200000".to_string()),
     );
@@ -167,10 +194,22 @@ fn main() {
                 stack.push(i);
             }
 
-            let barrier = Barrier::new(threads + 1);
+            // Published-window protocol, same shape as the contention phases of
+            // `benches/tagged_index_stack_bench.rs`: workers rendezvous at
+            // `barrier_ready` once setup is done; the coordinator then records the
+            // wall-clock start; only `barrier_window` releases workers into the
+            // counted work, and a worker cannot pass `barrier_window.wait()` until
+            // the coordinator arrives there (which it does only after its
+            // `Instant::now()`), so no counted pop/push can precede the clock read
+            // the `wall_ms` denominator derives from. The old single barrier let
+            // work begin before the coordinator timestamped the run, shortening
+            // `wall_ms`.
+            let barrier_ready = Barrier::new(threads + 1);
+            let barrier_window = Barrier::new(threads + 1);
             let (per_thread, wall) = std::thread::scope(|s| {
                 let stack = &stack;
-                let barrier = &barrier;
+                let barrier_ready = &barrier_ready;
+                let barrier_window = &barrier_window;
                 let mut handles = Vec::with_capacity(threads);
                 for _ in 0..threads {
                     handles.push(s.spawn(move || {
@@ -179,7 +218,8 @@ fn main() {
                         // counted, never silent: a saturated sample is recorded at
                         // exactly ~4295 ms, which is a floor, not a measurement.
                         let mut clamp_saturated: u64 = 0;
-                        barrier.wait();
+                        barrier_ready.wait();
+                        barrier_window.wait();
                         for _ in 0..iters {
                             let t0 = Instant::now();
                             let idx = stack.pop().expect(
@@ -197,8 +237,9 @@ fn main() {
                         (samples, clamp_saturated)
                     }));
                 }
-                barrier.wait();
+                barrier_ready.wait();
                 let start = Instant::now();
+                barrier_window.wait();
                 let per_thread: Vec<(Vec<u32>, u64)> =
                     handles.into_iter().map(|h| h.join().unwrap()).collect();
                 (per_thread, start.elapsed())
