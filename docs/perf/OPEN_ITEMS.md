@@ -2904,7 +2904,7 @@ for completeness.
     - **Current-number-or-verdict:** no measurement exists yet. The
       candidate: `pop_index`'s CAS SUCCESS ordering, currently
       `Ordering::Acquire`, weakened to `Ordering::Relaxed` — source
-      `crates/tagged-index-stack/CHANGELOG.md:283-292`. The CHANGELOG's
+      `crates/tagged-index-stack/CHANGELOG.md:166-183`. The CHANGELOG's
       own on-paper soundness argument (PROSE REASONING, NOT A MEASUREMENT
       — the item stays OPEN regardless of how plausible the argument
       reads): on success the CAS reads no new value, because the matched
@@ -2926,7 +2926,7 @@ for completeness.
       candidates; otherwise the item simply stays open until someone
       adds the variant sooner. Per CLAUDE.md, no hot-path runtime change
       lands without a gate report.
-    - **Evidence:** `crates/tagged-index-stack/CHANGELOG.md:283-292`
+    - **Evidence:** `crates/tagged-index-stack/CHANGELOG.md:166-183`
       (the source of the candidate);
       `docs/reviews/2026-09-01-fh-quality-perf-review-tagged-index-stack.md`
       §1.6 (the flag that it was tracked nowhere); sibling items 61/62

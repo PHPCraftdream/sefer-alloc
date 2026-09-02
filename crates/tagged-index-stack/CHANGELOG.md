@@ -202,6 +202,26 @@ First release. Everything below is new in this version; nothing has shipped befo
   accessor; competing bindings against the standalone type no longer compile, compile-fail
   pinned). External implementors add `unsafe impl` and uphold the contract;
   `push_index`/`pop_index` call sites are unchanged.
+- **BREAKING (unpublished 0.1.0): `StackStorage`'s three hooks (`head`, `load_next`, `store_next`)
+  each take a first `_: &Hook` witness parameter.** `Hook` is `pub struct Hook(())` — a public type
+  with a private field, unconstructible outside this crate by any spelling (a bare tuple-struct
+  call is `E0423`; the struct-literal `Hook { 0: () }` spelling is `E0451`) — so no code outside the
+  crate can obtain a witness to call the hooks directly, even under `--features internals`. This
+  closes the caller-side forgery gap the `unsafe trait` conversion above left open: before this
+  change, an external crate could call a hook directly (bypassing the `StackOps` blanket impl's
+  algorithm) and violate the binding invariants without needing an `unsafe impl` at all. The witness
+  is a reference (`&Hook`, not an owned `Hook`) deliberately: an owned non-`Copy` token could be
+  stashed by a cooperating implementor into a `Cell<Option<Hook>>` and re-exposed through the
+  implementor's own safe method; the reference form makes that a lifetime error instead. Callers
+  drive a stack only through `push_index`/`pop_index` (or `ArrayIndexStack`'s inherent `push`/`pop`),
+  exactly as before — this change affects only custom `StackStorage` implementors' hook signatures.
+  Compile-fail pinned (`tests/compile_fail/hook_token_unconstructible/`).
+- **BREAKING (unpublished 0.1.0): `TaggedIndex::pack`'s `index` parameter and `unpack`'s index half
+  move from `u64` to `u32`.** `_CHECK_BITS` already guarantees every valid index fits in 16 bits, so
+  the old `u64` signature forced callers into narrowing/widening casts purely to move a value that
+  could never legitimately need more than 32 bits; the type now carries that invariant directly. No
+  runtime/algorithmic behavior changed — same bit patterns, same packing arithmetic, only the
+  parameter/return type narrows to match the value's real range.
 
 ### Fixed
 
