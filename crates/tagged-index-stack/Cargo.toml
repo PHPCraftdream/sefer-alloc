@@ -19,10 +19,13 @@ categories = ["concurrency", "data-structures", "no-std::no-alloc"]
 # do not trust a number quoted here) each have their own Cargo.toml, so
 # cargo's nested-manifest packaging rule already auto-excludes them — this
 # states that EXPLICITLY so the published .crate does not silently depend
-# on that default. The compile_fail_*.rs driver files (`ls tests/ | grep
-# ^compile_fail_ | wc -l`) are plain .rs files directly under tests/ and DO
-# ship; each documents (and implements) its own skip-when-fixture-absent
-# behavior for the packaged suite.
+# on that default. The driver is the single consolidated file
+# tests/compile_fail.rs (the former compile_fail_*.rs drivers were
+# consolidated into it); its shared child-cargo helper lives in
+# tests/common/, a directory WITHOUT its own Cargo.toml, so the auto-exclude
+# above does not touch it. Both ship in the published .crate, and they
+# document (and implement) the skip-when-fixture-absent behavior for the
+# packaged suite.
 exclude = ["tests/compile_fail/"]
 
 # A crate-local `unexpected_cfgs` declaration, deliberately NOT the

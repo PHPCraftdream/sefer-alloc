@@ -309,7 +309,8 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
 }
 
 /// The head word of a tagged Treiber free-list: a single `AtomicU64` packing an
-/// `(index | tag)` pair (see [`TaggedIndex`]). Owned by  /// [`StackStorage`] implementor value at a time, and bound to one link
+/// `(index | tag)` pair (see [`TaggedIndex`]). Owned by exactly one
+/// [`StackStorage`] implementor value at a time, and bound to one link
 /// backing for its WHOLE life — the binding between this head and its links
 /// is established by that impl, not re-asserted per call; sharing one head
 /// between implementor values (clause 1) or rebinding a live head across time

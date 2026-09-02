@@ -34,7 +34,11 @@ deliberately-broken compile-fail fixtures). See the crate documentation's
 Slab allocators, object pools, entity-component stores, id allocators, and
 connection tables all need to recycle small integer ids. Crates like
 `sharded-slab` embed one privately; this ships the primitive standalone, with
-an exhaustive loom model-check run against the real type.
+a loom model-check of the real type — exhaustive within each of several
+bounded, individually-scoped models (not one unbounded check of the whole
+behavior space; see the "## loom — real-type model-check" section below for
+the precise scope, including the one counterfactual that drives a buggy
+stand-in stack instead of the real type).
 
 ## The packed word
 

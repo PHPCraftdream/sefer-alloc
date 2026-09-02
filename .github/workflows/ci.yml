@@ -761,17 +761,26 @@ jobs:
       - run: cargo publish --dry-run -p tagged-index-stack
       # P2-1 (round-10 @oh review): the `cargo publish --dry-run` step above
       # builds the lib target ONLY — it never runs the PACKAGED test suite,
-      # which is exactly how the P2-1 regression shipped: cargo auto-excludes
-      # every directory containing its own Cargo.toml, so the four
+      # which is exactly how the P2-1 regression shipped. Counts in the next
+      # sentence are HISTORICAL — the tree as of that round-10 regression,
+      # not today (fixture crates have been added since, and the driver test
+      # files were later consolidated into one): cargo auto-excludes every
+      # directory containing its own Cargo.toml, so the then-four
       # compile-fail fixture crates under tests/compile_fail/ silently
-      # dropped out of the .crate while their three driver test files
+      # dropped out of the .crate while their then-three driver test files
       # shipped, and `cargo test` inside the downloaded package failed three
-      # test binaries on fixture-manifest panics. This step reproduces the
-      # review's repro end-to-end — package, extract, run the packaged suite
-      # under an isolated CARGO_TARGET_DIR — and any packaged-test failure
-      # fails this step. `--no-verify` avoids a redundant lib build: the
-      # publish --dry-run above already verifies the packaged lib, and the
-      # extracted `cargo test` below builds it again for the dev profile.
+      # test binaries on fixture-manifest panics. Today the same auto-exclude
+      # covers every fixture crate under tests/compile_fail/ (count drifts —
+      # re-derive with `ls tests/compile_fail/ | wc -l`, never hardcode it
+      # here), and the single consolidated driver file tests/compile_fail.rs
+      # ships — with its shared helper under tests/common/ — implementing the
+      # skip-when-fixture-absent guard. This step reproduces the review's
+      # repro end-to-end against whatever the tree actually contains —
+      # package, extract, run the packaged suite under an isolated
+      # CARGO_TARGET_DIR — and any packaged-test failure fails this step.
+      # `--no-verify` avoids a redundant lib build: the publish --dry-run
+      # above already verifies the packaged lib, and the extracted
+      # `cargo test` below builds it again for the dev profile.
       - name: run the packaged .crate test suite + build the packaged bench (P2-1/P4-7 regression gate)
         run: |
           cargo package -p tagged-index-stack --no-verify
