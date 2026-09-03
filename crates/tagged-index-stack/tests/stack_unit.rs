@@ -303,11 +303,9 @@ fn empty_sentinel_never_collides_with_a_live_index() {
 }
 
 /// The empty word carrying a NON-zero running tag (the H-2 shape) stays
-/// unambiguously empty at tags spanning up to the `TAG_MAX` ceiling (this
-/// test's name predates the P1-1 seal fix; the boundary is now a seal, not
-/// a wrap — see the body for the current framing).
+/// unambiguously empty at tags spanning up to the `TAG_MAX` ceiling.
 #[test]
-fn empty_word_with_running_tag_reads_empty_across_wrap() {
+fn empty_word_with_running_tag_reads_empty_through_tag_max() {
     type T = TaggedIndex<16>;
     for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1] {
         let w =

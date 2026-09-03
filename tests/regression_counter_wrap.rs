@@ -18,7 +18,7 @@
 //! `tests/regression_counter_wrap.rs` was later retired and its two tests
 //! folded into `crates/tagged-index-stack/tests/stack_unit.rs`
 //! (`empty_sentinel_never_collides_with_a_live_index` +
-//! `empty_word_with_running_tag_reads_empty_across_wrap`), run against the
+//! `empty_word_with_running_tag_reads_empty_through_tag_max`), run against the
 //! crate's real `TaggedIndex` packing. The registry's `free_slots` now consumes
 //! that crate, so the packing is proven there, not here.)
 
