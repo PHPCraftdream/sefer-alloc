@@ -382,8 +382,11 @@ impl core::fmt::Display for TagExhausted {
 ///
 /// # Layout note — no cache-line isolation
 ///
-/// This type is a bare `AtomicU64` with no padding or alignment of its own: it
-/// inherits the cache line of whatever struct embeds it. If it lands adjacent
+/// This type is a bare `AtomicU64` with no padding or alignment of its own —
+/// `#[repr(transparent)]` makes that a compiler-enforced guarantee (layout,
+/// size, and ABI identical to the single `head` field), not an incidental
+/// property of the current definition — so it inherits the cache line of
+/// whatever struct embeds it. If it lands adjacent
 /// to another frequently-modified atomic, the two fields false-share — each
 /// write invalidates the other core's copy of the line, and contending cores
 /// ping-pong the line even though the atomics are logically independent. That
@@ -408,6 +411,7 @@ impl core::fmt::Display for TagExhausted {
 /// ([`pop_index`](StackOps::pop_index) → `None` repeatedly until empty) and
 /// must outlive every popper that may still reference it — for a `'static`
 /// head, forever.
+#[repr(transparent)]
 #[derive(Debug)]
 pub struct StackHead<const INDEX_BITS: u32> {
     /// INVARIANT (release sequence): every modification of `head` MUST be a
