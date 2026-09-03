@@ -398,13 +398,28 @@ fn out_dir_symlink_escape_is_rejected_and_canary_survives() {
     let real = exclusive_temp_dir("real");
     fs::write(real.path().join("canary.txt"), "behind the symlink")
         .expect("write symlink-target canary");
-    let link = exclusive_temp_dir("link");
-    if !make_dir_symlink(link.path(), real.path()) {
+    // run-19 review P2-1: the symlink destination must NOT already exist —
+    // `symlink`/`symlink_dir`/`mklink /J` all fail if the target path exists,
+    // and `exclusive_temp_dir("link")` creates its directory before returning,
+    // so a derived, never-created child of the guarded parent is used instead.
+    let link = parent.path().join("link");
+    assert!(
+        !link.exists(),
+        "make_dir_symlink requires a free destination path"
+    );
+    if !make_dir_symlink(&link, real.path()) {
         eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
         drop(parent);
         return;
     }
-    let link_str = link.path().to_string_lossy().to_string();
+    let metadata = fs::symlink_metadata(&link)
+        .unwrap_or_else(|e| panic!("symlink_metadata on {}: {e}", link.display()));
+    assert!(
+        metadata.file_type().is_symlink(),
+        "fixture: {} is not a symlink/junction after make_dir_symlink",
+        link.display()
+    );
+    let link_str = link.to_string_lossy().to_string();
     assert_fatal(
         &run_codegen(&runner, &["--out-dir", &link_str]),
         "--out-dir <symlink pointing outside the scratch root>",
@@ -415,7 +430,7 @@ fn out_dir_symlink_escape_is_rejected_and_canary_survives() {
         "--out-dir <symlink pointing outside the scratch root>",
     );
     assert!(
-        link.path().exists(),
+        link.exists(),
         "the symlink itself was deleted by the runner while rejecting its --out-dir"
     );
     assert!(
