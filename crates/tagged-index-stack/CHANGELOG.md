@@ -208,16 +208,23 @@ First release. Everything below is new in this version; nothing has shipped befo
   `pub unsafe trait` carrying the normative implementor-side `# Safety` contract, and its three
   hooks (`head`, `load_next`, `store_next`) are `unsafe fn`, each with its own caller-side `#
   Safety` clause. `StackOps::push_index`, `ArrayIndexStack::push`, and the crate-internal push path
-  (`push_index_impl`) are `unsafe fn` too, carrying a two-clause caller contract: (1) LINK DOMAIN
+  (`push_index_impl`) are `unsafe fn` too, carrying a three-clause caller contract: (1) LINK DOMAIN
   — `index` must be in the implementor's declared link domain, for which the release-active
   `index < INDEX_MASK` guard (necessary for the head-word encoding) is NEVER sufficient proof; (2)
   LIVENESS / no double push — `index` must not currently be reachable through any binding whose
-  hooks touch the same link cells. `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
+  hooks touch the same link cells. (3) EXCLUSIVE TEMPORAL OWNERSHIP — for the whole duration of
+  the call (until it returns) the caller holds exclusive publish/recycle authority over `index`:
+  no other push of the same index (through any binding touching the same link cells) runs
+  concurrently with this one or begins before it returns; concurrent same-index pushes both pass
+  the entry-time clauses and still corrupt the free-list into a self-loop (`next[index] ==
+  index`, caught by `pop_index`'s detector) — on `Ok(())` ownership transfers to the stack, on
+  `Err(TagExhausted)` it stays with the caller (Sol-codex review run 14, P1; pinned by the loom
+  counterfactual `counterfactual_same_index_concurrent_push_self_loops`). `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
   unauthorized pop can only leak an index, never double-issue one. The crate-private
   `SealedStorage` bridge remains the sole hook call site; its `store_next` surface (trait + both
   impls) is `unsafe fn`, so the bridge forwards verbatim and the actual safety proof lives at the
   call site inside `push_index_impl` (the `push_index` contract is the
-  `core::alloc::GlobalAlloc::dealloc` analogue — violating either clause is a soundness violation
+  `core::alloc::GlobalAlloc::dealloc` analogue — violating any clause is a soundness violation
   attributable to the caller). `ArrayIndexStack` deliberately does not implement the public
   `StackStorage` trait (crate-internal sealed accessor; competing bindings against the standalone
   type do not compile, compile-fail pinned). The crate moved from `#![forbid(unsafe_code)]` to
@@ -242,7 +249,7 @@ First release. Everything below is new in this version; nothing has shipped befo
   a fully contract-compliant sequence of pushes/pops could previously wrap the tag counter back to
   its starting value, letting a stale CAS from an earlier-observed head succeed and hand out an
   index a different, concurrent thread still legitimately owned — an exclusive-issuance violation
-  reachable without breaking either of `push_index`'s two documented `# Safety` clauses. Every
+  reachable without breaking any of `push_index`'s documented `# Safety` clauses. Every
   successful push now installs a tag exactly one greater than the one it observed; a push that
   observes the ceiling (new `TaggedIndex::TAG_MAX`) is refused (`Err(TagExhausted)`) instead of
   wrapping to 0, sealing that head permanently (pops are unaffected and keep draining). New public
@@ -285,7 +292,8 @@ First release. Everything below is new in this version; nothing has shipped befo
   `workflow_dispatch`-only `tis-weak-memory-wallclock-gate` CI job, and nothing in the regular
   per-PR/push CI path ever built it, so the break went undetected (Sol-codex review run 8, P2-2).
   Fixed: the three `stack.push(...)` call sites now carry local `unsafe` blocks, each with a
-  `// SAFETY:` comment arguing `push_index`'s two-clause contract (link domain + liveness) for
+  `// SAFETY:` comment arguing `push_index`'s caller contract (link domain + liveness + exclusive
+  ownership) for
   that specific call; the stale "100% safe code" module doc claim is removed
   (`#![deny(unsafe_code)]` stays crate-wide, with a statement-scoped `#[allow(unsafe_code)]` at
   each of the three sites); and a new `--mode build-check` mode in
@@ -293,6 +301,22 @@ First release. Everything below is new in this version; nothing has shipped befo
   (regular, non-manual), compiles the template on every push/PR — so a future `push`/`pop` API
   break fails immediately instead of staying invisible until the next manually-dispatched arm64
   run.
+
+- **The `push_index` caller contract now states a third clause — exclusive
+  temporal ownership of the pushed index (Sol-codex review run 14, P1).**
+  The previous two clauses (link domain; liveness) are point-in-time checks
+  at call entry, and two concurrent pushes of the SAME index both satisfy
+  them as literally worded: the loser's CAS-retry loop observes the winner's
+  just-published head and chains `next[index] = index`, a self-loop that
+  `pop_index`'s detector panics on at the first pop through it. The contract
+  now requires the caller to hold exclusive publish/recycle authority over
+  `index` for the whole duration of the call — freshly minted indices and
+  indices just returned by a successful `pop_index` qualify; on `Ok(())`
+  ownership transfers to the stack, on `Err(TagExhausted)` it stays with the
+  caller. Documentation-only: no algorithm change. Pinned by a new loom
+  counterfactual, `counterfactual_same_index_concurrent_push_self_loops`,
+  which deliberately violates the clause (both threads pass the entry-time
+  checks) and panics inside the shipped `pop`.
 
 ### Documentation
 

@@ -464,8 +464,8 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
 
 /// Negative compile-fail regression: the two push entry points — the
 /// blanket-impl [`StackOps::push_index`] and the owned type's inherent
-/// [`ArrayIndexStack::push`] — are `unsafe fn` carrying the two-clause
-/// caller-side contract (link domain + liveness), so a bare push outside an
+/// [`ArrayIndexStack::push`] — are `unsafe fn` carrying the three-clause
+/// caller-side contract (link domain + liveness + exclusive ownership), so a bare push outside an
 /// `unsafe` block must NOT compile, with **E0133** ("call to unsafe function
 /// `X` is unsafe and requires unsafe function or block") naming EACH entry
 /// point. This pins the 2026-09-02 boundary move that made `push_index` (and

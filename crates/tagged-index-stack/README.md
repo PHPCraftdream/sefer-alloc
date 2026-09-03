@@ -23,8 +23,8 @@ exactly EIGHT audited, item-scoped `#[allow(unsafe_code)]` lint-exception
 regions, all in `src/imp.rs` — the `unsafe trait StackStorage` declaration
 (whose three hooks are `unsafe fn`) plus the sealed `SealedStorage`
 trait/bridge surface, and the caller-facing push boundary (`push_index` and
-`ArrayIndexStack::push`, both `unsafe fn` under a two-clause link-domain +
-liveness contract). The repository's integration tests are separate crate
+`ArrayIndexStack::push`, both `unsafe fn` under a three-clause link-domain +
+liveness + exclusive-ownership contract). The repository's integration tests are separate crate
 targets outside that deny and intentionally carry additional `unsafe impl
 StackStorage` test fixtures (correct implementor examples plus
 deliberately-broken compile-fail fixtures). A region is a lint-exception
@@ -95,7 +95,7 @@ inside a slot it already owns) rather than paying for a second array, via a
 custom `StackStorage` impl. For standalone use, `ArrayIndexStack<INDEX_BITS,
 N>` is the owned standalone stack that fuses the head and an `ArrayLinks<N>`
 backing, with `push`/`pop` methods — `push` is `unsafe fn` (the caller
-upholds the link-domain + liveness contract, see below); `pop` stays safe.
+upholds the link-domain + liveness + exclusive-ownership contract, see below); `pop` stays safe.
 
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
@@ -151,6 +151,16 @@ authoritative empty check.
   (typically narrower) link domain.
   Full contract and consequences: `push_index`'s `# Safety` section (crate
   docs).
+
+- **No concurrent push of the same index (exclusive temporal ownership,
+  caller-side `# Safety` clause 3).** Clause 2's "not reachable" is a
+  point-in-time check at call entry only — it does not give the caller
+  exclusive authority over the index until the push RETURNS. Two concurrent
+  pushes of the same index both satisfy the entry checks and still corrupt
+  the free-list into a self-loop (`next[index] == index`), which
+  `pop_index`'s detector panics on; pinned by
+  `counterfactual_same_index_concurrent_push_self_loops` in the loom suite.
+  Full contract: `push_index`'s `# Safety` section (crate docs).
 
 ## Tag-width budget
 

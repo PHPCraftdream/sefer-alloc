@@ -19,7 +19,7 @@
 //!
 //! Uses the public `push`/`pop` API only; `push` is `unsafe fn` (see
 //! `crates/tagged-index-stack/src/imp.rs`'s `StackOps::push_index` doc for
-//! the two-clause caller contract: link domain + liveness). The three call
+//! the three-clause caller contract: link domain + liveness + exclusive ownership). The three call
 //! sites below each carry a `// SAFETY:` justification and a
 //! statement-scoped `#[allow(unsafe_code)]`; `#![deny(unsafe_code)]` below
 //! still covers every other line in this file — this is not a blanket

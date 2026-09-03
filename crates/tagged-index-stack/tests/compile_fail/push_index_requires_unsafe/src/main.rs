@@ -1,7 +1,7 @@
 //! Compile-fail fixture — the `unsafe fn` caller-side boundary on the two
 //! push entry points: the blanket-impl [`StackOps::push_index`] and the owned
 //! type's inherent [`ArrayIndexStack::push`]. Both became `unsafe fn` carrying
-//! the two-clause caller contract (link domain + liveness), so even a CORRECT
+//! the three-clause caller contract (link domain + liveness + exclusive ownership), so even a CORRECT
 //! implementor's own crate cannot push from safe code: every bare push outside
 //! an `unsafe` block is **E0133** ("call to unsafe function is unsafe").
 //!

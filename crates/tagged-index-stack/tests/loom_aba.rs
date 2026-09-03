@@ -3,13 +3,15 @@
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
 //! code that ships. How much of each model calls the shipped `push`/`pop`
-//! directly varies and is stated per model below: **five** models
+//! directly varies and is stated per model below: **six** models
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
-//! `push_push_conservation`, `pop_pop_conservation`,
+//! `push_push_conservation`,
+//! `counterfactual_same_index_concurrent_push_self_loops`,
+//! `pop_pop_conservation`,
 //! `pop_pop_single_element_loser_sees_empty_actual`,
 //! `tiny_tag_seal_rejects_stale_cas_at_the_real_width`) run end-to-end through
 //! ArrayIndexStack's shipped `push`/`pop` for their whole schedule (the
-//! sixth, `counterfactual_bypassed_seal_lets_stale_cas_double_issue`, runs
+//! seventh, `counterfactual_bypassed_seal_lets_stale_cas_double_issue`, runs
 //! the shipped `push`/`pop` for everything except its one deliberately
 //! bypassed final step — see section (h)); most of the rest hand-inline one
 //! side of an interaction through `cas_head_for_test` (real head atomic,
@@ -97,6 +99,16 @@
 //!     stale CAS then SUCCEEDS and the free-list conservation check FAILS —
 //!     the load-bearing proof that the seal, not just the tag bump, is what
 //!     closes P1-1.
+//! (i) **Same-index concurrent push (the caller contract's
+//!     exclusive-ownership clause — review run 14 P1):**
+//!     `counterfactual_same_index_concurrent_push_self_loops` races TWO
+//!     real `push`es of the SAME index on a fresh stack — a deliberate
+//!     violation of clause 3, with both calls satisfying the entry-time
+//!     clauses (link domain, liveness). Loom finds the corrupting
+//!     interleaving: the loser's CAS-retry observes the winner's
+//!     just-published head and chains `next[0] = 0`, a self-loop, and the
+//!     shipped `pop`'s self-loop detector panics on the schedules whose
+//!     drain observes it — proving clause 3 is load-bearing.
 //!
 //! # How to run
 //!
@@ -916,6 +928,82 @@ fn push_push_conservation() {
             );
         },
     );
+}
+
+// ============================================================================
+// (i) Same-index concurrent push: a deliberate violation of the caller
+// contract's exclusive-ownership clause (clause 3 — review run 14 P1).
+// ============================================================================
+
+/// Counterfactual: two threads each do ONE real [`ArrayIndexStack::push`] of
+/// the SAME index onto a shared fresh stack, concurrently. Both calls
+/// literally satisfy the contract's entry-time clauses at their own
+/// invocation — `index` is in-domain (clause 1) and not reachable through
+/// the head at that instant (clause 2) — yet the race corrupts the
+/// free-list: whichever push loses its first CAS retries, observes the
+/// winner's just-published head (the same index), and chains
+/// `next[0] = 0` — a self-loop — and its own CAS can then succeed too.
+/// The shipped `pop`'s self-loop detector (`pop_link_out_of_range`) panics
+/// on the first drain pop. This pins the contract's THIRD clause
+/// (exclusive temporal ownership: the caller must hold exclusive
+/// publish/recycle authority over the index for the whole duration of the
+/// call) as load-bearing — Sol-codex review run 14, finding P1
+/// (`docs/reviews/2026-09-03-123945-tagged-index-stack-review-Sol-codex-run-14.md`).
+///
+/// Plain [`model`], not [`model_with_oracle`]: the panic unwinds through
+/// `Builder::check`, so `model_with_oracle`'s after-snapshot could never
+/// run on the schedules that panic — an activation-oracle `verify` closure
+/// here would be partially unreachable code. This matches every other
+/// `#[should_panic]` counterfactual in this file.
+#[test]
+#[should_panic(expected = "the index's own link points back to itself — a self-loop")]
+fn counterfactual_same_index_concurrent_push_self_loops() {
+    model(|| {
+        let stack = Arc::new(ArrayIndexStack::<16, N>::new());
+
+        let stack_a = Arc::clone(&stack);
+        let ta = thread::spawn(move || {
+            // SAFETY (counterfactual — clause 3 DELIBERATELY violated):
+            // fresh stack (domain 0..2); index 0 is in-domain (clause 1)
+            // and not reachable at this call's entry (clause 2), but BOTH
+            // threads push the SAME index concurrently, violating the
+            // exclusive-ownership clause — that violation is exactly what
+            // this test proves is load-bearing (review run 14, P1).
+            unsafe { stack_a.push(0) }.expect("fresh head has tag budget");
+        });
+
+        let stack_b = Arc::clone(&stack);
+        let tb = thread::spawn(move || {
+            // SAFETY (counterfactual — clause 3 DELIBERATELY violated):
+            // identical to thread A's — same index, same entry-time
+            // satisfaction of clauses 1 and 2, concurrent with A by
+            // construction. The contract's clause 3 forbids exactly this,
+            // and the self-loop panic below proves the clause is real.
+            unsafe { stack_b.push(0) }.expect("fresh head has tag budget");
+        });
+
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // Drain: whichever push's CAS won, the loser's retry loop observed
+        // the winner's published head (index 0 itself) and stored
+        // `next[0] = 0` — the self-loop is the last write to that link cell
+        // on every explored schedule. Whether a given schedule's first pop
+        // OBSERVES it depends on visibility: `pop`'s initial head read is a
+        // plain `Acquire` load (not an RMW), so a schedule that reads the
+        // FIRST push's head publication synchronizes only with that push's
+        // release edge and may legitimately read the stale `next[0] = TAIL`
+        // — a stale observer the contract's clause 2 imposes no obligation
+        // on — and drains benignly. Loom explores both visibility classes;
+        // the panic fires on the fresh-visibility schedules and aborts the
+        // exploration there. NO fallback panic on a benign drain: it would
+        // abort the exploration on the first stale-visibility schedule
+        // before a self-loop-observing one is ever reached (observed
+        // empirically). Vacuousness is still structurally excluded: if NO
+        // explored schedule ever observes the self-loop, the body completes
+        // panic-free and `#[should_panic]` fails the test.
+        while stack.pop().is_some() {}
+    });
 }
 
 /// Two threads each do ONE real [`ArrayIndexStack::pop`] concurrently

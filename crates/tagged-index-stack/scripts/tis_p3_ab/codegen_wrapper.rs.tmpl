@@ -15,8 +15,8 @@
 // only the instantiation vehicle and contributes no logic of its own.
 //
 // `push` is `pub unsafe fn` (see `crates/tagged-index-stack/src/imp.rs`'s
-// `StackOps::push_index` doc for the two-clause caller contract: link domain
-// + liveness). Same statement-scoped `#[allow(unsafe_code)]` + `// SAFETY:`
+// `StackOps::push_index` doc for the three-clause caller contract: link domain
+// + liveness + exclusive ownership). Same statement-scoped `#[allow(unsafe_code)]` + `// SAFETY:`
 // convention as the sibling `scripts/tis_p3_ab/harness_bin.rs`;
 // `#![deny(unsafe_code)]` below still covers every other line in this file.
 

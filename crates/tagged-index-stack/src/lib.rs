@@ -376,7 +376,7 @@
 //! implementor hooks AND the caller-facing push surface are `unsafe fn` — a
 //! bare call from safe code is E0133, and an `unsafe`-block call takes on the
 //! callee's own caller-side `# Safety` contract (`push_index`'s is the
-//! two-clause link-domain + liveness contract); `pop_index` deliberately
+//! three-clause link-domain + liveness + exclusive-ownership contract); `pop_index` deliberately
 //! stays safe, because an unauthorized pop can only LEAK an index, never
 //! double-issue one. See the [`StackStorage`] trait doc's unsafe-fn hooks,
 //! `# Safety`, and `# Stability` sections.

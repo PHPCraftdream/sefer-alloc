@@ -917,8 +917,8 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// `unsafe fn` with per-method caller-side `# Safety` contracts,
 /// discharged at their one call site (the crate-internal bridge);
 /// [`push_index`](StackOps::push_index) — and the owned type's
-/// [`push`](ArrayIndexStack::push) — carries the two-clause
-/// link-domain+liveness caller contract, while
+/// [`push`](ArrayIndexStack::push) — carries the three-clause
+/// link-domain+liveness+exclusive-ownership caller contract, while
 /// [`pop_index`](StackOps::pop_index) stays safe (an unauthorized pop can
 /// only leak an index, never double-issue one). The boundary's design
 /// history, including the superseded designs that preceded it, is
@@ -998,8 +998,8 @@ pub unsafe trait StackStorage<const INDEX_BITS: u32> {
     /// [`TAIL`] or the index most recently observed as THIS binding's
     /// head, and the call happens before the head CAS that publishes
     /// `index`. (The trait-level `# Safety` clauses above say nothing
-    /// about CAPACITY — the domain and liveness legs this leans on are
-    /// `push_index`'s two caller-side clauses, not those clauses.)
+    /// about CAPACITY — the domain, liveness, and exclusive-ownership legs
+    /// this leans on are `push_index`'s three caller-side clauses, not those clauses.)
     unsafe fn store_next(&self, index: u32, next: u32);
 }
 
@@ -1026,8 +1026,9 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///
     /// # Safety
     ///
-    /// This is the caller-side unsafe contract, in two clauses; violating
-    /// either is a soundness violation attributable to the caller — the
+    /// This is the caller-side unsafe contract, in three clauses; violating
+    /// any one of them is a soundness violation attributable to the caller —
+    /// the
     /// same posture as [`core::alloc::GlobalAlloc::dealloc`], whose
     /// exclusive-issuance contract unsafe allocator code relies on.
     ///
@@ -1064,10 +1065,47 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///    section): the lost-CAS observer's `(index, tag)` expectation can
     ///    never be reinstalled, so its CAS is guaranteed to fail regardless
     ///    of what this push does.
+    /// 3. **Exclusive temporal ownership (no concurrent push of the same
+    ///    index).** For the whole duration of this call — from invocation
+    ///    until it returns — the caller holds EXCLUSIVE publish/recycle
+    ///    authority over `index`: no other
+    ///    [`push_index`](Self::push_index)/[`push`](ArrayIndexStack::push)
+    ///    call for the same `index` (through this binding, or any binding
+    ///    whose hooks touch the same link cells) executes concurrently with
+    ///    this one, or begins before this one returns. This is NOT implied
+    ///    by clause 2: clause 2 is a point-in-time check at call entry, and
+    ///    "not reachable at the instant I checked" does not mean "exclusively
+    ///    mine until I finish publishing". Counterexample (fresh empty
+    ///    stack, `index` in domain): threads A and B concurrently call this
+    ///    for the SAME `index`; at each call's entry `index` is unreachable,
+    ///    so both calls literally satisfy clauses 1 and 2. A wins its CAS
+    ///    and publishes `index` as head. B's CAS then loses; B's retry loop
+    ///    observes the NEW head — `index` itself, just published by A — and
+    ///    stores `next[index] = index` (this method always chains the
+    ///    observed head's index into `index`'s link cell), and B's own CAS
+    ///    can succeed too: the stack now holds `next[index] == index`, a
+    ///    self-loop that [`pop_index`](Self::pop_index)'s self-loop detector
+    ///    PANICS on at the first pop through it — the same corruption shape
+    ///    the sequential double-push clause 2 forbids. Pinned by
+    ///    `counterfactual_same_index_concurrent_push_self_loops` in
+    ///    `tests/loom_aba.rs`, a loom counterfactual that deliberately
+    ///    violates THIS clause (both threads satisfy clauses 1 and 2 at
+    ///    entry) and panics inside the shipped
+    ///    [`pop`](ArrayIndexStack::pop). Like clause 2, this clause is not
+    ///    runtime-CHECKED: detecting a racing same-index push would require
+    ///    ownership tracking the stack does not keep. Ownership transfer on
+    ///    return: on `Ok(())`, publish/recycle authority over `index` moves
+    ///    to the stack — the caller must not push `index` again until a
+    ///    future [`pop_index`](Self::pop_index) RETURNS it (restoring
+    ///    exactly the authority clause 2 already requires before the next
+    ///    push; this clause composes with clause 2, it does not replace
+    ///    it). On `Err(`[`TagExhausted`]`)` nothing was published and the
+    ///    refused `index` remains the caller's — see `# Errors` below.
     ///
     /// The obligation is stated over LINK CELLS, not over "the stack":
     /// link cells shared between two
-    /// stacks with completely separate heads are clause 3's binding-level
+    /// stacks with completely separate heads are the [`StackStorage`] trait
+    /// contract's own clause-3 binding-level
     /// hazard — see the [`StackStorage`] trait doc's "The shared-storage
     /// hazard class" section for the full inventory (this shape has no
     /// runtime detector); pinned by
@@ -1140,7 +1178,8 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     #[track_caller]
     #[allow(unsafe_code)]
     // Single documented reason to hold `unsafe`: this method carries the
-    // caller-side two-clause unsafe contract (link domain + liveness) —
+    // caller-side three-clause unsafe contract (link domain + liveness +
+    // exclusive ownership) —
     // the `core::alloc::GlobalAlloc::dealloc` analogue — relied on for
     // memory safety by allocator consumers; see the `# Safety` section
     // above.
@@ -1351,8 +1390,8 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> SealedStorage<B> for S {
 #[allow(unsafe_code)]
 // Single documented reason to hold `unsafe`: this is the shared body of
 // `StackOps::push_index`/`ArrayIndexStack::push`, forwarding their
-// caller-side unsafe contract (link domain + liveness) to the algorithm's
-// internal `store_next` call.
+// caller-side unsafe contract (link domain + liveness + exclusive
+// ownership) to the algorithm's internal `store_next` call.
 pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(
     s: &S,
     index: u32,
@@ -1409,7 +1448,8 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // discharges: we are in the CAS-valid push phase — `next_link` is
         // [`TAIL`] or the just-unpacked head index `cur_idx`, and the head
         // CAS that publishes `index` happens after, at the
-        // `compare_exchange` below; (b) the link-domain and liveness legs
+        // `compare_exchange` below; (b) the link-domain, liveness, and
+        // exclusive-ownership legs
         // come from [`StackOps::push_index`]'s caller-side `# Safety`
         // contract, which this function's own `# Safety` forwards — the
         // caller of `push_index_impl` proved them.
@@ -1556,13 +1596,15 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
 // Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
 // (see the crate docs' "Where unsafe lives"). Single documented reason to
 // hold `unsafe`: `push_index` carries the caller-side unsafe contract
-// (link domain + liveness), forwarded verbatim to `push_index_impl`.
+// (link domain + liveness + exclusive ownership), forwarded verbatim to
+// `push_index_impl`.
 #[allow(unsafe_code)]
 impl<const B: u32, S: StackStorage<B> + ?Sized> StackOps<B> for S {
     #[track_caller]
     unsafe fn push_index(&self, index: u32) -> Result<(), TagExhausted> {
         // SAFETY: this fn's own caller-side contract (link domain +
-        // liveness, `push_index`'s `# Safety` above) is forwarded verbatim
+        // liveness + exclusive ownership, `push_index`'s `# Safety` above)
+        // is forwarded verbatim
         // to `push_index_impl`'s identical `# Safety` contract — not
         // discharged locally, just passed through. `#![deny(unsafe_op_in_unsafe_fn)]`
         // requires this local block even inside this `unsafe fn`'s own body.
@@ -1712,10 +1754,11 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     #[allow(unsafe_code)]
     // Single documented reason to hold `unsafe`: forwards
     // `StackOps::push_index`'s caller-side unsafe contract (link domain +
-    // liveness) to the shared body `push_index_impl`.
+    // liveness + exclusive ownership) to the shared body `push_index_impl`.
     pub unsafe fn push(&self, index: u32) -> Result<(), TagExhausted> {
         // SAFETY: forwards this fn's own caller-side contract (link domain +
-        // liveness, same as `StackOps::push_index`'s `# Safety`) verbatim to
+        // liveness + exclusive ownership, same as `StackOps::push_index`'s
+        // `# Safety`) verbatim to
         // `push_index_impl` — not discharged locally, just passed through.
         // `#![deny(unsafe_op_in_unsafe_fn)]` requires this local block even
         // inside this `unsafe fn`'s own body.
