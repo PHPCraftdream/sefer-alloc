@@ -74,11 +74,32 @@ fn copy_file(src: &Path, dst: &Path) {
         .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", src.display(), dst.display()));
 }
 
+/// Same as [`copy_file`], but a missing SOURCE is not fatal: `real_repo`
+/// (see below) only resolves to a real workspace root when this test runs
+/// from a git checkout. When it runs against the PACKAGED `.crate`
+/// (`tagged-index-stack package gates` CI job, which extracts the `.crate`
+/// to a standalone temp dir and runs the suite from there), `CARGO_MANIFEST_DIR`
+/// IS the package root — there is no enclosing workspace two levels up, so
+/// `real_repo` resolves to an unrelated ancestor directory and these
+/// workspace-only files genuinely do not exist. That is fine: the fixed
+/// runner rejects every case this suite pins during argument parsing, long
+/// before it would ever read `capture-measurement-identity.mjs`, so the
+/// skeleton does not need that file to be present for the FIXED runner's
+/// behavior under test — only the (not-CI-exercised) pre-fix counterfactual
+/// needs it, and that is run by hand against a real git checkout.
+fn copy_file_if_present(src: &Path, dst: &Path) {
+    if !src.is_file() {
+        return;
+    }
+    copy_file(src, dst);
+}
+
 /// Builds a disposable skeleton repo in the temp dir and returns guards for
 /// its private parent and the runner copy inside it. The skeleton mirrors the
 /// layout the runner derives from its own location (repo root three levels
 /// above `crates/tagged-index-stack/scripts/`), plus the identity-capture
-/// script pair it invokes before any measurement mode.
+/// script pair it invokes before any measurement mode — best-effort: see
+/// [`copy_file_if_present`].
 fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let real_repo = crate_dir
@@ -123,11 +144,11 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
         &crate_dir.join("src/imp.rs"),
         &root.join("crates/tagged-index-stack/src/imp.rs"),
     );
-    copy_file(
+    copy_file_if_present(
         &real_repo.join("scripts/capture-measurement-identity.mjs"),
         &root.join("scripts/capture-measurement-identity.mjs"),
     );
-    copy_file(
+    copy_file_if_present(
         &real_repo.join("scripts/lib.mjs"),
         &root.join("scripts/lib.mjs"),
     );
