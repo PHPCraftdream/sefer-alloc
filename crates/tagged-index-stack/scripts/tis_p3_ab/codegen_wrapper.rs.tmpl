@@ -40,7 +40,11 @@ pub fn instantiate() {
     // SAFETY: domain — `stack` is `ArrayIndexStack<16, 256>`, so index `1` is
     // in range. Liveness — `stack` was just constructed by `new()` above and
     // `1` has never been pushed on it, so it cannot currently be reachable
-    // through this stack's head.
+    // through this stack's head. Exclusive ownership — `instantiate` runs on
+    // a single thread with `stack` still a function-local that nothing else
+    // can reach, and `1` is pushed exactly once here, so no other push of
+    // `1` can run concurrently with or begin before this one returns
+    // (push_index clause 3).
     #[allow(unsafe_code)]
     unsafe {
         black_box(push)(black_box(&stack), black_box(1u32))

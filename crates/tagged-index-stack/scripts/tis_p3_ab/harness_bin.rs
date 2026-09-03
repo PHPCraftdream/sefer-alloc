@@ -7,8 +7,13 @@
 //! `crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`
 //! (coordinator publishes a FUTURE window anchor, `now + WARMUP`, after
 //! full rendezvous; workers warm up uncounted until that anchor arrives,
-//! entry-lateness-guarded; each worker counts only completed repushes
-//! inside the window).
+//! entry-lateness-guarded; each worker then counts completed repushes
+//! against the shared window with a BOUNDED OVERSHOOT, not an exact
+//! `[timed_start, deadline)` cut — the deadline is only checked once per
+//! `DEADLINE_CHECK_INTERVAL` iterations, AFTER that batch of work, so up
+//! to `DEADLINE_CHECK_INTERVAL - 1` repushes per worker can complete past
+//! `deadline` and still be counted; same honest-overshoot posture the
+//! bench documents on its own timed loop).
 //!
 //! The driver spawns this binary once per (variant, sample) and reads ONE
 //! JSON line from stdout (the final line of output). CAS-retry counters come
@@ -47,7 +52,11 @@ const PREFILL: u32 = 64;
 /// Check the clock every N iterations in the warm-up and counted loops:
 /// checking every iteration would make the clock read a significant
 /// fraction of a two-atomic-op iteration (same cadence rationale as the
-/// bench's `DEADLINE_CHECK_INTERVAL`).
+/// bench's `DEADLINE_CHECK_INTERVAL`). Consequence in the COUNTED loop:
+/// the check runs AFTER the batch it bounds, so up to `N - 1` repushes
+/// per worker execute past `deadline` and are still counted — a bounded
+/// overshoot carried by both the numerator and the shared elapsed
+/// denominator, not an exact window cut (see the counted-loop comment).
 const DEADLINE_CHECK_INTERVAL: u32 = 64;
 
 /// Uncounted warm-up lead before the timed window opens: the coordinator
@@ -133,6 +142,13 @@ fn main() {
         // `stack` was just constructed by `Stack::new()` above and `i` has
         // never been pushed on it before, so it cannot currently be
         // reachable through any head sharing this stack's link cells.
+        // Exclusive ownership — this loop runs alone on the main thread
+        // BEFORE the `std::thread::scope` below spawns any worker, so no
+        // other push of `i` can exist, let alone run concurrently with or
+        // begin before this call returns; each `i` is fresh and pushed
+        // exactly once, and on the `Ok(())` the `.expect` below demands,
+        // publish/recycle authority for `i` transfers to the stack
+        // (push_index clause 3).
         #[allow(unsafe_code)]
         unsafe {
             stack.push(i)
@@ -185,6 +201,15 @@ fn main() {
                         // thread's CAS actually removed `idx` from the head
                         // chain, so it is not currently reachable through
                         // `stack`'s head and has not been re-pushed since.
+                        // Exclusive ownership — that same successful `pop`
+                        // transferred publish/recycle authority for `idx` to
+                        // THIS thread (a pop is the only way an index leaves
+                        // the stack, and only the winning popper's CAS takes
+                        // a given published instance), and this thread
+                        // re-pushes `idx` synchronously without ever sharing
+                        // it, so no other push of `idx` can run concurrently
+                        // with or begin before this call returns
+                        // (push_index clause 3).
                         #[allow(unsafe_code)]
                         unsafe {
                             stack.push(idx)
@@ -225,14 +250,31 @@ fn main() {
 
                 // Counted window: pop-then-repush; only COMPLETED repushes
                 // count (a None pop under transient drain counts nothing).
+                // Bounded overshoot, NOT an exact `[timed_start, deadline)`
+                // cut: the deadline below is checked once per
+                // DEADLINE_CHECK_INTERVAL iterations AFTER that batch of
+                // work, so up to DEADLINE_CHECK_INTERVAL - 1 repushes per
+                // worker can complete past `deadline` and are still
+                // counted. Elapsed runs from the shared anchor to the last
+                // worker's `barrier_done`, so the overshoot lands in
+                // numerator and denominator alike instead of being hidden;
+                // per-worker finish times differ, so early workers stop
+                // adding to the numerator before the shared denominator
+                // closes — accepted as direction-neutral noise for
+                // symmetric A/B arms, not papered over as an exact window.
                 let mut ops = 0u64;
                 since_check = 0;
                 loop {
                     if let Some(idx) = stack.pop() {
-                        // SAFETY: same argument as the warm-up loop above —
-                        // `idx` just came out of this stack's own `pop()`,
-                        // so it is both domain-valid and, because `pop()`
-                        // returned `Some`, not currently live anywhere else.
+                        // SAFETY: same argument as the warm-up loop above,
+                        // all three clauses — `idx` just came out of this
+                        // stack's own `pop()`, so it is domain-valid;
+                        // because `pop()` returned `Some`, it is not
+                        // currently live anywhere else; and that successful
+                        // pop transferred exclusive publish/recycle
+                        // authority for `idx` to this thread, which
+                        // re-pushes it synchronously without sharing it
+                        // (push_index clause 3).
                         #[allow(unsafe_code)]
                         unsafe {
                             stack.push(idx)

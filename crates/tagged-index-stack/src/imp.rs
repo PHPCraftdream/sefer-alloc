@@ -1041,7 +1041,8 @@ pub unsafe trait StackStorage<const INDEX_BITS: u32> {
     /// The caller must invoke this only in the stack algorithm's
     /// CAS-valid push phase: `index` already satisfies
     /// [`push_index`](StackOps::push_index)'s caller-side `# Safety`
-    /// contract (in `self`'s link domain; not currently live), `next` is
+    /// contract (in `self`'s link domain; not currently live; held under
+    /// exclusive publish/recycle authority), `next` is
     /// [`TAIL`] or the index most recently observed as THIS binding's
     /// head, and the call happens before the head CAS that publishes
     /// `index`. (The trait-level `# Safety` clauses above say nothing
@@ -1431,8 +1432,8 @@ impl<const B: u32, S: StackStorage<B> + ?Sized> SealedStorage<B> for S {
 /// Same caller-side contract as [`StackOps::push_index`]'s `# Safety` —
 /// the normative location, which this crate cross-references here. This
 /// function is the shared body behind both [`StackOps::push_index`] and
-/// [`ArrayIndexStack::push`]; its caller must discharge the link-domain
-/// and liveness clauses.
+/// [`ArrayIndexStack::push`]; its caller must discharge the link-domain,
+/// liveness, and exclusive-ownership clauses.
 #[track_caller]
 #[allow(unsafe_code)]
 // Single documented reason to hold `unsafe`: this is the shared body of
