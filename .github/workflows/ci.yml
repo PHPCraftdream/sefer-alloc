@@ -1798,13 +1798,17 @@ jobs:
     #   6-9. `size-classes` (debug + release, task #755 F1-F3) and
     #      `once-ptr-cell` (debug + release, task #773 F1) — `cargo test`
     #      proper, since steps 4-5's cross-builds compile no test target.
-    #   10. `tagged-index-stack` — `--features test-internals` in --release
-    #      (the `threaded_conservation` file, plus the three gated white-box
-    #      probes in `stack_unit.rs` since Sol-codex run-6 P2-1, task #1828)
-    #      plus a matching test-internals clippy row (Sol-codex run-3 review
-    #      P2-2, task tis-sc3-Group3 #1768): steps 2's default-feature runs
-    #      compile the retry/backoff activation-oracle assertions and the
-    #      gated raw head/link probes out entirely.
+    #   10. `tagged-index-stack` — `--features test-internals` in --release,
+    #      the WHOLE crate test set (`--no-fail-fast`, no per-file `--test`
+    #      allowlist since Sol-codex run-9 P2-2, task #1846 — a hand-picked
+    #      `--test` list previously missed `tag_seal.rs` entirely): covers
+    #      the `threaded_conservation` file's retry/backoff activation-oracle
+    #      assertions, the three gated white-box probes in `stack_unit.rs`
+    #      (Sol-codex run-6 P2-1, task #1828), and `tag_seal.rs`'s two
+    #      terminal-seal regression tests, plus a matching test-internals
+    #      clippy row (Sol-codex run-3 review P2-2, task tis-sc3-Group3
+    #      #1768): steps 2's default-feature runs compile all of the above
+    #      out entirely.
     name: test workspace members
     runs-on: ubuntu-latest
     steps:
@@ -1842,40 +1846,39 @@ jobs:
       # step is what would catch it.
       - run: cargo test -p tagged-index-stack --release --no-fail-fast
       # tagged-index-stack review (Sol-codex, run 3, P2-2, task
-      # tis-sc3-Group3 #1768): both rows above run this crate with DEFAULT
-      # features only, so the activation-oracle assertions inside
-      # `tests/threaded_conservation.rs` — the `retry_counts_for_test()` /
-      # `backoff_cap_reached_for_test()` snapshots, each gated on
-      # `#[cfg(feature = "test-internals")]` — compiled out of every CI run:
-      # CI executed the file's conservation/drain checks but never the
-      # assertions added specifically to prove retry and full-depth backoff
-      # activation. This row runs that one file in --release with the
-      # feature on (its own doc comment: ~0.1 s there), the same per-file
-      # row shape the `loom-alloc-global` job uses for `loom_aba.rs`. No
-      # tee+grep sentinel (task #1110 shape) is possible here — the feature
-      # flag changes no libtest output line — and it is not needed for the
-      # flag itself: cargo hard-errors on an unknown feature name, so the
-      # flag cannot silently degrade into a no-op (the residual risk — the
-      # flag being deleted outright — is what this comment documents; a
-      # deleted row leaves the two default rows above passing silently).
-      # Verified locally: green with the feature on; a temporary
+      # tis-sc3-Group3 #1768; folded into one whole-feature row by Sol-codex
+      # run-9 P2-2, task #1846): both rows above run this crate with DEFAULT
+      # features only, so every `#[cfg(any(feature = "test-internals", loom))]`
+      # / `#[cfg(feature = "test-internals")]`-gated test in the crate compiles
+      # out entirely — the activation-oracle assertions in
+      # `tests/threaded_conservation.rs` (`retry_counts_for_test()` /
+      # `backoff_cap_reached_for_test()`), the three white-box probes in
+      # `tests/stack_unit.rs` (`empty_transition_preserves_running_tag`,
+      # `links_are_lazy`, `default_stack_head_behaves_like_new`, gated since
+      # tis-sol6 run-6 P2-1, task #1828), and the two substantive terminal-seal
+      # regression tests in `tests/tag_seal.rs`
+      # (`seal_sequence_ok_ok_err_with_permanent_seal_after_drain`,
+      # `pushes_remaining_counts_down_to_zero_and_stays_there`, added by the
+      # P1-1 full-tag-wrap fix). This row previously hand-picked
+      # `--test threaded_conservation` and `--test stack_unit`; that
+      # hand-maintained list silently missed `tag_seal.rs` when it landed —
+      # its two substantive tests ran under NO CI job at all (the default
+      # rows compiled them out by feature, the loom job runs a different,
+      # `#[cfg(loom)]`-gated concurrent model, and the test-internals clippy
+      # row below only typechecks, never executes `#[test]` bodies) — exactly
+      # the drift class a per-file allowlist reproduces on every future gated
+      # test file. Fixed for good by running the WHOLE `test-internals` test
+      # set instead of a named subset, so any future gated test file is
+      # picked up automatically. No tee+grep sentinel (task #1110 shape) is
+      # possible here — the feature flag changes no libtest output line —
+      # and it is not needed for the flag itself: cargo hard-errors on an
+      # unknown feature name, so the flag cannot silently degrade into a
+      # no-op. Verified locally: green with the feature on; a temporary
       # counter-mutation (backoff-cap accessor pinned to zeros) made the
-      # backoff-depth oracle fail under this exact invocation and pass
-      # without the feature, then passed again after the restore — the
-      # oracle is feature-activated, not vacuous.
-      - run: cargo test -p tagged-index-stack --release --features test-internals --test threaded_conservation
-      # tis-sol6 review (Sol-codex run-6, P2-1, task #1828): P2-1 gated
-      # `StackHead::raw_head` / `ArrayIndexStack::raw_head` /
-      # `ArrayIndexStack::load_next_for_test` behind
-      # `#[cfg(any(feature = "test-internals", loom))]`, and the three
-      # white-box probes in `tests/stack_unit.rs` that read through them
-      # (`empty_transition_preserves_running_tag`, `links_are_lazy`,
-      # `default_stack_head_behaves_like_new`) carry the same gate — so the
-      # two default-feature rows above compile them out entirely. Same
-      # per-file shape and same rationale as the `threaded_conservation` row
-      # just above (its precedent, task tis-sc3-Group3 #1768): run the file
-      # with the feature on so its gated probes still execute in CI.
-      - run: cargo test -p tagged-index-stack --release --features test-internals --test stack_unit
+      # backoff-depth oracle in `threaded_conservation.rs` fail under this
+      # exact invocation and pass without the feature, then passed again
+      # after the restore — the oracle is feature-activated, not vacuous.
+      - run: cargo test -p tagged-index-stack --release --features test-internals --no-fail-fast
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
