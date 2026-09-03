@@ -108,7 +108,11 @@
 //!     interleaving: the loser's CAS-retry observes the winner's
 //!     just-published head and chains `next[0] = 0`, a self-loop, and the
 //!     shipped `pop`'s self-loop detector panics on the schedules whose
-//!     drain observes it — proving clause 3 is load-bearing.
+//!     drain observes it — proving clause 3 is load-bearing. A per-schedule
+//!     `PUSH_RETRY_COUNT` delta gate (review run 16, P2-1) means only the
+//!     genuinely-overlapping schedules drain, so the sequential double-push
+//!     (a clause-2 violation at the second caller's own entry) can never be
+//!     the schedule that satisfies `#[should_panic]`.
 //!
 //! # How to run
 //!
@@ -157,6 +161,19 @@ use tagged_index_stack::{ArrayIndexStack, TagExhausted, TaggedIndex, TAIL};
 /// while holding the lock) would otherwise poison this mutex for every test
 /// that acquires it afterward.
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Whether at least one explored schedule of
+/// `counterfactual_same_index_concurrent_push_self_loops` passed its
+/// retry gate (positive per-schedule `PUSH_RETRY_COUNT` delta) and
+/// therefore drained. A real `std::sync::atomic` (deliberately NOT
+/// `loom::sync::atomic`): it is not part of the modeled state, so it adds
+/// no schedules to explore, and like `PUSH_RETRY_COUNT` it survives
+/// loom's re-runs. Process-global and written only by that one test,
+/// which stores `false` immediately before its `model()` call;
+/// `MODEL_LOCK` — which `model()` holds for the whole window — keeps the
+/// flag's store/assert pair exclusive to this one test.
+static SAME_INDEX_RETRY_GATE_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Every model in this file that does not read an activation-oracle counter
 /// runs through here: the guard is acquired by construction, so a new test
@@ -950,15 +967,58 @@ fn push_push_conservation() {
 /// call) as load-bearing — Sol-codex review run 14, finding P1
 /// (`docs/reviews/2026-09-03-123945-tagged-index-stack-review-Sol-codex-run-14.md`).
 ///
+/// Why the retry gate (review run 16, finding P2-1 —
+/// `docs/reviews/2026-09-03-150547-tagged-index-stack-review-Sol-codex-run-16.md`):
+/// unchecked, loom may pick the schedule where A's `push(0)` completes
+/// ENTIRELY before B's begins. On that schedule B's own entry-time head read
+/// already observes index 0 as live, so B pushing anyway is an ordinary
+/// SEQUENTIAL double-push — a clause-2 violation at B's own entry, already
+/// covered elsewhere in this suite — NOT the clause-3 scenario. That schedule
+/// still writes `next[0] = 0` and still panics on drain, so
+/// `#[should_panic]` passes without demonstrating the claimed scenario. The
+/// fix is a per-schedule gate on `PUSH_RETRY_COUNT` (the process-global
+/// counter `push`'s CAS-retry arm increments on every failed CAS, read via
+/// `push_retry_count_for_test`): the closure snapshots the counter BEFORE
+/// spawning the threads and computes the delta AFTER both joins, and only a
+/// schedule with a POSITIVE delta proceeds to the drain. The discriminator
+/// is sound: a genuinely-overlapping push that loses its first CAS MUST
+/// retry (its expected value — the empty head — no longer matches once the
+/// winner publishes), and exactly one CAS can fail per overlapping schedule
+/// (the loser's retry CAS then succeeds uncontested), so `delta == 1` on
+/// gate-passing schedules. A purely-sequential B reads A's published head
+/// `(0, tag+1)` on its FIRST entry read and its first CAS succeeds
+/// uncontested — zero retries, gate closed. And both entry reads seeing the
+/// empty head is FORCED, not assumed, on positive-delta schedules: the only
+/// head values this 2-thread fresh-stack model admits are `empty` then
+/// `(0, tag+1)`, so a CAS failure is only possible for a thread whose read
+/// saw the empty head, and a failure requires the other thread's publish to
+/// have interleaved. Hence the gate selects EXACTLY the
+/// both-clauses-satisfied-at-entry concurrent scenario and structurally
+/// excludes the sequential double-push. The counter reads are real
+/// `core::sync::atomic` loads, not loom-modeled state, so the explored
+/// state space does not grow; delta==0 schedules skip their drain ops
+/// entirely, shrinking it if anything.
+///
 /// Plain [`model`], not [`model_with_oracle`]: the panic unwinds through
 /// `Builder::check`, so `model_with_oracle`'s after-snapshot could never
 /// run on the schedules that panic — an activation-oracle `verify` closure
 /// here would be partially unreachable code. This matches every other
-/// `#[should_panic]` counterfactual in this file.
+/// `#[should_panic]` counterfactual in this file. The before/after counter
+/// pair therefore lives INSIDE the per-schedule closure, where the panic
+/// cannot skip it.
+///
+/// Non-vacuousness is a conjunction: a schedule must BOTH pass the retry
+/// gate AND observe the self-loop on its drain. If no explored schedule
+/// does both, the closure never panics, `model()` returns,
+/// `#[should_panic]` fails loudly, and the post-`model` assert on
+/// `SAME_INDEX_RETRY_GATE_SEEN` distinguishes "gate never opened" from
+/// "gate opened but every drain was stale-visibility-benign".
 #[test]
 #[should_panic(expected = "the index's own link points back to itself — a self-loop")]
 fn counterfactual_same_index_concurrent_push_self_loops() {
+    SAME_INDEX_RETRY_GATE_SEEN.store(false, std::sync::atomic::Ordering::Relaxed);
     model(|| {
+        let retries_before = tagged_index_stack::push_retry_count_for_test();
         let stack = Arc::new(ArrayIndexStack::<16, N>::new());
 
         let stack_a = Arc::clone(&stack);
@@ -966,9 +1026,12 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
             // SAFETY (counterfactual — clause 3 DELIBERATELY violated):
             // fresh stack (domain 0..2); index 0 is in-domain (clause 1)
             // and not reachable at this call's entry (clause 2), but BOTH
-            // threads push the SAME index concurrently, violating the
-            // exclusive-ownership clause — that violation is exactly what
-            // this test proves is load-bearing (review run 14, P1).
+            // threads push the SAME index, violating the exclusive-
+            // ownership clause — that violation is exactly what this test
+            // proves is load-bearing (review run 14, P1). On the schedules
+            // that reach the drain, BOTH entry reads observed the empty
+            // head, and concurrency is proven by this schedule's positive
+            // `PUSH_RETRY_COUNT` delta (see the retry gate below).
             unsafe { stack_a.push(0) }.expect("fresh head has tag budget");
         });
 
@@ -976,16 +1039,32 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
         let tb = thread::spawn(move || {
             // SAFETY (counterfactual — clause 3 DELIBERATELY violated):
             // identical to thread A's — same index, same entry-time
-            // satisfaction of clauses 1 and 2, concurrent with A by
-            // construction. The contract's clause 3 forbids exactly this,
-            // and the self-loop panic below proves the clause is real.
+            // satisfaction of clauses 1 and 2. On the schedules that reach
+            // the drain, BOTH entry reads observed the empty head, and
+            // concurrency is proven by this schedule's positive
+            // `PUSH_RETRY_COUNT` delta (see the retry gate below) — so B is
+            // never a sequential double-push here. The contract's clause 3
+            // forbids exactly this, and the self-loop panic below proves
+            // the clause is real.
             unsafe { stack_b.push(0) }.expect("fresh head has tag budget");
         });
 
         ta.join().unwrap();
         tb.join().unwrap();
 
-        // Drain: whichever push's CAS won, the loser's retry loop observed
+        // Retry gate (review run 16, P2-1): drain reached ONLY on
+        // gate-passing (genuinely-overlapping) schedules.
+        let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
+        if retried == 0 {
+            // Sequential schedule (one push fully finished before the other
+            // began): B's entry read saw A's published head, making B an
+            // ordinary clause-2 double-push — not this test's scenario.
+            // Skip the drain; loom explores other schedules.
+            return;
+        }
+        SAME_INDEX_RETRY_GATE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // Whichever push's CAS won, the loser's retry loop observed
         // the winner's published head (index 0 itself) and stored
         // `next[0] = 0` — the self-loop is the last write to that link cell
         // on every explored schedule. Whether a given schedule's first pop
@@ -999,11 +1078,21 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
         // exploration there. NO fallback panic on a benign drain: it would
         // abort the exploration on the first stale-visibility schedule
         // before a self-loop-observing one is ever reached (observed
-        // empirically). Vacuousness is still structurally excluded: if NO
-        // explored schedule ever observes the self-loop, the body completes
-        // panic-free and `#[should_panic]` fails the test.
+        // empirically). Vacuousness is the conjunction "gate passed AND
+        // self-loop observed": if no explored schedule satisfies both, the
+        // body completes panic-free and `#[should_panic]` fails the test,
+        // with the post-`model` assert on `SAME_INDEX_RETRY_GATE_SEEN`
+        // naming which half failed.
         while stack.pop().is_some() {}
     });
+    assert!(
+        SAME_INDEX_RETRY_GATE_SEEN.load(std::sync::atomic::Ordering::Relaxed),
+        "activation oracle: no explored schedule's PUSH_RETRY_COUNT delta was \
+         positive — the retry gate never opened and the drain never ran on any \
+         schedule, so this test was about to fail `#[should_panic]` without ever \
+         exercising the clause-3 scenario it exists to pin (a gate this tight \
+         would mean the fix is over-restrictive, not that the corruption is gone)",
+    );
 }
 
 /// Two threads each do ONE real [`ArrayIndexStack::pop`] concurrently
