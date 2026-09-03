@@ -1130,42 +1130,65 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///    section): the lost-CAS observer's `(index, tag)` expectation can
     ///    never be reinstalled, so its CAS is guaranteed to fail regardless
     ///    of what this push does.
-    /// 3. **Exclusive temporal ownership (no concurrent push of the same
-    ///    index).** For the whole duration of this call — from invocation
-    ///    until it returns — the caller holds EXCLUSIVE publish/recycle
-    ///    authority over `index`: no other
-    ///    [`push_index`](Self::push_index)/[`push`](ArrayIndexStack::push)
-    ///    call for the same `index` (through this binding, or any binding
-    ///    whose hooks touch the same link cells) executes concurrently with
-    ///    this one, or begins before this one returns. This is NOT implied
-    ///    by clause 2: clause 2 is a point-in-time check at call entry, and
-    ///    "not reachable at the instant I checked" does not mean "exclusively
-    ///    mine until I finish publishing". Counterexample (fresh empty
-    ///    stack, `index` in domain): threads A and B concurrently call this
-    ///    for the SAME `index`; at each call's entry `index` is unreachable,
-    ///    so both calls literally satisfy clauses 1 and 2. A wins its CAS
-    ///    and publishes `index` as head. B's CAS then loses; B's retry loop
-    ///    observes the NEW head — `index` itself, just published by A — and
-    ///    stores `next[index] = index` (this method always chains the
-    ///    observed head's index into `index`'s link cell), and B's own CAS
-    ///    can succeed too: the stack now holds `next[index] == index`, a
-    ///    self-loop that [`pop_index`](Self::pop_index)'s self-loop detector
-    ///    PANICS on at the first pop through it — the same corruption shape
-    ///    the sequential double-push clause 2 forbids. Pinned by
-    ///    `counterfactual_same_index_concurrent_push_self_loops` in
-    ///    `tests/loom_aba.rs`, a loom counterfactual that deliberately
-    ///    violates THIS clause (both threads satisfy clauses 1 and 2 at
-    ///    entry) and panics inside the shipped
-    ///    [`pop`](ArrayIndexStack::pop). Like clause 2, this clause is not
-    ///    runtime-CHECKED: detecting a racing same-index push would require
-    ///    ownership tracking the stack does not keep. Ownership transfer on
-    ///    return: on `Ok(())`, publish/recycle authority over `index` moves
-    ///    to the stack — the caller must not push `index` again until a
-    ///    future [`pop_index`](Self::pop_index) RETURNS it (restoring
-    ///    exactly the authority clause 2 already requires before the next
-    ///    push; this clause composes with clause 2, it does not replace
-    ///    it). On `Err(`[`TagExhausted`]`)` nothing was published and the
-    ///    refused `index` remains the caller's — see `# Errors` below.
+    /// 3. **Exclusive ownership epoch (no duplicate authority over the same
+    ///    index).** The caller's call to this method must be backed by a
+    ///    unique, not-yet-consumed PUBLISH/RECYCLE AUTHORITY over `index`:
+    ///    either freshly minted (`index` has never been pushed through any
+    ///    binding whose hooks touch the same link cells), or obtained from
+    ///    one specific successful [`pop_index`](Self::pop_index) call that
+    ///    returned `index` to this caller. This call CONSUMES that
+    ///    authority, and its linearization point is THIS call's own
+    ///    successful head CAS — not physical return: at the CAS's instant,
+    ///    authority over `index` transfers from the caller to the stack.
+    ///    Consequently, another thread MAY legitimately
+    ///    [`pop_index`](Self::pop_index) the just-published `index` and
+    ///    legitimately push it again — backed by ITS OWN freshly obtained
+    ///    authority from THAT pop, a distinct later epoch — even before
+    ///    this original call has physically returned `Ok(())`. This is NOT
+    ///    a clause-3 violation: this call's own authority over `index`
+    ///    already ended at its own CAS, and nothing this call does
+    ///    afterward (returning) touches shared memory. What clause 3
+    ///    forbids is two push calls ([`push_index`](Self::push_index) or
+    ///    [`push`](ArrayIndexStack::push), through this binding or any
+    ///    binding whose hooks touch the same link cells) consuming the
+    ///    SAME unconsumed authority epoch — i.e. two pushes of one `index`
+    ///    with no intervening successful [`pop_index`](Self::pop_index)
+    ///    between them. Counterexample (fresh empty stack, `index` in
+    ///    domain): threads A and B each independently believe they hold
+    ///    exclusive authority over the SAME freshly-minted `index` (a
+    ///    caller bug: the authority was duplicated instead of obtained
+    ///    singly) and concurrently call this; at each call's entry `index`
+    ///    is unreachable, so both calls satisfy clauses 1 and 2. A wins
+    ///    its CAS and publishes `index`. B's CAS then loses; B's retry
+    ///    loop observes the NEW head — `index` itself, just published by
+    ///    A — and stores `next[index] = index` (this method always chains
+    ///    the observed head's index into `index`'s link cell), and B's own
+    ///    CAS can succeed too: the stack now holds
+    ///    `next[index] == index`, a self-loop that
+    ///    [`pop_index`](Self::pop_index)'s self-loop detector PANICS on at
+    ///    the first pop through it — the same corruption shape the
+    ///    sequential double-push clause 2 forbids. Pinned from both sides
+    ///    in `tests/loom_aba.rs`:
+    ///    `counterfactual_same_index_concurrent_push_self_loops` is the
+    ///    loom counterfactual deliberately violating THIS clause (two
+    ///    pushes on one duplicated freshly-minted epoch; both calls
+    ///    satisfy clauses 1 and 2 at entry) that panics inside the
+    ///    shipped [`pop`](ArrayIndexStack::pop), and
+    ///    `pop_repush_overlaps_unreturned_push_conserves` is the positive
+    ///    regression proving the PERMITTED overlap — pop-then-repush of a
+    ///    just-published index while the original push call is still in
+    ///    flight — conserves the free-list. Like clause 2, this clause is
+    ///    not runtime-CHECKED: detecting a duplicated authority epoch
+    ///    would require ownership tracking the stack does not keep.
+    ///    Authority transfer: on `Ok(())` it already happened at the head
+    ///    CAS (the return does not cause it) — the caller must not push
+    ///    `index` again until a future [`pop_index`](Self::pop_index)
+    ///    RETURNS it to the caller (restoring exactly the authority
+    ///    clause 2 already requires before the next push; this clause
+    ///    composes with clause 2, it does not replace it). On
+    ///    `Err(`[`TagExhausted`]`)` no publishing CAS occurred, so
+    ///    authority never left the caller and the refused `index` remains
+    ///    the caller's — see `# Errors` below.
     ///
     /// The obligation is stated over LINK CELLS, not over "the stack":
     /// link cells shared between two

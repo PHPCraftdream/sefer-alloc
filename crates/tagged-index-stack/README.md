@@ -152,14 +152,23 @@ authoritative empty check.
   Full contract and consequences: `push_index`'s `# Safety` section (crate
   docs).
 
-- **No concurrent push of the same index (exclusive temporal ownership,
-  caller-side `# Safety` clause 3).** Clause 2's "not reachable" is a
-  point-in-time check at call entry only — it does not give the caller
-  exclusive authority over the index until the push RETURNS. Two concurrent
-  pushes of the same index both satisfy the entry checks and still corrupt
-  the free-list into a self-loop (`next[index] == index`), which
-  `pop_index`'s detector panics on; pinned by
-  `counterfactual_same_index_concurrent_push_self_loops` in the loom suite.
+- **No duplicate authority over the same index (exclusive ownership epoch,
+  caller-side `# Safety` clause 3).** Each push of an index must be backed
+  by a unique, not-yet-consumed publish/recycle authority epoch over that
+  index — freshly minted, or obtained from one specific successful `pop`
+  that returned the index to this caller. Clause 2's "not reachable" is a
+  point-in-time check at call entry only. The push consumes its epoch at its
+  own successful head CAS — the linearization point, not physical return —
+  so another thread MAY legitimately pop the just-published index and push
+  it again (backed by its own epoch from that pop) even before the original
+  push call has physically returned: that overlap is permitted. What
+  clause 3 forbids is two pushes acting on the SAME epoch (no intervening
+  successful pop): both satisfy the entry checks and still corrupt the
+  free-list into a self-loop (`next[index] == index`), which `pop_index`'s
+  detector panics on; pinned from both sides in the loom suite by
+  `counterfactual_same_index_concurrent_push_self_loops` (the forbidden
+  duplicate-authority race) and
+  `pop_repush_overlaps_unreturned_push_conserves` (the permitted overlap).
   Full contract: `push_index`'s `# Safety` section (crate docs).
 
 ## Tag-width budget

@@ -143,12 +143,11 @@ fn main() {
         // never been pushed on it before, so it cannot currently be
         // reachable through any head sharing this stack's link cells.
         // Exclusive ownership — this loop runs alone on the main thread
-        // BEFORE the `std::thread::scope` below spawns any worker, so no
-        // other push of `i` can exist, let alone run concurrently with or
-        // begin before this call returns; each `i` is fresh and pushed
-        // exactly once, and on the `Ok(())` the `.expect` below demands,
-        // publish/recycle authority for `i` transfers to the stack
-        // (push_index clause 3).
+        // BEFORE the `std::thread::scope` below spawns any worker, so `i`'s
+        // publish/recycle authority is freshly minted and consumed by this
+        // call alone: each `i` is pushed exactly once, and at the `Ok(())`
+        // the `.expect` below demands, the successful head CAS has already
+        // transferred authority for `i` to the stack (push_index clause 3).
         #[allow(unsafe_code)]
         unsafe {
             stack.push(i)
@@ -205,11 +204,12 @@ fn main() {
                         // transferred publish/recycle authority for `idx` to
                         // THIS thread (a pop is the only way an index leaves
                         // the stack, and only the winning popper's CAS takes
-                        // a given published instance), and this thread
-                        // re-pushes `idx` synchronously without ever sharing
-                        // it, so no other push of `idx` can run concurrently
-                        // with or begin before this call returns
-                        // (push_index clause 3).
+                        // a given published instance): this push is backed by
+                        // that fresh, singly-obtained epoch — exactly what
+                        // push_index clause 3 requires. Another worker may
+                        // legitimately pop `idx` again once this call's CAS
+                        // publishes it and re-push it from that pop's own
+                        // epoch; no two pushes ever share one.
                         #[allow(unsafe_code)]
                         unsafe {
                             stack.push(idx)

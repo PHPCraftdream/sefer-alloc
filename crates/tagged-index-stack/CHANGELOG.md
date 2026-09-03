@@ -212,14 +212,18 @@ First release. Everything below is new in this version; nothing has shipped befo
   — `index` must be in the implementor's declared link domain, for which the release-active
   `index < INDEX_MASK` guard (necessary for the head-word encoding) is NEVER sufficient proof; (2)
   LIVENESS / no double push — `index` must not currently be reachable through any binding whose
-  hooks touch the same link cells. (3) EXCLUSIVE TEMPORAL OWNERSHIP — for the whole duration of
-  the call (until it returns) the caller holds exclusive publish/recycle authority over `index`:
-  no other push of the same index (through any binding touching the same link cells) runs
-  concurrently with this one or begins before it returns; concurrent same-index pushes both pass
-  the entry-time clauses and still corrupt the free-list into a self-loop (`next[index] ==
-  index`, caught by `pop_index`'s detector) — on `Ok(())` ownership transfers to the stack, on
-  `Err(TagExhausted)` it stays with the caller (Sol-codex review run 14, P1; pinned by the loom
-  counterfactual `counterfactual_same_index_concurrent_push_self_loops`). `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
+  hooks touch the same link cells. (3) EXCLUSIVE OWNERSHIP EPOCH — the caller must back each push of `index` with a unique,
+  not-yet-consumed publish/recycle authority over it (freshly minted, or obtained from one
+  specific successful pop): the push consumes that authority at its own successful head CAS —
+  the linearization point, not physical return — so a later pop may hand the just-published
+  index to another caller whose own push runs a distinct, later epoch even before the earlier
+  push call has physically returned (that overlap is permitted); two pushes acting on the SAME
+  epoch — no intervening successful pop — both pass the entry-time clauses and still corrupt the
+  free-list into a self-loop (`next[index] == index`, caught by `pop_index`'s detector) — on
+  `Ok(())` authority has already transferred to the stack at the CAS, on `Err(TagExhausted)` it
+  never left the caller (Sol-codex review run 14, P1; pinned by the loom counterfactual
+  `counterfactual_same_index_concurrent_push_self_loops` and, for the permitted overlap, the
+  positive regression `pop_repush_overlaps_unreturned_push_conserves`). `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
   unauthorized pop can only leak an index, never double-issue one. The crate-private
   `SealedStorage` bridge remains the sole hook call site; its `store_next` surface (trait + both
   impls) is `unsafe fn`, so the bridge forwards verbatim and the actual safety proof lives at the
@@ -303,20 +307,27 @@ First release. Everything below is new in this version; nothing has shipped befo
   run.
 
 - **The `push_index` caller contract now states a third clause — exclusive
-  temporal ownership of the pushed index (Sol-codex review run 14, P1).**
+  ownership epoch over the pushed index (Sol-codex review run 14, P1).**
   The previous two clauses (link domain; liveness) are point-in-time checks
-  at call entry, and two concurrent pushes of the SAME index both satisfy
-  them as literally worded: the loser's CAS-retry loop observes the winner's
-  just-published head and chains `next[index] = index`, a self-loop that
-  `pop_index`'s detector panics on at the first pop through it. The contract
-  now requires the caller to hold exclusive publish/recycle authority over
-  `index` for the whole duration of the call — freshly minted indices and
-  indices just returned by a successful `pop_index` qualify; on `Ok(())`
-  ownership transfers to the stack, on `Err(TagExhausted)` it stays with the
-  caller. Documentation-only: no algorithm change. Pinned by a new loom
-  counterfactual, `counterfactual_same_index_concurrent_push_self_loops`,
-  which deliberately violates the clause (both threads pass the entry-time
-  checks) and panics inside the shipped `pop`.
+  at call entry, and two pushes of the SAME index acting on one duplicated
+  authority epoch both satisfy them as literally worded: the loser's
+  CAS-retry loop observes the winner's just-published head and chains
+  `next[index] = index`, a self-loop that `pop_index`'s detector panics on
+  at the first pop through it. The contract now requires the caller to back
+  each push with a unique, not-yet-consumed publish/recycle authority epoch
+  over `index` — freshly minted indices and indices just returned by a
+  successful `pop_index` qualify — consumed at the push's own successful
+  head CAS, the linearization point: a later pop may hand the just-published
+  index to another caller whose own push runs a distinct, later epoch even
+  before the earlier push call has physically returned (that overlap is
+  permitted); on `Ok(())` authority has already transferred to the stack at
+  the CAS, on `Err(TagExhausted)` it never left the caller. Documentation
+  only: no algorithm change. Pinned from both sides in the loom suite: the
+  counterfactual `counterfactual_same_index_concurrent_push_self_loops`
+  deliberately violates the clause (two pushes on one duplicated epoch) and
+  panics inside the shipped `pop`; the positive regression
+  `pop_repush_overlaps_unreturned_push_conserves` proves the permitted
+  overlap conserves the free-list.
 
 ### Documentation
 
