@@ -2841,19 +2841,34 @@ for completeness.
       store is a real instruction. An elision guard would add its own
       branch to the same hot path, so the trade is not obviously positive
       even on paper.
-    - **Next trigger:** the shared measurement harness this blocker cited
-      NOW EXISTS (Sol-codex run-4 P3-1 = link-cell ordering / P3-2 =
-      strong-vs-weak CAS — run 4 renumbered run-3's findings): driver
-      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`, gate report
-      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, plus a
-      workflow_dispatch-only arm64 wall-clock CI job
-      (`tis-weak-memory-wallclock-gate`, ubuntu-24.04-arm) authored but not
-      yet run. Item 61's own elision idea is therefore no longer blocked by
-      missing infrastructure — it is blocked only by the same pending ARM
-      wall-clock RUN (see item 62).
-      Per CLAUDE.md, no hot-path runtime change lands without a gate report.
-    - **Evidence:** `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`;
-      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
+    - **Next trigger:** a measurement variant for THIS candidate DOES NOT
+      EXIST YET — corrected 2026-09-03 per Sol-codex review run 13 P3-2,
+      which caught this card's previous claim that the shared harness
+      already covered the elision idea (it does not). The existing driver
+      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`
+      materializes exactly three variants (`VARIANTS = ['base',
+      'links_relaxed', 'cas_weak']`, `tis_p3_ab_runner.mjs:59`;
+      `VARIANT_ANCHORS` at `:96-100`), and NONE of them touches
+      `push_index`'s retry loop or elides the re-issued `store_next`, so
+      the pending arm64 wall-clock job (`tis-weak-memory-wallclock-gate`)
+      measures item 62's candidates only and can say NOTHING about item
+      61. Measuring this candidate first requires a NEW `store_elision`
+      (or equivalently named) variant with an exact-anchor/tripwire added
+      to the driver, plus an activation oracle that distinguishes CAS
+      failures where `next_link` was preserved from failures carrying a
+      new head index (R26-4/R30-8: prove the labelled path actually ran)
+      — NOT measurable by the existing base/links_relaxed/cas_weak
+      variants. The natural moment to add the variant is BEFORE the same
+      pending ARM dispatch item 62 waits on, so one run covers the
+      candidates (sibling item 63's CAS-success-ordering variant would be
+      added in the same pass). Per CLAUDE.md, no hot-path runtime change
+      lands without a gate report.
+    - **Evidence:** `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`
+      (`VARIANT_ANCHORS`, `:96-100` — no elision variant exists);
+      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` (what the driver DOES
+      measure — item 62's candidates);
+      `docs/reviews/2026-09-03-111727-tagged-index-stack-review-Sol-codex-run-13.md`
+      §P3-2 (the correction source).
 
 62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B on a
     real weak-memory target — static codegen legs measured, arm64 wall-clock
