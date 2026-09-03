@@ -60,8 +60,8 @@
 //!
 //! The stack head is one `AtomicU64` holding a [`TaggedIndex`]`<INDEX_BITS>`:
 //! the low `INDEX_BITS` bits carry a slot index, the high `64 - INDEX_BITS`
-//! bits carry a wrapping generation **tag** bumped on every successful push
-//! and preserved on every pop. The all-ones value
+//! bits carry a strictly monotonic generation **tag** bumped on every
+//! successful push and preserved on every pop. The all-ones value
 //! ([`empty_index`](TaggedIndex::empty_index)) is reserved as the "stack
 //! empty" sentinel, so the usable index range is `0 .. (1 << INDEX_BITS) - 1`.
 //! The classic ABA scenario — a stale CAS on `(X, old_tag)` after X is popped

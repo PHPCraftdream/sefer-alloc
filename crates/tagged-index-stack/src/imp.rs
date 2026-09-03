@@ -110,7 +110,8 @@ impl Backoff {
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
 ///
 /// The low `INDEX_BITS` bits carry a slot index; the high `64 - INDEX_BITS`
-/// bits carry a wrapping generation ABA tag. The all-ones index value
+/// bits carry a strictly monotonic generation ABA tag that SEALS at
+/// [`TAG_MAX`](Self::TAG_MAX) rather than wrapping. The all-ones index value
 /// ([`empty_index`](Self::empty_index)) is reserved as the empty-stack sentinel,
 /// so valid indices are `0 .. (1 << INDEX_BITS) - 1`.
 ///
@@ -129,9 +130,10 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// index-carrying surface takes ([`push_index`](StackOps::push_index),
     /// [`pack`](Self::pack)'s parameter, [`unpack`](Self::unpack)'s index
     /// half, [`empty_index`](Self::empty_index) — all `u32`), with no
-    /// casts, and the tag half keeps a minimum of 48 bits — the wrap-time
-    /// floor below which a tag wrap comes within reach of an ordinary long
-    /// suspension (see the crate docs' "Tag-width budget" section). At
+    /// casts, and the tag half keeps a minimum of 48 bits — the seal-time
+    /// floor below which a head's pushes-until-sealed lifetime comes within
+    /// reach of an ordinary long-running process (see the crate docs'
+    /// "Tag-width budget" section). At
     /// every legal width `INDEX_MASK <= 0xFFFF`, so the historical
     /// `INDEX_MASK == TAIL` coincidence at the former width-32 cap is
     /// structurally impossible, and `index == TAIL` can never silently
@@ -149,8 +151,9 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     const _CHECK_BITS: () = assert!(
         INDEX_BITS >= 1 && INDEX_BITS <= 16,
         "INDEX_BITS must be in 1..=16: the tag half must keep at least 48 bits \
-         (the cache-line-throughput-derived floor against ABA tag wrap — see \
-         the crate docs' \"Tag-width budget\" section), both halves must be \
+         (the cache-line-throughput-derived floor against premature tag \
+         exhaustion/seal — see the crate docs' \"Tag-width budget\" \
+         section), both halves must be \
          non-empty, and every valid index must fit in the shared u32 index \
          half (pack/unpack/push_index/empty_index)"
     );
@@ -220,13 +223,17 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// ([`empty_index`](Self::empty_index)).
     ///
     /// `push_index`/`pop_index` do NOT call this function on the hot path:
-    /// their inputs are already guaranteed within their halves by the
-    /// crate's own guards, AND `push_index`'s tag bump legitimately produces
-    /// `tag == 2^TAG_BITS` at the ABA wrap boundary (the value whose
-    /// shifted-out high bit restarts the tag at 0), which this checked
-    /// function must reject. They pack through the crate-private truncating
-    /// fast path `pack_truncating` instead, which is where the silent
-    /// truncation semantics — and their sharp edges — now live.
+    /// their inputs are already guaranteed within range by the crate's own
+    /// guards — in particular, `push_index_impl`'s seal check refuses
+    /// (`Err(`[`TagExhausted`]`)`) BEFORE ever bumping the tag when the
+    /// observed tag is already [`TAG_MAX`](Self::TAG_MAX), so the tag handed
+    /// to the truncating helper below is always `<= TAG_MAX` and this
+    /// checked function's rejection path is never needed on that path. They
+    /// pack through the crate-private truncating fast path `pack_truncating`
+    /// instead purely to skip this function's redundant range re-check, not
+    /// because production input can be out of range — see
+    /// `pack_truncating`'s own doc for why reintroducing an out-of-range tag
+    /// there would be a soundness regression, not a style choice.
     #[must_use]
     pub const fn pack(index: u32, tag: u64) -> Option<u64> {
         // Forced here too: a const eval taking the short-circuit branch
@@ -248,14 +255,22 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// your halves are in range, use [`pack`](Self::pack), which rejects
     /// instead (see its doc for the checked semantics).
     ///
-    /// Crate-private so the sharp edges stay in-crate; the only callers
-    /// are [`push_index`](StackOps::push_index),
-    /// [`pop_index`](StackOps::pop_index), and [`empty`](Self::empty),
-    /// with one deliberate exception: `push_index` hands this helper
-    /// `tag.wrapping_add(1)`, which at the ABA wrap boundary is exactly
-    /// `2^TAG_BITS`, whose shifted-out high bit restarts the tag at 0.
-    /// That truncation is the wrap mechanism — the checked
-    /// [`pack`](Self::pack) rejects that value; the hot path must wrap.
+    /// Crate-private so the sharp edges stay in-crate; the only callers are
+    /// [`push_index`](StackOps::push_index), [`pop_index`](StackOps::pop_index),
+    /// and [`empty`](Self::empty). All three prove `tag <= TAG_MAX` before
+    /// calling: `push_index_impl`'s seal check refuses with
+    /// `Err(`[`TagExhausted`]`)` BEFORE ever bumping the tag when the
+    /// observed tag is already [`TAG_MAX`](Self::TAG_MAX), so
+    /// `tag.wrapping_add(1)` here only ever runs on a tag `< TAG_MAX`,
+    /// producing a value `<= TAG_MAX` that always fits within `TAG_BITS` —
+    /// truncation never actually discards a bit on this path.
+    /// `wrapping_add` is used only to avoid a debug-build overflow panic on
+    /// the increment itself, NOT as a wrap-on-truncate mechanism: this
+    /// helper does not wrap the tag back to 0 in production use, and must
+    /// never be made to — reintroducing wrap-on-truncation here would
+    /// reopen the exact stale-CAS double-issue the run-8 P1-1 fix
+    /// ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close (see
+    /// the crate-root docs' "The tag is strictly monotonic" section).
     #[must_use]
     pub(crate) const fn pack_truncating(index: u32, tag: u64) -> u64 {
         let () = Self::_CHECK_BITS;
@@ -1603,13 +1618,14 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
 }
 
 /// An owned standalone stack: head and links fused into one object. A
-/// lock-free LIFO free-list of indices
-/// with a wrapping generation
-/// tag packed into the head word mitigating ABA at every permitted
-/// `INDEX_BITS` (the tag defeats the ordinary short-window pattern; the
-/// residual wrap bound is derived in the crate-root docs' "Tag-width budget"
-/// section). Const-generic over the index width `INDEX_BITS` and the link
-/// capacity `N`.
+/// lock-free LIFO free-list of indices with a STRICTLY MONOTONIC generation
+/// tag packed into the head word that ELIMINATES ABA outright at every
+/// permitted `INDEX_BITS` — it never wraps; a push that would need to bump
+/// the tag past [`TaggedIndex::TAG_MAX`] is refused instead
+/// (`Err(`[`TagExhausted`]`)`), sealing the stack (pops are unaffected and
+/// keep draining). The pushes-until-sealed lifetime is derived in the
+/// crate-root docs' "Tag-width budget" section. Const-generic over the
+/// index width `INDEX_BITS` and the link capacity `N`.
 ///
 /// Fusion is ALSO the structural closure of the shared-head hazard: this
 /// type deliberately does NOT implement the public [`StackStorage`] trait

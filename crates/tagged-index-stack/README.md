@@ -42,7 +42,8 @@ stand-in stack instead of the real type).
 
 The stack head is one `AtomicU64` holding a `TaggedIndex<INDEX_BITS>`: the low
 `INDEX_BITS` bits carry a slot index, the high `64 - INDEX_BITS` bits carry a
-wrapping generation tag bumped on every successful push. The index half's
+strictly monotonic generation tag bumped on every successful push — it never
+wraps (see above). The index half's
 all-ones value is the reserved "stack empty" sentinel. The classic ABA scenario
 (A reads `head = X`; B pops X then re-pushes X) is defeated because B's re-push
 bumps the tag, so A's CAS on `(X, old_tag)` fails and retries.

@@ -7,7 +7,7 @@ edition = "2021"
 # measured rationale.
 rust-version = "1.79"
 license = "MIT OR Apache-2.0"
-description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with an ABA-mitigating tag packed into one atomic word."
+description = "Lock-free, allocation-free, no_std free-list of small indices (a slot recycler) with a strictly monotonic, non-wrapping ABA-eliminating tag packed into one atomic word."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged-index-stack"
