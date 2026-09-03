@@ -168,7 +168,7 @@ authoritative empty check.
   detector panics on; pinned from both sides in the loom suite by
   `counterfactual_same_index_concurrent_push_self_loops` (the forbidden
   duplicate-authority race) and
-  `pop_repush_overlaps_unreturned_push_conserves` (the permitted overlap).
+  `pop_repush_after_publish_conserves` (the permitted overlap).
   Full contract: `push_index`'s `# Safety` section (crate docs).
 
 ## Tag-width budget

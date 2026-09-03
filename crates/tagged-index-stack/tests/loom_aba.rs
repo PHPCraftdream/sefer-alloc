@@ -7,7 +7,7 @@
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 //! `push_push_conservation`,
 //! `counterfactual_same_index_concurrent_push_self_loops`,
-//! `pop_repush_overlaps_unreturned_push_conserves`,
+//! `pop_repush_after_publish_conserves`,
 //! `pop_pop_conservation`,
 //! `pop_pop_single_element_loser_sees_empty_actual`,
 //! `tiny_tag_seal_rejects_stale_cas_at_the_real_width`) run end-to-end through
@@ -164,7 +164,7 @@ use tagged_index_stack::{ArrayIndexStack, TagExhausted, TaggedIndex, TAIL};
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Activation oracle for
-/// `pop_repush_overlaps_unreturned_push_conserves`: whether at least one
+/// `pop_repush_after_publish_conserves`: whether at least one
 /// explored schedule had thread B's `pop` return the index A's push had
 /// already published (as opposed to popping before the publish and
 /// returning `None`). A real `std::sync::atomic` (deliberately NOT
@@ -174,7 +174,7 @@ static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// test after its `model()` call returns, so — unlike a
 /// snapshot-before/assert-after counter window — it needs no `MODEL_LOCK`
 /// exclusivity: no other test touches it.
-static OVERLAP_POP_OBSERVED_PUBLISHED_INDEX: std::sync::atomic::AtomicBool =
+static POP_OBSERVED_PUBLISHED_INDEX: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Every model in this file that does not read an activation-oracle counter
@@ -1023,7 +1023,7 @@ fn push_push_conservation() {
 /// gate opens, a benign drain is not a possible outcome, so the second
 /// scenario it existed to diagnose cannot arise (review run 17, P2-2).
 /// The positive counterpart
-/// `pop_repush_overlaps_unreturned_push_conserves` below independently
+/// `pop_repush_after_publish_conserves` below independently
 /// proves the overlapping scenario is reachable in this suite's models.
 #[test]
 #[should_panic(expected = "the index's own link points back to itself — a self-loop")]
@@ -1100,27 +1100,40 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
 }
 
 // ============================================================================
-// (j) The PERMITTED overlap: pop-then-repush of a just-published index while
-// the original push call is still in flight — the epoch contract's positive
-// side, pinned so the clause-3 rewording (review run 17, P1-2) cannot be
-// read as forbidding it.
+// (j) The PERMITTED republish: pop-then-repush of a just-published index —
+// the epoch contract's positive side, pinned so the clause-3 rewording
+// (review run 17, P1-2) cannot be read as forbidding it. (The original
+// push's physical-return timing is not distinguished here — see the test's
+// doc.)
 // ============================================================================
 
 /// Positive counterpart of
 /// `counterfactual_same_index_concurrent_push_self_loops`: thread A does
 /// ONE real [`ArrayIndexStack::push`] of index 0 on a fresh stack; thread B
-/// pops and — when its pop returns the just-published 0 — re-pushes it. In
-/// wall-clock terms this includes the schedule where B's whole pop+repush
-/// runs between A's publishing CAS and A's physical return — the overlap
-/// the epoch contract explicitly PERMITS: A's authority ended at its own
-/// CAS (nothing it does afterward touches shared memory), and B's push is
-/// backed by B's OWN successful pop, a distinct later epoch, so no two
-/// pushes ever consume one epoch and the self-loop shape is structurally
-/// unconstructible. Loom proves conservation — the drain yields exactly
-/// one 0, no panic, no double-issue — on EVERY schedule of the model, and
-/// the activation-oracle flag proves the interesting class (B's pop
-/// genuinely observing A's live publication rather than popping before it
-/// and returning `None`) was actually among the explored schedules.
+/// pops and — when its pop returns the just-published 0 — re-pushes it.
+/// Proves exactly one property: the publish -> pop -> repush sequence
+/// CONSERVES the free-list — the drain yields exactly one 0, no panic, no
+/// double-issue — on EVERY schedule of the model, and the activation-oracle
+/// flag proves the interesting class (B's pop genuinely observing A's
+/// published index rather than popping before the publish and returning
+/// `None`) was actually among the explored schedules.
+///
+/// What this test does NOT prove: that B's pop+repush can run while A's
+/// push call is still physically executing (before it returns). After A's
+/// publishing CAS succeeds, `push` performs no further shared-memory
+/// operation before returning, so "B between A's CAS and A's return" and
+/// "B after A's return" have an IDENTICAL observable partial order — loom
+/// cannot distinguish them, and no harness gating short of a test-only hook
+/// inside the shipped `push` could. Physical-return timing is also
+/// irrelevant to the algorithm's correctness: A's authority over index 0
+/// ended at its own CAS (nothing it does afterward touches shared memory —
+/// push_index clause 3's ownership-epoch framing), and B's push is backed
+/// by B's OWN successful pop, a distinct later epoch, so no two pushes
+/// ever consume one epoch and the self-loop shape is structurally
+/// unconstructible. The contract states the not-yet-returned window as a
+/// PERMISSION (push_index clause 3); this test pins that the same
+/// publish -> pop -> repush sequence conserves the free-list, without
+/// claiming to observe that window.
 ///
 /// Why a flag and not a retry counter: on this model no CAS EVER fails.
 /// The head's only possible transitions are `(empty, 0) -> (0, 1)` (A's
@@ -1137,7 +1150,7 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
 /// and read once after `model()` returns, so it needs no `MODEL_LOCK`
 /// exclusivity: no other test touches it.
 #[test]
-fn pop_repush_overlaps_unreturned_push_conserves() {
+fn pop_repush_after_publish_conserves() {
     model(|| {
         let stack = Arc::new(ArrayIndexStack::<16, N>::new());
 
@@ -1156,8 +1169,7 @@ fn pop_repush_overlaps_unreturned_push_conserves() {
         let tb = thread::spawn(move || {
             if let Some(idx) = stack_b.pop() {
                 assert_eq!(idx, 0, "only index 0 is ever pushed onto this stack");
-                OVERLAP_POP_OBSERVED_PUBLISHED_INDEX
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                POP_OBSERVED_PUBLISHED_INDEX.store(true, std::sync::atomic::Ordering::Relaxed);
                 // SAFETY: `idx` came out of THIS thread's own successful
                 // `pop()` — that pop's winning head CAS transferred
                 // publish/recycle authority for it to this thread, a
@@ -1166,9 +1178,10 @@ fn pop_repush_overlaps_unreturned_push_conserves() {
                 // exactly what push_index clause 3 requires. A's push of
                 // this index consumed its own separately-minted epoch at
                 // its own CAS, so the two pushes never share one — this
-                // is the overlap the epoch contract explicitly permits,
-                // even though A's push call may not have physically
-                // returned yet.
+                // is the republish the epoch contract explicitly permits,
+                // whether or not A's push call has physically returned
+                // yet (return timing is not distinguished here and does
+                // not matter: A's authority ended at its own CAS).
                 unsafe { stack_b.push(idx) }.expect("tiny loom model never nears TAG_MAX");
             }
         });
@@ -1185,17 +1198,17 @@ fn pop_repush_overlaps_unreturned_push_conserves() {
             vec![0],
             "free-list corrupted (lost or duplicated index) after B's \
              pop-then-repush of A's just-published index: draining yielded \
-             {popped:?}, expected exactly [0] — the permitted overlap must \
-             conserve the free-list"
+             {popped:?}, expected exactly [0] — the permitted republish \
+             must conserve the free-list"
         );
     });
     assert!(
-        OVERLAP_POP_OBSERVED_PUBLISHED_INDEX.load(std::sync::atomic::Ordering::Relaxed),
+        POP_OBSERVED_PUBLISHED_INDEX.load(std::sync::atomic::Ordering::Relaxed),
         "activation oracle: B's pop never returned A's just-published index \
          in any explored schedule — every explored schedule had B pop before \
-         A's publish (returning None), so the permitted-overlap scenario \
-         this test exists to pin was never exercised and the conservation \
-         assert above was vacuous",
+         A's publish (returning None), so the publish -> pop -> repush \
+         scenario this test exists to pin was never exercised and the \
+         conservation assert above was vacuous",
     );
 }
 

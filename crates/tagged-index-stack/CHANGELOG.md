@@ -228,7 +228,7 @@ First release. Everything below is new in this version; nothing has shipped befo
   `Ok(())` authority has already transferred to the stack at the CAS, on `Err(TagExhausted)` it
   never left the caller (Sol-codex review run 14, P1; pinned by the loom counterfactual
   `counterfactual_same_index_concurrent_push_self_loops` and, for the permitted overlap, the
-  positive regression `pop_repush_overlaps_unreturned_push_conserves`). `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
+  positive regression `pop_repush_after_publish_conserves`). `pop_index`/`ArrayIndexStack::pop` deliberately stay safe: an
   unauthorized pop can only leak an index, never double-issue one. The crate-private
   `SealedStorage` bridge remains the sole hook call site; its `store_next` surface (trait + both
   impls) is `unsafe fn`, so the bridge forwards verbatim and the actual safety proof lives at the
@@ -331,7 +331,7 @@ First release. Everything below is new in this version; nothing has shipped befo
   counterfactual `counterfactual_same_index_concurrent_push_self_loops`
   deliberately violates the clause (two pushes on one duplicated epoch) and
   panics inside the shipped `pop`; the positive regression
-  `pop_repush_overlaps_unreturned_push_conserves` proves the permitted
+  `pop_repush_after_publish_conserves` proves the permitted
   overlap conserves the free-list.
 
 ### Documentation

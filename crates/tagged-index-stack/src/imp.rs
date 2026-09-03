@@ -1202,11 +1202,15 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///    pushes on one duplicated freshly-minted epoch; both calls
     ///    satisfy clauses 1 and 2 at entry) that panics inside the
     ///    shipped [`pop`](ArrayIndexStack::pop), and
-    ///    `pop_repush_overlaps_unreturned_push_conserves` is the positive
-    ///    regression proving the PERMITTED overlap — pop-then-repush of a
-    ///    just-published index while the original push call is still in
-    ///    flight — conserves the free-list. Like clause 2, this clause is
-    ///    not runtime-CHECKED: detecting a duplicated authority epoch
+    ///    `pop_repush_after_publish_conserves` is the positive regression
+    ///    proving the PERMITTED republish — pop-then-repush of a
+    ///    just-published index, backed by the popper's own distinct later
+    ///    epoch — conserves the free-list on every schedule loom explores;
+    ///    the original push's physical-return timing is not distinguished
+    ///    by that test and is irrelevant to this clause (this call's
+    ///    authority already ended at its own CAS). Like clause 2, this
+    ///    clause is not runtime-CHECKED: detecting a duplicated authority
+    ///    epoch
     ///    would require ownership tracking the stack does not keep.
     ///    Authority transfer: on `Ok(())` it already happened at the head
     ///    CAS (the return does not cause it) — the caller must not push
