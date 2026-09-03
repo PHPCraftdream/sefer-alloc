@@ -344,7 +344,16 @@ fn main() {
         // `barrier_window` warms up uncounted until it arrives, instead of
         // the window already being open at the workers' first clock check.
         barrier_ready.wait();
-        let timed_start = Instant::now() + WARMUP;
+        // Checked, not a bare `+`: run-18 review P3-1 — the pre-spawn
+        // representability probe already proved `now + WARMUP + window` is
+        // representable, so this cannot fail in practice, but this line was
+        // the file's one remaining unchecked add; keep the file's
+        // checked-deadlines-everywhere posture here too.
+        let timed_start = Instant::now().checked_add(WARMUP).unwrap_or_else(|| {
+            die(String::from(
+                "now + WARMUP overflows this platform's Instant range",
+            ))
+        });
         timed_start_cell
             .set(timed_start)
             .expect("timed window published exactly once");
