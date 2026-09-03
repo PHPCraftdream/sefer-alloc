@@ -1827,9 +1827,8 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
         self.links.store_next(index, next);
     }
 
-    /// **test-only** constructor seeding a specific tag, for a tiny-tag
-    /// regression oracle at the REAL tag width — forwarder to
-    /// [`StackHead::with_tag_for_test`]; see its doc (including its `# Panics`
+    /// **test-only** constructor seeding a specific tag — forwarder to
+    /// [`StackHead::with_tag_for_test`] (see its doc, including its `# Panics`
     /// contract for an out-of-range tag).
     ///
     /// `#[doc(hidden)]` + gated: same test-only-forwarder convention as

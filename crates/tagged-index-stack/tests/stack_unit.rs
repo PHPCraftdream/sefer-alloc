@@ -667,14 +667,10 @@ fn default_stack_head_behaves_like_new() {
     assert!(new_head.is_empty(), "a freshly-newed head reads empty");
 }
 
-// P3-1 regression (2026-09-03 review, Sol-codex run 12): `with_tag_for_test`
-// used to call the crate-private truncating pack unconditionally, so a
-// caller passing `tag > TAG_MAX` got a silently-truncated (and therefore
-// wrong) starting tag instead of a loud failure — a future test using an
-// out-of-range tag would model the wrong starting point and get a
-// false-positive/misleading result. Both the in-range boundary (accepted)
-// and the just-over-the-boundary case (must panic, not truncate) are pinned
-// here.
+// Pins `with_tag_for_test`'s tag-range boundary both ways: `TAG_MAX` itself
+// is in-range and must round-trip exactly, while `TAG_MAX + 1` must be a
+// loud panic — not a silently-truncated starting tag, which would let a
+// test oracle pass or fail for the wrong reason.
 
 #[cfg(any(feature = "test-internals", loom))]
 #[test]
