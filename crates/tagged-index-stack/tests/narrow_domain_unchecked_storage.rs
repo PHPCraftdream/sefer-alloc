@@ -152,7 +152,9 @@ fn narrow_domain_unchecked_storage_seed_interleave_drain_conserves() {
     // deterministic (7,6,...,0).
     for i in 0..8u32 {
         // SAFETY: `i` is in the pool's declared domain 0..8 and has never
-        // been pushed (fresh pool) — both caller-side clauses discharged.
+        // been pushed (fresh pool), so its publish/recycle authority is
+        // freshly minted and consumed by this one call — all three
+        // caller-side clauses discharged (push_index clause 3 included).
         unsafe { pool.push_index(i) }.expect("fresh head has tag budget");
     }
 
@@ -160,8 +162,11 @@ fn narrow_domain_unchecked_storage_seed_interleave_drain_conserves() {
     // live ⇒ liveness clause holds), then pop one more that stays out.
     for _ in 0..3 {
         let idx = pool.pop_index().expect("stack holds all eight seeds");
-        // SAFETY: `idx` was just RETURNED by `pop_index`, so it is not
-        // live and it is in-domain — both caller-side clauses discharged.
+        // SAFETY: `idx` was just RETURNED by `pop_index` — that one
+        // successful pop transferred publish/recycle authority for it to
+        // this caller, which this push consumes at its own CAS; it is not
+        // live and it is in-domain — all three caller-side clauses
+        // discharged (push_index clause 3 included).
         unsafe { pool.push_index(idx) }.expect("fresh head has tag budget");
     }
     let stayed_out = pool.pop_index().expect("stack non-empty");
@@ -202,7 +207,9 @@ fn narrow_domain_unchecked_storage_round_trips_end_to_end() {
     let pool: UncheckedPool<8> = UncheckedPool::new();
 
     for i in 0..5u32 {
-        // SAFETY: `i` is in-domain (0..8) and never yet pushed.
+        // SAFETY: `i` is in-domain (0..8) and never yet pushed — freshly
+        // minted publish/recycle authority, consumed by this one call
+        // (push_index clause 3).
         unsafe { pool.push_index(i) }.expect("fresh head has tag budget");
     }
     let mut got = Vec::new();

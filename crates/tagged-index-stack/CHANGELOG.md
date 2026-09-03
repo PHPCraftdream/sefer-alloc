@@ -199,8 +199,13 @@ First release. Everything below is new in this version; nothing has shipped befo
   acquire link load per pop, release link store(s) per push — `ldar`/`stlr`), while all variants
   are codegen-identical on x86-64, so keeping the ordering costs nothing there. These stay as
   deliberate defence-in-depth until the pending arm64 wall-clock run shows a measured win, and the
-  contention harness times every worker against one shared `[timed_start, deadline)` window with an
-  uncounted warm-up.
+  contention harness times every worker against one shared anchor/deadline TARGET (`timed_start`
+  published at full rendezvous, `deadline = timed_start + window`) with an uncounted warm-up — a
+  bounded-overshoot protocol, not an exact `[timed_start, deadline)` cut: the deadline is checked
+  only once per `DEADLINE_CHECK_INTERVAL` iterations, so up to `DEADLINE_CHECK_INTERVAL - 1`
+  operations per worker can complete past `deadline` and still count, and the shared elapsed
+  denominator runs from the shared anchor to the LAST worker's finish while earlier workers stop
+  adding to the numerator sooner (accepted as direction-neutral noise for symmetric A/B arms).
 
 ### Changed
 

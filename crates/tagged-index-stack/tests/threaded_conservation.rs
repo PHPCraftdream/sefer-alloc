@@ -93,7 +93,10 @@ fn conservation_under_real_thread_contention() {
     // bench's `contention/churn` prefill discipline. No drain-first needed:
     // `Stack::new()` starts empty (RAD-1 lazy links).
     for i in 0..LINKS_SIZE {
-        // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is in-domain and pushed exactly once.
+        // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is in-domain,
+        // never pushed before, and pushed exactly once here, so its
+        // publish/recycle authority is freshly minted and consumed by this
+        // one call (push clause 3).
         unsafe { stack.push(i) }.expect("fresh head has tag budget");
     }
 
@@ -156,11 +159,14 @@ fn conservation_under_real_thread_contention() {
                          once, the stack can never observe fewer than \
                          LINKS_SIZE - NUM_THREADS elements",
                     );
-                    // SAFETY: idx was JUST returned by pop, so it is not live; in-domain by construction.
-                    // 1.6M total pop/push pairs is far below the 48-bit tag's
-                    // 2^48-1 budget, so this never legitimately hits
-                    // TagExhausted — `.expect` is a real assertion, not a
-                    // shrug.
+                    // SAFETY: idx was JUST returned by this stack's own pop —
+                    // that one successful pop transferred publish/recycle
+                    // authority for it to THIS thread, which re-pushes it
+                    // synchronously without sharing it; in-domain by
+                    // construction (push clause 3). 1.6M total pop/push pairs
+                    // is far below the 48-bit tag's 2^48-1 budget, so this
+                    // never legitimately hits TagExhausted — `.expect` is a
+                    // real assertion, not a shrug.
                     unsafe { stack.push(idx) }.expect("tag budget not exhausted at this scale");
                 }
             });

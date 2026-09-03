@@ -631,9 +631,10 @@ const _: () = assert!(
 //    EXTERNAL safe code, and the crate's `StackOps` blanket impl drives
 //    `pop_index` — a safe `fn` taking no witness — through this binding from
 //    outside the crate. `push_index`, by contrast, is now an `unsafe fn`
-//    carrying the crate's two-clause caller contract (link domain + liveness),
-//    so external SAFE code cannot drive it (E0133): any external push must be
-//    an `unsafe` call whose author takes on that contract. The remaining
+//    carrying the crate's three-clause caller contract (link domain +
+//    liveness + exclusive ownership epoch), so external SAFE code cannot
+//    drive it (E0133): any external push must be an `unsafe` call whose
+//    author takes on that contract. The remaining
 //    safe-code surface (`pop_index`, and the impl's load/store pairs via the
 //    push/pop loops with adversarial indices) bounds the exposure to an
 //    AVAILABILITY hazard — an unauthorized pop can only leak/livelock, never
@@ -792,7 +793,8 @@ fn push_free_slot(reg: &Registry, idx: u32) {
     );
     // NOTE: the `debug_assert!` above is NOT part of this proof — it compiles
     // out under `--release` and cannot be relied on for a safety argument.
-    // SAFETY: `StackOps::push_index`'s two-clause caller contract, upheld for
+    // SAFETY: `StackOps::push_index`'s three-clause caller contract (link
+    // domain + liveness + exclusive ownership epoch), upheld for
     // all three callers of `push_free_slot` (`recycle`, `push_back_after_oom`,
     // and `ConflictRollback::drop` → `push_back_after_oom`):
     // - LINK DOMAIN: every index reaching here is `< MAX_HEAPS` release-actively
@@ -827,6 +829,25 @@ fn push_free_slot(reg: &Registry, idx: u32) {
     //   further churn can ever reinstate a stale `(index, tag)` pair, so this
     //   argument holds for the head's ENTIRE lifetime, not just "until an
     //   astronomically distant wrap".
+    // - EXCLUSIVE OWNERSHIP EPOCH: every index reaching this push arrives
+    //   with a unique, not-yet-consumed publish/recycle authority. A
+    //   fresh-minted index (`bump_count`) has never been pushed: its
+    //   authority is freshly minted. A recycled index's authority was
+    //   obtained by the ONE successful `pop_index` (via `pop_free_slot` in
+    //   `pick_slot`, called by `claim`/`claim_with_config`) whose CAS
+    //   removed it from the free list — that pop transferred authority to
+    //   the `FREE → LIVE` winner,
+    //   and the slot-state machine keeps that winner the authority's ONLY
+    //   holder until it pushes back: while the slot is `LIVE` it is not on
+    //   the free list, so no second `pop_index` can mint a competing epoch,
+    //   and the slot becomes pushable again only through its owner's own
+    //   `LIVE → FREE` CAS (`recycle`'s is release-active and a loser
+    //   early-returns without pushing, so an already-FREE — still-listed —
+    //   slot can never reach this push). This push consumes that authority
+    //   at its own successful head CAS (push_index clause 3): two pushes
+    //   acting on the SAME epoch cannot occur, because between any two
+    //   pushes of one index there is always the intervening successful
+    //   `pop_index` that re-listed it.
     // Under loom the mirror `StackOps::push_index` (bootstrap.rs loom_shim)
     // is a SAFE fn (divergence note 7), so the unsafe block is cfg-gated.
     #[cfg(not(loom))]

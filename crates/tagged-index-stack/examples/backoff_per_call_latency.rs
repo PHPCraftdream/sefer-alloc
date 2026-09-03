@@ -232,7 +232,9 @@ fn main() {
             let stack = Stack::new();
             for i in 0..LINKS_SIZE {
                 // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is
-                // in-domain and pushed exactly once.
+                // in-domain, never pushed before, and pushed exactly once
+                // here, so its publish/recycle authority is freshly minted
+                // and consumed by this one call (push clause 3).
                 unsafe { stack.push(i) }.expect("fresh head has tag budget");
             }
 
@@ -283,8 +285,12 @@ fn main() {
                             }
                             black_box(idx);
                             samples.push(nanos.min(u32::MAX as u128) as u32);
-                            // SAFETY: idx was just returned by pop, so it is
-                            // not live; in-domain by construction.
+                            // SAFETY: idx was just returned by this stack's
+                            // own pop — that one successful pop transferred
+                            // publish/recycle authority for it to THIS
+                            // thread, which re-pushes it synchronously
+                            // without sharing it; in-domain by construction
+                            // (push clause 3).
                             unsafe { stack.push(idx) }
                                 .expect("bounded example run never nears TAG_MAX");
                         }

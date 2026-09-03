@@ -296,7 +296,9 @@ use tagged_index_stack::ArrayIndexStack;
 
 let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
 
-// SAFETY: 7 is a fresh index in this stack's 0..1024 domain, never pushed before.
+// SAFETY: 7 is in this stack's 0..1024 link domain and has never been
+// pushed, so its publish/recycle authority is freshly minted and consumed
+// by this one push (clause 3).
 unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
 assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
 ```

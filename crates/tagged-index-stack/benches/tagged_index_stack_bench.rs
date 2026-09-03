@@ -256,7 +256,12 @@ fn main() {
         let index = 1u32;
 
         h.bench("push_pop/single_thread", move || {
-            // SAFETY: index 1 is in-domain and was popped at the end of the previous iteration, so not live.
+            // SAFETY: index 1 is in-domain. Exclusive ownership: this closure
+            // is single-threaded, so the pop at the end of the previous
+            // iteration is the one successful pop that transferred
+            // publish/recycle authority for index 1 to this caller (first
+            // iteration: freshly minted -- fresh stack, never pushed), and
+            // this push consumes that authority at its own CAS (push clause 3).
             unsafe { stack.push(black_box(index)) }.expect("bounded bench run never nears TAG_MAX");
             black_box(stack.pop());
         });
@@ -295,13 +300,19 @@ fn main() {
     {
         let stack = Stack::new();
         for i in 0..8u32 {
-            // SAFETY: fresh stack (domain 0..8); each index is in-domain and pushed exactly once.
+            // SAFETY: fresh stack (domain 0..8); each index is in-domain,
+            // never pushed before, and pushed exactly once here, so its
+            // publish/recycle authority is freshly minted and consumed by
+            // this one call (push clause 3).
             unsafe { stack.push(i) }.expect("fresh head has tag budget");
         }
 
         h.bench("churn", move || {
             let idx = stack.pop().unwrap();
-            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            // SAFETY: idx was just returned by this stack's own pop -- that
+            // one successful pop transferred publish/recycle authority for it
+            // to this caller, and this push consumes it at its own CAS;
+            // in-domain by construction (push clause 3).
             unsafe { stack.push(idx) }.expect("bounded bench run never nears TAG_MAX");
         });
     }
@@ -415,7 +426,11 @@ fn main() {
             // this thread invented independently of pop()'s
             // result, so it can never collide with a value
             // still live elsewhere in the stack.
-            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            // SAFETY: idx was just returned by this stack's own pop -- that
+            // one successful pop transferred publish/recycle authority for it
+            // to THIS thread (pop is the only way an index leaves the stack),
+            // and this re-push consumes that authority at its own CAS;
+            // in-domain by construction (push clause 3).
             unsafe { shared_stack.push(black_box(idx)) }
                 .expect("bounded bench run never nears TAG_MAX");
             2
@@ -428,7 +443,11 @@ fn main() {
         "",
         num_threads,
         |thread_id| {
-            // SAFETY: fresh empty stack (domain 0..LINKS_SIZE); each thread's seed index is distinct and pushed once.
+            // SAFETY: fresh empty stack (domain 0..LINKS_SIZE); the assert
+            // above makes every thread's seed index distinct, each is pushed
+            // exactly once here before any iteration can run, so each seed's
+            // publish/recycle authority is freshly minted and consumed by
+            // this one call (push clause 3).
             unsafe { shared_stack.push((thread_id * LINKS_SIZE / num_threads) as u32) }
                 .expect("fresh head has tag budget")
         },
@@ -464,7 +483,12 @@ fn main() {
 
     // Pre-fill the now provably empty stack with 0..prefill_count.
     for i in 0..prefill_count {
-        // SAFETY: stack provably drained above; each index 0..prefill_count is in-domain and pushed exactly once.
+        // SAFETY: stack provably drained above: the drain loop's successful
+        // pops transferred publish/recycle authority for every live index
+        // back to this thread (indices never pushed before carry freshly
+        // minted authority), this loop runs alone before the workers spawn,
+        // and each index 0..prefill_count is in-domain and pushed exactly
+        // once (push clause 3).
         unsafe { shared_stack.push(i) }.expect("freshly-drained head has tag budget");
     }
 
@@ -492,7 +516,10 @@ fn main() {
                 .pop()
                 .expect("contention/churn: stack drained -- invariant violated (see prefill_count/num_threads assert above)");
             // Immediately re-push (steady-state churn).
-            // SAFETY: idx was just returned by pop, so it is not live; in-domain by construction.
+            // SAFETY: idx was just returned by this stack's own pop -- that
+            // one successful pop transferred publish/recycle authority for it
+            // to THIS thread, which re-pushes it synchronously without
+            // sharing it; in-domain by construction (push clause 3).
             unsafe { shared_stack.push(idx) }.expect("bounded bench run never nears TAG_MAX");
             2
         },
