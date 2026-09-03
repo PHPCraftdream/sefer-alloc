@@ -249,10 +249,14 @@ struct Parasite {
     links: ArrayLinks<64>,
 }
 
-// SAFETY: DELIBERATE contract violation — clause 2 (load_next must observe
-// the most recent store_next the stack performed): the test overwrites the
-// backing behind the algorithm's back, so load_next answers values the
-// crate never stored.
+// SAFETY: DELIBERATE contract violation — clause 4 (load_next must answer
+// only TAIL or a currently-valid index): the test overwrites the backing
+// behind the algorithm's back, so load_next answers values the crate never
+// stored. (Clause 2's coherence half is NOT the violated clause: the
+// forged write is LATER than the publishing push's own store_next in the
+// cell's modification order, and clause 2's lower bound forbids only
+// earlier ones — the value-level clause-4 obligation is what the forgery
+// breaks.)
 unsafe impl StackStorage<16> for Parasite {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -283,8 +287,11 @@ unsafe impl StackStorage<16> for Parasite {
 /// demonstrates is the pure hand-forged-acyclic-backing shape: the
 /// implementor's backing is overwritten BEHIND the algorithm's back, so
 /// its `load_next` answers with values the crate never stored (a violation
-/// of `# Safety` clause 2 — the coherence obligation) — and the acyclic forgery evades the
-/// self-loop detector. The detector's limit, unchanged.
+/// of `# Safety` clause 4 — the valid-answers obligation; clause 2's
+/// coherence lower bound is not crossed, since the forged write is later
+/// in the cell's modification order than the publishing push's own
+/// `store_next`) — and the acyclic forgery evades the self-loop detector.
+/// The detector's limit, unchanged.
 ///
 /// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,
 /// head `(1, tag)`), then forges its own links before popping —

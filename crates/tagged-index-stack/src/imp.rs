@@ -689,9 +689,26 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// 2. **One backing, consistently.** [`load_next`](Self::load_next) and
 ///    [`store_next`](Self::store_next) must read and write the same link
 ///    storage through a stable one-to-one index↔cell mapping, and a
-///    `load_next` must observe the most recent `store_next` the stack
-///    itself performed (the `# Ordering contract` below discharges the
-///    ordering half for a single, stable implementor).
+///    `load_next` must never answer with a write OLDER than the
+///    publishing push's own [`store_next`](Self::store_next): after a
+///    thread `Acquire`-observes a head published by one specific
+///    `Release`-ordered push's head CAS, a subsequent `load_next` of that
+///    push's link cell observes either that push's own `store_next` or
+///    some LATER write in the cell's modification order — never any write
+///    that precedes it there. This publication-relative lower bound is
+///    deliberately weaker than a "most recent store" promise, and it is
+///    the version every atomic-cell implementor can actually honour: a
+///    legal intervening pop+repush of the same index may write the cell
+///    between that observation and the load, and the load may observe
+///    THAT write. Such a late observation is harmless: the observing
+///    thread's head expectation still carries the pre-intervention tag,
+///    so its head CAS is guaranteed to fail before the late link value
+///    could ever be installed as head. (The `# Ordering contract` below
+///    discharges the ordering half for a single, stable implementor — the
+///    Release head publication paired with the popper's Acquire head
+///    observation is what forbids an earlier write — and clause 7's
+///    atomic cells supply the per-location modification order the bound
+///    is stated over.)
 /// 3. **Disjoint reachable-index populations across shared cells.** No
 ///    index reachable from two live head↔links bindings whose hooks touch
 ///    the same link cells (cell sharing per se is harmless with disjoint
@@ -762,11 +779,16 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// part of the published package).
 ///
 /// This ordering contract speaks to one head-and-backing pair used
-/// consistently — it is what makes a [`load_next`](Self::load_next) observe
-/// the [`store_next`](Self::store_next) the stack performed, *given* that
-/// every call reaches the same implementor. Under this API that "given" is
-/// structural only at the type level and a live obligation at the value
-/// level: see "The binding: structural vs. value-level obligations" below.
+/// consistently. Together with clause 7's atomic cells it is what
+/// discharges the ordering half of clause 2's coherence obligation — the
+/// publication-relative lower bound stated there (a
+/// [`load_next`](Self::load_next) never answers with a write preceding the
+/// publishing push's own [`store_next`](Self::store_next) in the cell's
+/// modification order) — *given* that every call reaches the same
+/// implementor; it promises nothing stronger (in particular, no globally
+/// most-recent store). Under this API that "given" is structural only at
+/// the type level and a live obligation at the value level: see "The
+/// binding: structural vs. value-level obligations" below.
 ///
 /// # The three hooks are unsafe fn — a compiler-enforced unsafe boundary
 ///
@@ -836,10 +858,16 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// their identity for as long as the stack's head can reference them — in
 /// practice, for the implementor's own lifetime. Clause 2's mapping half
 /// (every valid index maps to the same link cell for the implementor's
-/// whole lifetime) and its coherence half (a `load_next` of index `i`
-/// observes the most recent `store_next` of `(i, _)` the crate itself
-/// performed) are both guaranteed by the Acquire/Release ordering contract
-/// above, for a single, stable implementor.
+/// whole lifetime) holds by the implementor's own stable structure; its
+/// coherence half is the publication-relative modification-order lower
+/// bound stated in clause 2 itself (a `load_next` of index `i` never
+/// observes a write preceding the publishing push's own `store_next(i,
+/// _)`), discharged by the Acquire/Release ordering contract above plus
+/// clause 7's atomic cells for a single, stable implementor. When the
+/// load DOES observe a later write — an intervening pop+repush of `i` —
+/// clause 2 already covers the consequence: the observing thread's
+/// outdated head tag makes its CAS fail, so the late link value is never
+/// installed as head.
 ///
 /// Clause 1's coverage of the shared-head hazard is EXHAUSTIVE: there are
 /// exactly two routes to a `&StackHead<INDEX_BITS>` from safe code (own a

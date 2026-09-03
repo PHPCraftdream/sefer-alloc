@@ -92,9 +92,10 @@ impl<const N: usize> UncheckedPool<N> {
 //    `push_index`/`pop_index`).
 // 2. **One backing, consistently.** `load_next`/`store_next` both index
 //    `self.cells` by the same `index as usize` mapping, stable for the
-//    value's whole life; a `load_next` observes the most recent
-//    `store_next` the stack performed (Acquire/Release per the ordering
-//    contract).
+//    value's whole life; a `load_next` never answers with a write
+//    preceding the publishing push's own `store_next` in the cell's
+//    modification order — the publication-relative lower bound of trait
+//    `# Safety` clause 2 (Acquire/Release per the ordering contract).
 // 3. **Disjoint reachable populations.** These cells are touched by this
 //    one head↔cells binding only; no second binding exists.
 // 4. **Valid answers, dedicated cells.** Each cell is DEDICATED link
