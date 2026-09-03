@@ -370,10 +370,13 @@ impl HeapRegistry {
         // this index was returned by a prior `claim`, which touched it).
         let slot = reg.slot(idx);
 
-        // CAS LIVE → FREE. Release on success: a later claim's Acquire load
-        // of `state` (via its CAS) sees the slot's recycled state and the
-        // `next_free` link we are about to push. Relaxed on failure: the slot
-        // was not LIVE (double-recycle or raced); we no-op.
+        // CAS LIVE → FREE. This is a state transition only: its Release
+        // orders this owner's writes sequenced-before it (the heap contents
+        // from the slot's LIVE lifetime) so a later Acquire observation of
+        // `state` as FREE sees them — it cannot publish the `next_free`
+        // link, which is stored only afterwards, inside `push_free_slot`.
+        // Relaxed on failure: the slot was not LIVE (double-recycle or
+        // raced); we no-op.
         if slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed)
             == Err(STATE_FREE)
         {
@@ -383,7 +386,9 @@ impl HeapRegistry {
         }
 
         // Push the slot onto the free_slots stack (tagged-Treiber). The push
-        // establishes this slot as available for a future claim.
+        // stores the `next_free` link and then Release-CASes the stack head,
+        // which is what publishes the link; a later claim's Acquire pop of
+        // that head observes it, making this slot available for that claim.
         push_free_slot(reg, idx as u32);
     }
 }
@@ -476,9 +481,12 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 /// slot reference and index the caller already has in hand.
 ///
 /// CASes the slot `LIVE → FREE` (mirrors `recycle`'s CAS — Release on
-/// success so a later claim's Acquire load of `state` sees the slot's freed
-/// state and the `next_free` link this function pushes) then pushes it onto
-/// `free_slots`, exactly as `recycle` does. Without this push-back the slot
+/// success, ordering this caller's writes for a later Acquire read of
+/// `state`; the CAS is a state transition only and does NOT publish the
+/// `next_free` link) then pushes it onto `free_slots`, exactly as `recycle`
+/// does — the link is published by the push's own Release CAS on the
+/// `free_slots` stack head, which a later claim's Acquire pop observes.
+/// Without this push-back the slot
 /// would stay `LIVE` forever: never materialised (so every future `claim`
 /// hitting the initialisation branch on the SAME index would see
 /// `initialised == false` and retry `HeapCore::new`, which is a correctness
