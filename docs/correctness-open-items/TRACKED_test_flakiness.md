@@ -227,3 +227,23 @@ resolved" in RESOLVED.md.)_
     CI provider, sets `CI=true`), `0.20` otherwise, so a local `cargo test` run keeps the
     original tighter bound while CI gets more headroom against exactly the shared-runner
     jitter both occurrences exhibited. See the commit that added this for the exact diff.
+
+    **Third occurrence (2026-09-03, `test (feature isolation)` job, commit `0310fdb`):**
+    same test, now tripping the WIDENED 30% CI ceiling itself — observed ratio 33.3%
+    (`drained=15, wasted=5`). Unrelated to the landing commit's diff (a checkpoint-doc-only
+    commit on top of `crates/tagged-index-stack/**` + doc-comment-only changes in
+    `src/registry/heap_registry.rs`/`bootstrap.rs`/`src/lib.rs`, none touching
+    `class_aware_dirty` machinery — confirmed by reading `git log`/`git diff` over the
+    relevant range before accepting this as transient). Rather than widening the threshold a
+    third time (masking the same single-sample noise floor, not addressing it), fixed the
+    real mechanism: a single `run_round(8)` has a small denominator (~15 drains), so one
+    scheduler-jitter-induced extra wasted drain moves the ratio by ~6.7 points — exactly the
+    granularity both prior occurrences and this one show. The test now runs 5 independent
+    rounds and asserts the threshold against the AGGREGATE ratio (same accepted 0.20/0.30
+    thresholds, unchanged, now applied to a ~5x larger and materially less noisy
+    denominator) — this can only reduce the false-positive flake rate, never raise it, since
+    a real regression to ~95% waste would read ~95% in every round and therefore in the
+    aggregate too. Verified locally: 4 consecutive runs of the fixed test all read 0.0%
+    (drained_total in the 48-92 range across runs). Left as **[T]**, not closed — a
+    structural fix, but CI has not yet re-observed this test post-fix across enough runs to
+    call the flake class eliminated.

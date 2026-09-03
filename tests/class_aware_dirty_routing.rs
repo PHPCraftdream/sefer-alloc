@@ -680,15 +680,36 @@ fn run_round(n_producer_classes: usize) -> (u64, u64) {
 fn wasted_dirty_drains_stays_low_under_class_aware_routing() {
     let _g = SerialGuard::acquire();
 
-    let (drained, wasted) = run_round(8);
+    // A single `run_round(8)` has a small denominator (~15 drains), so one
+    // scheduler-jitter-induced extra wasted drain moves the ratio by ~6.7
+    // points -- the real mechanism behind this test's repeat flakes (item 96:
+    // tripped its 20% local ceiling at 26.7% once, then again after the
+    // ceiling was widened to 30% for CI, at 33.3% -- both single-round
+    // samples). Raising the threshold a third time would only mask that same
+    // single-sample noise floor, not address it. Aggregating several
+    // independent rounds instead shrinks the noise floor roughly with sample
+    // count while only STRENGTHENING the test's ability to catch a real
+    // regression: if class-aware routing had no effect, EVERY round would
+    // read ~95%, so the aggregate would too; a genuine jitter spike in one
+    // round is diluted by the other rounds instead of failing the whole test
+    // on its own.
+    const ROUNDS: u32 = 5;
+    let mut drained_total = 0u64;
+    let mut wasted_total = 0u64;
+    for _ in 0..ROUNDS {
+        let (drained, wasted) = run_round(8);
+        drained_total += drained;
+        wasted_total += wasted;
+    }
 
-    let ratio = if drained == 0 {
+    let ratio = if drained_total == 0 {
         0.0
     } else {
-        (wasted as f64) / (drained as f64)
+        (wasted_total as f64) / (drained_total as f64)
     };
     eprintln!(
-        "class-aware-dirty N=8: drained_delta={drained} wasted_delta={wasted} ratio={:.1}%",
+        "class-aware-dirty N=8 x{ROUNDS} rounds: drained_total={drained_total} \
+         wasted_total={wasted_total} ratio={:.1}%",
         ratio * 100.0
     );
 
@@ -698,19 +719,20 @@ fn wasted_dirty_drains_stays_low_under_class_aware_routing() {
     // thresholds below are generous ceilings (well above any expected noise)
     // that still clearly falsify "class-aware routing has no effect" (which
     // would read ~95%, matching the baseline) while tolerating real-world
-    // scheduler jitter and the rare cross-class same-segment carve.
+    // scheduler jitter and the rare cross-class same-segment carve. Kept
+    // unchanged from the pre-aggregation single-round thresholds (not
+    // tightened) -- same accepted ceilings, now applied to a materially less
+    // noisy statistic, which can only reduce the false-positive flake rate,
+    // never raise it.
     //
     // Two thresholds, not one: a shared GitHub Actions runner sees
-    // materially more scheduler jitter than a local dev machine -- this
-    // exact test tripped its (then-only) 20% ceiling once in CI at 26.7%,
-    // did not reproduce on an immediate rerun (see
-    // docs/correctness-open-items/TRACKED_test_flakiness.md item 96) -- so
-    // CI gets a wider 30% ceiling and a local run keeps the tighter 20%,
-    // which still falsifies "no effect" by a wide margin either way. `CI`
-    // is the de-facto standard env var GitHub Actions (and effectively
-    // every other CI provider) sets to `true` for exactly this kind of
-    // detection; `cargo test` run directly on a workstation never has it
-    // set.
+    // materially more scheduler jitter than a local dev machine -- see
+    // docs/correctness-open-items/TRACKED_test_flakiness.md item 96 for the
+    // two prior single-round occurrences that motivated the dual threshold
+    // and, now, this aggregation. `CI` is the de-facto standard env var
+    // GitHub Actions (and effectively every other CI provider) sets to
+    // `true` for exactly this kind of detection; `cargo test` run directly
+    // on a workstation never has it set.
     let threshold = if std::env::var_os("CI").is_some() {
         0.30
     } else {
@@ -718,9 +740,10 @@ fn wasted_dirty_drains_stays_low_under_class_aware_routing() {
     };
     assert!(
         ratio < threshold,
-        "class-aware-dirty waste ratio at N=8 was {:.1}% (drained={drained}, wasted={wasted}, \
-         threshold={:.0}%) -- expected well under the R9-6 baseline's ~95%, since the \
-         class-scoped scan should only visit segments actually dirty for the sought class",
+        "class-aware-dirty waste ratio over {ROUNDS} rounds at N=8 was {:.1}% \
+         (drained_total={drained_total}, wasted_total={wasted_total}, threshold={:.0}%) -- \
+         expected well under the R9-6 baseline's ~95%, since the class-scoped scan should only \
+         visit segments actually dirty for the sought class",
         ratio * 100.0,
         threshold * 100.0
     );
