@@ -26,8 +26,14 @@ path = "lib.rs"
 # The verbatim-copied lib.rs/imp.rs use `cfg(loom)` (a `--cfg` flag the real
 # crate sets from its dev-dependency machinery); silence the check-cfg lint
 # in this scratch crate — it is measurement-only and never shipped.
+#
+# unused_must_use = "deny": a plain `cargo build` exits 0 on warnings, so an
+# ignored `#[must_use] Result` (e.g. harness_bin.rs's `push` call sites)
+# would build green while silently corrupting the A/B op count. Denying it
+# here turns the drift into a build-check failure (review P2-1).
 [lints.rust]
 unexpected_cfgs = { level = "allow" }
+unused_must_use = "deny"
 
 [[bin]]
 name = "harness"

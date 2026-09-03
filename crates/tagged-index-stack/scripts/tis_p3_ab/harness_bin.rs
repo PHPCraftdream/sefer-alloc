@@ -103,8 +103,9 @@ fn main() {
         // reachable through any head sharing this stack's link cells.
         #[allow(unsafe_code)]
         unsafe {
-            stack.push(i);
+            stack.push(i)
         }
+        .expect("bounded measurement run never reaches TAG_MAX");
     }
 
     // Retry counters are process-global and cumulative, never reset: the
@@ -151,8 +152,9 @@ fn main() {
                         // `stack`'s head and has not been re-pushed since.
                         #[allow(unsafe_code)]
                         unsafe {
-                            stack.push(idx);
+                            stack.push(idx)
                         }
+                        .expect("bounded measurement run never reaches TAG_MAX");
                     }
                     since_check += 1;
                     if since_check >= DEADLINE_CHECK_INTERVAL {
@@ -175,8 +177,9 @@ fn main() {
                         // returned `Some`, not currently live anywhere else.
                         #[allow(unsafe_code)]
                         unsafe {
-                            stack.push(idx);
+                            stack.push(idx)
                         }
+                        .expect("bounded measurement run never reaches TAG_MAX");
                         ops += 1;
                     }
                     since_check += 1;
