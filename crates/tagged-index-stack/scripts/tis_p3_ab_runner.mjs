@@ -37,8 +37,16 @@
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
 // This script never modifies any tracked repository file: it writes only
-// under target/ (scratch) and docs/perf/ (artifacts) — build-check mode
-// writes only under target/ (no docs/perf output at all).
+// under target/tis_p3_ab/ (scratch) and docs/perf/ (artifacts) — build-check
+// mode writes only under target/tis_p3_ab/ (no docs/perf output at all).
+// The former --out-dir option was REMOVED (run-17 review P1-1): it resolved
+// against the repo root with no containment check and the resolved directory
+// was recursively deleted on every wallclock/codegen run, so `--out-dir .`
+// deleted the entire repository. There is no user-visible output-directory
+// knob anymore: every scratch path is <repoRoot>/target/tis_p3_ab/<target>
+// (plus fixed children) by construction, validateScratchLeaf pins the one
+// variable segment to a single non-dot path component, and freshDir()
+// refuses to clear anything at or outside the dedicated scratch root.
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -55,6 +63,12 @@ const repoRoot = path.resolve(scriptDir, '..', '..', '..');
 const srcDir = path.join(repoRoot, 'crates', 'tagged-index-stack', 'src');
 const tmplDir = path.join(scriptDir, 'tis_p3_ab');
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
+// Dedicated scratch root: the ONLY directory tree this runner ever creates
+// or deletes inside. The former --out-dir option (removed — run-17 review
+// P1-1) could point the recursive clear anywhere; now every freshDir() call
+// site is a fixed child of this directory by construction, and freshDir()
+// itself re-verifies containment before deleting (see below).
+const SCRATCH_ROOT = path.join(repoRoot, 'target', 'tis_p3_ab');
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
@@ -101,7 +115,7 @@ const VARIANT_ANCHORS = {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const args = { mode: null, target: null, outDir: null, threads: 4, windowMs: 1000, samples: 3, smoke: false };
+  const args = { mode: null, target: null, threads: 4, windowMs: 1000, samples: 3, smoke: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = () => {
@@ -111,7 +125,12 @@ function parseArgs(argv) {
     switch (a) {
       case '--mode': args.mode = need(); break;
       case '--target': args.target = need(); break;
-      case '--out-dir': args.outDir = need(); break;
+      case '--out-dir':
+        // P1-1 (run-17 review): this option resolved its value against the
+        // repo root and freshDir() recursively deleted the resolved directory
+        // on every run — `--out-dir .` deleted the whole repository. Removed
+        // without replacement; see SCRATCH_ROOT below.
+        fail('--out-dir was removed (its value was resolved against the repo root and then recursively deleted — `--out-dir .` deleted the entire repository; see docs/reviews/2026-09-03-164740-tagged-index-stack-review-Sol-codex-run-17.md P1-1). Scratch output now always goes to <repo>/target/tis_p3_ab/<target>.');
       case '--threads': args.threads = Number(need()); break;
       case '--window-ms': args.windowMs = Number(need()); break;
       case '--samples': args.samples = Number(need()); break;
@@ -124,8 +143,16 @@ function parseArgs(argv) {
   }
   // build-check runs `cargo build` natively (no cross target); summary reads
   // committed artifacts. Both skip the target-triple requirement.
-  if (args.mode !== 'summary' && args.mode !== 'build-check' && (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target))) {
-    fail('--target must be a rust target triple');
+  if (args.mode !== 'summary' && args.mode !== 'build-check') {
+    if (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target)) {
+      fail('--target must be a rust target triple');
+    }
+    // The target names the scratch leaf <repo>/target/tis_p3_ab/<target>:
+    // `.` or `..` would point freshDir() AT or ABOVE the dedicated scratch
+    // root (both pass the charset check above) — the run-17 review P1-1
+    // class of bug. validateScratchLeaf() rejects them here, before any
+    // filesystem access.
+    validateScratchLeaf(args.target);
   }
   return args;
 }
@@ -210,15 +237,44 @@ function verifyAllAnchorsOnce(impSrc) {
   }
 }
 
+// Single non-dot path segment naming a child of SCRATCH_ROOT. Rejects `.`,
+// `..`, and anything containing a separator, so the joined path cannot
+// escape the scratch root lexically. Enforced at the CLI layer (parseArgs)
+// and re-checked by every scratchRoot()/freshDir() call.
+function validateScratchLeaf(name) {
+  if (
+    typeof name !== 'string' || name.length === 0 ||
+    name === '.' || name === '..' ||
+    name.includes('/') || name.includes('\\')
+  ) {
+    fail(`scratch directory name ${JSON.stringify(name)} must be a single non-dot path segment — scratch output is always <repo>/target/tis_p3_ab/<name>, never anywhere else (run-17 review P1-1)`);
+  }
+  return path.join(SCRATCH_ROOT, name);
+}
+
 function freshDir(dir) {
+  // P1-1 containment guard, fails closed: refuse to clear anything at or
+  // outside the dedicated scratch root (this covers the filesystem root, the
+  // repo root, and every repo-root parent — all resolve outside it).
+  // path.relative() on win32 compares paths case-insensitively, so a
+  // different-cased spelling of the same directory cannot slip past. No
+  // caller passes a symlinked path (the segment is charset-validated), and
+  // SCRATCH_ROOT's own parent (`target/`) being a user junction on some dev
+  // machines only redirects WHERE the runner-owned tis_p3_ab tree lives, not
+  // what gets cleared.
+  const resolved = path.resolve(dir);
+  const rel = path.relative(SCRATCH_ROOT, resolved);
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    fail(`refusing to clear ${resolved}: it is not strictly inside the dedicated scratch root ${SCRATCH_ROOT} (run-17 review P1-1)`);
+  }
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
 }
 
+// P1-1: the scratch root has exactly one variable segment (args.target,
+// validated by validateScratchLeaf above) and no user-supplied base path.
 function scratchRoot(args) {
-  return args.outDir
-    ? path.resolve(repoRoot, args.outDir)
-    : path.join(repoRoot, 'target', 'tis_p3_ab', args.target);
+  return validateScratchLeaf(args.target);
 }
 
 // ── Assembler parsing ───────────────────────────────────────────────────────
