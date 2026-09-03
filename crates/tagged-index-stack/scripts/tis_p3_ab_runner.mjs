@@ -36,8 +36,10 @@
 //                      P2 (codegen wrapper template).
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
-// Scratch vs tracked outputs: build-check mode writes ONLY under
-// target/tis_p3_ab/ (no docs/perf output at all). Wallclock and codegen
+// Scratch vs tracked outputs: build-check mode writes ONLY under its own
+// invocation's scratch root target/tis_p3_ab-<mkdtemp>/ (the fixed children
+// build-check/ and build-check-codegen-wrapper/; no docs/perf output at
+// all). Wallclock and codegen
 // modes DO write into docs/perf/ — a TRACKED directory — whenever they are
 // run to (re)generate committed evidence (raw logs + summary CSVs; run-17
 // review P3-2 corrected the old wording here, which claimed the script
@@ -52,7 +54,7 @@
 // (plus fixed children) by construction, validateScratchLeaf pins the one
 // variable segment to a single non-dot path component, the root itself is
 // unpredictable and exclusively created by this process (run-18 review
-// P1-2), and freshDir() refuses to clear anything at or outside it.
+// P1-2), and freshDir() refuses to create anything at or outside it.
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -75,18 +77,27 @@ const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
 // unpredictable (random mkdtemp suffix) and it is created exclusively by
 // THIS process, so nothing else could have planted a symlink/junction/
 // reparse point anywhere on the path before this process's own first write.
-// The former fixed <repoRoot>/target/tis_p3_ab path allowed exactly that
-// plant: freshDir()'s purely lexical containment check still passed for
-// children of a redirected root, while rmSync resolved the reparse point at
-// delete time and destroyed the real external directory it pointed at.
-// Each invocation removes its own root again when its mode completes
-// successfully; a crashed run's leftover root is inert garbage under
+// (The former fixed <repoRoot>/target/tis_p3_ab path allowed exactly that
+// plant: back then freshDir()'s rmSync resolved a planted reparse point at
+// delete time and destroyed the real external directory it pointed at.)
+// Each invocation removes its own root again on EVERY exit path — success,
+// fail()-driven fatal error, unexpected exception — via the top-level
+// finally around the dispatch (run-19 review P3-2; --keep-scratch opts out
+// on purpose). A hard-killed run's leftover root is inert garbage under
 // gitignored <repoRoot>/target/ (never re-entered, never deleted by a later
 // invocation — later invocations get their own mkdtemp root).
+
+// Module-level handle for the top-level finally: the ONE scratch root this
+// invocation created (null until makeScratchRoot runs). Mode functions keep
+// their own local copy; this handle exists so the cleanup site lives in ONE
+// place around the dispatch instead of once per mode's success path.
+let activeScratchBase = null;
+
 function makeScratchRoot() {
   // mkdtemp requires its parent directory to already exist.
   fs.mkdirSync(path.join(repoRoot, 'target'), { recursive: true });
-  return fs.mkdtempSync(path.join(repoRoot, 'target', 'tis_p3_ab-'));
+  activeScratchBase = fs.mkdtempSync(path.join(repoRoot, 'target', 'tis_p3_ab-'));
+  return activeScratchBase;
 }
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
@@ -167,7 +178,7 @@ const VARIANT_ANCHORS = {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const args = { mode: null, target: null, threads: 4, windowMs: 1000, samples: 3, smoke: false };
+  const args = { mode: null, target: null, threads: 4, windowMs: 1000, samples: 3, smoke: false, keepScratch: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = () => {
@@ -187,6 +198,12 @@ function parseArgs(argv) {
       case '--window-ms': args.windowMs = Number(need()); break;
       case '--samples': args.samples = Number(need()); break;
       case '--smoke': args.smoke = true; break;
+      case '--keep-scratch':
+        // P3-2 (run-19 review): deliberate opt-out from the top-level
+        // finally's scratch-tree removal — for inspecting a failed run's
+        // scratch build tree on purpose. Default (flag absent) never leaks.
+        args.keepScratch = true;
+        break;
       default: fail(`unknown argument: ${a}`);
     }
   }
@@ -209,9 +226,16 @@ function parseArgs(argv) {
   return args;
 }
 
+// P3-2 (run-19 review): fail() THROWS instead of calling process.exit() —
+// process.exit() terminates the process on the spot and skips `finally`
+// blocks, so the scratch-tree cleanup in the top-level finally below could
+// never run for a fail() path (any expected build/oracle failure leaked the
+// whole scratch tree under target/). The dispatch at the bottom catches the
+// throw, prints the same FATAL line as before, and exits 1: identical
+// observable behavior, but cleanup now happens on the way out.
+class RunnerFatalError extends Error {}
 function fail(msg) {
-  console.error(`tis_p3_ab_runner: FATAL: ${msg}`);
-  process.exit(1);
+  throw new RunnerFatalError(msg);
 }
 
 function assert(cond, msg) {
@@ -306,24 +330,32 @@ function validateScratchLeaf(name) {
 }
 
 function freshDir(dir, root) {
-  // Defensive rmSync+mkdirSync for a directory under THIS invocation's
-  // mkdtemp scratch root. Its safety no longer rests on the lexical
-  // containment check alone (run-18 review P1-2): `root` is unpredictable
-  // and was created exclusively by THIS process via mkdtemp, so nothing
-  // else could have planted a symlink/junction/reparse point on the path
-  // before this process's own first write to it. The lexical check below
-  // remains purely as a backstop against caller bugs — it fails closed on
-  // anything at or outside `root`. (Within one invocation, a mode may call
-  // this several times for different children of the same root — e.g.
-  // codegen mode's per-feature-set roots and per-variant dirs — so the
-  // clear-then-create still earns its keep.)
+  // Fail-if-exists creation of ONE new child directory under THIS
+  // invocation's mkdtemp scratch root (run-19 review P3-2). Every call site
+  // passes a leaf whose parent already exists (the root itself, or a
+  // directory created earlier in the same mode), so plain mkdirSync is
+  // used ON PURPOSE: it throws if the leaf already exists, loudly surfacing
+  // any future path-reuse bug instead of silently clearing it — the old
+  // rmSync-then-mkdir was a destructive primitive whose only real effect
+  // was papering over exactly that bug class. Its safety rests on the
+  // mkdtemp root (run-18 review P1-2): `root` is unpredictable and was
+  // created exclusively by THIS process, so nothing else could have planted
+  // a symlink/junction/reparse point on the path before this process's own
+  // first write to it. The lexical check below remains purely as a backstop
+  // against caller bugs — it fails closed on anything at or outside `root`.
   const resolved = path.resolve(dir);
   const rel = path.relative(root, resolved);
   if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-    fail(`refusing to clear ${resolved}: it is not strictly inside this invocation's dedicated scratch root ${root} (run-17 review P1-1)`);
+    fail(`refusing to create ${resolved}: it is not strictly inside this invocation's dedicated scratch root ${root} (run-17 review P1-1)`);
   }
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.mkdirSync(dir);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      fail(`scratch directory already exists at ${resolved}: each child path must be created exactly once per invocation (path-reuse bug)`);
+    }
+    fail(`failed to create scratch directory ${resolved}: ${e.message}`);
+  }
 }
 
 // P1-1: the scratch tree has exactly one variable segment (args.target,
@@ -755,7 +787,7 @@ function modeCodegen(args, header) {
   const md = [];
   md.push(`# TIS P3 A/B codegen table — target ${args.target}`);
   md.push('');
-  md.push('delta% is instr_count relative to base for the same function (asserted arithmetic).');
+  md.push('delta% is instr_count relative to base for the same function (derived, rounded to 3 decimals).');
   md.push('');
   md.push('| target | features | function | variant | sha256_16 | instr_count | ldar | stlr | ldaxr | stlxr | cmpxchg | cas | cas8 | delta% vs base |');
   md.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
@@ -770,8 +802,10 @@ function modeCodegen(args, header) {
         if (variant !== 'base') {
           const b = variants.base.funcs[key].instrCount;
           if (b > 0) {
+            // Plain rounded computation, not a checked oracle (run-19
+            // review P3-1): the assert that stood here recomputed this exact
+            // expression and compared it to itself, which can never fail.
             const ratio = Math.round((f.instrCount / b) * 1000) / 1000;
-            assert(Math.round((f.instrCount / b) * 1000) / 1000 === ratio, `ratio arithmetic mismatch for ${fset}/${key}/${variant}`);
             deltaPct = String(Math.round((ratio - 1) * 1000) / 10);
           }
         }
@@ -794,10 +828,8 @@ function modeCodegen(args, header) {
     csvRows.map((r) => r.join(',')).join('\n') + '\n',
   );
 
-  fs.rmSync(scratchBase, { recursive: true, force: true });
-
   console.log(mdText);
-  console.log(`codegen mode OK: target=${args.target} scratch=${root} (scratch tree removed; artifacts in docs/perf/)`);
+  console.log(`codegen mode OK: target=${args.target} scratch=${root} (scratch tree removed on exit; artifacts in docs/perf/)`);
 }
 
 // ── Wallclock mode ──────────────────────────────────────────────────────────
@@ -957,7 +989,7 @@ function modeWallclock(args, header) {
     );
   }
 
-  // ── Summary (median; asserted ratios) ─────────────────────────────────────
+  // ── Summary (median; derived ratios) ──────────────────────────────────────
   function median(arr) {
     const s = [...arr].sort((a, b) => a - b);
     const n = s.length;
@@ -965,9 +997,12 @@ function modeWallclock(args, header) {
   }
   const med = Object.fromEntries(VARIANTS.map((v) => [v, median(crates[v].samples.map((s) => s.ops_per_sec))]));
   function ratioOf(v) {
-    const r = Math.round((med[v] / med.base) * 1000) / 1000;
-    assert(Math.round((med[v] / med.base) * 1000) / 1000 === r, `summary ratio arithmetic mismatch for ${v}/base`);
-    return r;
+    // Plain rounded computation, not a checked oracle (run-19 review P3-1):
+    // the assert that stood here recomputed this exact expression and
+    // compared it to itself, which can never fail. Ratio VERIFICATION lives
+    // in --mode summary, where the re-derived ratio is checked against the
+    // leg's own recorded ratio_vs_base SUMMARY cell.
+    return Math.round((med[v] / med.base) * 1000) / 1000;
   }
 
   const md = [];
@@ -999,10 +1034,8 @@ function modeWallclock(args, header) {
     csv.map((r) => r.join(',')).join('\n') + '\n',
   );
 
-  fs.rmSync(scratchBase, { recursive: true, force: true });
-
   console.log(mdText);
-  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (scratch tree removed; artifacts in docs/perf/)`);
+  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (scratch tree removed on exit; artifacts in docs/perf/)`);
 }
 
 // ── Build-check mode ────────────────────────────────────────────────────────
@@ -1081,8 +1114,7 @@ function modeBuildCheck() {
     process.stderr.write(cgBuild.stderr ?? '');
     fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
   }
-  fs.rmSync(scratchBase, { recursive: true, force: true });
-  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot} (scratch tree removed)`);
+  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot} (scratch tree removed on exit)`);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────────────
@@ -1198,7 +1230,6 @@ function modeSummary() {
     const stated = Object.values(summaryRowsWc[v] ?? {}).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
     assert(stated !== undefined, `${wcFile}: no ratio_vs_base SUMMARY cell for variant ${v}`);
     const r = Math.round((meds[v] / meds.base) * 1000) / 1000;
-    assert(Math.round((meds[v] / meds.base) * 1000) / 1000 === r, `summary ratio arithmetic mismatch for ${v}/base`);
     assert(Math.abs(r - Number(stated)) < 5e-4, `${wcFile}: ratio_vs_base for ${v}: leg says ${stated}, re-derived ${r}`);
     emit('wallclock', WALLCLOCK_CSV_TARGET, '', '', v, 'ratio_vs_base', r.toFixed(3), 'ratio');
   }
@@ -1209,13 +1240,34 @@ function modeSummary() {
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
-const args = parseArgs(process.argv.slice(2));
-if (args.mode === 'summary') {
-  modeSummary();
-} else if (args.mode === 'build-check') {
-  modeBuildCheck();
-} else {
-  const header = captureHeader(args);
-  if (args.mode === 'codegen') modeCodegen(args, header);
-  else modeWallclock(args, header);
+// P3-2 (run-19 review): the whole dispatch lives in one try/catch/finally so
+// the invocation's scratch root is removed on EVERY exit path — success,
+// fail()-driven fatal error (fail() throws; see its comment above),
+// unexpected exception — replacing the three former success-only rmSync
+// sites inside the mode functions. --keep-scratch opts out deliberately
+// (inspect a failed run's scratch tree); the default must never leak.
+let args = null;
+try {
+  args = parseArgs(process.argv.slice(2));
+  if (args.mode === 'summary') {
+    modeSummary();
+  } else if (args.mode === 'build-check') {
+    modeBuildCheck();
+  } else {
+    const header = captureHeader(args);
+    if (args.mode === 'codegen') modeCodegen(args, header);
+    else modeWallclock(args, header);
+  }
+} catch (e) {
+  if (!(e instanceof RunnerFatalError)) throw e; // real bug: full stack trace
+  console.error(`tis_p3_ab_runner: FATAL: ${e.message}`);
+  process.exitCode = 1;
+} finally {
+  if (activeScratchBase !== null) {
+    if (args !== null && args.keepScratch) {
+      console.error(`tis_p3_ab_runner: --keep-scratch: scratch tree left in place for inspection: ${activeScratchBase}`);
+    } else {
+      fs.rmSync(activeScratchBase, { recursive: true, force: true });
+    }
+  }
 }

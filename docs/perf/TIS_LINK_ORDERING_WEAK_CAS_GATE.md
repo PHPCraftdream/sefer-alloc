@@ -57,9 +57,12 @@ x86_64-pc-windows-msvc. Targets: `x86_64-unknown-linux-gnu` and
 
 **A/B mechanism — out-of-tree variant materialization.** The driver writes
 verbatim `lib.rs` + substituted `imp.rs` (base / `links_relaxed` /
-`cas_weak`) under `target/tis_p3_ab/<target>/<variant>/` and compiles each
-directly with `rustc --emit=asm` (codegen leg) or as a scratch cargo crate
-(wallclock leg). Each substitution anchor is asserted to occur EXACTLY ONCE
+`cas_weak`) under `target/tis_p3_ab-<mkdtemp>/<target>/<variant>/` — a fresh
+unpredictable mkdtemp scratch root per invocation, created exclusively by
+that run and removed again on its exit (`--keep-scratch` opts out) — and
+compiles each directly with `rustc --emit=asm` (codegen leg) or as a
+scratch cargo crate (wallclock leg). Each substitution anchor is asserted
+to occur EXACTLY ONCE
 in `src/imp.rs` before substitution (text-exact anchors, e.g.
 `self.next[index as usize].load(Ordering::Acquire)` → `...load(Ordering::Relaxed)`).
 The shipping `src/` is never touched and no scaffolding survives in the
@@ -120,8 +123,12 @@ node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary
   pop_retries=32744; links_relaxed 9618 / 41002; cas_weak 14248 / 38363.
 - Lateness guard: measured `elapsed_ms >= 0.5 × window_ms` per sample.
 - `ops_per_sec` re-derivation assert: harness-reported `ops_per_sec` must
-  match `ops_total / (elapsed_ms / 1000)` within 2%, and the driver's
-  median-ratio arithmetic is asserted against itself before emission.
+  match `ops_total / (elapsed_ms / 1000)` within 2%. The driver's
+  median-ratio is a plain rounded computation, not an independent oracle
+  (run-19 review P3-1 removed a tautological assert that compared the
+  expression to itself); the ratio IS verified in `--mode summary`, which
+  re-derives it from the CSV's sample rows and checks it against the leg's
+  own recorded `ratio_vs_base` SUMMARY cell.
 
 **Known oracle limitation, stated honestly:** the static oracles pin the
 BASELINE rustc's lowering (1.97.0 / LLVM 22.1.6). Other toolchains and
