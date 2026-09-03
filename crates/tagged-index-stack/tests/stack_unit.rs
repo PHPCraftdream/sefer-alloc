@@ -173,8 +173,8 @@ fn empty_sentinel_16() {
 }
 
 /// The 48-bit tag reaches its maximum (`2^48 - 1`) and still packs; the
-/// value one PAST it (`2^48`, what `wrapping_add(1)` would produce if
-/// applied to `TAG_MAX`) is REJECTED by the checked `pack` — the
+/// value one PAST it (`2^48`, the first value outside the tag field, one
+/// past `TAG_MAX`) is REJECTED by the checked `pack` — the
 /// fail-closed checked pack contract. In production `push` never computes
 /// this value: its seal check observes `tag == TAG_MAX` and returns
 /// `Err(TagExhausted)` BEFORE ever bumping, so the tag never wraps —
@@ -196,15 +196,18 @@ fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
     // Compute the value one bump PAST TAG_MAX (2^48). `push` itself never
     // reaches this: its seal check returns `Err(TagExhausted)` the moment
     // it observes `tag == TAG_MAX`, before ever bumping the tag.
-    // This pins the checked pack's own rejection boundary in isolation,
+    // Plain `+`, not a wrapping operator: `TAG_MAX + 1` cannot overflow
+    // `u64` at any legal width (see `pack_truncating`'s doc). This pins
+    // the checked pack's own rejection boundary in isolation,
     // independent of push.
-    let bumped = max_tag.wrapping_add(1); // 2^48
+    let bumped = max_tag + 1; // 2^48
     assert_eq!(
         T::pack(idx, bumped),
         None,
-        "the post-bump 2^48 tag is out of range and must be rejected by \
-         the checked pack (push never reaches it: it seals at TAG_MAX with \
-         Err(TagExhausted) first)"
+        "the one-past-TAG_MAX 2^48 tag — the first value outside the tag \
+         field — is out of range and must be rejected by the checked pack \
+         (push never reaches it: it seals at TAG_MAX with Err(TagExhausted) \
+         first)"
     );
 }
 
@@ -316,30 +319,33 @@ fn empty_word_with_running_tag_reads_empty_through_tag_max() {
         );
     }
 
-    // The TAG_MAX ceiling itself, through the value a wrap WOULD compute
-    // there: `wrapping_add(1)` on the all-ones tag is exactly
-    // `2^TAG_BITS`. The CHECKED pack REJECTS that value. In production
-    // `push` never computes it: its seal check returns
+    // The TAG_MAX ceiling itself, then one past it: `TAG_MAX + 1` on the
+    // all-ones tag is exactly `2^TAG_BITS` — the first value outside the
+    // tag field. Plain `+`, not a wrapping operator: at every legal width
+    // `TAG_MAX <= 2^63 - 1`, so the `u64` addition cannot overflow (see
+    // `pack_truncating`'s doc). The CHECKED pack REJECTS that value. In
+    // production `push` never computes it: its seal check returns
     // `Err(TagExhausted)` the moment the observed tag equals `TAG_MAX`,
-    // before ever bumping the tag — the tag never wraps. Deriving
-    // the post-bump value through the real bump arithmetic and confirming
-    // the checked pack refuses it is what remains testable at this
-    // boundary — a literal repeated `0` in the sweep above cannot show
-    // it, because a repeated `0` never reaches the boundary.
+    // before ever bumping the tag. Deriving the one-past-TAG_MAX value
+    // and confirming the checked pack refuses it is what remains
+    // testable at this boundary — a literal repeated `0` in the sweep
+    // above cannot show it, because a repeated `0` never reaches the
+    // boundary.
     let max_tag = (1u64 << T::TAG_BITS) - 1;
-    let bumped_tag = max_tag.wrapping_add(1);
+    let bumped_tag = max_tag + 1;
     assert_eq!(
         bumped_tag,
         1u64 << T::TAG_BITS,
-        "wrapping_add(1) past the all-ones tag yields 2^TAG_BITS — the \
-         value push's seal check exists precisely to prevent ever reaching \
-         (it refuses at TAG_MAX, before this bump would run)"
+        "one past the all-ones tag yields 2^TAG_BITS, the first value \
+         outside the tag field — the value push's seal check exists \
+         precisely to prevent ever reaching (it refuses at TAG_MAX, \
+         before this bump would run)"
     );
     assert_eq!(
         T::pack(T::empty_index(), bumped_tag),
         None,
-        "the post-bump 2^TAG_BITS tag is out of range: the checked pack \
-         refuses it, pinning the boundary push's seal check keeps \
+        "the one-past-TAG_MAX 2^TAG_BITS tag is out of range: the checked \
+         pack refuses it, pinning the boundary push's seal check keeps \
          production from ever reaching"
     );
 }

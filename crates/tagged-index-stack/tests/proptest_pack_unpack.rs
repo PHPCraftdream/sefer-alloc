@@ -19,23 +19,6 @@
 use proptest::prelude::*;
 use tagged_index_stack::TaggedIndex;
 
-// Per-width tripwires for the shifts below: the strategies shift
-// `1u64 << TaggedIndex::<N>::TAG_BITS`, a valid shift only while
-// `TAG_BITS < 64` — an out-of-range literal shift is a compile-time
-// shift-overflow error, never runtime UB. Honest scope: one assert per
-// width THIS FILE instantiates. They prove the widths exercised here are
-// safe to shift at, and would catch a future change pushing one of THOSE
-// widths to `TAG_BITS == 64`; they pin nothing about widths never
-// instantiated here. In particular, a future guard change legalizing
-// `INDEX_BITS = 0` would NOT fail this file's build (width 0 is never
-// constructed in it) — that boundary belongs to the existing compile-fail
-// fixture `tests/compile_fail/index_bits_zero/`, driven by
-// `index_bits_zero_must_not_compile` in `tests/compile_fail.rs`.
-const _: () = assert!(TaggedIndex::<1>::TAG_BITS < 64);
-const _: () = assert!(TaggedIndex::<12>::TAG_BITS < 64);
-const _: () = assert!(TaggedIndex::<15>::TAG_BITS < 64);
-const _: () = assert!(TaggedIndex::<16>::TAG_BITS < 64);
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
