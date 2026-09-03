@@ -83,6 +83,23 @@ const WARMUP: Duration = Duration::from_millis(200);
 // instead of reporting a plausible-looking number.
 const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
 
+/// Checked `Instant + Duration` for the timed-window deadline arithmetic,
+/// mirroring the A/B harness's checked-deadline posture (run-19 review
+/// P3-4): a bare `+` would panic on overflow with no diagnostic, so both
+/// the coordinator's `timed_start` and every worker's `deadline` go
+/// through this one helper, which names the operands if the sum is not
+/// representable in this platform's `Instant` range. A benchmark cannot
+/// recover from an unrepresentable deadline, so a loud panic with the
+/// offending values is the correct failure here.
+fn checked_deadline_add(instant: Instant, add: Duration) -> Instant {
+    instant.checked_add(add).unwrap_or_else(|| {
+        panic!(
+            "{instant:?} + {add:?} overflows this platform's Instant range -- \
+             timed-window deadline arithmetic must stay representable"
+        )
+    })
+}
+
 // Published-window protocol shared by both contention phases
 // (contention/push_pop and contention/churn): workers announce readiness
 // at `barrier_ready`, the coordinator then computes the window from its
@@ -146,7 +163,8 @@ fn run_contention_phase(
                 let timed_start = *timed_start_cell
                     .get()
                     .expect("coordinator publishes the timed window before releasing barrier_window");
-                let deadline = timed_start + Duration::from_secs(DURATION_SECS);
+                let deadline =
+                    checked_deadline_add(timed_start, Duration::from_secs(DURATION_SECS));
                 // Warm-up: run the workload uncounted until the SHARED
                 // window opens, so caches, branch predictors and the
                 // contention steady-state settle before any op is counted
@@ -212,7 +230,7 @@ fn run_contention_phase(
         // computed from a clock read at/after full rendezvous, with no
         // fixed lead to exceed.
         barrier_ready.wait();
-        let timed_start = Instant::now() + WARMUP;
+        let timed_start = checked_deadline_add(Instant::now(), WARMUP);
         timed_start_cell
             .set(timed_start)
             .expect("timed window must be published exactly once per phase");
