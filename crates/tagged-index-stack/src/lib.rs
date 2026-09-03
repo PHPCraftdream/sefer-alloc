@@ -332,14 +332,21 @@
 //! questions and neither substitutes for the other:
 //!
 //! ```text
-//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/
+//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/src/
 //! ```
 //!
-//! — run from the workspace root — returns exactly eight hits in this
-//! crate, ALL in `src/imp.rs`: the REGION boundary, confirming zero
-//! `#[allow(unsafe_code)]` attributes in `tests/` too (the fixtures'
-//! `unsafe impl`s need no per-site allow, because their crate targets never
-//! carry the library's deny). For the CONTENTS — the actual unsafe
+//! — run from the workspace root — returns exactly eight hits, ALL in
+//! `src/imp.rs`: eight lint-exception regions in the production library
+//! source and none anywhere else in it. The command is deliberately scoped
+//! to `src/` rather than the whole crate: an unscoped whole-crate grep
+//! additionally returns four statement-scoped allows in the tracked perf
+//! A/B tooling (`scripts/tis_p3_ab/harness_bin.rs` and
+//! `scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`) — scratch-crate generator
+//! files, each with its own `#![deny(unsafe_code)]` root and per-site `//
+//! SAFETY:` proofs, not part of the published library target, excluded
+//! from this inventory the same way the `tests/` fixtures above are (those
+//! fixtures need no per-site allow at all, because their crate targets
+//! never carry the library's deny). For the CONTENTS — the actual unsafe
 //! declarations/blocks/operations those regions hold — grep the tokens
 //! directly instead:
 //!

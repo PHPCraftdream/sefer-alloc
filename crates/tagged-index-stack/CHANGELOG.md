@@ -222,9 +222,9 @@ First release. Everything below is new in this version; nothing has shipped befo
   `StackStorage` trait (crate-internal sealed accessor; competing bindings against the standalone
   type do not compile, compile-fail pinned). The crate moved from `#![forbid(unsafe_code)]` to
   `#![deny(unsafe_code)]`: the audited unsafe surface is EIGHT item-scoped `#[allow(unsafe_code)]`
-  regions, all in `src/imp.rs` (self-verifying inventory: `grep -rnE
-  '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`; see the crate docs' "Where unsafe
-  lives"). External implementors write `unsafe impl StackStorage` and `unsafe fn` hook bodies,
+  regions in the production library source (`src/`), all in `src/imp.rs` (self-verifying inventory:
+  `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/src/`; see the crate docs'
+  "Where unsafe lives"). External implementors write `unsafe impl StackStorage` and `unsafe fn` hook bodies,
   upholding the trait's `# Safety` contract. Decision history — this boundary passed through
   three earlier designs in this unreleased cycle (safe hooks with one audited token; an
   unconstructible `&Hook` witness; whole-trait-unsafe with safe hooks), each superseded by the next
