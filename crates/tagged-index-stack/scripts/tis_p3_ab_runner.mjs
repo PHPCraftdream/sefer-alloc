@@ -909,7 +909,7 @@ function modeBuildCheck() {
   fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), codegenWrapperTmpl);
   const cgBuild = spawnSync('rustc', [
     '--edition=2021', '--crate-type=lib', '--crate-name=tis_p3ab_build_check_codegen',
-    '--emit=metadata', '-C', 'opt-level=3',
+    '--emit=metadata', '-C', 'opt-level=3', '-D', 'warnings',
     '-o', path.join(cgRoot, 'force_codegen.rmeta'), path.join(cgRoot, 'force_codegen.rs'),
   ], { cwd: cgRoot, encoding: 'utf8' });
   if (cgBuild.status !== 0) {

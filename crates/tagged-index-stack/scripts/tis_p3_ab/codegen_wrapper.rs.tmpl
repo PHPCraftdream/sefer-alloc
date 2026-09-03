@@ -22,6 +22,11 @@
 
 #![deny(unsafe_code)]
 
+// `lib.rs` is a verbatim crate-root copy, so its own `#![no_std]` is an inner
+// attribute meant for that position; included here as a submodule, rustc
+// warns `unused_attributes` (attribute only valid at crate root). Allow it on
+// this one declaration rather than editing the copied source.
+#[allow(unused_attributes)]
 #[path = "lib.rs"]
 pub mod tis;
 
