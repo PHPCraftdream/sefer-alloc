@@ -19,15 +19,19 @@ recurs, there is no collision to reason about at any point in that lifetime
 or beyond it — a head just stops accepting pushes, loudly, once its budget is
 spent. Allocation-free, `no_std`;
 the production library source (`src/`) is `#![deny(unsafe_code)]` with
-exactly EIGHT audited `unsafe` sites, all in `src/imp.rs` — the `unsafe
-trait StackStorage` declaration (whose three hooks are `unsafe fn`) plus the
-sealed `SealedStorage` trait/bridge surface, and the caller-facing push
-boundary (`push_index` and `ArrayIndexStack::push`, both `unsafe fn` under a
-two-clause link-domain + liveness contract). The repository's integration tests are
-separate crate targets outside that deny and intentionally carry additional
-`unsafe impl StackStorage` test fixtures (correct implementor examples plus
-deliberately-broken compile-fail fixtures). See the crate documentation's
-"Where unsafe lives" section for the self-verifying inventory.
+exactly EIGHT audited, item-scoped `#[allow(unsafe_code)]` lint-exception
+regions, all in `src/imp.rs` — the `unsafe trait StackStorage` declaration
+(whose three hooks are `unsafe fn`) plus the sealed `SealedStorage`
+trait/bridge surface, and the caller-facing push boundary (`push_index` and
+`ArrayIndexStack::push`, both `unsafe fn` under a two-clause link-domain +
+liveness contract). The repository's integration tests are separate crate
+targets outside that deny and intentionally carry additional `unsafe impl
+StackStorage` test fixtures (correct implementor examples plus
+deliberately-broken compile-fail fixtures). A region is a lint-exception
+boundary, not a count of unsafe declarations/blocks/operations inside it —
+see the crate documentation's "Where unsafe lives" section (`src/lib.rs`)
+for the authoritative declaration/block-count breakdown and the
+self-verifying inventory commands.
 
 Slab allocators, object pools, entity-component stores, id allocators, and
 connection tables all need to recycle small integer ids. Crates like
