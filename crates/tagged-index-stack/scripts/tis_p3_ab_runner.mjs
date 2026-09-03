@@ -835,6 +835,7 @@ function modeWallclock(args, header) {
 
   const logLines = [headerComment(header)];
   logLines.push(`run params: threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
+  logLines.push(`variant schedule: balanced rotation — sample s (1-based) runs [${VARIANTS.join(', ')}] rotated left by (s-1) % ${VARIANTS.length}; see the per-sample "realized variant order" lines`);
   logLines.push('');
 
   // Materialize + build the three scratch cargo crates.
@@ -873,9 +874,25 @@ function modeWallclock(args, header) {
   }
   logLines.push('');
 
-  // Run the harness per variant per sample.
-  for (const variant of VARIANTS) {
-    for (let sample = 1; sample <= samples; sample++) {
+  // Run the harness per SAMPLE, rotating the variant order every sample.
+  //
+  // P2-3 (run-18 review): the previous loop was a BLOCK design — ALL samples
+  // of one variant, then ALL of the next — so block boundaries co-varied with
+  // time-correlated confounds (machine warm-up, DVFS, thermal throttling,
+  // background load), and each block's median inherited its block's drift.
+  // The outer loop is now the sample index; each sample runs all variants in
+  // a deterministically rotated order — sample s (1-based) uses VARIANTS
+  // rotated left by (s - 1) % VARIANTS.length — so every variant occupies
+  // every position once per VARIANTS.length samples and the schedule favors
+  // no variant. The realized order is logged per sample (below) so
+  // downstream analysis can pair samples across variants by POSITION instead
+  // of trusting independent per-variant block medians as if they were
+  // sampled under identical conditions.
+  for (let sample = 1; sample <= samples; sample++) {
+    const shift = (sample - 1) % VARIANTS.length;
+    const order = VARIANTS.map((_, i) => VARIANTS[(i + shift) % VARIANTS.length]);
+    logLines.push(`--- sample=${sample} realized variant order: ${order.join(' -> ')} ---`);
+    for (const variant of order) {
       const env = {
         ...process.env,
         TIS_AB_THREADS: String(threads),
@@ -929,6 +946,10 @@ function modeWallclock(args, header) {
       crates[variant].pushRetries += rec.push_retries;
       crates[variant].popRetries += rec.pop_retries;
     }
+  }
+  // Contended-workload oracle, per variant: same assert as before, moved out
+  // of the old per-variant block loop that the P2-3 rotation dissolved.
+  for (const variant of VARIANTS) {
     const retries = crates[variant].pushRetries + crates[variant].popRetries;
     assert(
       retries > 0,
