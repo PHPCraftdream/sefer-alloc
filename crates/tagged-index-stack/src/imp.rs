@@ -912,7 +912,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// This trait IS an `unsafe trait`: implementing it is a soundness
 /// commitment (see `# Safety` above). The crate ships
 /// `#![deny(unsafe_code)]` with item-scoped, audited
-/// `#[allow(unsafe_code)]` sites — one on this declaration — inventoried
+/// `#[allow(unsafe_code)]` regions — one on this declaration — inventoried
 /// in the crate docs' "Where unsafe lives" section. The three hooks are
 /// `unsafe fn` with per-method caller-side `# Safety` contracts,
 /// discharged at their one call site (the crate-internal bridge);
@@ -927,8 +927,8 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
 /// (repository files, not part of the published package).
 #[allow(unsafe_code)]
-// Tier-2 item-scoped allow — one of the crate's audited `unsafe` sites (see
-// the crate docs' "Where unsafe lives" for the full inventory). This allow
+// Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
+// (see the crate docs' "Where unsafe lives" for the full inventory). This allow
 // covers the trait declaration AND its three `unsafe fn` hook declarations (lint levels are
 // inherited by nested items). Single documented reason to hold `unsafe`:
 // the trait's implementor obligations (the `# Safety` section in the doc
@@ -1266,7 +1266,7 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
 /// not at the bridge — a "my only caller is `push_index_impl`" privacy
 /// argument is not a proof and would silently break the next time an
 /// in-crate caller appears.
-// Tier-2 item-scoped allow — one of the crate's audited `unsafe` sites
+// Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
 // (see the crate docs' "Where unsafe lives"). Single documented reason to
 // hold `unsafe`: this trait's `store_next` member is an `unsafe fn`
 // declaration, so the crate-private bridge is a verbatim forwarder and the
@@ -1293,8 +1293,8 @@ pub(crate) trait SealedStorage<const B: u32> {
 /// is genuinely ambiguous between two applicable trait methods (E0034,
 /// "multiple applicable items in scope"). The `StackStorage::` qualifier
 /// resolves that ambiguity and pins the callee.
-// Tier-2 item-scoped allow — one of the crate's audited `unsafe` sites (see
-// the crate docs' "Where unsafe lives" for the full inventory). Single
+// Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
+// (see the crate docs' "Where unsafe lives" for the full inventory). Single
 // documented reason to hold `unsafe`: this bridge is the SOLE call site of
 // [`StackStorage`]'s three `unsafe fn` hooks — the one place the
 // implementor-side `unsafe impl` contract and the hooks' caller-side
@@ -1553,7 +1553,7 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
     }
 }
 
-// Tier-2 item-scoped allow — one of the crate's audited `unsafe` sites
+// Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
 // (see the crate docs' "Where unsafe lives"). Single documented reason to
 // hold `unsafe`: `push_index` carries the caller-side unsafe contract
 // (link domain + liveness), forwarded verbatim to `push_index_impl`.
@@ -1854,7 +1854,7 @@ impl<const B: u32, const N: usize> Default for ArrayIndexStack<B, N> {
     }
 }
 
-// Tier-2 item-scoped allow — one of the crate's audited `unsafe` sites
+// Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
 // (see the crate docs' "Where unsafe lives"). Single documented reason to
 // hold `unsafe`: this impl's `store_next` is an `unsafe fn` declaration —
 // a verbatim forwarder to the safe [`ArrayLinks::store_next`], whose proof

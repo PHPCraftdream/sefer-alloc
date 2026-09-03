@@ -11,7 +11,8 @@ First release. Everything below is new in this version; nothing has shipped befo
 ### Added
 
 - **`StackHead<INDEX_BITS>` + `StackStorage` / `StackOps` + `ArrayIndexStack<INDEX_BITS, N>`** —
-  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (eight audited `unsafe` sites in `src/imp.rs`; see
+  an allocation-free, `no_std`, `#![deny(unsafe_code)]` (eight audited, item-scoped `#[allow(unsafe_code)]`
+  lint-exception regions in `src/imp.rs`; see
   `### Changed`) lock-free LIFO free-list of small **indices** (a slot recycler): the "recycle a
   small integer id" primitive that slab allocators, object pools, entity-component stores, and
   connection tables reinvent. `StackHead` is the tagged head word; custom storage implementors
@@ -221,7 +222,7 @@ First release. Everything below is new in this version; nothing has shipped befo
   `StackStorage` trait (crate-internal sealed accessor; competing bindings against the standalone
   type do not compile, compile-fail pinned). The crate moved from `#![forbid(unsafe_code)]` to
   `#![deny(unsafe_code)]`: the audited unsafe surface is EIGHT item-scoped `#[allow(unsafe_code)]`
-  sites, all in `src/imp.rs` (self-verifying inventory: `grep -rnE
+  regions, all in `src/imp.rs` (self-verifying inventory: `grep -rnE
   '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`; see the crate docs' "Where unsafe
   lives"). External implementors write `unsafe impl StackStorage` and `unsafe fn` hook bodies,
   upholding the trait's `# Safety` contract. Decision history — this boundary passed through
