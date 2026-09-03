@@ -13,6 +13,14 @@
 // The lib.rs/imp.rs pair next to this file is a VERBATIM copy of the crate
 // sources (or the variant substitution applied to imp.rs); this wrapper is
 // only the instantiation vehicle and contributes no logic of its own.
+//
+// `push` is `pub unsafe fn` (see `crates/tagged-index-stack/src/imp.rs`'s
+// `StackOps::push_index` doc for the two-clause caller contract: link domain
+// + liveness). Same statement-scoped `#[allow(unsafe_code)]` + `// SAFETY:`
+// convention as the sibling `scripts/tis_p3_ab/harness_bin.rs`;
+// `#![deny(unsafe_code)]` below still covers every other line in this file.
+
+#![deny(unsafe_code)]
 
 #[path = "lib.rs"]
 pub mod tis;
@@ -21,10 +29,19 @@ use core::hint::black_box;
 
 pub fn instantiate() {
     let stack: tis::ArrayIndexStack<16, 256> = tis::ArrayIndexStack::new();
-    let push: fn(&tis::ArrayIndexStack<16, 256>, u32) = tis::ArrayIndexStack::push;
+    let push: unsafe fn(&tis::ArrayIndexStack<16, 256>, u32) -> Result<(), tis::TagExhausted> =
+        tis::ArrayIndexStack::push;
     let pop: fn(&tis::ArrayIndexStack<16, 256>) -> Option<u32> = tis::ArrayIndexStack::pop;
-    black_box(push)(black_box(&stack), black_box(1u32));
-    black_box(pop)(black_box(&stack));
+    // SAFETY: domain — `stack` is `ArrayIndexStack<16, 256>`, so index `1` is
+    // in range. Liveness — `stack` was just constructed by `new()` above and
+    // `1` has never been pushed on it, so it cannot currently be reachable
+    // through this stack's head.
+    #[allow(unsafe_code)]
+    unsafe {
+        black_box(push)(black_box(&stack), black_box(1u32))
+    }
+    .expect("codegen probe push must not hit tag seal");
+    let _ = black_box(pop)(black_box(&stack));
 
     let links = tis::ArrayLinks::<256>::new();
     let load: fn(&tis::ArrayLinks<256>, u32) -> u32 = tis::ArrayLinks::load_next;

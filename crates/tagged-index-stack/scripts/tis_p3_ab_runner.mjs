@@ -19,13 +19,21 @@
 //                      variant only — the push/pop API surface this checks
 //                      is identical across all three variants) from the
 //                      CURRENT src/{lib,imp}.rs and run a plain `cargo
-//                      build` against it. No timing, no docs/perf artifacts.
-//                      Exists so an API break in `push`/`pop` (e.g. the
-//                      `3e83b1c` unsafe-fn migration) fails regular per-PR
-//                      CI instead of staying invisible until the next
+//                      build` against it; ALSO materialize+`rustc
+//                      --emit=metadata` the separate `codegen_wrapper.rs.tmpl`
+//                      template against the same current sources (the wall-
+//                      clock harness and the codegen wrapper are two
+//                      independent templates with no shared materialization
+//                      code, so a break visible only through one is invisible
+//                      to a check of the other). No timing, no docs/perf
+//                      artifacts. Exists so an API break in `push`/`pop`
+//                      (e.g. the `3e83b1c` unsafe-fn migration) fails regular
+//                      per-PR CI instead of staying invisible until the next
 //                      workflow_dispatch-only wallclock/codegen run — see
 //                      docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md
-//                      P2-2.
+//                      P2-2 (harness template) and
+//                      docs/reviews/2026-09-03-084348-tagged-index-stack-review-Sol-codex-run-10.md
+//                      P2 (codegen wrapper template).
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
 // This script never modifies any tracked repository file: it writes only
@@ -845,11 +853,26 @@ function modeWallclock(args, header) {
 // only in atomic Ordering/CAS-strength substitutions inside `imp.rs`, never
 // in the harness template's own `push`/`pop` call sites, so building all
 // three would be redundant compile cost for zero extra API-break coverage.
+//
+// This mode ALSO covers the separate `codegen_wrapper.rs.tmpl` template
+// (Sol-codex review run 10, P2): that template is compiled directly by
+// `rustc` (no cargo) in `--mode codegen`, shares zero materialization code
+// with the harness template above, and is otherwise reachable only from the
+// arm64-only, `workflow_dispatch`-only weak-memory job — so an API break
+// visible only through it (as `push`'s unsafe/fallible signature was) stayed
+// invisible to every regular per-PR run. Reuses the exact `lib.rs`+`imp.rs`
+// pair already read above, mirrors `modeCodegen`'s own `base`-variant
+// materialization (no anchors), and compiles for the HOST target (no
+// `--target`, no cross-compiler needed) with `--emit=metadata` — the
+// cheapest invocation that still proves the source type-checks;
+// `--emit=asm` stays codegen-mode-only, since only codegen mode needs the
+// generated instructions.
 function modeBuildCheck() {
   const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
   const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
   const cargoTmpl = fs.readFileSync(path.join(tmplDir, 'scratch_Cargo.toml.tmpl'), 'utf8');
   const harnessTmpl = fs.readFileSync(path.join(tmplDir, 'harness_bin.rs'), 'utf8');
+  const codegenWrapperTmpl = fs.readFileSync(path.join(tmplDir, 'codegen_wrapper.rs.tmpl'), 'utf8');
   verifyAllAnchorsOnce(impSrc);
 
   const crateName = 'tis_p3ab_build_check';
@@ -874,6 +897,26 @@ function modeBuildCheck() {
     fail(`cargo build failed for the wall-clock harness template (build-check mode, cwd ${root})`);
   }
   console.log(`build-check mode OK: scratch=${root}`);
+
+  // Second, independent check: the codegen wrapper template, compiled
+  // directly with rustc (matching how --mode codegen actually invokes it),
+  // in its own scratch directory so `#[path = "lib.rs"]` resolves next to a
+  // fresh copy of the current sources.
+  const cgRoot = path.join(repoRoot, 'target', 'tis_p3_ab', 'build-check-codegen-wrapper');
+  freshDir(cgRoot);
+  fs.writeFileSync(path.join(cgRoot, 'lib.rs'), libSrc);
+  fs.writeFileSync(path.join(cgRoot, 'imp.rs'), impSrc);
+  fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), codegenWrapperTmpl);
+  const cgBuild = spawnSync('rustc', [
+    '--edition=2021', '--crate-type=lib', '--crate-name=tis_p3ab_build_check_codegen',
+    '--emit=metadata', '-C', 'opt-level=3',
+    '-o', path.join(cgRoot, 'force_codegen.rmeta'), path.join(cgRoot, 'force_codegen.rs'),
+  ], { cwd: cgRoot, encoding: 'utf8' });
+  if (cgBuild.status !== 0) {
+    process.stderr.write(cgBuild.stderr ?? '');
+    fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
+  }
+  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot}`);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────────────
