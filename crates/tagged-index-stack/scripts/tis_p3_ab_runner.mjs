@@ -36,9 +36,14 @@
 //                      P2 (codegen wrapper template).
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
-// This script never modifies any tracked repository file: it writes only
-// under target/tis_p3_ab/ (scratch) and docs/perf/ (artifacts) — build-check
-// mode writes only under target/tis_p3_ab/ (no docs/perf output at all).
+// Scratch vs tracked outputs: build-check mode writes ONLY under
+// target/tis_p3_ab/ (no docs/perf output at all). Wallclock and codegen
+// modes DO write into docs/perf/ — a TRACKED directory — whenever they are
+// run to (re)generate committed evidence (raw logs + summary CSVs; run-17
+// review P3-2 corrected the old wording here, which claimed the script
+// "never modifies any tracked repository file" while docs/perf/ is tracked).
+// That artifact writing is those modes' documented purpose, not a defect —
+// but the writes-nothing-tracked property belongs to build-check only.
 // The former --out-dir option was REMOVED (run-17 review P1-1): it resolved
 // against the repo root with no containment check and the resolved directory
 // was recursively deleted on every wallclock/codegen run, so `--out-dir .`
@@ -72,6 +77,39 @@ const SCRATCH_ROOT = path.join(repoRoot, 'target', 'tis_p3_ab');
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
+
+// ── Practical upper bounds (run-17 review P2-1) ─────────────────────────────
+// The JS side enforces the SAME practical bounds as the Rust harness
+// (scripts/tis_p3_ab/harness_bin.rs) — rejecting absurd inputs at argument
+// validation, BEFORE any cargo build or harness process exists, instead of
+// trusting the child to reject them after a multi-minute build (or, before
+// this fix, never rejecting them at all JS-side).
+// Mirrors harness_bin.rs's TIS_AB_THREADS bound exactly.
+const MAX_THREADS = 256;
+// 60 s: ~600x the largest documented run of this study (window_ms=100,
+// docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_REPORT.md) and 60x the default
+// (1000 ms), so no real measurement is excluded, while a fat-fingered
+// `--window-ms 99999999999999` is rejected at argument validation instead of
+// committing CI/a dev machine to a multi-year "measurement". At this cap the
+// harness's deadline arithmetic (`Instant::now() + WARMUP + window`) is also
+// trivially representable on any platform, so the Rust-side checked-deadline
+// guard is unreachable noise rather than a real limit.
+const MAX_WINDOW_MS = 60_000;
+// 100 samples: committed runs use 1 and the default is 3; the cap bounds the
+// worst-case run at 3 variants x 100 samples x (200 ms warm-up + 60 s window
+// + bounded overshoot) ≈ 5 hours — finite and loud rather than unbounded.
+const MAX_SAMPLES = 100;
+// Child timeout for ONE harness invocation (one variant, one sample),
+// derived the same way harness_bin.rs derives its margins: the fixed
+// uncounted warm-up lead (WARMUP = 200 ms there) + the timed window + a
+// bounded slack covering process spawn, stack prefill, barrier rendezvous,
+// the bounded overshoot and exit. The normal path is ~300 ms + window; the
+// 10 s slack is ~50x that fixed overhead — generous on a loaded CI machine,
+// finite by construction. Without a timeout, a harness that never exits (a
+// worker gone before the done-barrier rendezvous — std::sync::Barrier has no
+// poison — or any other hang) hung the runner forever.
+const HARNESS_WARMUP_MS = 200; // mirrors harness_bin.rs's WARMUP
+const HARNESS_TIMEOUT_SLACK_MS = 10_000;
 // Label matchers: primary is the key itself; fallback catches the public
 // push/pop entry points (`push_index_impl`/`pop_index_impl` are small enough
 // that LLVM inlines them into the fn-pointer-forced `push`/`pop` reify shims
@@ -755,9 +793,18 @@ function modeWallclock(args, header) {
     windowMs = 100;
     samples = 1;
   }
-  assert(Number.isInteger(threads) && threads >= 1, `--threads must be a positive integer (got ${threads})`);
-  assert(Number.isInteger(windowMs) && windowMs >= 50, `--window-ms must be an integer >= 50 (got ${windowMs})`);
-  assert(Number.isInteger(samples) && samples >= 1, `--samples must be a positive integer (got ${samples})`);
+  assert(
+    Number.isSafeInteger(threads) && threads >= 1 && threads <= MAX_THREADS,
+    `--threads must be a safe integer in 1..=${MAX_THREADS} (got ${threads})`,
+  );
+  assert(
+    Number.isSafeInteger(windowMs) && windowMs >= 50 && windowMs <= MAX_WINDOW_MS,
+    `--window-ms must be a safe integer in 50..=${MAX_WINDOW_MS} (got ${windowMs})`,
+  );
+  assert(
+    Number.isSafeInteger(samples) && samples >= 1 && samples <= MAX_SAMPLES,
+    `--samples must be a safe integer in 1..=${MAX_SAMPLES} (got ${samples})`,
+  );
 
   const root = scratchRoot(args);
   freshDir(root);
@@ -813,10 +860,25 @@ function modeWallclock(args, header) {
         TIS_AB_SMOKE: smoke ? '1' : '0',
         TIS_AB_VARIANT: variant,
       };
+      // P2-1 (run-17 review): bounded child runtime. A harness that never
+      // exits (worker gone before the done-barrier rendezvous — Barrier has
+      // no poison — or any other hang) is killed here and failed loudly, not
+      // allowed to hang CI/a dev machine indefinitely; never retried, never
+      // reported as a sample.
+      const harnessTimeoutMs = HARNESS_WARMUP_MS + HARNESS_TIMEOUT_SLACK_MS + windowMs;
       const r = spawnSync(crates[variant].exe, [], {
         env: { ...process.env, CARGO_TARGET_DIR: path.join(root, variant, 'target'), ...env },
         encoding: 'utf8',
+        timeout: harnessTimeoutMs,
       });
+      if (r.error?.code === 'ETIMEDOUT') {
+        process.stderr.write(r.stderr ?? '');
+        fail(
+          `harness killed after ${harnessTimeoutMs} ms child timeout for variant=${variant} sample=${sample} ` +
+            `(timeout = ${HARNESS_WARMUP_MS} ms warm-up + ${HARNESS_TIMEOUT_SLACK_MS} ms slack + ${windowMs} ms window) — ` +
+            `a hung harness is unrecoverable by design; failing loudly instead of retrying or reporting a partial sample`,
+        );
+      }
       if (r.error) fail(`harness spawn failed for variant=${variant}: ${r.error.message}`);
       if (r.status !== 0) {
         process.stderr.write(r.stderr ?? '');

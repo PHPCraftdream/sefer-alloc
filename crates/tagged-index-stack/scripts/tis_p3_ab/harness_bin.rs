@@ -85,6 +85,17 @@ const WARMUP: Duration = Duration::from_millis(200);
 /// independent of `window_ms`.
 const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
 
+/// Practical upper bound on the measured window, mirrored verbatim by the
+/// driver's JS-side validation (`scripts/tis_p3_ab_runner.mjs`,
+/// `MAX_WINDOW_MS` — run-17 review P2-1: both sides must reject an absurd
+/// window, the JS side before a harness process even exists). 60 s is
+/// ~600x the largest documented run of this study (window_ms=100) and 60x
+/// the default (1000 ms), so no real measurement is excluded; at this cap
+/// `Instant::now() + WARMUP + window` is trivially representable on any
+/// platform, making the checked-deadline guards below unreachable noise
+/// rather than a real limit.
+const MAX_WINDOW_MS: u64 = 60_000;
+
 /// Fail fast on an unrecoverable harness error: a misconfigured run must
 /// exit with a message naming the parameter, the value received, and the
 /// valid range — not surface later as a mid-run panic that looks like a
@@ -128,9 +139,29 @@ fn main() {
             "TIS_AB_THREADS: value {threads} out of range (valid: 1..=256)"
         ));
     }
-    if window_ms < 50 {
+    if !(50..=MAX_WINDOW_MS).contains(&window_ms) {
         die(format!(
-            "TIS_AB_WINDOW_MS: value {window_ms} out of range (valid: >= 50 ms)"
+            "TIS_AB_WINDOW_MS: value {window_ms} out of range (valid: 50..={MAX_WINDOW_MS} ms)"
+        ));
+    }
+
+    // P2-1 (run-17 review): prove the published-window arithmetic is
+    // representable BEFORE any thread is spawned or any barrier rendezvous
+    // begins. The workers' deadline is anchored at the rendezvous, but if
+    // `now + WARMUP + window` is not representable on this platform, that is
+    // a configuration error and must die() here — loudly, before any
+    // rendezvous exists — instead of surfacing as a worker panic BEFORE
+    // `barrier_done` (a Barrier has no poison: a missing participant hangs
+    // every waiter forever).
+    let window = Duration::from_millis(window_ms);
+    if Instant::now()
+        .checked_add(WARMUP)
+        .and_then(|anchor| anchor.checked_add(window))
+        .is_none()
+    {
+        die(format!(
+            "TIS_AB_WINDOW_MS: value {window_ms} cannot form a representable deadline \
+             (now + WARMUP + window overflows this platform's Instant range)"
         ));
     }
 
@@ -181,7 +212,17 @@ fn main() {
                 let timed_start = *timed_start_cell
                     .get()
                     .expect("coordinator publishes the timed window before releasing barrier_window");
-                let deadline = timed_start + Duration::from_millis(window_ms);
+                // Checked, not a bare `+`: after the pre-spawn
+                // representability check and the MAX_WINDOW_MS cap this
+                // cannot fail — but if it somehow did, die() (process-wide
+                // loud exit, the only loud exit a worker has) instead of a
+                // panic, which would never reach `barrier_done` and would
+                // hang every other participant forever.
+                let deadline = timed_start.checked_add(window).unwrap_or_else(|| {
+                    die(String::from(
+                        "timed_start + window overflows this platform's Instant range",
+                    ))
+                });
 
                 // Uncounted warm-up until the SHARED window opens:
                 // `timed_start` is a FUTURE anchor (`now + WARMUP`,
