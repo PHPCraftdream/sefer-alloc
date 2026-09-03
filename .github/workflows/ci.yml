@@ -1830,21 +1830,27 @@ jobs:
           targets: thumbv7em-none-eabi,x86_64-unknown-none,i686-unknown-linux-gnu,thumbv6m-none-eabi
       - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
       # Publish-readiness task #639 (P5, gap 1 of 4 — 2026-08-06 consolidated
-      # summary §8 cross-cutting theme #4): `tests/stack_unit.rs` and
-      # `tests/regression_counter_wrap.rs` in `crates/tagged-index-stack/` are
-      # both `#![cfg(not(loom))]` — the ONLY existing CI invocation of this
-      # crate anywhere in this workflow is `loom-alloc-global`'s `cargo test
-      # --release -p tagged-index-stack --test loom_aba` under `RUSTFLAGS:
-      # "--cfg loom"`, which excludes both files by cfg (and by `--test`
-      # target selection regardless). At the time, 12 of the crate's then-16
-      # tests — packing round-trip, the empty sentinel, the 2^48 tag-wrap
-      # boundary, LIFO order, H-2 single-threaded observation, RAD-1
-      # laziness, and the F1 regression test added by task #638 — had never
-      # run in CI. Plain
-      # `cargo test` (no `--cfg loom`) exercises all of them; `loom_aba.rs`
+      # summary §8 cross-cutting theme #4): at the time, `tests/stack_unit.rs`
+      # and `tests/regression_counter_wrap.rs` in `crates/tagged-index-stack/`
+      # were both `#![cfg(not(loom))]` — the ONLY existing CI invocation of
+      # this crate anywhere in this workflow was `loom-alloc-global`'s
+      # `cargo test --release -p tagged-index-stack --test loom_aba` under
+      # `RUSTFLAGS: "--cfg loom"`, which excludes both files by cfg (and by
+      # `--test` target selection regardless). At the time, 12 of the crate's
+      # then-16 tests — packing round-trip, the empty sentinel, the tag's
+      # `2^48` wrap-boundary coverage (pre-dating the later P1-1 seal fix;
+      # `push` no longer wraps the tag today — it seals at `TAG_MAX` and
+      # returns `Err(TagExhausted)` instead, see `stack_unit.rs`'s own module
+      # doc), LIFO order, H-2 single-threaded observation, RAD-1 laziness,
+      # and the F1 regression test added by task #638 — had never run in CI.
+      # Plain `cargo test` (no `--cfg loom`) exercises all of them; `loom_aba.rs`
       # itself still compiles to 0 tests here (correctly excluded by its own
       # `#![cfg(loom)]` gate), which is fine — its real coverage stays the
-      # `loom-alloc-global` job above.
+      # `loom-alloc-global` job above. `tests/regression_counter_wrap.rs` was
+      # later retired and its two tests folded into `stack_unit.rs`
+      # (`empty_sentinel_never_collides_with_a_live_index` +
+      # `empty_word_with_running_tag_reads_empty_across_wrap`) — it no longer
+      # exists as a separate file in this crate.
       - run: cargo test -p tagged-index-stack --no-fail-fast
       # rust-intel round-closing review (task #772, finding F4, 2026-08-09):
       # `push`'s index-validity guard was promoted from `debug_assert!` to a

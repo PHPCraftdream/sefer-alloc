@@ -1,9 +1,10 @@
 //! Single-threaded unit tests for the `tagged-index-stack` public API: the
 //! [`TaggedIndex`] packing at several widths (round-trip, empty sentinel,
-//! and the checked pack's acceptance/rejection boundaries — the 48-bit tag's
-//! `2^48` wrap now happens inside push via the crate-private truncating fast
-//! path and is pinned here at the boundary by rejection) and the
-//! wrap-boundary empty-sentinel sweep folded in from the retired
+//! and the checked pack's acceptance/rejection boundaries — production
+//! `push` never wraps the 48-bit tag: it SEALS at `TAG_MAX` and returns
+//! `Err(TagExhausted)` before the tag could ever reach `2^48`; this file
+//! pins that ceiling by rejection through the checked `pack`) and the
+//! sentinel-boundary sweep folded in from the retired
 //! `tests/regression_counter_wrap.rs`, plus the
 //! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the H-2
 //! empty transition observed single-threaded: drain to empty then refill,
@@ -146,8 +147,10 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
 
     // First out-of-range tag: exactly `1 << TAG_BITS` (2^48 at width 16) —
     // the value whose shifted-out high bit the old pack silently dropped,
-    // restarting the tag at 0. The checked pack refuses it; the actual
-    // wrap happens inside push via the crate-private truncating fast path.
+    // restarting the tag at 0. The checked pack refuses it; `push` itself
+    // never reaches this value in production — its seal check refuses
+    // (`Err(TagExhausted)`) once the observed tag hits `TAG_MAX`, before
+    // ever bumping past it.
     assert_eq!(T::pack(9, 1u64 << T::TAG_BITS), None, "first invalid tag");
 }
 
@@ -170,13 +173,13 @@ fn empty_sentinel_16() {
 }
 
 /// The 48-bit tag reaches its maximum (`2^48 - 1`) and still packs; the
-/// bump PAST it (`2^48`, what `push`'s `wrapping_add(1)` produces at the
-/// boundary) is REJECTED by the checked `pack` — the fail-closed checked
-/// pack contract. The wrap itself (the bumped tag restarting at 0 with the
-/// index intact) is unchanged machine behaviour inside `push`, which
-/// packs through the crate-private truncating fast path whose shift drops
-/// the `2^TAG_BITS` high bit; it is no longer reachable through any
-/// public packing function.
+/// value one PAST it (`2^48`, what `wrapping_add(1)` would produce if
+/// applied to `TAG_MAX`) is REJECTED by the checked `pack` — the
+/// fail-closed checked pack contract. In production `push` never computes
+/// this value: its seal check observes `tag == TAG_MAX` and returns
+/// `Err(TagExhausted)` BEFORE ever bumping, so the tag never wraps —
+/// `2^48` is pinned here only as the checked pack's rejection boundary,
+/// not as a value `push` ever produces.
 #[test]
 fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
     type T = TaggedIndex<16>;
@@ -190,15 +193,18 @@ fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
     let (v0, t0) = T::unpack(at_max);
     assert_eq!(v0, idx);
     assert_eq!(t0, max_tag);
-    // Bump once — `push` computes wrapping_add(1); at 2^48-1 that is 2^48.
-    // The checked pack rejects it (fail closed) instead of silently
-    // dropping its high bit.
+    // Compute the value one bump PAST TAG_MAX (2^48). `push` itself never
+    // reaches this: its seal check returns `Err(TagExhausted)` the moment
+    // it observes `tag == TAG_MAX`, before ever calling `wrapping_add`.
+    // This pins the checked pack's own rejection boundary in isolation,
+    // independent of push.
     let bumped = max_tag.wrapping_add(1); // 2^48
     assert_eq!(
         T::pack(idx, bumped),
         None,
         "the post-bump 2^48 tag is out of range and must be rejected by \
-         the checked pack (push wraps it via the private truncating path)"
+         the checked pack (push never reaches it: it seals at TAG_MAX with \
+         Err(TagExhausted) first)"
     );
 }
 
@@ -244,9 +250,10 @@ fn max_legal_width_index_mask_never_equals_tail() {
     );
 }
 
-/// 48-bit tag WRAP-boundary coverage for [`TaggedIndex`] (folded in from the
+/// 48-bit tag SEAL-boundary coverage for [`TaggedIndex`] (folded in from the
 /// retired `tests/regression_counter_wrap.rs`): pins the
-/// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag wrap at `2^48`.
+/// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag's `TAG_MAX`
+/// ceiling (`2^48 - 1`; push seals here rather than wrapping to `2^48`).
 /// [`pack_unpack_round_trip_16`] and
 /// [`checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48`]
 /// above already pin the width facts and the checked pack's boundary
@@ -256,7 +263,7 @@ fn max_legal_width_index_mask_never_equals_tail() {
 /// NOT: a parametrized sweep over multiple (index, tag) pairs confirming the
 /// empty sentinel is never confused with a live one, including the
 /// pool-cap-relevance argument, and a check that the empty sentinel stays
-/// unambiguous at multiple tags spanning the wrap boundary specifically.
+/// unambiguous at multiple tags spanning the `TAG_MAX` ceiling specifically.
 /// Non-vacuous: on a narrower tag (e.g. a 32-bit revert) the `2^48 - 1`
 /// maximum is unrepresentable, so these values cannot even be expressed
 /// pre-widening.
@@ -295,8 +302,10 @@ fn empty_sentinel_never_collides_with_a_live_index() {
     }
 }
 
-/// The empty word carrying a NON-zero running tag (the H-2 shape) is still
-/// unambiguously empty, across the wrap boundary.
+/// The empty word carrying a NON-zero running tag (the H-2 shape) stays
+/// unambiguously empty at tags spanning up to the `TAG_MAX` ceiling (this
+/// test's name predates the P1-1 seal fix; the boundary is now a seal, not
+/// a wrap — see the body for the current framing).
 #[test]
 fn empty_word_with_running_tag_reads_empty_across_wrap() {
     type T = TaggedIndex<16>;
@@ -309,31 +318,31 @@ fn empty_word_with_running_tag_reads_empty_across_wrap() {
         );
     }
 
-    // The wrap boundary itself, through the value the stack actually
-    // computes there: `push` bumps the observed tag via `wrapping_add(1)`,
-    // which at the all-ones tag is exactly `2^TAG_BITS`. The CHECKED pack
-    // now REJECTS that value instead of silently dropping
-    // its high bit; the wrap happens inside push, which packs through the
-    // crate-private truncating fast path (machine behaviour unchanged).
-    // Deriving the post-bump tag through the real bump sequence and
-    // confirming the checked pack refuses it is what remains testable at
-    // this boundary — a literal repeated `0` in the sweep above cannot
-    // show it, because a repeated `0` never crosses the boundary.
+    // The TAG_MAX ceiling itself, through the value a wrap WOULD compute
+    // there: `wrapping_add(1)` on the all-ones tag is exactly
+    // `2^TAG_BITS`. The CHECKED pack REJECTS that value. In production
+    // `push` never computes it: its seal check returns
+    // `Err(TagExhausted)` the moment the observed tag equals `TAG_MAX`,
+    // before ever calling `wrapping_add` — the tag never wraps. Deriving
+    // the post-bump value through the real bump arithmetic and confirming
+    // the checked pack refuses it is what remains testable at this
+    // boundary — a literal repeated `0` in the sweep above cannot show
+    // it, because a repeated `0` never reaches the boundary.
     let max_tag = (1u64 << T::TAG_BITS) - 1;
     let bumped_tag = max_tag.wrapping_add(1);
     assert_eq!(
         bumped_tag,
         1u64 << T::TAG_BITS,
         "wrapping_add(1) past the all-ones tag yields 2^TAG_BITS — the \
-         value `push` hands to its truncating pack after bumping the \
-         observed tag"
+         value push's seal check exists precisely to prevent ever reaching \
+         (it refuses at TAG_MAX, before this bump would run)"
     );
     assert_eq!(
         T::pack(T::empty_index(), bumped_tag),
         None,
         "the post-bump 2^TAG_BITS tag is out of range: the checked pack \
-         refuses it instead of silently wrapping (push's private \
-         truncating path performs the actual wrap)"
+         refuses it, pinning the boundary push's seal check keeps \
+         production from ever reaching"
     );
 }
 
