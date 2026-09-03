@@ -292,30 +292,47 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// and [`empty`](Self::empty). All three prove `tag <= TAG_MAX` before
     /// calling: `push_index_impl`'s seal check refuses with
     /// `Err(`[`TagExhausted`]`)` BEFORE ever bumping the tag when the
-    /// observed tag is already [`TAG_MAX`](Self::TAG_MAX), so
-    /// `tag.wrapping_add(1)` here only ever runs on a tag `< TAG_MAX`,
-    /// producing a value `<= TAG_MAX` that always fits within `TAG_BITS` —
-    /// truncation never actually discards a bit on this path.
-    /// `wrapping_add` defends against NO real current overflow: the tag
-    /// arriving here is always `< TAG_MAX` (above), so `tag + 1` can never
-    /// overflow `u64` at any legal width — `TAG_MAX <= 2^63 - 1` when
-    /// `INDEX_BITS` is in `1..=16` — in a debug build or in release. Plain
-    /// `+` would be exactly as correct today; `wrapping_add` is kept purely
-    /// as defense-in-depth against a hypothetical future weakening or
-    /// removal of the callers' seal check. It is NOT a wrap-on-truncate
-    /// mechanism: this helper does not wrap the tag back to 0 in production
-    /// use, and must never be made to — reintroducing wrap-on-truncation
-    /// here would reopen the exact stale-CAS double-issue the run-8 P1-1
-    /// fix ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close
+    /// observed tag is already [`TAG_MAX`](Self::TAG_MAX), so the
+    /// `tag + 1` bump at the call site only ever runs on a tag
+    /// `< TAG_MAX`, producing a value `<= TAG_MAX` that always fits within
+    /// `TAG_BITS` — truncation never actually discards a bit on this path.
+    ///
+    /// The bump is plain `+` deliberately: the tag arriving here is always
+    /// `< TAG_MAX` (above), so the addition can never overflow `u64` at
+    /// any legal width — `TAG_MAX <= 2^63 - 1` when `INDEX_BITS` is in
+    /// `1..=16` — in a debug build or in release. Plain `+` states that
+    /// proven precondition directly; there is nothing for a wrapping or
+    /// saturating operator to guard, and one would only invite the
+    /// misreading that the operator is a safety mechanism.
+    ///
+    /// Note what the actual protection against a hypothetical future
+    /// weakening or removal of the seal check is — the seal check itself,
+    /// run before any side effect, NOT the choice of addition operator:
+    /// with the check removed, the failure mode at these same legal widths
+    /// would still not be `u64` arithmetic overflow. It would be a bump
+    /// past [`TAG_MAX`](Self::TAG_MAX) whose high bits the
+    /// `(tag << INDEX_BITS)` shift below silently discards past bit 63 —
+    /// a semantically-wrapped pack (the tag field wraps exactly to 0)
+    /// that no addition operator detects or prevents.
+    ///
+    /// This helper is NOT a wrap-on-truncate mechanism: it does not wrap
+    /// the tag back to 0 in production use, and must never be made to —
+    /// reintroducing wrap-on-truncation here would reopen the exact
+    /// stale-CAS double-issue the run-8 P1-1 fix
+    /// ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close
     /// (see the crate-root docs' "The tag is strictly monotonic" section).
     #[must_use]
     pub(crate) const fn pack_truncating(index: u32, tag: u64) -> u64 {
         let () = Self::_CHECK_BITS;
         debug_assert!(
             index as u64 <= Self::INDEX_MASK,
-            "pack_truncating: index out of range — must be <= INDEX_MASK \
-             (the empty sentinel itself is legal: empty()/the H-2 drain \
-             path pack it)"
+            "pack_truncating: index out of range — must be <= INDEX_MASK. \
+             The `<=` is not a general invitation to pass INDEX_MASK: it \
+             is admitted only for the empty-sentinel callers (empty() and \
+             the H-2 drain path in pop_index_impl pack INDEX_MASK itself). \
+             A push caller can never reach this call with INDEX_MASK — \
+             push_index_impl's own >= INDEX_MASK guard panics upstream — \
+             so push callers are strictly < INDEX_MASK"
         );
         (tag << INDEX_BITS) | (index as u64)
     }
@@ -1493,9 +1510,32 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // more than once: on a CAS failure the NEXT iteration recomputes
         // `next_link` from the fresh head and OVERWRITES this same link
         // cell before its own CAS. The stale write from the failed
-        // iteration is never observable in the stack's read-set — a pop
-        // that read it did so off a head word this push's CAS has already
-        // displaced, so the pop's own CAS fails and it retries.
+        // iteration is never observable in the stack's read-set, for two
+        // disjoint reasons — the normative retry-overwrite proof (the
+        // SAFETY comment below cross-references it instead of repeating):
+        //
+        // (a) An ordinary pop cannot select `index`'s link cell at all
+        //     while this push is mid-retry. Under the liveness and
+        //     exclusive-ownership clauses of the caller-side push
+        //     contract, the `index` this push is publishing is
+        //     UNREACHABLE — part of no live chain — until this push's CAS
+        //     successfully publishes it, so no pop's traversal reaches
+        //     `index` before publication, stale-read or not. On the
+        //     losing-CAS path described here, this push's CAS has
+        //     displaced nothing.
+        //
+        // (b) A pop that DOES read `index`'s link cell mid-retry must be a
+        //     stale popper from a PRIOR push/pop lifecycle of this same
+        //     `index` (not this push). That stale popper's own CAS
+        //     expectation is the old `(index, tag)` head word from that
+        //     prior cycle — already displaced by whichever pop won the
+        //     head CAS and transferred ownership of `index` to ITS
+        //     caller. The tag is strictly monotonic (it never wraps — see
+        //     the crate-root docs' "The tag is strictly monotonic"
+        //     section), so that stale expected value can never be
+        //     reinstalled: the stale popper's own CAS is guaranteed to
+        //     fail regardless of what THIS push stores to the link cell
+        //     or does with the head word.
         //
         // SAFETY: (a) [`SealedStorage::store_next`] forwards to
         // [`StackStorage::store_next`], whose caller-side contract this
@@ -1505,12 +1545,13 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // `compare_exchange` below — per iteration, and on retry: a failed
         // CAS sends the loop back here, the next iteration recomputes
         // `next_link` from the fresh head and overwrites `index`'s link
-        // cell before its own CAS, and the failed iteration's stale write
-        // is never observable in the stack's read-set (a pop that read it
-        // did so off an already-displaced head, so the pop's own CAS fails
-        // and it retries); (b) the link-domain, liveness, and
-        // exclusive-ownership legs
-        // come from [`StackOps::push_index`]'s caller-side `# Safety`
+        // cell before its own CAS; the failed iteration's stale write is
+        // never observable in the stack's read-set (normative two-case
+        // proof — unreachable-before-publication, and a prior-cycle stale
+        // popper whose CAS expectation is already permanently displaced —
+        // on the retry-store comment directly above, not repeated here);
+        // (b) the link-domain, liveness, and exclusive-ownership legs come
+        // from [`StackOps::push_index`]'s caller-side `# Safety`
         // contract, which this function's own `# Safety` forwards — the
         // caller of `push_index_impl` proved them.
         //
@@ -1521,7 +1562,10 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         unsafe {
             s.store_next(index, next_link);
         }
-        let new_tag = tag.wrapping_add(1);
+        // Plain `+`: the seal check above guarantees tag < TAG_MAX, so the
+        // bump cannot overflow (range proof in `pack_truncating`'s doc —
+        // that check, not the operator, is the real guard).
+        let new_tag = tag + 1;
         let new_head = TaggedIndex::<B>::pack_truncating(index, new_tag);
         // Release on success so a pop's Acquire sees the link we wrote.
         // Relaxed on failure is sound HERE, and the asymmetry with pop is

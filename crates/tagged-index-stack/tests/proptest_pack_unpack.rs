@@ -19,14 +19,18 @@
 use proptest::prelude::*;
 use tagged_index_stack::TaggedIndex;
 
-// The strategies below shift `1u64 << TaggedIndex::<N>::TAG_BITS` at several
-// widths — a compile-time shift-overflow panic/UB if `TAG_BITS == 64` (i.e.
-// `INDEX_BITS == 0`). `_CHECK_BITS` caps `INDEX_BITS` at 1..=16 today, but
-// these strategies are not inside a `const fn` and do not benefit from that
-// compile-time guard, so the boundary is pinned here — one assert per width
-// this file instantiates — making a future widening that legalizes
-// `INDEX_BITS = 0` fail THIS file's build at exactly the shifted widths it
-// would break.
+// Per-width tripwires for the shifts below: the strategies shift
+// `1u64 << TaggedIndex::<N>::TAG_BITS`, a valid shift only while
+// `TAG_BITS < 64` — an out-of-range literal shift is a compile-time
+// shift-overflow error, never runtime UB. Honest scope: one assert per
+// width THIS FILE instantiates. They prove the widths exercised here are
+// safe to shift at, and would catch a future change pushing one of THOSE
+// widths to `TAG_BITS == 64`; they pin nothing about widths never
+// instantiated here. In particular, a future guard change legalizing
+// `INDEX_BITS = 0` would NOT fail this file's build (width 0 is never
+// constructed in it) — that boundary belongs to the existing compile-fail
+// fixture `tests/compile_fail/index_bits_zero/`, driven by
+// `index_bits_zero_must_not_compile` in `tests/compile_fail.rs`.
 const _: () = assert!(TaggedIndex::<1>::TAG_BITS < 64);
 const _: () = assert!(TaggedIndex::<12>::TAG_BITS < 64);
 const _: () = assert!(TaggedIndex::<15>::TAG_BITS < 64);
@@ -118,10 +122,11 @@ proptest! {
 
 /// The checked pack's bounds check shifts `1u64 << Self::TAG_BITS`; at
 /// width 1, `TAG_BITS` is 63 — the closest this crate gets to `u64` shift
-/// overflow (`1u64 << 63` is the last representable shift amount, `1u64
-/// << 64` would panic/UB). The properties above sample `pack` randomly at
-/// width 1 but are not guaranteed to land exactly on this boundary, so it
-/// gets its own focused assertion: the last valid tag (`2^63 - 1`) still
+/// overflow (`1u64 << 63` is the largest valid shift amount; a literal
+/// `1u64 << 64` is rejected at compile time as a shift-overflow error,
+/// not a runtime panic or UB). The properties above sample `pack` randomly
+/// at width 1 but are not guaranteed to land exactly on this boundary, so
+/// it gets its own focused assertion: the last valid tag (`2^63 - 1`) still
 /// packs to the exact word, and the first invalid tag (`2^63`, the shift
 /// boundary itself) is rejected.
 #[test]
