@@ -1,22 +1,13 @@
 //! `tagged-index-stack` — a lock-free LIFO free-list of small **indices** (a
 //! *slot recycler*) whose head is a single atomic word packing an
 //! `(index | tag)` pair, where a STRICTLY MONOTONIC generation **tag** in the
-//! high bits eliminates the ABA problem outright — it never wraps. Every
-//! successful push installs a tag exactly one greater than the one it
-//! observed, and a push that observes the ceiling
-//! ([`TaggedIndex::TAG_MAX`]) is refused (`Err(`[`TagExhausted`]`)`) instead
-//! of wrapping back to 0 — see [`push_index`](StackOps::push_index)'s
-//! `# Errors` section. Consequently every `(index, tag)` head word occurs in
-//! at most one contiguous interval of the head's history, so a stale CAS can
-//! never be reinstated by a later cycle: ABA is eliminated, not merely
-//! mitigated (see "The tag is strictly monotonic" below). The enforced
-//! `1..=16` cap on `INDEX_BITS` guarantees every legal configuration a tag of
-//! at least 48 bits, so a head accepts at least `2^48 - 1` successful pushes
-//! before it seals; the "Tag-width budget" section below derives the
-//! hardware-bounded floor on that LIFETIME (pushes are refused thereafter,
-//! permanently — pops are unaffected and keep draining the remaining chain).
-//! Lock-freedom here describes the stack's own CAS loops; end-to-end it
-//! additionally requires a non-blocking [`StackStorage`] implementation.
+//! high bits eliminates the ABA problem outright — it never wraps; a push
+//! that would need to wrap is refused instead (`Err(`[`TagExhausted`]`)`) —
+//! see "The tag is strictly monotonic" below for the full mechanism and
+//! "Tag-width budget" for the pushes-until-sealed lifetime (at least
+//! `2^48 - 1` at every legal `INDEX_BITS`). Lock-freedom here describes the
+//! stack's own CAS loops; end-to-end it additionally requires a
+//! non-blocking [`StackStorage`] implementation.
 //!
 //! # The tag is strictly monotonic — it never wraps
 //!
@@ -32,23 +23,13 @@
 //! least `2^48 - 1` at every legal width — after which the stack is sealed
 //! (pops continue; pushes are refused). See [`StackHead`]'s "Sealing is
 //! permanent" section: there is no reset API, by design.
+//!
 //! Allocation-free, `no_std`; the production library source (`src/`) is
-//! `#![deny(unsafe_code)]` with exactly EIGHT audited
-//! `#[allow(unsafe_code)]` lint-exception REGIONS (a boundary count — see
-//! ["Where unsafe lives"](#where-unsafe-lives) below for the actual
-//! unsafe-operation count those regions contain), all
-//! item-scoped, all in `src/imp.rs`: the `unsafe
-//! trait StackStorage` declaration (whose three hooks are `unsafe fn`), the
-//! caller-facing unsafe boundary (`StackOps::push_index` — trait method
-//! declaration and its blanket impl — plus the owned [`ArrayIndexStack::push`]
-//! and the shared internal `push_index_impl`, all carrying the two-clause
-//! link-domain + liveness caller contract), and the sealed `SealedStorage`
-//! surface (its `store_next` hook, the blanket bridge impl that is the
-//! `StackStorage` hooks' sole call site, and the owned type's own impl)
-//! (see ["Where unsafe lives"](#where-unsafe-lives) below; this repository's
-//! integration tests are separate crate targets that carry additional,
-//! intentional `unsafe impl StackStorage` test fixtures OUTSIDE that
-//! `src/`-scoped deny — see the same section).
+//! `#![deny(unsafe_code)]` with exactly EIGHT audited, item-scoped
+//! `#[allow(unsafe_code)]` lint-exception regions, all in `src/imp.rs` — see
+//! ["Where unsafe lives"](#where-unsafe-lives) below for the full
+//! region-by-region inventory, the unsafe-operation count those regions
+//! contain, and the separate test-fixture inventory.
 //!
 //! Slab allocators, object pools, entity-component stores, and connection
 //! tables all need to recycle small integer ids, and commonly get two details
@@ -413,33 +394,15 @@
 //! produce.
 
 #![no_std]
-// `deny`, not `forbid`: the library target (`src/`) now contains exactly EIGHT
-// audited `#[allow(unsafe_code)]` lint-exception REGIONS, all item-scoped, all
-// in src/imp.rs (tier 2 of this workspace's two-tier unsafe-inventory
-// convention): the `unsafe trait StackStorage` declaration (whose allow also
-// covers its three `unsafe fn` hooks), the crate-private `SealedStorage`
-// trait declaration (a safe trait whose `store_next` member is an `unsafe fn`),
-// the caller-facing `StackOps::push_index`
-// declaration, the blanket impl's `push_index`, the shared `push_index_impl`,
-// `ArrayIndexStack::push`, the `SealedStorage` blanket-bridge impl — the
-// `StackStorage` hooks' sole call site, holding their three `unsafe {}`
-// blocks — and the owned type's `SealedStorage` impl. A REGION count is a
-// boundary, not a contents count: see the crate docs' "Where unsafe lives"
-// section for the actual (larger) count of unsafe declarations/blocks these
-// eight regions hold.
-// A `forbid` lint cannot be locally relaxed by any inner `#[allow]`, so it
-// would reject all eight audited regions; `deny` keeps every OTHER
-// `unsafe` token in the library target a hard error. (Integration tests are
-// separate crate targets that do not inherit this attribute and intentionally
-// carry additional `unsafe impl` test fixtures — see the crate docs' "Where
-// unsafe lives" section.)
-// The self-verifying REGION-boundary command (see the crate docs' "Where
-// unsafe lives" section for the companion CONTENTS command) — run from the
-// workspace root:
-// `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/`
-// — returns exactly eight hits, all in src/imp.rs. This proves no unsafe
-// token exists OUTSIDE those eight regions; it does not by itself prove how
-// many unsafe declarations/blocks exist INSIDE them.
+// `deny`, not `forbid`: the library target (`src/`) holds eight audited,
+// item-scoped `#[allow(unsafe_code)]` regions (tier 2 of this workspace's
+// two-tier unsafe-inventory convention) that a `forbid` lint could not
+// locally relax; `deny` keeps every OTHER `unsafe` token a hard compile
+// error. Integration tests are separate crate targets that do not inherit
+// this attribute and intentionally carry additional `unsafe impl` test
+// fixtures. See the crate docs' "Where unsafe lives" section (above) for
+// the full region inventory, the self-verifying grep command, and the
+// unsafe-operation count those regions hold.
 #![deny(unsafe_code)]
 // Edition 2021 gives an `unsafe fn` body ambient permission to call another
 // `unsafe fn` with no local `unsafe {}` — a real gap the tier-2 allow-region
