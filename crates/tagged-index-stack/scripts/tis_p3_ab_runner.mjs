@@ -48,10 +48,11 @@
 // against the repo root with no containment check and the resolved directory
 // was recursively deleted on every wallclock/codegen run, so `--out-dir .`
 // deleted the entire repository. There is no user-visible output-directory
-// knob anymore: every scratch path is <repoRoot>/target/tis_p3_ab/<target>
+// knob anymore: every scratch path is <repoRoot>/target/tis_p3_ab-<mkdtemp>/<target>
 // (plus fixed children) by construction, validateScratchLeaf pins the one
-// variable segment to a single non-dot path component, and freshDir()
-// refuses to clear anything at or outside the dedicated scratch root.
+// variable segment to a single non-dot path component, the root itself is
+// unpredictable and exclusively created by this process (run-18 review
+// P1-2), and freshDir() refuses to clear anything at or outside it.
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -69,11 +70,24 @@ const srcDir = path.join(repoRoot, 'crates', 'tagged-index-stack', 'src');
 const tmplDir = path.join(scriptDir, 'tis_p3_ab');
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
 // Dedicated scratch root: the ONLY directory tree this runner ever creates
-// or deletes inside. The former --out-dir option (removed — run-17 review
-// P1-1) could point the recursive clear anywhere; now every freshDir() call
-// site is a fixed child of this directory by construction, and freshDir()
-// itself re-verifies containment before deleting (see below).
-const SCRATCH_ROOT = path.join(repoRoot, 'target', 'tis_p3_ab');
+// or deletes inside. Created FRESH by each top-level mode invocation via
+// mkdtemp under <repoRoot>/target/ (run-18 review P1-2): the full path is
+// unpredictable (random mkdtemp suffix) and it is created exclusively by
+// THIS process, so nothing else could have planted a symlink/junction/
+// reparse point anywhere on the path before this process's own first write.
+// The former fixed <repoRoot>/target/tis_p3_ab path allowed exactly that
+// plant: freshDir()'s purely lexical containment check still passed for
+// children of a redirected root, while rmSync resolved the reparse point at
+// delete time and destroyed the real external directory it pointed at.
+// Each invocation removes its own root again when its mode completes
+// successfully; a crashed run's leftover root is inert garbage under
+// gitignored <repoRoot>/target/ (never re-entered, never deleted by a later
+// invocation — later invocations get their own mkdtemp root).
+function makeScratchRoot() {
+  // mkdtemp requires its parent directory to already exist.
+  fs.mkdirSync(path.join(repoRoot, 'target'), { recursive: true });
+  return fs.mkdtempSync(path.join(repoRoot, 'target', 'tis_p3_ab-'));
+}
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
@@ -167,8 +181,8 @@ function parseArgs(argv) {
         // P1-1 (run-17 review): this option resolved its value against the
         // repo root and freshDir() recursively deleted the resolved directory
         // on every run — `--out-dir .` deleted the whole repository. Removed
-        // without replacement; see SCRATCH_ROOT below.
-        fail('--out-dir was removed (its value was resolved against the repo root and then recursively deleted — `--out-dir .` deleted the entire repository; see docs/reviews/2026-09-03-164740-tagged-index-stack-review-Sol-codex-run-17.md P1-1). Scratch output now always goes to <repo>/target/tis_p3_ab/<target>.');
+        // without replacement; see makeScratchRoot below.
+        fail('--out-dir was removed (its value was resolved against the repo root and then recursively deleted — `--out-dir .` deleted the entire repository; see docs/reviews/2026-09-03-164740-tagged-index-stack-review-Sol-codex-run-17.md P1-1). Scratch output now always goes to a fresh <repo>/target/tis_p3_ab-<mkdtemp>/<target> directory the runner creates itself.');
       case '--threads': args.threads = Number(need()); break;
       case '--window-ms': args.windowMs = Number(need()); break;
       case '--samples': args.samples = Number(need()); break;
@@ -185,7 +199,7 @@ function parseArgs(argv) {
     if (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target)) {
       fail('--target must be a rust target triple');
     }
-    // The target names the scratch leaf <repo>/target/tis_p3_ab/<target>:
+    // The target names the scratch leaf <repo>/target/tis_p3_ab-<mkdtemp>/<target>:
     // `.` or `..` would point freshDir() AT or ABOVE the dedicated scratch
     // root (both pass the charset check above) — the run-17 review P1-1
     // class of bug. validateScratchLeaf() rejects them here, before any
@@ -275,44 +289,49 @@ function verifyAllAnchorsOnce(impSrc) {
   }
 }
 
-// Single non-dot path segment naming a child of SCRATCH_ROOT. Rejects `.`,
+// Single non-dot path segment naming a child of THIS invocation's mkdtemp
+// scratch root. Rejects `.`,
 // `..`, and anything containing a separator, so the joined path cannot
-// escape the scratch root lexically. Enforced at the CLI layer (parseArgs)
-// and re-checked by every scratchRoot()/freshDir() call.
+// escape the scratch root lexically. Enforced at the CLI layer (parseArgs,
+// before any filesystem access) and re-checked where the segment is joined
+// (scratchRoot below).
 function validateScratchLeaf(name) {
   if (
     typeof name !== 'string' || name.length === 0 ||
     name === '.' || name === '..' ||
     name.includes('/') || name.includes('\\')
   ) {
-    fail(`scratch directory name ${JSON.stringify(name)} must be a single non-dot path segment — scratch output is always <repo>/target/tis_p3_ab/<name>, never anywhere else (run-17 review P1-1)`);
+    fail(`scratch directory name ${JSON.stringify(name)} must be a single non-dot path segment — scratch output is always <repo>/target/tis_p3_ab-<mkdtemp>/<name>, never anywhere else (run-17 review P1-1)`);
   }
-  return path.join(SCRATCH_ROOT, name);
 }
 
-function freshDir(dir) {
-  // P1-1 containment guard, fails closed: refuse to clear anything at or
-  // outside the dedicated scratch root (this covers the filesystem root, the
-  // repo root, and every repo-root parent — all resolve outside it).
-  // path.relative() on win32 compares paths case-insensitively, so a
-  // different-cased spelling of the same directory cannot slip past. No
-  // caller passes a symlinked path (the segment is charset-validated), and
-  // SCRATCH_ROOT's own parent (`target/`) being a user junction on some dev
-  // machines only redirects WHERE the runner-owned tis_p3_ab tree lives, not
-  // what gets cleared.
+function freshDir(dir, root) {
+  // Defensive rmSync+mkdirSync for a directory under THIS invocation's
+  // mkdtemp scratch root. Its safety no longer rests on the lexical
+  // containment check alone (run-18 review P1-2): `root` is unpredictable
+  // and was created exclusively by THIS process via mkdtemp, so nothing
+  // else could have planted a symlink/junction/reparse point on the path
+  // before this process's own first write to it. The lexical check below
+  // remains purely as a backstop against caller bugs — it fails closed on
+  // anything at or outside `root`. (Within one invocation, a mode may call
+  // this several times for different children of the same root — e.g.
+  // codegen mode's per-feature-set roots and per-variant dirs — so the
+  // clear-then-create still earns its keep.)
   const resolved = path.resolve(dir);
-  const rel = path.relative(SCRATCH_ROOT, resolved);
+  const rel = path.relative(root, resolved);
   if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-    fail(`refusing to clear ${resolved}: it is not strictly inside the dedicated scratch root ${SCRATCH_ROOT} (run-17 review P1-1)`);
+    fail(`refusing to clear ${resolved}: it is not strictly inside this invocation's dedicated scratch root ${root} (run-17 review P1-1)`);
   }
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// P1-1: the scratch root has exactly one variable segment (args.target,
-// validated by validateScratchLeaf above) and no user-supplied base path.
-function scratchRoot(args) {
-  return validateScratchLeaf(args.target);
+// P1-1: the scratch tree has exactly one variable segment (args.target,
+// validated by validateScratchLeaf above) and no user-supplied base path;
+// P1-2: the base itself is this invocation's fresh mkdtemp root.
+function scratchRoot(args, root) {
+  validateScratchLeaf(args.target);
+  return path.join(root, args.target);
 }
 
 // ── Assembler parsing ───────────────────────────────────────────────────────
@@ -430,7 +449,8 @@ function modeCodegen(args, header) {
   const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
   verifyAllAnchorsOnce(impSrc);
 
-  const root = scratchRoot(args);
+  const scratchBase = makeScratchRoot();
+  const root = scratchRoot(args, scratchBase);
   fs.mkdirSync(docsPerfDir, { recursive: true });
 
   const isX86 = args.target.startsWith('x86_64');
@@ -463,12 +483,12 @@ function modeCodegen(args, header) {
 
   // Compile one feature set: variant -> { asmText, funcs, fallback }.
   function compileFeatureSet(fset) {
-    const froot = fset === 'default' ? root : `${root}_${fset}`;
-    freshDir(froot);
+    const froot = fset === 'default' ? root : path.join(root, fset);
+    freshDir(froot, scratchBase);
     const out = {};
     for (const variant of VARIANTS) {
       const vdir = path.join(froot, variant);
-      freshDir(vdir);
+      freshDir(vdir, scratchBase);
       const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
       const wrapperSrc = fs.readFileSync(path.join(tmplDir, 'codegen_wrapper.rs.tmpl'), 'utf8');
       fs.writeFileSync(path.join(vdir, 'lib.rs'), libSrc);
@@ -774,8 +794,10 @@ function modeCodegen(args, header) {
     csvRows.map((r) => r.join(',')).join('\n') + '\n',
   );
 
+  fs.rmSync(scratchBase, { recursive: true, force: true });
+
   console.log(mdText);
-  console.log(`codegen mode OK: target=${args.target} scratch=${root} artifacts in docs/perf/`);
+  console.log(`codegen mode OK: target=${args.target} scratch=${root} (scratch tree removed; artifacts in docs/perf/)`);
 }
 
 // ── Wallclock mode ──────────────────────────────────────────────────────────
@@ -806,8 +828,9 @@ function modeWallclock(args, header) {
     `--samples must be a safe integer in 1..=${MAX_SAMPLES} (got ${samples})`,
   );
 
-  const root = scratchRoot(args);
-  freshDir(root);
+  const scratchBase = makeScratchRoot();
+  const root = scratchRoot(args, scratchBase);
+  freshDir(root, scratchBase);
   fs.mkdirSync(docsPerfDir, { recursive: true });
 
   const logLines = [headerComment(header)];
@@ -819,7 +842,7 @@ function modeWallclock(args, header) {
   for (const variant of VARIANTS) {
     const crateName = `tis_p3ab_${variant}`;
     const cdir = path.join(root, variant);
-    freshDir(cdir);
+    freshDir(cdir, scratchBase);
     fs.writeFileSync(path.join(cdir, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
     fs.mkdirSync(path.join(cdir, 'src', 'bin'), { recursive: true });
     const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
@@ -955,8 +978,10 @@ function modeWallclock(args, header) {
     csv.map((r) => r.join(',')).join('\n') + '\n',
   );
 
+  fs.rmSync(scratchBase, { recursive: true, force: true });
+
   console.log(mdText);
-  console.log(`wallclock mode OK: target=${args.target} scratch=${root} artifacts in docs/perf/`);
+  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (scratch tree removed; artifacts in docs/perf/)`);
 }
 
 // ── Build-check mode ────────────────────────────────────────────────────────
@@ -994,8 +1019,9 @@ function modeBuildCheck() {
   verifyAllAnchorsOnce(impSrc);
 
   const crateName = 'tis_p3ab_build_check';
-  const root = path.join(repoRoot, 'target', 'tis_p3_ab', 'build-check');
-  freshDir(root);
+  const scratchBase = makeScratchRoot();
+  const root = path.join(scratchBase, 'build-check');
+  freshDir(root, scratchBase);
   fs.writeFileSync(path.join(root, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
   fs.mkdirSync(path.join(root, 'src', 'bin'), { recursive: true });
   fs.writeFileSync(path.join(root, 'lib.rs'), libSrc);
@@ -1020,8 +1046,8 @@ function modeBuildCheck() {
   // directly with rustc (matching how --mode codegen actually invokes it),
   // in its own scratch directory so `#[path = "lib.rs"]` resolves next to a
   // fresh copy of the current sources.
-  const cgRoot = path.join(repoRoot, 'target', 'tis_p3_ab', 'build-check-codegen-wrapper');
-  freshDir(cgRoot);
+  const cgRoot = path.join(scratchBase, 'build-check-codegen-wrapper');
+  freshDir(cgRoot, scratchBase);
   fs.writeFileSync(path.join(cgRoot, 'lib.rs'), libSrc);
   fs.writeFileSync(path.join(cgRoot, 'imp.rs'), impSrc);
   fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), codegenWrapperTmpl);
@@ -1034,7 +1060,8 @@ function modeBuildCheck() {
     process.stderr.write(cgBuild.stderr ?? '');
     fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
   }
-  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot}`);
+  fs.rmSync(scratchBase, { recursive: true, force: true });
+  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot} (scratch tree removed)`);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────────────

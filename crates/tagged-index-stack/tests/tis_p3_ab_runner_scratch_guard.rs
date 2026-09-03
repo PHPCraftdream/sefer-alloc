@@ -13,6 +13,20 @@
 //! (non-zero exit) BEFORE any filesystem mutation — the repo copy, the
 //! dedicated scratch root, and every canary probe must survive.
 //!
+//! More precisely: every `--out-dir`/`--target` case below must be rejected
+//! with the runner's `FATAL` diagnostics (non-zero exit) BEFORE any
+//! filesystem mutation — the repo copy, the dedicated scratch root, and every
+//! canary probe must survive; the junction-redirect case instead requires a
+//! SUCCESSFUL run with the victim untouched.
+//!
+//! Run-18 review additions: this suite also pins the P1-2/P2-2 fixes — one
+//! test plants a junction at the old scratch-root path and asserts the
+//! victim's canary survives a real `--mode build-check` run (it MUST fail
+//! against the pre-fix runner), and the suite's own temp dirs are now
+//! exclusive-create nonces (PID + sub-second time + counter, `create_dir`
+//! retry on `AlreadyExists`) so concurrent test processes cannot collide or
+//! adopt a pre-planted path.
+//!
 //! Every case runs against a DISPOSABLE SKELETON COPY of the repo built in
 //! the system temp dir (never against the real repo tree), so this suite is
 //! also the counterfactual vehicle: checking out the pre-fix runner and
@@ -32,12 +46,17 @@
 //! analogously where the OS refuses to create one.
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Directory removed recursively on drop, including when an assertion panics
-/// mid-test (keeps counterfactual runs from littering the temp dir).
+/// mid-test (keeps counterfactual runs from littering the temp dir). The
+/// unconditional `remove_dir_all` is safe because, after the exclusive-nonce
+/// fix below, the guard provably wraps a directory this process exclusively
+/// created itself (first-to-create-wins).
 struct DirGuard(PathBuf);
 
 impl Drop for DirGuard {
@@ -60,6 +79,39 @@ impl DirGuard {
 fn next_uid() -> u32 {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Exclusive temp-dir creation (run-18 review P2-2): the old names
+/// (`tis_p1_1_guard_{counter}_{label}`) were predictable across processes —
+/// a counter starting at zero, no PID, no time — and `create_dir_all`
+/// silently accepted a pre-existing directory or symlink at that name, so a
+/// concurrent `cargo test` process (or a pre-planted path) could collide and
+/// `DirGuard` would then recursively delete a tree this process never owned —
+/// the same "predictable path + unconditional recursive delete" hazard class
+/// this suite polices in the runner itself. The nonce combines PID, a
+/// sub-second wall-clock component and the process-local counter (kept: it
+/// disambiguates sequential tests within one run); `create_dir` (NOT
+/// `create_dir_all`) makes creation exclusive, and `AlreadyExists` means
+/// "pick a new nonce and retry", never "adopt the pre-existing path".
+fn exclusive_temp_dir(label: &str) -> DirGuard {
+    loop {
+        let subsec_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "tis_p1_1_guard_{}_{}_{}_{}",
+            std::process::id(),
+            subsec_nanos,
+            next_uid(),
+            label
+        ));
+        match fs::create_dir(&dir) {
+            Ok(()) => return DirGuard::new(dir),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => panic!("create exclusive temp dir {}: {e}", dir.display()),
+        }
+    }
 }
 
 fn node_available() -> bool {
@@ -106,11 +158,7 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
         .ancestors()
         .nth(2)
         .expect("manifest dir sits two levels below the repo root");
-    let parent = DirGuard::new(std::env::temp_dir().join(format!(
-        "tis_p1_1_guard_{}_{}",
-        next_uid(),
-        label
-    )));
+    let parent = exclusive_temp_dir(label);
     let root = parent.path().join("repo");
     fs::create_dir_all(&root).expect("create skeleton repo root");
 
@@ -184,6 +232,19 @@ fn run_codegen(runner: &Path, extra: &[&str]) -> Output {
         .arg(runner)
         .args(["--mode", "codegen", "--target", "x86_64-unknown-linux-gnu"])
         .args(extra)
+        .output()
+        .expect("spawn node for the runner copy")
+}
+
+/// Run the runner copy in `--mode build-check`: the cheapest mode that
+/// actually REACHES the scratch machinery (the `--out-dir`/`--target`
+/// rejection cases above die in argument parsing, before any filesystem
+/// access), and the one mode whose scratch writes nothing outside `target/`
+/// — no docs/perf artifacts, no identity capture, no git needed.
+fn run_build_check(runner: &Path) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(["--mode", "build-check"])
         .output()
         .expect("spawn node for the runner copy")
 }
@@ -262,9 +323,7 @@ fn out_dir_absolute_temp_victim_is_rejected_and_canary_survives() {
         return;
     }
     let (parent, root_guard, runner) = build_repo_copy("victim");
-    let victim =
-        DirGuard::new(std::env::temp_dir().join(format!("tis_p1_1_guard_victim_{}", next_uid())));
-    fs::create_dir_all(victim.path()).expect("create victim dir");
+    let victim = exclusive_temp_dir("victim");
     fs::write(victim.path().join("canary.txt"), "unrelated to the repo")
         .expect("write victim canary");
     let victim_str = victim.path().to_string_lossy().to_string();
@@ -336,13 +395,10 @@ fn out_dir_symlink_escape_is_rejected_and_canary_survives() {
         return;
     }
     let (parent, root_guard, runner) = build_repo_copy("symlink");
-    let real =
-        DirGuard::new(std::env::temp_dir().join(format!("tis_p1_1_guard_real_{}", next_uid())));
-    fs::create_dir_all(real.path()).expect("create symlink-target dir");
+    let real = exclusive_temp_dir("real");
     fs::write(real.path().join("canary.txt"), "behind the symlink")
         .expect("write symlink-target canary");
-    let link =
-        DirGuard::new(std::env::temp_dir().join(format!("tis_p1_1_guard_link_{}", next_uid())));
+    let link = exclusive_temp_dir("link");
     if !make_dir_symlink(link.path(), real.path()) {
         eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
         drop(parent);
@@ -394,4 +450,54 @@ fn target_dot_and_dotdot_are_rejected_and_scratch_canary_survives() {
         "--target .. cleared at or above the dedicated scratch root (canary gone)"
     );
     drop(parent);
+}
+
+/// Run-18 review P1-2: the OLD fixed scratch root `<repo>/target/tis_p3_ab`
+/// was a predictable, reused path, and `freshDir()`'s containment check was
+/// purely lexical — a directory junction/symlink planted at that exact path
+/// made `<scratch>/build-check` look "inside" the root while `rmSync`
+/// resolved the reparse point and destroyed the REAL external directory.
+/// This test plants exactly that redirect in a disposable skeleton (the
+/// skeleton's `target/tis_p3_ab` → an outside "victim" dir holding a canary
+/// at `victim/build-check/canary.txt` — precisely the child path the
+/// build-check mode clears), runs the REAL runner in build-check mode, and
+/// asserts the runner succeeds AND the canary survives. It MUST fail against
+/// the pre-fix runner (the canary is deleted through the junction) and pass
+/// once the scratch root is a fresh, unpredictable, exclusively-created
+/// `mkdtemp` sibling that could not have been pre-planted.
+#[test]
+fn scratch_root_junction_redirect_leaves_victim_canary_intact() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("scratch_junction");
+    let victim = parent.path().join("victim");
+    fs::create_dir_all(victim.join("build-check")).expect("create victim build-check dir");
+    fs::write(
+        victim.join("build-check").join("canary.txt"),
+        "behind the scratch-root junction",
+    )
+    .expect("write victim canary");
+
+    let skeleton_target = root_guard.path().join("target");
+    fs::create_dir_all(&skeleton_target).expect("create skeleton target dir");
+    if !make_dir_symlink(&skeleton_target.join("tis_p3_ab"), &victim) {
+        eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
+        drop(parent);
+        return;
+    }
+
+    let out = run_build_check(&runner);
+    assert!(
+        out.status.success(),
+        "runner failed outright against a junction at the old scratch-root path \
+         (expected: succeed via a fresh mkdtemp sibling); stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        victim.join("build-check").join("canary.txt").is_file(),
+        "the victim directory behind the <target>/tis_p3_ab junction was deleted — \
+         the runner still follows a reparse point planted at the scratch root (run-18 P1-2)"
+    );
 }
