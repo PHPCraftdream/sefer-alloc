@@ -666,3 +666,35 @@ fn default_stack_head_behaves_like_new() {
     );
     assert!(new_head.is_empty(), "a freshly-newed head reads empty");
 }
+
+// P3-1 regression (2026-09-03 review, Sol-codex run 12): `with_tag_for_test`
+// used to call the crate-private truncating pack unconditionally, so a
+// caller passing `tag > TAG_MAX` got a silently-truncated (and therefore
+// wrong) starting tag instead of a loud failure — a future test using an
+// out-of-range tag would model the wrong starting point and get a
+// false-positive/misleading result. Both the in-range boundary (accepted)
+// and the just-over-the-boundary case (must panic, not truncate) are pinned
+// here.
+
+#[cfg(any(feature = "test-internals", loom))]
+#[test]
+fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
+    let head = StackHead::<16>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX);
+    let (_index, tag) = TaggedIndex::<16>::unpack(head.raw_head());
+    assert_eq!(
+        tag,
+        TaggedIndex::<16>::TAG_MAX,
+        "TAG_MAX itself is in-range and must round-trip exactly, not truncate"
+    );
+}
+
+#[cfg(any(feature = "test-internals", loom))]
+#[test]
+#[should_panic(expected = "with_tag_for_test: tag out of range")]
+fn with_tag_for_test_panics_instead_of_silently_truncating_an_out_of_range_tag() {
+    // Before the fix this call packed through `pack_truncating`, which
+    // silently drops the tag's high bits — TAG_MAX + 1 truncates straight
+    // back to 0, an in-range-looking but WRONG starting tag. It must now
+    // panic instead of returning a mis-seeded head.
+    let _ = StackHead::<16>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX + 1);
+}

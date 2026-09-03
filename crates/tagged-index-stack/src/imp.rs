@@ -516,15 +516,23 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     ///
     /// `#[doc(hidden)]` + gated: same test-only-forwarder convention as
     /// [`raw_head`](Self::raw_head) — see its rationale.
+    ///
+    /// Uses the CHECKED [`TaggedIndex::pack`], not the crate-private
+    /// truncating fast path: a test passing `tag > TAG_MAX` must get a loud
+    /// failure here, not a silently truncated (and therefore wrong) starting
+    /// tag that would make a test oracle pass or fail for the wrong reason.
+    ///
+    /// # Panics
+    /// Panics if `tag > `[`TaggedIndex::TAG_MAX`].
     #[doc(hidden)]
     #[cfg(any(feature = "test-internals", loom))]
     #[must_use]
     pub fn with_tag_for_test(tag: u64) -> Self {
         Self {
-            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::pack_truncating(
-                TaggedIndex::<INDEX_BITS>::empty_index(),
-                tag,
-            )),
+            head: AtomicU64::new(
+                TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
+                    .expect("with_tag_for_test: tag out of range (tag > TaggedIndex::TAG_MAX)"),
+            ),
         }
     }
 
@@ -1821,10 +1829,14 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
 
     /// **test-only** constructor seeding a specific tag, for a tiny-tag
     /// regression oracle at the REAL tag width — forwarder to
-    /// [`StackHead::with_tag_for_test`]; see its doc.
+    /// [`StackHead::with_tag_for_test`]; see its doc (including its `# Panics`
+    /// contract for an out-of-range tag).
     ///
     /// `#[doc(hidden)]` + gated: same test-only-forwarder convention as
     /// [`raw_head`].
+    ///
+    /// # Panics
+    /// Panics if `tag > `[`TaggedIndex::TAG_MAX`].
     #[doc(hidden)]
     #[cfg(any(feature = "test-internals", loom))]
     #[must_use]
