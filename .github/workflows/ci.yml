@@ -995,7 +995,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: node scripts/run-check-matrix.mjs --kind check --kind test
@@ -1204,7 +1204,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Lint the commit range this event introduced
@@ -3221,7 +3221,7 @@ jobs:
       # raw logs so the failure can be diagnosed offline.
       - name: Upload raw artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: tis-p3-ab-aarch64-artifacts
           path: |
