@@ -58,13 +58,25 @@ const BACKOFF_SPIN_CAP: u32 = 6;
 const _: () = assert!(BACKOFF_SPIN_CAP < 32);
 
 /// Per-call exponential-backoff state for the CAS-retry arms: wraps the retry
-/// counter (`K`, starting at 0) that drives the spin-loop depth below.
+/// counter (`K`, starting at 0) that drives the spin-loop depth below, plus
+/// (under `test-internals`/`loom` only) the PRE-increment at-cap verdict of
+/// the most recent [`Backoff::spin`], reported by [`Backoff::spun_at_cap`].
 /// Starts fresh every call, never persisted.
-struct Backoff(u32);
+struct Backoff(
+    u32,
+    // Oracle flag: written by `spin`, read by `spun_at_cap`. Exists only
+    // where the oracle counters exist — in a production build the field,
+    // its write, and `spun_at_cap` are all compiled out together.
+    #[cfg(any(feature = "test-internals", loom))] bool,
+);
 
 impl Backoff {
     fn new() -> Self {
-        Backoff(0)
+        #[cfg(not(any(feature = "test-internals", loom)))]
+        return Backoff(0);
+
+        #[cfg(any(feature = "test-internals", loom))]
+        return Backoff(0, false);
     }
 
     /// `#[inline]`: called from generic fns monomorphized in downstream
@@ -80,11 +92,13 @@ impl Backoff {
     /// the head cache line instead of every loser re-hammering it
     /// immediately. `K` grows only within one call.
     ///
-    /// Returns whether this retry spun at FULL depth (the PRE-increment
-    /// `K` was already at the cap) — the oracle trigger for
-    /// `PUSH_BACKOFF_CAP_REACH_COUNT` / `POP_BACKOFF_CAP_REACH_COUNT`.
-    /// The check deliberately happens before the increment, so the oracle
-    /// does not fire one retry early.
+    /// Under `test-internals`/`loom`, records in `.1` whether THIS retry
+    /// spun at FULL depth (the PRE-increment `K` was already at the cap) —
+    /// the oracle verdict [`Self::spun_at_cap`] reports. The check
+    /// deliberately happens before the increment, so the oracle does not
+    /// fire one retry early; the verdict cannot be recomputed after the
+    /// fact, because a post-increment `K == BACKOFF_SPIN_CAP` is ambiguous
+    /// between "was already at the cap" and "incremented into it".
     ///
     /// `#[inline]`: see [`Self::at_cap`] — same monomorphization/codegen
     /// reasoning.
@@ -95,7 +109,7 @@ impl Backoff {
     /// close. The saturation also guarantees `self.0 <= BACKOFF_SPIN_CAP`
     /// at the shift, so no `.min` guard is needed on the shift expression.
     #[inline]
-    fn spin(&mut self) -> bool {
+    fn spin(&mut self) {
         let at_cap = self.at_cap();
         for _ in 0..(1u32 << self.0) {
             core::hint::spin_loop();
@@ -103,7 +117,22 @@ impl Backoff {
         if !at_cap {
             self.0 += 1;
         }
-        at_cap
+        #[cfg(any(feature = "test-internals", loom))]
+        {
+            self.1 = at_cap;
+        }
+    }
+
+    /// Query-only oracle trigger for `PUSH_BACKOFF_CAP_REACH_COUNT` /
+    /// `POP_BACKOFF_CAP_REACH_COUNT`: whether the most recent
+    /// [`Self::spin`] spun at FULL depth (its PRE-increment `K` was already
+    /// at the cap). Must be called AFTER `spin` — before it, the flag still
+    /// holds the PREVIOUS retry's verdict. Mirrors [`Self::at_cap`]'s
+    /// shape; `#[cfg]`-gated with the oracle counters it feeds.
+    #[cfg(any(feature = "test-internals", loom))]
+    #[inline]
+    fn spun_at_cap(&self) -> bool {
+        self.1
     }
 }
 
@@ -246,14 +275,17 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
         }
     }
 
-    /// Truncating fast path: `(tag << INDEX_BITS) | (index &
-    /// INDEX_MASK)`. TRUSTS ITS PRECONDITION — the name is the contract:
-    /// this silently produces a VALID-LOOKING word from invalid input. An
-    /// over-wide index masks to a DIFFERENT (possibly still-live) index, or
-    /// to the [empty sentinel](Self::empty_index) if the low bits are all
-    /// ones; an over-wide tag loses its high bits. If you cannot prove
-    /// your halves are in range, use [`pack`](Self::pack), which rejects
-    /// instead (see its doc for the checked semantics).
+    /// Truncating fast path: `(tag << INDEX_BITS) | index`. TRUSTS ITS
+    /// PRECONDITION — the name is the contract: this silently produces a
+    /// VALID-LOOKING word from invalid input, and no masking takes place:
+    /// an over-wide index ORs its high bits across the index/tag boundary
+    /// into the tag half, corrupting BOTH halves at once (a different
+    /// index AND a different tag — nothing rounds invalid input to a
+    /// benign value); an over-wide tag loses its high bits. If you cannot
+    /// prove your halves are in range, use [`pack`](Self::pack), which
+    /// rejects instead (see its doc for the checked semantics). The range
+    /// proof is additionally tripped by a `debug_assert!` in the body —
+    /// a debug-build check, never a release-build guarantee.
     ///
     /// Crate-private so the sharp edges stay in-crate; the only callers are
     /// [`push_index`](StackOps::push_index), [`pop_index`](StackOps::pop_index),
@@ -264,17 +296,28 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// `tag.wrapping_add(1)` here only ever runs on a tag `< TAG_MAX`,
     /// producing a value `<= TAG_MAX` that always fits within `TAG_BITS` —
     /// truncation never actually discards a bit on this path.
-    /// `wrapping_add` is used only to avoid a debug-build overflow panic on
-    /// the increment itself, NOT as a wrap-on-truncate mechanism: this
-    /// helper does not wrap the tag back to 0 in production use, and must
-    /// never be made to — reintroducing wrap-on-truncation here would
-    /// reopen the exact stale-CAS double-issue the run-8 P1-1 fix
-    /// ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close (see
-    /// the crate-root docs' "The tag is strictly monotonic" section).
+    /// `wrapping_add` defends against NO real current overflow: the tag
+    /// arriving here is always `< TAG_MAX` (above), so `tag + 1` can never
+    /// overflow `u64` at any legal width — `TAG_MAX <= 2^63 - 1` when
+    /// `INDEX_BITS` is in `1..=16` — in a debug build or in release. Plain
+    /// `+` would be exactly as correct today; `wrapping_add` is kept purely
+    /// as defense-in-depth against a hypothetical future weakening or
+    /// removal of the callers' seal check. It is NOT a wrap-on-truncate
+    /// mechanism: this helper does not wrap the tag back to 0 in production
+    /// use, and must never be made to — reintroducing wrap-on-truncation
+    /// here would reopen the exact stale-CAS double-issue the run-8 P1-1
+    /// fix ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close
+    /// (see the crate-root docs' "The tag is strictly monotonic" section).
     #[must_use]
     pub(crate) const fn pack_truncating(index: u32, tag: u64) -> u64 {
         let () = Self::_CHECK_BITS;
-        (tag << INDEX_BITS) | ((index as u64) & Self::INDEX_MASK)
+        debug_assert!(
+            index as u64 <= Self::INDEX_MASK,
+            "pack_truncating: index out of range — must be <= INDEX_MASK \
+             (the empty sentinel itself is legal: empty()/the H-2 drain \
+             path pack it)"
+        );
+        (tag << INDEX_BITS) | (index as u64)
     }
 
     /// Split a packed word back into `(u32 index, u64 tag)`.
@@ -1445,14 +1488,26 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         };
         // Write the link under Release so a concurrent pop's Acquire read of
         // this slot's link (after observing it as head) sees it. This is the
-        // ONLY link write — never an eager init (RAD-1).
+        // ONLY link write — never an eager init (RAD-1) — and it may run
+        // more than once: on a CAS failure the NEXT iteration recomputes
+        // `next_link` from the fresh head and OVERWRITES this same link
+        // cell before its own CAS. The stale write from the failed
+        // iteration is never observable in the stack's read-set — a pop
+        // that read it did so off a head word this push's CAS has already
+        // displaced, so the pop's own CAS fails and it retries.
         //
         // SAFETY: (a) [`SealedStorage::store_next`] forwards to
         // [`StackStorage::store_next`], whose caller-side contract this
         // discharges: we are in the CAS-valid push phase — `next_link` is
         // [`TAIL`] or the just-unpacked head index `cur_idx`, and the head
         // CAS that publishes `index` happens after, at the
-        // `compare_exchange` below; (b) the link-domain, liveness, and
+        // `compare_exchange` below — per iteration, and on retry: a failed
+        // CAS sends the loop back here, the next iteration recomputes
+        // `next_link` from the fresh head and overwrites `index`'s link
+        // cell before its own CAS, and the failed iteration's stale write
+        // is never observable in the stack's read-set (a pop that read it
+        // did so off an already-displaced head, so the pop's own CAS fails
+        // and it retries); (b) the link-domain, liveness, and
         // exclusive-ownership legs
         // come from [`StackOps::push_index`]'s caller-side `# Safety`
         // contract, which this function's own `# Safety` forwards — the
@@ -1506,9 +1561,12 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
                 PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 head = actual;
                 #[cfg(any(feature = "test-internals", loom))]
-                if backoff.spin() {
-                    PUSH_BACKOFF_CAP_REACH_COUNT
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                {
+                    backoff.spin();
+                    if backoff.spun_at_cap() {
+                        PUSH_BACKOFF_CAP_REACH_COUNT
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 #[cfg(not(any(feature = "test-internals", loom)))]
                 backoff.spin();
@@ -1567,6 +1625,11 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
         // being handed out, so our own write need not head one. See the
         // INVARIANT on the `head` field — a plain `store` there would
         // sever that sequence and make this ordering unsound.
+        // The success/failure asymmetry with push's `Release`/`Relaxed`
+        // CAS is deliberate and explained from push's side in
+        // `push_index_impl`'s CAS comment (why push's failure ordering is
+        // `Relaxed` while pop's must stay `Acquire` — pop follows a link
+        // on retry, push does not).
         // Strong CAS over `compare_exchange_weak` — measured
         // codegen-identical on aarch64 (see push's CAS note:
         // `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` §0).
@@ -1585,9 +1648,12 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
                 // is unchanged, only how fast it gets there.
                 if !TaggedIndex::<B>::is_empty(actual) {
                     #[cfg(any(feature = "test-internals", loom))]
-                    if backoff.spin() {
-                        POP_BACKOFF_CAP_REACH_COUNT
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    {
+                        backoff.spin();
+                        if backoff.spun_at_cap() {
+                            POP_BACKOFF_CAP_REACH_COUNT
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     #[cfg(not(any(feature = "test-internals", loom)))]
                     backoff.spin();

@@ -19,6 +19,19 @@
 use proptest::prelude::*;
 use tagged_index_stack::TaggedIndex;
 
+// The strategies below shift `1u64 << TaggedIndex::<N>::TAG_BITS` at several
+// widths — a compile-time shift-overflow panic/UB if `TAG_BITS == 64` (i.e.
+// `INDEX_BITS == 0`). `_CHECK_BITS` caps `INDEX_BITS` at 1..=16 today, but
+// these strategies are not inside a `const fn` and do not benefit from that
+// compile-time guard, so the boundary is pinned here — one assert per width
+// this file instantiates — making a future widening that legalizes
+// `INDEX_BITS = 0` fail THIS file's build at exactly the shifted widths it
+// would break.
+const _: () = assert!(TaggedIndex::<1>::TAG_BITS < 64);
+const _: () = assert!(TaggedIndex::<12>::TAG_BITS < 64);
+const _: () = assert!(TaggedIndex::<15>::TAG_BITS < 64);
+const _: () = assert!(TaggedIndex::<16>::TAG_BITS < 64);
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
