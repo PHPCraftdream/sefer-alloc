@@ -257,7 +257,13 @@ gated forwarder) is a raw CAS on the head word that the shipped loom proof
 (`tests/loom_aba.rs`) uses to split a pop's head-load from its CAS and drive
 ABA counterfactuals; `pop_retry_count_for_test`/`push_retry_count_for_test`
 are loom-only accessors over the same retry-activation counters that the
-same suite asserts against.
+same suite asserts against; `ArrayIndexStack::store_next_for_test` is a raw
+WRITE to a link cell (bypassing the stack algorithm entirely) that the same
+loom proof uses to reconstruct a pre-seal wrapping counterfactual — it is
+`loom`-only, not `test-internals`, because a safe write of this shape is
+reachable exclusively for that one loom counterfactual; enabling it under
+plain `test-internals` would let any downstream consumer construct a cycle
+in the linked chain and make `pop()` double-issue an index.
 
 ## Example
 

@@ -97,7 +97,13 @@ bench-scale-tool = "0.1"
 # so per this crate's minimality pitch ("allocation-free, no_std") it must
 # not ride the default build (an earlier revision compiled all of it
 # unconditionally into every published build). Off by
-# default. The loom build does NOT need this feature: under `--cfg loom` the
+# default. All of the above are read-only (no link-cell write). The
+# link-cell WRITE probe, `ArrayIndexStack::store_next_for_test`, is
+# deliberately NOT gated by this feature — it is `#[cfg(loom)]`-only, since
+# a safe write of this shape reachable under plain `test-internals` would
+# let any downstream consumer construct a cycle in the linked chain and
+# make `pop()` double-issue an index (Sol-codex run-9 review P1-1). The
+# loom build does NOT need this feature: under `--cfg loom` the
 # same counters compile (the loom suite's `pop_retry_count_for_test` /
 # `push_retry_count_for_test` read them), so the documented loom invocation
 # is unchanged. `tests/threaded_conservation.rs` compiles its activation-

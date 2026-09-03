@@ -1788,10 +1788,17 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// `tests/loom_aba.rs`'s tiny-tag counterfactual.
     ///
     /// `#[doc(hidden)]` per this crate's established test-only-forwarder
-    /// rationale (see [`raw_head`]). Gated: same `test-internals`/loom gate
-    /// as [`load_next_for_test`] — it does not exist in a default build.
+    /// rationale (see [`raw_head`]). Gated: `loom` only — unlike
+    /// [`load_next_for_test`], this is a raw link-cell WRITE that bypasses
+    /// the stack algorithm entirely; under plain `test-internals` (a
+    /// published, downstream-enabled Cargo feature) it would be a safe
+    /// `pub fn` reachable by any consumer, letting safe code construct a
+    /// cycle in the linked chain (e.g. double-issuing an index from
+    /// `pop()`). Its only real caller is `tests/loom_aba.rs`, which is
+    /// itself `#![cfg(loom)]`-gated, so `loom` alone is the correct and
+    /// sufficient gate.
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(loom)]
     pub fn store_next_for_test(&self, index: u32, next: u32) {
         self.links.store_next(index, next);
     }
