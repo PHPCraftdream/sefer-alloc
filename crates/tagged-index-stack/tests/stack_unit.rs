@@ -195,7 +195,7 @@ fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
     assert_eq!(t0, max_tag);
     // Compute the value one bump PAST TAG_MAX (2^48). `push` itself never
     // reaches this: its seal check returns `Err(TagExhausted)` the moment
-    // it observes `tag == TAG_MAX`, before ever calling `wrapping_add`.
+    // it observes `tag == TAG_MAX`, before ever bumping the tag.
     // This pins the checked pack's own rejection boundary in isolation,
     // independent of push.
     let bumped = max_tag.wrapping_add(1); // 2^48
@@ -321,7 +321,7 @@ fn empty_word_with_running_tag_reads_empty_through_tag_max() {
     // `2^TAG_BITS`. The CHECKED pack REJECTS that value. In production
     // `push` never computes it: its seal check returns
     // `Err(TagExhausted)` the moment the observed tag equals `TAG_MAX`,
-    // before ever calling `wrapping_add` — the tag never wraps. Deriving
+    // before ever bumping the tag — the tag never wraps. Deriving
     // the post-bump value through the real bump arithmetic and confirming
     // the checked pack refuses it is what remains testable at this
     // boundary — a literal repeated `0` in the sweep above cannot show

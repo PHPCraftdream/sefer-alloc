@@ -1298,8 +1298,8 @@ const TINY_SEAL_MARGIN: u64 = 3;
 /// entirely — to install the exact head word a COMPLETED
 /// `2^TAG_BITS`-push wrap-around would produce: `(q_a, p_stale_tag)`, i.e.
 /// EXACTLY the stale word P is still holding. This is deliberately NOT a
-/// literal `(index, 0)` raw CAS: a single real `wrapping_add(1)` past
-/// `TAG_MAX` truncates to tag 0 (see `TaggedIndex::pack_truncating`'s doc),
+/// literal `(index, 0)` raw CAS: a single real tag bump past `TAG_MAX`
+/// truncates to tag 0 (see `TaggedIndex::pack_truncating`'s doc),
 /// but reaching `p_stale_tag` again through real pushes needs an entire
 /// `2^TAG_BITS`-push lap — the actual arithmetic content of "wrap" is
 /// "returns to the exact starting tag after one full cycle", which is what
