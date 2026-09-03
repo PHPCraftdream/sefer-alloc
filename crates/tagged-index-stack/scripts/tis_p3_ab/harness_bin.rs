@@ -5,9 +5,10 @@
 //! shared `ArrayIndexStack<16, 256>` prefilled with `0..64`, started from a
 //! barrier under the same published-window protocol as
 //! `crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`
-//! (coordinator publishes the timed window after full rendezvous; workers
-//! warm up uncounted until the shared window opens; each worker counts only
-//! completed repushes inside the window).
+//! (coordinator publishes a FUTURE window anchor, `now + WARMUP`, after
+//! full rendezvous; workers warm up uncounted until that anchor arrives,
+//! entry-lateness-guarded; each worker counts only completed repushes
+//! inside the window).
 //!
 //! The driver spawns this binary once per (variant, sample) and reads ONE
 //! JSON line from stdout (the final line of output). CAS-retry counters come
@@ -49,9 +50,40 @@ const PREFILL: u32 = 64;
 /// bench's `DEADLINE_CHECK_INTERVAL`).
 const DEADLINE_CHECK_INTERVAL: u32 = 64;
 
-/// Fail fast at the argument-parsing boundary: a misconfigured run must exit
-/// with a message naming the parameter, the value received, and the valid
-/// range — not surface later as a mid-run panic that looks like a crate bug.
+/// Uncounted warm-up lead before the timed window opens: the coordinator
+/// publishes `timed_start = Instant::now() + WARMUP` (a FUTURE anchor) at
+/// full rendezvous, and workers run the workload uncounted until that
+/// anchor arrives — letting caches, branch predictors and the contention
+/// steady-state settle so the first counted iterations are representative
+/// rather than cold-start-shaped. Same value as the bench's `WARMUP`
+/// (`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`):
+/// settling depends on the workload — the identical pop-then-repush shape
+/// — not on the runtime-selected window length, so the fixed 200 ms is
+/// correct even for the runner's short `--window-ms` smoke runs.
+const WARMUP: Duration = Duration::from_millis(200);
+
+/// Upper bound on how late a worker may enter the counted window after it
+/// opens. Under the published-window protocol the coordinator computes the
+/// window only AFTER every worker has reached the ready barrier, so a
+/// worker's normal path from barrier release through warm-up to window
+/// entry is one clock-check granularity (microseconds). Entering more than
+/// `MAX_WINDOW_ENTRY_LATENESS` late means the thread was descheduled on
+/// that path: its count would silently miss that fraction of the window
+/// while the denominator still covers the full window — exactly the
+/// failure mode this harness must never paper over — so the sample aborts
+/// loudly instead of reporting a plausible-looking number. Same value as
+/// the bench's `MAX_WINDOW_ENTRY_LATENESS`: the guarded path's length is
+/// independent of `window_ms`.
+const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
+
+/// Fail fast on an unrecoverable harness error: a misconfigured run must
+/// exit with a message naming the parameter, the value received, and the
+/// valid range — not surface later as a mid-run panic that looks like a
+/// crate bug — and a worker detecting a published-window protocol
+/// violation (the entry-lateness guard in `main`) must kill the process
+/// loudly too: a worker `panic!` cannot propagate through the `barrier_done`
+/// rendezvous (a missing participant would deadlock every waiter), so a
+/// hard `std::process::exit` is the only loud exit a worker has.
 /// (Same input-validation discipline as
 /// `crates/tagged-index-stack/examples/backoff_per_call_latency.rs`.)
 fn die(msg: String) -> ! {
@@ -136,10 +168,13 @@ fn main() {
                     .expect("coordinator publishes the timed window before releasing barrier_window");
                 let deadline = timed_start + Duration::from_millis(window_ms);
 
-                // Uncounted warm-up until the SHARED window opens: caches,
-                // branch predictors and the contention steady-state settle
-                // before any op is counted, and every thread's counted
-                // window is the same one.
+                // Uncounted warm-up until the SHARED window opens:
+                // `timed_start` is a FUTURE anchor (`now + WARMUP`,
+                // published before `barrier_window` released us), so this
+                // loop genuinely runs the workload for ~WARMUP before any
+                // op is counted — caches, branch predictors and the
+                // contention steady-state settle — and every thread's
+                // counted window is the same one.
                 let mut since_check = 0u32;
                 loop {
                     if let Some(idx) = stack.pop() {
@@ -163,6 +198,29 @@ fn main() {
                             break;
                         }
                     }
+                }
+
+                // Entry-lateness guard (bench shape): under the
+                // published-window protocol the only way to reach here
+                // late is being descheduled on the path from the barrier
+                // rendezvous through warm-up to window entry, which would
+                // silently shorten this thread's count while the shared
+                // denominator still covers the full window. Aborts the
+                // process via `die()` instead of `panic!`: a panicked
+                // worker never arrives at `barrier_done`, and a Barrier
+                // has no poison mechanism — every other participant would
+                // hang forever.
+                let entered = Instant::now();
+                let entry_lateness = entered.duration_since(timed_start);
+                if entry_lateness > MAX_WINDOW_ENTRY_LATENESS {
+                    die(format!(
+                        "worker entered the counted window {entry_lateness:?} after it opened \
+                         (allowed up to {MAX_WINDOW_ENTRY_LATENESS:?}) -- the thread was stalled \
+                         on its way from the barrier rendezvous to the window opening, so part \
+                         of the shared window would silently be missing from its count while \
+                         the elapsed denominator still covers the full window; aborting loudly \
+                         instead of reporting a plausible-looking number"
+                    ));
                 }
 
                 // Counted window: pop-then-repush; only COMPLETED repushes
@@ -195,9 +253,15 @@ fn main() {
             });
         }
 
-        // Coordinator: rendezvous, publish the shared window, release.
+        // Coordinator: after every worker has announced readiness, the
+        // rendezvous itself provides the happens-before edge — the value
+        // set here after `barrier_ready.wait()` is visible to every worker
+        // after their `barrier_window.wait()`. The anchor is a FUTURE
+        // instant (`now + WARMUP`, bench shape): everyone released by
+        // `barrier_window` warms up uncounted until it arrives, instead of
+        // the window already being open at the workers' first clock check.
         barrier_ready.wait();
-        let timed_start = Instant::now();
+        let timed_start = Instant::now() + WARMUP;
         timed_start_cell
             .set(timed_start)
             .expect("timed window published exactly once");
