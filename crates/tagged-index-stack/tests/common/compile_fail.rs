@@ -1,5 +1,7 @@
 //! Shared child-cargo mechanics for the crate's compile-fail drivers
-//! (all seven tests now live in `tests/compile_fail.rs`).
+//! (all consolidated tests now live in `tests/compile_fail.rs` — count
+//! drifts as new hazards get pinned, re-derive via `grep -c '^#\[test\]'
+//! tests/compile_fail.rs` rather than trusting a number quoted here).
 //!
 //! Every compile-fail test used to duplicate the same ~55 lines of
 //! boilerplate: manifest-path resolution, the packaged-package skip guard,
@@ -8,7 +10,7 @@
 //! which error codes and message substrings each fixture must produce —
 //! stays in the individual tests in `tests/compile_fail.rs`.
 //!
-//! # Published-package behavior (shared by all seven fixtures)
+//! # Published-package behavior (shared by all consolidated fixtures)
 //!
 //! The fixture crates under `tests/compile_fail/` are git-checkout-only
 //! test infrastructure: each has its own `Cargo.toml`, so cargo's
@@ -118,8 +120,8 @@ pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Option<Outpu
 
 /// The shared failure-context string every assertion message in
 /// `tests/compile_fail.rs` embeds: fixture path, exit status, and both
-/// output streams. Byte-identical format to the string the seven pre-
-/// consolidation drivers each built by hand.
+/// output streams. Byte-identical format to the string each
+/// pre-consolidation driver built by hand.
 pub fn failure_context(manifest: &Path, output: &Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
