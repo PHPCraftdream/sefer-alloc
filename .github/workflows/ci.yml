@@ -781,7 +781,7 @@ jobs:
       # `--no-verify` avoids a redundant lib build: the publish --dry-run
       # above already verifies the packaged lib, and the extracted
       # `cargo test` below builds it again for the dev profile.
-      - name: run the packaged .crate test suite + build the packaged bench (P2-1/P4-7 regression gate)
+      - name: run the packaged .crate test suite (default + test-internals) + build the packaged bench (P2-1/P4-7/P3 regression gate)
         run: |
           cargo package -p tagged-index-stack --no-verify
           crate_file=$(ls target/package/tagged-index-stack-*.crate)
@@ -789,6 +789,18 @@ jobs:
           tar xzf "$crate_file" -C "$extract_dir"
           cd "$extract_dir"/tagged-index-stack-*/
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
+          # P3 (Sol-codex review run 10,
+          # docs/reviews/2026-09-03-084348-tagged-index-stack-review-Sol-codex-run-10.md):
+          # the plain `cargo test` above only proves the packaged .crate's
+          # DEFAULT-feature test surface survives `cargo package`'s file-
+          # inclusion rules. The workspace's whole-feature-row test
+          # (ci.yml, run-9's fix) already proves the SOURCE tree's
+          # test-internals-gated tests run, but nothing proved the gated
+          # test files themselves (e.g. tag_seal.rs) actually ship inside
+          # the .crate — a packaging change could silently drop them while
+          # this gate stayed green. Same extraction, same isolated target
+          # dir, re-run with the feature on.
+          CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test --features test-internals
           # P4-7 (round-11 @oh review): plain `cargo test` never builds the
           # bench target (`[[bench]] test = false`, and no --benches), so a
           # packaged-bench regression — a dev-dependency that does not survive
