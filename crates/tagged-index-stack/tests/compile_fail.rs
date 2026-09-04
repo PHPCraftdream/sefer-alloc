@@ -73,6 +73,100 @@
 mod common;
 
 use common::compile_fail::{build_fixture, failure_context, fixture_manifest};
+use std::path::PathBuf;
+use std::process::{Command, Output};
+
+/// Builds the loom-cfg fixture with Cargo's machine-readable diagnostics.
+fn build_fixture_with_json(fixture_dir: &str, rustflags: &str) -> Option<Output> {
+    let manifest = fixture_manifest(fixture_dir);
+    let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("Cargo.toml.orig")
+        .exists();
+    if !manifest.exists() {
+        assert!(
+            packaged,
+            "compile-fail fixture missing from a git checkout: {}",
+            manifest.display()
+        );
+        eprintln!(
+            "skipping: compile-fail fixture not present ({}) — fixture crates are \
+             git-checkout-only test infrastructure, excluded from the published .crate",
+            manifest.display()
+        );
+        return None;
+    }
+
+    let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(fixture_dir);
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    Some(
+        Command::new(&cargo)
+            .args([
+                "build",
+                "--offline",
+                "--message-format=json",
+                "--manifest-path",
+            ])
+            .arg(&manifest)
+            .env("CARGO_TARGET_DIR", child_target)
+            .env("RUSTFLAGS", rustflags)
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env("CARGO_TERM_COLOR", "never")
+            .output()
+            .expect("failed to spawn cargo for the compile-fail fixture"),
+    )
+}
+
+#[derive(Debug)]
+struct CargoErrorDiagnostic {
+    code: Option<String>,
+    code_is_null: bool,
+    message: String,
+    rendered: String,
+    spans: Vec<serde_json::Value>,
+}
+
+fn cargo_error_diagnostics(output: &Output) -> Vec<CargoErrorDiagnostic> {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.trim_start().starts_with('{'))
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .expect("Cargo JSON output contained invalid JSON")
+        })
+        .filter_map(|record| {
+            if record.get("reason").and_then(serde_json::Value::as_str) != Some("compiler-message")
+            {
+                return None;
+            }
+            let message = record.get("message")?.as_object()?;
+            if message.get("level").and_then(serde_json::Value::as_str) != Some("error") {
+                return None;
+            }
+            Some(CargoErrorDiagnostic {
+                code_is_null: message.get("code").is_some_and(serde_json::Value::is_null),
+                code: message
+                    .get("code")
+                    .and_then(|code| code.get("code"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                message: message.get("message")?.as_str()?.to_owned(),
+                rendered: message
+                    .get("rendered")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                spans: message.get("spans")?.as_array()?.clone(),
+            })
+        })
+        .collect()
+}
+
+fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
+    span.get("file_name")
+        .and_then(serde_json::Value::as_str)
+        .map(|path| path.replace('\\', "/"))
+        .is_some_and(|path| path.ends_with("/crates/tagged-index-stack/src/lib.rs"))
+}
 
 /// API-REMOVAL regression (Group C): the pre-redesign API's minimal
 /// two-`ArrayLinks`-backings + one-`StackHead` repro must NOT compile against
@@ -124,14 +218,12 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
          compile errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("no method named `push` "),
-        "expected `no method named `push`` on StackHead in the fixture's \
-         compile errors:\n{context}"
+        stderr.contains("StackHead") && stderr.contains("stack.push(&a, 1)"),
+        "expected E0599 at THIS fixture's `StackHead` push call:\n{context}"
     );
     assert!(
-        stderr.contains("no method named `pop` "),
-        "expected `no method named `pop`` on StackHead in the fixture's \
-         compile errors:\n{context}"
+        stderr.contains("StackHead") && stderr.contains("stack.pop(&b)"),
+        "expected E0599 at THIS fixture's `StackHead` pop call:\n{context}"
     );
 }
 
@@ -199,11 +291,10 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
          compile errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains(
-            "the trait bound `ArrayIndexStack<16, 64>: StackStorage<16>` is not satisfied"
-        ),
-        "expected the exact E0277 wording `the trait bound \\
-         `ArrayIndexStack<16, 64>: StackStorage<16>` is not satisfied`:\n{context}"
+        stderr.contains("ArrayIndexStack<16, 64>")
+            && stderr.contains("steal_head(&owned)")
+            && stderr.contains("&dyn StackStorage<16>"),
+        "expected E0277 at THIS fixture's generic and dyn `StackStorage` routes:\n{context}"
     );
     assert!(
         stderr.contains("E0599"),
@@ -211,9 +302,8 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
          errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("no method named `head`"),
-        "expected `no method named `head`` on ArrayIndexStack in the \
-         fixture's compile errors:\n{context}"
+        stderr.contains("owned.head()"),
+        "expected E0599 at THIS fixture's direct `owned.head()` call:\n{context}"
     );
 }
 
@@ -264,27 +354,10 @@ fn hook_call_requires_unsafe_block() {
          compile errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("is unsafe and requires unsafe function or block"),
-        "expected the exact E0133 wording `is unsafe and requires unsafe \
-         function or block`:\n{context}"
-    );
-    assert!(
-        stderr.contains("call to unsafe function `head`"),
-        "expected an E0133 naming the `head` hook:\n{context}"
-    );
-    assert!(
-        stderr.contains("call to unsafe function `load_next`"),
-        "expected an E0133 naming the `load_next` hook:\n{context}"
-    );
-    assert!(
-        stderr.contains("call to unsafe function `store_next`"),
-        "expected an E0133 naming the `store_next` hook:\n{context}"
-    );
-    assert!(
-        stderr.contains("pool.head()"),
-        "expected the fixture's own implementor binding (`pool`, a `Pool`) \
-         in the E0133 source snippets — the errors must come from THIS \
-         fixture's calls, not an unrelated site:\n{context}"
+        stderr.contains("pool.head()")
+            && stderr.contains("pool.load_next(2)")
+            && stderr.contains("pool.store_next(2, TAIL)"),
+        "expected E0133 at all THREE unsafe hook call sites in THIS fixture:\n{context}"
     );
 }
 
@@ -377,37 +450,46 @@ fn index_bits_seventeen_must_not_compile() {
 /// it silently cancels the override).
 #[test]
 fn loom_cfg_without_feature_fails_with_only_the_named_error() {
-    let Some(output) = build_fixture("loom_cfg_without_feature", Some("--cfg loom")) else {
+    let Some(output) = build_fixture_with_json("loom_cfg_without_feature", "--cfg loom") else {
         return; // packaged package: fixtures absent, skip.
     };
     let manifest = fixture_manifest("loom_cfg_without_feature");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
+    const EXPECTED_MESSAGE: &str =
+        "building with --cfg loom requires --features loom (loom is now an optional dependency)";
 
     assert!(
         !output.status.success(),
         "the `--cfg loom` WITHOUT `--features loom` fixture COMPILED — the \
          crate's fast-fail compile_error! regressed:\n{context}"
     );
-    assert!(
-        stderr.contains(
-            "building with --cfg loom requires --features loom \
-             (loom is now an optional dependency)"
-        ),
-        "expected the crate's exact named compile_error! text in the \
-         fixture's compile errors — it failed for some OTHER reason:\n\
-         {context}"
+    let errors = cargo_error_diagnostics(&output);
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected exactly one error-level diagnostic — the crate-owned \
+         compile_error! — and no secondary errors:\n{context}"
+    );
+    let error = &errors[0];
+    assert_eq!(
+        error.message, EXPECTED_MESSAGE,
+        "expected the exact crate-owned compile_error! message, not another \
+         failure mechanism:\n{context}"
     );
     assert!(
-        !stderr.contains("E0433"),
-        "expected NO secondary name-resolution error (E0433) alongside the \
-         named compile_error! (the implementation module must be fully \
-         cfg'd out under the invalid configuration):\n{context}"
+        error.code.is_none() && error.code_is_null,
+        "expected the named compile_error! diagnostic to have no rustc error \
+         code:\n{context}"
     );
     assert!(
-        !stderr.contains("cannot find module or crate `loom`"),
-        "expected NO `cannot find module or crate `loom`` error alongside \
-         the named compile_error!:\n{context}"
+        error.rendered.contains(EXPECTED_MESSAGE),
+        "expected the rendered compiler diagnostic to contain the named \
+         compile_error!:\n{context}"
+    );
+    assert!(
+        error.spans.iter().any(is_tagged_index_stack_source),
+        "expected the sole error's span to be in the crate-owned \
+         `tagged-index-stack/src/lib.rs`, not in the fixture or Cargo:\n{context}"
     );
 }
 
@@ -446,14 +528,9 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
          errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("the trait `StackStorage<16>` requires an `unsafe impl` declaration"),
-        "expected the exact E0200 wording `the trait `StackStorage<16>` \\
-         requires an `unsafe impl` declaration`:\n{context}"
-    );
-    assert!(
-        stderr.contains("PlainStorage"),
-        "expected the error to name THIS impl site (`PlainStorage`), not \
-         some unrelated error:\n{context}"
+        stderr.contains("StackStorage<16>")
+            && stderr.contains("impl StackStorage<16> for PlainStorage"),
+        "expected E0200 at THIS `PlainStorage` impl site:\n{context}"
     );
 }
 
@@ -505,29 +582,7 @@ fn push_index_requires_unsafe_block() {
          compile errors — it failed for some OTHER reason:\n{context}"
     );
     assert!(
-        stderr.contains("is unsafe and requires unsafe function or block"),
-        "expected the exact E0133 wording `is unsafe and requires unsafe \
-         function or block`:\n{context}"
-    );
-    assert!(
-        stderr.contains("call to unsafe function `push_index`"),
-        "expected an E0133 naming the `push_index` entry point:\n{context}"
-    );
-    assert!(
-        stderr.contains("call to unsafe function `ArrayIndexStack::<B, N>::push`"),
-        "expected an E0133 naming the owned type's `push` entry point (rustc \
-         qualifies inherent unsafe methods as `Type::push`):\n{context}"
-    );
-    assert!(
-        stderr.contains("pool.push_index(0)"),
-        "expected the fixture's own implementor binding (`pool`, a `Pool`) \
-         in the E0133 source snippets — the errors must come from THIS fixture's \
-         calls, not an unrelated site:\n{context}"
-    );
-    assert!(
-        stderr.contains("owned.push(0)"),
-        "expected the fixture's own owned-type binding (`owned`) in the \
-         E0133 source snippets — the errors must come from THIS fixture's \
-         calls, not an unrelated site:\n{context}"
+        stderr.contains("pool.push_index(0)") && stderr.contains("owned.push(0)"),
+        "expected E0133 at BOTH unsafe push call sites in THIS fixture:\n{context}"
     );
 }
