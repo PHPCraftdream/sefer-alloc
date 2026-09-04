@@ -334,6 +334,18 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
              push_index_impl's own >= INDEX_MASK guard panics upstream — \
              so push callers are strictly < INDEX_MASK"
         );
+        debug_assert!(
+            tag <= Self::TAG_MAX,
+            "pack_truncating: tag out of range — must be <= TAG_MAX. \
+             All callers prove `tag <= TAG_MAX` before calling: empty() \
+             passes tag 0, push_index_impl's seal check refuses \
+             (Err(TagExhausted)) BEFORE ever bumping when the observed \
+             tag is already TAG_MAX — so the bumped tag is <= TAG_MAX — \
+             and pop repacks an observed, already-valid tag. An \
+             over-wide tag's high bits would be silently discarded by \
+             the `(tag << INDEX_BITS)` shift below, yielding a \
+             valid-looking word instead of a loud failure"
+        );
         (tag << INDEX_BITS) | (index as u64)
     }
 
