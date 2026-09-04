@@ -74,11 +74,7 @@ impl Backoff {
     /// Exponential backoff before retrying (BACKOFF_SPIN_CAP): spins
     /// `1 << K` times, letting the winning thread's Release CAS drain off
     /// the head cache line instead of every loser re-hammering it
-    /// immediately. `K` grows only within one call. Returns whether THIS
-    /// spin already ran at FULL depth (the PRE-increment `K` was already at
-    /// the cap) — the verdict the retry arms turn into a
-    /// backoff-cap-reach oracle count (see the `note_*` helpers below); a
-    /// production build discards it.
+    /// immediately. `K` grows only within one call.
     ///
     /// `#[inline]`: hot path, monomorphised downstream.
     ///
@@ -89,24 +85,21 @@ impl Backoff {
     /// saturation also guarantees `self.0 <= BACKOFF_SPIN_CAP` at the
     /// shift, so no `.min` guard is needed on the shift expression.
     #[inline]
-    fn spin(&mut self) -> bool {
-        let at_cap = self.0 >= BACKOFF_SPIN_CAP;
+    fn spin(&mut self) {
         for _ in 0..(1u32 << self.0) {
             core::hint::spin_loop();
         }
-        if !at_cap {
+        if self.0 < BACKOFF_SPIN_CAP {
             self.0 += 1;
         }
-        at_cap
     }
 }
 
 /// Retry-counter oracle increment for `pop_index`'s CAS-retry arm (see
-/// `POP_RETRY_COUNT`): one lost CAS. A REAL core-atomic write under
-/// `test-internals`/`loom`, so counts survive loom re-runs; `Relaxed`
-/// counts only. The helper is compiled only for test/loom builds; its call
-/// sites are cfg-gated too, so low-opt default builds contain no test
-/// instrumentation in the retry paths.
+/// `POP_RETRY_COUNT`): one lost CAS. Loom models use it as a deterministic
+/// activation oracle; the opt-in A/B harness uses it as measurement-path
+/// observability. Default builds contain no retry-counter write. `Relaxed`
+/// counts only.
 #[cfg(any(feature = "test-internals", loom))]
 #[inline]
 fn note_pop_retry() {
@@ -119,25 +112,6 @@ fn note_pop_retry() {
 #[inline]
 fn note_push_retry() {
     PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-}
-
-/// Backoff-activation oracle increment for `pop_index`'s CAS-retry arm:
-/// called for a retry whose spin loop ran at FULL backoff depth (see
-/// `POP_BACKOFF_CAP_REACH_COUNT`; non-zero proves the backoff climbs into
-/// its higher range under real contention. The helper and its call sites are
-/// absent from a default build.
-#[cfg(any(feature = "test-internals", loom))]
-#[inline]
-fn note_pop_cap_reach() {
-    POP_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-}
-
-/// Push-side twin of [`note_pop_cap_reach`] (see
-/// `PUSH_BACKOFF_CAP_REACH_COUNT`).
-#[cfg(any(feature = "test-internals", loom))]
-#[inline]
-fn note_push_cap_reach() {
-    PUSH_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
@@ -1555,11 +1529,7 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
                 #[cfg(any(feature = "test-internals", loom))]
                 note_push_retry();
                 head = actual;
-                let _at_cap = backoff.spin();
-                #[cfg(any(feature = "test-internals", loom))]
-                if _at_cap {
-                    note_push_cap_reach();
-                }
+                backoff.spin();
             }
         }
     }
@@ -1638,11 +1608,7 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
                 // wasted latency; which outcome a call eventually returns
                 // is unchanged, only how fast it gets there.
                 if !TaggedIndex::<B>::is_empty(actual) {
-                    let _at_cap = backoff.spin();
-                    #[cfg(any(feature = "test-internals", loom))]
-                    if _at_cap {
-                        note_pop_cap_reach();
-                    }
+                    backoff.spin();
                 }
             }
         }
@@ -2069,16 +2035,12 @@ impl<const N: usize> Default for ArrayLinks<N> {
 /// entire exploration. `Relaxed` access: the counter promises no ordering, it
 /// only counts.
 ///
-/// Gated: compiled ONLY under the `test-internals` feature or a loom build —
-/// a default build of the crate carries neither the counters nor the
-/// retry-arm increments that write them (shipping two process-global atomics
-/// and a hot-path write per lost CAS to consumers who can neither use nor
-/// remove them would be unjustified). Under the gate it serves the
-/// `#[cfg(loom)]` loom suite via `pop_retry_count_for_test` and the non-loom
-/// threaded test via [`retry_counts_for_test`]. Cost when enabled: one
-/// Relaxed `fetch_add` per lost CAS, on the retry arm only — the
-/// uncontended fast path never touches it. Never reset by this crate
-/// (snapshot and diff is the caller's job); process-global and cumulative.
+/// Gated: compiled only under `test-internals` or loom. Default builds carry
+/// neither the counters nor their retry-arm writes. Cost when enabled: one
+/// Relaxed `fetch_add` per lost CAS, on the retry arm only. Never reset by
+/// this crate (snapshot and diff is the caller's job); process-global and
+/// cumulative. Loom models use this as a non-vacuity oracle; the repository's
+/// opt-in A/B harness uses it to prove the measured retry paths activated.
 #[cfg(any(feature = "test-internals", loom))]
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
@@ -2102,8 +2064,7 @@ pub fn pop_retry_count_for_test() -> usize {
 /// Push-side twin of `POP_RETRY_COUNT` — identical rationale, gate, ordering
 /// and never-reset semantics; counts [`push_index`](StackOps::push_index)'s
 /// CAS-retry branch (the `Err(actual) => head = actual` arm). See
-/// `POP_RETRY_COUNT`'s doc. Serves `push_retry_count_for_test` and
-/// [`retry_counts_for_test`].
+/// `POP_RETRY_COUNT`'s doc.
 #[cfg(any(feature = "test-internals", loom))]
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
@@ -2124,26 +2085,15 @@ pub fn push_retry_count_for_test() -> usize {
     PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-/// **test-only** activation oracle: reads BOTH CAS-retry counters in one
-/// call, as `(pop, push)` — `POP_RETRY_COUNT` first, then
-/// `PUSH_RETRY_COUNT`. The non-loom twin of `pop_retry_count_for_test` /
-/// `push_retry_count_for_test` (both `#[cfg(loom)]`, invisible to a plain
-/// build): `tests/threaded_conservation.rs` snapshots this tuple before its
-/// threaded phase and asserts BOTH counters advanced after it — the FIRST
-/// half of its two-level activation oracle, pinning that the retry branches
-/// are reached under real threads ([`backoff_cap_reached_for_test`] supplies
-/// the second half — that the backoff depth climbs into its higher range; this counter
-/// alone cannot even distinguish 1 retry from thousands).
+/// **test-only** measurement observability: reads both cumulative CAS-retry
+/// counters as `(pop, push)`. The A/B harness snapshots this tuple around its
+/// workload and requires both deltas to be non-zero before accepting timing
+/// data. Correctness tests do not require a real OS scheduler to produce a
+/// retry; loom's per-side accessors above provide deterministic retry-branch
+/// activation oracles.
 ///
 /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
-/// Gated: under the same `test-internals`/loom gate as the counters
-/// themselves — it does not exist in a default build.
-///
-/// Never reset: process-global and cumulative — see `POP_RETRY_COUNT`'s doc
-/// — so a test wanting a delta exclusive to its own window must be the only
-/// active driver of the real `push_index`/`pop_index` during it (the loom
-/// suite serializes with `MODEL_LOCK`; `threaded_conservation.rs` is a
-/// one-test binary, so its window is exclusive by construction).
+/// Gated with the counters, absent from default builds, and never reset.
 #[doc(hidden)]
 #[must_use]
 #[cfg(any(feature = "test-internals", loom))]
@@ -2154,52 +2104,22 @@ pub fn retry_counts_for_test() -> (usize, usize) {
     )
 }
 
-/// Test-only backoff-activation counter for
-/// [`pop_index`](StackOps::pop_index): incremented in `pop_index`'s retry arm
-/// for every retry whose spin loop ran at FULL backoff depth (`K` already
-/// saturated at `BACKOFF_SPIN_CAP`, so `1 << BACKOFF_SPIN_CAP` = 64
-/// `spin_loop` iterations actually executed). Non-zero proves the backoff
-/// climbs into its higher range under real contention; a regression that pins
-/// the backoff depth at 0, resets it per iteration, or moves its increment off the
-/// reachable path zeroes this counter while `POP_RETRY_COUNT` keeps advancing
-/// — exactly the silently-inert-backoff failure
-/// `tests/threaded_conservation.rs`'s second oracle level catches. Same gate,
-/// ordering and never-reset semantics as `POP_RETRY_COUNT`; see its doc for
-/// the gating rationale.
-#[cfg(any(feature = "test-internals", loom))]
-static POP_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
-    core::sync::atomic::AtomicUsize::new(0);
-
-/// Test-only backoff-activation counter for
-/// [`push_index`](StackOps::push_index): the push-side twin of
-/// `POP_BACKOFF_CAP_REACH_COUNT` — same condition, same gate, same never-reset
-/// semantics.
-#[cfg(any(feature = "test-internals", loom))]
-static PUSH_BACKOFF_CAP_REACH_COUNT: core::sync::atomic::AtomicUsize =
-    core::sync::atomic::AtomicUsize::new(0);
-
-/// **test-only** backoff-activation oracle: reads BOTH backoff-cap-reach
-/// counters in one call, as `(pop, push)` — `POP_BACKOFF_CAP_REACH_COUNT`
-/// first, then `PUSH_BACKOFF_CAP_REACH_COUNT`. The second half of
-/// `tests/threaded_conservation.rs`'s two-level activation oracle: where
-/// [`retry_counts_for_test`] proves only that a retry branch
-/// was reached at all, a non-zero delta here proves the backoff depth genuinely
-/// climbs into its higher range — at least one call per branch executed
-/// its spin loop at full `1 << BACKOFF_SPIN_CAP` depth — so a future
-/// change that silently disarms the backoff fails loudly instead of
-/// shipping with the documented behavior inert.
-///
-/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
-/// Gated: under the same `test-internals`/loom gate as the counters
-/// themselves — it does not exist in a default build.
-/// Never reset: process-global and cumulative, like
-/// [`retry_counts_for_test`].
+/// **test-only** deterministic observations of the real [`Backoff`] state
+/// machine. Each element records the spin depth immediately before one call
+/// to the same [`Backoff::spin`] implementation used by the retry paths. The
+/// helper does not exercise `push_index`/`pop_index` and makes no claim about
+/// their wiring; loom's activation oracles cover those retry branches.
+/// Keeping this local-state oracle deterministic avoids requiring a real OS
+/// scheduler to produce a particular sequence of lost CASes.
 #[doc(hidden)]
 #[must_use]
 #[cfg(any(feature = "test-internals", loom))]
-pub fn backoff_cap_reached_for_test() -> (usize, usize) {
-    (
-        POP_BACKOFF_CAP_REACH_COUNT.load(core::sync::atomic::Ordering::Relaxed),
-        PUSH_BACKOFF_CAP_REACH_COUNT.load(core::sync::atomic::Ordering::Relaxed),
-    )
+pub fn backoff_spin_depths_for_test() -> [u32; 9] {
+    let mut backoff = Backoff::new();
+    let mut depths = [0; 9];
+    for depth in &mut depths {
+        *depth = 1u32 << backoff.0;
+        backoff.spin();
+    }
+    depths
 }

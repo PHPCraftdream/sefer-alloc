@@ -19,7 +19,7 @@ First release. Everything below is new in this version; nothing has shipped befo
 - **`ArrayLinks<N>`** — the public links building block (`Acquire` `load_next` / `Release` `store_next`) that `ArrayIndexStack` composes.
 - **`pub const TAIL: u32`** — the link end-of-chain sentinel, part of the `StackStorage` contract.
 - **`Default` and `Debug`** for `StackHead`, `ArrayIndexStack`, and `ArrayLinks`.
-- **Off-by-default test instrumentation** — `#[doc(hidden)]` probes (`raw_head`, `cas_head_for_test`, `load_next_for_test`, `retry_counts_for_test`, `backoff_cap_reached_for_test`, ...) compiled only under the `test-internals` feature or a `--cfg loom` build, carrying no semver guarantee and absent from default builds entirely.
+- **Off-by-default test instrumentation** — `#[doc(hidden)]` probes (`raw_head`, `cas_head_for_test`, `load_next_for_test`, `retry_counts_for_test`, loom retry-counter accessors, `backoff_spin_depths_for_test`, ...) compiled only under the `test-internals` feature or a `--cfg loom` build, carrying no semver guarantee and absent from default builds entirely.
 
 ### Notes
 

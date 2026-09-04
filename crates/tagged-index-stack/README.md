@@ -282,8 +282,9 @@ deliberately not re-quoted here so they cannot drift from it.
 ## Notes
 
 This crate's test-only probes (`raw_head`, `load_next_for_test`,
-`store_next_for_test`, `cas_head_for_test`, `retry_counts_for_test`,
-`backoff_cap_reached_for_test`) are feature- or cfg-gated and
+`store_next_for_test`, `cas_head_for_test`, `retry_counts_for_test`, loom
+retry-counter accessors, and `backoff_spin_depths_for_test`) are feature- or
+cfg-gated and
 `#[doc(hidden)]`: under default features none of them exists at all (docs.rs
 included). The `test-internals` feature is an explicitly unstable,
 repository-test escape hatch: its probes may be changed or removed without a

@@ -1786,7 +1786,7 @@ jobs:
     # debug/release tests where cross-builds do not build test targets.
     # `tagged-index-stack` has default and release rows plus a release
     # `test-internals` row. The latter runs the whole crate test set so the
-    # retry/backoff activation oracle, white-box probes, and terminal-seal
+    # deterministic backoff oracle, white-box probes, and terminal-seal
     # tests remain covered without a per-file allowlist; its matching clippy
     # row is below. The root feature matrix remains in the `test` job because
     # those feature flags are root-crate-scoped.
@@ -1810,7 +1810,7 @@ jobs:
       # `test-internals` enables the crate's instrumentation and white-box
       # tests, which are compiled out of both default-feature rows. Run every
       # test target rather than naming files so new gated tests are included;
-      # the retry/backoff activation and terminal-seal assertions are
+      # the deterministic backoff and terminal-seal assertions are
       # load-bearing. Cargo rejects an unknown feature, so this feature gate
       # cannot silently become a no-op.
       - run: cargo test -p tagged-index-stack --release --features test-internals --no-fail-fast

@@ -56,10 +56,11 @@ bench-scale-tool = "0.1"
 
 [features]
 # Explicitly unstable repository-test escape hatch; not part of the stable
-# library API or a semver commitment. It gates the CAS-retry/backoff
-# activation counters, their `#[doc(hidden)]` accessors, and the test-only raw
-# probes (all read-only) — instrumentation with no production caller, off by
-# default. The loom build compiles the same counters without this feature.
+# library API or a semver commitment. It gates the CAS-retry counters used by
+# the A/B harness, the deterministic backoff state-machine oracle, and the
+# test-only raw probes (all read-only) — instrumentation with no production
+# caller, off by default. Loom builds also compile the retry counters so their
+# models can assert retry-path activation.
 # The link-cell WRITE probe
 # `store_next_for_test` is deliberately NOT gated here — it is
 # `#[cfg(loom)]`-only, since a safe write probe would let a consumer corrupt
