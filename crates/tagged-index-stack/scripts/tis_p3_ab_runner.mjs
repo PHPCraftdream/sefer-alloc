@@ -41,9 +41,7 @@
 // build-check/ and build-check-codegen-wrapper/; no docs/perf output at
 // all). Wallclock and codegen
 // modes DO write into docs/perf/ — a TRACKED directory — whenever they are
-// run to (re)generate committed evidence (raw logs + summary CSVs; run-17
-// review P3-2 corrected the old wording here, which claimed the script
-// "never modifies any tracked repository file" while docs/perf/ is tracked).
+// run to (re)generate committed evidence (raw logs + summary CSVs).
 // That artifact writing is those modes' documented purpose, not a defect —
 // but the writes-nothing-tracked property belongs to build-check only.
 // The former --out-dir option was REMOVED (run-17 review P1-1): it resolved
@@ -803,8 +801,8 @@ function modeCodegen(args, header) {
           const b = variants.base.funcs[key].instrCount;
           if (b > 0) {
             // Plain rounded computation, not a checked oracle (run-19
-            // review P3-1): the assert that stood here recomputed this exact
-            // expression and compared it to itself, which can never fail.
+            // review P3-1): an assert recomputing this exact expression and
+            // comparing it to itself could never fail.
             const ratio = Math.round((f.instrCount / b) * 1000) / 1000;
             deltaPct = String(Math.round((ratio - 1) * 1000) / 10);
           }
@@ -979,8 +977,8 @@ function modeWallclock(args, header) {
       crates[variant].popRetries += rec.pop_retries;
     }
   }
-  // Contended-workload oracle, per variant: same assert as before, moved out
-  // of the old per-variant block loop that the P2-3 rotation dissolved.
+  // Contended-workload oracle, per variant: the retries were accumulated
+  // across all samples in the rotation loop above.
   for (const variant of VARIANTS) {
     const retries = crates[variant].pushRetries + crates[variant].popRetries;
     assert(
@@ -998,10 +996,10 @@ function modeWallclock(args, header) {
   const med = Object.fromEntries(VARIANTS.map((v) => [v, median(crates[v].samples.map((s) => s.ops_per_sec))]));
   function ratioOf(v) {
     // Plain rounded computation, not a checked oracle (run-19 review P3-1):
-    // the assert that stood here recomputed this exact expression and
-    // compared it to itself, which can never fail. Ratio VERIFICATION lives
-    // in --mode summary, where the re-derived ratio is checked against the
-    // leg's own recorded ratio_vs_base SUMMARY cell.
+    // an assert recomputing this exact expression and comparing it to
+    // itself could never fail. Ratio VERIFICATION lives in --mode summary,
+    // where the re-derived ratio is checked against the leg's own recorded
+    // ratio_vs_base SUMMARY cell.
     return Math.round((med[v] / med.base) * 1000) / 1000;
   }
 
@@ -1246,7 +1244,9 @@ function modeSummary() {
 // unexpected exception — replacing the three former success-only rmSync
 // sites inside the mode functions. --keep-scratch opts out deliberately
 // (inspect a failed run's scratch tree); the default must never leak.
-// The finally block is also the ONLY place reporting the scratch-tree lifecycle (run-20 review P4-1): the mode functions no longer print a speculative "removed on exit" claim before cleanup runs — the outcome is reported here, after it actually happened.
+// The finally block is also the ONLY place reporting the scratch-tree
+// lifecycle (run-20 review P4-1): the outcome is reported here, after it
+// actually happened — never speculatively, before cleanup runs.
 let args = null;
 try {
   args = parseArgs(process.argv.slice(2));
