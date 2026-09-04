@@ -829,7 +829,7 @@ function modeCodegen(args, header) {
   );
 
   console.log(mdText);
-  console.log(`codegen mode OK: target=${args.target} scratch=${root} (scratch tree removed on exit; artifacts in docs/perf/)`);
+  console.log(`codegen mode OK: target=${args.target} scratch=${root} (artifacts in docs/perf/)`);
 }
 
 // ── Wallclock mode ──────────────────────────────────────────────────────────
@@ -1035,7 +1035,7 @@ function modeWallclock(args, header) {
   );
 
   console.log(mdText);
-  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (scratch tree removed on exit; artifacts in docs/perf/)`);
+  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (artifacts in docs/perf/)`);
 }
 
 // ── Build-check mode ────────────────────────────────────────────────────────
@@ -1114,7 +1114,7 @@ function modeBuildCheck() {
     process.stderr.write(cgBuild.stderr ?? '');
     fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
   }
-  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot} (scratch tree removed on exit)`);
+  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot}`);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────────────
@@ -1246,6 +1246,7 @@ function modeSummary() {
 // unexpected exception — replacing the three former success-only rmSync
 // sites inside the mode functions. --keep-scratch opts out deliberately
 // (inspect a failed run's scratch tree); the default must never leak.
+// The finally block is also the ONLY place reporting the scratch-tree lifecycle (run-20 review P4-1): the mode functions no longer print a speculative "removed on exit" claim before cleanup runs — the outcome is reported here, after it actually happened.
 let args = null;
 try {
   args = parseArgs(process.argv.slice(2));
@@ -1268,6 +1269,7 @@ try {
       console.error(`tis_p3_ab_runner: --keep-scratch: scratch tree left in place for inspection: ${activeScratchBase}`);
     } else {
       fs.rmSync(activeScratchBase, { recursive: true, force: true });
+      console.error(`tis_p3_ab_runner: scratch tree removed: ${activeScratchBase}`);
     }
   }
 }
