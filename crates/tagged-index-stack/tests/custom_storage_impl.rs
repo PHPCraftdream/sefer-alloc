@@ -3,8 +3,8 @@
 //! design point), and the crate blanket-implements [`StackOps`] for every
 //! `S: StackStorage<B> + ?Sized` — precisely so `&dyn StackStorage` works.
 //! Every other test in this crate exercises only [`ArrayIndexStack`] (the
-//! exceptions are not working implementors: `stack_unit.rs`'s
-//! `AlwaysInvalidStorage` deliberately violates the contract to fire
+//! exceptions are not working implementors: this file's own
+//! `AlwaysInvalidStorage` below deliberately violates the contract to fire
 //! [`pop_index`](StackOps::pop_index)'s clause-4 guard, and
 //! `tests/compile_fail/unsafe_impl_required/` deliberately fails to
 //! compile), so this file is where those claims are exercised by a real,
@@ -34,7 +34,7 @@
 //! value.
 //!
 //! Since the 2026-09-01 `unsafe trait` conversion, EVERY implementor in
-//! this file carries an `unsafe impl` — seven types, eight impl sites
+//! this file carries an `unsafe impl` — eight types, nine impl sites
 //! (`DualWidth` implements the trait at both widths) — and NO test was
 //! removed by the conversion: every shape this file demonstrated remained
 //! expressible, so each test kept pinning its shape, now UNDER AN
@@ -66,18 +66,19 @@
 //! (clause 2; guard fires), `head_moved_into_fresh_links_leaks_and_then_panics`
 //! (clause 1's temporal half; guard fires one index late), and
 //! `one_value_two_bindings_shared_backing_still_double_issue` (clause 3 at
-//! both widths; silent).
+//! both widths; silent), and `pop_rule_4_guard_fires_on_invalid_next_from_backing`
+//! (clause 4 via `AlwaysInvalidStorage`; guard fires).
 //!
-//! `stack_unit.rs`'s `AlwaysInvalidStorage` (clause 4, guard fires) and
-//! `double_push_of_current_head_panics_on_first_pop` (no custom implementor
-//! — a caller-contract violation through [`ArrayIndexStack`]'s inherent
-//! API) complete the crate-level picture there.
+//! `double_push_of_current_head_panics_on_first_pop` in `tests/stack_unit.rs`
+//! (no custom implementor — a caller-contract violation through
+//! [`ArrayIndexStack`]'s inherent API) completes the crate-level picture
+//! over there.
 
 #![cfg(not(loom))]
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tagged_index_stack::{ArrayLinks, StackHead, StackOps, StackStorage, TAIL};
+use tagged_index_stack::{ArrayLinks, StackHead, StackOps, StackStorage, TaggedIndex, TAIL};
 
 /// A `Vec`-backed [`StackStorage`] implementation, deliberately NOT
 /// [`ArrayLinks`]: heap-allocated rather than an owned array, otherwise
@@ -652,4 +653,63 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
          ONE implementor value the whole time; no panic fired because the \
          shared chain stays acyclic"
     );
+}
+
+/// [`pop_index`]'s clause-4 guard fires when a [`StackStorage`] implementor
+/// returns a `next` value that is neither `TAIL` nor a valid index — a
+/// caller-contract violation `pop_index` cannot otherwise detect (see the
+/// crate docs' "Storage requirement" section on `StackStorage`). A tiny
+/// custom implementor whose `load_next` always answers `INDEX_MASK` (a value
+/// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
+///
+/// Release-active: promoted from `debug_assert!` to an
+/// unconditional `#[cold]` panic helper mirroring
+/// [`push_index`]'s own `index < INDEX_MASK` guard, once an out-of-tree A/B
+/// measured the release-active cost at ≈ 0 ns (see CHANGELOG.md). Unlike its
+/// predecessor, this test needs no `#[cfg(debug_assertions)]` gate: the
+/// panic now fires identically under `cargo test -p tagged-index-stack
+/// --release` (the configuration `.github/workflows/ci.yml`'s `test
+/// workspace members` job actually uses for this crate) and under the
+/// dev/test profile default.
+struct AlwaysInvalidStorage {
+    head: StackHead<16>,
+}
+
+// SAFETY: DELIBERATE contract violation — clause 4 (load_next must return
+// only TAIL or a currently-valid index): this implementor deliberately
+// answers INDEX_MASK, an out-of-range value, to fire pop_index's clause-4
+// guard.
+unsafe impl StackStorage<16> for AlwaysInvalidStorage {
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    unsafe fn load_next(&self, _index: u32) -> u32 {
+        // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
+        // exactly the shape pop_index's clause-4 guard exists to catch.
+        TaggedIndex::<16>::INDEX_MASK as u32
+    }
+
+    unsafe fn store_next(&self, _index: u32, _next: u32) {}
+}
+
+#[test]
+#[should_panic(expected = "neither TAIL")]
+fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
+    let storage = AlwaysInvalidStorage {
+        head: StackHead::new(),
+    };
+    // SAFETY: DELIBERATE double contract violation, both intentional to this
+    // fixture: (1) clause 4 (valid answers) — load_next always answers
+    // INDEX_MASK, neither TAIL nor a valid index, which is the guard this
+    // test targets; (2) clause 6 (declared link domain) — this storage
+    // declares NO domain at all (no backing cells; store_next is a no-op),
+    // and an UNDECLARED domain is not proof push_index's clause-1 (link
+    // domain) is discharged — clause 6 requires the implementor to define
+    // and document a domain it owns a dedicated cell for, so the absence of
+    // one is a second, separate violation this fixture also commits, not a
+    // vacuous non-issue. index 0 has never been pushed through this
+    // binding, so push_index's clause-2 (liveness) alone is honestly held.
+    unsafe { storage.push_index(0) }.expect("fresh head has tag budget"); // real push, so the head is non-empty
+    let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }

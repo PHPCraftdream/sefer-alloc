@@ -1,7 +1,10 @@
-//! Consolidated compile-fail driver for `tagged-index-stack`: eight
-//! negative-regression tests, each building a deliberately-broken fixture
-//! crate under `tests/compile_fail/<fixture>/` in an out-of-process
-//! `cargo build` and asserting it fails with SPECIFIC errors. The shared
+//! Consolidated compile-fail driver for `tagged-index-stack`: one
+//! negative-regression test per fixture, each building a
+//! deliberately-broken fixture crate under `tests/compile_fail/<fixture>/`
+//! in an out-of-process `cargo build` and asserting it fails with SPECIFIC
+//! errors (the test count is deliberately not quoted here — it drifts as
+//! new hazards get pinned; `tests/common/compile_fail.rs`'s header gives
+//! the re-derivation command). The shared
 //! child-cargo mechanics (manifest resolution, packaged-package skip
 //! guard, spawn, diagnostic context string) live in
 //! `tests/common/compile_fail.rs`; each `#[test]` below keeps only its own
@@ -59,13 +62,12 @@
 //! make a fixture fail for the WRONG reason: the crate's own `--cfg
 //! loom`-without-feature `compile_error!` (see `src/lib.rs`) fires before
 //! any method resolution or bounds check, so assertions would pass even if
-//! the regression under test had resurfaced. For seven of the eight fixtures
-//! the child env therefore REMOVES `RUSTFLAGS` (and
+//! the regression under test had resurfaced. Every fixture EXCEPT the
+//! loom-cfg fixture below has its child env REMOVE `RUSTFLAGS` (and
 //! `CARGO_ENCODED_RUSTFLAGS`, which cargo prefers) so the fixture fails for
-//! the RIGHT reason. The eighth — the loom-cfg fixture below — is the
-//! INVERSE: the `--cfg loom` configuration is the whole point, so its child
-//! env SETS `RUSTFLAGS` to the literal `--cfg loom` (still removing
-//! `CARGO_ENCODED_RUSTFLAGS`).
+//! the RIGHT reason. The loom-cfg fixture is the INVERSE: the `--cfg loom`
+//! configuration is the whole point, so its child env SETS `RUSTFLAGS` to
+//! the literal `--cfg loom` (still removing `CARGO_ENCODED_RUSTFLAGS`).
 #![cfg(not(loom))]
 
 mod common;
@@ -82,9 +84,8 @@ use common::compile_fail::{build_fixture, failure_context, fixture_manifest};
 /// mean that old API resurfaced.
 ///
 /// The hazard CLASS itself — one head, two backings — is NOT closed by this
-/// test and is NOT closed by the type system: since the 2026-09-01 `unsafe
-/// trait` conversion (`unsafe trait StackStorage`) it is re-expressible
-/// through a custom `unsafe impl` that asserts the trait's `# Safety`
+/// test and is NOT closed by the type system: it is re-expressible through
+/// a custom `unsafe impl` that asserts the trait's `# Safety`
 /// contract and then violates it (inventory shape 2; pinned at runtime by
 /// `two_implementor_values_sharing_one_head_still_double_issue` in
 /// `tests/custom_storage_impl.rs`). The structural closure that DOES exist —
@@ -92,12 +93,9 @@ use common::compile_fail::{build_fixture, failure_context, fixture_manifest};
 /// competing binding around its head — is proven by the Group A compile-fail
 /// oracle `competing_binding_around_array_index_stack_head_must_not_compile`
 /// below (fixture under `tests/compile_fail/array_index_stack_head/`); go
-/// THERE for the real safety-invariant proof. (Earlier drafts of this doc
-/// called the E0599 here "the structural fix itself" and the repro
-/// "UNEXPRESSIBLE" — an overclaim that misled later rounds of this campaign's
-/// own review history; see
-/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` for
-/// what was actually decided and why.)
+/// THERE for the real safety-invariant proof. The storage-binding closure's
+/// design rationale (including the Group A/B/C taxonomy used in this file):
+/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`.
 ///
 /// The fixture at `tests/compile_fail/two_backings/src/main.rs` is exactly
 /// the old repro, adapted to the post-redesign type names: two independent
@@ -116,7 +114,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 
     assert!(
         !output.status.success(),
-        "the P1-1 two-backings repro COMPILED — the old per-call API (external \
+        "the two-backings repro COMPILED — the old per-call API (external \
          push/pop with a caller-supplied backing) has resurfaced; `StackHead` \
          must have no push/pop:\n{context}"
     );
@@ -225,13 +223,10 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 /// block must NOT compile, with **E0133** ("call to unsafe function `X` is
 /// unsafe and requires unsafe function or block").
 ///
-/// Supersession history: audit finding P2-1's caller-side forgery was first
-/// closed by the `&Hook` witness — since removed, because fabricating a
-/// witness value was not an unsafe operation, so that closure was prose-only
-/// and unenforceable; the `unsafe fn` design replaces it with a
-/// compiler-enforced unsafe boundary — the literal `GlobalAlloc` shape
-/// (`unsafe trait` + `unsafe fn`) — not a compiler-checked contract: the
-/// compiler only forces the `unsafe {}` acknowledgement.
+/// The hooks use the literal `GlobalAlloc` shape (`unsafe trait` + `unsafe
+/// fn`): a compiler-enforced unsafe boundary, not a compiler-checked
+/// contract — the compiler forces the `unsafe {}` acknowledgement at each
+/// call site (E0133) and checks nothing beyond it.
 ///
 /// # This fixture does NOT stand alone
 ///
@@ -406,13 +401,13 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
     assert!(
         !stderr.contains("E0433"),
         "expected NO secondary name-resolution error (E0433) alongside the \
-         named compile_error! — the P2-4 regression (implementation module \
-         not fully cfg'd out under the invalid configuration):\n{context}"
+         named compile_error! (the implementation module must be fully \
+         cfg'd out under the invalid configuration):\n{context}"
     );
     assert!(
         !stderr.contains("cannot find module or crate `loom`"),
         "expected NO `cannot find module or crate `loom`` error alongside \
-         the named compile_error! — the P2-4 regression:\n{context}"
+         the named compile_error!:\n{context}"
     );
 }
 
@@ -468,9 +463,9 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
 /// caller-side contract (link domain + liveness + exclusive ownership), so a bare push outside an
 /// `unsafe` block must NOT compile, with **E0133** ("call to unsafe function
 /// `X` is unsafe and requires unsafe function or block") naming EACH entry
-/// point. This pins the 2026-09-02 boundary move that made `push_index` (and
-/// `push`) join the three `StackStorage` hooks on the compiler-enforced
-/// caller-side `unsafe` surface.
+/// point. This pins that `push_index` (and `push`) sit on the same
+/// compiler-enforced caller-side `unsafe` surface as the three
+/// `StackStorage` hooks.
 ///
 /// # This fixture does NOT stand alone
 ///

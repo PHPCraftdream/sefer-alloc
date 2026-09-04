@@ -244,8 +244,10 @@ zero side effects in all cases."
 
 **`TAG_MAX` off-by-one, pinned two ways.** `TaggedIndex::pack(_, TAG_MAX)` is
 `Some`; `pack(_, TAG_MAX + 1)` is `None` — asserted directly in
-`tests/tag_seal.rs`'s `tag_max_is_the_exact_pack_ceiling`, alongside a
-`const _: () = assert!(TAG_MAX == (1u64 << TAG_BITS) - 1)` compile-time pin.
+`tests/stack_unit.rs`'s
+`pack_rejects_out_of_range_halves_and_accepts_the_full_index_range`,
+alongside a `const _: () = assert!(TAG_MAX == (1u64 << TAG_BITS) - 1)`
+compile-time pin (`tests/tag_seal.rs`).
 
 **Option 4: the tiny-tag oracle seeds near the ceiling, never reduces
 `TAG_BITS`.** New `#[doc(hidden)]`, `test-internals`/loom-gated

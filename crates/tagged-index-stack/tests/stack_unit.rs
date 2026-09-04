@@ -25,9 +25,7 @@
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::{
-    ArrayIndexStack, ArrayLinks, StackHead, StackOps, StackStorage, TaggedIndex, TAIL,
-};
+use tagged_index_stack::{ArrayIndexStack, ArrayLinks, StackHead, TaggedIndex, TAIL};
 
 // Compile-time pin: all three public types must stay auto-`Send +
 // Sync`. Every field of all three is an atomic today, so they derive the
@@ -70,47 +68,19 @@ fn pack_unpack_round_trip_16() {
     }
 }
 
-/// The checked `pack` REJECTS an over-wide index with `None` — the
-/// fail-closed checked `pack` (it replaced an earlier truncating `pack`
-/// whose silent masking turned `0x1_FFFF` into the EMPTY SENTINEL (its low 16
-/// bits equal `INDEX_MASK`) and `0x1_0001` into the unrelated live index
-/// `1`. The truncating behaviour survives only as the crate-private
-/// `pack_truncating` fast path used by `push_index`/`pop_index`, whose
-/// inputs are guard-proven in range.
-#[test]
-fn pack_rejects_an_over_wide_index_instead_of_truncating_it() {
-    type T = TaggedIndex<16>;
-    let tag = 42u64;
-
-    // 0x1_FFFF's low 16 bits are 0xFFFF == INDEX_MASK == the empty
-    // sentinel: the old truncating pack turned this into a word that
-    // is_empty() read as EMPTY. The checked pack refuses it instead.
-    assert_eq!(
-        T::pack(0x1_FFFF, tag),
-        None,
-        "an over-wide index whose low bits are the empty sentinel must be \
-         rejected, not silently masked into it"
-    );
-    // A less extreme over-wide value would have truncated to the live
-    // index 1 — also rejected now.
-    assert_eq!(
-        T::pack(0x1_0001, tag),
-        None,
-        "an over-wide index must be rejected, not truncated to its low bits"
-    );
-    assert_eq!(T::pack(u32::MAX, tag), None, "far out-of-range index");
-}
-
-/// The CHECKED `pack`'s boundary behaviour, pinned with literal expected
+/// The CHECKED `pack`'s acceptance boundary, pinned with literal expected
 /// words (an independent hand-computed oracle, not a comparison against
-/// `pack` itself): an in-range pair packs to the exact
-/// `(tag << INDEX_BITS) | index` word — `INDEX_MASK` itself included,
-/// because pack's acceptance boundary is `< 2^INDEX_BITS`, NOT push's
-/// stricter `< INDEX_MASK` reserve-sentinel bound (packing the empty
-/// index with a tag is the legitimate H-2 shape) — and the first
-/// out-of-range value on either half is rejected with `None` exactly
-/// where the old truncating `pack` silently produced a different
-/// valid-looking word.
+/// `pack` itself) at the exact boundary values of BOTH halves. Index half:
+/// `INDEX_MASK` itself is IN range — pack's acceptance boundary is
+/// `< 2^INDEX_BITS`, NOT `push`'s stricter `< INDEX_MASK` reserve-sentinel
+/// bound (packing the empty index with a tag is the legitimate H-2 shape) —
+/// and `1 << INDEX_BITS` is the first rejected index. Tag half: `TAG_MAX`
+/// is IN range (the `(0xFFFE, TAG_MAX)` table row) and `TAG_MAX + 1`
+/// (`2^TAG_BITS`) is the first rejected tag; production `push` never
+/// computes that value — its seal check refuses (`Err(TagExhausted)`) once
+/// the observed tag hits `TAG_MAX`, before ever bumping past it. Values
+/// BEYOND the first rejected one on either half are covered generatively by
+/// `proptest_pack_unpack.rs`.
 #[test]
 fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
     type T = TaggedIndex<16>;
@@ -133,22 +103,19 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
         );
     }
 
-    // First out-of-range index: exactly `1 << INDEX_BITS` — the value the
-    // old truncating pack masked to 0, a DIFFERENT valid index.
+    // First out-of-range index: exactly `1 << INDEX_BITS`.
     assert_eq!(T::pack(1u32 << 16, 7), None, "first invalid index");
-    // Farther out of range, including the value whose low bits are all
-    // ones (the old pack truncated it to the empty sentinel).
+    // Farther out of range.
     assert_eq!(T::pack(u32::MAX, 7), None, "far out-of-range index");
     assert_eq!(
         T::pack(0x1_FFFF, 7),
         None,
-        "over-wide index that the old pack truncated to the empty sentinel"
+        "over-wide index whose low bits are the empty sentinel must be rejected, not masked into it"
     );
 
-    // First out-of-range tag: exactly `1 << TAG_BITS` (2^48 at width 16) —
-    // the value whose shifted-out high bit the old pack silently dropped,
-    // restarting the tag at 0. The checked pack refuses it; `push` itself
-    // never reaches this value in production — its seal check refuses
+    // First out-of-range tag: exactly `TAG_MAX + 1` == `1 << TAG_BITS`
+    // (2^48 at width 16). The checked pack refuses it; `push` itself never
+    // reaches this value in production — its seal check refuses
     // (`Err(TagExhausted)`) once the observed tag hits `TAG_MAX`, before
     // ever bumping past it.
     assert_eq!(T::pack(9, 1u64 << T::TAG_BITS), None, "first invalid tag");
@@ -170,45 +137,6 @@ fn empty_sentinel_16() {
     );
     let (_v, t) = T::unpack(running);
     assert_eq!(t, 99, "the running tag survives on the empty word");
-}
-
-/// The 48-bit tag reaches its maximum (`2^48 - 1`) and still packs; the
-/// value one PAST it (`2^48`, the first value outside the tag field, one
-/// past `TAG_MAX`) is REJECTED by the checked `pack` — the
-/// fail-closed checked pack contract. In production `push` never computes
-/// this value: its seal check observes `tag == TAG_MAX` and returns
-/// `Err(TagExhausted)` BEFORE ever bumping, so the tag never wraps —
-/// `2^48` is pinned here only as the checked pack's rejection boundary,
-/// not as a value `push` ever produces.
-#[test]
-fn checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48() {
-    type T = TaggedIndex<16>;
-    let max_tag = (1u64 << T::TAG_BITS) - 1; // 2^48 - 1
-    assert!(
-        max_tag > u32::MAX as u64,
-        "48-bit tag exceeds the old 32-bit range"
-    );
-    let idx = 0x0ABCu32;
-    let at_max = T::pack(idx, max_tag).expect("2^48 - 1 is the last valid tag");
-    let (v0, t0) = T::unpack(at_max);
-    assert_eq!(v0, idx);
-    assert_eq!(t0, max_tag);
-    // Compute the value one bump PAST TAG_MAX (2^48). `push` itself never
-    // reaches this: its seal check returns `Err(TagExhausted)` the moment
-    // it observes `tag == TAG_MAX`, before ever bumping the tag.
-    // Plain `+`, not a wrapping operator: `TAG_MAX + 1` cannot overflow
-    // `u64` at any legal width (see `pack_truncating`'s doc). This pins
-    // the checked pack's own rejection boundary in isolation,
-    // independent of push.
-    let bumped = max_tag + 1; // 2^48
-    assert_eq!(
-        T::pack(idx, bumped),
-        None,
-        "the one-past-TAG_MAX 2^48 tag — the first value outside the tag \
-         field — is out of range and must be rejected by the checked pack \
-         (push never reaches it: it seals at TAG_MAX with Err(TagExhausted) \
-         first)"
-    );
 }
 
 /// A different width (`INDEX_BITS = 12`) partitions the word correctly and the
@@ -258,7 +186,7 @@ fn max_legal_width_index_mask_never_equals_tail() {
 /// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag's `TAG_MAX`
 /// ceiling (`2^48 - 1`; push seals here rather than wrapping to `2^48`).
 /// [`pack_unpack_round_trip_16`] and
-/// [`checked_pack_still_accepts_max_tag_but_rejects_the_post_bump_2_pow_48`]
+/// [`pack_rejects_out_of_range_halves_and_accepts_the_full_index_range`]
 /// above already pin the width facts and the checked pack's boundary
 /// behaviour (the older `split_is_16_48` and
 /// `tag_wraps_at_2_pow_48_and_index_survives` were removed as exact
@@ -318,36 +246,6 @@ fn empty_word_with_running_tag_reads_empty_through_tag_max() {
             "empty_index packed with running tag {tag} must read empty (H-2)"
         );
     }
-
-    // The TAG_MAX ceiling itself, then one past it: `TAG_MAX + 1` on the
-    // all-ones tag is exactly `2^TAG_BITS` — the first value outside the
-    // tag field. Plain `+`, not a wrapping operator: at every legal width
-    // `TAG_MAX <= 2^63 - 1`, so the `u64` addition cannot overflow (see
-    // `pack_truncating`'s doc). The CHECKED pack REJECTS that value. In
-    // production `push` never computes it: its seal check returns
-    // `Err(TagExhausted)` the moment the observed tag equals `TAG_MAX`,
-    // before ever bumping the tag. Deriving the one-past-TAG_MAX value
-    // and confirming the checked pack refuses it is what remains
-    // testable at this boundary — a literal repeated `0` in the sweep
-    // above cannot show it, because a repeated `0` never reaches the
-    // boundary.
-    let max_tag = (1u64 << T::TAG_BITS) - 1;
-    let bumped_tag = max_tag + 1;
-    assert_eq!(
-        bumped_tag,
-        1u64 << T::TAG_BITS,
-        "one past the all-ones tag yields 2^TAG_BITS, the first value \
-         outside the tag field — the value push's seal check exists \
-         precisely to prevent ever reaching (it refuses at TAG_MAX, \
-         before this bump would run)"
-    );
-    assert_eq!(
-        T::pack(T::empty_index(), bumped_tag),
-        None,
-        "the one-past-TAG_MAX 2^TAG_BITS tag is out of range: the checked \
-         pack refuses it, pinning the boundary push's seal check keeps \
-         production from ever reaching"
-    );
 }
 
 /// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
@@ -371,7 +269,8 @@ fn array_links_load_next_panics_on_index_out_of_range() {
 /// the worked example in `push_index`'s own `# Panics` section: an
 /// `ArrayIndexStack::<16, 4>` accepts indices up to 65534 by `INDEX_BITS`,
 /// but its `ArrayLinks<4>` links hold only `0..=3`, so
-/// [`StackOps::push_index`]'s `store_next` call (which runs before the head
+/// [`StackOps::push_index`](tagged_index_stack::StackOps::push_index)'s
+/// `store_next` call (which runs before the head
 /// CAS) panics on the links layer's own, narrower bound before the stack's
 /// wider `INDEX_BITS` guard is ever in play.
 #[test]
@@ -383,65 +282,6 @@ fn array_links_store_next_panics_on_index_out_of_range() {
     // Result discarded: the ArrayLinks bound panics before push_index_impl
     // would ever return a value here.
     let _ = unsafe { stack.push(5) }; // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
-}
-
-/// [`pop_index`]'s clause-4 guard fires when a [`StackStorage`] implementor
-/// returns a `next` value that is neither `TAIL` nor a valid index — a
-/// caller-contract violation `pop_index` cannot otherwise detect (see the
-/// crate docs' "Storage requirement" section on `StackStorage`). A tiny
-/// custom implementor whose `load_next` always answers `INDEX_MASK` (a value
-/// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
-///
-/// Release-active: promoted from `debug_assert!` to an
-/// unconditional `#[cold]` panic helper mirroring
-/// [`push_index`]'s own `index < INDEX_MASK` guard, once an out-of-tree A/B
-/// measured the release-active cost at ≈ 0 ns (see CHANGELOG.md). Unlike its
-/// predecessor, this test needs no `#[cfg(debug_assertions)]` gate: the
-/// panic now fires identically under `cargo test -p tagged-index-stack
-/// --release` (the configuration `.github/workflows/ci.yml`'s `test
-/// workspace members` job actually uses for this crate) and under the
-/// dev/test profile default.
-struct AlwaysInvalidStorage {
-    head: StackHead<16>,
-}
-
-// SAFETY: DELIBERATE contract violation — clause 4 (load_next must return
-// only TAIL or a currently-valid index): this implementor deliberately
-// answers INDEX_MASK, an out-of-range value, to fire pop_index's clause-4
-// guard.
-unsafe impl StackStorage<16> for AlwaysInvalidStorage {
-    unsafe fn head(&self) -> &StackHead<16> {
-        &self.head
-    }
-
-    unsafe fn load_next(&self, _index: u32) -> u32 {
-        // Neither TAIL nor a valid index at width 16 (INDEX_MASK == 0xFFFF):
-        // exactly the shape pop_index's clause-4 guard exists to catch.
-        TaggedIndex::<16>::INDEX_MASK as u32
-    }
-
-    unsafe fn store_next(&self, _index: u32, _next: u32) {}
-}
-
-#[test]
-#[should_panic(expected = "neither TAIL")]
-fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
-    let storage = AlwaysInvalidStorage {
-        head: StackHead::new(),
-    };
-    // SAFETY: DELIBERATE double contract violation, both intentional to this
-    // fixture: (1) clause 4 (valid answers) — load_next always answers
-    // INDEX_MASK, neither TAIL nor a valid index, which is the guard this
-    // test targets; (2) clause 6 (declared link domain) — this storage
-    // declares NO domain at all (no backing cells; store_next is a no-op),
-    // and an UNDECLARED domain is not proof push_index's clause-1 (link
-    // domain) is discharged — clause 6 requires the implementor to define
-    // and document a domain it owns a dedicated cell for, so the absence of
-    // one is a second, separate violation this fixture also commits, not a
-    // vacuous non-issue. index 0 has never been pushed through this
-    // binding, so push_index's clause-2 (liveness) alone is honestly held.
-    unsafe { storage.push_index(0) }.expect("fresh head has tag budget"); // real push, so the head is non-empty
-    let _ = storage.pop_index(); // load_next() always answers INDEX_MASK -> guard fires
 }
 
 /// The self-loop guard's SIMPLEST real-world trigger, pinned without any

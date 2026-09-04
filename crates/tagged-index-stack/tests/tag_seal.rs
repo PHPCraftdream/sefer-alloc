@@ -25,21 +25,6 @@ use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 
 type T = TaggedIndex<16>;
 
-/// Pins the ceiling's off-by-one arithmetic directly against `pack`: exactly
-/// `TAG_MAX` is still a packable tag, `TAG_MAX + 1` is not — the boundary
-/// [`TaggedIndex::TAG_MAX`]'s own doc states.
-#[test]
-fn tag_max_is_the_exact_pack_ceiling() {
-    assert!(
-        T::pack(0, T::TAG_MAX).is_some(),
-        "TAG_MAX itself must still be a packable tag"
-    );
-    assert!(
-        T::pack(0, T::TAG_MAX + 1).is_none(),
-        "TAG_MAX + 1 must be rejected by the checked pack — one past the ceiling"
-    );
-}
-
 /// `TAG_MAX == 2^TAG_BITS - 1` at width 16, pinned as a `const` assertion so
 /// a future arithmetic regression in the constant's definition is a compile
 /// error, not a runtime surprise.

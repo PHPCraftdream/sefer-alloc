@@ -84,7 +84,7 @@
 //!     only head transition this model admits is `(0, t) -> (empty, t)`, so
 //!     its `POP_RETRY_COUNT` delta is provably an empty-`actual` retry —
 //!     a path no other shipped model or test reaches.
-//! (h) **Tiny-tag seal (P1-1 fix):** the review's exact stale-observer
+//! (h) **Tiny-tag seal:** the stale-observer
 //!     counterexample (P observes a stale head and pauses; Q pops both
 //!     chained indices, churns one of them through a real push/pop cycle,
 //!     then attempts a final push) replayed at the REAL 48-bit-plus tag
@@ -99,9 +99,9 @@
 //!     `store_next_for_test` + a raw `cas_head_for_test`) and proves P's
 //!     stale CAS then SUCCEEDS and the free-list conservation check FAILS —
 //!     the load-bearing proof that the seal, not just the tag bump, is what
-//!     closes P1-1.
+//!     closes the stale-CAS double-issue hole.
 //! (i) **Same-index concurrent push (the caller contract's
-//!     exclusive-ownership clause — review run 14 P1):**
+//!     exclusive-ownership clause):**
 //!     `counterfactual_same_index_concurrent_push_self_loops` races TWO
 //!     real `push`es of the SAME index on a fresh stack — a deliberate
 //!     violation of clause 3, with both calls satisfying the entry-time
@@ -110,7 +110,7 @@
 //!     just-published head and chains `next[0] = 0`, a self-loop, and the
 //!     shipped `pop`'s self-loop detector panics on the schedules whose
 //!     drain observes it — proving clause 3 is load-bearing. A per-schedule
-//!     `PUSH_RETRY_COUNT` delta gate (review run 16, P2-1) means only the
+//!     `PUSH_RETRY_COUNT` delta gate means only the
 //!     genuinely-overlapping schedules drain, so the sequential double-push
 //!     (a clause-2 violation at the second caller's own entry) can never be
 //!     the schedule that satisfies `#[should_panic]`.
@@ -951,7 +951,7 @@ fn push_push_conservation() {
 
 // ============================================================================
 // (i) Same-index concurrent push: a deliberate violation of the caller
-// contract's exclusive-ownership-epoch clause (clause 3 — review run 14 P1):
+// contract's exclusive-ownership-epoch clause (clause 3):
 // two pushes acting on ONE duplicated authority epoch.
 // ============================================================================
 
@@ -968,13 +968,10 @@ fn push_push_conservation() {
 /// (exclusive ownership epoch: each push must consume a unique,
 /// not-yet-consumed publish/recycle authority over the index — freshly
 /// minted, or obtained from one specific successful pop; two pushes acting
-/// on one duplicated epoch are forbidden) as load-bearing — Sol-codex
-/// review run 14, finding P1
-/// (`docs/reviews/2026-09-03-123945-tagged-index-stack-review-Sol-codex-run-14.md`).
+/// on one duplicated epoch are forbidden) as load-bearing.
 ///
-/// Why the retry gate (review run 16, finding P2-1 —
-/// `docs/reviews/2026-09-03-150547-tagged-index-stack-review-Sol-codex-run-16.md`):
-/// unchecked, loom may pick the schedule where A's `push(0)` completes
+/// Why the retry gate: unchecked, loom may pick the schedule where A's
+/// `push(0)` completes
 /// ENTIRELY before B's begins. On that schedule B's own entry-time head read
 /// already observes index 0 as live, so B pushing anyway is an ordinary
 /// SEQUENTIAL double-push — a clause-2 violation at B's own entry, already
@@ -1021,7 +1018,7 @@ fn push_push_conservation() {
 /// process-global `SAME_INDEX_RETRY_GATE_SEEN` disambiguation flag ("gate
 /// never opened" vs "gate opened but drained benignly") is gone: once the
 /// gate opens, a benign drain is not a possible outcome, so the second
-/// scenario it existed to diagnose cannot arise (review run 17, P2-2).
+/// scenario it existed to diagnose cannot arise.
 /// The positive counterpart
 /// `pop_repush_after_publish_conserves` below independently
 /// proves the overlapping scenario is reachable in this suite's models.
@@ -1040,7 +1037,7 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
             // threads push the SAME index backed by the SAME duplicated
             // freshly-minted authority epoch, violating the
             // exclusive-ownership-epoch clause — that violation is exactly
-            // what this test proves is load-bearing (review run 14, P1).
+            // what this test proves is load-bearing.
             // On the schedules that reach the drain, BOTH entry reads
             // observed the empty head, and concurrency is proven by this
             // schedule's positive `PUSH_RETRY_COUNT` delta (see the retry
@@ -1066,7 +1063,7 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
         ta.join().unwrap();
         tb.join().unwrap();
 
-        // Retry gate (review run 16, P2-1): drain reached ONLY on
+        // Retry gate: drain reached ONLY on
         // gate-passing (genuinely-overlapping) schedules.
         let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
         if retried == 0 {
@@ -1090,9 +1087,7 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
         // reads the final head — never the first push's publication, never
         // empty — and the final `next[0] == 0`, and the shipped `pop`'s
         // self-loop detector panics. There is no "stale visibility" class
-        // left for the drain to fall into after both joins (review run 17,
-        // P2-2: the former claim that a drain could legitimately read the
-        // stale `next[0] = TAIL` and drain benignly was wrong). If no
+        // left for the drain to fall into after both joins. If no
         // explored schedule passes the gate, this body completes
         // panic-free and `#[should_panic]` fails the test.
         while stack.pop().is_some() {}
@@ -1101,8 +1096,8 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
 
 // ============================================================================
 // (j) The PERMITTED republish: pop-then-repush of a just-published index —
-// the epoch contract's positive side, pinned so the clause-3 rewording
-// (review run 17, P1-2) cannot be read as forbidding it. (The original
+// the epoch contract's positive side, pinned so clause 3 cannot be read as
+// forbidding it. (The original
 // push's physical-return timing is not distinguished here — see the test's
 // doc.)
 // ============================================================================
@@ -1385,7 +1380,7 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
 }
 
 // ============================================================================
-// (h) Tiny-tag seal (P1-1 fix). See the module doc's "(h)" entry for the
+// (h) Tiny-tag seal. See the module doc's "(h)" entry for the
 // full description. Seeded at the REAL tag width (never a TAG_BITS-reducing
 // cfg) a handful of pushes short of TaggedIndex::TAG_MAX, so the schedule
 // stays loom-tractable while every arithmetic operation exercised is the
@@ -1394,8 +1389,8 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
 
 /// How many successful pushes short of [`TaggedIndex::TAG_MAX`] the seeded
 /// EMPTY head starts: the two chain-building pushes below consume 2, one
-/// real push/pop "churn" cycle (mirroring the review's "Q re-pushes the
-/// same index and pops it again" step) consumes 1 more, landing exactly on
+/// real push/pop "churn" cycle (Q re-pushes the same index and pops it
+/// again) consumes 1 more, landing exactly on
 /// the ceiling before the final step — see [`run_tiny_tag_seal`]'s
 /// walk-through comments for the exact arithmetic. Chosen small purely so
 /// the two-thread interleaving space loom must explore stays a "handful of
@@ -1450,7 +1445,7 @@ fn run_tiny_tag_seal(bypass_seal: bool) {
         let p_loaded = Arc::new(AtomicU32::new(0));
         let q_done = Arc::new(AtomicU32::new(0));
 
-        // Thread Q: the review's exact churn shape — pop A, pop B (holding
+        // Thread Q: the adversarial churn shape — pop A, pop B (holding
         // B), one real push(A)/pop(A) churn cycle, then a final step
         // exactly at the tag ceiling — using the REAL push/pop entry
         // points throughout except the counterfactual's one bypassed final
@@ -1586,7 +1581,7 @@ fn run_tiny_tag_seal(bypass_seal: bool) {
     });
 }
 
-/// **Fixed:** confirms the seal engages under the review's exact adversarial
+/// **Fixed:** confirms the seal engages under the exact adversarial
 /// schedule replayed at the real tag width, and that P's stale CAS —
 /// captured before Q's churn — is rejected.
 #[test]
@@ -1597,7 +1592,7 @@ fn tiny_tag_seal_rejects_stale_cas_at_the_real_width() {
 /// **Counterfactual (non-vacuousness):** bypassing the `TAG_MAX` check for
 /// Q's one final step lets P's stale CAS succeed and the free-list
 /// conservation check fail — proving the seal, not just the tag bump, is
-/// what closes P1-1.
+/// what closes the stale-CAS double-issue hole.
 #[test]
 #[should_panic(expected = "corrupted")]
 fn counterfactual_bypassed_seal_lets_stale_cas_double_issue() {
