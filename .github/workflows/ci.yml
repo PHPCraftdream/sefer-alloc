@@ -1769,7 +1769,7 @@ jobs:
       # errexit, so `! grep` can never fail the step.
       - run: |
           cargo test -p tagged-index-stack --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tis-crate-suite.log"
-          grep -F "test out_dir_symlink_escape_is_rejected_and_canary_survives ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
+          grep -F "test out_dir_rejection_is_value_independent ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
           grep -F "test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
           if grep -q "skipping: node not on PATH" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: scratch-guard tests skipped (node not on PATH) - green is vacuous"; exit 1; fi
           if grep -q "skipping: directory symlinks/junctions unavailable" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: junction-branch tests skipped - the Windows branch this row exists for did not run"; exit 1; fi

@@ -297,99 +297,122 @@ fn assert_repo_intact(root: &Path, runner: &Path, what: &str) {
     );
 }
 
-#[test]
-fn out_dir_dot_is_rejected() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("dot");
-    assert_fatal(&run_codegen(&runner, &["--out-dir", "."]), "--out-dir .");
-    assert_repo_intact(root_guard.path(), &runner, "--out-dir .");
-    drop(parent);
-}
+/// One rejected `--out-dir` case: assertion label, the value, and the
+/// value's own survival oracle (run after the shared fatal/intact asserts).
+type OutDirCase<'a> = (&'a str, String, Box<dyn Fn()>);
 
+/// NONOPT-2 (run-21 review): the runner's `--out-dir` handling is
+/// value-independent — `parseArgs`'s `case '--out-dir'` arm calls `fail()`
+/// without ever reading the value (`tis_p3_ab_runner.mjs:189-194`) — so the
+/// six former per-value tests (`out_dir_dot_is_rejected` through
+/// `out_dir_symlink_escape_is_rejected_and_canary_survives`) all drove the
+/// identical statement, each behind its own full skeleton build (five file
+/// copies plus `git init`/`add`/`commit`). This single test loops all six
+/// rejected values over ONE skeleton and re-pins the invariant per value:
+/// FATAL rejection, repo intact. The case-specific survival oracles (victim
+/// canary, sibling-not-created, symlink + its target's canary) are kept PER
+/// VALUE rather than hoisted: each value gets its own runner invocation
+/// anyway, and a future regression that starts reading the value should
+/// name which value class leaked. The symlink case still skips itself where
+/// the OS refuses to create one — with the same message the CI skip needle
+/// greps for (`ci.yml` test-windows row) — while the other five values stay
+/// pinned on such a machine.
 #[test]
-fn out_dir_dotdot_is_rejected() {
+fn out_dir_rejection_is_value_independent() {
     if !node_available() {
         eprintln!("skipping: node not on PATH");
         return;
     }
-    let (parent, root_guard, runner) = build_repo_copy("dotdot");
-    assert_fatal(&run_codegen(&runner, &["--out-dir", ".."]), "--out-dir ..");
-    assert_repo_intact(root_guard.path(), &runner, "--out-dir ..");
-    drop(parent);
-}
-
-#[test]
-fn out_dir_absolute_repo_root_is_rejected() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("absroot");
+    let (parent, root_guard, runner) = build_repo_copy("out_dir_values");
     let root_str = root_guard.path().to_string_lossy().to_string();
-    assert_fatal(
-        &run_codegen(&runner, &["--out-dir", &root_str]),
-        "--out-dir <repo root as absolute path>",
-    );
-    assert_repo_intact(
-        root_guard.path(),
-        &runner,
-        "--out-dir <repo root as absolute path>",
-    );
-    drop(parent);
-}
 
-#[test]
-fn out_dir_absolute_temp_victim_is_rejected_and_canary_survives() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("victim");
+    // Fixtures for the values that point OUTSIDE the skeleton, planted the
+    // same way the six former tests planted them.
     let victim = exclusive_temp_dir("victim");
     fs::write(victim.path().join("canary.txt"), "unrelated to the repo")
         .expect("write victim canary");
     let victim_str = victim.path().to_string_lossy().to_string();
-    assert_fatal(
-        &run_codegen(&runner, &["--out-dir", &victim_str]),
-        "--out-dir <absolute temp dir unrelated to the repo>",
-    );
-    assert_repo_intact(
-        root_guard.path(),
-        &runner,
-        "--out-dir <absolute temp dir unrelated to the repo>",
-    );
-    assert!(
-        victim.path().join("canary.txt").is_file(),
-        "the absolute out-dir's canary file was deleted — the runner still clears a user-supplied directory"
-    );
-    drop(parent);
-}
 
-#[test]
-fn out_dir_repo_sibling_is_rejected_and_not_created() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("sibling");
     let sibling = DirGuard::new(parent.path().join(format!("sibling_{}", next_uid())));
     let sibling_str = sibling.path().to_string_lossy().to_string();
-    assert_fatal(
-        &run_codegen(&runner, &["--out-dir", &sibling_str]),
-        "--out-dir <sibling directory of the repo>",
-    );
-    assert_repo_intact(
-        root_guard.path(),
-        &runner,
-        "--out-dir <sibling directory of the repo>",
-    );
+
+    let real = exclusive_temp_dir("real");
+    fs::write(real.path().join("canary.txt"), "behind the symlink")
+        .expect("write symlink-target canary");
+    // run-19 review P2-1: the symlink destination must NOT already exist —
+    // `symlink`/`symlink_dir`/`mklink /J` all fail if the target path exists,
+    // and `exclusive_temp_dir("link")` creates its directory before returning,
+    // so a derived, never-created child of the guarded parent is used instead.
+    let link = parent.path().join("link");
     assert!(
-        !sibling.path().exists(),
-        "the runner created the sibling directory it was supposed to reject"
+        !link.exists(),
+        "make_dir_symlink requires a free destination path"
     );
+    let symlink_planted = make_dir_symlink(&link, real.path());
+    let link_str = link.to_string_lossy().to_string();
+    if symlink_planted {
+        let metadata = fs::symlink_metadata(&link)
+            .unwrap_or_else(|e| panic!("symlink_metadata on {}: {e}", link.display()));
+        assert!(
+            metadata.file_type().is_symlink(),
+            "fixture: {} is not a symlink/junction after make_dir_symlink",
+            link.display()
+        );
+    } else {
+        eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
+    }
+
+    // (assertion label, the rejected value, the value's own survival oracle)
+    let mut cases: Vec<OutDirCase<'_>> = Vec::new();
+    cases.push(("--out-dir .", ".".to_string(), Box::new(|| {})));
+    cases.push(("--out-dir ..", "..".to_string(), Box::new(|| {})));
+    cases.push((
+        "--out-dir <repo root as absolute path>",
+        root_str,
+        Box::new(|| {}),
+    ));
+    cases.push((
+        "--out-dir <absolute temp dir unrelated to the repo>",
+        victim_str,
+        Box::new(move || {
+            assert!(
+                victim.path().join("canary.txt").is_file(),
+                "the absolute out-dir's canary file was deleted — the runner still clears a user-supplied directory"
+            );
+        }),
+    ));
+    cases.push((
+        "--out-dir <sibling directory of the repo>",
+        sibling_str,
+        Box::new(move || {
+            assert!(
+                !sibling.path().exists(),
+                "the runner created the sibling directory it was supposed to reject"
+            );
+        }),
+    ));
+    if symlink_planted {
+        cases.push((
+            "--out-dir <symlink pointing outside the scratch root>",
+            link_str,
+            Box::new(move || {
+                assert!(
+                    link.exists(),
+                    "the symlink itself was deleted by the runner while rejecting its --out-dir"
+                );
+                assert!(
+                    real.path().join("canary.txt").is_file(),
+                    "the symlink target's canary file was deleted by the runner while rejecting its --out-dir"
+                );
+            }),
+        ));
+    }
+
+    for (what, value, post) in &cases {
+        assert_fatal(&run_codegen(&runner, &["--out-dir", value.as_str()]), what);
+        assert_repo_intact(root_guard.path(), &runner, what);
+        post();
+    }
     drop(parent);
 }
 
@@ -411,58 +434,6 @@ fn make_dir_symlink(link: &Path, target: &Path) -> bool {
         .output()
         .map(|o| o.status.success() && link.exists())
         .unwrap_or(false)
-}
-
-#[test]
-fn out_dir_symlink_escape_is_rejected_and_canary_survives() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("symlink");
-    let real = exclusive_temp_dir("real");
-    fs::write(real.path().join("canary.txt"), "behind the symlink")
-        .expect("write symlink-target canary");
-    // run-19 review P2-1: the symlink destination must NOT already exist —
-    // `symlink`/`symlink_dir`/`mklink /J` all fail if the target path exists,
-    // and `exclusive_temp_dir("link")` creates its directory before returning,
-    // so a derived, never-created child of the guarded parent is used instead.
-    let link = parent.path().join("link");
-    assert!(
-        !link.exists(),
-        "make_dir_symlink requires a free destination path"
-    );
-    if !make_dir_symlink(&link, real.path()) {
-        eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
-        drop(parent);
-        return;
-    }
-    let metadata = fs::symlink_metadata(&link)
-        .unwrap_or_else(|e| panic!("symlink_metadata on {}: {e}", link.display()));
-    assert!(
-        metadata.file_type().is_symlink(),
-        "fixture: {} is not a symlink/junction after make_dir_symlink",
-        link.display()
-    );
-    let link_str = link.to_string_lossy().to_string();
-    assert_fatal(
-        &run_codegen(&runner, &["--out-dir", &link_str]),
-        "--out-dir <symlink pointing outside the scratch root>",
-    );
-    assert_repo_intact(
-        root_guard.path(),
-        &runner,
-        "--out-dir <symlink pointing outside the scratch root>",
-    );
-    assert!(
-        link.exists(),
-        "the symlink itself was deleted by the runner while rejecting its --out-dir"
-    );
-    assert!(
-        real.path().join("canary.txt").is_file(),
-        "the symlink target's canary file was deleted by the runner while rejecting its --out-dir"
-    );
-    drop(parent);
 }
 
 #[test]
