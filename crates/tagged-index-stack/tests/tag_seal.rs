@@ -23,12 +23,10 @@ use tagged_index_stack::TaggedIndex;
 #[cfg(any(feature = "test-internals", loom))]
 use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 
-type T = TaggedIndex<16>;
-
 /// `TAG_MAX == 2^TAG_BITS - 1` at width 16, pinned as a `const` assertion so
 /// a future arithmetic regression in the constant's definition is a compile
 /// error, not a runtime surprise.
-const _: () = assert!(T::TAG_MAX == (1u64 << T::TAG_BITS) - 1);
+const _: () = assert!(TaggedIndex::<16>::TAG_MAX == (1u64 << TaggedIndex::<16>::TAG_BITS) - 1);
 
 /// The core seal sequence: seed `TAG_MAX - 2` (2 pushes of headroom), three
 /// pushes onto a fresh 1-slot chain-building sequence produce exactly
@@ -42,7 +40,7 @@ const _: () = assert!(T::TAG_MAX == (1u64 << T::TAG_BITS) - 1);
 #[cfg(any(feature = "test-internals", loom))]
 #[test]
 fn seal_sequence_ok_ok_err_with_permanent_seal_after_drain() {
-    let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(T::TAG_MAX - 2);
+    let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX - 2);
 
     assert_eq!(
         stack.pushes_remaining(),
@@ -124,7 +122,7 @@ fn seal_sequence_ok_ok_err_with_permanent_seal_after_drain() {
 #[cfg(any(feature = "test-internals", loom))]
 #[test]
 fn pushes_remaining_counts_down_to_zero_and_stays_there() {
-    let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(T::TAG_MAX - 2);
+    let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX - 2);
     let mut remaining_before_each_push = Vec::new();
 
     for i in 0..3u32 {
