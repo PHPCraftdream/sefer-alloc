@@ -153,7 +153,7 @@ fn push_pop_through_dyn_storage() {
     let vec_storage = VecStorage::new(4);
     let storage_dyn: &dyn StackStorage<16> = &vec_storage;
 
-    // SAFETY: fresh storage with domain 0..16; index 2 is in-domain and not yet pushed.
+    // SAFETY: fresh storage with domain 0..4; index 2 is in-domain and not yet pushed.
     unsafe { storage_dyn.push_index(2) }.expect("fresh head has tag budget");
     assert_eq!(storage_dyn.pop_index(), Some(2));
     assert_eq!(storage_dyn.pop_index(), None);
@@ -478,7 +478,7 @@ fn internally_disagreeing_storage_still_double_issue() {
         write_links: ArrayLinks::<64>::new(),
     };
 
-    // SAFETY: fresh storage (domain 0..16); index 1 is in-domain and this is its first push.
+    // SAFETY: fresh storage (domain 0..64); index 1 is in-domain and this is its first push.
     unsafe { storage.push_index(1) }.expect("fresh head has tag budget");
 
     // First pop: reads the FOREIGN `read_links` (0 — in range and != 1),
@@ -530,7 +530,7 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
         head: StackHead::new(),
         links: ArrayLinks::<64>::new(),
     };
-    // SAFETY: fresh Pool (domain 0..16); indices 1 and 2 are each in-domain and pushed exactly once.
+    // SAFETY: fresh Pool (domain 0..64); indices 1 and 2 are each in-domain and pushed exactly once.
     unsafe { old.push_index(1) }.expect("fresh head has tag budget");
     unsafe { old.push_index(2) }.expect("fresh head has tag budget");
 
@@ -618,7 +618,7 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
     let wide: &dyn StackStorage<16> = &dual;
     let narrow: &dyn StackStorage<12> = &dual;
 
-    // SAFETY: fresh dual (links domain 0..16); indices 1 and 2 are in-domain, pushed once via `wide`.
+    // SAFETY: fresh dual (links domain 0..64); indices 1 and 2 are in-domain, pushed once via `wide`.
     unsafe { wide.push_index(1) }.expect("fresh head has tag budget");
     unsafe { wide.push_index(2) }.expect("fresh head has tag budget");
     // SAFETY: fresh narrow binding; index 3 is in-domain and not yet pushed on this binding.
