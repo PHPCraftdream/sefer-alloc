@@ -17,30 +17,40 @@ saturated pushes at the widest permitted width before a head this width
 seals. That is a LIFETIME bound, not a risk bound: because the tag never
 recurs, there is no collision to reason about at any point in that lifetime
 or beyond it — a head just stops accepting pushes, loudly, once its budget is
-spent. Allocation-free, `no_std`;
-the production library source (`src/`) is `#![deny(unsafe_code)]` with
-exactly EIGHT audited, item-scoped `#[allow(unsafe_code)]` lint-exception
-regions, all in `src/imp.rs` — the `unsafe trait StackStorage` declaration
-(whose three hooks are `unsafe fn`) plus the sealed `SealedStorage`
-trait/bridge surface, and the caller-facing push boundary (`push_index` and
-`ArrayIndexStack::push`, both `unsafe fn` under a three-clause link-domain +
-liveness + exclusive-ownership contract). The repository's integration tests are separate crate
-targets outside that deny and intentionally carry additional `unsafe impl
-StackStorage` test fixtures (correct implementor examples plus
-deliberately-broken compile-fail fixtures). A region is a lint-exception
-boundary, not a count of unsafe declarations/blocks/operations inside it —
-see the crate documentation's "Where unsafe lives" section (`src/lib.rs`)
-for the authoritative declaration/block-count breakdown and the
-self-verifying inventory commands.
+spent.
 
-Slab allocators, object pools, entity-component stores, id allocators, and
-connection tables all need to recycle small integer ids. Crates like
-`sharded-slab` embed one privately; this ships the primitive standalone, with
-a loom model-check of the real type — exhaustive within each of several
-bounded, individually-scoped models (not one unbounded check of the whole
-behavior space; see the "## loom — real-type model-check" section below for
-the precise scope, including the one counterfactual that drives a buggy
-stand-in stack instead of the real type).
+Allocation-free and `no_std`. Slab allocators, object pools, entity-component
+stores, id allocators, and connection tables all need to recycle small
+integer ids. Crates like `sharded-slab` embed one privately; this ships the
+primitive standalone, with a loom model-check of the real type — exhaustive
+within each of several bounded, individually-scoped models (not one
+unbounded check of the whole behavior space; see the "## loom — real-type
+model-check" section below for the precise scope, including the one
+counterfactual that drives a buggy stand-in stack instead of the real type).
+
+## Example
+
+```rust
+use tagged_index_stack::ArrayIndexStack;
+
+let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
+
+// SAFETY: on this fresh stack, 7 is inside the 0..1024 link domain and no
+// caller has pushed it: this first publish is backed by a freshly minted
+// publish/recycle authority, which is exactly what `push`'s `# Safety`
+// contract requires of a first push.
+unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
+assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
+```
+
+`push` is an `unsafe fn` because the compiler cannot check its caller-side
+contract: the pushed index must live in the implementor's link domain, must
+not already be reachable from any stack that reads and writes the same link
+cells, and each push must carry a unique, not-yet-consumed publish/recycle
+authority over the index (freshly minted, or obtained from one successful
+`pop` that returned the index to this caller). The full contract is
+`push_index`'s `# Safety` section in the crate docs; the crate's complete
+unsafe-surface inventory is in "The unsafe surface" section below.
 
 ## The packed word
 
@@ -242,66 +252,42 @@ See `tests/loom_aba.rs`'s own module doc for the per-model breakdown:
 RUSTFLAGS="--cfg loom" cargo test -p tagged-index-stack --release --features loom --test loom_aba
 ```
 
+## The unsafe surface
+
+The production library source (`src/`) is `#![deny(unsafe_code)]`: every
+`unsafe` token outside an audited set of item-scoped `#[allow(unsafe_code)]`
+lint-exception regions — all in `src/imp.rs` — is a hard compile error. Those
+regions cover the `unsafe trait StackStorage` declaration (its three hooks
+are `unsafe fn`), the crate-private `SealedStorage` trait/bridge surface, and
+the caller-facing push boundary (`push_index` and `ArrayIndexStack::push`,
+both `unsafe fn` under a three-clause link-domain + liveness +
+exclusive-ownership contract).
+
+The repository's integration tests are separate crate targets outside that
+deny, and intentionally carry additional `unsafe impl StackStorage` test
+fixtures — correct implementor examples plus deliberately-broken compile-fail
+fixtures.
+
+A region is a lint-exception boundary, not a count of the unsafe
+declarations, blocks, or operations inside it. The audited region count, the
+declaration/block-count breakdown, and the self-verifying inventory commands
+are stated in ONE place — the crate documentation's "Where unsafe lives"
+section (`src/lib.rs`) — next to the grep that re-derives them, and are
+deliberately not re-quoted here so they cannot drift from it.
+
 ## Notes
 
-This crate's test-only surface is feature- and cfg-gated, not merely
-`#[doc(hidden)]`: under DEFAULT features none of the test probes below
-exists at all — a downstream consumer cannot name them, and a default
-`cargo doc` render (docs.rs included) does not contain them. (The attribute
-alone only hides an item from rustdoc's rendered navigation while it stays
-publicly callable; the gate is what makes it genuinely absent, and each
-gated item additionally carries no semver stability guarantee.)
+This crate's test-only probes (`raw_head`, `load_next_for_test`,
+`store_next_for_test`, `cas_head_for_test`, `retry_counts_for_test`,
+`backoff_cap_reached_for_test`) are feature- or cfg-gated and
+`#[doc(hidden)]`: under default features none of them exists at all (docs.rs
+included), and none carries a semver stability guarantee. They exist for this
+crate's own test suite — a downstream consumer has no reason to name them.
 
-The ONE `#[doc(hidden)]` item that remains in a default build is
-`TaggedIndex::empty()` — not test-only: it is used internally by this
-crate's bootstrap path (`StackHead::new` / `ArrayIndexStack::new`), and its
-one out-of-crate consumer is `sefer-alloc`'s registry bootstrap — through
-that crate's `#[cfg(loom)]` `bootstrap::loom_shim` TEST shim (its mirrored
-const-capable `StackHead::new`, which keeps the const `REGISTRY` static
-compiling under loom and is never on a modeled interleaving); a production
-`sefer-alloc` build takes the real `StackHead` type directly and never
-calls `empty()` itself. So it is not freely removable, but do not depend on
-it either.
-
-Under the `test-internals` feature (off by default — a default build of the
-crate carries no instrumentation at all) or a `--cfg loom` build:
-`StackHead::raw_head` (also reachable through `ArrayIndexStack`'s gated
-forwarder) is a test-only probe of the packed head word, used only by this
-crate's own `tests/`; `ArrayIndexStack::load_next_for_test` is the matching
-read-only link probe; `retry_counts_for_test` reads both CAS-retry counters
-in one call; and `backoff_cap_reached_for_test` reads the matching
-backoff-depth counters (non-zero only when a retry's spin loop ran at full
-backoff depth) — these last two are the non-loom twins of the loom-only
-accessors below and are what `tests/threaded_conservation.rs` uses as its
-two-level activation oracle under real OS threads.
-
-Under `--cfg loom` only (not present in a normal build or on docs.rs):
-`StackHead::cas_head_for_test` (also reachable through `ArrayIndexStack`'s
-gated forwarder) is a raw CAS on the head word that the shipped loom proof
-(`tests/loom_aba.rs`) uses to split a pop's head-load from its CAS and drive
-ABA counterfactuals; `pop_retry_count_for_test`/`push_retry_count_for_test`
-are loom-only accessors over the same retry-activation counters that the
-same suite asserts against; `ArrayIndexStack::store_next_for_test` is a raw
-WRITE to a link cell (bypassing the stack algorithm entirely) that the same
-loom proof uses to reconstruct a pre-seal wrapping counterfactual — it is
-`loom`-only, not `test-internals`, because a safe write of this shape is
-reachable exclusively for that one loom counterfactual; enabling it under
-plain `test-internals` would let any downstream consumer construct a cycle
-in the linked chain and make `pop()` double-issue an index.
-
-## Example
-
-```rust
-use tagged_index_stack::ArrayIndexStack;
-
-let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
-
-// SAFETY: 7 is in this stack's 0..1024 link domain and has never been
-// pushed, so its publish/recycle authority is freshly minted and consumed
-// by this one push (clause 3).
-unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
-assert_eq!(stack.pop(), Some(7));         // recycled index comes back out
-```
+The one `#[doc(hidden)]` item that remains in a default build is
+`TaggedIndex::empty()` — a bootstrap internal, used by `StackHead::new` /
+`ArrayIndexStack::new` and by one `sefer-alloc` test shim; not freely
+removable, but not something to depend on either.
 
 ## MSRV
 

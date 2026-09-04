@@ -25,11 +25,12 @@
 //! permanent" section: there is no reset API, by design.
 //!
 //! Allocation-free, `no_std`; the production library source (`src/`) is
-//! `#![deny(unsafe_code)]` with exactly EIGHT audited, item-scoped
-//! `#[allow(unsafe_code)]` lint-exception regions, all in `src/imp.rs` — see
-//! ["Where unsafe lives"](#where-unsafe-lives) below for the full
-//! region-by-region inventory, the unsafe-operation count those regions
-//! contain, and the separate test-fixture inventory.
+//! `#![deny(unsafe_code)]`, with its `unsafe` surface confined to an audited
+//! set of item-scoped `#[allow(unsafe_code)]` lint-exception regions, all in
+//! `src/imp.rs` — see ["Where unsafe lives"](#where-unsafe-lives) below for
+//! the audited region count, the full region-by-region inventory, the
+//! unsafe-operation count those regions contain, and the separate
+//! test-fixture inventory.
 //!
 //! Slab allocators, object pools, entity-component stores, and connection
 //! tables all need to recycle small integer ids, and commonly get two details
@@ -263,12 +264,12 @@
 //! call another `unsafe fn` with no local `unsafe {}` block, so one region
 //! covering an `unsafe fn` declaration can legitimately contain several
 //! distinct unsafe operations, not just the one declaration — the region
-//! count alone does not say how many. Since 2026-09-02 this crate also sets
+//! count alone does not say how many. The crate also sets
 //! `#![deny(unsafe_op_in_unsafe_fn)]` (below the header), which forces every
 //! such call to carry its own local `unsafe {}` + `// SAFETY:` — the
 //! region count is unaffected (no new `#[allow(unsafe_code)]` was added),
-//! but the actual unsafe-block count inside those regions rose from three to
-//! six (see the operation count below). Grouped by role:
+//! but the actual unsafe-block count inside those regions is six
+//! (see the operation count below). Grouped by role:
 //!
 //! 1. the `unsafe trait StackStorage` declaration — its allow also covers its
 //!    three `unsafe fn` hook declarations (`head`, `load_next`, `store_next`;
@@ -401,15 +402,15 @@
 //! produce.
 
 #![no_std]
-// `deny`, not `forbid`: the library target (`src/`) holds eight audited,
+// `deny`, not `forbid`: the library target (`src/`) holds audited,
 // item-scoped `#[allow(unsafe_code)]` regions (tier 2 of this workspace's
 // two-tier unsafe-inventory convention) that a `forbid` lint could not
 // locally relax; `deny` keeps every OTHER `unsafe` token a hard compile
 // error. Integration tests are separate crate targets that do not inherit
 // this attribute and intentionally carry additional `unsafe impl` test
 // fixtures. See the crate docs' "Where unsafe lives" section (above) for
-// the full region inventory, the self-verifying grep command, and the
-// unsafe-operation count those regions hold.
+// the audited region count, the full region inventory, the self-verifying
+// grep command, and the unsafe-operation count those regions hold.
 #![deny(unsafe_code)]
 // Edition 2021 gives an `unsafe fn` body ambient permission to call another
 // `unsafe fn` with no local `unsafe {}` — a real gap the tier-2 allow-region
