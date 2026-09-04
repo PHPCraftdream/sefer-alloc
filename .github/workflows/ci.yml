@@ -1632,6 +1632,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # run-20 review P3-1: the tagged-index-stack row below runs
+      # tis_p3_ab_runner_scratch_guard.rs, whose tests shell out to `node`
+      # (the tis_p3_ab_runner.mjs runner under test) and early-return as
+      # green "ok" when node is missing — pin Node explicitly (the same
+      # actions/setup-node@v5 + node-version '22' pattern the other jobs in
+      # this workflow that need node already use) so the row cannot go
+      # vacuously green on a runner image without a usable node.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
       # `internals` added (R34-3/task #522) — whole-suite row.
       - run: cargo test --features "production internals" --no-fail-fast
       # Task #1086 (M6): each forced-page row is now self-verifying —
@@ -1740,6 +1750,30 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
+
+      # run-20 review P3-1: the workspace member's own test suite never ran on
+      # a real Windows kernel — its tis_p3_ab_runner_scratch_guard.rs carries
+      # a Windows-specific fixture branch (`std::os::windows::fs::symlink_dir`,
+      # falling back to `cmd /c mklink /J` when Dev Mode is absent — hosted
+      # runners have no Dev Mode, so the junction fallback is the branch this
+      # row exists for) that no ubuntu-latest row can execute. Full default
+      # suite per the review's preferred form (same per-crate-suite shape as
+      # the aligned-vmem rows above), plus task #1086/#1101 self-verifying
+      # postconditions: the two junction-branch tests are named greps (a
+      # renamed test fails LOUD instead of silently vanishing from the
+      # postcondition), and the two skip needles fail the step because a
+      # skipped test still prints "... ok" — the positive greps alone cannot
+      # distinguish ran-and-passed from early-return-skipped. Explicit
+      # `if grep ...; then exit 1; fi` rather than a bare `! grep -q`: under
+      # `set -e` the return value of a `!`-inverted command is exempt from
+      # errexit, so `! grep` can never fail the step.
+      - run: |
+          cargo test -p tagged-index-stack --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tis-crate-suite.log"
+          grep -F "test out_dir_symlink_escape_is_rejected_and_canary_survives ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
+          grep -F "test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
+          if grep -q "skipping: node not on PATH" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: scratch-guard tests skipped (node not on PATH) - green is vacuous"; exit 1; fi
+          if grep -q "skipping: directory symlinks/junctions unavailable" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: junction-branch tests skipped - the Windows branch this row exists for did not run"; exit 1; fi
+        shell: bash
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -3181,7 +3215,7 @@ jobs:
     # because it is an evidence-gathering gate, not a standing regression
     # check.
     #
-    # What the two steps assert: step 1 re-verifies the static codegen
+    # What the three steps assert: step 1 re-verifies the static codegen
     # oracles on the runner's own toolchain — including the DELIBERATE
     # `cas_weak` sha-identity asserts that FAIL LOUDLY (message contains
     # "P3-2 REOPENED") if a future toolchain reintroduces an inline-LL/SC
@@ -3192,6 +3226,11 @@ jobs:
     # 3 variants x 3 samples x 1 s) whose retry-counter oracle proves the
     # CAS-retry path was actually exercised (per CLAUDE.md's
     # path-activation-oracle rule).
+    # Step 3 runs `--mode summary` — the runner's only independent ratio
+    # oracle: it re-derives each variant's median from the wallclock CSV's
+    # own sample rows and asserts the re-derived ratio against the recorded
+    # `ratio_vs_base` (run-20 review P3-2; without it a green job never
+    # executes that check).
     #
     # Provenance: authored on branch `tis-sol4-w3-perf` (Wave 3) WITHOUT ever
     # being executed from that sandboxed environment (no push); the first
@@ -3217,6 +3256,23 @@ jobs:
       - name: Contended wall-clock A/B (retry-counter oracle)
         run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
         shell: bash
+      # run-20 review P3-2: modeSummary is the ONE place that independently
+      # re-derives the ratio from sample rows and compares it against the
+      # wallclock producer's recorded `ratio_vs_base` — without this step the
+      # job can go green without ever executing that check. Scope note,
+      # stated explicitly per the review: summary mode is targetless by
+      # design and reads the COMMITTED per-leg artifacts from the checkout —
+      # the x86_64 codegen CSV and the x86_64-pc-windows-msvc wallclock CSV
+      # are committed repo files, while the aarch64 codegen CSV + identity
+      # header are freshly overwritten by this job's first step — so the
+      # wallclock half of the oracle re-checks the committed windows-msvc
+      # evidence corpus, NOT this run's fresh aarch64 wallclock output (that
+      # fresh CSV is uploaded below for the gate doc's documented offline
+      # aggregation). Exit status propagates through the tee pipe the same
+      # way the two steps above rely on.
+      - name: Summary ratio oracle (re-derived medians vs recorded ratio_vs_base)
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary 2>&1 | tee "$RUNNER_TEMP/tis-p3-summary.log"
+        shell: bash
       # `if: always()` is deliberate: a failed oracle run still uploads its
       # raw logs so the failure can be diagnosed offline.
       - name: Upload raw artifacts
@@ -3230,6 +3286,7 @@ jobs:
             docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_wallclock.log
             docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_aarch64-unknown-linux-gnu.csv
             docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_aarch64-unknown-linux-gnu.csv
+            docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv
           if-no-files-found: error
 
   numa-shim-mock:
