@@ -5,8 +5,8 @@
 //! errors (the test count is deliberately not quoted here — it drifts as
 //! new hazards get pinned; `tests/common/compile_fail.rs`'s header gives
 //! the re-derivation command). The shared
-//! child-cargo mechanics (manifest resolution, packaged-package skip
-//! guard, spawn, diagnostic context string) live in
+//! child-cargo mechanics (manifest resolution, spawn, diagnostic context
+//! string) live in
 //! `tests/common/compile_fail.rs`; each `#[test]` below keeps only its own
 //! assertions and its fixture-specific rationale.
 //!
@@ -42,19 +42,11 @@
 //!
 //! # Published-package behavior
 //!
-//! The fixture crates under `tests/compile_fail/` are git-checkout-only
-//! test infrastructure: each has its own `Cargo.toml`, so cargo's
-//! packaging rule auto-excludes them from the published `.crate` (now
-//! stated explicitly via the `[package]` `exclude` in `Cargo.toml`). This
-//! driver file itself IS packaged (a plain `.rs` file directly under
-//! `tests/`), so `cargo test` inside a downloaded package reaches it —
-//! but not usefully as a compile-fail test: the fixtures are simply not
-//! there. The skip fires ONLY in a packaged context — detected via the
-//! `Cargo.toml.orig` `cargo package` writes into every extracted package
-//! (absent from any git checkout) — so a fixture that goes missing from a
-//! real checkout FAILS LOUD instead (a bare
-//! `manifest.exists()` guard silently skipped the test in a checkout whose
-//! fixture directory had been renamed away, reporting a false `ok`).
+//! The fixture crates, this driver, and `tests/common/` are explicitly
+//! excluded from the published `.crate` by `Cargo.toml`. Consequently a
+//! packaged `cargo test` cannot discover this driver. In a repository
+//! checkout, every test below reaches its child Cargo build, and a missing
+//! fixture fails loudly.
 //!
 //! # RUSTFLAGS stripping
 //!
@@ -77,43 +69,30 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 /// Builds the loom-cfg fixture with Cargo's machine-readable diagnostics.
-fn build_fixture_with_json(fixture_dir: &str, rustflags: &str) -> Option<Output> {
+fn build_fixture_with_json(fixture_dir: &str, rustflags: &str) -> Output {
     let manifest = fixture_manifest(fixture_dir);
-    let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("Cargo.toml.orig")
-        .exists();
-    if !manifest.exists() {
-        assert!(
-            packaged,
-            "compile-fail fixture missing from a git checkout: {}",
-            manifest.display()
-        );
-        eprintln!(
-            "skipping: compile-fail fixture not present ({}) — fixture crates are \
-             git-checkout-only test infrastructure, excluded from the published .crate",
-            manifest.display()
-        );
-        return None;
-    }
+    assert!(
+        manifest.is_file(),
+        "compile-fail fixture missing from checkout: {}",
+        manifest.display()
+    );
 
     let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(fixture_dir);
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    Some(
-        Command::new(&cargo)
-            .args([
-                "build",
-                "--offline",
-                "--message-format=json",
-                "--manifest-path",
-            ])
-            .arg(&manifest)
-            .env("CARGO_TARGET_DIR", child_target)
-            .env("RUSTFLAGS", rustflags)
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env("CARGO_TERM_COLOR", "never")
-            .output()
-            .expect("failed to spawn cargo for the compile-fail fixture"),
-    )
+    Command::new(&cargo)
+        .args([
+            "build",
+            "--offline",
+            "--message-format=json",
+            "--manifest-path",
+        ])
+        .arg(&manifest)
+        .env("CARGO_TARGET_DIR", child_target)
+        .env("RUSTFLAGS", rustflags)
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env("CARGO_TERM_COLOR", "never")
+        .output()
+        .expect("failed to spawn cargo for the compile-fail fixture")
 }
 
 #[derive(Debug)]
@@ -199,9 +178,7 @@ fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
 /// `StackHead<16>`").
 #[test]
 fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
-    let Some(output) = build_fixture("two_backings", None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture("two_backings", None);
     let manifest = fixture_manifest("two_backings");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
@@ -273,9 +250,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// out-of-crate attempt fails with **E0117** (orphan rule).
 #[test]
 fn competing_binding_around_array_index_stack_head_must_not_compile() {
-    let Some(output) = build_fixture("array_index_stack_head", None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture("array_index_stack_head", None);
     let manifest = fixture_manifest("array_index_stack_head");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
@@ -336,9 +311,7 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 /// against `pool`, the `Pool` binding.)
 #[test]
 fn hook_call_requires_unsafe_block() {
-    let Some(output) = build_fixture("hook_call_requires_unsafe", None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture("hook_call_requires_unsafe", None);
     let manifest = fixture_manifest("hook_call_requires_unsafe");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
@@ -386,9 +359,7 @@ fn hook_call_requires_unsafe_block() {
 /// fixture and asserts it fails with the `_CHECK_BITS` E0080 range
 /// requirement.
 fn assert_index_bits_fixture_must_not_compile(fixture_dir: &str) {
-    let Some(output) = build_fixture(fixture_dir, None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture(fixture_dir, None);
     let manifest = fixture_manifest(fixture_dir);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
@@ -450,9 +421,7 @@ fn index_bits_seventeen_must_not_compile() {
 /// it silently cancels the override).
 #[test]
 fn loom_cfg_without_feature_fails_with_only_the_named_error() {
-    let Some(output) = build_fixture_with_json("loom_cfg_without_feature", "--cfg loom") else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture_with_json("loom_cfg_without_feature", "--cfg loom");
     let manifest = fixture_manifest("loom_cfg_without_feature");
     let context = failure_context(&manifest, &output);
     const EXPECTED_MESSAGE: &str =
@@ -509,9 +478,7 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
 /// safe trait, with no acknowledgment possible or required.
 #[test]
 fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
-    let Some(output) = build_fixture("unsafe_impl_required", None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture("unsafe_impl_required", None);
     let manifest = fixture_manifest("unsafe_impl_required");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
@@ -563,9 +530,7 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
 /// `pool` and `owned`.)
 #[test]
 fn push_index_requires_unsafe_block() {
-    let Some(output) = build_fixture("push_index_requires_unsafe", None) else {
-        return; // packaged package: fixtures absent, skip.
-    };
+    let output = build_fixture("push_index_requires_unsafe", None);
     let manifest = fixture_manifest("push_index_requires_unsafe");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);

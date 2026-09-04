@@ -14,11 +14,18 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
-# tests/compile_fail/ fixture crates auto-exclude via the nested-manifest rule;
-# explicit so the .crate never depends on that default (the shipped driver +
-# tests/common/ skip when fixtures are absent). scripts/ and the scratch-guard
-# test that drives it are repository-only measurement infrastructure.
-exclude = ["tests/compile_fail/", "scripts/", "tests/tis_p3_ab_runner_scratch_guard.rs"]
+# Compile-fail fixtures, their driver, and its helper are repository-only test
+# infrastructure and must not enter the published .crate. The fixture crates
+# auto-exclude via Cargo's nested-manifest rule; all three paths are explicit
+# so package contents do not depend on that rule. scripts/ and the scratch-
+# guard test that drives it are repository-only measurement infrastructure.
+exclude = [
+    "tests/compile_fail/",
+    "tests/compile_fail.rs",
+    "tests/common/",
+    "scripts/",
+    "tests/tis_p3_ab_runner_scratch_guard.rs",
+]
 
 # Crate-local `unexpected_cfgs` declaration, deliberately NOT the
 # workspace-inherited table (`[lints] workspace = true`): the workspace
@@ -39,11 +46,11 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 incompatible-msrv = "allow"
 
 [dependencies]
-# `loom` is optional so a NORMAL build has zero loom entries in `Cargo.lock`
-# (a non-optional `cfg(loom)` target dep would still be resolved and locked
-# into every consumer). Running the loom suite needs BOTH `--cfg loom` in
-# RUSTFLAGS and `--features loom`; the cfg alone fails fast with a named
-# `compile_error!` in `src/lib.rs`.
+# `loom` is optional, so default activation neither activates nor compiles
+# Loom. A shared or previously generated lockfile may still contain a `loom`
+# entry for another workspace member or another dependency-resolution reason.
+# Running the loom suite needs BOTH `--cfg loom` in RUSTFLAGS and `--features
+# loom`; the cfg alone fails fast with a named `compile_error!` in `src/lib.rs`.
 
 [target.'cfg(loom)'.dependencies]
 loom = { workspace = true, optional = true }

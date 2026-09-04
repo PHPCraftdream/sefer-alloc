@@ -4,27 +4,16 @@
 //! tests/compile_fail.rs` rather than trusting a number quoted here).
 //!
 //! Every compile-fail test used to duplicate the same ~55 lines of
-//! boilerplate: manifest-path resolution, the packaged-package skip guard,
-//! the out-of-process `cargo build`, and the diagnostic context string.
+//! boilerplate: manifest-path resolution, the out-of-process `cargo build`,
+//! and the diagnostic context string.
 //! This module is that boilerplate, stated once. The assertion logic —
 //! which error codes and message substrings each fixture must produce —
 //! stays in the individual tests in `tests/compile_fail.rs`.
 //!
-//! # Published-package behavior (shared by all consolidated fixtures)
-//!
-//! The fixture crates under `tests/compile_fail/` are git-checkout-only
-//! test infrastructure: each has its own `Cargo.toml`, so cargo's
-//! packaging rule auto-excludes them from the published `.crate` (now
-//! stated explicitly via the `[package]` `exclude` in `Cargo.toml`). The
-//! driver file itself IS packaged (a plain `.rs` file directly under
-//! `tests/`, and so is this helper), so `cargo test` inside a downloaded
-//! package reaches it — but not usefully as a compile-fail test: the
-//! fixtures are simply not there. The skip fires ONLY in a packaged
-//! context — detected via the `Cargo.toml.orig` `cargo package` writes
-//! into every extracted package (absent from any git checkout) — so a
-//! fixture that goes missing from a real checkout FAILS LOUD instead (a
-//! bare `manifest.exists()` guard silently skipped the test in a checkout
-//! whose fixture directory had been renamed away, reporting a false `ok`).
+//! The fixture crates, this helper, and the `tests/compile_fail.rs` driver are
+//! explicitly excluded from the published `.crate` by the package manifest.
+//! A checkout that reaches this helper must therefore contain every fixture;
+//! a missing manifest is an immediate test failure.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -42,14 +31,6 @@ pub fn fixture_manifest(fixture_dir: &str) -> PathBuf {
 /// Builds the named compile-fail fixture in a child cargo process and
 /// returns its output.
 ///
-/// Returns `None` ONLY in the packaged-package skip case: the fixture
-/// manifest is absent AND `Cargo.toml.orig` (written by `cargo package`
-/// into every extracted package, never present in a git checkout) proves a
-/// packaged context. In that case the caller just returns — the test is
-/// skipped with a printed notice. If the manifest is absent in a real
-/// checkout, this FAILS LOUD (a bad rename or accidental deletion must not
-/// report a false `ok`).
-///
 /// `rustflags` selects the child `RUSTFLAGS` handling: `Some(f)` SETS
 /// `RUSTFLAGS=f` (the loom-cfg fixture is the inverse case — the `--cfg
 /// loom` configuration is the whole point); `None` REMOVES `RUSTFLAGS` so
@@ -63,25 +44,13 @@ pub fn fixture_manifest(fixture_dir: &str) -> PathBuf {
 ///
 /// The child target dir is `CARGO_TARGET_TMPDIR/<fixture_dir>` — cached
 /// across runs; target/tmp is gitignored.
-pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Option<Output> {
+pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Output {
     let manifest = fixture_manifest(fixture_dir);
-    let packaged = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("Cargo.toml.orig")
-        .exists();
-    if !manifest.exists() {
-        assert!(
-            packaged,
-            "compile-fail fixture missing from a git checkout: {}",
-            manifest.display()
-        );
-        eprintln!(
-            "skipping: compile-fail fixture not present ({}) — fixture \
-             crates are git-checkout-only test infrastructure, excluded \
-             from the published .crate",
-            manifest.display()
-        );
-        return None;
-    }
+    assert!(
+        manifest.is_file(),
+        "compile-fail fixture missing from checkout: {}",
+        manifest.display()
+    );
 
     let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(fixture_dir);
 
@@ -111,11 +80,9 @@ pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Option<Outpu
     // locally (same class as the earlier CI color bug fixed in fcae3ad
     // with --color=never).
     command.env("CARGO_TERM_COLOR", "never");
-    Some(
-        command
-            .output()
-            .expect("failed to spawn cargo for the compile-fail fixture"),
-    )
+    command
+        .output()
+        .expect("failed to spawn cargo for the compile-fail fixture")
 }
 
 /// The shared failure-context string every assertion message in
