@@ -8,13 +8,15 @@
 
 **Дельта нового раунда:** изменения после ревизии предыдущего независимого отчёта `1e75569`, прежде всего `1e55c43..954f044`.
 
+**Коррекция после аудита правок:** 2026-09-04 14:24:55 +02:00. P3-2 отозван после прямой проверки ordering pair на Rust 1.79 и 1.97; подробность и исправленная рекомендация находятся в исходном разделе P3-2 ниже. Остальные findings и GO-вердикт не изменились.
+
 ## Вердикт
 
 **GO по production-коду и публикуемому crate artifact.** Новых P0, P1 или P2 не найдено. Повторный разбор packed-state, tag seal, H-2, CAS loops, release sequence, unsafe-границ, panic/error paths, package surface и новых коммитов не выявил нарушения soundness, ABA-защиты, lock-free progress или заявленного `no_std`/allocation-free контракта.
 
-До финальной публикационной точки желательно закрыть четыре P3. Два из них — противоречия в текущих repository trackers, один — зависимость «нулевой стоимости» test-инструментации от оптимизатора, один — нечестно обозначенная публичная semver-поверхность. Они не меняют нынешнюю корректность алгоритма, но их лучше не переносить через первую публикацию.
+До финальной публикационной точки желательно закрыть три P3. Один из них — противоречие в current-state correctness tracker, один — зависимость «нулевой стоимости» test-инструментации от оптимизатора, один — нечестно обозначенная публичная semver-поверхность. Они не меняют нынешнюю корректность алгоритма, но их лучше не переносить через первую публикацию.
 
-Сводка: **P0: 0, P1: 0, P2: 0, P3: 4, P4: 4.**
+Сводка после коррекции P3-2: **P0: 0, P1: 0, P2: 0, P3: 3, P4: 4.**
 
 ## Что просмотрено
 
@@ -43,13 +45,13 @@
 
 **Рекомендация:** обновить карточку 141 по всем findings либо перенести её в resolved trail по принятому в репозитории правилу «headline истории не переписывается, current status исправляется». Для каждого старого P1/P2/P3 достаточно дать closure commit/current evidence; не оставлять старое `all OPEN`.
 
-### P3-2. Perf item 63 предлагает невозможную независимую CAS-ordering variant
+### P3-2 — WITHDRAWN. Perf item 63 предлагает допустимую CAS-ordering variant
 
 `docs/perf/OPEN_ITEMS.md:2909-2949` предлагает ослабить только success ordering в `pop_index` с `Acquire` до `Relaxed` и добавить четвёртый A/B variant. Текущий CAS — `compare_exchange(head, new_head, Acquire, Acquire)` (`src/imp.rs:1628`). Failure `Acquire` здесь намеренно load-bearing: возвращённый `actual` сразу становится следующим observed head, по которому retry может читать link.
 
-У `AtomicU64::compare_exchange` failure ordering не может быть сильнее success ordering. Поэтому пара `(success = Relaxed, failure = Acquire)` не является допустимым независимым вариантом: такой эксперимент не даёт валидной оптимизации. Одновременное ослабление failure до `Relaxed` — уже другой протокол и противоречит существующему proof/counterfactual для retry path. Дополнительно карточка ссылается на `CHANGELOG.md:186-192`, хотя нынешний файл имеет 35 строк и больше не содержит этого кандидата.
+Первоначальный вывод выше был ошибочен: Rust разрешает failure ordering сильнее success ordering, пока failure не равен `Release` или `AcqRel`. Проверка при аудите правок на MSRV Rust 1.79 и текущем Rust 1.97 приняла `(success = Relaxed, failure = Acquire)` и в обоих случаях выдала LLVM `cmpxchg ... monotonic acquire`. Таким образом failure `Acquire` можно сохранить для retry proof, ослабив только success ordering. Устаревшая ссылка карточки на прежние строки CHANGELOG действительно требовала удаления, но не закрытия кандидата.
 
-**Рекомендация:** закрыть item 63 как invalid independent knob. Если когда-либо исследовать переработку всего pop-retry протокола, завести отдельную карточку с новым happens-before proof, activation oracle и Loom counterfactual; не добавлять текущую четвёртую variant в measurement runner.
+**Исправленная рекомендация:** оставить item 63 открытым и добавить четвёртую A/B variant перед запланированным arm64-прогоном. Это подтверждение допустимости ordering pair, а не доказательство ускорения; production hot path менять только по результатам gate. P3-2 больше не считается finding этого обзора.
 
 ### P3-3. Нулевая стоимость backoff-инструментации теперь гарантируется оптимизатором, а не cfg-формой исходника
 
@@ -154,7 +156,9 @@ Public blanket impl — осознанный coherence commitment: он огра
 1. `docs/perf/OPEN_ITEMS.md` item 61 — не повторять `store_next(index, same_next)` после lost push CAS, если observed successor не изменился. Нужны отдельная A/B variant, activation counter «store действительно пропущен» и weak-memory proof; нынешний runner эту variant не содержит.
 2. Item 62 — `load_next`/`store_next` Acquire/Release → Relaxed. На x86 это codegen-null, на AArch64 удаляет реальные `ldar/stlr`; решение должно ждать native arm64 wall-clock и Loom/counterfactual пакет.
 
-Item 63 к этому списку не относится: он ошибочно выделяет success ordering как независимый knob (P3-2). Padding `ArrayLinks` внутри crate без consumer profile также нецелесообразен: он раздует footprint до 16 раз; slot-resident mapping/padding должен оставаться решением владельца storage по фактическому false-sharing профилю.
+3. Item 63 — `pop_index` CAS success `Acquire` → `Relaxed` при сохранении failure `Acquire`. Rust 1.79/1.97 принимают эту пару; нужен отдельный A/B arm и target-specific codegen/wall-clock evidence.
+
+Padding `ArrayLinks` внутри crate без consumer profile нецелесообразен: он раздует footprint до 16 раз; slot-resident mapping/padding должен оставаться решением владельца storage по фактическому false-sharing профилю.
 
 ## Тестовая и публикационная поверхность — статическая оценка
 
@@ -176,4 +180,4 @@ Item 63 к этому списку не относится: он ошибочн�
 
 `tagged-index-stack` **готов к публикации по состоянию production-кода**. Алгоритмического, soundness- или package-blocker уровня P0–P2 не найдено; последние исправления не внесли видимой semantic regression.
 
-Перед финальной точкой особенно полезно закрыть P3-1 и P3-2: сейчас два официальных current-state документа говорят неправду — один сохраняет старый `NO-GO`, другой просит измерить недопустимую ordering pair. P3-3 и P3-4 лучше решить сейчас, пока можно свободно выбрать идеальную cfg/API форму. После этого остаток — P4-сопровождаемость, а не риск корректности публикуемого stack.
+Перед финальной точкой особенно полезно закрыть P3-1, P3-3 и P3-4. P3-2 отозван этой коррекцией: item 63 остаётся допустимой, но пока не измеренной perf-возможностью. После исправления трёх действующих P3 остаток — P4-сопровождаемость и measurement-only perf backlog, а не риск корректности публикуемого stack.

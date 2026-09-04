@@ -2907,46 +2907,37 @@ for completeness.
       committed CSVs + `_raw_tis_p3_ab_*` logs.
 
 63. **[D] `tagged-index-stack` `pop_index`'s CAS SUCCESS ordering (Acquire
-    today) as a `Relaxed` candidate — a THIRD ordering-weakening candidate
-    named in the crate CHANGELOG but tracked in neither item 61 nor 62 nor
-    the A/B driver's variant list.** (Filed 2026-09-01 from the @fh
-    quality/perf review of `tagged-index-stack` §1.6 [process note] —
-    indexed here per CLAUDE.md's round-start rule so the candidate is not
-    lost.)
+    today) as a `Relaxed` candidate — a valid but unmeasured FOURTH
+    weak-memory A/B variant.** (Filed 2026-09-01 from the @fh quality/perf
+    review of `tagged-index-stack` §1.6 [process note]. Corrected 2026-09-04
+    after Sol-codex run-22 incorrectly called the ordering pair invalid.)
 
-    - **Status:** OPEN — unmeasured, not landed. Explicitly considered
-      and NOT changed per the crate CHANGELOG entry, pending measurement.
-    - **Current-number-or-verdict:** no measurement exists yet. The
-      candidate: `pop_index`'s CAS SUCCESS ordering, currently
-      `Ordering::Acquire`, weakened to `Ordering::Relaxed` — source
-      `crates/tagged-index-stack/CHANGELOG.md:186-192`. The CHANGELOG's
-      own on-paper soundness argument (PROSE REASONING, NOT A MEASUREMENT
-      — the item stays OPEN regardless of how plausible the argument
-      reads): on success the CAS reads no new value, because the matched
-      `head` is already held locally, Acquire-loaded either by `pop`'s
-      initial head load or by the previous failed iteration's Acquire
-      failure ordering, so the synchronizes-with edge already exists
-      without the success ordering itself being `Acquire`/`AcqRel`.
-    - **Next trigger:** the measurement infrastructure items 61/62 cite
-      NOW EXISTS — driver
-      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs` plus the
-      workflow_dispatch-only arm64 CI job
-      (`tis-weak-memory-wallclock-gate`, ubuntu-24.04-arm,
-      `.github/workflows/ci.yml`). This candidate is NOT among the
-      driver's variants (`VARIANTS = ['base', 'links_relaxed',
-      'cas_weak']`, `tis_p3_ab_runner.mjs:59`), so acting on it first
-      requires adding a FOURTH variant to that list. The natural trigger
-      is the pending arm64 wall-clock run for items 61/62: add the
-      variant BEFORE that dispatch so one run measures all three
-      candidates; otherwise the item simply stays open until someone
-      adds the variant sooner. Per CLAUDE.md, no hot-path runtime change
-      lands without a gate report.
-    - **Evidence:** `crates/tagged-index-stack/CHANGELOG.md:186-192`
-      (the source of the candidate);
-      `docs/reviews/2026-09-01-fh-quality-perf-review-tagged-index-stack.md`
-      §1.6 (the flag that it was tracked nowhere); sibling items 61/62
-      (the shared infrastructure — same driver, same CI job, same
-      pending-run blocker).
+    - **Status:** OPEN — unmeasured, not landed. `pop_index` currently uses
+      `compare_exchange(head, new_head, Acquire, Acquire)`. The candidate
+      changes only success to `Relaxed` and retains the load-bearing
+      `failure = Acquire` used by the retry proof.
+    - **Current-number-or-verdict:** no performance measurement exists yet.
+      The candidate is technically valid: both Rust 1.79 (the crate MSRV)
+      and Rust 1.97 accept `(success = Relaxed, failure = Acquire)` and lower
+      the constant pair to LLVM `cmpxchg ... monotonic acquire`. Rust forbids
+      `Release` and `AcqRel` as failure orderings; it does not impose the
+      C/C++ rule that failure cannot be stronger than success. The initial
+      head load and every failed CAS already provide the Acquire observation
+      used before following a link, so this success-only candidate does not
+      weaken the retry path. This is validity evidence, not speed evidence.
+    - **Next trigger:** add a fourth variant to
+      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs` before the
+      pending native arm64 dispatch for items 61/62, with an oracle asserting
+      that only pop's success ordering changed. Measure/codegen-compare it in
+      the same run; land no hot-path change without the gate report required
+      by CLAUDE.md.
+    - **Evidence:** `crates/tagged-index-stack/src/imp.rs` (the current
+      `Acquire/Acquire` pop CAS); Rust 1.79 and 1.97 emitted LLVM IR for a
+      constant `AtomicU64::compare_exchange(_, _, Relaxed, Acquire)` pair
+      (`cmpxchg ... monotonic acquire`) during the 2026-09-04 patch audit;
+      `docs/reviews/2026-09-04-124118-tagged-index-stack-review-Sol-codex-run-22.md`
+      now records the correction. The obsolete CHANGELOG line reference from
+      the original card has been removed.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
