@@ -405,24 +405,11 @@ fn main() {
     // by exactly one push, and every subsequent operation on it is
     // pop-then-immediate-repush of that same value, so no index is ever
     // pushed while still reachable elsewhere.
-    // The timed window is ONE shared pair of instants (`timed_start` /
-    // `deadline` below) published by the coordinator AFTER every worker has
-    // reached the ready barrier, so every worker -- and the coordinator's
-    // elapsed denominator -- times against the SAME window instead of each
-    // worker's own post-barrier-resume clock (the old shape let scheduler
-    // skew decorrelate the numerator's exposure window from the
-    // denominator). The old fixed BARRIER_LEAD lead time (window computed
-    // before spawning) silently trusted thread-spawn + rendezvous to finish
-    // within the lead; on a slow CI runner or VM it could not, and part of
-    // the window was lost with no signal. The window
-    // is now computed at/after full rendezvous, so there is no fixed
-    // spawn+rendezvous budget left to exceed, and the only residual stall
-    // path -- a worker descheduled between the rendezvous and its window
-    // entry -- is covered by the MAX_WINDOW_ENTRY_LATENESS guard the
-    // workers check before counting. Each worker checks the clock only
-    // once per DEADLINE_CHECK_INTERVAL iterations inside the timed loop
-    // (mechanism documented on the const above), and runs an uncounted
-    // warm-up until the shared window opens.
+    // The timed window is the published-window protocol described once
+    // above, on `run_contention_phase`: ONE shared coordinator-published
+    // `timed_start`/`deadline` pair, so every worker and the coordinator's
+    // elapsed denominator time against the same window. See that
+    // description for the full mechanics; this phase uses them unchanged.
     // Seed indices are `thread_id * LINKS_SIZE / num_threads` -- distinct
     // for every thread only while `num_threads <= LINKS_SIZE`. True today
     // (num_threads capped at 8 above, LINKS_SIZE = 256), but nothing

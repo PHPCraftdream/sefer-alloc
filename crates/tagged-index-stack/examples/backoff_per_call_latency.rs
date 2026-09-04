@@ -238,25 +238,11 @@ fn main() {
                 unsafe { stack.push(i) }.expect("fresh head has tag budget");
             }
 
-            // Published-window protocol, same shape as the contention phases of
-            // `benches/tagged_index_stack_bench.rs`: workers rendezvous at
-            // `barrier_ready` once setup is done; the coordinator then records the
-            // wall-clock start; only `barrier_window` releases workers into the
-            // counted work, and a worker cannot pass `barrier_window.wait()` until
-            // the coordinator arrives there (which it does only after its
-            // `Instant::now()`), so no counted pop/push can precede the clock read
-            // the `wall_ms` denominator derives from. The old single barrier let
-            // work begin before the coordinator timestamped the run, shortening
-            // `wall_ms`.
-            //
-            // `wall_ms` is a coordinator-to-last-join ENVELOPE, not a tight
-            // measurement of pure work time: the second barrier prevents
-            // counted work from starting before `start` is taken, but the
-            // elapsed denominator still includes each worker's own release
-            // overhead past the window barrier, that worker's last
-            // iteration's tail, the final `.join()` wait, and any
-            // OS-scheduling overshoot past the nominal deadline — an upper
-            // bound with real but bounded slack.
+            // Published-window protocol, same shape as the contention phases
+            // of `benches/tagged_index_stack_bench.rs` -- see the canonical
+            // published-window protocol description there (on
+            // `run_contention_phase`), and this file's header doc above for
+            // what the shape means for `wall_ms`.
             let barrier_ready = Barrier::new(threads + 1);
             let barrier_window = Barrier::new(threads + 1);
             let (per_thread, wall) = std::thread::scope(|s| {
