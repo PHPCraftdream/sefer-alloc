@@ -76,8 +76,12 @@ every `StackStorage` implementor), so the CAS-loop bodies cannot be
 overridden downstream. The old per-call repro — two independent calls, each
 supplying a different link array against one head and double-issuing an
 index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
-implementor/caller discipline at the VALUE level: a head must be reachable
-through exactly ONE live implementor value at a time (the trait doc's `# Safety` clause 1),
+implementor/caller discipline at the VALUE level: a head must stay bound to one
+backing for its whole life and be reachable through exactly ONE live implementor
+value at a time — but one-at-a-time liveness is not sufficient: it must never
+be rebound to different link storage across time, even if no more than one value
+is live at any instant (the trait doc's `# Safety` clause 1; clause 2 requires
+one backing consistently),
 and disjoint REACHABLE-index populations per binding over any shared
 link-cell population — cell sharing per se is harmless (two stacks over the
 same cells with disjoint populations coexist correctly); the hazard is one
@@ -141,7 +145,7 @@ authoritative empty check.
   slot's page, and the SLOTS are what total ~16 MiB, not the link array
   itself.) A fresh stack is therefore EMPTY.
 
-### No double-push — compiler-enforced unsafe boundary, still not runtime-checked
+### No double-push — compiler-enforced unsafe boundary, partial runtime detection
 
 - **No double-push (caller-side `# Safety` clause).** An index must NOT
   already be reachable from ANY stack that reads and writes the same link
@@ -150,11 +154,11 @@ authoritative empty check.
   `# Safety` contract, behind a compiler-enforced unsafe boundary —
   `push_index` is an `unsafe fn`, so a bare call from safe code is a compile
   error (E0133) — but the compiler checks only that an `unsafe` context
-  exists, not the clause's substance: it is STILL not runtime-checked, no
-  detector exists. Consequence:
-  re-pushing a live index closes a cycle in the link chain — a
-  deeper-than-head loop silently hands one index to two callers; re-pushing
-  the current head trips `pop_index`'s self-loop detector on the first pop.
+  exists, not the clause's substance: there is no FULL runtime detector for
+  the liveness rule. `pop_index`'s release-active self-loop guard catches the
+  current-head double-push — its write makes `next[index] == index`, so the
+  first pop panics — but misses a deeper-than-head re-push that creates a
+  cycle without a self-loop and silently hands one index to two callers.
   Checking liveness would cost an O(n) chain walk per push, so `push_index`'s
   own unconditional check is only `index < INDEX_MASK` — necessary for the
   head-word encoding, but never sufficient proof of the implementor's
