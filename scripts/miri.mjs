@@ -10,9 +10,11 @@
 //   node scripts/miri.mjs --plain regression_heap_xthread_large_free_no_leak
 //   npm run miri
 //
-// Each entry is [features, testName]; miri is slow (segment tests run 1-8 min
-// each), so keep the set to the focused invariant/UB targets per the project's
-// short-scenario policy — not the whole suite.
+// Each entry is [features, testName, packageName?]; miri is slow (segment tests
+// run 1-8 min each), so keep the set to the focused invariant/UB targets per
+// the project's short-scenario policy — not the whole suite. Entries without
+// packageName run against the workspace root package, preserving the historical
+// command shape.
 
 import { REPO_ROOT, run, verdict } from './lib.mjs';
 
@@ -90,6 +92,10 @@ const MATRIX = [
   // slow under miri; the below-threshold path exercises the null-pointer
   // guard + publish helpers + try_materialise early return.
   ['alloc-segment-directory', 'segment_directory_a5_miri'],
+  // The extracted tagged-index-stack crate's unchecked-storage domain oracle.
+  // It has no crate features; keep the package-qualified invocation separate
+  // from the root-package feature matrix entry shape.
+  ['', 'narrow_domain_unchecked_storage', 'tagged-index-stack'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not
@@ -168,11 +174,11 @@ const PLAIN_MATRIX = [
 
 const args = process.argv.slice(2);
 const plain = args.includes('--plain');
-// The positional args are TEST NAMES (each MATRIX entry is `[features, test]`).
+// The positional args are TEST NAMES (the second column of each MATRIX entry).
 // They are NOT feature names: an entry with several features
 // (`'alloc-global alloc-xthread alloc-decommit fastbin'`) must be selected as a
 // whole by its test name — never token-matched against the space-joined feature
-// string. Filter strictly on the test name (column 1) to keep that distinction.
+// string. Filter strictly on the test name (column 2) to keep that distinction.
 const filter = args.filter((a) => a !== '--plain');
 const matrix = plain ? PLAIN_MATRIX : MATRIX;
 const knownTests = new Set(matrix.map(([, t]) => t));
@@ -187,7 +193,7 @@ if (unknown.length) {
   console.error(
     `[miri] unknown test name(s): ${unknown.join(', ')} — not a test in the ${
       plain ? 'PLAIN_MATRIX' : 'MATRIX'
-    }. Pass test names (column 1 of the matrix), not feature names.`,
+    }. Pass test names (the second matrix column), not feature names.`,
   );
   console.error(`[miri] known tests: ${[...knownTests].join(', ')}`);
   process.exit(2);
@@ -203,7 +209,16 @@ const entries = filter.length
 console.log(
   `[miri] ${plain ? 'PLAIN' : 'strict'} matrix: ${entries.length} entr${
     entries.length === 1 ? 'y' : 'ies'
-  } selected — ${entries.map(([, t]) => t).join(', ') || '(none)'}`,
+  } selected — ${
+    entries
+      .map(
+        ([features, test, packageName]) =>
+          `${test} (package: ${packageName || 'root'}, features: ${
+            features.trim() || '(none)'
+          })`,
+      )
+      .join(', ') || '(none)'
+  }`,
 );
 if (entries.length === 0) {
   console.error(
@@ -230,17 +245,32 @@ const env = {
 };
 
 let allOk = true;
-for (const [features, test] of entries) {
-  console.log(`\n[miri] ${test} (features: ${features})`);
+for (const [features, test, packageName] of entries) {
+  const packageArg = packageName ? ['-p', packageName] : [];
+  const featuresArg = features.trim();
+  const featuresArgs = featuresArg ? ['--features', featuresArg] : [];
+  console.log(
+    `\n[miri] ${test} (package: ${packageName || 'root'}, features: ${
+      featuresArg || '(none)'
+    })`,
+  );
   // `run()` defaults to `shell: false`, so the space-joined `features` value
   // reaches cargo as ONE argv element (no shell to re-split it on whitespace).
   // The previous COMMA-join here existed only to dodge `shell: true`'s
   // whitespace-splitting (DEP0190); cargo accepts `--features "a b c"` and
-  // `--features "a,b,c"` identically either way.
-  const featuresArg = features.trim();
+  // `--features "a,b,c"` identically either way. Package-only entries omit
+  // `--features` entirely rather than passing an empty value.
   const { code, out } = await run(
     'cargo',
-    ['+nightly', 'miri', 'test', '--features', featuresArg, '--test', test],
+    [
+      '+nightly',
+      'miri',
+      'test',
+      ...packageArg,
+      ...featuresArgs,
+      '--test',
+      test,
+    ],
     { cwd: REPO_ROOT, env },
   );
   allOk = verdict(`miri:${test}`, code, out) && allOk;
