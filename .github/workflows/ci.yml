@@ -2171,12 +2171,17 @@ jobs:
       # tagged-index-stack bench under the pinned 1.88 toolchain.
       - run: cargo bench -p tagged-index-stack --no-run
       # The published library surface has MSRV 1.79: `inline const`, used by
-      # `ArrayLinks::new`, is stabilized there. The floor rows therefore check
-      # the library only; the 1.88 rows above cover test and bench compilation,
-      # and the stable loom job covers the cfg+feature loom configuration.
+      # `ArrayLinks::new`, is stabilized there. The floor rows check the
+      # library on both the host and the no_std `x86_64-unknown-none` target;
+      # the latter is the MSRV × native-AtomicU64 intersection. The 1.88 rows
+      # above cover test and bench compilation, and the stable loom job covers
+      # the cfg+feature loom configuration.
       - uses: dtolnay/rust-toolchain@1.79
+        with:
+          targets: x86_64-unknown-none
       - run: cargo check -p tagged-index-stack
       - run: cargo check -p tagged-index-stack --features test-internals
+      - run: cargo check -p tagged-index-stack --target x86_64-unknown-none
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -2229,6 +2234,13 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
+      # P4 Miri automation: the package-specific unchecked-storage oracle for
+      # `tagged-index-stack`. Keep this as an explicit Miri invocation under
+      # the same strict-provenance flags as the root invariants above; a plain
+      # `cargo test` run would not exercise the interpreter's bounds/provenance
+      # checks for the narrower declared link domain.
+      - name: narrow_domain_unchecked_storage
+        run: cargo miri test -p tagged-index-stack --test narrow_domain_unchecked_storage
       # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
       # (zero-crossing of payload pages) over the segment substrate.
       # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
@@ -2600,7 +2612,8 @@ jobs:
     # toolchain) rather than each justifying its own job: the empty-feature
     # `loom_thread_free` model, and the `alloc-global,alloc-xthread` group
     # (`loom_magazine_ring_compose` + task #204's three shipping HeapOverflow
-    # / overflow-composition models — these in-tree files are the real
+    # / overflow-composition models + the Registry `free_slots` binding model —
+    # these in-tree files are the real
     # coverage of those protocols; the standalone `ring-mpsc` crate that
     # once shipped a parallel real-type suite for the same protocol shape
     # was removed from the workspace, task #655 — it had zero production
@@ -2636,25 +2649,29 @@ jobs:
       # test` invocation (one compile) per the file's consolidation
       # convention — they are the real coverage of the shipping HeapOverflow
       # ring + overflow-first composition referenced in the CRATE-P4 note
-      # above.
+      # above. The fifth target below is the root `Registry::free_slots`
+      # binding model; it uses the same feature/cfg composition and must stay
+      # explicit so a missing file or target cannot pass by absence.
       # `alloc-global` pulls in `tagged-index-stack` as a path dependency. With
       # this job's `--cfg loom`, its optional dependency feature must also be
       # enabled explicitly via `tagged-index-stack/loom`; the cfg alone is not
       # sufficient.
       - name: loom_magazine_ring_compose
         # Task #1110: tee + grep postconditions (task #1086 shape) — one
-        # sentinel per `--test` target in this four-target invocation (#1101
+        # sentinel per `--test` target in this five-target invocation (#1101
         # per-FILE granularity); `shell: bash` for `-eo pipefail`.
         run: |
           cargo test --release --features "alloc-global alloc-xthread tagged-index-stack/loom" \
             --test loom_magazine_ring_compose \
             --test loom_overflow_first_retry \
             --test loom_heap_overflow \
-            --test loom_heap_overflow_drain_guard 2>&1 | tee "$RUNNER_TEMP/loom-misc-compose.log"
+            --test loom_heap_overflow_drain_guard \
+            --test loom_registry_free_slots 2>&1 | tee "$RUNNER_TEMP/loom-misc-compose.log"
           grep -F "test compose_gen_guard_holds ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
           grep -F "test overflow_first_composed_never_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
           grep -F "test correct_overflow_never_tears_loses_or_duplicates ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
           grep -F "test guard_reclaims_entry_despite_unpublished_slot_gap ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
+          grep -F "test registry_free_slots_claim_recycle_is_conservative_under_contention ... ok" "$RUNNER_TEMP/loom-misc-compose.log"
         shell: bash
 
   tsan:

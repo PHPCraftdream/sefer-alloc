@@ -1092,7 +1092,7 @@ function verifyCiSentinels() {
 // its own isolated marker invocation, both in the `aligned-vmem-hugetlb-real`
 // job -- see docs/CORRECTNESS_OPEN_ITEMS.md item 87's card for the full
 // re-derivation this bump pairs with, in the same commit.
-const MIN_SENTINEL_COUNT = 47;
+const MIN_SENTINEL_COUNT = 75;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
