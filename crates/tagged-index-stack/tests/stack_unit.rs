@@ -124,7 +124,7 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
 #[test]
 fn empty_sentinel_16() {
     type T = TaggedIndex<16>;
-    let e = T::empty();
+    let e = T::pack(T::empty_index(), 0).expect("bootstrap empty halves are in range");
     assert!(T::is_empty(e));
     let (v, tag) = T::unpack(e);
     assert_eq!(v, 0xFFFF);
@@ -153,7 +153,9 @@ fn width_12_partitions() {
     let (v, t) = T::unpack(w);
     assert_eq!(v, 0xABC);
     assert_eq!(t, 7);
-    assert!(T::is_empty(T::empty()));
+    assert!(T::is_empty(
+        T::pack(T::empty_index(), 0).expect("bootstrap empty halves are in range")
+    ));
     // TAIL (u32::MAX) differs from this width's empty_index (0xFFF).
     assert_ne!(T::empty_index(), TAIL);
 }
@@ -201,7 +203,7 @@ fn max_legal_width_index_mask_never_equals_tail() {
 #[test]
 fn empty_sentinel_never_collides_with_a_live_index() {
     type T = TaggedIndex<16>;
-    let empty = T::empty();
+    let empty = T::pack(T::empty_index(), 0).expect("bootstrap empty halves are in range");
     assert!(T::is_empty(empty), "the empty sentinel reads as empty");
     let (sentinel_idx, sentinel_tag) = T::unpack(empty);
     assert_eq!(
@@ -476,8 +478,8 @@ fn default_array_index_stack_behaves_like_new() {
 }
 
 /// `StackHead::<INDEX_BITS>::default()` must behave exactly like `new()`:
-/// the same bootstrap head word — `TaggedIndex::<16>::empty()`'s documented
-/// empty-index sentinel with tag 0 — reading empty through the advisory
+/// the same bootstrap head word — `empty_index()` packed with tag 0 — reading
+/// empty through the advisory
 /// `is_empty`. This is the one `Default` impl a custom-storage implementor
 /// reaches directly (`StackHead` is the head half of the `StackStorage`
 /// extension point); it was previously pinned by nothing —
@@ -498,12 +500,14 @@ fn default_stack_head_behaves_like_new() {
     );
     assert_eq!(
         default_head.raw_head(),
-        TaggedIndex::<16>::empty(),
+        TaggedIndex::<16>::pack(TaggedIndex::<16>::empty_index(), 0)
+            .expect("bootstrap empty halves are in range"),
         "a freshly-defaulted head IS the documented bootstrap empty sentinel"
     );
     assert_eq!(
         new_head.raw_head(),
-        TaggedIndex::<16>::empty(),
+        TaggedIndex::<16>::pack(TaggedIndex::<16>::empty_index(), 0)
+            .expect("bootstrap empty halves are in range"),
         "a freshly-newed head IS the documented bootstrap empty sentinel"
     );
     assert!(

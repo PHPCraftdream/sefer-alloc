@@ -215,7 +215,7 @@ fn conservation_under_real_thread_contention() {
     // REQUIRED, just no longer on one round's scheduler luck. Without the
     // feature there is nothing to wait on, so exactly one round runs.
     #[cfg(feature = "test-internals")]
-    {
+    let rounds_done = {
         let mut rounds_done = 0u32;
         loop {
             contention_round(&stack);
@@ -232,12 +232,16 @@ fn conservation_under_real_thread_contention() {
                  cap {pop_cap_before} -> {pop_cap_now}, push cap \
                  {push_cap_before} -> {push_cap_now}) — the scheduler starved \
                  genuine contention in every bounded attempt, so the depth-7 \
-                 event this oracle requires never happened"
+                event this oracle requires never happened"
             );
         }
-    }
+        rounds_done
+    };
     #[cfg(not(feature = "test-internals"))]
-    contention_round(&stack);
+    let rounds_done = {
+        contention_round(&stack);
+        1u32
+    };
 
     #[cfg(feature = "test-internals")]
     {
@@ -272,11 +276,14 @@ fn conservation_under_real_thread_contention() {
     drained.sort_unstable();
 
     let expected: Vec<u32> = (0..LINKS_SIZE).collect();
+    let total_iterations =
+        u64::from(rounds_done) * (NUM_THREADS as u64) * u64::from(ITERS_PER_THREAD);
     assert_eq!(
         drained, expected,
-        "free-list conservation violated after {NUM_THREADS} threads x \
-         {ITERS_PER_THREAD} contention-shaped pop/push iterations: drained \
-         multiset does not match the prefilled 0..{LINKS_SIZE} exactly \
-         (lost and/or duplicated index)"
+        "free-list conservation violated after {rounds_done} full contended \
+         round(s), {total_iterations} total pop/push iterations ({NUM_THREADS} \
+         threads x {ITERS_PER_THREAD} per round): drained multiset does not \
+         match the prefilled 0..{LINKS_SIZE} exactly (lost and/or duplicated \
+         index)"
     );
 }

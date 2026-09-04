@@ -281,13 +281,19 @@ This crate's test-only probes (`raw_head`, `load_next_for_test`,
 `store_next_for_test`, `cas_head_for_test`, `retry_counts_for_test`,
 `backoff_cap_reached_for_test`) are feature- or cfg-gated and
 `#[doc(hidden)]`: under default features none of them exists at all (docs.rs
-included), and none carries a semver stability guarantee. They exist for this
-crate's own test suite — a downstream consumer has no reason to name them.
+included). The `test-internals` feature is an explicitly unstable,
+repository-test escape hatch: its probes may be changed or removed without a
+semver guarantee, and consumers must not build production code against them.
+The `loom` cfg/feature has the same policy for its loom-only probes. These
+surfaces remain public only because Cargo integration-test targets are separate
+crates; no standalone harness crate is needed, and the feature is not part of
+the stable API contract.
 
-The one `#[doc(hidden)]` item that remains in a default build is
-`TaggedIndex::empty()` — a bootstrap internal, used by `StackHead::new` /
-`ArrayIndexStack::new` and by one `sefer-alloc` test shim; not freely
-removable, but not something to depend on either.
+The bootstrap empty word is crate-private. `StackHead::new` and
+`ArrayIndexStack::new` construct it internally, while external consumers that
+need the sentinel use the stable `TaggedIndex::empty_index()` plus
+`TaggedIndex::pack(empty_index, 0)` contract instead of depending on an
+undocumented empty-word helper.
 
 ## MSRV
 

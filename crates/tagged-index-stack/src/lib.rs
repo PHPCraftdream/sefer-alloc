@@ -105,7 +105,7 @@
 //!
 //! When a [`pop_index`](StackOps::pop_index) drains the last element, the head
 //! transitions to "empty". A naive implementation packs the empty sentinel
-//! with tag 0 ([`TaggedIndex::empty()`](TaggedIndex::empty)). That is a bug:
+//! with tag 0 (the bootstrap word). That is a bug:
 //! resetting the tag to 0 reopens the ABA window — a popper parked mid-`pop`
 //! holding a stale `(idx, tag)` snapshot from before the drain sees its stale
 //! tag recur once the stack drains (→ tag 0) and is refilled by a push of the

@@ -558,7 +558,18 @@ pub(crate) mod loom_shim {
     impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
         pub(crate) const fn new() -> Self {
             StackHead {
-                head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+                // Bootstrap emptiness is index-only; tag 0 is the initial
+                // generation. Keep this shim on the stable public packing
+                // primitives instead of depending on a crate-private helper.
+                head: AtomicU64::new(
+                    match TaggedIndex::<INDEX_BITS>::pack(
+                        TaggedIndex::<INDEX_BITS>::empty_index(),
+                        0,
+                    ) {
+                        Some(word) => word,
+                        None => panic!("bootstrap empty halves must be in range"),
+                    },
+                ),
             }
         }
 

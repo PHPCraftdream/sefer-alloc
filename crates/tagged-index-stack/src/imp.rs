@@ -104,38 +104,39 @@ impl Backoff {
 /// Retry-counter oracle increment for `pop_index`'s CAS-retry arm (see
 /// `POP_RETRY_COUNT`): one lost CAS. A REAL core-atomic write under
 /// `test-internals`/`loom`, so counts survive loom re-runs; `Relaxed`
-/// counts only. Empty in a production build — which is what lets the
-/// retry arms call these helpers unconditionally, with no `#[cfg]` at the
-/// call site and no production code change.
+/// counts only. The helper is compiled only for test/loom builds; its call
+/// sites are cfg-gated too, so low-opt default builds contain no test
+/// instrumentation in the retry paths.
+#[cfg(any(feature = "test-internals", loom))]
 #[inline]
 fn note_pop_retry() {
-    #[cfg(any(feature = "test-internals", loom))]
     POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// Push-side twin of [`note_pop_retry`] (see `PUSH_RETRY_COUNT`): one lost
 /// CAS in `push_index`'s retry arm.
+#[cfg(any(feature = "test-internals", loom))]
 #[inline]
 fn note_push_retry() {
-    #[cfg(any(feature = "test-internals", loom))]
     PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// Backoff-activation oracle increment for `pop_index`'s CAS-retry arm:
 /// called for a retry whose spin loop ran at FULL backoff depth (see
 /// `POP_BACKOFF_CAP_REACH_COUNT`; non-zero proves the backoff climbs into
-/// its higher range under real contention). Empty in a production build.
+/// its higher range under real contention. The helper and its call sites are
+/// absent from a default build.
+#[cfg(any(feature = "test-internals", loom))]
 #[inline]
 fn note_pop_cap_reach() {
-    #[cfg(any(feature = "test-internals", loom))]
     POP_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// Push-side twin of [`note_pop_cap_reach`] (see
 /// `PUSH_BACKOFF_CAP_REACH_COUNT`).
+#[cfg(any(feature = "test-internals", loom))]
 #[inline]
 fn note_push_cap_reach() {
-    #[cfg(any(feature = "test-internals", loom))]
     PUSH_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
@@ -174,7 +175,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// with a `let () = Self::_CHECK_BITS;` statement, `INDEX_MASK` and
     /// [`TAG_BITS`](Self::TAG_BITS) evaluate it in their own initializers,
     /// and [`unpack`](Self::unpack), [`empty_index`](Self::empty_index),
-    /// [`is_empty`](Self::is_empty), [`empty`](Self::empty), and the
+    /// [`is_empty`](Self::is_empty), and the
     /// crate-private `pack_truncating` all route through `INDEX_MASK` — so
     /// an out-of-range `INDEX_BITS` cannot reach any associated item
     /// without tripping this guard.
@@ -283,7 +284,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     ///
     /// Crate-private so the sharp edges stay in-crate; the only callers are
     /// [`push_index`](StackOps::push_index), [`pop_index`](StackOps::pop_index),
-    /// and [`empty`](Self::empty). All three prove `tag <= TAG_MAX` before
+    /// and the bootstrap constructor. All three prove `tag <= TAG_MAX` before
     /// calling — push's seal check refuses an already-[`TAG_MAX`](Self::TAG_MAX)
     /// tag before its `tag + 1` bump — so truncation never actually discards
     /// a bit on this path, and the push caller's plain `+` bump can never
@@ -327,26 +328,18 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// running tag — see [`empty_index`](Self::empty_index); resetting to 0
     /// there reopens the ABA window (the crate docs' H-2 note).
     ///
-    /// `#[doc(hidden)]`: part of this crate's test-only-forwarder
-    /// convention — hidden from rustdoc's rendered navigation while staying
-    /// callable; see the crate README's "Notes" section for the per-item
-    /// breakdown. This is the only `#[doc(hidden)]` item that remains in a
-    /// default build: unlike the test probes it is NOT feature-gated,
-    /// because the crate's own bootstrap constructors
-    /// ([`StackHead::new`] / [`ArrayIndexStack::new`]) call it. One
-    /// in-workspace consumer outside this crate (the root crate's
-    /// loom-test-only `bootstrap::loom_shim`) also calls it — check that
-    /// caller before removing.
-    #[doc(hidden)]
+    /// Crate-private bootstrap helper. Runtime empty transitions must use the
+    /// observed tag instead; this word is only valid for construction.
     #[must_use]
-    pub const fn empty() -> u64 {
+    const fn bootstrap_empty() -> u64 {
         Self::pack_truncating(Self::INDEX_MASK_U32, 0)
     }
 
     /// The empty sentinel's index half: the `u32` form of `INDEX_MASK`, for
     /// packing it with a
     /// NON-zero, caller-supplied RUNNING tag (`pack(empty_index(), running_tag)`)
-    /// instead of `empty()` (which always zeroes the tag).
+    /// instead of the crate-private bootstrap helper, which always zeroes the
+    /// tag.
     ///
     /// **H-2 fix:** the empty transition in [`pop_index`](StackOps::pop_index)
     /// uses this, packing the tag it just observed on the popped head, so the
@@ -475,7 +468,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::bootstrap_empty()),
         }
     }
 
@@ -484,7 +477,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+            head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::bootstrap_empty()),
         }
     }
 
@@ -576,14 +569,15 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     ///
     /// `#[doc(hidden)]` + gated (this project's established test-only surface
     /// convention — every other `#[doc(hidden)]` item in this crate points
-    /// here for the generic rationale): this is a `pub` item solely so
+    /// here for the generic rationale): this is a `pub` item only so
     /// `tests/` — an external crate from this crate's own perspective — can
     /// reach it. Gated: compiled ONLY under the `test-internals` feature or a
     /// loom build — a default build (a downstream consumer, the docs.rs
     /// render) does not contain this item at all, so unlike `#[doc(hidden)]`
     /// alone the gate makes it genuinely unnameable from safe downstream
     /// code, not merely hidden from rustdoc navigation. It is not exercised
-    /// by any production caller.
+    /// by any production caller. It is an unstable repository-test surface;
+    /// enabling the feature is not a semver promise for these probes.
     #[doc(hidden)]
     #[cfg(any(feature = "test-internals", loom))]
     #[must_use]
@@ -595,7 +589,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// proof (`tests/loom_aba.rs`) can split a pop's head-load from its CAS —
     /// opening the ABA window the real `pop_index` closes internally — and
     /// drive the buggy-drain counterfactual, all against the REAL head atomic.
-    /// NOT part of the public API: it is compiled only under `--cfg loom`.
+    /// Not part of the stable API: it is compiled only under `--cfg loom`.
     ///
     /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
     /// rationale. This item carries the strictly narrower `#[cfg(loom)]`
@@ -1555,11 +1549,15 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
             Ok(_) => return Ok(()),
             Err(actual) => {
-                // Retry-counter oracle (see `note_push_retry`): no-op
-                // outside `test-internals`/`loom`.
+                // Retry-counter instrumentation is compiled only for the
+                // explicit test/loom builds; the retry algorithm itself is
+                // shared with the default build.
+                #[cfg(any(feature = "test-internals", loom))]
                 note_push_retry();
                 head = actual;
-                if backoff.spin() {
+                let _at_cap = backoff.spin();
+                #[cfg(any(feature = "test-internals", loom))]
+                if _at_cap {
                     note_push_cap_reach();
                 }
             }
@@ -1628,8 +1626,10 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
         match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {
             Ok(_) => return Some(index),
             Err(actual) => {
-                // Retry-counter oracle (`POP_RETRY_COUNT`); see
-                // `note_pop_retry` — no-op outside `test-internals`/`loom`.
+                // Retry-counter instrumentation is compiled only for the
+                // explicit test/loom builds; the retry algorithm itself is
+                // shared with the default build.
+                #[cfg(any(feature = "test-internals", loom))]
                 note_pop_retry();
                 head = actual;
                 // Skipped when the lost CAS reveals the stack just went
@@ -1637,8 +1637,12 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
                 // next iteration regardless, so spinning here is pure
                 // wasted latency; which outcome a call eventually returns
                 // is unchanged, only how fast it gets there.
-                if !TaggedIndex::<B>::is_empty(actual) && backoff.spin() {
-                    note_pop_cap_reach();
+                if !TaggedIndex::<B>::is_empty(actual) {
+                    let _at_cap = backoff.spin();
+                    #[cfg(any(feature = "test-internals", loom))]
+                    if _at_cap {
+                        note_pop_cap_reach();
+                    }
                 }
             }
         }
@@ -1886,8 +1890,8 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// not implement the public [`StackStorage`] trait, so
     /// [`StackStorage::load_next`] cannot reach its links.
     /// `#[doc(hidden)]` per the crate's established test-only-forwarder
-    /// rationale (see [`raw_head`] and [`cas_head_for_test`]): not public
-    /// API. Gated: same `test-internals`/loom gate as [`StackHead::raw_head`]
+    /// rationale (see [`raw_head`] and [`cas_head_for_test`]): not part of the
+    /// stable API. Gated: same `test-internals`/loom gate as [`StackHead::raw_head`]
     /// — it does not exist in a default build. Read-only — it exposes no
     /// `&StackHead` and no link write, so it reopens none of the sealed
     /// hazard.

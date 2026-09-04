@@ -54,7 +54,7 @@
 //!     tagged companion `tagged_stack_survives_the_same_resurrection_pattern`.
 //! (d) **H-2 empty-transition:** the REAL `pop` preserves the running tag across
 //!     a drain-to-empty, so a stalled popper's CAS fails (fixed); a buggy pop
-//!     that packs `TaggedIndex::empty()` (tag 0) on the drain lets the stale CAS
+//!     that packs the bootstrap empty word (tag 0) on the drain lets the stale CAS
 //!     recur — the `#[should_panic]` counterfactual
 //!     `counterfactual_empty_transition_tag_reset_lets_aba_recur`.
 //! (e) **CAS-failure ordering:** a pop that retries after a failed CAS must
@@ -561,7 +561,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 // ============================================================================
 // (d) H-2 empty-transition. The FIXED side runs the REAL `stack.pop` (which
 // preserves the running tag on drain). The BUGGY side inlines a pop whose drain
-// branch packs `TaggedIndex::empty()` (tag 0) — the exact buggy behaviour this
+// branch packs the bootstrap empty word (tag 0) — the exact buggy behaviour this
 // counterfactual exists to expose — using the crate's own packing primitives.
 // A two-flag rendezvous guarantees B's full pop+push is sandwiched between
 // A's load and A's CAS: a free race would admit benign orderings (A completing
@@ -625,7 +625,7 @@ fn run_h2(preserve_tag_on_drain: bool) {
             if preserve_tag_on_drain {
                 tag_pack(Tag::empty_index(), tag)
             } else {
-                Tag::empty()
+                tag_pack(Tag::empty_index(), 0)
             }
         } else {
             tag_pack(next, tag)
@@ -650,7 +650,8 @@ fn run_h2(preserve_tag_on_drain: bool) {
     });
 }
 
-/// A pop whose drain-to-empty branch resets the tag to 0 (`TaggedIndex::empty()`)
+/// A pop whose drain-to-empty branch resets the tag to 0 (the bootstrap empty
+/// word)
 /// — the exact pre-H-2-fix behaviour, expressed with the crate's own packing so
 /// the counterfactual is faithful. NOT reachable through the shipped `pop`.
 fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
@@ -662,7 +663,7 @@ fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
         let (idx, tag) = Tag::unpack(head);
         let next = stack.load_next_for_test(idx);
         let new_head = if next == TAIL {
-            Tag::empty() // BUG: hardcoded tag 0 on the empty transition.
+            tag_pack(Tag::empty_index(), 0) // BUG: hardcoded tag 0 on the empty transition.
         } else {
             tag_pack(next, tag)
         };

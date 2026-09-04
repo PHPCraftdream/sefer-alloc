@@ -144,19 +144,13 @@ fn copy_file(src: &Path, dst: &Path) {
         .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", src.display(), dst.display()));
 }
 
-/// Same as [`copy_file`], but a missing SOURCE is not fatal: `real_repo`
-/// (see below) only resolves to a real workspace root when this test runs
-/// from a git checkout. When it runs against the PACKAGED `.crate`
-/// (`tagged-index-stack package gates` CI job, which extracts the `.crate`
-/// to a standalone temp dir and runs the suite from there), `CARGO_MANIFEST_DIR`
-/// IS the package root — there is no enclosing workspace two levels up, so
-/// `real_repo` resolves to an unrelated ancestor directory and these
-/// workspace-only files genuinely do not exist. That is fine: the fixed
-/// runner rejects every case this suite pins during argument parsing, long
-/// before it would ever read `capture-measurement-identity.mjs`, so the
-/// skeleton does not need that file to be present for the FIXED runner's
-/// behavior under test — only the (not-CI-exercised) pre-fix counterfactual
-/// needs it, and that is run by hand against a real git checkout.
+/// Same as [`copy_file`], but a missing SOURCE is not fatal. This is a
+/// checkout-only test: `real_repo` resolves to the workspace root when the
+/// test runs from a git checkout, while the workspace-only identity script is
+/// intentionally unavailable in a standalone package tree. The fixed runner
+/// rejects every case this suite pins during argument parsing, before it would
+/// read that script; the pre-fix counterfactual is a manual checkout
+/// diagnostic, not a packaged-test execution path.
 fn copy_file_if_present(src: &Path, dst: &Path) {
     if !src.is_file() {
         return;
