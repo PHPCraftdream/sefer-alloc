@@ -925,11 +925,13 @@ size-classes = { path = "crates/size-classes", version = "0.1", optional = true 
 # CRATE-P7: the ABA-tagged Treiber free-index stack (a slot recycler), extracted
 # from `registry/tagged_ptr.rs` (the packed `index:16 | tag:48` word) +
 # `heap_registry.rs`'s `pop_free_slot`/`push_free_slot` Treiber loop. The
-# registry's `free_slots` is now a `TaggedIndexStack<16>` and its slot-resident
-# `next_free` links reach the crate through a `Links` adapter; the H-2
-# empty-transition tag preservation and the RAD-1 lazy-link discipline live in
-# the crate. Pulled in ONLY by `alloc-global` (and every feature that depends on
-# it), since the registry is `alloc-global`-gated. See `crates/tagged-index-stack`.
+# registry's `free_slots` is now a `StackHead<16>`; `Registry` implements
+# `StackStorage<16>` once, binding that head to the slot-resident `next_free`
+# links, and the operations come from the blanket `StackOps` implementation.
+# The H-2 empty-transition tag preservation and the RAD-1 lazy-link discipline
+# live in the crate. Pulled in ONLY by `alloc-global` (and every feature that
+# depends on it), since the registry is `alloc-global`-gated. See
+# `crates/tagged-index-stack`.
 tagged-index-stack = { path = "crates/tagged-index-stack", version = "0.1", optional = true }
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
