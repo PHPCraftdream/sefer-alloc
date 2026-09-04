@@ -781,6 +781,21 @@ jobs:
       # `--no-verify` avoids a redundant lib build: the publish --dry-run
       # above already verifies the packaged lib, and the extracted
       # `cargo test` below builds it again for the dev profile.
+      # run-21 review SMELL-3: the tarball EXCLUDES scripts/ (the Node.js A/B
+      # measurement driver + its templates) and
+      # tests/tis_p3_ab_runner_scratch_guard.rs (the test that drives it;
+      # hard-panics in its copy_file helper if scripts/ is absent, which is
+      # why they are excluded together) — a no_std, zero-dependency
+      # primitive's published package neither ships nor runs a measurement
+      # script's filesystem-hygiene suite (it spawns node, git, and several
+      # cargo builds of a scratch crate) inside this extracted-package gate.
+      # The excluded suite still runs from the CHECKOUT, where scripts/
+      # exists: `test workspace members` step 2 (Linux, default suite) and
+      # `test windows (production)`'s tagged-index-stack row (junction
+      # branches) both run `cargo test -p tagged-index-stack` against the
+      # checkout; the build-check step at the bottom of this job also runs
+      # the runner from the checkout. This step therefore validates the
+      # package's remaining (non-excluded) tests.
       - name: run the packaged .crate test suite (default + test-internals) + build the packaged bench (P2-1/P4-7/P3 regression gate)
         run: |
           cargo package -p tagged-index-stack --no-verify
@@ -3226,11 +3241,14 @@ jobs:
     # 3 variants x 3 samples x 1 s) whose retry-counter oracle proves the
     # CAS-retry path was actually exercised (per CLAUDE.md's
     # path-activation-oracle rule).
-    # Step 3 runs `--mode summary` — the runner's only independent ratio
-    # oracle: it re-derives each variant's median from the wallclock CSV's
-    # own sample rows and asserts the re-derived ratio against the recorded
-    # `ratio_vs_base` (run-20 review P3-2; without it a green job never
-    # executes that check).
+    # Step 3 runs `--mode summary --target aarch64-unknown-linux-gnu` — the
+    # runner's only independent ratio oracle: it re-derives each variant's
+    # median from the wallclock CSV's own sample rows and asserts the
+    # re-derived ratio against the recorded `ratio_vs_base` (run-20 review
+    # P3-2; without it a green job never executes that check). The `--target`
+    # (run-21 review NONOPT-1) points the wallclock half of the oracle at
+    # THIS run's freshly written aarch64 CSV, not the committed windows-msvc
+    # one.
     #
     # Provenance: authored on branch `tis-sol4-w3-perf` (Wave 3) WITHOUT ever
     # being executed from that sandboxed environment (no push); the first
@@ -3259,19 +3277,19 @@ jobs:
       # run-20 review P3-2: modeSummary is the ONE place that independently
       # re-derives the ratio from sample rows and compares it against the
       # wallclock producer's recorded `ratio_vs_base` — without this step the
-      # job can go green without ever executing that check. Scope note,
-      # stated explicitly per the review: summary mode is targetless by
-      # design and reads the COMMITTED per-leg artifacts from the checkout —
-      # the x86_64 codegen CSV and the x86_64-pc-windows-msvc wallclock CSV
-      # are committed repo files, while the aarch64 codegen CSV + identity
-      # header are freshly overwritten by this job's first step — so the
-      # wallclock half of the oracle re-checks the committed windows-msvc
-      # evidence corpus, NOT this run's fresh aarch64 wallclock output (that
-      # fresh CSV is uploaded below for the gate doc's documented offline
-      # aggregation). Exit status propagates through the tee pipe the same
-      # way the two steps above rely on.
+      # job can go green without ever executing that check. run-21 review
+      # NONOPT-1: the step passes `--target aarch64-unknown-linux-gnu`, so
+      # the wallclock half of the oracle re-derives from the CSV THIS job's
+      # step 2 just wrote into docs/perf/ — a bad aarch64 ratio now fails the
+      # job instead of hiding behind the committed x86_64-pc-windows-msvc
+      # evidence corpus (which remains what a bare targetless `--mode
+      # summary` checks, unchanged for offline use). The codegen half is
+      # unchanged: the committed x86_64 codegen CSV plus this run's fresh
+      # aarch64 codegen CSV + identity header from step 1. Exit status
+      # propagates through the tee pipe the same way the two steps above
+      # rely on.
       - name: Summary ratio oracle (re-derived medians vs recorded ratio_vs_base)
-        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary 2>&1 | tee "$RUNNER_TEMP/tis-p3-summary.log"
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-summary.log"
         shell: bash
       # `if: always()` is deliberate: a failed oracle run still uploads its
       # raw logs so the failure can be diagnosed offline.

@@ -14,7 +14,10 @@
 //                      run wallclock oracles, emit logs/CSV/summary.
 //   --mode summary  — read the committed per-leg CSVs + the aarch64 raw log
 //                      header and emit the compact summary CSV companion for
-//                      the gate report. No build, no measurement.
+//                      the gate report. No build, no measurement. Optional
+//                      `--target <triple>` re-points the wallclock ratio
+//                      oracle at that target's CSV (default: the committed
+//                      x86_64-pc-windows-msvc one).
 //   --mode build-check — materialize ONE scratch CARGO crate (the `base`
 //                      variant only — the push/pop API surface this checks
 //                      is identical across all three variants) from the
@@ -220,6 +223,17 @@ function parseArgs(argv) {
     // class of bug. validateScratchLeaf() rejects them here, before any
     // filesystem access.
     validateScratchLeaf(args.target);
+  }
+  // run-21 review NONOPT-1: summary mode accepts an OPTIONAL --target to
+  // point the wallclock ratio oracle at a different leg's CSV (e.g. the
+  // aarch64 CSV a CI job just produced) instead of the committed
+  // x86_64-pc-windows-msvc default. Same charset as the producing modes'
+  // triples; also rejected as a bare `.`/`..` path segment (the value is
+  // spliced into a docs/perf filename below).
+  if (args.mode === 'summary' && args.target !== null) {
+    if (!/^[A-Za-z0-9_.-]+$/.test(args.target) || args.target === '.' || args.target === '..') {
+      fail(`--target (summary mode) must be a single rust target triple (got ${JSON.stringify(args.target)})`);
+    }
   }
   return args;
 }
@@ -1120,7 +1134,10 @@ function modeBuildCheck() {
 // one compact machine-readable companion CSV for the gate report. Fails
 // loudly if any referenced artifact is missing. Every emitted ratio is
 // re-derived from the CSV's own sample rows and asserted against the ratio
-// the leg itself recorded.
+// the leg itself recorded. The wallclock leg defaults to the committed
+// x86_64-pc-windows-msvc CSV; an explicit `--target <triple>` re-points it
+// at that target's CSV instead (run-21 review NONOPT-1) so a CI job can
+// check the leg it just produced rather than the pinned evidence corpus.
 const CODEGEN_CSV_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
 const WALLCLOCK_CSV_TARGET = 'x86_64-pc-windows-msvc';
 
@@ -1139,7 +1156,7 @@ function readCsvOrDie(file) {
   }) };
 }
 
-function modeSummary() {
+function modeSummary(args) {
   const summaryRows = [['kind', 'target', 'features', 'function_or_variant', 'variant', 'metric', 'value', 'unit']];
   const emit = (kind, target, features, fov, variant, metric, value, unit) =>
     summaryRows.push([kind, target, features, fov, variant, metric, String(value), unit]);
@@ -1197,7 +1214,12 @@ function modeSummary() {
 
   // (c) wallclock smoke leg: medians re-derived from the sample rows, ratios
   // re-derived from the medians, both asserted against the leg's own SUMMARY.
-  const wcFile = `TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_${WALLCLOCK_CSV_TARGET}.csv`;
+  // run-21 review NONOPT-1: `--target` (optional) re-points the wallclock
+  // oracle at that target's CSV; absent, the committed windows-msvc default
+  // is checked exactly as before (backward compatible with every documented
+  // invocation).
+  const wallclockTarget = args.target ?? WALLCLOCK_CSV_TARGET;
+  const wcFile = `TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_${wallclockTarget}.csv`;
   const wc = readCsvOrDie(wcFile);
   const wcHeader = ['target', 'variant', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries'];
   assert(JSON.stringify(wc.header) === JSON.stringify(wcHeader), `${wcFile}: unexpected header ${wc.header.join(',')}`);
@@ -1212,7 +1234,7 @@ function modeSummary() {
       summaryRowsWc[r.variant] = r;
       continue;
     }
-    assert(r.target === WALLCLOCK_CSV_TARGET, `${wcFile}: row target ${r.target} != ${WALLCLOCK_CSV_TARGET}`);
+    assert(r.target === wallclockTarget, `${wcFile}: row target ${r.target} != ${wallclockTarget}`);
     const derived = Number(r.ops_total) / (Number(r.elapsed_ms) / 1000);
     const reported = Number(r.ops_per_sec);
     assert(Math.abs(derived - reported) < 0.02 * reported, `${wcFile}: ops_per_sec mismatch for ${r.variant}: reported ${reported}, derived ${derived}`);
@@ -1222,14 +1244,14 @@ function modeSummary() {
     const samples = wc.rows.filter((r) => r.threads !== 'SUMMARY' && r.variant === v);
     assert(samples.length >= 1, `${wcFile}: no sample rows for variant ${v}`);
     meds[v] = median(samples.map((s) => Number(s.ops_per_sec)));
-    emit('wallclock', WALLCLOCK_CSV_TARGET, '', '', v, 'median_ops_per_sec', meds[v].toFixed(2), 'ops/s');
+    emit('wallclock', wallclockTarget, '', '', v, 'median_ops_per_sec', meds[v].toFixed(2), 'ops/s');
   }
   for (const v of VARIANTS) {
     const stated = Object.values(summaryRowsWc[v] ?? {}).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
     assert(stated !== undefined, `${wcFile}: no ratio_vs_base SUMMARY cell for variant ${v}`);
     const r = Math.round((meds[v] / meds.base) * 1000) / 1000;
     assert(Math.abs(r - Number(stated)) < 5e-4, `${wcFile}: ratio_vs_base for ${v}: leg says ${stated}, re-derived ${r}`);
-    emit('wallclock', WALLCLOCK_CSV_TARGET, '', '', v, 'ratio_vs_base', r.toFixed(3), 'ratio');
+    emit('wallclock', wallclockTarget, '', '', v, 'ratio_vs_base', r.toFixed(3), 'ratio');
   }
 
   const outPath = path.join(docsPerfDir, 'TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv');
@@ -1251,7 +1273,7 @@ let args = null;
 try {
   args = parseArgs(process.argv.slice(2));
   if (args.mode === 'summary') {
-    modeSummary();
+    modeSummary(args);
   } else if (args.mode === 'build-check') {
     modeBuildCheck();
   } else {

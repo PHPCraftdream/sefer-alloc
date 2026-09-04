@@ -14,21 +14,13 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
-# The compile-fail fixture crates under tests/compile_fail/ (count drifts as
-# new hazards get pinned — re-derive via `ls tests/compile_fail/ | wc -l`,
-# do not trust a number quoted here) each have their own Cargo.toml, so
-# cargo's nested-manifest packaging rule already auto-excludes them — this
-# states that EXPLICITLY so the published .crate does not silently depend
-# on that default. The driver is the single consolidated file
-# tests/compile_fail.rs (the former compile_fail_*.rs drivers were
-# consolidated into it); its shared child-cargo helper lives in
-# tests/common/, a directory WITHOUT its own Cargo.toml, so the auto-exclude
-# above does not touch it. Both ship in the published .crate, and they
-# document (and implement) the skip-when-fixture-absent behavior for the
-# packaged suite.
-exclude = ["tests/compile_fail/"]
+# tests/compile_fail/ fixture crates auto-exclude via the nested-manifest rule;
+# explicit so the .crate never depends on that default (the shipped driver +
+# tests/common/ skip when fixtures are absent). scripts/ and the scratch-guard
+# test that drives it are repository-only measurement infrastructure.
+exclude = ["tests/compile_fail/", "scripts/", "tests/tis_p3_ab_runner_scratch_guard.rs"]
 
-# A crate-local `unexpected_cfgs` declaration, deliberately NOT the
+# Crate-local `unexpected_cfgs` declaration, deliberately NOT the
 # workspace-inherited table (`[lints] workspace = true`): the workspace
 # allowlist also carries root-crate-only cfgs (`kani`,
 # `aligned_vmem_page_size_override`, `numa_shim_mock`) that would otherwise
@@ -38,44 +30,20 @@ exclude = ["tests/compile_fail/"]
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
-# `incompatible_msrv` reads the DECLARED `rust-version` against a
-# stabilization table for EVERY target — `tests/` included — so with the
-# floor declared at its measured LIBRARY value above, this repo's
-# `cargo clippy --all-targets -D warnings` convention fires the lint on
-# `tests/stack_unit.rs`'s `std::panic::PanicHookInfo` (stable 1.81):
-# dev-only code a library consumer never builds, which the library-surface
-# MSRV policy (see `rust-version` above) refuses to let raise the floor. The floor's real oracle is the msrv
-# job's pinned `cargo +1.79 check` rows in `.github/workflows/ci.yml` — a
-# hard toolchain boundary, strictly stronger than this stabilization-table
-# lint — so the lint is allowed instead of holding the declared number
-# hostage to dev-only API usage.
+# Allowed: dev-only tests use APIs newer than the library-surface MSRV floor
+# (`std::panic::PanicHookInfo`, stable 1.81); the floor's real oracle is the
+# msrv job's pinned `cargo +1.79 check` rows in `.github/workflows/ci.yml`.
+# MSRV policy + measured re-derivation:
+# docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md.
 [lints.clippy]
 incompatible-msrv = "allow"
 
 [dependencies]
-# Zero non-std deps in a NORMAL build — enforced by Cargo's RESOLVER, not just
-# by rustc's cfg evaluation. `loom` below is `optional = true`, which gives it
-# an implicit `loom` feature; because Cargo's resolver is cfg-agnostic when
-# producing `Cargo.lock`, a NON-optional `cfg(loom)` target dependency would
-# still be resolved, locked, vendored and audited into every consumer's
-# lockfile even though its cfg never holds in their build (a crate whose only
-# dependency is this one goes from 31 locked packages down to 2 once `loom` is
-# optional). Marking it optional means a normal build (no `--features loom`)
-# has ZERO loom-related entries in `Cargo.lock` — not merely zero compiled
-# code.
-#
-# Running the loom suite therefore requires BOTH:
-#   1. `--cfg loom` in RUSTFLAGS, so the `#[cfg(loom)]` source lines compile —
-#      the stack aliases its atomics to `loom::sync::atomic` ONLY under that
-#      cfg (see `src/imp.rs`), so the shipped loom tests exercise the REAL
-#      type, which is why `loom` is a `cfg(loom)`-gated LIBRARY dependency
-#      (not merely a dev-dependency): the crate's own `src/imp.rs` references
-#      it; AND
-#   2. `--features loom`, so Cargo actually resolves and links the loom
-#      dependency those lines reference.
-# `--cfg loom` without the feature fails fast with a named `compile_error!`
-# (adjacent to the `target_has_atomic` guard in `src/lib.rs`) instead of the
-# cryptic unresolved-import error.
+# `loom` is optional so a NORMAL build has zero loom entries in `Cargo.lock`
+# (a non-optional `cfg(loom)` target dep would still be resolved and locked
+# into every consumer). Running the loom suite needs BOTH `--cfg loom` in
+# RUSTFLAGS and `--features loom`; the cfg alone fails fast with a named
+# `compile_error!` in `src/lib.rs`.
 
 [target.'cfg(loom)'.dependencies]
 loom = { workspace = true, optional = true }
@@ -87,28 +55,13 @@ proptest = "1"
 bench-scale-tool = "0.1"
 
 [features]
-# Gates the crate's CAS-retry/backoff activation counters (`POP_RETRY_COUNT`,
-# `PUSH_RETRY_COUNT`, the two backoff-cap-reach counters), their
-# `#[doc(hidden)]` accessors (`retry_counts_for_test`,
-# `backoff_cap_reached_for_test`), and the test-only raw probes
-# (`StackHead::raw_head`, `ArrayIndexStack::raw_head`,
-# `ArrayIndexStack::load_next_for_test` — Sol-codex run-6 review P2-1):
-# instrumentation with no production caller,
-# so per this crate's minimality pitch ("allocation-free, no_std") it must
-# not ride the default build (an earlier revision compiled all of it
-# unconditionally into every published build). Off by
-# default. All of the above are read-only (no link-cell write). The
-# link-cell WRITE probe, `ArrayIndexStack::store_next_for_test`, is
-# deliberately NOT gated by this feature — it is `#[cfg(loom)]`-only, since
-# a safe write of this shape reachable under plain `test-internals` would
-# let any downstream consumer construct a cycle in the linked chain and
-# make `pop()` double-issue an index (Sol-codex run-9 review P1-1). The
-# loom build does NOT need this feature: under `--cfg loom` the
-# same counters compile (the loom suite's `pop_retry_count_for_test` /
-# `push_retry_count_for_test` read them), so the documented loom invocation
-# is unchanged. `tests/threaded_conservation.rs` compiles its activation-
-# oracle assertions only when this feature is on (its conservation and drain
-# checks still run without it).
+# Gates the CAS-retry/backoff activation counters, their `#[doc(hidden)]`
+# accessors, and the test-only raw probes (all read-only) — instrumentation
+# with no production caller, off by default; the loom build compiles the same
+# counters without this feature. The link-cell WRITE probe
+# `store_next_for_test` is deliberately NOT gated here — it is
+# `#[cfg(loom)]`-only, since a safe write probe would let a consumer corrupt
+# the link chain.
 test-internals = []
 
 [[bench]]
