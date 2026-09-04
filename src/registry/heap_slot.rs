@@ -413,8 +413,12 @@ pub struct HeapSlot {
     pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
     /// Intrusive link for the `free_slots` Treiber stack. Holds the NEXT free
     /// slot's index (or [`NEXT_FREE_TAIL`] for the stack tail) while the slot
-    /// is FREE. Read/written by the registry only while the slot is FREE (no
-    /// concurrent LIVE access).
+    /// is on the free list. The current slot owner executes `store_next`
+    /// before publishing the index into `free_slots`; a stale popper may
+    /// atomically read this dedicated cell after another thread has already
+    /// moved the slot into its next `LIVE` epoch. Its lifetime and index-to-cell
+    /// mapping are stable, and it is not aliased with the heap payload, so it
+    /// must remain atomic.
     pub(crate) next_free: AtomicU32,
     /// Release-published "heap is materialised" flag (task #133 hardening).
     ///
