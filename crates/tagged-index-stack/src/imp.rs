@@ -26,10 +26,13 @@ use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 /// while the empty sentinel marks the HEAD word as carrying no index at all
 /// (their low bits do agree — `TAIL & INDEX_MASK == INDEX_MASK` is a
 /// mathematical identity at every legal width, all-ones AND
-/// all-ones-low-bits — but their ROLES are distinct). The two mappings are
-/// kept spelled out separately in
-/// [`push_index`](StackOps::push_index) /
-/// [`pop_index`](StackOps::pop_index) purely for readability.
+/// all-ones-low-bits — but their ROLES are distinct: an empty head's index
+/// half is the sentinel `INDEX_MASK`, NOT `TAIL`). The mappings between the
+/// two in [`push_index`](StackOps::push_index) /
+/// [`pop_index`](StackOps::pop_index) are therefore REQUIRED, not a
+/// readability choice: the sentinels' values no longer coincide, so each
+/// site must map the sentinel it observes to the other by an explicit
+/// branch.
 pub const TAIL: u32 = u32::MAX;
 
 /// Exponential-backoff cap for `push_index`/`pop_index`'s CAS-retry arms: the
@@ -58,82 +61,83 @@ const BACKOFF_SPIN_CAP: u32 = 6;
 const _: () = assert!(BACKOFF_SPIN_CAP < 32);
 
 /// Per-call exponential-backoff state for the CAS-retry arms: wraps the retry
-/// counter (`K`, starting at 0) that drives the spin-loop depth below, plus
-/// (under `test-internals`/`loom` only) the PRE-increment at-cap verdict of
-/// the most recent [`Backoff::spin`], reported by [`Backoff::spun_at_cap`].
-/// Starts fresh every call, never persisted.
-struct Backoff(
-    u32,
-    // Oracle flag: written by `spin`, read by `spun_at_cap`. Exists only
-    // where the oracle counters exist — in a production build the field,
-    // its write, and `spun_at_cap` are all compiled out together.
-    #[cfg(any(feature = "test-internals", loom))] bool,
-);
+/// counter (`K`, starting at 0) that drives the spin-loop depth of
+/// [`Backoff::spin`]. Starts fresh every call, never persisted.
+struct Backoff(u32);
 
 impl Backoff {
-    fn new() -> Self {
-        #[cfg(not(any(feature = "test-internals", loom)))]
-        return Backoff(0);
-
-        #[cfg(any(feature = "test-internals", loom))]
-        return Backoff(0, false);
-    }
-
-    /// `#[inline]`: called from generic fns monomorphized in downstream
-    /// crates — a non-`#[inline]` non-generic private fn would not be
-    /// cross-crate-inlinable, a codegen regression in a hot path.
+    /// `#[inline]`: hot path, monomorphised downstream.
     #[inline]
-    fn at_cap(&self) -> bool {
-        self.0 >= BACKOFF_SPIN_CAP
+    fn new() -> Self {
+        Backoff(0)
     }
 
     /// Exponential backoff before retrying (BACKOFF_SPIN_CAP): spins
     /// `1 << K` times, letting the winning thread's Release CAS drain off
     /// the head cache line instead of every loser re-hammering it
-    /// immediately. `K` grows only within one call.
+    /// immediately. `K` grows only within one call. Returns whether THIS
+    /// spin already ran at FULL depth (the PRE-increment `K` was already at
+    /// the cap) — the verdict the retry arms turn into a
+    /// backoff-cap-reach oracle count (see the `note_*` helpers below); a
+    /// production build discards it.
     ///
-    /// Under `test-internals`/`loom`, records in `.1` whether THIS retry
-    /// spun at FULL depth (the PRE-increment `K` was already at the cap) —
-    /// the oracle verdict [`Self::spun_at_cap`] reports. The check
-    /// deliberately happens before the increment, so the oracle does not
-    /// fire one retry early; the verdict cannot be recomputed after the
-    /// fact, because a post-increment `K == BACKOFF_SPIN_CAP` is ambiguous
-    /// between "was already at the cap" and "incremented into it".
+    /// `#[inline]`: hot path, monomorphised downstream.
     ///
-    /// `#[inline]`: see [`Self::at_cap`] — same monomorphization/codegen
-    /// reasoning.
-    ///
-    /// Capped, not unconditional: unbounded `K` would eventually be an
-    /// `attempt to add with overflow` panic under overflow-checks after
-    /// ~2^32 consecutive lost CASes in one call — remote, but free to
-    /// close. The saturation also guarantees `self.0 <= BACKOFF_SPIN_CAP`
-    /// at the shift, so no `.min` guard is needed on the shift expression.
+    /// Capped, not unconditional: saturation keeps `K <= BACKOFF_SPIN_CAP`,
+    /// so `1u32 << K` can never overflow (`K` = 32 would, after only 32
+    /// consecutive lost CASes in one call — an ordinary event under the
+    /// contention this crate is built for, not a remote one). The
+    /// saturation also guarantees `self.0 <= BACKOFF_SPIN_CAP` at the
+    /// shift, so no `.min` guard is needed on the shift expression.
     #[inline]
-    fn spin(&mut self) {
-        let at_cap = self.at_cap();
+    fn spin(&mut self) -> bool {
+        let at_cap = self.0 >= BACKOFF_SPIN_CAP;
         for _ in 0..(1u32 << self.0) {
             core::hint::spin_loop();
         }
         if !at_cap {
             self.0 += 1;
         }
-        #[cfg(any(feature = "test-internals", loom))]
-        {
-            self.1 = at_cap;
-        }
+        at_cap
     }
+}
 
-    /// Query-only oracle trigger for `PUSH_BACKOFF_CAP_REACH_COUNT` /
-    /// `POP_BACKOFF_CAP_REACH_COUNT`: whether the most recent
-    /// [`Self::spin`] spun at FULL depth (its PRE-increment `K` was already
-    /// at the cap). Must be called AFTER `spin` — before it, the flag still
-    /// holds the PREVIOUS retry's verdict. Mirrors [`Self::at_cap`]'s
-    /// shape; `#[cfg]`-gated with the oracle counters it feeds.
+/// Retry-counter oracle increment for `pop_index`'s CAS-retry arm (see
+/// `POP_RETRY_COUNT`): one lost CAS. A REAL core-atomic write under
+/// `test-internals`/`loom`, so counts survive loom re-runs; `Relaxed`
+/// counts only. Empty in a production build — which is what lets the
+/// retry arms call these helpers unconditionally, with no `#[cfg]` at the
+/// call site and no production code change.
+#[inline]
+fn note_pop_retry() {
     #[cfg(any(feature = "test-internals", loom))]
-    #[inline]
-    fn spun_at_cap(&self) -> bool {
-        self.1
-    }
+    POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Push-side twin of [`note_pop_retry`] (see `PUSH_RETRY_COUNT`): one lost
+/// CAS in `push_index`'s retry arm.
+#[inline]
+fn note_push_retry() {
+    #[cfg(any(feature = "test-internals", loom))]
+    PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Backoff-activation oracle increment for `pop_index`'s CAS-retry arm:
+/// called for a retry whose spin loop ran at FULL backoff depth (see
+/// `POP_BACKOFF_CAP_REACH_COUNT`; non-zero proves the backoff climbs into
+/// its higher range under real contention). Empty in a production build.
+#[inline]
+fn note_pop_cap_reach() {
+    #[cfg(any(feature = "test-internals", loom))]
+    POP_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Push-side twin of [`note_pop_cap_reach`] (see
+/// `PUSH_BACKOFF_CAP_REACH_COUNT`).
+#[inline]
+fn note_push_cap_reach() {
+    #[cfg(any(feature = "test-internals", loom))]
+    PUSH_BACKOFF_CAP_REACH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// A packed `(index | tag)` word with a compile-time-chosen index width.
@@ -1561,11 +1565,13 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
             return Err(TagExhausted);
         }
         // The link this index chains to: the current head's index, or TAIL
-        // if the stack is empty. The empty sentinel packs INDEX_MASK, which
-        // is <= 0xFFFF at every legal width per `_CHECK_BITS`, so it can no
-        // longer equal TAIL; and `TAIL & INDEX_MASK == INDEX_MASK` is a
-        // mathematical identity (all-ones AND all-ones-low-bits), not a
-        // coincidence. The branch is kept explicit purely for readability.
+        // if the stack is empty. On an empty head the observed index half
+        // IS the sentinel `INDEX_MASK` (which `_CHECK_BITS` keeps <= 0xFFFF
+        // at every legal width), NOT `TAIL` — so the branch mapping it to
+        // `TAIL` is semantically REQUIRED, not a readability choice:
+        // without it an empty-head push would store `INDEX_MASK` as the
+        // link, and the next pop would panic on it at the clause-4 guard
+        // below (neither TAIL nor a valid index).
         let next_link = if TaggedIndex::<B>::is_empty(head) {
             TAIL
         } else {
@@ -1665,23 +1671,13 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {
             Ok(_) => return Ok(()),
             Err(actual) => {
-                // Retry-counter oracle (see `PUSH_RETRY_COUNT` below): a
-                // REAL core atomic, so counts survive loom re-runs;
-                // `Relaxed` counts only. Gated so a default build compiles
-                // neither the counters nor this increment.
-                #[cfg(any(feature = "test-internals", loom))]
-                PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                // Retry-counter oracle (see `note_push_retry`): no-op
+                // outside `test-internals`/`loom`.
+                note_push_retry();
                 head = actual;
-                #[cfg(any(feature = "test-internals", loom))]
-                {
-                    backoff.spin();
-                    if backoff.spun_at_cap() {
-                        PUSH_BACKOFF_CAP_REACH_COUNT
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    }
+                if backoff.spin() {
+                    note_push_cap_reach();
                 }
-                #[cfg(not(any(feature = "test-internals", loom)))]
-                backoff.spin();
             }
         }
     }
@@ -1748,27 +1744,17 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
         match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {
             Ok(_) => return Some(index),
             Err(actual) => {
-                // Retry-counter oracle (`POP_RETRY_COUNT`; same mechanism
-                // as push's arm).
-                #[cfg(any(feature = "test-internals", loom))]
-                POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                // Retry-counter oracle (`POP_RETRY_COUNT`); see
+                // `note_pop_retry` — no-op outside `test-internals`/`loom`.
+                note_pop_retry();
                 head = actual;
                 // Skipped when the lost CAS reveals the stack just went
                 // empty: the top-of-loop `is_empty` check returns `None`
                 // next iteration regardless, so spinning here is pure
                 // wasted latency; which outcome a call eventually returns
                 // is unchanged, only how fast it gets there.
-                if !TaggedIndex::<B>::is_empty(actual) {
-                    #[cfg(any(feature = "test-internals", loom))]
-                    {
-                        backoff.spin();
-                        if backoff.spun_at_cap() {
-                            POP_BACKOFF_CAP_REACH_COUNT
-                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
-                    #[cfg(not(any(feature = "test-internals", loom)))]
-                    backoff.spin();
+                if !TaggedIndex::<B>::is_empty(actual) && backoff.spin() {
+                    note_pop_cap_reach();
                 }
             }
         }
