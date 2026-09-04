@@ -752,10 +752,12 @@ jobs:
       - run: cargo publish --dry-run -p tagged-index-stack
       # The dry-run verifies the packaged library but does not execute the
       # packaged tests or compile the bench target. Package and extract the
-      # crate, then run its default and `test-internals` test surfaces and
-      # build the bench in an isolated target directory. Fixture crates under
-      # `tests/compile_fail/` are excluded by their own manifests; the shipped
-      # consolidated driver handles the package's available fixtures.
+      # crate, assert that the checkout-only compile-fail harness and fixtures
+      # are absent, then run the package's default and `test-internals` test
+      # surfaces and build the bench in isolated target directories. The
+      # extracted package must stand on its normalized manifest alone: the
+      # repository-only driver is not allowed to make a missing-fixture package
+      # look green.
       # `--no-verify` avoids a redundant lib build: the publish --dry-run
       # above already verifies the packaged lib, and the extracted
       # `cargo test` below builds it again for the dev profile.
@@ -763,13 +765,24 @@ jobs:
       # measurement harness and its scratch guard test. Those checkout-only
       # tests run in the Linux/Windows workspace rows; this extracted gate
       # validates the remaining tests that belong in the published artifact.
-      - name: run the packaged .crate test suite (default + test-internals) + build the packaged bench (P2-1/P4-7/P3 regression gate)
+      - name: run the packaged .crate test suite (default + test-internals + Loom/manifest guards) + build the packaged bench (P2-1/P4-7/P3 regression gate)
         run: |
+          set -euo pipefail
           cargo package -p tagged-index-stack --no-verify
           crate_file=$(ls target/package/tagged-index-stack-*.crate)
           extract_dir=$(mktemp -d)
           tar xzf "$crate_file" -C "$extract_dir"
-          cd "$extract_dir"/tagged-index-stack-*/
+          package_dir=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -name 'tagged-index-stack-*' -print -quit)
+          test -n "$package_dir"
+          # These are checkout-only negative-test infrastructure. Hard-assert
+          # all three absences so a vacuous packaged driver cannot return.
+          for repository_only in tests/compile_fail.rs tests/common tests/compile_fail; do
+            if [[ -e "$package_dir/$repository_only" ]]; then
+              echo "::error::repository-only path leaked into the packaged crate: $repository_only"
+              exit 1
+            fi
+          done
+          cd "$package_dir"
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
           # Re-run the extracted tests with `test-internals` so the package
           # inclusion of the gated test targets is checked as well.
@@ -778,6 +791,76 @@ jobs:
           # catch missing packaged bench files or dev-dependencies before
           # publication.
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo bench --no-run
+          # Run the NORMALIZED package manifest's real loom test target. This
+          # has its own target dir/log so it cannot reuse a non-loom artifact,
+          # and the named plain test proves the packaged `loom_aba.rs` did not
+          # compile to an empty binary.
+          RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR="$extract_dir/pkg-loom-test-target" \
+            cargo test --release --features loom --test loom_aba 2>&1 | tee "$RUNNER_TEMP/tagged-index-stack-packaged-loom.log"
+          grep -F "test push_push_conservation ... ok" "$RUNNER_TEMP/tagged-index-stack-packaged-loom.log"
+          # The inverse package-manifest check is expected to fail: with
+          # `--cfg loom` but no `loom` feature, src/lib.rs must emit exactly
+          # its crate-owned named compile_error, without fixture assistance,
+          # numbered rustc cascades, or another named diagnostic.
+          loom_check_json="$RUNNER_TEMP/tagged-index-stack-packaged-loom-without-feature.json"
+          loom_check_stderr="$RUNNER_TEMP/tagged-index-stack-packaged-loom-without-feature.stderr"
+          set +e
+          RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR="$extract_dir/pkg-loom-check-target" \
+            cargo check --message-format=json >"$loom_check_json" 2>"$loom_check_stderr"
+          loom_check_status=$?
+          set -e
+          if [[ "$loom_check_status" -eq 0 ]]; then
+            echo "::error::packaged RUSTFLAGS=--cfg loom cargo check unexpectedly succeeded without feature loom"
+            exit 1
+          fi
+          expected_message='building with --cfg loom requires --features loom (loom is now an optional dependency)'
+          if ! jq -e -s --arg expected_message "$expected_message" --arg package_dir "$package_dir" '
+            def well_formed_compiler_message:
+              if (.message | type) == "object" then
+                (.message.level | type) == "string"
+              else
+                false
+              end;
+            def crate_source_span:
+              ((.file_name | gsub("\\\\"; "/")) as $file
+                | ($file == "src/lib.rs" or ($file | endswith("/src/lib.rs"))));
+            def normalize_path:
+              gsub("\\\\"; "/");
+
+            [ .[] | select(.reason == "compiler-message") ] as $compiler_messages
+            | [ $compiler_messages[] | select(well_formed_compiler_message | not) ] as $malformed_messages
+            | [ $compiler_messages[]
+                | select(well_formed_compiler_message and .message.level == "error") ] as $errors
+            | ($malformed_messages | length) == 0
+              and ($errors | length) == 1
+              and (($errors[0].target.kind | type) == "array")
+              and (($errors[0].target.kind | index("lib")) != null)
+              and (($errors[0].target.src_path | normalize_path) ==
+                   (($package_dir | normalize_path) + "/src/lib.rs"))
+              and (($errors[0].message | has("code"))
+                   and ($errors[0].message.code == null))
+              and ($errors[0].message.message == $expected_message)
+              and (($errors[0].message.spans | type) == "array")
+              and (($errors[0].message.spans | length) == 1)
+              and ($errors[0].message.spans[0] | crate_source_span)
+              and ($errors[0].message.spans[0].is_primary == true)
+              and ($errors[0].message.spans[0] as $span
+                   | (($span.text | type) == "array")
+                   and (($span.text | length) > 0)
+                   and (all($span.text[];
+                       (type == "object") and ((.text | type) == "string")))
+                   and ($span.text[0].text | contains("compile_error!("))
+                   and (($span.text | map(.text) | join("\n")) as $source
+                        | ($source | contains("building with --cfg loom requires --features loom (loom is now an "))
+                          and ($source | contains("optional dependency)"))))
+              and (($errors[0].message.children | type) == "array")
+              and ([ $errors[0].message.children[] | select(.level == "error") ] | length) == 0
+          ' "$loom_check_json" >/dev/null; then
+            echo "::error::packaged loom-without-feature check did not produce the one expected crate-owned JSON diagnostic"
+            sed -n '1,160p' "$loom_check_json"
+            sed -n '1,80p' "$loom_check_stderr"
+            exit 1
+          fi
       # The arm64 measurement job is dispatch-only, so regular CI keeps its
       # materialized A/B harness template build-checked here. `build-check`
       # uses the driver's own materialization path and performs no timing or

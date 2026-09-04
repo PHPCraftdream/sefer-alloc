@@ -1092,7 +1092,11 @@ function verifyCiSentinels() {
 // its own isolated marker invocation, both in the `aligned-vmem-hugetlb-real`
 // job -- see docs/CORRECTNESS_OPEN_ITEMS.md item 87's card for the full
 // re-derivation this bump pairs with, in the same commit.
-const MIN_SENTINEL_COUNT = 75;
+// Current tree update: the extracted `tagged-index-stack` package Loom gate
+// adds one plain `test <name> ... ok` sentinel for
+// `push_push_conservation`; item 87's authoritative current and Next-trigger
+// figures are raised with this floor from 75 to 76.
+const MIN_SENTINEL_COUNT = 76;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {
