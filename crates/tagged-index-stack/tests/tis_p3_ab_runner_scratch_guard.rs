@@ -27,6 +27,24 @@
 //! retry on `AlreadyExists`) so concurrent test processes cannot collide or
 //! adopt a pre-planted path.
 //!
+//! Run-20 review additions (P3-3): this suite also pins the runner's
+//! scratch-root LIFECYCLE contract (commit `24944ee`): `fail()` throws
+//! `RunnerFatalError` instead of calling `process.exit()`, so the top-level
+//! `try`/`catch`/`finally` removes the invocation's own `mkdtemp` root on
+//! EVERY exit path — success, fatal error, unexpected exception — with
+//! `--keep-scratch` as the deliberate opt-out. The three lifecycle tests at
+//! the bottom of this file snapshot the `tis_p3_ab-*` entries under the
+//! SKELETON's `target/` around one real run and assert the exact delta: a
+//! successful `--mode build-check` must leave none; a deterministic fatal
+//! error raised AFTER `mkdtemp` (a deliberately broken copy of `src/imp.rs`
+//! in the skeleton — the run dies at build-check's post-`mkdtemp` `cargo
+//! build` step, which a FATAL-message oracle proves per run) must also
+//! leave none; and the same failure with `--keep-scratch` must leave
+//! exactly one root, which the test then removes itself. Against the
+//! pre-`24944ee` runner, the failure-path oracle fails by leaking and the
+//! `--keep-scratch` oracle fails at argument parsing — each test's doc
+//! comment names its specific counterfactual.
+//!
 //! Every case runs against a DISPOSABLE SKELETON COPY of the repo built in
 //! the system temp dir (never against the real repo tree), so this suite is
 //! also the counterfactual vehicle: checking out the pre-fix runner and
@@ -242,9 +260,16 @@ fn run_codegen(runner: &Path, extra: &[&str]) -> Output {
 /// access), and the one mode whose scratch writes nothing outside `target/`
 /// — no docs/perf artifacts, no identity capture, no git needed.
 fn run_build_check(runner: &Path) -> Output {
+    run_build_check_with(runner, &[])
+}
+
+/// [`run_build_check`] with extra CLI arguments (e.g. `--keep-scratch` for
+/// the lifecycle oracles at the bottom of this file).
+fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
     Command::new("node")
         .arg(runner)
         .args(["--mode", "build-check"])
+        .args(extra)
         .output()
         .expect("spawn node for the runner copy")
 }
@@ -515,4 +540,216 @@ fn scratch_root_junction_redirect_leaves_victim_canary_intact() {
         "the victim directory behind the <target>/tis_p3_ab junction was deleted — \
          the runner still follows a reparse point planted at the scratch root (run-18 P1-2)"
     );
+}
+
+// ── Run-20 review P3-3: scratch-root lifecycle oracles ─────────────────────
+//
+// The tests above pin CONTAINMENT (what the runner must refuse to delete);
+// the three tests below pin the CLEANUP LIFECYCLE (what the runner must not
+// leave behind). Each snapshots the `tis_p3_ab-*` entries under the
+// skeleton's `target/` immediately before and after one real runner
+// invocation and asserts the exact delta.
+
+/// Sorted list of the `tis_p3_ab-` prefixed entries directly under the
+/// skeleton's `target/` — exactly the per-invocation `mkdtemp` scratch roots
+/// the runner creates (`tis_p3_ab-<random>`). A missing `target/` directory
+/// means "no roots yet" (a fresh skeleton's state); any other read error is
+/// a fixture failure, not an empty snapshot.
+fn scratch_roots_under(target_dir: &Path) -> Vec<PathBuf> {
+    match fs::read_dir(target_dir) {
+        Ok(entries) => {
+            let mut roots: Vec<PathBuf> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with("tis_p3_ab-"))
+                })
+                .collect();
+            roots.sort();
+            roots
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => panic!("snapshot scratch roots under {}: {e}", target_dir.display()),
+    }
+}
+
+/// Appends a guaranteed top-level syntax error to the SKELETON's
+/// `src/imp.rs` copy — the controlled failure injection for the lifecycle
+/// oracles. The appended line cannot create or duplicate a template anchor
+/// (the runner's `verifyAllAnchorsOnce` only counts fixed multi-line
+/// snippets), so the runner sails past source verification, creates its
+/// `mkdtemp` scratch root, materializes the scratch tree, and only then
+/// fails deterministically at `cargo build` (a parse error, on every
+/// toolchain) — strictly after `makeScratchRoot()`, which is exactly the
+/// ordering the lifecycle oracles test.
+fn break_skeleton_imp_rs(skeleton_root: &Path) {
+    let imp = skeleton_root.join("crates/tagged-index-stack/src/imp.rs");
+    let mut src = fs::read_to_string(&imp).expect("read skeleton imp.rs copy");
+    src.push_str("\n__tis_p3_3_scratch_guard_deliberate_syntax_error__\n");
+    fs::write(&imp, src).expect("append deliberate syntax error to skeleton imp.rs copy");
+}
+
+/// For the failure-path lifecycle oracles: the run must be fatal AND the
+/// FATAL must come from build-check's post-`mkdtemp` `cargo build` step —
+/// not from argument parsing or any pre-scratch validation. Without this
+/// mechanism oracle, a "no new scratch root" assertion could pass vacuously
+/// (a run that dies before `mkdtemp` also leaves nothing behind).
+fn assert_fatal_from_post_mkdtemp_cargo_build(out: &Output) {
+    assert!(
+        !out.status.success(),
+        "runner exited 0 against a deliberately broken imp.rs — the controlled \
+         post-mkdtemp failure did not happen"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("tis_p3_ab_runner: FATAL"),
+        "broken-source run failed without the runner's FATAL diagnostics; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cargo build failed"),
+        "FATAL did not come from the post-mkdtemp cargo-build step — a pre-scratch death \
+         would make the no-leak assertion vacuous; stderr:\n{stderr}"
+    );
+}
+
+/// Run-20 review P3-3, oracle 1: a SUCCESSFUL `--mode build-check` run must
+/// leave no new `tis_p3_ab-*` scratch root under the repo's `target/` — the
+/// top-level `finally` cleans up on the success path too. Counterfactual: a
+/// refactor that drops the cleanup entirely, skips it on the success path,
+/// or defaults `--keep-scratch` to on fails here by leaving exactly the root
+/// the run created. (The pre-`24944ee` runner PASSES this oracle: its
+/// success-only cleanup still ran on success — the failure-path oracles
+/// below are what catch that revert.)
+#[test]
+fn build_check_success_leaves_no_scratch_root() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("lifecycle_ok");
+    let skeleton_target = root_guard.path().join("target");
+    let before = scratch_roots_under(&skeleton_target);
+    assert!(
+        before.is_empty(),
+        "fixture: a fresh skeleton must have no scratch roots yet: {before:?}"
+    );
+    let out = run_build_check(&runner);
+    assert!(
+        out.status.success(),
+        "build-check must succeed against an unbroken skeleton for this oracle to mean \
+         anything; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("build-check mode OK"),
+        "run exited 0 but never printed build-check's success line (mechanism oracle); \
+         stdout:\n{stdout}"
+    );
+    let after = scratch_roots_under(&skeleton_target);
+    assert_eq!(
+        before, after,
+        "a successful --mode build-check left new tis_p3_ab-* scratch root(s) under \
+         <repo>/target/ — the top-level finally's cleanup regressed on the success path \
+         (run-20 review P3-3)"
+    );
+    drop(parent);
+}
+
+/// Run-20 review P3-3, oracle 2: a fatal error raised AFTER the `mkdtemp`
+/// scratch root already exists must still leave no new `tis_p3_ab-*` root —
+/// exactly the leak commit `24944ee` fixed (the pre-fix `fail()` called
+/// `process.exit()`, which terminates on the spot and skips every `finally`,
+/// so ANY expected build/oracle failure leaked the whole scratch tree under
+/// `target/`). Counterfactual: reverting `fail()` to `process.exit(1)`, or
+/// moving cleanup back to the success path only, fails here by leaving
+/// exactly the root the failed run created. The failure itself is injected
+/// deterministically AFTER `mkdtemp` (see [`break_skeleton_imp_rs`]) and its
+/// post-`mkdtemp` origin is proven per-run by
+/// [`assert_fatal_from_post_mkdtemp_cargo_build`].
+#[test]
+fn build_check_fatal_failure_leaves_no_scratch_root() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("lifecycle_fail");
+    break_skeleton_imp_rs(root_guard.path());
+    let skeleton_target = root_guard.path().join("target");
+    let before = scratch_roots_under(&skeleton_target);
+    assert!(
+        before.is_empty(),
+        "fixture: a fresh skeleton must have no scratch roots yet: {before:?}"
+    );
+    let out = run_build_check(&runner);
+    assert_fatal_from_post_mkdtemp_cargo_build(&out);
+    let after = scratch_roots_under(&skeleton_target);
+    assert_eq!(
+        before, after,
+        "a fatal error raised after scratch-root creation left new tis_p3_ab-* root(s) \
+         under <repo>/target/ — cleanup no longer runs on the fatal path (the 24944ee \
+         leak regression; run-20 review P3-3)"
+    );
+    drop(parent);
+}
+
+/// Run-20 review P3-3, oracle 3: the same controlled post-`mkdtemp` failure
+/// WITH `--keep-scratch` must leave exactly ONE new `tis_p3_ab-*` root, and
+/// it must be THIS invocation's own — proven by the presence of build-check
+/// mode's fixed `build-check` child inside it. The test then removes the
+/// kept root itself (it lives inside this test's exclusive skeleton, and was
+/// created by the runner process this test spawned), so a `--keep-scratch`
+/// run never litters any real `target/` across test runs. Counterfactuals:
+/// removing the `--keep-scratch` option (the pre-`24944ee` CLI shape) fails
+/// here at argument parsing — no root is created at all; making the cleanup
+/// ignore the flag and remove anyway fails here with zero new roots.
+#[test]
+fn keep_scratch_fatal_failure_keeps_exactly_one_owned_root() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("lifecycle_keep");
+    break_skeleton_imp_rs(root_guard.path());
+    let skeleton_target = root_guard.path().join("target");
+    let before = scratch_roots_under(&skeleton_target);
+    assert!(
+        before.is_empty(),
+        "fixture: a fresh skeleton must have no scratch roots yet: {before:?}"
+    );
+    let out = run_build_check_with(&runner, &["--keep-scratch"]);
+    assert_fatal_from_post_mkdtemp_cargo_build(&out);
+    let after = scratch_roots_under(&skeleton_target);
+    assert_eq!(
+        after.len(),
+        1,
+        "--keep-scratch must leave exactly ONE new tis_p3_ab-* root for this invocation \
+         (the skeleton starts with none: {before:?}); got {after:?} — the flag was \
+         rejected at argument parsing (no root at all) or cleanup ran despite it \
+         (run-20 review P3-3)"
+    );
+    let kept = &after[0];
+    assert!(
+        kept.join("build-check").is_dir(),
+        "the kept root {} does not contain build-check mode's fixed child — it is not \
+         this invocation's scratch root",
+        kept.display()
+    );
+    // Same contract the oracle pins, honored by the test itself: a
+    // --keep-scratch caller cleans its kept root up deliberately. Safe
+    // because the path was discovered inside this test's own exclusive
+    // skeleton and positively identified above.
+    fs::remove_dir_all(kept).unwrap_or_else(|e| {
+        panic!(
+            "remove the kept --keep-scratch root {}: {e}",
+            kept.display()
+        )
+    });
+    assert!(
+        !kept.exists(),
+        "the kept --keep-scratch root survived its own explicit removal"
+    );
+    drop(parent);
 }
