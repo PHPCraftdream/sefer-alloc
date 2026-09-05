@@ -2821,123 +2821,44 @@ for completeness.
       one-syscall candidate — different API, different crate,
       cross-reference only, not the same item).
 
-61. **[D] `tagged-index-stack` `push_index`'s CAS-retry loop re-issues
-    `store_next` on every retry even when the link value is unchanged — an
-    elidable extra `Release` store per retry; hot-path idea deferred pending
-    a dedicated multi-target measurement.** (Filed 2026-08-31 from the
-    round-10 @oh adversarial review, finding 7 — DECIDE-don't-implement
-    disposition, task tis-r10-groupD.)
+61. **[D] `tagged-index-stack` store-elision candidate in the `push_index`
+    retry loop.**
 
-    - **Status:** OPEN — observation only. Nothing measured, nothing
-      changed; not quotable as a speedup.
-    - **Current-number-or-verdict:** unmeasured. Mechanism
-      (`crates/tagged-index-stack/src/imp.rs`, `StackOps::push_index`'s
-      retry loop, the unconditional `self.store_next(index, next_link)`):
-      a CAS that failed purely on a tag-only head change (e.g. a concurrent
-      pop-then-repush of the SAME head index) leaves `next_link` identical
-      to the value the previous attempt already stored, so the retry's
-      `store_next` rewrites the same word — one redundant `Release` store
-      per retry, most relevant on weakly-ordered targets where a Release
-      store is a real instruction. An elision guard would add its own
-      branch to the same hot path, so the trade is not obviously positive
-      even on paper.
-    - **Next trigger:** a measurement variant for THIS candidate DOES NOT
-      EXIST YET — corrected 2026-09-03 per Sol-codex review run 13 P3-2,
-      which caught this card's previous claim that the shared harness
-      already covered the elision idea (it does not). The existing driver
-      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`
-      materializes exactly three variants (`VARIANTS = ['base',
-      'links_relaxed', 'cas_weak']`, `tis_p3_ab_runner.mjs:59`;
-      `VARIANT_ANCHORS` at `:96-100`), and NONE of them touches
-      `push_index`'s retry loop or elides the re-issued `store_next`, so
-      the pending arm64 wall-clock job (`tis-weak-memory-wallclock-gate`)
-      measures item 62's candidates only and can say NOTHING about item
-      61. Measuring this candidate first requires a NEW `store_elision`
-      (or equivalently named) variant with an exact-anchor/tripwire added
-      to the driver, plus an activation oracle that distinguishes CAS
-      failures where `next_link` was preserved from failures carrying a
-      new head index (R26-4/R30-8: prove the labelled path actually ran)
-      — NOT measurable by the existing base/links_relaxed/cas_weak
-      variants. The natural moment to add the variant is BEFORE the same
-      pending ARM dispatch item 62 waits on, so one run covers the
-      candidates (sibling item 63's CAS-success-ordering variant would be
-      added in the same pass). Per CLAUDE.md, no hot-path runtime change
-      lands without a gate report.
-    - **Evidence:** `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs`
-      (`VARIANT_ANCHORS`, `:96-100` — no elision variant exists);
-      `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` (what the driver DOES
-      measure — item 62's candidates);
-      `docs/reviews/2026-09-03-111727-tagged-index-stack-review-Sol-codex-run-13.md`
-      §P3-2 (the correction source).
+    - **Status:** OPEN — measurement-only; no production change.
+    - **Current-number-or-verdict:** unmeasured. The current runner does not
+      include a store-elision variant.
+    - **Next trigger:** add a dedicated variant and activation oracle, then
+      include it in the native-arm64 wall-clock dispatch with items 62/63.
+      No hot-path change before a gate report.
+    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
 
-62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B on a
-    real weak-memory target — static codegen legs measured, arm64 wall-clock
-    authored and pending its first runner run.** (Filed 2026-09-01 from
-    Sol-codex review run 4 P3-1/P3-2, branch tis-sol4-w3-perf Wave 3.)
+62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B.**
 
-    - **Status:** OPEN — measurement-only. Nothing changed in
-      `crates/tagged-index-stack/src/`; the P3-1 Relaxed change is NOT
-      landed (no measured wall-clock win exists).
-    - **Current-number-or-verdict:** x86-64 codegen identity — all four
-      studied functions (`ArrayLinks::load_next`/`store_next`,
-      `push_index_impl`, `pop_index_impl`) are sha-identical across
-      base / links-Relaxed / CAS-weak variants, so the ordering and CAS
-      candidates cost nothing on x86 (TSO) either way. aarch64 (rustc
-      1.97.0 / LLVM 22) static delta is REAL: link-cell Acquire/Release is
-      visible at the ISA level (per pop one extra `ldar` link load; per
-      push one-two `stlr` link stores; `load_next`/`store_next` each carry
-      exactly one `ldar`/`stlr`), removable under Relaxed (pop's head
-      Acquire load correctly remains; magnitudes: `load_next`/`store_next`
-      13→12 instructions); whether that instruction delta is a wall-clock
-      win on real silicon is UNMEASURED. P3-2 (weak-vs-strong CAS)
-      measured NULL on this toolchain — `compare_exchange_weak` is
-      sha-identical to `compare_exchange` under BOTH lowerings (default:
-      outlined `__aarch64_cas8_{acq,rel}` helper calls, no inline
-      ldaxr/stlxr anywhere; `+lse`: single `casl`/`casa`), and the driver's
-      oracle asserts that identity so a future toolchain reintroducing an
-      inline-LL/SC lowering where weak differs fails loudly
-      ("P3-2 REOPENED").
-    - **Next trigger:** dispatch the `tis-weak-memory-wallclock-gate` CI
-      job (workflow_dispatch-only, ubuntu-24.04-arm, free for public repos)
-      and file the resulting wall-clock A/B; then decide P3-1 (land
-      Relaxed + loom model + counterfactual ONLY if a measured win exists;
-      otherwise record the wall-clock NULL) and update the crate
-      CHANGELOG's Performance section again.
-    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` + its
-      committed CSVs + `_raw_tis_p3_ab_*` logs.
+    - **Status:** OPEN — measurement-only; production Acquire/Release links
+      and strong CAS remain unchanged.
+    - **Current-number-or-verdict:** harness P3 defects were repaired in
+      `7e5ea47` and codegen was refreshed in `4a2a178`. The authoritative
+      result is x86 identity; AArch64 removes link `ldar`/`stlr` only in the
+      Relaxed candidate, while weak CAS is identity. Native arm64 timing is
+      still OPEN.
+    - **Next trigger:** after commits are available to CI, explicit
+      `workflow_dispatch` of `tis-weak-memory-wallclock-gate` on native arm64;
+      it generates fresh x86+AArch64 codegen plus ARM wall-clock and summary
+      from one checkout/toolchain.
+    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` and its two
+      current codegen CSVs/raw logs/asm.
 
-63. **[D] `tagged-index-stack` `pop_index`'s CAS SUCCESS ordering (Acquire
-    today) as a `Relaxed` candidate — a valid but unmeasured FOURTH
-    weak-memory A/B variant.** (Filed 2026-09-01 from the @fh quality/perf
-    review of `tagged-index-stack` §1.6 [process note]. Corrected 2026-09-04
-    after Sol-codex run-22 incorrectly called the ordering pair invalid.)
+63. **[D] `tagged-index-stack` `pop_index` CAS-success ordering as a Relaxed
+    candidate.**
 
-    - **Status:** OPEN — unmeasured, not landed. `pop_index` currently uses
-      `compare_exchange(head, new_head, Acquire, Acquire)`. The candidate
-      changes only success to `Relaxed` and retains the load-bearing
-      `failure = Acquire` used by the retry proof.
-    - **Current-number-or-verdict:** no performance measurement exists yet.
-      The candidate is technically valid: both Rust 1.79 (the crate MSRV)
-      and Rust 1.97 accept `(success = Relaxed, failure = Acquire)` and lower
-      the constant pair to LLVM `cmpxchg ... monotonic acquire`. Rust forbids
-      `Release` and `AcqRel` as failure orderings; it does not impose the
-      C/C++ rule that failure cannot be stronger than success. The initial
-      head load and every failed CAS already provide the Acquire observation
-      used before following a link, so this success-only candidate does not
-      weaken the retry path. This is validity evidence, not speed evidence.
-    - **Next trigger:** add a fourth variant to
-      `crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs` before the
-      pending native arm64 dispatch for items 61/62, with an oracle asserting
-      that only pop's success ordering changed. Measure/codegen-compare it in
-      the same run; land no hot-path change without the gate report required
-      by CLAUDE.md.
-    - **Evidence:** `crates/tagged-index-stack/src/imp.rs` (the current
-      `Acquire/Acquire` pop CAS); Rust 1.79 and 1.97 emitted LLVM IR for a
-      constant `AtomicU64::compare_exchange(_, _, Relaxed, Acquire)` pair
-      (`cmpxchg ... monotonic acquire`) during the 2026-09-04 patch audit;
-      `docs/reviews/2026-09-04-124118-tagged-index-stack-review-Sol-codex-run-22.md`
-      now records the correction. The obsolete CHANGELOG line reference from
-      the original card has been removed.
+    - **Status:** OPEN — measurement-only; not landed.
+    - **Current-number-or-verdict:** technically valid but unmeasured. The
+      current runner does not include this variant; no timing or codegen claim
+      is made for it.
+    - **Next trigger:** add a dedicated variant with an oracle proving only
+      pop's success ordering changed, then measure it in the native-arm64 gate
+      with items 61/62. No hot-path change before a gate report.
+    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
