@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// tis_p3_ab_runner.mjs — measurement driver for the P3-1/P3-2 A/B study of
+// tis_p3_ab_runner.mjs — measurement driver for the link-ordering/CAS A/B study of
 // `crates/tagged-index-stack`:
-//   P3-1: ArrayLinks::load_next/store_next Acquire/Release vs Relaxed.
-//   P3-2: strong compare_exchange vs compare_exchange_weak in the push/pop
+//   Link ordering: ArrayLinks::load_next/store_next Acquire/Release vs Relaxed.
+//   CAS strength: strong compare_exchange vs compare_exchange_weak in the push/pop
 //         head CAS loops (relevant on LL/SC ISAs like non-LSE AArch64).
 //
 // Modes:
@@ -29,13 +29,8 @@
 //                      code, so a break visible only through one is invisible
 //                      to a check of the other). No timing, no docs/perf
 //                      artifacts. Exists so an API break in `push`/`pop`
-//                      (e.g. the `3e83b1c` unsafe-fn migration) fails regular
-//                      per-PR CI instead of staying invisible until the next
-//                      workflow_dispatch-only wallclock/codegen run — see
-//                      docs/reviews/2026-09-02-180547-tagged-index-stack-review-Sol-codex-run-8.md
-//                      P2-2 (harness template) and
-//                      docs/reviews/2026-09-03-084348-tagged-index-stack-review-Sol-codex-run-10.md
-//                      P2 (codegen wrapper template).
+//                      an API break in `push`/`pop` fails regular per-PR CI
+//                      instead of staying invisible until a measurement run.
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
 // Scratch vs tracked outputs: build-check mode writes ONLY under its own
@@ -46,15 +41,12 @@
 // run to (re)generate committed evidence (raw logs + summary CSVs).
 // That artifact writing is those modes' documented purpose, not a defect —
 // but the writes-nothing-tracked property belongs to build-check only.
-// The former --out-dir option was REMOVED (run-17 review P1-1): it resolved
-// against the repo root with no containment check and the resolved directory
-// was recursively deleted on every wallclock/codegen run, so `--out-dir .`
-// deleted the entire repository. There is no user-visible output-directory
-// knob anymore: every scratch path is <repoRoot>/target/tis_p3_ab-<mkdtemp>/<target>
-// (plus fixed children) by construction, validateScratchLeaf pins the one
-// variable segment to a single non-dot path component, the root itself is
-// unpredictable and exclusively created by this process (run-18 review
-// P1-2), and freshDir() refuses to create anything at or outside it.
+// `--out-dir` is rejected. Every scratch path is
+// <repoRoot>/target/tis_p3_ab-<mkdtemp>/<target> (plus fixed children) by
+// construction, validateScratchLeaf pins the one variable segment to a
+// single non-dot path component, the root is unpredictable and exclusively
+// created by this process, and freshDir() refuses to create anything at or
+// outside it.
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -73,17 +65,16 @@ const tmplDir = path.join(scriptDir, 'tis_p3_ab');
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
 // Dedicated scratch root: the ONLY directory tree this runner ever creates
 // or deletes inside. Created FRESH by each top-level mode invocation via
-// mkdtemp under <repoRoot>/target/ (run-18 review P1-2): the full path is
+// mkdtemp under <repoRoot>/target/: the full path is
 // unpredictable (random mkdtemp suffix) and it is created exclusively by
 // THIS process, so nothing else could have planted a symlink/junction/
 // reparse point anywhere on the path before this process's own first write.
-// (The former fixed <repoRoot>/target/tis_p3_ab path allowed exactly that
-// plant: back then freshDir()'s rmSync resolved a planted reparse point at
-// delete time and destroyed the real external directory it pointed at.)
+// A fixed scratch path could be redirected by a planted reparse point; this
+// per-invocation root prevents that before the first write.
 // Each invocation removes its own root again on EVERY exit path — success,
 // fail()-driven fatal error, unexpected exception — via the top-level
-// finally around the dispatch (run-19 review P3-2; --keep-scratch opts out
-// on purpose). A hard-killed run's leftover root is inert garbage under
+// finally around the dispatch; --keep-scratch opts out on purpose. A
+// hard-killed run's leftover root is inert garbage under
 // gitignored <repoRoot>/target/ (never re-entered, never deleted by a later
 // invocation — later invocations get their own mkdtemp root).
 
@@ -106,7 +97,7 @@ function makeScratchRoot() {
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
 
-// ── Practical upper bounds (run-17 review P2-1) ─────────────────────────────
+// ── Practical upper bounds ─────────────────────────────────────────────────
 // The JS side enforces the SAME practical bounds as the Rust harness
 // (scripts/tis_p3_ab/harness_bin.rs) — rejecting absurd inputs at argument
 // validation, BEFORE any cargo build or harness process exists, instead of
@@ -188,19 +179,15 @@ function parseArgs(argv) {
       case '--mode': args.mode = need(); break;
       case '--target': args.target = need(); break;
       case '--out-dir':
-        // P1-1 (run-17 review): this option resolved its value against the
-        // repo root and freshDir() recursively deleted the resolved directory
-        // on every run — `--out-dir .` deleted the whole repository. Removed
-        // without replacement; see makeScratchRoot below.
-        fail('--out-dir was removed (its value was resolved against the repo root and then recursively deleted — `--out-dir .` deleted the entire repository; see docs/reviews/2026-09-03-164740-tagged-index-stack-review-Sol-codex-run-17.md P1-1). Scratch output now always goes to a fresh <repo>/target/tis_p3_ab-<mkdtemp>/<target> directory the runner creates itself.');
+        // Scratch output is created only under the runner-owned root.
+        fail('--out-dir is not supported; scratch output goes to a fresh <repo>/target/tis_p3_ab-<mkdtemp>/<target> directory created by the runner.');
       case '--threads': args.threads = Number(need()); break;
       case '--window-ms': args.windowMs = Number(need()); break;
       case '--samples': args.samples = Number(need()); break;
       case '--smoke': args.smoke = true; break;
       case '--keep-scratch':
-        // P3-2 (run-19 review): deliberate opt-out from the top-level
-        // finally's scratch-tree removal — for inspecting a failed run's
-        // scratch build tree on purpose. Default (flag absent) never leaks.
+        // Deliberate opt-out from scratch-tree removal for inspection.
+        // Without this flag, cleanup runs on every exit path.
         args.keepScratch = true;
         break;
       default: fail(`unknown argument: ${a}`);
@@ -217,12 +204,11 @@ function parseArgs(argv) {
     }
     // The target names the scratch leaf <repo>/target/tis_p3_ab-<mkdtemp>/<target>:
     // `.` or `..` would point freshDir() AT or ABOVE the dedicated scratch
-    // root (both pass the charset check above) — the run-17 review P1-1
-    // class of bug. validateScratchLeaf() rejects them here, before any
-    // filesystem access.
+    // root (both pass the charset check above). validateScratchLeaf() rejects
+    // them here, before any filesystem access.
     validateScratchLeaf(args.target);
   }
-  // run-21 review NONOPT-1: summary mode accepts an OPTIONAL --target to
+  // Summary mode accepts an optional --target to
   // point the wallclock ratio oracle at a different leg's CSV (e.g. the
   // aarch64 CSV a CI job just produced) instead of the committed
   // x86_64-pc-windows-msvc default. Same charset as the producing modes'
@@ -236,7 +222,7 @@ function parseArgs(argv) {
   return args;
 }
 
-// P3-2 (run-19 review): fail() THROWS instead of calling process.exit() —
+// fail() throws instead of calling process.exit() —
 // process.exit() terminates the process on the spot and skips `finally`
 // blocks, so the scratch-tree cleanup in the top-level finally below could
 // never run for a fail() path (any expected build/oracle failure leaked the
@@ -468,20 +454,16 @@ function validateScratchLeaf(name) {
     name === '.' || name === '..' ||
     name.includes('/') || name.includes('\\')
   ) {
-    fail(`scratch directory name ${JSON.stringify(name)} must be a single non-dot path segment — scratch output is always <repo>/target/tis_p3_ab-<mkdtemp>/<name>, never anywhere else (run-17 review P1-1)`);
+    fail(`scratch directory name ${JSON.stringify(name)} must be a single non-dot path segment — scratch output is always <repo>/target/tis_p3_ab-<mkdtemp>/<name>, never anywhere else`);
   }
 }
 
 function freshDir(dir, root) {
   // Fail-if-exists creation of ONE new child directory under THIS
-  // invocation's mkdtemp scratch root (run-19 review P3-2). Every call site
-  // passes a leaf whose parent already exists (the root itself, or a
-  // directory created earlier in the same mode), so plain mkdirSync is
-  // used ON PURPOSE: it throws if the leaf already exists, loudly surfacing
-  // any future path-reuse bug instead of silently clearing it — the old
-  // rmSync-then-mkdir was a destructive primitive whose only real effect
-  // was papering over exactly that bug class. Its safety rests on the
-  // mkdtemp root (run-18 review P1-2): `root` is unpredictable and was
+  // invocation's mkdtemp scratch root. Every call site passes a leaf whose
+  // parent already exists, so plain mkdirSync intentionally throws if the
+  // leaf already exists and exposes path reuse instead of clearing it. Its
+  // safety rests on the mkdtemp root: `root` is unpredictable and was
   // created exclusively by THIS process, so nothing else could have planted
   // a symlink/junction/reparse point on the path before this process's own
   // first write to it. The lexical check below remains purely as a backstop
@@ -489,7 +471,7 @@ function freshDir(dir, root) {
   const resolved = path.resolve(dir);
   const rel = path.relative(root, resolved);
   if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-    fail(`refusing to create ${resolved}: it is not strictly inside this invocation's dedicated scratch root ${root} (run-17 review P1-1)`);
+    fail(`refusing to create ${resolved}: it is not strictly inside this invocation's dedicated scratch root ${root}`);
   }
   try {
     fs.mkdirSync(dir);
@@ -501,9 +483,9 @@ function freshDir(dir, root) {
   }
 }
 
-// P1-1: the scratch tree has exactly one variable segment (args.target,
-// validated by validateScratchLeaf above) and no user-supplied base path;
-// P1-2: the base itself is this invocation's fresh mkdtemp root.
+// The scratch tree has exactly one variable segment (args.target, validated
+// by validateScratchLeaf above) and no user-supplied base path. The base is
+// this invocation's fresh mkdtemp root.
 function scratchRoot(args, root) {
   validateScratchLeaf(args.target);
   return path.join(root, args.target);
@@ -613,13 +595,13 @@ function extractFunctions(asmText, target) {
 //   * -C target-feature=+lse: each CAS lowers to a single casl/casa
 //     instruction (2 casa + 2 casl across push+pop), zero __aarch64_cas8
 //     calls, zero ldaxr/stlxr. cas_weak == base here too.
-//   * Links ordering (P3-1): base has ldar/stlr for ArrayLinks accesses
+  //   * Links ordering: base has ldar/stlr for ArrayLinks accesses
 //     (residual ldar in relaxed = pop_index_impl's own 64-bit Acquire HEAD
 //     load (`head_ref.load(Ordering::Acquire)`), which must remain); links_relaxed drops link ldar to 0 / link stlr to 0.
 // The cas_weak identity asserts below are DELIBERATE and load-bearing: they
 // are the self-updating oracle. If a future toolchain reintroduces an inline
 // LL/SC lowering where weak differs from strong, these asserts FAIL loudly
-// and reopen the P3-2 question instead of silently hiding the change.
+// and make the CAS lowering change visible instead of silently hiding it.
 function modeCodegen(args, header) {
   const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
   const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
@@ -641,9 +623,8 @@ function modeCodegen(args, header) {
       '//   +lse: CAS = single casl/casa instructions (zero outlined calls, zero ldaxr/stlxr);',
       '//   strong compare_exchange == compare_exchange_weak after normalization on BOTH feature',
       '//   sets. The cas_weak sha-identity asserts below are DELIBERATE: if a toolchain change',
-      '//   reintroduces an inline-LL/SC lowering where weak differs, they fail loudly and reopen',
-      '//   the P3-2 question.',
-      '// Byte-exact sha identity is asserted for cas_weak (P3-2) but NOT for links_relaxed',
+      '//   reintroduces an inline-LL/SC lowering where weak differs, they fail loudly.',
+      '// Byte-exact sha identity is asserted for cas_weak but NOT for links_relaxed',
       '// push/pop: removing a link acquire/release legitimately shifts register allocation.',
       '// For links_relaxed the oracle instead asserts the exact acquire/release instruction',
       '// DELTA formulas derived from the base run: pop ldar == base_pop_ldar - base_load_next_ldar',
@@ -763,7 +744,7 @@ function modeCodegen(args, header) {
     //     disappear (stlr == 0) and a plain relaxed link store (str) appears.
     //   * LOAD_NEXT/STORE_NEXT standalone blocks: base has the Acquire/Release
     //     instruction (>= 1); relaxed has none and a plain ldr/str instead.
-    // Byte identity REMAINS asserted for cas_weak (P3-2) only.
+    // Byte identity remains asserted for cas_weak only.
     for (const key of ['load_next', 'store_next']) {
       const mne = key === 'load_next' ? 'ldar' : 'stlr';
       const plain = key === 'load_next' ? 'ldr' : 'str';
@@ -840,15 +821,14 @@ function modeCodegen(args, header) {
       }
     }
 
-    // (c) cas_weak: DELIBERATE identity assert (self-updating oracle — see the
-    // file-header note). If this fails, a toolchain change has made weak CAS
-    // diverge from strong; that REOPENS P3-2 and must NOT be weakened.
+    // (c) cas_weak: deliberate identity assert (self-updating oracle). If this
+    // fails, weak CAS has diverged from strong and the oracle must remain loud.
     for (const key of ['push_index_impl', 'pop_index_impl']) {
       if (!identical('cas_weak', key)) {
         printNorm('base', key);
         printNorm('cas_weak', key);
-        logLines.push(`P3-2 REOPENED: weak CAS now diverges from strong on ${tag} (${key}).`);
-        fail(shaFail('cas_weak', key, 'deliberate strong==weak codegen identity assert (self-updating oracle; a divergence reopens P3-2)'));
+        logLines.push(`CAS equivalence reopened: weak CAS now diverges from strong on ${tag} (${key}).`);
+        fail(shaFail('cas_weak', key, 'deliberate strong==weak codegen identity assert (self-updating oracle)'));
       }
     }
   }
@@ -914,7 +894,7 @@ function modeCodegen(args, header) {
 
   // ── Derived markdown table (with asserted arithmetic) ─────────────────────
   const md = [];
-  md.push(`# TIS P3 A/B codegen table — target ${args.target}`);
+  md.push(`# TIS link-ordering/CAS A/B codegen table — target ${args.target}`);
   md.push('');
   md.push('delta% is instr_count relative to base for the same function (derived, rounded to 3 decimals).');
   md.push('');
@@ -930,9 +910,9 @@ function modeCodegen(args, header) {
         if (variant !== 'base') {
           const b = variants.base.funcs[key].instrCount;
           if (b > 0) {
-            // Plain rounded computation, not a checked oracle (run-19
-            // review P3-1): an assert recomputing this exact expression and
-            // comparing it to itself could never fail.
+            // Plain rounded computation, not a checked oracle: an assert
+            // recomputing this exact expression and comparing it to itself
+            // could never fail.
             const ratio = Math.round((f.instrCount / b) * 1000) / 1000;
             deltaPct = String(Math.round((ratio - 1) * 1000) / 10);
           }
@@ -1109,15 +1089,11 @@ function modeWallclock(args, header) {
 
   // Run the harness per SAMPLE, rotating the variant order every sample.
   //
-  // P2-3 (run-18 review): the previous loop was a BLOCK design — ALL samples
-  // of one variant, then ALL of the next — so block boundaries co-varied with
-  // time-correlated confounds (machine warm-up, DVFS, thermal throttling,
-  // background load), and each block's median inherited its block's drift.
-  // The outer loop is now the sample index; each sample runs all variants in
-  // a deterministically rotated order — sample s (1-based) uses VARIANTS
-  // rotated left by (s - 1) % VARIANTS.length — so every variant occupies
-  // every position once per VARIANTS.length samples and the schedule favors
-  // no variant. The realized order is logged per sample (below) so
+  // The outer loop is the sample index; each sample runs all variants in
+  // a deterministically rotated order. This prevents block boundaries from
+  // co-varying with machine warm-up, DVFS, thermal throttling, or background
+  // load, and gives each variant every position once per cycle. The schedule
+  // favors no variant. The realized order is logged per sample (below) so
   // downstream analysis can pair samples across variants by POSITION instead
   // of trusting independent per-variant block medians as if they were
   // sampled under identical conditions.
@@ -1126,8 +1102,8 @@ function modeWallclock(args, header) {
     const order = VARIANTS.map((_, i) => VARIANTS[(i + shift) % VARIANTS.length]);
     logLines.push(`--- sample=${sample} realized variant order: ${order.join(' -> ')} ---`);
     for (const variant of order) {
-      // P2-1 (run-17 review): bounded child runtime. A harness that never
-      // exits (worker gone before the done-barrier rendezvous — Barrier has
+      // Bounded child runtime. A harness that never exits (worker gone before
+      // the done-barrier rendezvous — Barrier has
       // no poison — or any other hang) is killed here and failed loudly, not
       // allowed to hang CI/a dev machine indefinitely; never retried, never
       // reported as a sample.
@@ -1167,7 +1143,7 @@ function modeWallclock(args, header) {
   }
   const med = Object.fromEntries(VARIANTS.map((v) => [v, median(crates[v].samples.map((s) => s.ops_per_sec))]));
   function ratioOf(v) {
-    // Plain rounded computation, not a checked oracle (run-19 review P3-1):
+    // Plain rounded computation, not a checked oracle:
     // an assert recomputing this exact expression and comparing it to
     // itself could never fail. Ratio VERIFICATION lives in --mode summary,
     // where the re-derived ratio is checked against the leg's own recorded
@@ -1176,7 +1152,7 @@ function modeWallclock(args, header) {
   }
 
   const md = [];
-  md.push(`# TIS P3 A/B wallclock summary — target ${args.target}`);
+  md.push(`# TIS link-ordering/CAS A/B wallclock summary — target ${args.target}`);
   md.push('');
   md.push(`threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
   md.push('');
@@ -1223,7 +1199,7 @@ function modeWallclock(args, header) {
 // three would be redundant compile cost for zero extra API-break coverage.
 //
 // This mode ALSO covers the separate `codegen_wrapper.rs.tmpl` template
-// (Sol-codex review run 10, P2): that template is compiled directly by
+// That template is compiled directly by
 // `rustc` (no cargo) in `--mode codegen`, shares zero materialization code
 // with the harness template above, and is otherwise reachable only from the
 // arm64-only, `workflow_dispatch`-only weak-memory job — so an API break
@@ -1303,7 +1279,7 @@ function modeBuildCheck() {
 // re-derived from the CSV's own sample rows and asserted against the ratio
 // the leg itself recorded. The wallclock leg defaults to the committed
 // x86_64-pc-windows-msvc CSV; an explicit `--target <triple>` re-points it
-// at that target's CSV instead (run-21 review NONOPT-1) so a CI job can
+// at that target's CSV so a CI job can
 // check the leg it just produced rather than the pinned evidence corpus.
 const CODEGEN_CSV_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
 const WALLCLOCK_CSV_TARGET = 'x86_64-pc-windows-msvc';
@@ -1461,7 +1437,7 @@ function modeSummary(args) {
 
   // (c) wallclock production leg: medians re-derived from sample rows, ratios
   // re-derived from the medians, both asserted against the leg's own SUMMARY.
-  // run-21 review NONOPT-1: `--target` (optional) re-points the wallclock
+  // `--target` (optional) re-points the wallclock
   // oracle at that target's CSV; absent, the committed windows-msvc default
   // is checked exactly as before (backward compatible with every documented
   // invocation).
@@ -1507,14 +1483,14 @@ function modeSummary(args) {
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
-// P3-2 (run-19 review): the whole dispatch lives in one try/catch/finally so
+// The whole dispatch lives in one try/catch/finally so
 // the invocation's scratch root is removed on EVERY exit path — success,
 // fail()-driven fatal error (fail() throws; see its comment above),
-// unexpected exception — replacing the three former success-only rmSync
+  // unexpected exception — replacing success-only cleanup sites
 // sites inside the mode functions. --keep-scratch opts out deliberately
 // (inspect a failed run's scratch tree); the default must never leak.
-// The finally block is also the ONLY place reporting the scratch-tree
-// lifecycle (run-20 review P4-1): the outcome is reported here, after it
+// The finally block is also the only place reporting the scratch-tree
+// lifecycle: the outcome is reported here, after it
 // actually happened — never speculatively, before cleanup runs.
 let args = null;
 try {

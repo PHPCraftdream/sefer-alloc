@@ -84,8 +84,8 @@ const WARMUP: Duration = Duration::from_millis(200);
 const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
 
 /// Checked `Instant + Duration` for the timed-window deadline arithmetic,
-/// mirroring the A/B harness's checked-deadline posture (run-19 review
-/// P3-4): a bare `+` would panic on overflow with no diagnostic, so both
+/// mirroring the A/B harness's checked-deadline posture: a bare `+` would
+/// panic on overflow with no diagnostic, so both
 /// the coordinator's `timed_start` and every worker's `deadline` go
 /// through this one helper, which names the operands if the sum is not
 /// representable in this platform's `Instant` range. A benchmark cannot
@@ -106,8 +106,8 @@ fn checked_deadline_add(instant: Instant, add: Duration) -> Instant {
 // own clock and publishes it in a `OnceLock` cell, and `barrier_window`
 // releases everyone into their warm-up against the now-known window.
 // Because the window is computed only after full rendezvous, no fixed
-// spawn+rendezvous budget has to be trusted. The old fixed BARRIER_LEAD
-// lead time (window computed before spawning) silently trusted
+// spawn+rendezvous budget has to be trusted. A fixed lead time (window
+// computed before spawning) would silently trust
 // thread-spawn + rendezvous to finish within the lead; on a slow CI
 // runner or VM it could not, and part of the window was lost with no
 // signal. The window is now computed at/after
@@ -502,8 +502,7 @@ fn main() {
     // repushed index at a time, the stack can never observe fewer than
     // `prefill_count - num_threads` elements -- at least 56 with today's
     // constants. A `None` here is therefore not a legitimate steady-state
-    // outcome to route around with a fallback workload (the old per-thread
-    // `fresh_idx`/`fresh_idx_outstanding` machinery, now removed) -- it is
+    // outcome to route around with a fallback workload -- it is
     // an invariant violation, so it now hard-panics via `.expect(...)`
     // instead.
     assert!(

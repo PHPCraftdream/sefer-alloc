@@ -1015,11 +1015,9 @@ fn push_push_conservation() {
 /// overlapping ones pass the gate, and on each gate-passing schedule the
 /// drain panics DETERMINISTICALLY (coherence — see the drain comment in
 /// the body), so a body that completes panic-free means the gate never
-/// opened, and `#[should_panic]` fails the test loudly. The former
-/// process-global `SAME_INDEX_RETRY_GATE_SEEN` disambiguation flag ("gate
-/// never opened" vs "gate opened but drained benignly") is gone: once the
-/// gate opens, a benign drain is not a possible outcome, so the second
-/// scenario it existed to diagnose cannot arise.
+/// opened, and `#[should_panic]` fails the test loudly. Once the gate opens,
+/// a benign drain is not a possible outcome, so the gate itself is the
+/// non-vacuity oracle.
 /// The positive counterpart
 /// `pop_repush_after_publish_conserves` below independently
 /// proves the overlapping scenario is reachable in this suite's models.

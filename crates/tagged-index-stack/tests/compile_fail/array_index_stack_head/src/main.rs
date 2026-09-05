@@ -1,12 +1,9 @@
-//! Compile-fail successor of the former `array_index_stack_head_still_double_issue`
-//! runtime test (Group A of
-//! docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md): building a
-//! competing binding around a standalone `ArrayIndexStack`'s head MUST NOT compile.
-//! The type deliberately does not implement the public `StackStorage` trait — the
-//! ADR's Group A closure — so `head()` is neither callable on it (no trait method)
-//! nor reachable via any generic over `StackStorage` (no impl to satisfy). What
-//! used to be a compiling, double-issuing runtime demonstration is now
-//! UNEXPRESSIBLE in safe code; the compile errors below ARE the structural fix.
+//! Building a competing binding around a standalone `ArrayIndexStack`'s head
+//! MUST NOT compile. The type deliberately does not implement the public
+//! `StackStorage` trait, so `head()` is neither callable on it nor reachable
+//! through a generic `StackStorage` bound. No safe route can construct a
+//! competing binding around its head; the compile errors below are the
+//! structural oracle.
 //! Pinned failing by root `tests/tagged_index_stack_compile_fail.rs`.
 use tagged_index_stack::{ArrayIndexStack, StackHead, StackStorage};
 

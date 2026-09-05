@@ -2291,7 +2291,7 @@ jobs:
       # The core invariants (UB-free slotmap membrane), default features.
       - name: region_invariants
         run: cargo miri test --test region_invariants
-      # P4 Miri automation: the package-specific unchecked-storage oracle for
+      # Tagged-index-stack Miri automation: the package-specific unchecked-storage oracle for
       # `tagged-index-stack`. Keep this as an explicit Miri invocation under
       # the same strict-provenance flags as the root invariants above; a plain
       # `cargo test` run would not exercise the interpreter's bounds/provenance

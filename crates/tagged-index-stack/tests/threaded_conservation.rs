@@ -8,9 +8,8 @@
 //! It deliberately does not require a particular CAS-loss count: a real OS
 //! scheduler may serialize otherwise-correct workers. Loom models separately
 //! force and assert both retry branches, while `backoff_oracle.rs` checks the
-//! local backoff progression and saturation deterministically. This is the
-//! committed replacement for the throwaway ad hoc probe that originally
-//! measured the backoff.
+//! local backoff progression and saturation deterministically. This test
+//! checks the same conservation property at real-thread scale.
 //!
 //! Discipline mirrors `benches/tagged_index_stack_bench.rs`'s
 //! `contention/churn` phase exactly: every thread pops WHATEVER is currently
@@ -45,8 +44,7 @@ const LINKS_SIZE: u32 = 64;
 const NUM_THREADS: usize = 8;
 
 /// Pop-then-repush iterations per thread. `NUM_THREADS * ITERS_PER_THREAD`
-/// (1.6M total pop/push pairs) matches the 8-threads-x-200,000 shape of the
-/// throwaway ad hoc probe this file replaces. The scale makes contention
+/// (1.6M total pop/push pairs). The scale makes contention
 /// likely on ordinary multi-core hosts, but no assertion depends on that
 /// scheduler outcome.
 const ITERS_PER_THREAD: u32 = 200_000;
@@ -67,11 +65,8 @@ fn contention_round(stack: &Stack) {
     // their 200,000 iterations before a later thread is even scheduled for
     // the first time -- collapsing what should be 8-way real contention into
     // several near-sequential runs with little to no overlap. That is
-    // exactly what happened in CI run 33508623598 (job 99858613637,
-    // 2026-09-01): `push`'s CAS-retry branch fired ZERO times across all
-    // 1.6M iterations (before=0, after=0) -- the activation oracle
-    // caught it as designed, because a staggered start against a shared
-    // stack still conserves the free-list (no thread ever needs a SECOND
+    // A staggered start against a shared stack still conserves the free-list
+    // (no thread ever needs a SECOND
     // concurrent writer to stay correct), so only the oracle -- not the
     // conservation check -- can tell "ran without contention" apart from
     // "the retry path is broken". `NUM_THREADS + 1` participants (the

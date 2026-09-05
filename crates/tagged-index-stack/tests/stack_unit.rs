@@ -4,8 +4,7 @@
 //! `push` never wraps the 48-bit tag: it SEALS at `TAG_MAX` and returns
 //! `Err(TagExhausted)` before the tag could ever reach `2^48`; this file
 //! pins that ceiling by rejection through the checked `pack`) and the
-//! sentinel-boundary sweep folded in from the retired
-//! `tests/regression_counter_wrap.rs`, plus the
+//! sentinel-boundary sweep, plus the
 //! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the H-2
 //! empty transition observed single-threaded: drain to empty then refill,
 //! and confirm the tag keeps climbing).
@@ -140,10 +139,8 @@ fn empty_sentinel_16() {
 }
 
 /// A different width (`INDEX_BITS = 12`) partitions the word correctly and the
-/// empty sentinel is width-appropriate — exercises the const generic. (Width
-/// 20 was retired when `_CHECK_BITS` narrowed the legal range to `1..=16`;
-/// 12 keeps the same shape at a mid-range legal width, distinct from this
-/// file's other widths 1 and 16.)
+/// empty sentinel is width-appropriate — exercises the const generic at a
+/// mid-range legal width, distinct from this file's other widths 1 and 16.
 #[test]
 fn width_12_partitions() {
     type T = TaggedIndex<12>;
@@ -160,11 +157,10 @@ fn width_12_partitions() {
     assert_ne!(T::empty_index(), TAIL);
 }
 
-/// The old legal maximum `INDEX_BITS = 32` made `INDEX_MASK` numerically
+/// An `INDEX_BITS = 32` configuration would make `INDEX_MASK` numerically
 /// equal `TAIL` (`u32::MAX`), collapsing `push`'s two reject-purposes
-/// (out-of-range and reject-`TAIL`) into one value; the former
-/// `width_32_index_mask_equals_tail_and_is_rejected` test pinned that
-/// coincidence (and `push` panicking on `index == TAIL` because of it).
+/// (out-of-range and reject-`TAIL`) into one value, so the legal-width cap
+/// must keep the two values distinct.
 /// The `_CHECK_BITS` cap is now `1..=16`, so the coincidence is structurally
 /// impossible at EVERY legal width (`INDEX_MASK <= 0xFFFF`) — pinned here at
 /// the MAXIMUM legal width. The guard's panic path and its exact message
@@ -183,23 +179,19 @@ fn max_legal_width_index_mask_never_equals_tail() {
     );
 }
 
-/// 48-bit tag SEAL-boundary coverage for [`TaggedIndex`] (folded in from the
-/// retired `tests/regression_counter_wrap.rs`): pins the
+/// 48-bit tag SEAL-boundary coverage for [`TaggedIndex`]: pins the
 /// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag's `TAG_MAX`
 /// ceiling (`2^48 - 1`; push seals here rather than wrapping to `2^48`).
 /// [`pack_unpack_round_trip_16`] and
 /// [`pack_rejects_out_of_range_halves_and_accepts_the_full_index_range`]
 /// above already pin the width facts and the checked pack's boundary
-/// behaviour (the older `split_is_16_48` and
-/// `tag_wraps_at_2_pow_48_and_index_survives` were removed as exact
-/// duplicates). What the two tests below provide is the coverage those do
-/// NOT: a parametrized sweep over multiple (index, tag) pairs confirming the
+/// behaviour. The tests below provide a parametrized sweep over multiple
+/// (index, tag) pairs confirming the
 /// empty sentinel is never confused with a live one, including the
 /// pool-cap-relevance argument, and a check that the empty sentinel stays
 /// unambiguous at multiple tags spanning the `TAG_MAX` ceiling specifically.
-/// Non-vacuous: on a narrower tag (e.g. a 32-bit revert) the `2^48 - 1`
-/// maximum is unrepresentable, so these values cannot even be expressed
-/// pre-widening.
+/// Non-vacuous: the `2^48 - 1` maximum must be representable at the legal
+/// maximum width, so these values exercise the full tag range.
 #[test]
 fn empty_sentinel_never_collides_with_a_live_index() {
     type T = TaggedIndex<16>;
@@ -436,7 +428,7 @@ fn links_are_lazy() {
     );
 }
 
-/// Neither `Default` impl was previously exercised by any test.
+/// Both `Default` impls must behave like `new()`.
 /// `ArrayLinks::<N>::default()` must behave exactly like `new()`: every link
 /// at the zero value (RAD-1 — no eager chaining), readable through the
 /// inherent `load_next`, verified here link-for-link across all `N` indices.
@@ -483,8 +475,7 @@ fn default_array_index_stack_behaves_like_new() {
 /// empty through the advisory
 /// `is_empty`. This is the one `Default` impl a custom-storage implementor
 /// reaches directly (`StackHead` is the head half of the `StackStorage`
-/// extension point); it was previously pinned by nothing —
-/// the CHANGELOG cited a test name that did not exist.
+/// extension point).
 /// Gated like the accessor it reads through (`raw_head`) — see the module
 /// doc. (The sibling `default_array_links_behaves_like_new` /
 /// `default_array_index_stack_behaves_like_new` stay ungated: they read only

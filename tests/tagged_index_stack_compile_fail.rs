@@ -147,14 +147,13 @@ fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
         .is_some_and(|path| path.ends_with("/crates/tagged-index-stack/src/lib.rs"))
 }
 
-/// API-REMOVAL regression (Group C): the pre-redesign API's minimal
-/// two-`ArrayLinks`-backings + one-`StackHead` repro must NOT compile against
-/// the post-redesign API — because the OLD unsafe-free-form API it used no
-/// longer EXISTS. This is an API-removal regression test, NOT a
+/// API-boundary regression: two `ArrayLinks` backings plus one `StackHead`
+/// must NOT compile because `StackHead` has no
+/// caller-supplied-backing operations. This is an API-boundary test, NOT a
 /// safety-invariant proof: it pins that `StackHead` (the head word alone) has
 /// no external `push(&links, idx)` / `pop(&links)` methods and no
 /// caller-supplied-backing calling convention. A fixture that compiled would
-/// mean that old API resurfaced.
+/// violate that boundary.
 ///
 /// The hazard CLASS itself — one head, two backings — is NOT closed by this
 /// test and is NOT closed by the type system: it is re-expressible through
@@ -163,15 +162,14 @@ fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
 /// `two_implementor_values_sharing_one_head_still_double_issue` in
 /// `tests/custom_storage_impl.rs`). The structural closure that DOES exist —
 /// no route from a shipped [`ArrayIndexStack`] to a `&StackHead`, so no
-/// competing binding around its head — is proven by the Group A compile-fail
+/// competing binding around its head — is proven by the compile-fail
 /// oracle `competing_binding_around_array_index_stack_head_must_not_compile`
-/// below (fixture under `crates/tagged-index-stack/tests/compile_fail/array_index_stack_head/`); go
-/// THERE for the real safety-invariant proof. The storage-binding closure's
-/// design rationale (including the Group A/B/C taxonomy used in this file):
+/// below (fixture under `crates/tagged-index-stack/tests/compile_fail/array_index_stack_head/`).
+/// The storage-binding rationale is in
 /// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`.
 ///
 /// The fixture at `crates/tagged-index-stack/tests/compile_fail/two_backings/src/main.rs` is exactly
-/// the old repro, adapted to the post-redesign type names: two independent
+/// two independent
 /// `ArrayLinks` backings (`a`, `b`) plus one `StackHead<16>`, with the
 /// stack's `push`/`pop` called externally against each. It must fail with
 /// **E0599** ("no method named `push` / `pop` found for struct
@@ -185,7 +183,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 
     assert!(
         !output.status.success(),
-        "the two-backings repro COMPILED — the old per-call API (external \
+        "the two-backings fixture COMPILED — the caller-supplied-backing API (external \
          push/pop with a caller-supplied backing) has resurfaced; `StackHead` \
          must have no push/pop:\n{context}"
     );
@@ -204,16 +202,12 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
     );
 }
 
-/// Negative compile-fail regression, Group A of the storage-binding closure
-/// (ADR `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
+/// Negative compile-fail regression from the storage-binding contract (ADR
+/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
 /// competing binding built around a standalone [`ArrayIndexStack`]'s head must
-/// NOT compile. This test is the REPLACEMENT of the deleted runtime test
-/// `array_index_stack_head_still_double_issue` in
-/// `tests/custom_storage_impl.rs`: that test extracted `&StackHead` off the
-/// owned type via the then-public `StackStorage` impl and demonstrated a real
-/// double-issue; Group A removes the type's public trait impl in favor of a
-/// `pub(crate)`-sealed accessor, so the extraction route is now UNEXPRESSIBLE
-/// and the runtime demonstration becomes a compile-fail oracle pinned HERE.
+/// NOT compile. The public type does not expose a route to its `StackHead`, so
+/// the extraction route is unexpressible and this fixture is the structural
+/// oracle.
 ///
 /// The fixture at `crates/tagged-index-stack/tests/compile_fail/array_index_stack_head/src/main.rs` tries
 /// both routes: a generic `fn steal_head<S: StackStorage<16>>` (must fail with
@@ -228,7 +222,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// A competing binding (a second `StackOps`-callable value sharing this
 /// head) has exactly ONE prerequisite expressible against a shipped
 /// `ArrayIndexStack`: obtaining its `&StackHead`. Every route to that
-/// reference requires the public `StackStorage` impl Group A removed — the
+/// reference requires the public `StackStorage` impl to be absent — the
 /// generic-bound route (E0277), the inherent-method route (E0599), and the
 /// `&dyn StackStorage` coercion route (E0277, third statement in the
 /// fixture's `main`) — and the fixture asserts all of them fail. The
@@ -236,8 +230,8 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// custom impl) adds no independent signal: its only live ingredient IS the
 /// stolen head, which already fails to compile here. A competing binding
 /// that does NOT involve this type — own a `StackHead`, hand it to two
-/// custom `unsafe impl` values — remains expressible by Group B's deliberate
-/// design and is pinned at runtime by
+/// custom `unsafe impl` values — remains expressible by design and is pinned
+/// at runtime by
 /// `two_implementor_values_sharing_one_head_still_double_issue` in
 /// `tests/custom_storage_impl.rs`.
 ///
@@ -257,7 +251,7 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 
     assert!(
         !output.status.success(),
-        "the Group A head-extraction repro COMPILED — `ArrayIndexStack` must \
+        "the head-extraction fixture COMPILED — `ArrayIndexStack` must \
          NOT implement the public `StackStorage` trait (the sealing regressed):\n{context}"
     );
     assert!(
@@ -462,10 +456,10 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
     );
 }
 
-/// Negative compile-fail regression, Group B of the storage-binding closure
-/// (ADR `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
+/// Negative compile-fail regression from the storage-binding contract (ADR
+/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`): a
 /// storage impl whose hook bodies are CORRECT but whose declaration omits the
-/// `unsafe` keyword must NOT compile. This pins Group B's actual mechanism —
+/// `unsafe` keyword must NOT compile. This pins the mechanism —
 /// the compiler-forced per-impl-site acknowledgment: `StackStorage` is an
 /// `unsafe trait`, so no implementor can exist anywhere without asserting the
 /// contract at the `unsafe impl` site. The asserted error is **E0200** ("the
@@ -474,8 +468,8 @@ fn loom_cfg_without_feature_fails_with_only_the_named_error() {
 /// The compile-PASS counterpart — a correct `unsafe impl` compiles and
 /// behaves correctly — is pinned by `vec_backed_storage_push_pop_round_trips`
 /// and `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`.
-/// Counterfactually, this exact fixture COMPILED under the pre-conversion
-/// safe trait, with no acknowledgment possible or required.
+/// Counterfactual: a safe trait would compile this fixture without an
+/// acknowledgment.
 #[test]
 fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
     let output = build_fixture("unsafe_impl_required", None);
@@ -486,7 +480,7 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
     assert!(
         !output.status.success(),
         "a plain (non-`unsafe`) impl of `StackStorage` COMPILED — the trait \
-         stopped being `unsafe` (Group B reverted; the forced per-impl-site \
+         stopped being `unsafe` (the forced per-impl-site \
          acknowledgment regressed):\n{context}"
     );
     assert!(

@@ -26,7 +26,7 @@ path = "lib.rs"
 # unused_must_use = "deny": a plain `cargo build` exits 0 on warnings, so an
 # ignored `#[must_use] Result` (e.g. harness_bin.rs's `push` call sites)
 # would build green while silently corrupting the A/B op count. Denying it
-# here turns the drift into a build-check failure (review P2-1).
+# here turns the drift into a build-check failure.
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tagged_index_stack_test)'] }
 unused_must_use = "deny"

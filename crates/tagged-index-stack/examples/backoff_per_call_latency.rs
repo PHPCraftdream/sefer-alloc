@@ -1,7 +1,7 @@
 //! Per-call `pop` tail-latency probe for `BACKOFF_SPIN_CAP`'s CAS-retry
 //! backoff — the axis the cap sweep
 //! (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` — a repository file, not part
-//! of the published package) did not originally measure: per-thread ops over
+//! of the published package): per-thread ops over
 //! a 1-second window cannot
 //! distinguish "one call starved for 100+ ms" from "every call uniformly 10x
 //! slow").
@@ -291,7 +291,7 @@ fn main() {
                 (per_thread, start.elapsed())
             });
 
-            // Empty-bracket baseline (review P3-2): the same two-clock-read
+            // Empty-bracket baseline: the same two-clock-read
             // bracket as the pop samples, with NO `pop`/`push` between the
             // reads, same thread count, so the row carries its own
             // calibration of how much of a sample can be pure bracket

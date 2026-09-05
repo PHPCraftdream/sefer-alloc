@@ -1,14 +1,9 @@
-//! Tiny-tag regression oracle for the P1-1 fix (the full-wrap exclusive-
-//! issuance hole from run-8's review, closed by making the tag strictly
-//! monotonic and sealing at [`TaggedIndex::TAG_MAX`]): single-threaded,
-//! non-loom conformance tests seeding the tag NEAR the ceiling via
-//! `with_tag_for_test` at the REAL tag width — never a `TAG_BITS`-reducing
-//! cfg (this crate's Option-4 tiny-tag oracle convention).
+//! Tiny-tag seal oracle: single-threaded, non-loom conformance tests seed the
+//! tag near [`TaggedIndex::TAG_MAX`] via `with_tag_for_test` at the real tag
+//! width, never through a `TAG_BITS`-reducing cfg.
 //!
-//! Concurrent evidence that the seal is what actually closes the P1-1
-//! counterexample (not just that the ceiling can be reached) lives in
-//! `tests/loom_aba.rs`'s "(h) Tiny-tag seal" section; this file covers the
-//! single-threaded API contract the seal establishes: the exact
+//! Concurrent seal coverage lives in `tests/loom_aba.rs`; this file covers
+//! the single-threaded API contract: the exact
 //! `Ok, Ok, Err` sequence at the ceiling, `pushes_remaining()`'s readback,
 //! that a refused push has no observable side effect, that pops keep
 //! working after a seal, and that the seal is permanent.

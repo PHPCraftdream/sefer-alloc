@@ -79,7 +79,7 @@ pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Output {
     // CI's workflow-level CARGO_TERM_COLOR=always is inherited all the way
     // down to this child build; force plain-text rustc diagnostics so the
     // substring assertions in the callers match the same text in CI as
-    // locally (same class as the earlier CI color bug fixed in fcae3ad
+    // locally (the same color-sensitive diagnostic class as CI
     // with --color=never).
     command.env("CARGO_TERM_COLOR", "never");
     command

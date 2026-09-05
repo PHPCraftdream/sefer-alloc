@@ -672,9 +672,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    orderings; this clause states it plainly.)
 ///
 /// The full design/audit detail beneath this contract — the per-clause
-/// elaboration, the worked corruption examples, and the dated census of the
-/// safe-code routes to a `&StackHead` with its falsification limits — is
-/// archived in the repository ADR
+/// elaboration and worked corruption examples are in the repository ADR
 /// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
 /// (a repository file, not part of the published package).
 ///
@@ -760,7 +758,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// a second, different storage argument to
 /// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 /// on a later call — the two-backings-one-head call shape does not compile
-/// (pinned by `tests/compile_fail.rs`). What NOTHING enforces — not the
+/// (pinned by `tests/tagged_index_stack_compile_fail.rs`). What NOTHING enforces — not the
 /// type system, not the [`StackOps`] blanket impl, not even the
 /// `unsafe impl` acknowledgment (which forces every implementor to ASSERT
 /// the contract but detects no violation) — is the INSTANCE-level half of
@@ -780,7 +778,7 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///
 /// The caller-facing calling convention makes the two-backings-one-head
 /// swap trap — two independent calls, each supplying a different backing
-/// for the same head — uncompilable (`tests/compile_fail.rs` pins exactly
+/// for the same head — uncompilable (`tests/tagged_index_stack_compile_fail.rs` pins exactly
 /// that). What remains expressible is the REST of the shared-storage
 /// hazard class: FOUR shapes, none of them the only gap the others leave,
 /// each still expressible only behind an `unsafe impl StackStorage` — a
@@ -814,13 +812,9 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// sub-shapes of shapes 1, 2, and 4, one pop too late. Shape 3 has no
 /// detector at all, because every link value stays numerically valid and
 /// the chain acyclic — documented, not detected. The full shape-by-shape
-/// walkthroughs (worked examples, exact corruption mechanisms) and the
-/// per-test status list (which test pins which shape, guard fires vs.
-/// silent) are archived in the repository ADR
-/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`'s
-/// P3-4 addendum and in `tests/custom_storage_impl.rs`'s own module doc
-/// respectively (both repository files/locations, per this crate's
-/// existing single-sourcing convention).
+/// walkthroughs and per-test status are in the repository ADR
+/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+/// and `tests/custom_storage_impl.rs`'s own module doc.
 ///
 /// (This inventory counts head↔links BINDINGS, not implementor values: a
 /// shape qualifies when a head or a link-cell population reaches two live
@@ -883,10 +877,9 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// link-domain+liveness+exclusive-ownership caller contract, while
 /// [`pop_index`](StackOps::pop_index) stays safe (an unauthorized pop can
 /// only leak an index, never double-issue one). The boundary's design
-/// history, including the superseded designs that preceded it, is
+/// rationale is
 /// recorded in the repository ADRs
-/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md` and
-/// `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+/// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`
 /// (repository files, not part of the published package).
 #[allow(unsafe_code)]
 // Tier-2 item-scoped allow — one of the crate's audited lint-exception regions
@@ -1231,7 +1224,7 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     /// of the index that is ALREADY the current head — the pushed index IS the
     /// head, so [`push_index`](StackOps::push_index) itself writes
     /// `next[index] = index` directly, no foreign writer and no shared storage
-    /// involved (this crate's separate, older no-double-push rule — see
+    /// involved (this crate's separate no-double-push rule — see
     /// [`push_index`](StackOps::push_index)'s `# Safety` section; the guard
     /// fires on the FIRST pop through it). The other: a writer other than a
     /// contract-abiding push answering for this index — in practice a
@@ -1507,11 +1500,11 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         // `compare_exchange_weak`: measured equivalent on x86-64, and
         // `weak` codegen-IDENTICAL to strong on aarch64 under both the
         // outlined-atomics default and the `+lse` lowerings (multi-target
-        // A/B harness, `scripts/tis_p3_ab_runner.mjs`) — the hypothesized
+        // link-ordering/CAS A/B harness, `scripts/tis_p3_ab_runner.mjs`) —
         // inline-LL/SC spurious-failure win does not exist on this
         // toolchain. See `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`
-        // §0 — measured NULL; the driver asserts the identity, so a toolchain
-        // change fails loudly and reopens the question). This concerns the
+        // current codegen oracle; the driver asserts identity, so a toolchain
+        // change fails loudly. This concerns the
         // CAS KIND only; the separate LINK-ordering relaxation's native
         // AArch64 wall-clock cost remains unmeasured — its static
         // multi-target A/B codegen comparison IS done (a real `ldar`/`stlr`

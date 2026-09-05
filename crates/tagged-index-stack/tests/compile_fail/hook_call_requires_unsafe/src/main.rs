@@ -5,14 +5,10 @@
 //! call outside an `unsafe` block is **E0133** ("call to unsafe function is
 //! unsafe").
 //!
-//! This fixture REPLACES the retired
-//! `tests/compile_fail/hook_token_unconstructible/`: the `&Hook` witness
-//! design was removed because fabricating a witness value involved no unsafe
-//! operation, so its prose-only closure was unenforceable; `unsafe fn` is the
-//! `GlobalAlloc` shape — `unsafe trait` + `unsafe fn` — and gives a
-//! compiler-enforced acknowledgement of the caller-side contract, not a
-//! compiler-checked one: the compiler only forces the `unsafe {}` wrapper,
-//! the contract's substance is still verified by the human writing the call.
+//! The `unsafe fn` boundary gives a compiler-enforced acknowledgement of the
+//! caller-side contract, not a compiler-checked one: the compiler forces the
+//! `unsafe {}` wrapper, while the contract's substance is verified by the
+//! implementor and caller.
 //!
 //! The compile-PASS counterpart: the hooks are a barrier to MISUSE, not to
 //! legitimate use — a correct `unsafe impl` driven only through the safe

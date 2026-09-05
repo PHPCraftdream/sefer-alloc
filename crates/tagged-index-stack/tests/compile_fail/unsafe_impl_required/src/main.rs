@@ -1,14 +1,13 @@
-//! Group B compile-fail fixture (ADR
-//! docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md): a
+//! Compile-fail fixture (the storage-binding contract): a
 //! storage whose three hook bodies are CORRECT (the impl below upholds every
 //! `# Safety` clause — this is NOT a contract-violation repro) but whose
-//! declaration omits the `unsafe` keyword MUST NOT COMPILE. This pins Group
-//! B's actual mechanism, the compiler-forced per-impl-site acknowledgment:
+//! declaration omits the `unsafe` keyword MUST NOT COMPILE. The mechanism is
+//! the compiler-forced per-impl-site acknowledgment:
 //! `StackStorage` is an `unsafe trait`, so no implementor can exist anywhere
 //! without asserting the contract at the `unsafe impl` site (E0200, "the
 //! trait `StackStorage<16>` requires an `unsafe impl` declaration").
-//! Counterfactual: under the pre-conversion safe trait this exact file
-//! COMPILED with no acknowledgment possible or required. The compile-PASS
+//! Counterfactual: a safe trait would compile this file without an
+//! acknowledgment. The compile-PASS
 //! counterpart — a correct `unsafe impl` compiles and behaves correctly —
 //! is pinned by `vec_backed_storage_push_pop_round_trips` +
 //! `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. Pinned

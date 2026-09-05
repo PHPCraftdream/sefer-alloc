@@ -70,14 +70,12 @@
 //! The head↔links binding is expressed in ONE place — the implementor's own
 //! single [`StackStorage`] impl, a trait
 //! deliberately OPEN to external implementation (that is the extension
-//! point, not a crate-owned surface) — instead of being re-asserted per
-//! call via a per-call `&L: Links` parameter, as in the previous design.
+//! point, not a crate-owned surface) — instead of being re-asserted per call
+//! through a caller-supplied `&L: Links` parameter.
 //! What IS crate-owned is the operation side: [`StackOps`] is
 //! blanket-implemented for every implementor and coherence makes a
-//! downstream override impossible. The old repro's per-call shape — two
-//! independent calls, each supplying a different backing against one head —
-//! no longer compiles (pinned by a compile-fail regression test). The
-//! obligation moved rather than vanished, and the part that stayed live is
+//! downstream override impossible. The caller cannot supply a different
+//! backing for the same head on a later call. The obligation is
 //! implementor/caller discipline: one implementor value per head, for the
 //! head's WHOLE life (trait clause 1), and disjoint index populations per
 //! binding over any shared link-cell population — not "one link-cell
@@ -341,7 +339,7 @@
 //! source and none anywhere else in it. The command is deliberately scoped
 //! to `src/` rather than the whole crate: an unscoped whole-crate grep
 //! additionally returns four statement-scoped allows in the tracked perf
-//! A/B tooling (`scripts/tis_p3_ab/harness_bin.rs` and
+//! Link-ordering/CAS A/B tooling (`scripts/tis_p3_ab/harness_bin.rs` and
 //! `scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`) — scratch-crate generator
 //! files, each with its own `#![deny(unsafe_code)]` root and per-site `//
 //! SAFETY:` proofs, not part of the published library target, excluded

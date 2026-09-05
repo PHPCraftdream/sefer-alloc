@@ -73,9 +73,8 @@ AND the links (`load_next` / `store_next`) in a single impl — the head↔links
 binding is expressed once, in that impl, rather than re-asserted per call.
 `push_index`/`pop_index` are crate-owned (a blanket `StackOps` impl over
 every `StackStorage` implementor), so the CAS-loop bodies cannot be
-overridden downstream. The old per-call repro — two independent calls, each
-supplying a different link array against one head and double-issuing an
-index — no longer compiles. The obligation moved rather than vanished, and the part that stayed live is
+overridden downstream. A caller cannot supply a different link array for the
+same head on another call. The live obligation is
 implementor/caller discipline at the VALUE level: a head must stay bound to one
 backing for its whole life and be reachable through exactly ONE live implementor
 value at a time — but one-at-a-time liveness is not sufficient: it must never

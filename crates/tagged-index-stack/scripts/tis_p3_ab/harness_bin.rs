@@ -1,4 +1,4 @@
-//! Wall-clock harness for the tagged-index-stack A/B study.
+//! Wall-clock harness for the tagged-index-stack link-ordering/CAS study.
 //!
 //! The production binary is built without `tagged_index_stack_test` and is
 //! the only binary whose samples enter the timing CSV. A separate cfg-enabled

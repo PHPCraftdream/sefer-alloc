@@ -33,17 +33,11 @@
 //! different-width bindings over one backing inside a single implementor
 //! value.
 //!
-//! Since the 2026-09-01 `unsafe trait` conversion, EVERY implementor in
-//! this file carries an `unsafe impl` — eight types, nine impl sites
-//! (`DualWidth` implements the trait at both widths) — and NO test was
-//! removed by the conversion: every shape this file demonstrated remained
-//! expressible, so each test kept pinning its shape, now UNDER AN
-//! ACKNOWLEDGED-BROKEN CONTRACT (each `unsafe impl` names exactly which
-//! `# Safety` clause it violates). The one test the conversion DID retire
-//! from this file is `array_index_stack_head_still_double_issue`: Group A
-//! made its extraction route unexpressible, and it lives on as the
-//! compile-fail fixture `tests/compile_fail/array_index_stack_head/`
-//! (cross-referenced in the shared-head test's doc below).
+//! Every intentionally-invalid implementor in this file uses `unsafe impl`;
+//! each test names the `# Safety` clause it violates. The public
+//! `ArrayIndexStack` type has no `StackStorage` implementation, so the
+//! competing-head case is covered by the compile-fail fixture
+//! `tests/compile_fail/array_index_stack_head/`.
 //!
 //! Per-test status, explicitly — this module doc is the source of truth for
 //! that per-test status list (the same pattern tests/loom_aba.rs's module
@@ -120,11 +114,9 @@ unsafe impl StackStorage<16> for VecStorage {
 
 /// An external, non-`ArrayLinks` [`StackStorage`] implementor works exactly
 /// like the owned-array type does: push/pop round-trips and LIFO order hold.
-/// (This is the compile-PASS side of the 2026-09-01 `unsafe trait`
-/// conversion — see the module doc's per-test status list; `VecStorage`
-/// mirrors the real external consumer's shape: `sefer-alloc`'s `Registry`
-/// implements the trait and calls only
-/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index).)
+/// This is the compile-PASS side of the unsafe storage contract;
+/// `VecStorage` mirrors an external consumer's shape and calls only
+/// [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index).
 #[test]
 fn vec_backed_storage_push_pop_round_trips() {
     let storage = VecStorage::new(8);
@@ -238,9 +230,9 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
 }
 
 /// A self-sufficient implementor that OWNS its head and its links — the
-/// same shape a hand-rolled third-party `StackStorage` impl takes. An
-/// earlier variant of this test borrowed its head out of
-/// `ArrayIndexStack::head()`; that extraction route is CLOSED
+/// same shape a hand-rolled third-party `StackStorage` impl takes. The
+/// implementation owns its head and links; extracting a head from
+/// `ArrayIndexStack` is not part of the public API
 /// (`ArrayIndexStack` no longer implements `StackStorage` — see the
 /// compile-fail fixture `tests/compile_fail/array_index_stack_head/`), so
 /// this struct now constructs its own `StackHead` like any other custom
@@ -256,7 +248,7 @@ struct Parasite {
 // stored. (Clause 2's coherence half is NOT the violated clause: the
 // forged write is LATER than the publishing push's own store_next in the
 // cell's modification order, and clause 2's lower bound forbids only
-// earlier ones — the value-level clause-4 obligation is what the forgery
+// other clauses — the value-level clause-4 obligation is what the forgery
 // breaks.)
 unsafe impl StackStorage<16> for Parasite {
     unsafe fn head(&self) -> &StackHead<16> {
@@ -662,11 +654,9 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
 /// custom implementor whose `load_next` always answers `INDEX_MASK` (a value
 /// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
 ///
-/// Release-active: promoted from `debug_assert!` to an
-/// unconditional `#[cold]` panic helper mirroring
-/// [`push_index`]'s own `index < INDEX_MASK` guard, once an out-of-tree A/B
-/// measured the release-active cost at ≈ 0 ns (see CHANGELOG.md). Unlike its
-/// predecessor, this test needs no `#[cfg(debug_assertions)]` gate: the
+/// Release-active: an unconditional `#[cold]` panic helper mirrors
+/// [`push_index`]'s own `index < INDEX_MASK` guard. This test needs no
+/// `#[cfg(debug_assertions)]` gate: the
 /// panic now fires identically under `cargo test -p tagged-index-stack
 /// --release` (the configuration `.github/workflows/ci.yml`'s `test
 /// workspace members` job actually uses for this crate) and under the
