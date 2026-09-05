@@ -268,6 +268,15 @@ fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
         .expect("spawn node for the runner copy")
 }
 
+fn run_build_check_unexpected_error(runner: &Path) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(["--mode", "build-check"])
+        .env("TIS_P3_AB_TEST_UNEXPECTED_AFTER_MKDTEMP", "1")
+        .output()
+        .expect("spawn node for the unexpected-error lifecycle oracle")
+}
+
 fn assert_fatal(out: &Output, what: &str) {
     assert!(
         !out.status.success(),
@@ -656,6 +665,41 @@ fn build_check_fatal_failure_leaves_no_scratch_root() {
         "a fatal error raised after scratch-root creation left new tis_p3_ab-* root(s) \
          under <repo>/target/ — cleanup no longer runs on the fatal path (the 24944ee \
          leak regression; run-20 review P3-3)"
+    );
+    drop(parent);
+}
+
+/// The ordinary-`Error` path is distinct from the expected `RunnerFatalError`
+/// path: the top-level catch rethrows it, but `finally` must still remove the
+/// already-created root. The environment hook throws only after `mkdtemp`, so
+/// a pre-scratch rejection cannot satisfy this oracle.
+#[test]
+fn unexpected_post_mkdtemp_error_leaves_no_scratch_root() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("lifecycle_unexpected");
+    let target = root_guard.path().join("target");
+    let before = scratch_roots_under(&target);
+    assert!(
+        before.is_empty(),
+        "fixture: unexpected-error skeleton has roots: {before:?}"
+    );
+    let out = run_build_check_unexpected_error(&runner);
+    assert!(
+        !out.status.success(),
+        "ordinary post-mkdtemp Error unexpectedly returned success"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("deliberate post-mkdtemp ordinary Error"),
+        "failure did not come from the ordinary Error hook: {stderr}"
+    );
+    assert_eq!(
+        before,
+        scratch_roots_under(&target),
+        "ordinary Error after mkdtemp leaked a scratch root"
     );
     drop(parent);
 }

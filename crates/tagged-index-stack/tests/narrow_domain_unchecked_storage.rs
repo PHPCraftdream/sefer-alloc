@@ -57,7 +57,7 @@
 //!
 //! This file uses only `core::sync::atomic` types of its own, so it
 //! compiles and passes identically under default features,
-//! `--features test-internals`, and `RUSTFLAGS="--cfg loom" --features
+//! `RUSTFLAGS="--cfg tagged_index_stack_test"`, and `RUSTFLAGS="--cfg loom" --features
 //! loom` builds (only the LIBRARY aliases its atomics under loom cfg; this
 //! file's `AtomicU32`s stay real either way).
 

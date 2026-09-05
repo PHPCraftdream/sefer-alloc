@@ -6,9 +6,8 @@
 // stack's push/pop entry points) is generic (over the storage type or const
 // parameters), so without a concrete use LLVM emits only the panic-path
 // helpers and the extraction finds no function blocks. This wrapper forces
-// exactly one monomorphization of each function we study by taking its
-// address as a concrete fn pointer (fn-pointer calls cannot be inlined away,
-// so real out-of-line bodies are emitted with extractable labels).
+// exactly one monomorphization of each function we study through explicit
+// `#[inline(never)]` probe symbols with extractable labels.
 //
 // The lib.rs/imp.rs pair next to this file is a VERBATIM copy of the crate
 // sources (or the variant substitution applied to imp.rs); this wrapper is
@@ -32,29 +31,46 @@ pub mod tis;
 
 use core::hint::black_box;
 
+#[inline(never)]
+#[allow(unsafe_code)]
+/// Calls the production push path for codegen extraction.
+///
+/// # Safety
+///
+/// `index` is in this stack's link domain, is not currently reachable from
+/// the stack, and this call owns its exclusive publish/recycle epoch.
+pub unsafe fn tis_probe_push_index_impl(
+    stack: &tis::ArrayIndexStack<16, 256>,
+    index: u32,
+) {
+    // SAFETY: the caller upholds the stack push contract.
+    #[allow(unsafe_code)]
+    unsafe { tis::ArrayIndexStack::push(stack, index) }
+    .expect("codegen probe push must not hit tag seal");
+}
+
+#[inline(never)]
+pub fn tis_probe_pop_index_impl(stack: &tis::ArrayIndexStack<16, 256>) {
+    let _ = tis::ArrayIndexStack::pop(stack);
+}
+
+#[inline(never)]
+pub fn tis_probe_load_next(links: &tis::ArrayLinks<256>, index: u32) -> u32 {
+    tis::ArrayLinks::load_next(links, index)
+}
+
+#[inline(never)]
+pub fn tis_probe_store_next(links: &tis::ArrayLinks<256>, index: u32, next: u32) {
+    tis::ArrayLinks::store_next(links, index, next);
+}
+
 pub fn instantiate() {
     let stack: tis::ArrayIndexStack<16, 256> = tis::ArrayIndexStack::new();
-    let push: unsafe fn(&tis::ArrayIndexStack<16, 256>, u32) -> Result<(), tis::TagExhausted> =
-        tis::ArrayIndexStack::push;
-    let pop: fn(&tis::ArrayIndexStack<16, 256>) -> Option<u32> = tis::ArrayIndexStack::pop;
-    // SAFETY: domain — `stack` is `ArrayIndexStack<16, 256>`, so index `1` is
-    // in range. Liveness — `stack` was just constructed by `new()` above and
-    // `1` has never been pushed on it, so it cannot currently be reachable
-    // through this stack's head. Exclusive ownership — `instantiate` runs on
-    // a single thread with `stack` still a function-local that nothing else
-    // can reach, and `1` is pushed exactly once here, so no other push of
-    // `1` can run concurrently with or begin before this one returns
-    // (push_index clause 3).
+    // SAFETY: `stack` is fresh and index 1 is in-domain and exclusively owned.
     #[allow(unsafe_code)]
-    unsafe {
-        black_box(push)(black_box(&stack), black_box(1u32))
-    }
-    .expect("codegen probe push must not hit tag seal");
-    let _ = black_box(pop)(black_box(&stack));
-
+    unsafe { black_box(tis_probe_push_index_impl)(black_box(&stack), black_box(1u32)); }
+    black_box(tis_probe_pop_index_impl)(black_box(&stack));
     let links = tis::ArrayLinks::<256>::new();
-    let load: fn(&tis::ArrayLinks<256>, u32) -> u32 = tis::ArrayLinks::load_next;
-    let store: fn(&tis::ArrayLinks<256>, u32, u32) = tis::ArrayLinks::store_next;
-    black_box(load)(black_box(&links), black_box(0u32));
-    black_box(store)(black_box(&links), black_box(0u32), black_box(1u32));
+    black_box(tis_probe_load_next)(black_box(&links), black_box(0u32));
+    black_box(tis_probe_store_next)(black_box(&links), black_box(0u32), black_box(1u32));
 }

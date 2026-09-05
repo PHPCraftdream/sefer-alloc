@@ -9,14 +9,10 @@ rust-version = "1.79"
 # real workspace's members or lockfile.
 [workspace]
 
-# The retry-count oracle accessors (`retry_counts_for_test`) in the
-# substituted copy of `tagged-index-stack/src/imp.rs` are gated on
-# `feature = "test-internals"`, so the harness can observe CAS-retry
-# activity. Default-on HERE ONLY — this is a scratch measurement crate,
-# never the real crate.
-[features]
-default = ["test-internals"]
-test-internals = []
+# The retry-count oracle accessors in the substituted copy of
+# `tagged-index-stack/src/imp.rs` are enabled only for the separately-built
+# instrumented binary with `--cfg tagged_index_stack_test`. The production
+# timing binary is built without that cfg and contains no counter writes.
 
 # imp.rs lives next to lib.rs at the crate root (the driver writes both
 # there), mirroring `crates/tagged-index-stack/src/{lib,imp}.rs`.
@@ -32,7 +28,7 @@ path = "lib.rs"
 # would build green while silently corrupting the A/B op count. Denying it
 # here turns the drift into a build-check failure (review P2-1).
 [lints.rust]
-unexpected_cfgs = { level = "allow" }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tagged_index_stack_test)'] }
 unused_must_use = "deny"
 
 [[bin]]

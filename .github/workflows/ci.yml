@@ -753,7 +753,7 @@ jobs:
       # The dry-run verifies the packaged library but does not execute the
       # packaged tests or compile the bench target. Package and extract the
       # crate, assert that the checkout-only compile-fail harness and fixtures
-      # are absent, then run the package's default and `test-internals` test
+      # are absent, then run the package's default and repository-cfg test
       # surfaces and build the bench in isolated target directories. The
       # extracted package must stand on its normalized manifest alone: the
       # repository-only driver is not allowed to make a missing-fixture package
@@ -765,7 +765,7 @@ jobs:
       # measurement harness and its scratch guard test. Those checkout-only
       # tests run in the Linux/Windows workspace rows; this extracted gate
       # validates the remaining tests that belong in the published artifact.
-      - name: run the packaged .crate test suite (default + test-internals + Loom/manifest guards) + build the packaged bench (P2-1/P4-7/P3 regression gate)
+      - name: run the packaged .crate test suite (default + repository cfg + Loom/manifest guards) + build the packaged bench (P2-1/P4-7/P3 regression gate)
         run: |
           set -euo pipefail
           cargo package -p tagged-index-stack --no-verify
@@ -784,9 +784,9 @@ jobs:
           done
           cd "$package_dir"
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
-          # Re-run the extracted tests with `test-internals` so the package
-          # inclusion of the gated test targets is checked as well.
-          CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test --features test-internals
+          # Re-run the extracted tests with the repository-only cfg. It is
+          # deliberately not a Cargo feature and is never published.
+          RUSTFLAGS="--cfg tagged_index_stack_test" CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
           # `cargo test` does not build this bench target; compile it here to
           # catch missing packaged bench files or dev-dependencies before
           # publication.
@@ -844,15 +844,6 @@ jobs:
               and (($errors[0].message.spans | length) == 1)
               and ($errors[0].message.spans[0] | crate_source_span)
               and ($errors[0].message.spans[0].is_primary == true)
-              and ($errors[0].message.spans[0] as $span
-                   | (($span.text | type) == "array")
-                   and (($span.text | length) > 0)
-                   and (all($span.text[];
-                       (type == "object") and ((.text | type) == "string")))
-                   and ($span.text[0].text | contains("compile_error!("))
-                   and (($span.text | map(.text) | join("\n")) as $source
-                        | ($source | contains("building with --cfg loom requires --features loom (loom is now an "))
-                          and ($source | contains("optional dependency)"))))
               and (($errors[0].message.children | type) == "array")
               and ([ $errors[0].message.children[] | select(.level == "error") ] | length) == 0
           ' "$loom_check_json" >/dev/null; then
@@ -1868,7 +1859,7 @@ jobs:
     # bare-metal no_std builds for the crates that advertise them, and
     # debug/release tests where cross-builds do not build test targets.
     # `tagged-index-stack` has default and release rows plus a release
-    # `test-internals` row. The latter runs the whole crate test set so the
+    # repository-cfg row. The latter runs the whole crate test set so the
     # deterministic backoff oracle, white-box probes, and terminal-seal
     # tests remain covered without a per-file allowlist; its matching clippy
     # row is below. The root feature matrix remains in the `test` job because
@@ -1890,13 +1881,13 @@ jobs:
       # assertions and optimized code paths must be exercised under the
       # profile used by release artifacts.
       - run: cargo test -p tagged-index-stack --release --no-fail-fast
-      # `test-internals` enables the crate's instrumentation and white-box
+      # The repository cfg enables the crate's instrumentation and white-box
       # tests, which are compiled out of both default-feature rows. Run every
       # test target rather than naming files so new gated tests are included;
       # the deterministic backoff and terminal-seal assertions are
-      # load-bearing. Cargo rejects an unknown feature, so this feature gate
-      # cannot silently become a no-op.
-      - run: cargo test -p tagged-index-stack --release --features test-internals --no-fail-fast
+      # load-bearing. The cfg is declared in the crate manifest's check-cfg
+      # table, so a typo is diagnosed instead of becoming a no-op.
+      - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo test -p tagged-index-stack --release --no-fail-fast
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,
@@ -2055,7 +2046,7 @@ jobs:
       # head uses `AtomicU64`; use `x86_64-unknown-none`, which provides native
       # 64-bit atomics in a no-std sysroot, rather than the 32-bit-atomic
       # thumb target used by other members. This plain build deliberately
-      # omits the separate `loom` and `test-internals` configurations.
+      # omits the separate `loom` and repository-cfg configurations.
       - run: cargo build -p tagged-index-stack --target x86_64-unknown-none
       # The unsupported-target guard must fail with exactly one named
       # `compile_error!` and no secondary numbered diagnostics. `--color=never`
@@ -2080,14 +2071,14 @@ jobs:
       # docs jobs do not lint or document this dependency's own test/bench
       # targets.
       # `--all-targets` covers the crate's tests and bench in one step. The
-      # default row deliberately omits `loom` and `test-internals`: loom has
+      # default row deliberately omits `loom` and the repository cfg: loom has
       # a dedicated cfg+feature job, while instrumentation is linted by the
       # separate row below.
       - run: cargo clippy -p tagged-index-stack --all-targets -- -D warnings
-      # Lint the `test-internals`-gated probes and oracle code explicitly. Do
+      # Lint the repository-cfg probes and oracle code explicitly. Do
       # not combine it with `loom`: loom requires the matching cfg and has its
       # own dedicated clippy row.
-      - run: cargo clippy -p tagged-index-stack --features test-internals --all-targets -- -D warnings
+      - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo clippy -p tagged-index-stack --all-targets -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps
       # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
       # of gap, but UNLIKE the two crates above, sefer-region genuinely
@@ -2247,7 +2238,7 @@ jobs:
       # rows compile its library, tests, and bench under the pinned 1.88
       # toolchain. The crate declares `rust-version = "1.79"`; `--all-features`
       # is intentionally omitted because `loom` needs its dedicated cfg+
-      # feature job, while `test-internals` has stable rows above.
+      # feature job, while the repository-cfg rows have stable coverage above.
       - run: cargo check -p tagged-index-stack
       - run: cargo test -p tagged-index-stack --no-run
       # `cargo test` does not build bench targets; this row type-checks the
@@ -2263,7 +2254,7 @@ jobs:
         with:
           targets: x86_64-unknown-none
       - run: cargo check -p tagged-index-stack
-      - run: cargo check -p tagged-index-stack --features test-internals
+      - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo check -p tagged-index-stack
       - run: cargo check -p tagged-index-stack --target x86_64-unknown-none
 
   no_std:
@@ -2991,32 +2982,32 @@ jobs:
     # coverage, which `multi-arch` already supplies, but not the relevant
     # acquire/release lowering timing.
     #
-    # The codegen step checks variant identity and deltas, including the
-    # deliberate `compare_exchange_weak` identity guard. The wall-clock step
-    # measures the contended A/B and requires retry-counter activation. The
-    # summary step independently recomputes medians and checks the recorded
-    # `ratio_vs_base` against the fresh aarch64 CSV produced by this run.
+    # Both codegen legs and the wall-clock leg use this checkout and rustc, so
+    # summary can enforce exact source/revision/toolchain provenance equality.
     name: tagged-index-stack weak-memory wall-clock A/B gate (arm64)
     runs-on: ubuntu-24.04-arm
     if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
       # No Rust-test grep sentinel is needed: bash `pipefail` propagates the
       # runner's exit status through `tee`, and the runner's Node output is not
       # a Rust test oracle for the repository sentinel checker.
-      - name: Static codegen A/B (identity + delta oracles)
-        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen.log"
+      - name: Static x86_64 codegen A/B (identity oracles)
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target x86_64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen-x86_64.log"
+        shell: bash
+      - name: Static aarch64 codegen A/B (identity + delta oracles)
+        run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-codegen-aarch64.log"
         shell: bash
       - name: Contended wall-clock A/B (retry-counter oracle)
         run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode wallclock --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-wallclock.log"
         shell: bash
       # This is the independent ratio oracle: it recomputes medians from the
       # sample rows and compares them with the producer's `ratio_vs_base`.
-      # Passing the aarch64 target makes the wall-clock check consume this
-      # run's fresh CSV, not the committed x86_64 evidence corpus; the codegen
-      # check likewise combines committed baseline data with this run's arm64
-      # output. The runner's exit status propagates through `tee`.
+      # Passing the aarch64 target selects this run's fresh wall-clock CSV;
+      # both codegen CSVs above are fresh legs from the same runner/rustc.
       - name: Summary ratio oracle (re-derived medians vs recorded ratio_vs_base)
         run: node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary --target aarch64-unknown-linux-gnu 2>&1 | tee "$RUNNER_TEMP/tis-p3-summary.log"
         shell: bash
@@ -3030,8 +3021,11 @@ jobs:
           path: |
             docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.log
             docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_codegen.s.all
+            docs/perf/_raw_tis_p3_ab_x86_64-unknown-linux-gnu_codegen.log
+            docs/perf/_raw_tis_p3_ab_x86_64-unknown-linux-gnu_codegen.s.all
             docs/perf/_raw_tis_p3_ab_aarch64-unknown-linux-gnu_wallclock.log
             docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_aarch64-unknown-linux-gnu.csv
+            docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_x86_64-unknown-linux-gnu.csv
             docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_aarch64-unknown-linux-gnu.csv
             docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv
           if-no-files-found: error

@@ -1,6 +1,6 @@
 //! Deterministic test-only oracle for the local backoff state machine.
 
-#![cfg(any(feature = "test-internals", loom))]
+#![cfg(any(tagged_index_stack_test, loom))]
 
 #[test]
 fn backoff_progression_and_saturation_are_exact() {

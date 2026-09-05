@@ -95,12 +95,8 @@ impl Backoff {
     }
 }
 
-/// Retry-counter oracle increment for `pop_index`'s CAS-retry arm (see
-/// `POP_RETRY_COUNT`): one lost CAS. Loom models use it as a deterministic
-/// activation oracle; the opt-in A/B harness uses it as measurement-path
-/// observability. Default builds contain no retry-counter write. `Relaxed`
-/// counts only.
-#[cfg(any(feature = "test-internals", loom))]
+/// Retry-counter increment for test/loom builds only.
+#[cfg(any(tagged_index_stack_test, loom))]
 #[inline]
 fn note_pop_retry() {
     POP_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -108,7 +104,7 @@ fn note_pop_retry() {
 
 /// Push-side twin of [`note_pop_retry`] (see `PUSH_RETRY_COUNT`): one lost
 /// CAS in `push_index`'s retry arm.
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[inline]
 fn note_push_retry() {
     PUSH_RETRY_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -461,7 +457,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
         self.head.load(ordering)
     }
 
-    /// Thin wrapper over the head atomic's compare_exchange — for the
+    /// Thin wrapper over the head atomic's strong compare_exchange — for the
     /// [`StackOps`] blanket impl.
     pub(crate) fn compare_exchange(
         &self,
@@ -523,7 +519,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// # Panics
     /// Panics if `tag > `[`TaggedIndex::TAG_MAX`].
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(any(tagged_index_stack_test, loom))]
     #[must_use]
     pub fn with_tag_for_test(tag: u64) -> Self {
         Self {
@@ -545,15 +541,15 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// convention — every other `#[doc(hidden)]` item in this crate points
     /// here for the generic rationale): this is a `pub` item only so
     /// `tests/` — an external crate from this crate's own perspective — can
-    /// reach it. Gated: compiled ONLY under the `test-internals` feature or a
+    /// reach it. Gated: compiled only under the repository test cfg or a
     /// loom build — a default build (a downstream consumer, the docs.rs
     /// render) does not contain this item at all, so unlike `#[doc(hidden)]`
     /// alone the gate makes it genuinely unnameable from safe downstream
     /// code, not merely hidden from rustdoc navigation. It is not exercised
     /// by any production caller. It is an unstable repository-test surface;
-    /// enabling the feature is not a semver promise for these probes.
+    /// enabling the test cfg is not a semver promise for these probes.
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(any(tagged_index_stack_test, loom))]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
         self.head.load(Ordering::Acquire)
@@ -567,7 +563,7 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     ///
     /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s
     /// rationale. This item carries the strictly narrower `#[cfg(loom)]`
-    /// gate (vs `raw_head`'s `test-internals`-or-loom), so it does not exist
+    /// gate (vs `raw_head`'s test-cfg-or-loom gate), so it does not exist
     /// at all outside a `--cfg loom` build.
     ///
     /// # Errors
@@ -1526,7 +1522,7 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
                 // Retry-counter instrumentation is compiled only for the
                 // explicit test/loom builds; the retry algorithm itself is
                 // shared with the default build.
-                #[cfg(any(feature = "test-internals", loom))]
+                #[cfg(any(tagged_index_stack_test, loom))]
                 note_push_retry();
                 head = actual;
                 backoff.spin();
@@ -1599,7 +1595,7 @@ pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) 
                 // Retry-counter instrumentation is compiled only for the
                 // explicit test/loom builds; the retry algorithm itself is
                 // shared with the default build.
-                #[cfg(any(feature = "test-internals", loom))]
+                #[cfg(any(tagged_index_stack_test, loom))]
                 note_pop_retry();
                 head = actual;
                 // Skipped when the lost CAS reveals the stack just went
@@ -1820,10 +1816,10 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// The raw packed head word (`Acquire`) — forwarder to
     /// [`StackHead::raw_head`] (tests/loom suite need it).
     ///
-    /// Gated: same `test-internals`/loom gate as [`StackHead::raw_head`] —
+    /// Gated: same test-cfg/loom gate as [`StackHead::raw_head`] —
     /// it does not exist in a default build.
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(any(tagged_index_stack_test, loom))]
     #[must_use]
     pub fn raw_head(&self) -> u64 {
         self.head.raw_head()
@@ -1857,12 +1853,12 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// [`StackStorage::load_next`] cannot reach its links.
     /// `#[doc(hidden)]` per the crate's established test-only-forwarder
     /// rationale (see [`raw_head`] and [`cas_head_for_test`]): not part of the
-    /// stable API. Gated: same `test-internals`/loom gate as [`StackHead::raw_head`]
+    /// stable API. Gated: same test-cfg/loom gate as [`StackHead::raw_head`]
     /// — it does not exist in a default build. Read-only — it exposes no
     /// `&StackHead` and no link write, so it reopens none of the sealed
     /// hazard.
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(any(tagged_index_stack_test, loom))]
     pub fn load_next_for_test(&self, index: u32) -> u32 {
         self.links.load_next(index)
     }
@@ -1878,9 +1874,8 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// `#[doc(hidden)]` per this crate's established test-only-forwarder
     /// rationale (see [`raw_head`]). Gated: `loom` only — unlike
     /// [`load_next_for_test`], this is a raw link-cell WRITE that bypasses
-    /// the stack algorithm entirely; under plain `test-internals` (a
-    /// published, downstream-enabled Cargo feature) it would be a safe
-    /// `pub fn` reachable by any consumer, letting safe code construct a
+    /// the stack algorithm entirely; under the repository test cfg it is a
+    /// safe `pub fn` reachable by any consumer, letting safe code construct a
     /// cycle in the linked chain (e.g. double-issuing an index from
     /// `pop()`). Its only real caller is `tests/loom_aba.rs`, which is
     /// itself `#![cfg(loom)]`-gated, so `loom` alone is the correct and
@@ -1901,7 +1896,7 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// # Panics
     /// Panics if `tag > `[`TaggedIndex::TAG_MAX`].
     #[doc(hidden)]
-    #[cfg(any(feature = "test-internals", loom))]
+    #[cfg(any(tagged_index_stack_test, loom))]
     #[must_use]
     pub fn with_tag_for_test(tag: u64) -> Self {
         Self {
@@ -2035,16 +2030,16 @@ impl<const N: usize> Default for ArrayLinks<N> {
 /// entire exploration. `Relaxed` access: the counter promises no ordering, it
 /// only counts.
 ///
-/// Gated: compiled only under `test-internals` or loom. Default builds carry
-/// neither the counters nor their retry-arm writes. Cost when enabled: one
+/// Gated: compiled only under the repository test cfg or loom. Default builds
+/// carry neither the counters nor their retry-arm writes. Cost when enabled: one
 /// Relaxed `fetch_add` per lost CAS, on the retry arm only. Never reset by
 /// this crate (snapshot and diff is the caller's job); process-global and
 /// cumulative. Loom models use this as a non-vacuity oracle; the repository's
 /// opt-in A/B harness uses it to prove the measured retry paths activated.
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-/// **loom-test-only** activation oracle: reads `POP_RETRY_COUNT` — the
+/// **test-only** activation oracle: reads `POP_RETRY_COUNT` — the
 /// number of times `pop_index`'s CAS-retry branch has executed in this
 /// process. The loom suite asserts this counter ADVANCES across an exploration
 /// so a model whose schedules never actually reach `pop_index`'s retry path
@@ -2054,7 +2049,7 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
 /// Never reset: process-global and cumulative — see `POP_RETRY_COUNT`'s doc
 /// (the shipped loom suite's `MODEL_LOCK` serializes tests that read it).
-#[cfg(loom)]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[doc(hidden)]
 #[must_use]
 pub fn pop_retry_count_for_test() -> usize {
@@ -2065,10 +2060,10 @@ pub fn pop_retry_count_for_test() -> usize {
 /// and never-reset semantics; counts [`push_index`](StackOps::push_index)'s
 /// CAS-retry branch (the `Err(actual) => head = actual` arm). See
 /// `POP_RETRY_COUNT`'s doc.
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-/// **loom-test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
+/// **test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
 /// number of times `push_index`'s CAS-retry branch has executed in this
 /// process. The loom suite asserts this counter ADVANCES across an exploration
 /// so a model whose schedules never actually reach `push_index`'s retry path
@@ -2078,7 +2073,7 @@ static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::A
 /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
 /// Never reset: process-global and cumulative — see `POP_RETRY_COUNT`'s doc
 /// (the shipped loom suite's `MODEL_LOCK` serializes tests that read it).
-#[cfg(loom)]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[doc(hidden)]
 #[must_use]
 pub fn push_retry_count_for_test() -> usize {
@@ -2086,17 +2081,17 @@ pub fn push_retry_count_for_test() -> usize {
 }
 
 /// **test-only** measurement observability: reads both cumulative CAS-retry
-/// counters as `(pop, push)`. The A/B harness snapshots this tuple around its
-/// workload and requires both deltas to be non-zero before accepting timing
-/// data. Correctness tests do not require a real OS scheduler to produce a
-/// retry; loom's per-side accessors above provide deterministic retry-branch
-/// activation oracles.
+/// counters as `(pop, push)`. The instrumented A/B binary snapshots this tuple
+/// after warm-up around its separate observed window and requires both deltas
+/// to be non-zero. Correctness tests do not require a real OS scheduler to
+/// produce a retry; loom's per-side accessors above provide deterministic
+/// retry-branch activation oracles.
 ///
 /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
 /// Gated with the counters, absent from default builds, and never reset.
 #[doc(hidden)]
 #[must_use]
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 pub fn retry_counts_for_test() -> (usize, usize) {
     (
         POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed),
@@ -2113,7 +2108,7 @@ pub fn retry_counts_for_test() -> (usize, usize) {
 /// scheduler to produce a particular sequence of lost CASes.
 #[doc(hidden)]
 #[must_use]
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 pub fn backoff_spin_depths_for_test() -> [u32; 9] {
     let mut backoff = Backoff::new();
     let mut depths = [0; 9];

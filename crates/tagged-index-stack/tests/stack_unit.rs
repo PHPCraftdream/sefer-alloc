@@ -15,11 +15,11 @@
 //!
 //! Three white-box probes below (`empty_transition_preserves_running_tag`,
 //! `links_are_lazy`, `default_stack_head_behaves_like_new`) read through the
-//! `test-internals`/loom-gated raw accessors (`raw_head` /
+//! repository-test-cfg/loom-gated raw accessors (`raw_head` /
 //! `load_next_for_test`) and carry the same
-//! `#[cfg(any(feature = "test-internals", loom))]` gate, so plain
+//! `#[cfg(any(tagged_index_stack_test, loom))]` gate, so plain
 //! default-feature `cargo test` runs compile them out; CI runs this file
-//! under `--features test-internals` to execute them (the same per-file row
+//! under `RUSTFLAGS="--cfg tagged_index_stack_test"` to execute them (the same per-file row
 //! shape `tests/threaded_conservation.rs`'s activation-oracle assertions
 //! already use).
 
@@ -368,9 +368,9 @@ fn width_1_stack_push_pop_round_trips_its_sole_index() {
 
 /// Drain to empty then refill the SAME index: the tag must have advanced across
 /// the empty transition (H-2), NOT reset to 0. Observed via `raw_head` — a
-/// `test-internals`/loom-gated accessor, so this probe carries the same gate
+/// repository-test-cfg/loom-gated accessor, so this probe carries the same gate
 /// (see the module doc).
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[test]
 fn empty_transition_preserves_running_tag() {
     type T = TaggedIndex<16>;
@@ -412,7 +412,7 @@ fn empty_transition_preserves_running_tag() {
 /// eagerly-chained-but-empty-headed stack.)
 /// Gated like the accessor it reads through (`load_next_for_test`) — see the
 /// module doc.
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[test]
 fn links_are_lazy() {
     let stack = ArrayIndexStack::<16, 4>::new();
@@ -488,7 +488,7 @@ fn default_array_index_stack_behaves_like_new() {
 /// doc. (The sibling `default_array_links_behaves_like_new` /
 /// `default_array_index_stack_behaves_like_new` stay ungated: they read only
 /// through public API.)
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[test]
 fn default_stack_head_behaves_like_new() {
     let default_head = StackHead::<16>::default();
@@ -522,7 +522,7 @@ fn default_stack_head_behaves_like_new() {
 // loud panic — not a silently-truncated starting tag, which would let a
 // test oracle pass or fail for the wrong reason.
 
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[test]
 fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
     let head = StackHead::<16>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX);
@@ -534,7 +534,7 @@ fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
     );
 }
 
-#[cfg(any(feature = "test-internals", loom))]
+#[cfg(any(tagged_index_stack_test, loom))]
 #[test]
 #[should_panic(expected = "with_tag_for_test: tag out of range")]
 fn with_tag_for_test_panics_instead_of_silently_truncating_an_out_of_range_tag() {

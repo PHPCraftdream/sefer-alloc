@@ -281,18 +281,18 @@ deliberately not re-quoted here so they cannot drift from it.
 
 ## Notes
 
-This crate's test-only probes (`raw_head`, `load_next_for_test`,
-`store_next_for_test`, `cas_head_for_test`, `retry_counts_for_test`, loom
-retry-counter accessors, and `backoff_spin_depths_for_test`) are feature- or
-cfg-gated and
-`#[doc(hidden)]`: under default features none of them exists at all (docs.rs
-included). The `test-internals` feature is an explicitly unstable,
+This crate's read-only/counter test probes (`raw_head`, `load_next_for_test`,
+`retry_counts_for_test`, retry-counter accessors, and
+`backoff_spin_depths_for_test`) compile under `tagged_index_stack_test` or
+`loom`; the raw CAS/write probes (`cas_head_for_test`, `store_next_for_test`)
+remain loom-only. All are `#[doc(hidden)]` and absent from default builds
+(docs.rs included). The `tagged_index_stack_test` cfg is an explicitly unstable,
 repository-test escape hatch: its probes may be changed or removed without a
 semver guarantee, and consumers must not build production code against them.
 The `loom` cfg/feature has the same policy for its loom-only probes. These
 surfaces remain public only because Cargo integration-test targets are separate
-crates; no standalone harness crate is needed, and the feature is not part of
-the stable API contract.
+crates; no standalone harness crate is needed, and the cfg is not part of the
+stable API contract.
 
 The bootstrap empty word is crate-private. `StackHead::new` and
 `ArrayIndexStack::new` construct it internally, while external consumers that
@@ -305,7 +305,7 @@ undocumented empty-word helper.
 Rust 1.79 — the measured LIBRARY-surface floor (the newest API the published
 library itself uses is the inline `const` block in `ArrayLinks::new`'s array
 repeat, stable in 1.79; verified with `cargo +1.79 check`, default and
-`--features test-internals`). The crate's own test/clippy target set needs
+`RUSTFLAGS="--cfg tagged_index_stack_test"`). The crate's own test/clippy target set needs
 newer toolchains (dev-dependency graph, `std::panic::PanicHookInfo` at 1.81)
 — dev-only needs do not raise the floor a library consumer pays. Details:
 the `rust-version` comment in this crate's `Cargo.toml`.
