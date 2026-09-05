@@ -1073,6 +1073,7 @@ dependencies = [
  "proc-probe",
  "proptest",
  "sefer-region",
+ "serde_json",
  "size-classes",
  "slotmap",
  "tagged-index-stack",
@@ -1199,7 +1200,6 @@ dependencies = [
  "bench-scale-tool",
  "loom",
  "proptest",
- "serde_json",
 ]
 
 [[package]]

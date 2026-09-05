@@ -1,27 +1,29 @@
-//! Shared child-cargo mechanics for the crate's compile-fail drivers
-//! (all consolidated tests now live in `tests/compile_fail.rs` — count
-//! drifts as new hazards get pinned, re-derive via `grep -c '^#\[test\]'
-//! tests/compile_fail.rs` rather than trusting a number quoted here).
+//! Shared child-cargo mechanics for the root compile-fail driver. The test
+//! count drifts as hazards are added; re-derive it with
+//! `grep -c '^#\[test\]' tests/tagged_index_stack_compile_fail.rs`.
 //!
 //! Every compile-fail test used to duplicate the same ~55 lines of
 //! boilerplate: manifest-path resolution, the out-of-process `cargo build`,
 //! and the diagnostic context string.
 //! This module is that boilerplate, stated once. The assertion logic —
 //! which error codes and message substrings each fixture must produce —
-//! stays in the individual tests in `tests/compile_fail.rs`.
+//! stays in the individual tests in `tests/tagged_index_stack_compile_fail.rs`.
 //!
-//! The fixture crates, this helper, and the `tests/compile_fail.rs` driver are
-//! explicitly excluded from the published `.crate` by the package manifest.
-//! A checkout that reaches this helper must therefore contain every fixture;
-//! a missing manifest is an immediate test failure.
+//! The fixture crates stay under the package's repository-only test tree; the
+//! root driver and this helper live outside the published crate. A checkout
+//! that reaches this helper must therefore contain every fixture; a missing
+//! manifest is an immediate test failure.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// Resolves the fixture manifest `tests/compile_fail/<fixture_dir>/Cargo.toml`
+/// Resolves the fixture manifest
+/// `crates/tagged-index-stack/tests/compile_fail/<fixture_dir>/Cargo.toml`
 /// (public so callers can build their failure context from the same path).
 pub fn fixture_manifest(fixture_dir: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join("tagged-index-stack")
         .join("tests")
         .join("compile_fail")
         .join(fixture_dir)
@@ -86,9 +88,8 @@ pub fn build_fixture(fixture_dir: &str, rustflags: Option<&str>) -> Output {
 }
 
 /// The shared failure-context string every assertion message in
-/// `tests/compile_fail.rs` embeds: fixture path, exit status, and both
-/// output streams. Byte-identical format to the string each
-/// pre-consolidation driver built by hand.
+/// `tests/tagged_index_stack_compile_fail.rs` embeds: fixture path, exit
+/// status, and both output streams.
 pub fn failure_context(manifest: &Path, output: &Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);

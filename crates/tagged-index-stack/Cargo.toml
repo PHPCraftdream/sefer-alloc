@@ -14,15 +14,11 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/tagged
 documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
-# Compile-fail infrastructure and the A/B runner/scratch guard are
-# repository-only and must not enter the published .crate. The fixture crates
-# auto-exclude via Cargo's nested-manifest rule; every path remains explicit.
+# These repository-only fixture crates and measurement scripts do not belong
+# in the published .crate; the root integration tests own the drivers.
 exclude = [
     "tests/compile_fail/",
-    "tests/compile_fail.rs",
-    "tests/common/",
     "scripts/",
-    "tests/tis_p3_ab_runner_scratch_guard.rs",
 ]
 
 # Crate-local `unexpected_cfgs` declaration, deliberately NOT the
@@ -56,9 +52,6 @@ loom = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
-# Direct dev-only dependency for the compile-fail oracle's Cargo JSON records;
-# already present in the workspace lock graph, so no new parser is vendored here.
-serde_json = "1"
 # Fixed-iteration bench harness (dev-only — never reaches published
 # consumers). See benches/tagged_index_stack_bench.rs.
 bench-scale-tool = "0.1"

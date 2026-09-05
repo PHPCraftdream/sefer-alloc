@@ -752,20 +752,15 @@ jobs:
       - run: cargo publish --dry-run -p tagged-index-stack
       # The dry-run verifies the packaged library but does not execute the
       # packaged tests or compile the bench target. Package and extract the
-      # crate, assert that the checkout-only compile-fail harness and fixtures
-      # are absent, then run the package's default and repository-cfg test
-      # surfaces and build the bench in isolated target directories. The
-      # extracted package must stand on its normalized manifest alone: the
-      # repository-only driver is not allowed to make a missing-fixture package
-      # look green.
+      # crate, assert that every remaining repository-only exclusion is absent,
+      # then run the package's default and repository-cfg test surfaces and
+      # build the bench in isolated target directories.
       # `--no-verify` avoids a redundant lib build: the publish --dry-run
       # above already verifies the packaged lib, and the extracted
       # `cargo test` below builds it again for the dev profile.
-      # The package intentionally excludes the repository-only `scripts/`
-      # measurement harness and its scratch guard test. Those checkout-only
-      # tests run in the Linux/Windows workspace rows; this extracted gate
-      # validates the remaining tests that belong in the published artifact.
-      - name: run the packaged .crate test suite (default + repository cfg + Loom/manifest guards) + build the packaged bench (P2-1/P4-7/P3 regression gate)
+      # The package intentionally excludes only repository-only fixture crates
+      # and `scripts/`; root integration drivers live outside this package.
+      - name: test packaged crate (default/repository cfg/Loom guards) and build bench
         run: |
           set -euo pipefail
           cargo package -p tagged-index-stack --no-verify
@@ -774,9 +769,9 @@ jobs:
           tar xzf "$crate_file" -C "$extract_dir"
           package_dir=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -name 'tagged-index-stack-*' -print -quit)
           test -n "$package_dir"
-          # These are checkout-only negative-test infrastructure. Hard-assert
-          # all three absences so a vacuous packaged driver cannot return.
-          for repository_only in tests/compile_fail.rs tests/common tests/compile_fail; do
+          # Hard-assert every remaining exclusion so package contents cannot
+          # drift into a vacuous published test surface.
+          for repository_only in tests/compile_fail scripts; do
             if [[ -e "$package_dir/$repository_only" ]]; then
               echo "::error::repository-only path leaked into the packaged crate: $repository_only"
               exit 1
@@ -1666,9 +1661,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # The tagged-index-stack scratch-guard tests invoke the repository's
-      # Node-based A/B runner and treat a missing Node executable as a skip.
-      # Pin Node so this Windows row cannot pass vacuously.
+      # The root A/B scratch-guard integration test invokes the repository's
+      # Node-based runner. Pin Node so this Windows row cannot pass vacuously.
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -1781,28 +1775,17 @@ jobs:
         env:
           RUSTFLAGS: "--cfg aligned_vmem_mock"
 
-      # run-20 review P3-1: the workspace member's own test suite never ran on
-      # a real Windows kernel — its tis_p3_ab_runner_scratch_guard.rs carries
-      # a Windows-specific fixture branch (`std::os::windows::fs::symlink_dir`,
-      # falling back to `cmd /c mklink /J` when Dev Mode is absent — hosted
-      # runners have no Dev Mode, so the junction fallback is the branch this
-      # row exists for) that no ubuntu-latest row can execute. Full default
-      # suite per the review's preferred form (same per-crate-suite shape as
-      # the aligned-vmem rows above), plus task #1086/#1101 self-verifying
-      # postconditions: the two junction-branch tests are named greps (a
-      # renamed test fails LOUD instead of silently vanishing from the
-      # postcondition), and the two skip needles fail the step because a
-      # skipped test still prints "... ok" — the positive greps alone cannot
-      # distinguish ran-and-passed from early-return-skipped. Explicit
-      # `if grep ...; then exit 1; fi` rather than a bare `! grep -q`: under
-      # `set -e` the return value of a `!`-inverted command is exempt from
-      # errexit, so `! grep` can never fail the step.
+      # Run the member and compile-fail suites directly; verify the root
+      # scratch guard executes both Windows junction oracles without skipping.
+      - run: cargo test -p tagged-index-stack --no-fail-fast
+      - run: cargo test --test tagged_index_stack_compile_fail --no-fail-fast
       - run: |
-          cargo test -p tagged-index-stack --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tis-crate-suite.log"
-          grep -F "test out_dir_rejection_is_value_independent ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
-          grep -F "test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok" "$RUNNER_TEMP/tis-crate-suite.log"
-          if grep -q "skipping: node not on PATH" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: scratch-guard tests skipped (node not on PATH) - green is vacuous"; exit 1; fi
-          if grep -q "skipping: directory symlinks/junctions unavailable" "$RUNNER_TEMP/tis-crate-suite.log"; then echo "FATAL: junction-branch tests skipped - the Windows branch this row exists for did not run"; exit 1; fi
+          set -euo pipefail
+          cargo test --test tagged_index_stack_ab_runner_scratch_guard --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+          grep -F "test out_dir_rejection_is_value_independent ... ok" "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+          grep -F "test scratch_root_junction_redirect_leaves_victim_canary_intact ... ok" "$RUNNER_TEMP/tis-ab-scratch-guard.log"
+          if grep -q "skipping: node not on PATH" "$RUNNER_TEMP/tis-ab-scratch-guard.log"; then echo "FATAL: scratch-guard tests skipped (node not on PATH) - green is vacuous"; exit 1; fi
+          if grep -q "skipping: directory symlinks/junctions unavailable" "$RUNNER_TEMP/tis-ab-scratch-guard.log"; then echo "FATAL: junction-branch tests skipped - the Windows branch this row exists for did not run"; exit 1; fi
         shell: bash
 
   test-macos:

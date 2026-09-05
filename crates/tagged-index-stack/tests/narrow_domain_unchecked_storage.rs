@@ -37,7 +37,7 @@
 //! reached; that remains undemonstrated by any runtime test (see the
 //! section above for why it cannot safely be demonstrated at runtime
 //! either). The caller-side E0133 boundary is a SEPARATE concern, covered
-//! by a different oracle: `tests/compile_fail.rs`
+//! by a different oracle: `tests/tagged_index_stack_compile_fail.rs`
 //! (`push_index_requires_unsafe_block`) pins that bare pushes fail to
 //! compile; `tests/compile_fail/hook_call_requires_unsafe/` pins the
 //! in-domain/unwrapped-hook negative shapes. Neither substitutes for a

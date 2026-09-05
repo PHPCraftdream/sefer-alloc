@@ -947,6 +947,8 @@ slotmap = "1"
 # Phase 0 dependency: property-based differential testing against a reference
 # model. This is the heart of the verification-first build — see docs/PLAN.md.
 proptest = "1"
+# Root integration test dependency for tagged-index-stack's Cargo JSON oracle.
+serde_json = "1"
 # Task #52: tokio burn-in example — async runtime driving SeferAlloc as
 # #[global_allocator].  Minimal feature set: rt-multi-thread (multi-thread
 # scheduler), macros (#[tokio::main]), sync (mpsc channel), time (sleep /
