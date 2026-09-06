@@ -185,9 +185,9 @@
 //! The rate assumption's order of magnitude is confirmed by this repository's
 //! own bench receipts
 //! ([`docs/perf/_raw_tis_backoff_cap_sweep_run1.log`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log)
-//! — a repository file, not part of the published package; re-run `cargo
+//! Re-run `cargo
 //! bench -p tagged-index-stack --bench tagged_index_stack_bench` for a fresh
-//! sample) — the bound needs only the order of magnitude, not the exact
+//! sample); the bound needs only the order of magnitude, not the exact
 //! figure. The same receipts also bound the UNCONTENDED regime: the
 //! single-threaded `churn` rows measure ~`2 × 10^7` successful pushes/sec (a
 //! pop+push pair per iteration, so the push-only rate is somewhat higher) —
@@ -234,9 +234,9 @@
 //! tail-count band at its own thread count, not assume either single
 //! thread count's story. Full measurements and the derivation are in
 //! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
-//! — a repository file (not
-//! part of the published package), measured with
-//! `examples/backoff_per_call_latency.rs`.
+//! Measured with `examples/backoff_per_call_latency.rs`. The backoff depth is
+//! counted in `spin_loop` hint invocations, not portable time units, so this
+//! trade can differ across microarchitectures and targets.
 //!
 //! # loom — the tests run against THIS type
 //!
@@ -254,111 +254,35 @@
 //!
 //! # Where unsafe lives
 //!
-//! The production library source (`src/`) contains exactly EIGHT audited
-//! `#[allow(unsafe_code)]` LINT-EXCEPTION REGIONS — item-scoped spans where
-//! the `unsafe_code` lint is permitted to fire — all in `src/imp.rs` (tier 2
-//! of this workspace's two-tier unsafe-inventory convention). A region is a
-//! BOUNDARY: on edition 2021 an `unsafe fn`'s body has AMBIENT permission to
-//! call another `unsafe fn` with no local `unsafe {}` block, so one region
-//! covering an `unsafe fn` declaration can legitimately contain several
-//! distinct unsafe operations, not just the one declaration — the region
-//! count alone does not say how many. The crate also sets
-//! `#![deny(unsafe_op_in_unsafe_fn)]` (below the header), which forces every
-//! such call to carry its own local `unsafe {}` + `// SAFETY:` — the
-//! region count is unaffected (no new `#[allow(unsafe_code)]` was added),
-//! but the actual unsafe-block count inside those regions is six
-//! (see the operation count below). Grouped by role:
+//! The production library source (`src/`) contains exactly nine audited
+//! `#[allow(unsafe_code)]` regions, all in `src/imp.rs`:
 //!
-//! 1. the `unsafe trait StackStorage` declaration — its allow also covers its
-//!    three `unsafe fn` hook declarations (`head`, `load_next`, `store_next`;
-//!    lint levels are inherited by nested items);
-//! 2. the crate-private `SealedStorage` trait declaration — a safe `pub(crate)`
-//!    trait whose one `store_next` member is an `unsafe fn` (the allow covers
-//!    that declaration);
-//! 3. the caller-facing boundary `StackOps::push_index`'s trait-method
-//!    declaration;
-//! 4. the blanket [`StackOps`] impl's `push_index` body — an `unsafe fn`
-//!    whose own local `unsafe {}` block forwards to `push_index_impl`;
-//! 5. the shared internal `push_index_impl` — an `unsafe fn` whose own local
-//!    `unsafe {}` block calls `store_next`;
-//! 6. the owned type's [`ArrayIndexStack::push`] — an `unsafe fn` whose own
-//!    local `unsafe {}` block forwards to `push_index_impl`;
-//! 7. the crate-private `SealedStorage` blanket-impl bridge — the SOLE call
-//!    site of the three `StackStorage` hooks, holding their three `unsafe {}`
-//!    blocks with per-call `// SAFETY:` proofs;
-//! 8. the owned type's `SealedStorage` impl block (its `store_next` body).
+//! 1. `StackStorage`'s unsafe-trait declaration;
+//! 2. `SealedStorage`'s three unsafe-hook declarations;
+//! 3. the `StackOps::push_index` unsafe-method declaration;
+//! 4. the `StackOps` blanket implementation;
+//! 5. the shared `push_index_impl` body;
+//! 6. the shared `pop_index_impl` body;
+//! 7. the `SealedStorage` blanket bridge;
+//! 8. `ArrayIndexStack::push`;
+//! 9. `ArrayIndexStack`'s `SealedStorage` implementation.
 //!
-//! Exactly ONE `unsafe trait`, exactly TEN `unsafe fn` declarations, ZERO
-//! `unsafe impl`, and exactly SIX `unsafe {}` blocks exist in `src/` (ten fn =
-//! `StackStorage`'s three hook declarations (`head`, `load_next`,
-//! `store_next`), `SealedStorage`'s `store_next` declaration,
-//! `StackOps::push_index`'s declaration, the blanket impl's `push_index`,
-//! `push_index_impl`, `ArrayIndexStack::push`, the bridge impl's
-//! `store_next`, and the owned type's `SealedStorage` impl's `store_next`;
-//! six blocks = the bridge's three per-hook `unsafe {}` calls (region 7)
-//! PLUS three more required by `#![deny(unsafe_op_in_unsafe_fn)]` (regions
-//! 4, 5, 6): the blanket impl's `push_index` calling `push_index_impl`,
-//! `push_index_impl` itself calling `store_next`, and
-//! `ArrayIndexStack::push` calling `push_index_impl`) — no other unsafe
-//! syntax in the library target, pinned by `#![deny(unsafe_code)]`: unlike
-//! `forbid`, `deny` can be locally relaxed — but only at those eight audited
-//! REGIONS — so every OTHER `unsafe` token in the library target remains a
-//! hard compile error. These declaration/block/trait counts are re-derived
-//! by grepping `unsafe fn|unsafe impl|unsafe trait|unsafe \{` in
-//! `src/imp.rs`, not by counting `#[allow(unsafe_code)]` regions — see the
-//! boundary-vs-contents distinction below.
+//! The production contents are exactly one unsafe trait, sixteen unsafe
+//! function declarations, zero unsafe impls, and nine local `unsafe {}`
+//! blocks. Paths under `docs/` and the repository-root `tests/` are repository
+//! files, not part of the published package.
 //!
-//! A separate inventory, deliberately NOT folded into the production claim
-//! above: this repository's integration tests are separate crate targets
-//! that do NOT inherit the library root's `#![deny(unsafe_code)]`, and
-//! `tests/` intentionally contains additional `unsafe impl StackStorage`
-//! blocks as test infrastructure — correct implementor fixtures
-//! (`tests/custom_storage_impl.rs`) and deliberately-broken compile-fail
-//! fixtures (`tests/compile_fail/`). Those are expected, audited test
-//! fixtures outside the `src/` count, not a violation of it.
-//!
-//! The `src/` inventory's REGION BOUNDARY is self-verifying — but a region
-//! count is a boundary check, not a contents check, and must not be read as
-//! one: the command below counts `#[allow(unsafe_code)]` attributes, and
-//! given that the library target compiles under `#![deny(unsafe_code)]`,
-//! that count proves no unsafe token exists OUTSIDE those eight regions —
-//! every un-allowed unsafe token would otherwise be a hard compile error.
-//! It does NOT, by itself, prove how many unsafe declarations/blocks/traits
-//! exist INSIDE those regions: a single item-scoped allow can cover one
-//! `unsafe fn`/`unsafe trait` declaration plus every `unsafe {}` block its
-//! own body contains — six of this crate's eight regions (1, 4, 5, 6, 7, 8
-//! above) are exactly that shape. The two counts answer different
-//! questions and neither substitutes for the other:
+//! Integration tests are separate crate targets and intentionally contain
+//! additional `unsafe impl StackStorage` fixtures; they are outside this
+//! production inventory.
 //!
 //! ```text
-//! grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' crates/tagged-index-stack/src/
+//! rg -n '^\s*#\[allow\(unsafe_code\)\]' crates/tagged-index-stack/src/imp.rs
+//! rg -n '^\s*(?:pub(?:\([^)]*\))?\s+)?unsafe (?:trait|fn|impl)|^\s*unsafe \{|=\s*unsafe \{' crates/tagged-index-stack/src/imp.rs
 //! ```
 //!
-//! — run from the workspace root — returns exactly eight hits, ALL in
-//! `src/imp.rs`: eight lint-exception regions in the production library
-//! source and none anywhere else in it. The command is deliberately scoped
-//! to `src/` rather than the whole crate: an unscoped whole-crate grep
-//! additionally returns four statement-scoped allows in the tracked perf
-//! Link-ordering/CAS A/B tooling (`scripts/tis_p3_ab/harness_bin.rs` and
-//! `scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`) — scratch-crate generator
-//! files, each with its own `#![deny(unsafe_code)]` root and per-site `//
-//! SAFETY:` proofs, not part of the published library target, excluded
-//! from this inventory the same way the `tests/` fixtures above are (those
-//! fixtures need no per-site allow at all, because their crate targets
-//! never carry the library's deny). For the CONTENTS — the actual unsafe
-//! declarations/blocks/operations those regions hold — grep the tokens
-//! directly instead:
-//!
-//! ```text
-//! grep -nE 'unsafe fn|unsafe impl|unsafe trait|unsafe \{' crates/tagged-index-stack/src/imp.rs
-//! ```
-//!
-//! which returns the one `unsafe trait`, ten `unsafe fn`, zero `unsafe
-//! impl`, and six `unsafe {}` block matches enumerated above (plus
-//! comment-only lines that merely mention these tokens in prose, which a
-//! human reader filters by inspection — this second command is a content
-//! CHECKLIST to audit against, not a self-checking assertion the way the
-//! region-boundary command is).
+//! The first command checks region boundaries; the second checks the unsafe
+//! contents inside them, so neither count substitutes for the other.
 //!
 //! WHY: because allocator consumers rely on [`StackStorage`]'s exclusive-issuance
 //! contract for their own memory safety — sefer-alloc's registry free-list

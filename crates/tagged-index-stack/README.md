@@ -110,6 +110,10 @@ N>` is the owned standalone stack that fuses the head and an `ArrayLinks<N>`
 backing, with `push`/`pop` methods — `push` is `unsafe fn` (the caller
 upholds the link-domain + liveness + exclusive-ownership contract, see below); `pop` stays safe.
 
+The owned array checks its `N` link bound on each access; a slot-resident
+implementor can use a proven domain to avoid that second bounds check in its
+own link accessor.
+
 **Storage requirement: dedicated, never payload-aliased.** Slot-resident means
 the link lives in memory the slot owns, not that it may share bytes with the
 slot's live payload — a backing that overlays the link on the popped slot's
@@ -207,7 +211,7 @@ A 128-bit packed word was considered and explicitly rejected: `loom` has no
 unsafe third-party dependency; and `cmpxchg16b` is not in the x86-64
 baseline. Full rationale in the repository ADR
 `docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
-(repository file, not part of the published package). A genuine future need
+A genuine future need
 for >65535 indices should be a separate opt-in, feature-gated type — not a
 change to this default.
 
@@ -220,11 +224,13 @@ call wait longer between retries. The shipped backoff cap trades worse
 extreme outliers and a thread-count-dependent slow-pop tail-count band for
 better latency through p99.9 and roughly 4-5x aggregate wall-clock
 throughput. A latency-sensitive consumer must size its tolerance at its own
-thread count — neither single thread count's story generalizes. Full
-measurements and per-thread-count tables: the crate docs'
+thread count — neither single thread count's story generalizes. The cap
+counts `spin_loop` hint invocations, not portable time units, so this
+trade is specific to the measured host and can differ across
+microarchitectures and targets. Full measurements and per-thread-count
+tables are in the crate docs'
 "Lock-freedom and starvation" section and
-[`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
-(repository file, not in the published package).
+[`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md).
 
 ## Portability limit — requires 64-bit atomics
 
@@ -287,15 +293,19 @@ deliberately not re-quoted here so they cannot drift from it.
 
 ## Notes
 
-This crate's read-only/counter test probes (`raw_head`, `load_next_for_test`,
-`retry_counts_for_test`, retry-counter accessors, and
-`backoff_spin_depths_for_test`) compile under `tagged_index_stack_test` or
-`loom`; the raw CAS/write probes (`cas_head_for_test`, `store_next_for_test`)
-remain loom-only. All are `#[doc(hidden)]` and absent from default builds
+This crate's hidden test probes are absent from default builds. Under
+`tagged_index_stack_test` or `loom`, the read/counter probes include
+`raw_head`, `load_next_for_test`, `with_tag_for_test`, both retry-counter
+accessors, `retry_counts_for_test`, and `backoff_spin_depths_for_test`;
+`backoff_spin_count_for_test` is loom-only. The raw CAS/write probes
+(`cas_head_for_test`, `store_next_for_test`) remain loom-only. All are
+`#[doc(hidden)]`
 (docs.rs included). The `tagged_index_stack_test` cfg is an explicitly unstable,
 repository-test escape hatch: its probes may be changed or removed without a
 semver guarantee, and consumers must not build production code against them.
-The `loom` cfg/feature has the same policy for its loom-only probes. These
+The default package test run therefore skips the seal and backoff oracles;
+repository CI enables the test cfgs. The `loom` cfg/feature has the same
+policy for its loom-only probes. These
 surfaces remain public only because Cargo integration-test targets are separate
 crates; no standalone harness crate is needed, and the cfg is not part of the
 stable API contract.
