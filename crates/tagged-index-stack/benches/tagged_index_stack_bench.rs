@@ -10,10 +10,11 @@
 //! ```
 
 use std::hint::black_box;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use bench_scale_tool::Harness;
-use tagged_index_stack::ArrayIndexStack;
+use tagged_index_stack::{ArrayIndexStack, StackHead, StackOps, StackStorage};
 
 /// Use 16-bit indices (65535 usable indices, 0xFFFF reserved for empty).
 /// This is the documented practical choice in the crate docs.
@@ -22,6 +23,56 @@ type Stack = ArrayIndexStack<16, LINKS_SIZE>;
 /// Number of indices in the fused stack's ArrayLinks links array.
 /// Must be > 0 and < 2^16 (the usable range at INDEX_BITS=16).
 const LINKS_SIZE: usize = 256;
+
+/// One independent cache line per link, with the head in the preceding line.
+#[repr(align(64))]
+struct AlignedLink {
+    next: AtomicU32,
+}
+
+impl AlignedLink {
+    const fn new() -> Self {
+        Self {
+            next: AtomicU32::new(0),
+        }
+    }
+}
+
+#[repr(C)]
+struct HeadContentionStorage {
+    head: StackHead<16>,
+    links: [AlignedLink; LINKS_SIZE],
+}
+
+impl HeadContentionStorage {
+    fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            links: [const { AlignedLink::new() }; LINKS_SIZE],
+        }
+    }
+
+    fn link(&self, index: u32) -> &AlignedLink {
+        &self.links[index as usize]
+    }
+}
+
+// SAFETY: the head and the one-to-one link array belong to this storage value;
+// every link is a dedicated atomic cell in the fixed 0..LINKS_SIZE domain.
+#[allow(unsafe_code)]
+unsafe impl StackStorage<16> for HeadContentionStorage {
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.link(index).next.load(Ordering::Acquire)
+    }
+
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.link(index).next.store(next, Ordering::Release);
+    }
+}
 
 /// Fairness signal printed after each contention benchmark: the
 /// cap-sweep investigation (docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md) found
@@ -240,7 +291,8 @@ fn main() {
     // sentinel, taking push's `next_link = TAIL` branch) and the
     // drain-to-empty pop (taking pop's last-element `next == TAIL`
     // branch, which preserves the running ABA tag across the transition --
-    // the H-2 path documented in the crate docs).
+    // the empty-transition tag-preservation path documented in the crate
+    // docs).
     //
     // The push-onto-empty shape is load-bearing: pushing without first
     // popping would re-push index 1 while it is still the live head -- a
@@ -285,7 +337,7 @@ fn main() {
     // churn: steady-state push/pop churn on the ORDINARY (non-empty) path.
     // Seeded with 8 indices before the timed closure -- one iteration pops
     // the top (leaving >= 7 elements, so pop always takes the `next != TAIL`
-    // branch, never the drain-to-empty H-2 branch) and immediately pushes it
+    // branch, never the drain-to-empty tag-preservation branch) and immediately pushes it
     // back onto a still-non-empty stack (so push always takes
     // the head-index branch, never the empty-sentinel branch). This is
     // deliberately the complement of push_pop/single_thread above, which
@@ -503,6 +555,35 @@ fn main() {
             // to THIS thread, which re-pushes it synchronously without
             // sharing it; in-domain by construction (push clause 3).
             unsafe { shared_stack.push(idx) }.expect("bounded bench run never nears TAG_MAX");
+            2
+        },
+    );
+
+    // contention/head_cas_aligned_links: the same successful pop-then-push
+    // workload, but through slot storage with one 64-byte cache line per link.
+    // The head occupies the preceding cache line, so link writes cannot add
+    // false sharing to the head-CAS contention. Each successful iteration
+    // counts exactly two stack operations.
+    let aligned_stack = HeadContentionStorage::new();
+    for i in 0..prefill_count {
+        // SAFETY: the stack is fresh, each in-domain index is pushed once, and
+        // no other operation can reach it before the contention phase starts.
+        unsafe { aligned_stack.push_index(i) }.expect("freshly-created head has tag budget");
+    }
+
+    run_contention_phase(
+        "contention/head_cas_aligned_links",
+        &format!(", prefill={prefill_count}, link_stride=64B"),
+        num_threads,
+        |_| {},
+        || {
+            let idx = aligned_stack
+                .pop_index()
+                .expect("head-isolated stack drained -- prefill invariant violated");
+            // SAFETY: pop_index transferred exclusive publish authority for
+            // idx to this thread, which immediately returns it to this stack.
+            unsafe { aligned_stack.push_index(black_box(idx)) }
+                .expect("bounded bench run never nears TAG_MAX");
             2
         },
     );
