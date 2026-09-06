@@ -74,6 +74,55 @@ fn node_available() -> bool {
     Command::new("node").arg("--version").output().is_ok()
 }
 
+/// Pins the evidence source to one HEAD while preserving build-check's dirty
+/// worktree-compatible snapshot path.
+#[test]
+fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatible() {
+    let runner_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
+    let source = fs::read_to_string(&runner_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", runner_path.display()));
+
+    let (read_git_source, _) = source
+        .split_once("function readGitSourceBytes(headSha, relativePath)")
+        .and_then(|(_, rest)| rest.split_once("\nfunction requireCapturedCargoConfig"))
+        .expect("runner is missing the bounded readGitSourceBytes body");
+    assert!(
+        read_git_source.contains("const result = spawnSync('git', ['show', `${headSha}:${relativePath}`], {")
+            && read_git_source.contains("assert(Buffer.isBuffer(result.stdout), `git show returned non-Buffer bytes for ${relativePath}`);")
+            && read_git_source.contains("return result.stdout;"),
+        "readGitSourceBytes lost its pinned git-show Buffer mechanism"
+    );
+
+    let (evidence, _) = source
+        .split_once("function captureEvidenceHeader(args)")
+        .and_then(|(_, rest)| rest.split_once("\nfunction headerComment(header)"))
+        .expect("runner is missing the bounded captureEvidenceHeader body");
+    let pinned = "const headSha = runCapture('git', ['rev-parse', 'HEAD']).trim();";
+    let odb = "const context = captureSnapshotContext(args, (relativePath) => readGitSourceBytes(headSha, relativePath));";
+    let pinned_at = evidence
+        .find(pinned)
+        .expect("evidence capture lost HEAD pin");
+    let odb_at = evidence
+        .find(odb)
+        .expect("evidence capture lost ODB callback");
+    assert!(
+        pinned_at < odb_at,
+        "HEAD must be pinned before ODB context construction"
+    );
+    assert!(
+        !evidence.contains("captureSnapshotContext(args);") && evidence.contains(odb),
+        "evidence capture must not use the plain dirty-worktree snapshot"
+    );
+
+    assert!(
+        source.contains(
+            "  } else if (args.mode === 'build-check') {\n    modeBuildCheck(args, captureSnapshotContext(args));\n  } else {"
+        ),
+        "build-check dispatch must retain the plain dirty-compatible snapshot"
+    );
+}
+
 fn copy_file(src: &Path, dst: &Path) {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent).expect("create skeleton parent dir");
