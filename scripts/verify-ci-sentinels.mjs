@@ -921,6 +921,16 @@ function verifyCiSentinels() {
           .flat();
         if (testTargets.length === 1) {
           candidateFiles = targetFiles;
+          if (pkgScope && CRATE_TEST_DIRS[pkgScope]) {
+            const targetDefinesSentinel = targetFiles.some((f) => {
+              if (!fs.existsSync(f)) return false;
+              const src = fs.readFileSync(f, 'utf8');
+              return new RegExp(`\\bfn\\s+${bareFn}\\s*[(<]`).test(src);
+            });
+            if (!targetDefinesSentinel) {
+              candidateFiles = listTestFiles(CRATE_TEST_DIRS[pkgScope]);
+            }
+          }
         } else {
           // Multi-target step: find which target file actually defines the
           // bare fn name, to disambiguate without relying on grep order.
@@ -1092,11 +1102,9 @@ function verifyCiSentinels() {
 // its own isolated marker invocation, both in the `aligned-vmem-hugetlb-real`
 // job -- see docs/CORRECTNESS_OPEN_ITEMS.md item 87's card for the full
 // re-derivation this bump pairs with, in the same commit.
-// Current tree update: the extracted `tagged-index-stack` package Loom gate
-// adds one plain `test <name> ... ok` sentinel for
-// `push_push_conservation`; item 87's authoritative current and Next-trigger
-// figures are raised with this floor from 75 to 76.
-const MIN_SENTINEL_COUNT = 76;
+// Current tree update: the tagged-index-stack repository-cfg release and
+// extracted-package rows add six live test sentinels.
+const MIN_SENTINEL_COUNT = 82;
 
 const { checkedCount, errors } = verifyCiSentinels();
 if (errors.length > 0) {

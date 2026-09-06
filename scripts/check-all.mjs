@@ -1048,6 +1048,11 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-ci-sentinels.mjs'],
   },
+  {
+    name: 'verify-root-package-list (published root exclusions)',
+    cmd: 'node',
+    args: ['scripts/verify-root-package-list.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);

@@ -781,7 +781,11 @@ jobs:
           CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
           # Re-run the extracted tests with the repository-only cfg. It is
           # deliberately not a Cargo feature and is never published.
-          RUSTFLAGS="--cfg tagged_index_stack_test" CARGO_TARGET_DIR="$extract_dir/pkg-test-target" cargo test
+          RUSTFLAGS="--cfg tagged_index_stack_test" CARGO_TARGET_DIR="$extract_dir/pkg-test-target" \
+            cargo test 2>&1 | tee "$RUNNER_TEMP/tagged-index-stack-packaged-repository-cfg.log"
+          grep -F "test backoff_progression_and_saturation_are_exact ... ok" "$RUNNER_TEMP/tagged-index-stack-packaged-repository-cfg.log"
+          grep -F "test seal_sequence_ok_ok_err_with_permanent_seal_after_drain ... ok" "$RUNNER_TEMP/tagged-index-stack-packaged-repository-cfg.log"
+          grep -F "test empty_transition_preserves_running_tag ... ok" "$RUNNER_TEMP/tagged-index-stack-packaged-repository-cfg.log"
           # `cargo test` does not build this bench target; compile it here to
           # catch missing packaged bench files or dev-dependencies before
           # publication.
@@ -1185,6 +1189,7 @@ jobs:
       # and its documented does/does-NOT-cover split (also recorded in
       # docs/CORRECTNESS_OPEN_ITEMS.md item 85).
       - run: node scripts/verify-ci-sentinels.mjs
+      - run: node scripts/verify-root-package-list.mjs
 
   commit-prefix-lint:
     # R31-5c (task #482): lints every commit in a PR's range against
@@ -1870,7 +1875,13 @@ jobs:
       # the deterministic backoff and terminal-seal assertions are
       # load-bearing. The cfg is declared in the crate manifest's check-cfg
       # table, so a typo is diagnosed instead of becoming a no-op.
-      - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo test -p tagged-index-stack --release --no-fail-fast
+      - run: |
+          set -euo pipefail
+          RUSTFLAGS="--cfg tagged_index_stack_test" cargo test -p tagged-index-stack --release --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+          grep -F "test backoff_progression_and_saturation_are_exact ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+          grep -F "test seal_sequence_ok_ok_err_with_permanent_seal_after_drain ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+          grep -F "test empty_transition_preserves_running_tag ... ok" "$RUNNER_TEMP/tagged-index-stack-repository-cfg-release.log"
+        shell: bash
       # Publish-readiness task #639 (P5, gap 2 of 4): the crate-scoped
       # `aligned-vmem` step above ran default-features-only, so 3 of the
       # crate's 4 test files (`fault_injection.rs`, `lazy_commit.rs`,

@@ -20,6 +20,7 @@
     "check:matrix": "node scripts/run-check-matrix.mjs",
     "check:stubs": "node scripts/verify-perf-gate-stubs.mjs",
     "verify-gate-reports": "node scripts/verify-gate-report.mjs",
+    "verify:root-package-list": "node scripts/verify-root-package-list.mjs",
     "check:commit-prefixes": "node scripts/verify-commit-prefixes.mjs",
     "harden": "node scripts/loom.mjs && node scripts/miri.mjs && node scripts/tsan.mjs && node scripts/asan.mjs"
   }
