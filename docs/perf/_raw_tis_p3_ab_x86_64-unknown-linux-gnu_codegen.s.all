@@ -489,7 +489,7 @@ _RNvXsa_NtNtCseJpwr1mI4s2_13tis_p3ab_base3tis3impNtB5_12TagExhaustedNtNtCscI6d9C
 	.p2align	3, 0x0
 .Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.1:
 	.quad	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.0
-	.asciz	"6\000\000\000\000\000\000\000b\000\000\000\r\000\000"
+	.asciz	"6\000\000\000\000\000\000\000c\000\000\000\r\000\000"
 	.size	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.1, 24
 
 	.type	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.2,@object
@@ -497,7 +497,7 @@ _RNvXsa_NtNtCseJpwr1mI4s2_13tis_p3ab_base3tis3impNtB5_12TagExhaustedNtNtCscI6d9C
 	.p2align	3, 0x0
 .Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.2:
 	.quad	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.0
-	.asciz	"6\000\000\000\000\000\000\000\\\000\000\000\016\000\000"
+	.asciz	"6\000\000\000\000\000\000\000]\000\000\000\016\000\000"
 	.size	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.2, 24
 
 	.type	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.3,@object
@@ -511,7 +511,7 @@ _RNvXsa_NtNtCseJpwr1mI4s2_13tis_p3ab_base3tis3impNtB5_12TagExhaustedNtNtCscI6d9C
 	.p2align	3, 0x0
 .Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.4:
 	.quad	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.0
-	.asciz	"6\000\000\000\000\000\000\000]\000\000\000\n\000\000"
+	.asciz	"6\000\000\000\000\000\000\000^\000\000\000\n\000\000"
 	.size	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.4, 24
 
 	.type	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.5,@object
@@ -557,7 +557,7 @@ _RNvXsa_NtNtCseJpwr1mI4s2_13tis_p3ab_base3tis3impNtB5_12TagExhaustedNtNtCscI6d9C
 	.p2align	3, 0x0
 .Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.11:
 	.quad	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.0
-	.asciz	"6\000\000\000\000\000\000\000*\000\000\000\n\000\000"
+	.asciz	"6\000\000\000\000\000\000\000+\000\000\000\n\000\000"
 	.size	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.11, 24
 
 	.type	.Lanon.1bc1dc19fd6cc5bec46c192bcc6b80a2.12,@object
@@ -1066,7 +1066,7 @@ _RNvXsa_NtNtCshNnv2WZPhEg_22tis_p3ab_links_relaxed3tis3impNtB5_12TagExhaustedNtN
 	.p2align	3, 0x0
 .Lanon.453f76bf35b353396e4cb5f56c68742a.1:
 	.quad	.Lanon.453f76bf35b353396e4cb5f56c68742a.0
-	.asciz	"?\000\000\000\000\000\000\000b\000\000\000\r\000\000"
+	.asciz	"?\000\000\000\000\000\000\000c\000\000\000\r\000\000"
 	.size	.Lanon.453f76bf35b353396e4cb5f56c68742a.1, 24
 
 	.type	.Lanon.453f76bf35b353396e4cb5f56c68742a.2,@object
@@ -1074,7 +1074,7 @@ _RNvXsa_NtNtCshNnv2WZPhEg_22tis_p3ab_links_relaxed3tis3impNtB5_12TagExhaustedNtN
 	.p2align	3, 0x0
 .Lanon.453f76bf35b353396e4cb5f56c68742a.2:
 	.quad	.Lanon.453f76bf35b353396e4cb5f56c68742a.0
-	.asciz	"?\000\000\000\000\000\000\000\\\000\000\000\016\000\000"
+	.asciz	"?\000\000\000\000\000\000\000]\000\000\000\016\000\000"
 	.size	.Lanon.453f76bf35b353396e4cb5f56c68742a.2, 24
 
 	.type	.Lanon.453f76bf35b353396e4cb5f56c68742a.3,@object
@@ -1088,7 +1088,7 @@ _RNvXsa_NtNtCshNnv2WZPhEg_22tis_p3ab_links_relaxed3tis3impNtB5_12TagExhaustedNtN
 	.p2align	3, 0x0
 .Lanon.453f76bf35b353396e4cb5f56c68742a.4:
 	.quad	.Lanon.453f76bf35b353396e4cb5f56c68742a.0
-	.asciz	"?\000\000\000\000\000\000\000]\000\000\000\n\000\000"
+	.asciz	"?\000\000\000\000\000\000\000^\000\000\000\n\000\000"
 	.size	.Lanon.453f76bf35b353396e4cb5f56c68742a.4, 24
 
 	.type	.Lanon.453f76bf35b353396e4cb5f56c68742a.5,@object
@@ -1134,7 +1134,7 @@ _RNvXsa_NtNtCshNnv2WZPhEg_22tis_p3ab_links_relaxed3tis3impNtB5_12TagExhaustedNtN
 	.p2align	3, 0x0
 .Lanon.453f76bf35b353396e4cb5f56c68742a.11:
 	.quad	.Lanon.453f76bf35b353396e4cb5f56c68742a.0
-	.asciz	"?\000\000\000\000\000\000\000*\000\000\000\n\000\000"
+	.asciz	"?\000\000\000\000\000\000\000+\000\000\000\n\000\000"
 	.size	.Lanon.453f76bf35b353396e4cb5f56c68742a.11, 24
 
 	.type	.Lanon.453f76bf35b353396e4cb5f56c68742a.12,@object
@@ -1643,7 +1643,7 @@ _RNvXsa_NtNtCseq9nsRR769q_17tis_p3ab_cas_weak3tis3impNtB5_12TagExhaustedNtNtCscI
 	.p2align	3, 0x0
 .Lanon.af96410ef9d3a74abc53a73b8e5821e1.1:
 	.quad	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.0
-	.asciz	":\000\000\000\000\000\000\000b\000\000\000\r\000\000"
+	.asciz	":\000\000\000\000\000\000\000c\000\000\000\r\000\000"
 	.size	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.1, 24
 
 	.type	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.2,@object
@@ -1651,7 +1651,7 @@ _RNvXsa_NtNtCseq9nsRR769q_17tis_p3ab_cas_weak3tis3impNtB5_12TagExhaustedNtNtCscI
 	.p2align	3, 0x0
 .Lanon.af96410ef9d3a74abc53a73b8e5821e1.2:
 	.quad	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.0
-	.asciz	":\000\000\000\000\000\000\000\\\000\000\000\016\000\000"
+	.asciz	":\000\000\000\000\000\000\000]\000\000\000\016\000\000"
 	.size	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.2, 24
 
 	.type	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.3,@object
@@ -1665,7 +1665,7 @@ _RNvXsa_NtNtCseq9nsRR769q_17tis_p3ab_cas_weak3tis3impNtB5_12TagExhaustedNtNtCscI
 	.p2align	3, 0x0
 .Lanon.af96410ef9d3a74abc53a73b8e5821e1.4:
 	.quad	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.0
-	.asciz	":\000\000\000\000\000\000\000]\000\000\000\n\000\000"
+	.asciz	":\000\000\000\000\000\000\000^\000\000\000\n\000\000"
 	.size	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.4, 24
 
 	.type	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.5,@object
@@ -1711,7 +1711,7 @@ _RNvXsa_NtNtCseq9nsRR769q_17tis_p3ab_cas_weak3tis3impNtB5_12TagExhaustedNtNtCscI
 	.p2align	3, 0x0
 .Lanon.af96410ef9d3a74abc53a73b8e5821e1.11:
 	.quad	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.0
-	.asciz	":\000\000\000\000\000\000\000*\000\000\000\n\000\000"
+	.asciz	":\000\000\000\000\000\000\000+\000\000\000\n\000\000"
 	.size	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.11, 24
 
 	.type	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.12,@object
@@ -1725,6 +1725,1179 @@ _RNvXsa_NtNtCseq9nsRR769q_17tis_p3ab_cas_weak3tis3impNtB5_12TagExhaustedNtNtCscI
 .Lanon.af96410ef9d3a74abc53a73b8e5821e1.13:
 	.ascii	"TagExhausted"
 	.size	.Lanon.af96410ef9d3a74abc53a73b8e5821e1.13, 12
+
+	.ident	"rustc version 1.97.0 (2d8144b78 2026-07-07)"
+	.section	".note.GNU-stack","",@progbits
+
+# ===== features: default variant: pop_success_relaxed =====
+	.file	"tis_p3ab_pop_success_relaxed.598d900fe2ed62f9-cgu.0"
+	.section	.text._RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate,"ax",@progbits
+	.globl	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate
+	.p2align	4
+	.type	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate,@function
+_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset %rbp, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register %rbp
+	pushq	%rbx
+	andq	$-64, %rsp
+	subq	$64, %rsp
+	movq	$0, (%rsp)
+	movq	%rsp, %r11
+	subq	$32768, %r11
+.LBB0_1:
+	subq	$4096, %rsp
+	movq	$0, (%rsp)
+	cmpq	%r11, %rsp
+	jne	.LBB0_1
+	subq	$64, %rsp
+	.cfi_offset %rbx, -24
+	xorl	%eax, %eax
+	xorps	%xmm0, %xmm0
+	.p2align	4
+.LBB0_3:
+	movaps	%xmm0, 48(%rsp,%rax)
+	movaps	%xmm0, 32(%rsp,%rax)
+	movaps	%xmm0, 16(%rsp,%rax)
+	movaps	%xmm0, (%rsp,%rax)
+	addq	$64, %rax
+	cmpq	$16384, %rax
+	jne	.LBB0_3
+	movq	$65535, 32768(%rsp)
+	leaq	16384(%rsp), %rbx
+	movq	%rsp, %rsi
+	movl	$16384, %edx
+	movq	%rbx, %rdi
+	callq	*memcpy@GOTPCREL(%rip)
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	movl	$-1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %edx
+	callq	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	callq	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	callq	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	callq	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl
+	leaq	-8(%rbp), %rsp
+	popq	%rbx
+	popq	%rbp
+	.cfi_def_cfa %rsp, 8
+	retq
+.Lfunc_end0:
+	.size	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate, .Lfunc_end0-_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed11instantiate
+	.cfi_endproc
+
+	.section	.text._RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next,@function
+_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$256, %esi
+	jae	.LBB1_2
+	shlq	$6, %rdi
+	movl	(%rax,%rdi), %eax
+	retq
+.LBB1_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end1:
+	.size	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next, .Lfunc_end1-_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed19tis_probe_load_next
+	.cfi_endproc
+
+	.section	.text._RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next,@function
+_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$256, %esi
+	jae	.LBB2_2
+	shlq	$6, %rdi
+	movl	%edx, (%rax,%rdi)
+	retq
+.LBB2_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end2:
+	.size	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next, .Lfunc_end2-_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed20tis_probe_store_next
+	.cfi_endproc
+
+	.section	.text._RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl,@function
+_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl:
+	.cfi_startproc
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	movq	16384(%rdi), %rax
+	movzwl	%ax, %r8d
+	cmpq	$65535, %r8
+	jne	.LBB3_1
+.LBB3_15:
+	popq	%rax
+	.cfi_def_cfa_offset 8
+	retq
+.LBB3_1:
+	.cfi_def_cfa_offset 16
+	cmpl	$255, %r8d
+	ja	.LBB3_14
+	xorl	%edx, %edx
+	.p2align	4
+.LBB3_3:
+	movq	%r8, %rcx
+	shlq	$6, %rcx
+	movl	(%rdi,%rcx), %esi
+	cmpl	$-1, %esi
+	je	.LBB3_7
+	cmpl	$65534, %esi
+	ja	.LBB3_6
+	cmpl	%r8d, %esi
+	je	.LBB3_6
+	movq	%rax, %rcx
+	andq	$-65536, %rcx
+	orq	%rsi, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	jne	.LBB3_10
+	jmp	.LBB3_15
+	.p2align	4
+.LBB3_7:
+	movq	%rax, %rcx
+	orq	$65535, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	je	.LBB3_15
+.LBB3_10:
+	movzwl	%ax, %r8d
+	cmpq	$65535, %r8
+	je	.LBB3_15
+	movl	%edx, %ecx
+	andl	$31, %ecx
+	movl	$1, %esi
+	.p2align	4
+.LBB3_12:
+	pause
+	movl	%esi, %r9d
+	shrl	%cl, %r9d
+	incl	%esi
+	testl	%r9d, %r9d
+	je	.LBB3_12
+	cmpl	$6, %edx
+	adcl	$0, %edx
+	cmpl	$256, %r8d
+	jb	.LBB3_3
+.LBB3_14:
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	movq	%r8, %rdi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.LBB3_6:
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.1(%rip), %rcx
+	movl	$65535, %edx
+	movl	%r8d, %edi
+	callq	*_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range@GOTPCREL(%rip)
+.Lfunc_end3:
+	.size	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl, .Lfunc_end3-_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed24tis_probe_pop_index_impl
+	.cfi_endproc
+
+	.section	.text._RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl,@function
+_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl:
+	.cfi_startproc
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	cmpl	$65534, %esi
+	ja	.LBB4_10
+	movq	16384(%rdi), %rax
+	cmpq	$-65537, %rax
+	ja	.LBB4_12
+	movl	%esi, %r8d
+	cmpl	$255, %esi
+	ja	.LBB4_11
+	movq	%r8, %rdx
+	orq	$65536, %rdx
+	shlq	$6, %r8
+	addq	%rdi, %r8
+	movzwl	%ax, %ecx
+	cmpq	$65535, %rcx
+	movl	$-1, %esi
+	cmovel	%esi, %ecx
+	movl	%ecx, (%r8)
+	movq	%rax, %rcx
+	andq	$-65536, %rcx
+	addq	%rdx, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	je	.LBB4_9
+	xorl	%r9d, %r9d
+	.p2align	4
+.LBB4_5:
+	movl	%r9d, %ecx
+	andl	$31, %ecx
+	movl	$1, %r10d
+	.p2align	4
+.LBB4_6:
+	pause
+	movl	%r10d, %r11d
+	shrl	%cl, %r11d
+	incl	%r10d
+	testl	%r11d, %r11d
+	je	.LBB4_6
+	cmpq	$-65537, %rax
+	ja	.LBB4_12
+	cmpl	$6, %r9d
+	adcl	$0, %r9d
+	movzwl	%ax, %ecx
+	cmpq	$65535, %rcx
+	cmovel	%esi, %ecx
+	movl	%ecx, (%r8)
+	movq	%rax, %rcx
+	andq	$-65536, %rcx
+	addq	%rdx, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	jne	.LBB4_5
+.LBB4_9:
+	popq	%rax
+	.cfi_def_cfa_offset 8
+	retq
+.LBB4_12:
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.3(%rip), %rdi
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.5(%rip), %rcx
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.4(%rip), %r8
+	leaq	7(%rsp), %rdx
+	movl	$32, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core6result13unwrap_failed@GOTPCREL(%rip)
+.LBB4_10:
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.2(%rip), %rdx
+	movl	%esi, %edi
+	movl	$65535, %esi
+	callq	*_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range@GOTPCREL(%rip)
+.LBB4_11:
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	movq	%r8, %rdi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end4:
+	.size	_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl, .Lfunc_end4-_RNvCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed25tis_probe_push_index_impl
+	.cfi_endproc
+
+	.section	.text.unlikely._RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range,"ax",@progbits
+	.globl	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range
+	.p2align	4
+	.type	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range,@function
+_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range:
+	.cfi_startproc
+	subq	$104, %rsp
+	.cfi_def_cfa_offset 112
+	movl	%edi, 8(%rsp)
+	movl	%esi, 12(%rsp)
+	movq	%rdx, 16(%rsp)
+	cmpl	%edi, %esi
+	jne	.LBB5_1
+	leaq	8(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsu_NtNtCscI6d9CVNmLh_4core3fmt3nummNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.9(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	movq	%rcx, %rdx
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.LBB5_1:
+	andl	%edx, %esi
+	xorl	%eax, %eax
+	cmpq	%rdx, %rsi
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.7(%rip), %rdx
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.6(%rip), %rsi
+	cmoveq	%rdx, %rsi
+	setne	%al
+	leaq	53(%rax,%rax,2), %rax
+	movq	%rsi, 88(%rsp)
+	movq	%rax, 96(%rsp)
+	leaq	8(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsu_NtNtCscI6d9CVNmLh_4core3fmt3nummNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	16(%rsp), %rax
+	movq	%rax, 56(%rsp)
+	movq	_RNvXsC_NtNtCscI6d9CVNmLh_4core3fmt3numyNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 64(%rsp)
+	leaq	88(%rsp), %rax
+	movq	%rax, 72(%rsp)
+	leaq	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed(%rip), %rax
+	movq	%rax, 80(%rsp)
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.8(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	movq	%rcx, %rdx
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.Lfunc_end5:
+	.size	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range, .Lfunc_end5-_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp21pop_link_out_of_range
+	.cfi_endproc
+
+	.section	.text.unlikely._RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range,"ax",@progbits
+	.globl	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range
+	.p2align	4
+	.type	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range,@function
+_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range:
+	.cfi_startproc
+	subq	$56, %rsp
+	.cfi_def_cfa_offset 64
+	movl	%edi, 12(%rsp)
+	movq	%rsi, 16(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	16(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsC_NtNtCscI6d9CVNmLh_4core3fmt3numyNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.10(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.Lfunc_end6:
+	.size	_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range, .Lfunc_end6-_RNvNtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3imp23push_index_out_of_range
+	.cfi_endproc
+
+	.section	.text._RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next,"ax",@progbits
+	.globl	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next
+	.p2align	4
+	.type	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next,@function
+_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$255, %esi
+	ja	.LBB7_2
+	shlq	$6, %rdi
+	movl	%edx, (%rax,%rdi)
+	retq
+.LBB7_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end7:
+	.size	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next, .Lfunc_end7-_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next
+	.cfi_endproc
+
+	.section	.text._RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next,"ax",@progbits
+	.globl	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next
+	.p2align	4
+	.type	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next,@function
+_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$255, %esi
+	ja	.LBB8_2
+	shlq	$6, %rdi
+	movl	(%rax,%rdi), %eax
+	retq
+.LBB8_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end8:
+	.size	_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next, .Lfunc_end8-_RNvXs0_Cs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next
+	.cfi_endproc
+
+	.section	.text._RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt,"ax",@progbits
+	.globl	_RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt
+	.p2align	4
+	.type	_RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt,@function
+_RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt:
+	.cfi_startproc
+	movq	(%rsi), %rdi
+	movq	8(%rsi), %rax
+	movq	24(%rax), %rax
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.12(%rip), %rsi
+	movl	$152, %edx
+	jmpq	*%rax
+.Lfunc_end9:
+	.size	_RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt, .Lfunc_end9-_RNvXs0_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt
+	.cfi_endproc
+
+	.section	.text._RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed,"ax",@progbits
+	.p2align	4
+	.type	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed,@function
+_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed:
+	.cfi_startproc
+	movq	%rsi, %rdx
+	movq	(%rdi), %rax
+	movq	8(%rdi), %rsi
+	movq	%rax, %rdi
+	jmpq	*_RNvXsi_NtCscI6d9CVNmLh_4core3fmteNtB5_7Display3fmt@GOTPCREL(%rip)
+.Lfunc_end10:
+	.size	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed, .Lfunc_end10-_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed
+	.cfi_endproc
+
+	.section	.text._RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt,"ax",@progbits
+	.p2align	4
+	.type	_RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt,@function
+_RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt:
+	.cfi_startproc
+	movq	%rsi, %rdi
+	leaq	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.13(%rip), %rsi
+	movl	$12, %edx
+	jmpq	*_RNvMsa_NtCscI6d9CVNmLh_4core3fmtNtB5_9Formatter9write_str@GOTPCREL(%rip)
+.Lfunc_end11:
+	.size	_RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt, .Lfunc_end11-_RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt
+	.cfi_endproc
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0,@object
+	.section	.rodata.str1.1,"aMS",@progbits,1
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0:
+	.asciz	"SCRATCH\\x86_64-unknown-linux-gnu\\pop_success_relaxed\\force_codegen.rs"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0, 70
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.1,@object
+	.section	.data.rel.ro..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.1,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.1:
+	.quad	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0
+	.asciz	"E\000\000\000\000\000\000\000c\000\000\000\r\000\000"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.1, 24
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.2,@object
+	.section	.data.rel.ro..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.2,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.2:
+	.quad	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0
+	.asciz	"E\000\000\000\000\000\000\000]\000\000\000\016\000\000"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.2, 24
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.3,@object
+	.section	.rodata.cst32,"aM",@progbits,32
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.3:
+	.ascii	"codegen probe push must not seal"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.3, 32
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.4,@object
+	.section	.data.rel.ro..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.4,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.4:
+	.quad	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0
+	.asciz	"E\000\000\000\000\000\000\000^\000\000\000\n\000\000"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.4, 24
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.5,@object
+	.section	.data.rel.ro..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.5,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.5:
+	.asciz	"\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\001\000\000\000\000\000\000"
+	.quad	_RNvXsa_NtNtCs7GGGeYBHN0X_28tis_p3ab_pop_success_relaxed3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.5, 32
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.6,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.6,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.6:
+	.ascii	"a wrong index, possibly a live one \342\200\224 double-issuing it"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.6, 56
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.7,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.7,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.7:
+	.ascii	"the EMPTY SENTINEL, leaking the whole remaining chain"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.7, 53
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.8,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.8,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.8:
+	.asciz	"\nload_next(\300\013) returned \301 \000\200`$, neither TAIL nor a valid index (< \301 \000\200`=): pop_index's truncating pack would silently truncate it to \300"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.8, 135
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.9,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.9,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.9:
+	.asciz	"\nload_next(\300\013) returned \301 \000\200`\200\272\000, the index's own link points back to itself \342\200\224 a self-loop, corrupting the free-list into a cycle: pop_index's truncating pack would silently re-issue this same index to a second owner"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.9, 219
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.10,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.10,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.10:
+	.asciz	"Aindex must be < INDEX_MASK (the empty sentinel is reserved), got \300\017 (INDEX_MASK = \301 \000\200`\001)"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.10, 91
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11,@object
+	.section	.data.rel.ro..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11:
+	.quad	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.0
+	.asciz	"E\000\000\000\000\000\000\000+\000\000\000\n\000\000"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.11, 24
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.12,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.12,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.12:
+	.ascii	"tagged-index-stack: push refused, the head's tag has reached TaggedIndex::TAG_MAX; the stack is sealed (pops still work, pushes are refused permanently)"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.12, 152
+
+	.type	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.13,@object
+	.section	.rodata..Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.13,"a",@progbits
+.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.13:
+	.ascii	"TagExhausted"
+	.size	.Lanon.c84ff10ad2f5fe61d856f7dc115b6e99.13, 12
+
+	.ident	"rustc version 1.97.0 (2d8144b78 2026-07-07)"
+	.section	".note.GNU-stack","",@progbits
+
+# ===== features: default variant: store_elided =====
+	.file	"tis_p3ab_store_elided.657aef11301e4192-cgu.0"
+	.section	.text._RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate,"ax",@progbits
+	.globl	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate
+	.p2align	4
+	.type	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate,@function
+_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset %rbp, -16
+	movq	%rsp, %rbp
+	.cfi_def_cfa_register %rbp
+	pushq	%rbx
+	andq	$-64, %rsp
+	subq	$64, %rsp
+	movq	$0, (%rsp)
+	movq	%rsp, %r11
+	subq	$32768, %r11
+.LBB0_1:
+	subq	$4096, %rsp
+	movq	$0, (%rsp)
+	cmpq	%r11, %rsp
+	jne	.LBB0_1
+	subq	$64, %rsp
+	.cfi_offset %rbx, -24
+	xorl	%eax, %eax
+	xorps	%xmm0, %xmm0
+	.p2align	4
+.LBB0_3:
+	movaps	%xmm0, 48(%rsp,%rax)
+	movaps	%xmm0, 32(%rsp,%rax)
+	movaps	%xmm0, 16(%rsp,%rax)
+	movaps	%xmm0, (%rsp,%rax)
+	addq	$64, %rax
+	cmpq	$16384, %rax
+	jne	.LBB0_3
+	movq	$65535, 32768(%rsp)
+	leaq	16384(%rsp), %rbx
+	movq	%rsp, %rsi
+	movl	$16384, %edx
+	movq	%rbx, %rdi
+	callq	*memcpy@GOTPCREL(%rip)
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	movl	$-1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %edx
+	callq	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	callq	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	movl	$1, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movl	(%rsp), %esi
+	callq	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl
+	#APP
+	#NO_APP
+	movq	%rbx, (%rsp)
+	movq	%rsp, %rax
+	#APP
+	#NO_APP
+	movq	(%rsp), %rdi
+	callq	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl
+	leaq	-8(%rbp), %rsp
+	popq	%rbx
+	popq	%rbp
+	.cfi_def_cfa %rsp, 8
+	retq
+.Lfunc_end0:
+	.size	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate, .Lfunc_end0-_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided11instantiate
+	.cfi_endproc
+
+	.section	.text._RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next,@function
+_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$256, %esi
+	jae	.LBB1_2
+	shlq	$6, %rdi
+	movl	(%rax,%rdi), %eax
+	retq
+.LBB1_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end1:
+	.size	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next, .Lfunc_end1-_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided19tis_probe_load_next
+	.cfi_endproc
+
+	.section	.text._RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next,@function
+_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$256, %esi
+	jae	.LBB2_2
+	shlq	$6, %rdi
+	movl	%edx, (%rax,%rdi)
+	retq
+.LBB2_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end2:
+	.size	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next, .Lfunc_end2-_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided20tis_probe_store_next
+	.cfi_endproc
+
+	.section	.text._RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl,@function
+_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl:
+	.cfi_startproc
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	movq	16384(%rdi), %rax
+	movzwl	%ax, %r8d
+	cmpq	$65535, %r8
+	jne	.LBB3_1
+.LBB3_15:
+	popq	%rax
+	.cfi_def_cfa_offset 8
+	retq
+.LBB3_1:
+	.cfi_def_cfa_offset 16
+	cmpl	$255, %r8d
+	ja	.LBB3_14
+	xorl	%edx, %edx
+	.p2align	4
+.LBB3_3:
+	movq	%r8, %rcx
+	shlq	$6, %rcx
+	movl	(%rdi,%rcx), %esi
+	cmpl	$-1, %esi
+	je	.LBB3_7
+	cmpl	$65534, %esi
+	ja	.LBB3_6
+	cmpl	%r8d, %esi
+	je	.LBB3_6
+	movq	%rax, %rcx
+	andq	$-65536, %rcx
+	orq	%rsi, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	jne	.LBB3_10
+	jmp	.LBB3_15
+	.p2align	4
+.LBB3_7:
+	movq	%rax, %rcx
+	orq	$65535, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	je	.LBB3_15
+.LBB3_10:
+	movzwl	%ax, %r8d
+	cmpq	$65535, %r8
+	je	.LBB3_15
+	movl	%edx, %ecx
+	andl	$31, %ecx
+	movl	$1, %esi
+	.p2align	4
+.LBB3_12:
+	pause
+	movl	%esi, %r9d
+	shrl	%cl, %r9d
+	incl	%esi
+	testl	%r9d, %r9d
+	je	.LBB3_12
+	cmpl	$6, %edx
+	adcl	$0, %edx
+	cmpl	$256, %r8d
+	jb	.LBB3_3
+.LBB3_14:
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	movq	%r8, %rdi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.LBB3_6:
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.1(%rip), %rcx
+	movl	$65535, %edx
+	movl	%r8d, %edi
+	callq	*_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range@GOTPCREL(%rip)
+.Lfunc_end3:
+	.size	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl, .Lfunc_end3-_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided24tis_probe_pop_index_impl
+	.cfi_endproc
+
+	.section	.text._RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl,"ax",@progbits
+	.p2align	4
+	.type	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl,@function
+_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	pushq	%r14
+	.cfi_def_cfa_offset 24
+	pushq	%rbx
+	.cfi_def_cfa_offset 32
+	subq	$16, %rsp
+	.cfi_def_cfa_offset 48
+	.cfi_offset %rbx, -32
+	.cfi_offset %r14, -24
+	.cfi_offset %rbp, -16
+	cmpl	$65534, %esi
+	ja	.LBB4_11
+	movq	16384(%rdi), %rax
+	cmpq	$-65537, %rax
+	ja	.LBB4_10
+	movl	%esi, %r8d
+	cmpl	$255, %esi
+	ja	.LBB4_12
+	movq	%r8, %rdx
+	orq	$65536, %rdx
+	shlq	$6, %r8
+	addq	%rdi, %r8
+	xorl	%esi, %esi
+	movl	$-1, %r9d
+	xorl	%ecx, %ecx
+	.p2align	4
+.LBB4_4:
+	movzwl	%ax, %ebx
+	cmpq	$65535, %rbx
+	movl	%ebx, %ebp
+	cmovel	%r9d, %ebp
+	cmpl	%ebx, %r11d
+	sete	%r14b
+	andb	%cl, %r14b
+	cmpl	%ebp, %r10d
+	sete	%cl
+	testb	%cl, %r14b
+	jne	.LBB4_6
+	movl	%ebp, (%r8)
+	movl	%ebp, %r10d
+	movl	%ebx, %r11d
+.LBB4_6:
+	movq	%rax, %rcx
+	andq	$-65536, %rcx
+	addq	%rdx, %rcx
+	lock		cmpxchgq	%rcx, 16384(%rdi)
+	je	.LBB4_13
+	movl	%esi, %ecx
+	andl	$31, %ecx
+	movl	$1, %ebx
+	.p2align	4
+.LBB4_8:
+	pause
+	movl	%ebx, %ebp
+	shrl	%cl, %ebp
+	incl	%ebx
+	testl	%ebp, %ebp
+	je	.LBB4_8
+	cmpl	$6, %esi
+	adcl	$0, %esi
+	movb	$1, %cl
+	cmpq	$-65537, %rax
+	jbe	.LBB4_4
+.LBB4_10:
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.3(%rip), %rdi
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.5(%rip), %rcx
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.4(%rip), %r8
+	leaq	15(%rsp), %rdx
+	movl	$32, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core6result13unwrap_failed@GOTPCREL(%rip)
+.LBB4_13:
+	addq	$16, %rsp
+	.cfi_def_cfa_offset 32
+	popq	%rbx
+	.cfi_def_cfa_offset 24
+	popq	%r14
+	.cfi_def_cfa_offset 16
+	popq	%rbp
+	.cfi_def_cfa_offset 8
+	retq
+.LBB4_11:
+	.cfi_def_cfa_offset 48
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.2(%rip), %rdx
+	movl	%esi, %edi
+	movl	$65535, %esi
+	callq	*_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range@GOTPCREL(%rip)
+.LBB4_12:
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	movq	%r8, %rdi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end4:
+	.size	_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl, .Lfunc_end4-_RNvCs8IaXxhSHeUw_21tis_p3ab_store_elided25tis_probe_push_index_impl
+	.cfi_endproc
+
+	.section	.text.unlikely._RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range,"ax",@progbits
+	.globl	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range
+	.p2align	4
+	.type	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range,@function
+_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range:
+	.cfi_startproc
+	subq	$104, %rsp
+	.cfi_def_cfa_offset 112
+	movl	%edi, 8(%rsp)
+	movl	%esi, 12(%rsp)
+	movq	%rdx, 16(%rsp)
+	cmpl	%edi, %esi
+	jne	.LBB5_1
+	leaq	8(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsu_NtNtCscI6d9CVNmLh_4core3fmt3nummNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.9(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	movq	%rcx, %rdx
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.LBB5_1:
+	andl	%edx, %esi
+	xorl	%eax, %eax
+	cmpq	%rdx, %rsi
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.7(%rip), %rdx
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.6(%rip), %rsi
+	cmoveq	%rdx, %rsi
+	setne	%al
+	leaq	53(%rax,%rax,2), %rax
+	movq	%rsi, 88(%rsp)
+	movq	%rax, 96(%rsp)
+	leaq	8(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsu_NtNtCscI6d9CVNmLh_4core3fmt3nummNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	16(%rsp), %rax
+	movq	%rax, 56(%rsp)
+	movq	_RNvXsC_NtNtCscI6d9CVNmLh_4core3fmt3numyNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 64(%rsp)
+	leaq	88(%rsp), %rax
+	movq	%rax, 72(%rsp)
+	leaq	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided(%rip), %rax
+	movq	%rax, 80(%rsp)
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.8(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	movq	%rcx, %rdx
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.Lfunc_end5:
+	.size	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range, .Lfunc_end5-_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp21pop_link_out_of_range
+	.cfi_endproc
+
+	.section	.text.unlikely._RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range,"ax",@progbits
+	.globl	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range
+	.p2align	4
+	.type	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range,@function
+_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range:
+	.cfi_startproc
+	subq	$56, %rsp
+	.cfi_def_cfa_offset 64
+	movl	%edi, 12(%rsp)
+	movq	%rsi, 16(%rsp)
+	leaq	12(%rsp), %rax
+	movq	%rax, 24(%rsp)
+	movq	_RNvXs8_NtNtNtCscI6d9CVNmLh_4core3fmt3num3impmNtB9_7Display3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 32(%rsp)
+	leaq	16(%rsp), %rax
+	movq	%rax, 40(%rsp)
+	movq	_RNvXsC_NtNtCscI6d9CVNmLh_4core3fmt3numyNtB7_8LowerHex3fmt@GOTPCREL(%rip), %rax
+	movq	%rax, 48(%rsp)
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.10(%rip), %rdi
+	leaq	24(%rsp), %rsi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking9panic_fmt@GOTPCREL(%rip)
+.Lfunc_end6:
+	.size	_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range, .Lfunc_end6-_RNvNtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3imp23push_index_out_of_range
+	.cfi_endproc
+
+	.section	.text._RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next,"ax",@progbits
+	.globl	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next
+	.p2align	4
+	.type	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next,@function
+_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$255, %esi
+	ja	.LBB7_2
+	shlq	$6, %rdi
+	movl	%edx, (%rax,%rdi)
+	retq
+.LBB7_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end7:
+	.size	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next, .Lfunc_end7-_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E10store_next
+	.cfi_endproc
+
+	.section	.text._RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next,"ax",@progbits
+	.globl	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next
+	.p2align	4
+	.type	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next,@function
+_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next:
+	.cfi_startproc
+	movq	%rdi, %rax
+	movl	%esi, %edi
+	cmpl	$255, %esi
+	ja	.LBB8_2
+	shlq	$6, %rdi
+	movl	(%rax,%rdi), %eax
+	retq
+.LBB8_2:
+	pushq	%rax
+	.cfi_def_cfa_offset 16
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.11(%rip), %rdx
+	movl	$256, %esi
+	callq	*_RNvNtCscI6d9CVNmLh_4core9panicking18panic_bounds_check@GOTPCREL(%rip)
+.Lfunc_end8:
+	.size	_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next, .Lfunc_end8-_RNvXs0_Cs8IaXxhSHeUw_21tis_p3ab_store_elidedNtB5_21RegistryShapedStorageINtNtNtB5_3tis3imp12StackStorageKm10_E9load_next
+	.cfi_endproc
+
+	.section	.text._RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt,"ax",@progbits
+	.globl	_RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt
+	.p2align	4
+	.type	_RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt,@function
+_RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt:
+	.cfi_startproc
+	movq	(%rsi), %rdi
+	movq	8(%rsi), %rax
+	movq	24(%rax), %rax
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.12(%rip), %rsi
+	movl	$152, %edx
+	jmpq	*%rax
+.Lfunc_end9:
+	.size	_RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt, .Lfunc_end9-_RNvXs0_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt7Display3fmt
+	.cfi_endproc
+
+	.section	.text._RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided,"ax",@progbits
+	.p2align	4
+	.type	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided,@function
+_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided:
+	.cfi_startproc
+	movq	%rsi, %rdx
+	movq	(%rdi), %rax
+	movq	8(%rdi), %rsi
+	movq	%rax, %rdi
+	jmpq	*_RNvXsi_NtCscI6d9CVNmLh_4core3fmteNtB5_7Display3fmt@GOTPCREL(%rip)
+.Lfunc_end10:
+	.size	_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided, .Lfunc_end10-_RNvXs1i_NtCscI6d9CVNmLh_4core3fmtReNtB6_7Display3fmtCs8IaXxhSHeUw_21tis_p3ab_store_elided
+	.cfi_endproc
+
+	.section	.text._RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt,"ax",@progbits
+	.p2align	4
+	.type	_RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt,@function
+_RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt:
+	.cfi_startproc
+	movq	%rsi, %rdi
+	leaq	.Lanon.64dc336d6b5788ce0bc895b75107f184.13(%rip), %rsi
+	movl	$12, %edx
+	jmpq	*_RNvMsa_NtCscI6d9CVNmLh_4core3fmtNtB5_9Formatter9write_str@GOTPCREL(%rip)
+.Lfunc_end11:
+	.size	_RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt, .Lfunc_end11-_RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt
+	.cfi_endproc
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.0,@object
+	.section	.rodata.str1.1,"aMS",@progbits,1
+.Lanon.64dc336d6b5788ce0bc895b75107f184.0:
+	.asciz	"SCRATCH\\x86_64-unknown-linux-gnu\\store_elided\\force_codegen.rs"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.0, 63
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.1,@object
+	.section	.data.rel.ro..Lanon.64dc336d6b5788ce0bc895b75107f184.1,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.64dc336d6b5788ce0bc895b75107f184.1:
+	.quad	.Lanon.64dc336d6b5788ce0bc895b75107f184.0
+	.asciz	">\000\000\000\000\000\000\000c\000\000\000\r\000\000"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.1, 24
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.2,@object
+	.section	.data.rel.ro..Lanon.64dc336d6b5788ce0bc895b75107f184.2,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.64dc336d6b5788ce0bc895b75107f184.2:
+	.quad	.Lanon.64dc336d6b5788ce0bc895b75107f184.0
+	.asciz	">\000\000\000\000\000\000\000]\000\000\000\016\000\000"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.2, 24
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.3,@object
+	.section	.rodata.cst32,"aM",@progbits,32
+.Lanon.64dc336d6b5788ce0bc895b75107f184.3:
+	.ascii	"codegen probe push must not seal"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.3, 32
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.4,@object
+	.section	.data.rel.ro..Lanon.64dc336d6b5788ce0bc895b75107f184.4,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.64dc336d6b5788ce0bc895b75107f184.4:
+	.quad	.Lanon.64dc336d6b5788ce0bc895b75107f184.0
+	.asciz	">\000\000\000\000\000\000\000^\000\000\000\n\000\000"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.4, 24
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.5,@object
+	.section	.data.rel.ro..Lanon.64dc336d6b5788ce0bc895b75107f184.5,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.64dc336d6b5788ce0bc895b75107f184.5:
+	.asciz	"\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\001\000\000\000\000\000\000"
+	.quad	_RNvXsa_NtNtCs8IaXxhSHeUw_21tis_p3ab_store_elided3tis3impNtB5_12TagExhaustedNtNtCscI6d9CVNmLh_4core3fmt5Debug3fmt
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.5, 32
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.6,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.6,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.6:
+	.ascii	"a wrong index, possibly a live one \342\200\224 double-issuing it"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.6, 56
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.7,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.7,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.7:
+	.ascii	"the EMPTY SENTINEL, leaking the whole remaining chain"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.7, 53
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.8,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.8,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.8:
+	.asciz	"\nload_next(\300\013) returned \301 \000\200`$, neither TAIL nor a valid index (< \301 \000\200`=): pop_index's truncating pack would silently truncate it to \300"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.8, 135
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.9,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.9,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.9:
+	.asciz	"\nload_next(\300\013) returned \301 \000\200`\200\272\000, the index's own link points back to itself \342\200\224 a self-loop, corrupting the free-list into a cycle: pop_index's truncating pack would silently re-issue this same index to a second owner"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.9, 219
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.10,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.10,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.10:
+	.asciz	"Aindex must be < INDEX_MASK (the empty sentinel is reserved), got \300\017 (INDEX_MASK = \301 \000\200`\001)"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.10, 91
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.11,@object
+	.section	.data.rel.ro..Lanon.64dc336d6b5788ce0bc895b75107f184.11,"aw",@progbits
+	.p2align	3, 0x0
+.Lanon.64dc336d6b5788ce0bc895b75107f184.11:
+	.quad	.Lanon.64dc336d6b5788ce0bc895b75107f184.0
+	.asciz	">\000\000\000\000\000\000\000+\000\000\000\n\000\000"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.11, 24
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.12,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.12,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.12:
+	.ascii	"tagged-index-stack: push refused, the head's tag has reached TaggedIndex::TAG_MAX; the stack is sealed (pops still work, pushes are refused permanently)"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.12, 152
+
+	.type	.Lanon.64dc336d6b5788ce0bc895b75107f184.13,@object
+	.section	.rodata..Lanon.64dc336d6b5788ce0bc895b75107f184.13,"a",@progbits
+.Lanon.64dc336d6b5788ce0bc895b75107f184.13:
+	.ascii	"TagExhausted"
+	.size	.Lanon.64dc336d6b5788ce0bc895b75107f184.13, 12
 
 	.ident	"rustc version 1.97.0 (2d8144b78 2026-07-07)"
 	.section	".note.GNU-stack","",@progbits
