@@ -59,9 +59,17 @@ const scriptDir = path.dirname(scriptPath);
 // repo root is three levels up from this script
 // (<repoRoot>/crates/tagged-index-stack/scripts/).
 const repoRoot = path.resolve(scriptDir, '..', '..', '..');
-const srcDir = path.join(repoRoot, 'crates', 'tagged-index-stack', 'src');
-const tmplDir = path.join(scriptDir, 'tis_p3_ab');
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
+const SOURCE_INPUT_RELATIVE_PATHS = Object.freeze([
+  'crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
+  '.cargo/config.toml',
+  'crates/tagged-index-stack/src/lib.rs',
+  'crates/tagged-index-stack/src/imp.rs',
+  'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl',
+  'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs',
+  'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl',
+]);
+const CARGO_CONFIG_RELATIVE_PATH = '.cargo/config.toml';
 // Dedicated scratch root: the ONLY directory tree this runner ever creates
 // or deletes inside. Created FRESH by each top-level mode invocation via
 // mkdtemp under <repoRoot>/target/: the full path is
@@ -409,29 +417,18 @@ function directRustcChildEnv() {
   return childEnv;
 }
 
-function sourceInputManifest() {
-  // Cargo discovers the repository config through the scratch path's ancestors.
-  const files = [
-    scriptPath,
-    path.join(repoRoot, '.cargo', 'config.toml'),
-    path.join(srcDir, 'lib.rs'),
-    path.join(srcDir, 'imp.rs'),
-  ];
-  // Keep one digest across codegen and wall-clock legs: every template that
-  // any runner mode can copy/substitute is part of the source identity.
-  files.push(
-    path.join(tmplDir, 'codegen_wrapper.rs.tmpl'),
-    path.join(tmplDir, 'harness_bin.rs'),
-    path.join(tmplDir, 'scratch_Cargo.toml.tmpl'),
-  );
-  const manifest = files.map((file) => {
-    const bytes = fs.readFileSync(file);
+function sourceInputManifest(readBytes = (_relativePath, file) => fs.readFileSync(file)) {
+  // Keep one digest across codegen and wall-clock legs: every source or
+  // template that any runner mode can consume is part of the identity.
+  const manifest = SOURCE_INPUT_RELATIVE_PATHS.map((relativePath) => {
+    const file = path.join(repoRoot, ...relativePath.split('/'));
+    const bytes = readBytes(relativePath, file);
+    assert(Buffer.isBuffer(bytes), `source input reader returned non-Buffer bytes for ${relativePath}`);
     return {
-      path: path.relative(repoRoot, file).replaceAll(path.sep, '/'),
+      path: relativePath,
       bytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       snapshotBytes: bytes,
-      file,
     };
   });
   const digest = createHash('sha256');
@@ -447,9 +444,59 @@ function sourceInputManifest() {
   }
   return {
     digest: digest.digest('hex'),
-    files: manifest.map(({ file, snapshotBytes, ...item }) => item),
+    files: manifest.map(({ snapshotBytes, ...item }) => item),
     snapshot: new Map(manifest.map((item) => [item.path, item.snapshotBytes])),
   };
+}
+
+function readGitSourceBytes(headSha, relativePath) {
+  assert(/^[0-9a-f]{40}$/.test(headSha), `malformed source snapshot HEAD ${headSha}`);
+  const result = spawnSync('git', ['show', `${headSha}:${relativePath}`], {
+    cwd: repoRoot,
+    shell: false,
+  });
+  if (result.error) {
+    fail(`could not read ${relativePath} from captured HEAD ${headSha}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = Buffer.isBuffer(result.stderr) ? result.stderr.toString('utf8') : String(result.stderr ?? '');
+    fail(`could not read ${relativePath} from captured HEAD ${headSha} (git show ${result.status}): ${stderr}`);
+  }
+  assert(Buffer.isBuffer(result.stdout), `git show returned non-Buffer bytes for ${relativePath}`);
+  return result.stdout;
+}
+
+function requireCapturedCargoConfig(header, phase) {
+  const captured = header.sourceSnapshot.get(CARGO_CONFIG_RELATIVE_PATH);
+  assert(Buffer.isBuffer(captured), `${phase}: captured .cargo/config.toml bytes are missing`);
+  let live;
+  try {
+    live = fs.readFileSync(path.join(repoRoot, ...CARGO_CONFIG_RELATIVE_PATH.split('/')));
+  } catch (error) {
+    fail(`${phase}: live ancestor .cargo/config.toml could not be read: ${error.message}`);
+  }
+  assert(live.equals(captured), `${phase}: live ancestor .cargo/config.toml differs from the captured HEAD object`);
+}
+
+function runEvidenceCargoBuild(header, rustflagTokens, cargoArgs, cwd, targetDir, label) {
+  // Cargo discovers the checkout's live ancestor config because evidence
+  // crates are deliberately materialized below repoRoot. The source files
+  // themselves come from the ODB snapshot; this check makes the config use
+  // explicit and fail closed instead of implying Cargo read ODB bytes.
+  requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `before ${label}`);
+  requireCapturedCargoConfig(header, `before ${label}`);
+  let result;
+  try {
+    result = spawnSync('cargo', cargoArgs, {
+      cwd,
+      encoding: 'utf8',
+      env: cargoChildEnv(rustflagTokens, targetDir, header.cargoHome),
+    });
+  } finally {
+    requireCapturedCargoConfig(header, `after ${label}`);
+  }
+  requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `after ${label}`);
+  return result;
 }
 
 function requireSourceInputsAtHead(sourceInputs, expectedHead, phase) {
@@ -570,10 +617,11 @@ function stageAndPublishArtifacts(header, scratchBase, artifacts) {
 }
 
 // ── Snapshot and evidence capture ───────────────────────────────────────────
-// Build-check consumes this dirty-compatible snapshot directly.
-function captureSnapshotContext(args) {
+// Build-check consumes this dirty-compatible snapshot directly. Evidence
+// modes pass an ODB reader bound to one already-pinned HEAD SHA.
+function captureSnapshotContext(args, readBytes) {
+  const sourceInputs = sourceInputManifest(readBytes);
   const effectiveRustflags = effectiveMeasurementRustflags();
-  const sourceInputs = sourceInputManifest();
   return {
     sourceInputDigest: sourceInputs.digest,
     sourceInputs: sourceInputs.files,
@@ -589,12 +637,14 @@ function captureSnapshotContext(args) {
   };
 }
 
-// Evidence modes require the captured paths to match HEAD before scratch exists.
+// Evidence modes pin HEAD before reading any source bytes. The snapshot is
+// immutable ODB data; the worktree check below is a separate cleanliness gate.
 function captureEvidenceHeader(args) {
-  const context = captureSnapshotContext(args);
   const headSha = runCapture('git', ['rev-parse', 'HEAD']).trim();
+  assert(/^[0-9a-f]{40}$/.test(headSha), `malformed captured HEAD ${headSha}`);
+  const context = captureSnapshotContext(args, (relativePath) => readGitSourceBytes(headSha, relativePath));
   requireSourceInputsAtHead({ files: context.sourceInputs }, headSha, 'initial evidence capture');
-  const treeSha = runCapture('git', ['rev-parse', 'HEAD^{tree}']).trim();
+  const treeSha = runCapture('git', ['rev-parse', `${headSha}^{tree}`]).trim();
   const checkedHead = runCapture('git', ['rev-parse', 'HEAD']).trim();
   assert(checkedHead === headSha, 'HEAD changed while source snapshot was captured');
   const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
@@ -636,6 +686,7 @@ function headerComment(header) {
     `// source-input-digest: ${header.sourceInputDigest}`,
     `// source-inputs: ${JSON.stringify(header.sourceInputs)}`,
     `// source-inputs-at-head: ${header.sourceInputsAtHead}`,
+    '// cargo-config-policy: Cargo reads live ancestor .cargo/config.toml; evidence checks it byte-for-byte against the captured HEAD object immediately before and after each Cargo build',
     `// toolchain:    ${header.toolchain}`,
     `// effective-production-rustflags: ${JSON.stringify(header.effectiveRustflags.production)}`,
     `// effective-activation-rustflags: ${JSON.stringify(header.effectiveRustflags.activation)}`,
@@ -1272,11 +1323,14 @@ function modeWallclock(args, header) {
     // Pin the target dir INSIDE the scratch crate: a global CARGO_TARGET_DIR
     // (common on dev machines) would otherwise send both variants'
     // artifacts to one shared directory — collisions and wrong exe paths.
-    const build = spawnSync('cargo', ['build', '--release', '--target', args.target], {
-      cwd: cdir,
-      encoding: 'utf8',
-      env: cargoChildEnv(header.actualRustflagTokens.production, path.join(cdir, 'target'), header.cargoHome),
-    });
+    const build = runEvidenceCargoBuild(
+      header,
+      header.actualRustflagTokens.production,
+      ['build', '--release', '--target', args.target],
+      cdir,
+      path.join(cdir, 'target'),
+      `production cargo build for variant ${variant}`,
+    );
     if (build.status !== 0) {
       process.stderr.write(build.stderr ?? '');
       fail(`cargo build --release --target ${args.target} failed for variant ${variant} (cwd ${cdir})`);
@@ -1296,11 +1350,14 @@ function modeWallclock(args, header) {
     fs.writeFileSync(path.join(adir, 'lib.rs'), libSrc);
     fs.writeFileSync(path.join(adir, 'imp.rs'), imp);
     fs.writeFileSync(path.join(adir, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTemplate, variant).replaceAll('{{CRATE_NAME}}', activationName));
-    const activationBuild = spawnSync('cargo', ['build', '--release', '--target', args.target], {
-      cwd: adir,
-      encoding: 'utf8',
-      env: cargoChildEnv(header.actualRustflagTokens.activation, path.join(adir, 'target'), header.cargoHome),
-    });
+    const activationBuild = runEvidenceCargoBuild(
+      header,
+      header.actualRustflagTokens.activation,
+      ['build', '--release', '--target', args.target],
+      adir,
+      path.join(adir, 'target'),
+      `activation cargo build for variant ${variant}`,
+    );
     if (activationBuild.status !== 0) {
       process.stderr.write(activationBuild.stderr ?? '');
       fail(`instrumented cargo build --release --target ${args.target} failed for variant ${variant} (cwd ${adir})`);
