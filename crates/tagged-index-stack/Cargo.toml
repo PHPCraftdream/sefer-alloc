@@ -41,14 +41,12 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tagged_index_
 [lints.clippy]
 incompatible-msrv = "allow"
 
-[dependencies]
+[target.'cfg(loom)'.dependencies]
 # `loom` is optional, so default activation neither activates nor compiles
 # Loom. A shared or previously generated lockfile may still contain a `loom`
 # entry for another workspace member or another dependency-resolution reason.
 # Running the loom suite needs BOTH `--cfg loom` in RUSTFLAGS and `--features
 # loom`; the cfg alone fails fast with a named `compile_error!` in `src/lib.rs`.
-
-[target.'cfg(loom)'.dependencies]
 loom = { workspace = true, optional = true }
 
 [dev-dependencies]

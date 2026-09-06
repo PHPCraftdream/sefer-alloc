@@ -1,10 +1,8 @@
 //! Per-call `pop` tail-latency probe for `BACKOFF_SPIN_CAP`'s CAS-retry
-//! backoff — the axis the cap sweep
-//! Backoff-cap measurements are described in
-//! `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`: per-thread ops over
-//! a 1-second window cannot
-//! distinguish "one call starved for 100+ ms" from "every call uniformly 10x
-//! slow").
+//! backoff — the axis the cap sweep cannot resolve. Backoff-cap measurements
+//! are described in `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`: per-thread
+//! ops over a 1-second window cannot distinguish "one call starved for 100+
+//! ms" from "every call uniformly 10x slow".
 //!
 //! Observation-only: public `push`/`pop` API (through `ArrayIndexStack`),
 //! std-only, no dependency added,
@@ -25,7 +23,7 @@
 //! slack. Every `pop` is individually timed.
 //!
 //! The backoff cap itself is a private `const` in
-//! `crates/tagged-index-stack/src/imp.rs`, so an arm at a non-shipped cap is
+//! `src/imp.rs` in the crate source, so an arm at a non-shipped cap is
 //! produced by temporarily editing that one line and rebuilding — the same
 //! documented substitution the cap sweep used (report §1). This binary cannot
 //! observe that const; the `cap_label` it prints comes from `TIS_CAP_LABEL`
@@ -34,8 +32,8 @@
 //! `[A-Za-z0-9_.-]+` alphabet, and any other value aborts with exit code 2
 //! before any output. The resolved-cap evidence for a run is the
 //! captured `const BACKOFF_SPIN_CAP: u32 = ...;` source line taken
-//! immediately before each build (see the raw log this probe's output is
-//! appended to `docs/perf/_raw_tis_backoff_per_call_latency.log`.
+//! immediately before each build (see the repository raw log this probe's
+//! output is appended to: `docs/perf/_raw_tis_backoff_per_call_latency.log`).
 //!
 //! Run (shipped cap 6, no source edit needed):
 //!
@@ -134,9 +132,10 @@ fn parse_shapes(spec: &str) -> Vec<(usize, u32)> {
             };
             if threads < 1 || threads > LINKS_SIZE as usize {
                 die(format!(
-                    "TIS_SHAPES entry {s:?}: threads {threads} must be in 1..=64 (LINKS_SIZE) -- \
+                    "TIS_SHAPES entry {s:?}: threads {threads} must be in 1..={} (LINKS_SIZE) -- \
                      only LINKS_SIZE indices are prefilled, so more threads than that makes \
-                     pop() legitimately return None mid-run"
+                     pop() legitimately return None mid-run",
+                    LINKS_SIZE
                 ));
             }
             if iters < 1 {

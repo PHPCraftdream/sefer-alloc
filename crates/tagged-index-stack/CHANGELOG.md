@@ -24,16 +24,11 @@ First release. Everything below is new in this version; nothing has shipped befo
 ### Notes
 
 - **ABA eliminated, not mitigated** — the tag never wraps: each push installs tag + 1, and a push observing `TAG_MAX` is refused with `Err(TagExhausted)`, sealing that head (pops keep draining; pushes stop loudly; there is no reset API). Every legal width guarantees at least `2^48 - 1` pushes per head.
-- **Empty-transition tag preservation (H-2)** — draining the last element packs the empty sentinel with the running tag, not 0; resetting it would reopen the ABA window.
-- **Lazy links (RAD-1)** — a link is written only by `push`, immediately before that index is published as head; a fresh stack is empty, and OS-zeroed backings are never first-touched merely to set up the free-list.
-- **Release-active guards** — push's index-range check and pop's link sanity check (a link neither `TAIL` nor in range, or a self-link) panic in every build profile, not only debug; measured at no measurable cost next to the head CAS.
+- **Empty-transition tag preservation** — draining the last element packs the empty sentinel with the running tag, not 0; resetting it would reopen the ABA window.
+- **Lazy links** — a link is written only by `push`, immediately before that index is published as head; a fresh stack is empty, and OS-zeroed backings are never first-touched merely to set up the free-list.
+- **Release-active guards** — push's index-range check and pop's link sanity check (a link neither `TAIL` nor in range, or a self-link) panic in every build profile, not only debug.
 - **Three-clause caller contract** — `push_index`/`push` are `unsafe fn` (link domain; liveness — no double push; exclusive ownership epoch); `pop_index`/`pop` deliberately stay safe: an unauthorized pop can only leak an index, never double-issue one.
 - **Lock-free, not starvation-free** — CAS retries use capped exponential backoff; its `spin_loop` hint-unit trade-off is host- and microarchitecture-specific, as documented in the crate docs.
 - **Loom-checked** — under `--cfg loom` the stack's atomics alias to loom and the shipped suite model-checks the real stack code with no preemption bound, with `#[should_panic]` counterfactuals proving the harness non-vacuous; `loom` is optional, so default activation neither activates nor compiles Loom. A shared or previously generated `Cargo.lock` may still contain a `loom` entry for another workspace member or another dependency-resolution reason.
 - **`no_std`, allocation-free, zero dependencies** in a default build; requires a target with native 64-bit atomics (unsupported targets fail fast with a named `compile_error!`). The library is `#![deny(unsafe_code)]` with audited, item-scoped lint-exception regions — see the crate docs' "Where unsafe lives" section for the self-verifying inventory.
 - **MSRV** Rust 1.79 (library surface). **License** MIT OR Apache-2.0.
-- **Pending measurement** — current codegen closes `cas_weak` and
-  `pop_success_relaxed` as static NULL controls. Native ARM timing remains
-  pending only for link ordering (`links_relaxed`) and `store_elided`;
-  production code is unchanged. Detailed source identity, matrix, oracle, and
-  profile facts are in `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.

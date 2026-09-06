@@ -2074,6 +2074,7 @@ jobs:
       # own dedicated clippy row.
       - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo clippy -p tagged-index-stack --all-targets -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps
+      - run: RUSTFLAGS="--cfg tagged_index_stack_test" RUSTDOCFLAGS="-D warnings" cargo doc -p tagged-index-stack --no-deps --document-private-items
       # sefer-region (task #667, gap-audit item filed 2026-08-07): same class
       # of gap, but UNLIKE the two crates above, sefer-region genuinely
       # declares a `std` Cargo feature to disable (`default = ["std"]`,
@@ -2557,7 +2558,7 @@ jobs:
       # features) — see the `loom_once_ptr_cell` step below.
       # Real-type `ArrayIndexStack` loom coverage runs with the job-level
       # `RUSTFLAGS: "--cfg loom"` and the crate's optional `loom` feature.
-      # The suite includes untagged-corruption and H-2 tag-reset
+      # The suite includes untagged-corruption and empty-transition tag-reset
       # counterfactuals, so a broken model fails rather than passing
       # vacuously. One named grep sentinel per loom-gated test target ensures
       # each target actually ran; `shell: bash` preserves failure through the

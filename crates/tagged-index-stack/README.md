@@ -71,44 +71,83 @@ of silently truncating it.
 A `StackStorage<INDEX_BITS>` implementor supplies BOTH the head (its `head()`)
 AND the links (`load_next` / `store_next`) in a single impl — the head↔links
 binding is expressed once, in that impl, rather than re-asserted per call.
-`push_index`/`pop_index` are crate-owned (a blanket `StackOps` impl over
-every `StackStorage` implementor), so the CAS-loop bodies cannot be
-overridden downstream. A caller cannot supply a different link array for the
-same head on another call. The live obligation is
-implementor/caller discipline at the VALUE level: a head must stay bound to one
-backing for its whole life and be reachable through exactly ONE live implementor
-value at a time — but one-at-a-time liveness is not sufficient: it must never
-be rebound to different link storage across time, even if no more than one value
-is live at any instant (the trait doc's `# Safety` clause 1; clause 2 requires
-one backing consistently),
-and disjoint REACHABLE-index populations per binding over any shared
-link-cell population — cell sharing per se is harmless (two stacks over the
-same cells with disjoint populations coexist correctly); the hazard is one
-index reachable from two bindings (the trait doc's `# Safety` clause 3). These are
-obligations about head↔links BINDINGS — invisible to any audit of a single
-impl block, discharged by construction. All three `StackStorage` hooks are
-`unsafe fn` with per-method caller-side `# Safety` contracts — a call from
-safe code is a compile error (E0133), and an `unsafe`-block call puts the
-caller under the hook's own contract (for `head()`: no second, competing
-binding built around the returned reference) — and the owned
-`ArrayIndexStack` additionally does not implement the trait at all (its
-`head` field is private, no trait impl hands it out), so a competing
-binding around a standalone `ArrayIndexStack` still does not COMPILE
-(pinned by the compile-fail fixture
-`tests/compile_fail/array_index_stack_head/`).
-For CUSTOM implementors the shared-head shape remains expressible — only
-behind an `unsafe impl` asserting the very `# Safety` clause it violates. The
+`push_index`/`pop_index` are crate-owned through the blanket `StackOps`
+implementation, so the CAS-loop bodies cannot be overridden downstream. The
+value-level safety obligation is simple: bind each head to one backing for its
+whole life, never rebind it, and never let two bindings reach the same index
+through shared link cells. Sharing cells for disjoint reachable populations is
+fine; these binding-level obligations must be discharged by construction.
+
+All three `StackStorage` hooks are `unsafe fn` with caller-side `# Safety`
+contracts. The owned `ArrayIndexStack` does not implement the trait, so a
+competing binding around it is rejected by the type system; custom
+implementors can express that shape only behind an `unsafe impl`. The
 `StackStorage` trait doc's "The shared-storage hazard class" section is the
-single source of truth for the full inventory and for what the runtime does
-and does not detect (pinned by that compile-fail fixture and the pinning
-tests in `tests/custom_storage_impl.rs`).
+source of truth for the full inventory and its runtime detection boundary.
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
 custom `StackStorage` impl. For standalone use, `ArrayIndexStack<INDEX_BITS,
-N>` is the owned standalone stack that fuses the head and an `ArrayLinks<N>`
-backing, with `push`/`pop` methods — `push` is `unsafe fn` (the caller
-upholds the link-domain + liveness + exclusive-ownership contract, see below); `pop` stays safe.
+N>` is the owned stack that fuses the head and an `ArrayLinks<N>` backing,
+with `push`/`pop` methods — `push` is `unsafe fn` (the caller upholds the
+link-domain + liveness + exclusive-ownership contract, see below); `pop`
+stays safe.
+
+For a slot-resident implementation, the `StackOps` import provides the
+blanket `push_index`/`pop_index` operations:
+
+```rust
+use core::sync::atomic::{AtomicU32, Ordering};
+use tagged_index_stack::{StackHead, StackOps as _, StackStorage, TAIL};
+
+struct SlotStorage {
+    head: StackHead<16>,
+    links: [AtomicU32; 8],
+}
+
+impl SlotStorage {
+    fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            links: [const { AtomicU32::new(TAIL) }; 8],
+        }
+    }
+}
+
+// SAFETY: one private head has one stable backing; each index in 0..8 has a
+// dedicated atomic link cell with Acquire/Release access, and callers provide
+// disjoint publish/recycle authority for the in-domain indices.
+unsafe impl StackStorage<16> for SlotStorage {
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.links[index as usize].load(Ordering::Acquire)
+    }
+
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.links[index as usize].store(next, Ordering::Release);
+    }
+}
+
+let storage = SlotStorage::new();
+for index in 0..4 {
+    // SAFETY: each index is in 0..8, fresh, and published exactly once.
+    unsafe { storage.push_index(index) }.expect("fresh head has tag budget");
+}
+assert_eq!(storage.pop_index(), Some(3));
+```
+
+The owned array is convenient for small stacks. `ArrayIndexStack<16, 65535>`
+is 256 KiB by value; a large local `let` can overflow a small debug thread
+stack. Because `new` is `const`, prefer static placement for a large owned
+stack, or use slot-resident `StackStorage` when the links already belong to
+caller-owned slots. For example:
+
+```text
+static LARGE_STACK: ArrayIndexStack<16, 65535> = ArrayIndexStack::new();
+```
 
 The owned array checks its `N` link bound on each access; a slot-resident
 implementor can use a proven domain to avoid that second bounds check in its
@@ -130,55 +169,29 @@ useful for diagnostics/monitoring, but a concurrent push or pop can make it
 stale the instant it returns, so `pop_index`'s `None` remains the only
 authoritative empty check.
 
-## Two correctness-critical subtleties (H-2 and RAD-1)
+## Two correctness-critical subtleties
 
-- **H-2 empty-transition tag preservation.** When a pop drains the LAST element,
+- **Empty-transition tag preservation.** When a pop drains the LAST element,
   the head goes "empty". Packing the empty sentinel with **tag 0** reopens the
   ABA window (a parked popper's stale tag can recur after a drain+refill). The
   fix packs the empty sentinel with the RUNNING tag the draining pop just
   observed, so the tag keeps climbing. The shipped loom counterfactual
   `counterfactual_empty_transition_tag_reset_lets_aba_recur` proves this is
   load-bearing.
-- **Lazy link discipline (internally: RAD-1).** Links are NEVER eagerly written — only a push
-  writes a link. A caller whose link backing is OS-zeroed memory never
-  first-touches those pages merely to set up the free-list; they commit lazily,
-  on first push of each index. (In the allocator this crate was extracted from,
-  this saved a ~16 MiB bootstrap first-touch — because the links there were
-  slot-resident, so eagerly chaining them would have first-touched every
-  slot's page, and the SLOTS are what total ~16 MiB, not the link array
-  itself.) A fresh stack is therefore EMPTY.
+- **Lazy link discipline.** Links are NEVER eagerly written — only a push
+  writes a link. OS-zeroed backing is not first-touched merely to initialize
+  the free-list; links are committed lazily on each index's first push. A
+  fresh stack is therefore EMPTY.
 
-### No double-push — compiler-enforced unsafe boundary, partial runtime detection
+### Caller obligations at the unsafe boundary
 
-- **No double-push (caller-side `# Safety` clause).** An index must NOT
-  already be reachable from ANY stack that reads and writes the same link
-  cells this stack's `load_next`/`store_next` touch. This rule is no longer
-  prose-only caller discipline: it is clause 2 of `push_index`'s caller-side
-  `# Safety` contract, behind a compiler-enforced unsafe boundary —
-  `push_index` is an `unsafe fn`, so a bare call from safe code is a compile
-  error (E0133) — but the compiler checks only that an `unsafe` context
-  exists, not the clause's substance: there is no FULL runtime detector for
-  the liveness rule. `pop_index`'s release-active self-loop guard catches the
-  current-head double-push — its write makes `next[index] == index`, so the
-  first pop panics — but misses a deeper-than-head re-push that creates a
-  cycle without a self-loop and silently hands one index to two callers.
-  Checking liveness would cost an O(n) chain walk per push, so `push_index`'s
-  own unconditional check is only `index < INDEX_MASK` — necessary for the
-  head-word encoding, but never sufficient proof of the implementor's
-  (typically narrower) link domain.
-  Full contract and consequences: `push_index`'s `# Safety` section (crate
-  docs).
-
-- **No duplicate authority over the same index (exclusive ownership epoch,
-  caller-side `# Safety` clause 3).** Each push must consume a unique,
-  not-yet-consumed publish/recycle epoch (fresh or returned by that caller's
-  successful pop): clause 2's entry check is point-in-time, the epoch is
-  consumed at the successful head CAS (so a pop-then-repush with a new epoch
-  may overlap the original return), while two pushes reusing one epoch are
-  forbidden and can self-loop the list; pinned by
-  `counterfactual_same_index_concurrent_push_self_loops` and
-  `pop_repush_after_publish_conserves`; full contract:
-  `push_index`'s `# Safety` section (crate docs).
+`push_index` is `unsafe` because callers must prove three facts the compiler
+cannot: the index is in the implementor's fixed link domain; it is not already
+reachable from another stack using the same cells; and this call consumes a
+unique publish/recycle authority (fresh or returned by a successful `pop`).
+The compiler checks only that an unsafe context exists. Runtime guards catch
+out-of-range links and current-head self-loops, but not every deeper cycle, so
+the full contract in the crate docs remains required.
 
 ## Tag-width budget
 
@@ -186,15 +199,14 @@ The tag never recurs, so it does not defend against ABA "while" some window
 holds — it SEALS: a head accepts successful pushes until its tag reaches
 `TaggedIndex::TAG_MAX`, then `push_index` refuses (`Err(TagExhausted)`)
 rather than wrapping. The time a head's tag budget lasts is bounded by
-hardware (cache-coherence throughput on the single head cache line), not by
-the workload. This bound is why `INDEX_BITS > 16` is compile-time rejected
+hardware: the fastest uncontended head RMW is the upper bound, while
+contention on the single head cache line only lowers aggregate throughput.
+This bound is why `INDEX_BITS > 16` is compile-time rejected
 (`TaggedIndex::_CHECK_BITS`), not merely discouraged — an availability floor
 (enough pushes-until-sealed lifetime for ordinary long-running use), not a
 soundness floor: sealing is safe at any width, just impractically frequent
-below it. The derivation and the figures (hardware rate bound across
-contended and uncontended regimes, seal times at each permitted width, the
-uncontended bench receipt, and the fresh-sample command) are in the crate
-docs' "Tag-width budget" section.
+below it. The derivation and figures are in the crate docs' "Tag-width budget"
+section.
 
 ### Why the default is not a wider packed word (128-bit CAS)
 
@@ -239,8 +251,7 @@ On AArch64, the portable baseline may lower atomic CAS operations to outlined
 compiler/runtime atomic calls; baseline code must not assume LSE instructions.
 Consumers may select `-C target-feature=+lse` (or an equivalent `target-cpu`)
 only when their deployment guarantees LSE support. That is an explicit
-deployment choice, not a crate requirement. Static assembly differences are
-codegen observations only and do not constitute a runtime speedup claim.
+deployment choice, not a crate requirement.
 
 ## loom — real-type model-check
 
@@ -252,8 +263,10 @@ exhaustively (no
 packing through `cas_head_for_test` so an interleaving can be pinned — the one
 exception is the untagged-ABA counterfactual, which drives a locally-defined
 buggy stand-in stack instead of the real type. `#[should_panic]`
-counterfactuals (untagged corruption, the H-2 tag-reset ABA, and a
-Relaxed-CAS-failure-ordering regression) prove the harness is non-vacuous.
+counterfactuals (untagged corruption, empty-transition tag-reset ABA,
+Relaxed-CAS-failure-ordering regression, same-index concurrent-push
+self-loop, and bypassed-seal stale-CAS double-issue) prove the harness is
+non-vacuous.
 See `tests/loom_aba.rs`'s own module doc for the per-model breakdown:
 
 ```sh
@@ -290,9 +303,9 @@ This crate's hidden test probes are absent from default builds. Under
 `raw_head`, `load_next_for_test`, `with_tag_for_test`, `retry_counts_for_test`,
 and `backoff_spin_depths_for_test`;
 `backoff_spin_count_for_test` is loom-only. The raw CAS/write probes
-(`cas_head_for_test`, `store_next_for_test`) remain loom-only. All are
-`#[doc(hidden)]`
-(docs.rs included). The `tagged_index_stack_test` cfg is an explicitly unstable,
+(`cas_head_for_test`, `store_next_for_test`) remain loom-only. When enabled,
+all are `#[doc(hidden)]`; the cfg gates keep them out of default and docs.rs
+builds. The `tagged_index_stack_test` cfg is an explicitly unstable,
 repository-test escape hatch: its probes may be changed or removed without a
 semver guarantee, and consumers must not build production code against them.
 The default package test run therefore skips the seal and backoff oracles;

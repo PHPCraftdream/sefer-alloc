@@ -34,9 +34,8 @@
 //!
 //! Slab allocators, object pools, entity-component stores, and connection
 //! tables all need to recycle small integer ids, and commonly get two details
-//! wrong (documented below): the **H-2 empty-transition tag preservation** and
-//! the **lazy link discipline** (internally: RAD-1); both are structurally
-//! enforced here.
+//! wrong (documented below): **empty-transition tag preservation** and the
+//! **lazy link discipline**; both are structurally enforced here.
 //!
 //! # The packed word — [`TaggedIndex`]
 //!
@@ -67,39 +66,28 @@
 //! [`pop_index`](StackOps::pop_index)'s corruption-detection guard; see its
 //! `# Panics`).
 //!
-//! The head↔links binding is expressed in ONE place — the implementor's own
-//! single [`StackStorage`] impl, a trait
-//! deliberately OPEN to external implementation (that is the extension
-//! point, not a crate-owned surface) — instead of being re-asserted per call
-//! through a caller-supplied `&L: Links` parameter.
-//! What IS crate-owned is the operation side: [`StackOps`] is
-//! blanket-implemented for every implementor and coherence makes a
-//! downstream override impossible. The caller cannot supply a different
-//! backing for the same head on a later call. The obligation is
-//! implementor/caller discipline: one implementor value per head, for the
-//! head's WHOLE life (trait clause 1), and disjoint index populations per
-//! binding over any shared link-cell population — not "one link-cell
-//! population per stack": cell sharing per se is harmless, only a
-//! REACHABLE index across two bindings is the hazard (trait clause 3) — obligations about head↔links BINDINGS,
-//! invisible to any per-impl audit.
-//! The [`StackStorage`] trait doc's "The shared-storage hazard class"
-//! section is the single source of truth for that hazard inventory and for
-//! what the runtime does and does not detect; this doc does not re-derive
-//! it.
+//! The head↔links binding is established once by the implementor's single
+//! [`StackStorage`] impl. [`StackOps`] owns the operation side through its
+//! blanket implementation, so a caller cannot supply different backing for
+//! the same head on a later call. The value-level obligations are one live
+//! binding per head for its whole life and disjoint reachable-index
+//! populations when link cells are shared; cell sharing itself is harmless.
+//! The [`StackStorage`] trait doc's "The shared-storage hazard class" section
+//! is the source of truth for that inventory and its detection boundary.
 //!
 //! [`store_next`](StackStorage::store_next) is the only write the stack ever
 //! makes to a link, and it happens during
 //! [`push_index`](StackOps::push_index), immediately before the CAS that
-//! publishes the index as the new head — see "The lazy link discipline
-//! (RAD-1)" below. [`StackHead::is_empty`] is an advisory, `Relaxed`
+//! publishes the index as the new head — see "The lazy link discipline"
+//! below. [`StackHead::is_empty`] is an advisory, `Relaxed`
 //! emptiness check for diagnostics/monitoring; a concurrent push or pop can
 //! make it stale the instant it returns, so
 //! [`pop_index`](StackOps::pop_index)'s `None` remains the only authoritative
 //! empty check.
 //!
-//! # Two correctness-critical subtleties (H-2 and RAD-1)
+//! # Two correctness-critical subtleties
 //!
-//! ## H-2: the empty-transition tag MUST be preserved (not reset to 0)
+//! ## Empty-transition tag preservation
 //!
 //! When a [`pop_index`](StackOps::pop_index) drains the last element, the head
 //! transitions to "empty". A naive implementation packs the empty sentinel
@@ -119,7 +107,7 @@
 //! `counterfactual_empty_transition_tag_reset_lets_aba_recur` proves this is
 //! load-bearing: with tag-reset restored, loom finds the collision.
 //!
-//! ## The lazy link discipline (RAD-1): links are never eagerly written
+//! ## The lazy link discipline
 //!
 //! The stack writes a slot's link only inside
 //! [`push_index`](StackOps::push_index) (the
@@ -132,7 +120,7 @@
 //! a full free-list. Consequently a freshly-constructed stack is empty — the
 //! caller pushes indices in as they become free. This crate offers no "start
 //! with `0..N` all pushed" constructor precisely because that would require an
-//! eager link-chaining pass, defeating RAD-1. (A caller that wants every index
+//! eager link-chaining pass. (A caller that wants every index
 //! free from the start pushes `0..N` itself, or mints fresh indices via a
 //! separate monotonic counter and pushes only recycled ones here.)
 //!
@@ -156,26 +144,23 @@
 //! are approximation-only shorthand; the exact numerator is one less in each
 //! case.
 //!
-//! The rate term is bounded by hardware, not by the workload. The tag is
-//! global to the whole stack: every successful push is a compare-exchange (a
-//! locked RMW) on the one `AtomicU64` head word, so in the contended regime
-//! every push serializes on a single cache line whose exclusive ownership must
-//! transfer between cores, capping the aggregate rate at roughly `10^8` to
-//! `10^9` RMWs/sec no matter how many threads contend. The opposite regime —
-//! the uncontended single-threaded case, where the head line stays resident
-//! in one core's L1 — is governed instead by the latency of the bare RMW
-//! instruction itself (`lock cmpxchg` on x86-64): materially faster, but
-//! still bounded.
+//! The rate term is bounded above by the fastest regime, not by the workload.
+//! An uncontended head line resident in one core's L1 makes the successful
+//! push rate roughly a `10^8`/sec hardware ceiling; contention on that one
+//! cache line only lowers the aggregate. The cited sweep's 8-16-thread rows
+//! measure roughly `1.1–1.4 × 10^7` pop+push pairs/sec, versus about
+//! `1.8 × 10^7` pairs/sec single-threaded. The deliberately generous
+//! `2 × 10^8` working ceiling below is therefore an upper bound for both
+//! regimes, not a contended-rate estimate.
 //!
 //! Taking a generous `2 × 10^8` successful pushes/sec as the working ceiling:
 //! at `INDEX_BITS = 16` — the widest permitted index half, 65535 usable
 //! indices with the `0xFFFF` empty sentinel reserved above them — the tag
 //! gets the other **48 bits**, sealing after
 //! `2^48 - 1 ≈ 2.8 × 10^14` successful pushes, which takes
-//! `2^48 / (2 × 10^8) ≈ 16` days at the working ceiling; even at the
-//! optimistic top of the hardware range it is still `2^48 / 10^9 ≈ 3.3`
-//! days before a head this width seals — at which point pushes are refused
-//! (not corrupted), never silently. This bound is why `INDEX_BITS > 16` is
+//! `2^48 / (2 × 10^8) ≈ 16` days at the deliberately generous ceiling —
+//! at which point pushes are refused (not corrupted), never silently. This
+//! bound is why `INDEX_BITS > 16` is
 //! rejected at compile time (`TaggedIndex::_CHECK_BITS`) rather than merely
 //! discouraged: at `INDEX_BITS = 24` the tag would be 40 bits,
 //! `2^40 / (2 × 10^8) ≈ 92` minutes at the same ceiling — sealing a hot
@@ -187,15 +172,11 @@
 //! but never below the 48-bit floor.
 //!
 //! The rate assumption's order of magnitude is confirmed by this repository's
-//! own bench receipts
-//! ([`docs/perf/_raw_tis_backoff_cap_sweep_run1.log`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log)
-//! Re-run `cargo
-//! bench -p tagged-index-stack --bench tagged_index_stack_bench` for a fresh
-//! sample); the bound needs only the order of magnitude, not the exact
-//! figure. The same receipts also bound the UNCONTENDED regime: the
-//! single-threaded `churn` rows measure ~`2 × 10^7` successful pushes/sec (a
-//! pop+push pair per iteration, so the push-only rate is somewhat higher) —
-//! an order of magnitude under the working ceiling above.
+//! own bench receipt
+//! ([`docs/perf/_raw_tis_backoff_cap_sweep_run1.log`](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/_raw_tis_backoff_cap_sweep_run1.log)).
+//! For a fresh sample, run `cargo bench -p tagged-index-stack
+//! --bench tagged_index_stack_bench`; the bound needs only the order of
+//! magnitude, not the exact figure.
 //!
 //! Read this section as what it is: a bound on how long — in pushes, and in
 //! wall time at a hardware-bounded rate ceiling — a head's tag budget lasts
@@ -216,31 +197,15 @@
 //!
 //! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index)
 //! never block on a lock — a losing CAS retries — but lock-freedom is not
-//! starvation-freedom: a call can lose arbitrarily many CASes in a row, and
-//! the exponential backoff deliberately makes an unlucky call wait longer
-//! between retries. The measured trade is not single-axis: the backoff-free
-//! build (cap 0) wins the absolute worst single `pop` at every thread count
-//! tested — on a 64-element `ArrayLinks` at 200,000 pop-then-repush
-//! iterations, 41-60 ms across three runs under the shipped backoff cap vs
-//! 0.6-24 ms disabled at 8 threads, and 130-173 ms vs 40-46 ms at 16 — AND,
-//! at 8 threads specifically, the whole slow-pop tail-count band (pops
-//! slower than 1 ms: 60-86 per run under the cap vs 0-8 disabled; slower
-//! than 10 ms: 26-34 vs 0-2). In exchange the shipped cap wins every
-//! percentile through p99.9 (≈ 1 µs vs 54-182 µs at 8-16 threads),
-//! the >1 ms tail-count band at 16 threads specifically (249-285 pops vs
-//! 553-661 — the tail-count axis is genuinely thread-count-dependent, not
-//! uniform), and roughly 4-5x aggregate wall-clock throughput (median speedup
-//! 4.85x at 8 threads, 4.05x at 16; the backoff-free build produced ~2.4x
-//! more pops slower than 1 ms median-to-median, 1.9-2.6x across rep
-//! pairings). A consumer
-//! recycling a slot on a latency-sensitive request path should size its
-//! tolerance for the extreme outliers AND the thread-count-dependent
-//! tail-count band at its own thread count, not assume either single
-//! thread count's story. Full measurements and the derivation are in
-//! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md)
-//! Measured with `examples/backoff_per_call_latency.rs`. The backoff depth is
-//! counted in `spin_loop` hint invocations, not portable time units, so this
-//! trade can differ across microarchitectures and targets.
+//! starvation-freedom: a call can lose arbitrarily many CASes, and capped
+//! exponential backoff can make an unlucky call wait longer between retries.
+//! The shipped cap trades a small number of extreme outliers for better
+//! latency through p99.9 and roughly 4-5x aggregate throughput in the
+//! repository's contention sweep. A latency-sensitive consumer should size
+//! its tolerance at its own thread count; the trade is host- and
+//! microarchitecture-dependent because the cap counts `spin_loop` hints, not
+//! portable time units. Full measurements and the derivation are in
+//! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md).
 //!
 //! # loom — the tests run against THIS type
 //!
@@ -281,16 +246,16 @@
 //! production inventory.
 //!
 //! ```text
-//! rg -n '^\s*#\[allow\(unsafe_code\)\]' crates/tagged-index-stack/src/imp.rs
-//! rg -n '^\s*(?:pub(?:\([^)]*\))?\s+)?unsafe (?:trait|fn|impl)|^\s*unsafe \{|=\s*unsafe \{' crates/tagged-index-stack/src/imp.rs
+//! rg -n '^\s*#\[allow\(unsafe_code\)\]' src/imp.rs
+//! rg -n '^\s*(?:pub(?:\([^)]*\))?\s+)?unsafe (?:trait|fn|impl)|^\s*unsafe \{|=\s*unsafe \{' src/imp.rs
 //! ```
 //!
 //! The first command checks region boundaries; the second checks the unsafe
 //! contents inside them, so neither count substitutes for the other.
 //!
 //! WHY: because allocator consumers rely on [`StackStorage`]'s exclusive-issuance
-//! contract for their own memory safety — sefer-alloc's registry free-list
-//! today; any third-party unsafe allocator built on this crate after
+//! contract for their own memory safety — an allocator's registry free-list
+//! today, and any third-party unsafe allocator built on this crate after
 //! publication. The moment unsafe code depends on a trait's contract, that
 //! trait is in the same category as
 //! [`core::alloc::GlobalAlloc`](https://doc.rust-lang.org/core/alloc/trait.GlobalAlloc.html)
