@@ -2,7 +2,7 @@
 
 ## Verdict
 
-Production code is unchanged: link cells retain `Acquire`/`Release` ordering,
+The ordering algorithm remains unchanged in substance: link cells retain `Acquire`/`Release` ordering,
 the pop success CAS retains `Acquire`, and all CAS operations remain strong.
 There is **no current wall-clock evidence or verdict**. The link-ordering
 candidate still needs native ARM timing. `pop_success_relaxed` is a resolved
@@ -17,7 +17,7 @@ and store-elision await native ARM timing.
 
 ## Accepted measurement identity
 
-The final authoritative codegen artifacts use source HEAD
+The final authoritative codegen artifacts were captured under source HEAD
 `ff081851f71f9d8e554e216b7ca925fff6a7643b`, tree
 `42c50f2219ccbc5fa63d1a15870d327b960162e6`, source-input digest
 `360d23ec7b20f6b2c96b4ed1274bc405127677911aaf69012bd05e997ef4fc7e`, and
@@ -27,9 +27,13 @@ natural-workload support was implemented in `b01580f`, and the earlier codegen
 artifact recording landed in `133d842`—both are intermediate implementation
 commits. The final runner identity binding is `ff081851f71f9d8e554e216b7ca925fff6a7643b`
 (host/profile/toolchain/flags), and the final recorded artifacts are in
-`59644b2c4b3ca3e1590f93dc399fe5feef83d507`. Both current codegen legs are
-source-input-identical to the final HEAD and use the exact
-`release-thin-lto-1cgu-no-incremental` profile.
+`59644b2c4b3ca3e1590f93dc399fe5feef83d507`. Both recorded codegen legs were
+source-input-identical to that captured HEAD and use the exact
+`release-thin-lto-1cgu-no-incremental` profile. These are preserved historical
+receipts: the run-25 source/doc/unsafe refactor landed in `9215cba`, followed
+by `1b5ce46`, so the receipts are not
+source-input-identical to the current tree and must be regenerated before the
+ARM bundle.
 
 The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
 evidence modes pin HEAD before reading each source input with
