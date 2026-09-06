@@ -676,9 +676,10 @@ item-scoped regions.
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 9 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` trait and bridge make all three hooks `unsafe fn`; the bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. The shared `push_index_impl` and `pop_index_impl` are the caller-side proof regions, while `StackOps::push_index` and `ArrayIndexStack::push` carry the public unsafe boundaries; the direct `ArrayIndexStack` sealed-hook implementation is the ninth region. The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 5 | Codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, three unsafe push/load/store probe functions, and the `instantiate` call-site block; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/tagged-index-stack/benches/tagged_index_stack_bench.rs`](crates/tagged-index-stack/benches/tagged_index_stack_bench.rs) | 1 | `HeadContentionStorage`'s `StackStorage<16>` unsafe impl, isolating the head cache line from the link array for a contention benchmark row. |
 
 That's the full list (both tiers): **18** tier-1 module-level seams (12 in
-`src/`, 6 in `crates/`) plus **93** tier-2 item-scoped allows across **21**
+`src/`, 6 in `crates/`) plus **94** tier-2 item-scoped allows across **22**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
