@@ -11,6 +11,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use tis::{StackHead, StackOps, StackStorage, TAIL};
 
 const LINKS: usize = 256;
+const MATERIALIZED_VARIANT: &str = "{{VARIANT_NAME}}";
 
 #[repr(align(64))]
 struct RegistrySlot {
@@ -129,6 +130,7 @@ unsafe fn tis_probe_store_next(stack: &RegistryShapedStorage, index: u32, next: 
 
 #[allow(unsafe_code)]
 pub fn instantiate() {
+    let _ = MATERIALIZED_VARIANT;
     let stack = RegistryShapedStorage::new();
     // SAFETY: index 1 is in the fresh binding's 0..256 domain, is non-live,
     // has one unique initial authority, next is TAIL for the empty head, and

@@ -4,6 +4,8 @@
 
 use std::env;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+#[cfg(tagged_index_stack_test)]
+use std::sync::atomic::AtomicBool;
 use std::sync::{Barrier, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -15,10 +17,39 @@ const DEADLINE_CHECK_INTERVAL: u32 = 64;
 const WARMUP: Duration = Duration::from_millis(200);
 const MAX_WINDOW_MS: u64 = 60_000;
 const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
+const MATERIALIZED_VARIANT: &str = "{{VARIANT_NAME}}";
+#[cfg(tagged_index_stack_test)]
+const EXPECTED_STORE_NEXT_CALLS: u64 = {{EXPECTED_STORE_NEXT_CALLS}};
+#[cfg(tagged_index_stack_test)]
+const ORACLE_A: u32 = 0;
+#[cfg(tagged_index_stack_test)]
+const ORACLE_X: u32 = 1;
 
 #[repr(align(64))]
 struct RegistrySlot {
     next_free: AtomicU32,
+}
+
+#[cfg(tagged_index_stack_test)]
+struct ActivationProbe {
+    x_first_store_entered: Barrier,
+    allow_x_first_store: Barrier,
+    armed: AtomicBool,
+    x_first_store_seen: AtomicBool,
+    store_next_calls: AtomicU64,
+}
+
+#[cfg(tagged_index_stack_test)]
+impl ActivationProbe {
+    fn new() -> Self {
+        Self {
+            x_first_store_entered: Barrier::new(2),
+            allow_x_first_store: Barrier::new(2),
+            armed: AtomicBool::new(false),
+            x_first_store_seen: AtomicBool::new(false),
+            store_next_calls: AtomicU64::new(0),
+        }
+    }
 }
 
 impl RegistrySlot {
@@ -30,6 +61,8 @@ impl RegistrySlot {
 struct RegistryShapedStorage {
     head: StackHead<16>,
     slots: [RegistrySlot; LINKS],
+    #[cfg(tagged_index_stack_test)]
+    activation_probe: ActivationProbe,
 }
 
 // This models Registry's ownership shape, not HeapSlot's byte layout.
@@ -39,6 +72,8 @@ impl RegistryShapedStorage {
         Self {
             head: StackHead::new(),
             slots: [const { RegistrySlot::new() }; LINKS],
+            #[cfg(tagged_index_stack_test)]
+            activation_probe: ActivationProbe::new(),
         }
     }
 
@@ -77,6 +112,17 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// `index` is in-domain, non-live, and uniquely owned; `next` is TAIL or
     /// the observed in-domain head, and this store precedes publication.
     unsafe fn store_next(&self, index: u32, next: u32) {
+        #[cfg(tagged_index_stack_test)]
+        {
+            self.activation_probe.store_next_calls.fetch_add(1, Ordering::Relaxed);
+            if self.activation_probe.armed.load(Ordering::Acquire)
+                && index == ORACLE_X
+                && !self.activation_probe.x_first_store_seen.swap(true, Ordering::AcqRel)
+            {
+                self.activation_probe.x_first_store_entered.wait();
+                self.activation_probe.allow_x_first_store.wait();
+            }
+        }
         self.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
     }
 }
@@ -119,11 +165,84 @@ fn cycle(stack: &Stack) -> bool {
     true
 }
 
+#[cfg(tagged_index_stack_test)]
+fn run_activation_oracle() {
+    let smoke = env::var("TIS_AB_SMOKE").as_deref() == Ok("1");
+    let stack = Stack::new();
+    // SAFETY: the fresh binding owns A's first publication authority and A is
+    // in-domain; this establishes the initial top before the measured leg.
+    if let Err(_) = {
+        #[allow(unsafe_code)]
+        unsafe { stack.push_index(ORACLE_A) }
+    } {
+        die(String::from("activation oracle: initial push of A unexpectedly sealed"));
+    }
+    stack.activation_probe.store_next_calls.store(0, Ordering::Relaxed);
+    stack.activation_probe.armed.store(true, Ordering::Release);
+    let (pop_before, push_before) = retry_counts();
+    let x_result = std::thread::scope(|scope| {
+        let x = scope.spawn(|| {
+            // SAFETY: X is in-domain, non-live, and its unique publication
+            // authority belongs to this worker for the whole push call.
+            {
+                #[allow(unsafe_code)]
+                unsafe { stack.push_index(ORACLE_X) }
+            }
+                .map_err(|_| String::from("activation oracle: X push sealed"))
+        });
+
+        // X is blocked inside its first store_next. The coordinator now pops
+        // A and republishes A, changing only its tag while keeping its index.
+        stack.activation_probe.x_first_store_entered.wait();
+        let coordinator_result = if stack.pop_index() != Some(ORACLE_A) {
+            Err(String::from("activation oracle: coordinator did not pop A"))
+        } else {
+            // SAFETY: pop returned A to this coordinator, which owns its one
+            // recycled publication authority; A is still in-domain and non-live.
+            {
+                #[allow(unsafe_code)]
+                unsafe { stack.push_index(ORACLE_A) }
+            }
+                .map_err(|_| String::from("activation oracle: coordinator push of A sealed"))
+        };
+        stack.activation_probe.allow_x_first_store.wait();
+        let worker_result = match x.join() {
+            Ok(result) => result,
+            Err(_) => Err(String::from("activation oracle: X worker panicked")),
+        };
+        match (coordinator_result, worker_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(message), _) | (_, Err(message)) => Err(message),
+        }
+    });
+    if let Err(message) = x_result {
+        die(message);
+    }
+    stack.activation_probe.armed.store(false, Ordering::Release);
+    let (pop_after, push_after) = retry_counts();
+    let push_retries = push_after.saturating_sub(push_before);
+    let pop_retries = pop_after.saturating_sub(pop_before);
+    let store_next_calls = stack.activation_probe.store_next_calls.load(Ordering::Relaxed);
+    if push_retries != 1 || pop_retries != 0 || store_next_calls != EXPECTED_STORE_NEXT_CALLS {
+        die(format!(
+            "activation oracle mismatch for {MATERIALIZED_VARIANT}: push_retries={push_retries}, pop_retries={pop_retries}, store_next_calls={store_next_calls}, expected push=1 pop=0 store={EXPECTED_STORE_NEXT_CALLS}"
+        ));
+    }
+    println!(
+        "{{\"variant\":\"{MATERIALIZED_VARIANT}\",\"source_variant\":\"{MATERIALIZED_VARIANT}\",\"threads\":0,\"window_ms\":0,\"elapsed_ms\":0,\"ops_total\":0,\"ops_per_sec\":0.0,\"push_retries\":0,\"pop_retries\":0,\"activation_push_retries\":{push_retries},\"activation_pop_retries\":{pop_retries},\"activation_store_next_calls\":{store_next_calls},\"activation_probe\":\"tag_only_retry\",\"activation\":true,\"smoke\":{smoke}}}"
+    );
+}
+
 fn main() {
+    #[cfg(tagged_index_stack_test)]
+    if env::var("TIS_AB_ACTIVATION_ORACLE").as_deref() == Ok("1") {
+        run_activation_oracle();
+        return;
+    }
     let threads: usize = parse_env("TIS_AB_THREADS", 4);
     let window_ms: u64 = parse_env("TIS_AB_WINDOW_MS", 1_000);
     let smoke = env::var("TIS_AB_SMOKE").as_deref() == Ok("1");
-    let variant = env::var("TIS_AB_VARIANT").unwrap_or_else(|_| String::from("unlabeled"));
+    let variant = MATERIALIZED_VARIANT;
     if !(1..=256).contains(&threads) {
         die(format!("TIS_AB_THREADS: value {threads} out of range (valid: 1..=256)"));
     }

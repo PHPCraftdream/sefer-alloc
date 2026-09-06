@@ -2,25 +2,26 @@
 // tis_p3_ab_runner.mjs — measurement driver for the link-ordering/CAS A/B study of
 // `crates/tagged-index-stack`:
 //   Link ordering: RegistryShapedStorage hook Acquire/Release vs Relaxed.
-//   CAS strength: strong compare_exchange vs compare_exchange_weak in the push/pop
-//         head CAS loops (relevant on LL/SC ISAs like non-LSE AArch64).
+//   CAS strength/order: weak CAS and pop-success Relaxed are codegen negative
+//         controls; store_elided is a scratch-only push-loop candidate.
 //
 // Modes:
-//   --mode codegen   — materialize the three variants, `rustc --emit=asm`
+//   --mode codegen   — materialize the five variants, `rustc --emit=asm`
 //                      each DIRECTLY (no cargo), extract/normalize function
 //                      blocks, run per-ISA oracles, emit logs/CSV/table.
-//   --mode wallclock — materialize base/links_relaxed scratch CARGO crates,
-//                      run production timing and separate activation probes.
+//   --mode wallclock — materialize the three timing variants, run production
+//                      timing, and run separate deterministic activation probes.
 //   --mode summary  — read every per-leg CSV + its own raw-log provenance
 //                      header and emit the compact summary CSV companion for
 //                      the gate report. No build, no measurement. Optional
 //                      `--target <triple>` selects that target's wallclock
 //                      CSV. Without it, lookup uses the conventional
 //                      x86_64-pc-windows-msvc path and fails if absent.
-//   --mode build-check — materialize the base scratch CARGO crate from one
-//                      dirty-compatible immutable source snapshot and compile
-//                      production and cfg-enabled activation harnesses in separate
-//                      target dirs; ALSO materialize+`rustc
+//   --mode build-check — materialize all timing-variant scratch CARGO crates
+//                      from one dirty-compatible immutable source snapshot and
+//                      compile production and cfg-enabled activation harnesses
+//                      in separate target dirs; run only the deterministic
+//                      cfg activation oracle; ALSO materialize+`rustc
 //                      --emit=metadata` the separate `codegen_wrapper.rs.tmpl`
 //                      template against the same current sources (the wall-
 //                      clock harness and the codegen wrapper are two
@@ -92,10 +93,10 @@ function makeScratchRoot() {
   return activeScratchBase;
 }
 
-const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
-const WALLCLOCK_VARIANTS = ['base', 'links_relaxed'];
+const VARIANTS = ['base', 'links_relaxed', 'cas_weak', 'pop_success_relaxed', 'store_elided'];
+const WALLCLOCK_VARIANTS = ['base', 'links_relaxed', 'store_elided'];
 const CODEGEN_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
-const MIN_COMPARATIVE_SAMPLES = 4;
+const MIN_COMPARATIVE_SAMPLES = 6;
 const PROFILE_ID = 'release-thin-lto-1cgu-no-incremental';
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
 
@@ -116,8 +117,8 @@ const MAX_THREADS = 256;
 // trivially representable on any platform, so the Rust-side checked-deadline
 // guard is unreachable noise rather than a real limit.
 const MAX_WINDOW_MS = 60_000;
-// 100 samples: smoke uses 1 and comparative runs default to 4; the cap bounds
-// two wall-clock variants to under 4 hours at the maximum window and timeout.
+// 100 samples: smoke uses 1 and comparative runs default to 6; the cap bounds
+// three wall-clock variants to under 6 hours at the maximum window and timeout.
 const MAX_SAMPLES = 100;
 // Child timeout for ONE harness invocation (one variant, one sample),
 // derived the same way harness_bin.rs derives its margins: the fixed
@@ -151,13 +152,34 @@ const ANCHORS = {
     replace:
       'match head_ref.head.compare_exchange_weak(head, new_head, Ordering::Acquire, Ordering::Acquire) {',
   },
+  POP_SUCCESS_RELAXED: {
+    find: 'match head_ref.compare_exchange(head, new_head, Ordering::Acquire, Ordering::Acquire) {',
+    replace:
+      'match head_ref.compare_exchange(head, new_head, Ordering::Relaxed, Ordering::Acquire) {',
+  },
 };
 
 const VARIANT_ANCHORS = {
   base: [],
   cas_weak: ['PUSH_CAS', 'POP_CAS'],
   links_relaxed: [],
+  pop_success_relaxed: ['POP_SUCCESS_RELAXED'],
+  store_elided: [],
 };
+
+// This is deliberately a source rewrite, not a production edit. The exact
+// anchors are scoped to push_index_impl and keep the first attempt as a store;
+// only a retry that observed the same (head index, next link) may elide it.
+const STORE_ELIDED_REWRITES = [
+  {
+    find: `    let mut head = head_ref.load(Ordering::Relaxed);\n    let mut backoff = Backoff::new();\n    loop {`,
+    replace: `    let mut head = head_ref.load(Ordering::Relaxed);\n    let mut last_stored_head: Option<(u32, u32)> = None;\n    let mut backoff = Backoff::new();\n    loop {`,
+  },
+  {
+    find: `        unsafe {\n            s.store_next(index, next_link);\n        }`,
+    replace: `        let observed_head = (cur_idx, next_link);\n        if last_stored_head != Some(observed_head) {\n            // SAFETY: same proof as the production store; this is only a\n            // scratch measurement substitution.\n            unsafe {\n                s.store_next(index, next_link);\n            }\n            last_stored_head = Some(observed_head);\n        }`,
+  },
+];
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -218,6 +240,13 @@ function parseArgs(argv) {
       fail(`--mode codegen supports only ${CODEGEN_TARGETS.join(' or ')} (got ${JSON.stringify(args.target)})`);
     }
   }
+  if (args.mode === 'wallclock' && args.smoke) {
+    for (const option of ['--threads', '--window-ms', '--samples']) {
+      if (provided.has(option)) {
+        fail(`${option} cannot be provided with --smoke; smoke fixes threads=4, window-ms=100, samples=1`);
+      }
+    }
+  }
   // Summary mode accepts an optional --target to select another provided or
   // newly-produced wallclock CSV. Without it, the conventional lookup target
   // is x86_64-pc-windows-msvc; no existing artifact is implied. The value uses
@@ -244,6 +273,24 @@ function fail(msg) {
 
 function assert(cond, msg) {
   if (!cond) fail(`ORACLE/ASSERT failed: ${msg}`);
+}
+
+function assertActivationRecord(rec, variant, context, expectedSmoke) {
+  assert(rec.variant === variant && rec.source_variant === variant, `${context}: materialized variant identity mismatch`);
+  assert(rec.activation === true && rec.activation_probe === 'tag_only_retry', `${context}: not the deterministic activation record`);
+  assert(rec.threads === 0 && rec.window_ms === 0 && rec.elapsed_ms === 0 && rec.ops_total === 0 && rec.ops_per_sec === 0, `${context}: activation record contains timing data`);
+  assert(rec.push_retries === 0 && rec.pop_retries === 0 && rec.smoke === expectedSmoke, `${context}: activation ordinary fields are not exact`);
+  assert(rec.activation_push_retries === 1 && rec.activation_pop_retries === 0, `${context}: activation retry fields are not exact`);
+  assert(rec.activation_store_next_calls === (variant === 'store_elided' ? 2 : 3), `${context}: activation store field is not exact`);
+}
+
+function assertProductionRecord(rec, variant, context) {
+  assert(rec.variant === variant && rec.activation === false && rec.smoke === false, `${context}: not the production timing record`);
+  assert(!Object.hasOwn(rec, 'source_variant') && !Object.hasOwn(rec, 'activation_probe'), `${context}: production record contains activation-only fields`);
+  assert(Number.isSafeInteger(rec.threads) && rec.threads >= 1 && rec.threads <= MAX_THREADS, `${context}: invalid production threads`);
+  assert(Number.isSafeInteger(rec.window_ms) && rec.window_ms >= 50 && rec.window_ms <= MAX_WINDOW_MS, `${context}: invalid production window`);
+  assert(Number.isSafeInteger(rec.elapsed_ms) && rec.elapsed_ms > 0 && Number.isSafeInteger(rec.ops_total) && rec.ops_total > 0, `${context}: invalid production counters`);
+  assert(Number.isFinite(rec.ops_per_sec) && rec.ops_per_sec > 0 && rec.push_retries === 0 && rec.pop_retries === 0, `${context}: invalid production metric/retry fields`);
 }
 
 const sha256hex = (s) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -485,8 +532,21 @@ function rustcRemapArgs(scratchBase) {
 function materializeTemplate(template, variant) {
   const relaxed = variant === 'links_relaxed';
   return template
+    .replaceAll('{{VARIANT_NAME}}', variant)
+    .replaceAll('{{EXPECTED_STORE_NEXT_CALLS}}', variant === 'store_elided' ? '2' : '3')
     .replaceAll('{{LINK_LOAD_ORDERING}}', relaxed ? 'Ordering::Relaxed' : 'Ordering::Acquire')
     .replaceAll('{{LINK_STORE_ORDERING}}', relaxed ? 'Ordering::Relaxed' : 'Ordering::Release');
+}
+
+function materializeImp(impSrc, variant) {
+  let out = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
+  if (variant !== 'store_elided') return out;
+  for (const [i, rewrite] of STORE_ELIDED_REWRITES.entries()) {
+    const count = out.split(rewrite.find).length - 1;
+    assert(count === 1, `store_elided rewrite ${i}: expected exactly 1 occurrence, found ${count}`);
+    out = out.replace(rewrite.find, rewrite.replace);
+  }
+  return out;
 }
 
 function stageAndPublishArtifacts(header, scratchBase, artifacts) {
@@ -683,7 +743,7 @@ function parseBlocks(asmText) {
 // both; mnemonics and register/immediate operands are untouched.
 function scrubSymbols(line) {
   return line
-    .replace(/\d+tis_p3ab_(base|links_relaxed|cas_weak)/g, 'TISCRATE')
+    .replace(/\d+tis_p3ab_(base|links_relaxed|cas_weak|pop_success_relaxed|store_elided)/g, 'TISCRATE')
     .replace(/Cs[A-Za-z0-9]{8,16}_/g, 'CSHASH')
     .replace(/\.Lanon\.[0-9a-f]+/g, '.Lanon');
 }
@@ -766,8 +826,8 @@ function extractFunctions(asmText, target) {
 //   * Links ordering: base has ldar/stlr for RegistryShapedStorage accesses
 //     (residual ldar in relaxed = pop_index_impl's own 64-bit Acquire HEAD
 //     load (`head_ref.load(Ordering::Acquire)`), which must remain); links_relaxed drops link ldar to 0 / link stlr to 0.
-// The cas_weak identity asserts below are DELIBERATE and load-bearing: they
-// are the self-updating oracle. If a future toolchain reintroduces an inline
+// The cas_weak/pop_success_relaxed identity asserts below are DELIBERATE and
+// load-bearing: they are self-updating negative controls. If a future toolchain reintroduces an inline
 // LL/SC lowering where weak differs from strong, these asserts FAIL loudly
 // and make the CAS lowering change visible instead of silently hiding it.
 function modeCodegen(args, header) {
@@ -791,9 +851,11 @@ function modeCodegen(args, header) {
       '//   default feature set: CAS = outlined __aarch64_cas8_acq/rel calls (no inline ldaxr/stlxr);',
       '//   +lse: CAS = single casl/casa instructions (zero outlined calls, zero ldaxr/stlxr);',
       '//   strong compare_exchange == compare_exchange_weak after normalization on BOTH feature',
-      '//   sets. The cas_weak sha-identity asserts below are DELIBERATE: if a toolchain change',
-      '//   reintroduces an inline-LL/SC lowering where weak differs, they fail loudly.',
-      '// Byte-exact sha identity is asserted for cas_weak but NOT for links_relaxed',
+      '//   sets. The cas_weak and pop_success_relaxed sha-identity asserts below are DELIBERATE',
+      '//   negative controls: if a toolchain change makes either differ, they fail loudly.',
+      '// Byte-exact sha identity is asserted for cas_weak/pop_success_relaxed and',
+      '// store_elided untouched probes; links_relaxed and store_elided push use',
+      '// semantic/activation oracles rather than hardcoded instruction counts.',
       '// push/pop: removing a link acquire/release legitimately shifts register allocation.',
       '// For links_relaxed the oracle instead asserts the exact acquire/release instruction',
       '// DELTA formulas derived from the base run: pop ldar == base_pop_ldar - base_load_next_ldar',
@@ -814,7 +876,7 @@ function modeCodegen(args, header) {
     for (const variant of VARIANTS) {
       const vdir = path.join(froot, variant);
       freshDir(vdir, scratchBase);
-      const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
+      const imp = materializeImp(impSrc, variant);
       const wrapperSrc = materializeTemplate(wrapperTemplate, variant);
       fs.writeFileSync(path.join(vdir, 'lib.rs'), libSrc);
       fs.writeFileSync(path.join(vdir, 'imp.rs'), imp);
@@ -916,7 +978,8 @@ function modeCodegen(args, header) {
     //     disappear (stlr == 0) and a plain relaxed link store (str) appears.
     //   * LOAD_NEXT/STORE_NEXT standalone blocks: base has the Acquire/Release
     //     instruction (>= 1); relaxed has none and a plain ldr/str instead.
-    // Byte identity remains asserted for cas_weak only.
+    // Byte identity remains asserted for the negative controls; store_elided
+    // additionally proves that only its push body is active.
     for (const key of ['load_next', 'store_next']) {
       const mne = key === 'load_next' ? 'ldar' : 'stlr';
       const plain = key === 'load_next' ? 'ldr' : 'str';
@@ -993,15 +1056,38 @@ function modeCodegen(args, header) {
       }
     }
 
-    // (c) cas_weak: deliberate identity assert (self-updating oracle). If this
-    // fails, weak CAS has diverged from strong and the oracle must remain loud.
-    for (const key of ['push_index_impl', 'pop_index_impl']) {
+    // (c) Negative controls: these source-ordering changes must remain byte-
+    // identical after normalization on both AArch64 feature sets. The failure
+    // ordering determines the target CAS lowering here, so this is an
+    // identity oracle rather than an instruction-count guess.
+    for (const key of FUNCTION_KEYS) {
       if (!identical('cas_weak', key)) {
         printNorm('base', key);
         printNorm('cas_weak', key);
         logLines.push(`CAS equivalence reopened: weak CAS now diverges from strong on ${tag} (${key}).`);
         fail(`${shaFail('cas_weak', key, 'deliberate strong==weak codegen identity assert')} Add cas_weak back to WALLCLOCK_VARIANTS before timing it.`);
       }
+      if (!identical('pop_success_relaxed', key)) {
+        printNorm('base', key);
+        printNorm('pop_success_relaxed', key);
+        fail(`${shaFail('pop_success_relaxed', key, 'deliberate pop-success Relaxed codegen identity assert')} Keep this variant out of WALLCLOCK_VARIANTS unless its target oracle is intentionally redesigned.`);
+      }
+    }
+    // store_elided is an active scratch candidate: only the push body may
+    // differ; all standalone hooks and pop must remain byte-identical. The
+    // push distinction is asserted by normalized assembly/block identity, with
+    // no hardcoded instruction-count expectation for any target feature set.
+    for (const key of ['load_next', 'store_next', 'pop_index_impl']) {
+      if (!identical('store_elided', key)) {
+        printNorm('base', key);
+        printNorm('store_elided', key);
+        fail(`${shaFail('store_elided', key, 'store_elided touched an unrelated probe')}`);
+      }
+    }
+    if (identical('store_elided', 'push_index_impl')) {
+      printNorm('base', 'push_index_impl');
+      printNorm('store_elided', 'push_index_impl');
+      fail(`${tag} store_elided push codegen is byte-identical to base; the scratch candidate is not active`);
     }
   }
 
@@ -1016,9 +1102,10 @@ function modeCodegen(args, header) {
       logLines.push('');
       runAarch64Oracles(fset, variants);
     } else {
-      // Supported x86_64 target: all-sha-identity vs base.
+      // Supported x86_64 target: link/CAS/pop-ordering negative controls are
+      // all identity; store_elided changes only the push body.
       for (const key of FUNCTION_KEYS) {
-        for (const variant of ['links_relaxed', 'cas_weak']) {
+        for (const variant of ['links_relaxed', 'cas_weak', 'pop_success_relaxed']) {
           if (variants[variant].funcs[key].sha256_16 !== variants.base.funcs[key].sha256_16) {
             logLines.push(`--- normalized text: variant=${variant} function=${key} ---`);
             logLines.push(variants[variant].funcs[key].normalizedText || '(empty)');
@@ -1026,6 +1113,12 @@ function modeCodegen(args, header) {
             fail(`x86_64 identity oracle failed for function ${key} variant ${variant}`);
           }
         }
+        if (key !== 'push_index_impl' && variants.store_elided.funcs[key].sha256_16 !== variants.base.funcs[key].sha256_16) {
+          fail(`x86_64 store_elided identity oracle failed for untouched function ${key}`);
+        }
+      }
+      if (variants.store_elided.funcs.push_index_impl.sha256_16 === variants.base.funcs.push_index_impl.sha256_16) {
+        fail('x86_64 store_elided push codegen is byte-identical to base; scratch candidate is not active');
       }
       for (const key of ['push_index_impl', 'pop_index_impl']) {
         if (variants.base.funcs[key].counts.cmpxchg < 1) {
@@ -1171,7 +1264,7 @@ function modeWallclock(args, header) {
     freshDir(cdir, scratchBase);
     fs.writeFileSync(path.join(cdir, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
     fs.mkdirSync(path.join(cdir, 'src', 'bin'), { recursive: true });
-    const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
+    const imp = materializeImp(impSrc, variant);
     fs.writeFileSync(path.join(cdir, 'lib.rs'), libSrc);
     fs.writeFileSync(path.join(cdir, 'imp.rs'), imp);
     fs.writeFileSync(path.join(cdir, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTemplate, variant).replaceAll('{{CRATE_NAME}}', crateName));
@@ -1223,7 +1316,7 @@ function modeWallclock(args, header) {
       TIS_AB_THREADS: String(threads),
       TIS_AB_WINDOW_MS: String(windowMs),
       TIS_AB_SMOKE: smoke ? '1' : '0',
-      TIS_AB_VARIANT: variant,
+      TIS_AB_ACTIVATION_ORACLE: label === 'activation' || label === 'smoke-activation' ? '1' : '0',
     };
     const harnessTimeoutMs = HARNESS_WARMUP_MS + HARNESS_TIMEOUT_SLACK_MS + windowMs;
     const r = spawnSync(exe, [], {
@@ -1240,15 +1333,18 @@ function modeWallclock(args, header) {
       process.stderr.write(r.stderr ?? '');
       fail(`harness exited ${r.status} for variant=${variant} label=${label}`);
     }
-    let rec = null;
+    const records = [];
     for (const line of r.stdout.split(/\r?\n/)) {
       try {
         const json = JSON.parse(line);
-        if (json && typeof json === 'object' && 'ops_per_sec' in json) rec = json;
+        if (json && typeof json === 'object' && Object.hasOwn(json, 'ops_per_sec') && Object.hasOwn(json, 'activation')) records.push(json);
       } catch { /* ignore non-JSON diagnostics */ }
     }
-    assert(rec, `harness emitted no JSON line for variant=${variant} label=${label}`);
-    assert(rec.variant === variant, `harness variant mismatch: ${rec.variant} != ${variant}`);
+    assert(records.length === 1, `harness emitted ${records.length} matching JSON records; expected exactly one for variant=${variant} label=${label}`);
+    const rec = records[0];
+    const activation = label === 'activation' || label === 'smoke-activation';
+    if (activation) assertActivationRecord(rec, variant, `harness variant=${variant} label=${label}`, label === 'smoke-activation');
+    else assertProductionRecord(rec, variant, `harness variant=${variant} label=${label}`);
     return { rec, stdout: r.stdout };
   }
 
@@ -1256,9 +1352,7 @@ function modeWallclock(args, header) {
     logLines.push('SMOKE: non-comparative build/activation check; no timing ratio or verdict emitted.');
     for (const variant of WALLCLOCK_VARIANTS) {
       const activation = runHarness(crates[variant].activationExe, variant, 'smoke-activation', 1);
-      assert(activation.rec.activation === true, `smoke activation binary missing cfg marker for variant=${variant}`);
-      assert(activation.rec.push_retries > 0, `smoke activation push retry oracle failed for variant=${variant}`);
-      assert(activation.rec.pop_retries > 0, `smoke activation pop retry oracle failed for variant=${variant}`);
+      assert(activation.rec.smoke === true, `smoke activation JSON did not preserve smoke=true for variant=${variant}`);
       logLines.push(`--- variant=${variant} smoke activation stdout (not timing evidence) ---`);
       logLines.push(activation.stdout.replaceAll(repoRoot, 'REPO'));
     }
@@ -1310,9 +1404,6 @@ function modeWallclock(args, header) {
   // counters are never part of the production timing samples.
   for (const variant of WALLCLOCK_VARIANTS) {
     const activation = runHarness(crates[variant].activationExe, variant, 'activation', 'observed');
-    assert(activation.rec.activation === true, `activation binary missing cfg marker for variant=${variant}`);
-    assert(activation.rec.push_retries > 0, `activation oracle failed: push_delta=0 for variant=${variant}`);
-    assert(activation.rec.pop_retries > 0, `activation oracle failed: pop_delta=0 for variant=${variant}`);
     crates[variant].activation = activation.rec;
     logLines.push(`--- variant=${variant} activation stdout (separate observed window) ---`);
     logLines.push(activation.stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
@@ -1336,27 +1427,27 @@ function modeWallclock(args, header) {
 
   const md = [];
   md.push(`# TIS production registry-shaped wallclock summary — target ${args.target}`);
-  md.push('cas_weak is excluded from timing because codegen identity keeps it as a negative control.');
+  md.push('cas_weak and pop_success_relaxed are codegen negative controls; only base, links_relaxed, and store_elided are timed.');
   md.push('');
   md.push(`threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
   md.push('');
-  md.push('| target | variant | median_ops_per_sec | ratio vs base | activation_push_delta | activation_pop_delta |');
+  md.push('| target | variant | median_ops_per_sec | ratio vs base | activation_push_retries | activation_pop_retries | activation_store_next_calls |');
   md.push('|---|---|---|---|---|---|');
   for (const v of WALLCLOCK_VARIANTS) {
-    md.push(`| ${args.target} | ${v} | ${med[v].toFixed(2)} | ${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)} | ${crates[v].activation.push_retries} | ${crates[v].activation.pop_retries} |`);
+    md.push(`| ${args.target} | ${v} | ${med[v].toFixed(2)} | ${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)} | ${crates[v].activation.activation_push_retries} | ${crates[v].activation.activation_pop_retries} | ${crates[v].activation.activation_store_next_calls} |`);
   }
   const mdText = md.join('\n') + '\n';
   logLines.push(mdText);
 
   // ── Artifacts ─────────────────────────────────────────────────────────────
-  const csv = [['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke']];
+  const csv = [['target', 'variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke']];
   for (const v of WALLCLOCK_VARIANTS) {
     for (const s of crates[v].samples) {
-      csv.push([args.target, v, 'production', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, 0, 0, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
+      csv.push([args.target, v, 'production', 'none', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, 0, 0, '', '', '', header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
     }
   }
   for (const v of WALLCLOCK_VARIANTS) {
-    csv.push([args.target, v, 'SUMMARY', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', `activation_push_delta=${crates[v].activation.push_retries}`, `activation_pop_delta=${crates[v].activation.pop_retries}`, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
+    csv.push([args.target, v, 'SUMMARY', 'tag_only_retry', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', 0, 0, crates[v].activation.activation_push_retries, crates[v].activation.activation_pop_retries, crates[v].activation.activation_store_next_calls, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
   }
   const csvText = csv.map((r) => r.join(',')).join('\n') + '\n';
   logLines.push(`// csv-sha256: ${sha256hex(csvText)}`);
@@ -1367,13 +1458,13 @@ function modeWallclock(args, header) {
   });
 
   console.log(mdText);
-  console.log(`production wallclock OK: target=${args.target} variants=${WALLCLOCK_VARIANTS.join(',')} (cas_weak negative control excluded)`);
+  console.log(`production wallclock OK: target=${args.target} variants=${WALLCLOCK_VARIANTS.join(',')} (cas_weak + pop_success_relaxed codegen negative controls excluded)`);
 }
 
 // ── Build-check mode ────────────────────────────────────────────────────────
 // Static regression gate, not measurement evidence. It materializes one dirty-
-// compatible snapshot and compiles production and activation harness shapes.
-// Only `base` is needed: storage ordering and weak CAS do not change the API.
+// compatible snapshot and compiles every timing source variant plus its
+// activation harness shape.
 // Both Cargo builds name the verified rustc host explicitly. The same snapshot
 // also materializes the independent codegen wrapper for metadata-only checking.
 function modeBuildCheck(args, snapshot) {
@@ -1386,59 +1477,96 @@ function modeBuildCheck(args, snapshot) {
   const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
   const rustcHost = rustcHostFromVerbose(rustcVersion);
 
-  const crateName = 'tis_p3ab_build_check';
   const scratchBase = makeScratchRoot();
   const root = path.join(scratchBase, 'build-check');
   freshDir(root, scratchBase);
   bindRunFlags(snapshot, scratchBase);
-  fs.writeFileSync(path.join(root, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
-  fs.mkdirSync(path.join(root, 'src', 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'lib.rs'), libSrc);
-  fs.writeFileSync(path.join(root, 'imp.rs'), impSrc);
-  fs.writeFileSync(path.join(root, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTmpl, 'base').replaceAll('{{CRATE_NAME}}', crateName));
+  // Build every timing source variant. The production binaries are compile-
+  // only; cfg activation binaries are executed through the deterministic
+  // tag-only retry oracle, never through warmup or a timed window.
+  for (const variant of WALLCLOCK_VARIANTS) {
+    const variantRoot = variant === 'base' ? root : path.join(scratchBase, `build-check-${variant}`);
+    if (variant !== 'base') freshDir(variantRoot, scratchBase);
+    const crateName = `tis_p3ab_build_check_${variant}`;
+    fs.writeFileSync(path.join(variantRoot, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
+    fs.mkdirSync(path.join(variantRoot, 'src', 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(variantRoot, 'lib.rs'), libSrc);
+    fs.writeFileSync(path.join(variantRoot, 'imp.rs'), materializeImp(impSrc, variant));
+    fs.writeFileSync(path.join(variantRoot, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTmpl, variant).replaceAll('{{CRATE_NAME}}', crateName));
 
-  // Dev-profile builds prove both harness shapes without producing evidence.
-  const productionBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
-    cwd: root,
-    encoding: 'utf8',
-    env: cargoChildEnv(snapshot.actualRustflagTokens.production, path.join(root, 'target-production'), snapshot.cargoHome),
-  });
-  if (productionBuild.status !== 0) {
-    process.stderr.write(productionBuild.stderr ?? '');
-    fail(`production cargo build --target ${rustcHost} failed for the wall-clock harness template (build-check mode, cwd ${root})`);
-  }
-  const activationBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
-    cwd: root,
-    encoding: 'utf8',
-    env: cargoChildEnv(snapshot.actualRustflagTokens.activation, path.join(root, 'target-activation'), snapshot.cargoHome),
-  });
-  if (activationBuild.status !== 0) {
-    process.stderr.write(activationBuild.stderr ?? '');
-    fail(`activation cargo build --target ${rustcHost} failed for the wall-clock harness template (build-check mode, cwd ${root})`);
+    const productionBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
+      cwd: variantRoot,
+      encoding: 'utf8',
+      env: cargoChildEnv(snapshot.actualRustflagTokens.production, path.join(variantRoot, 'target-production'), snapshot.cargoHome),
+    });
+    if (productionBuild.status !== 0) {
+      process.stderr.write(productionBuild.stderr ?? '');
+      fail(`production cargo build --target ${rustcHost} failed for ${variant} (build-check mode, cwd ${variantRoot})`);
+    }
+    const activationBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
+      cwd: variantRoot,
+      encoding: 'utf8',
+      env: cargoChildEnv(snapshot.actualRustflagTokens.activation, path.join(variantRoot, 'target-activation'), snapshot.cargoHome),
+    });
+    if (activationBuild.status !== 0) {
+      process.stderr.write(activationBuild.stderr ?? '');
+      fail(`activation cargo build --target ${rustcHost} failed for ${variant} (build-check mode, cwd ${variantRoot})`);
+    }
+    const exeName = `harness${process.platform === 'win32' ? '.exe' : ''}`;
+    const exe = path.join(variantRoot, 'target-activation', rustcHost, 'debug', exeName);
+    const activationRun = spawnSync(exe, [], {
+      cwd: variantRoot,
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: { ...sanitizedBaseChildEnv(), TIS_AB_ACTIVATION_ORACLE: '1' },
+    });
+    if (activationRun.error?.code === 'ETIMEDOUT') fail(`activation oracle timed out for ${variant} (build-check mode)`);
+    if (activationRun.error) fail(`activation oracle spawn failed for ${variant}: ${activationRun.error.message}`);
+    if (activationRun.status !== 0) {
+      process.stderr.write(activationRun.stderr ?? '');
+      fail(`activation oracle exited ${activationRun.status} for ${variant} (build-check mode)`);
+    }
+    const records = [];
+    for (const line of activationRun.stdout.split(/\r?\n/)) {
+      try {
+        const json = JSON.parse(line);
+        if (json && typeof json === 'object' && json.activation === true && Object.hasOwn(json, 'ops_per_sec')) records.push(json);
+      } catch { /* ignore cargo/harness diagnostics */ }
+    }
+    assert(records.length === 1, `build-check activation oracle emitted ${records.length} matching JSON records; expected exactly one for ${variant}`);
+    const rec = records[0];
+    assertActivationRecord(rec, variant, `build-check activation variant=${variant}`, false);
+    console.log(`build-check activation oracle OK: variant=${variant} target=${rustcHost}`);
   }
   console.log(`build-check mode OK: production + activation harness shapes target=${rustcHost} scratch=${root}`);
 
-  // Second, independent check: the codegen wrapper template, compiled
-  // directly with rustc (matching how --mode codegen actually invokes it),
-  // in its own scratch directory so `#[path = "lib.rs"]` resolves next to a
-  // fresh copy of the current sources.
-  const cgRoot = path.join(scratchBase, 'build-check-codegen-wrapper');
-  freshDir(cgRoot, scratchBase);
-  fs.writeFileSync(path.join(cgRoot, 'lib.rs'), libSrc);
-  fs.writeFileSync(path.join(cgRoot, 'imp.rs'), impSrc);
-  fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), materializeTemplate(codegenWrapperTmpl, 'base'));
-  const cgBuild = spawnSync('rustc', [
-    '--edition=2021', '--crate-type=lib', '--crate-name=tis_p3ab_build_check_codegen',
-    '--emit=metadata', '-C', 'opt-level=3', '-C', 'lto=thin', '-C', 'embed-bitcode=yes',
-    '-C', 'codegen-units=1', '-D', 'warnings',
-    ...rustcRemapArgs(scratchBase),
-    '-o', path.join(cgRoot, 'force_codegen.rmeta'), path.join(cgRoot, 'force_codegen.rs'),
-  ], { cwd: cgRoot, encoding: 'utf8', env: directRustcChildEnv() });
-  if (cgBuild.status !== 0) {
-    process.stderr.write(cgBuild.stderr ?? '');
-    fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
+  // Second, independent check: compile the codegen wrapper for every source
+  // variant directly with rustc, each in its own scratch directory. This
+  // checks every exact anchor/rewrite without generating assembly artifacts.
+  for (const variant of VARIANTS) {
+    const cgRoot = path.join(scratchBase, `build-check-codegen-wrapper-${variant}`);
+    freshDir(cgRoot, scratchBase);
+    fs.writeFileSync(path.join(cgRoot, 'lib.rs'), libSrc);
+    fs.writeFileSync(path.join(cgRoot, 'imp.rs'), materializeImp(impSrc, variant));
+    fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), materializeTemplate(codegenWrapperTmpl, variant));
+    // cas_weak bypasses StackHead::compare_exchange; the other variants keep
+    // strict dead-code diagnostics in this metadata-only check.
+    const lintArgs = variant === 'cas_weak'
+      ? ['-D', 'warnings', '-A', 'dead_code']
+      : ['-D', 'warnings'];
+    const cgBuild = spawnSync('rustc', [
+      '--edition=2021', '--crate-type=lib', `--crate-name=tis_p3ab_build_check_codegen_${variant}`,
+      '--emit=metadata', '-C', 'opt-level=3', '-C', 'lto=thin', '-C', 'embed-bitcode=yes',
+      '-C', 'codegen-units=1', ...lintArgs,
+      ...rustcRemapArgs(scratchBase),
+      '-o', path.join(cgRoot, 'force_codegen.rmeta'), path.join(cgRoot, 'force_codegen.rs'),
+    ], { cwd: cgRoot, encoding: 'utf8', env: directRustcChildEnv() });
+    if (cgBuild.status !== 0) {
+      process.stderr.write(cgBuild.stderr ?? '');
+      fail(`rustc --emit=metadata failed for codegen variant ${variant} (build-check mode, cwd ${cgRoot})`);
+    }
+    console.log(`build-check mode OK: codegen wrapper variant=${variant} scratch=${cgRoot}`);
   }
-  console.log(`build-check mode OK: codegen wrapper scratch=${cgRoot}`);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────────────
@@ -1686,6 +1814,13 @@ function modeSummary(args) {
         const expectedIdentity = byVariant[variant].sha256_16 === byVariant.base.sha256_16;
         assert(byVariant[variant].identical_to_base === String(expectedIdentity), `${file}: identical_to_base disagrees with SHA equality for ${k}/${variant}`);
       }
+      assert(byVariant.cas_weak.identical_to_base === 'true', `${file}: cas_weak negative control diverged for ${k}`);
+      assert(byVariant.pop_success_relaxed.identical_to_base === 'true', `${file}: pop_success_relaxed negative control diverged for ${k}`);
+      if (fn !== 'push_index_impl') {
+        assert(byVariant.store_elided.identical_to_base === 'true', `${file}: store_elided touched ${fn}`);
+      } else {
+        assert(byVariant.store_elided.identical_to_base === 'false', `${file}: store_elided push is not codegen-distinguishable`);
+      }
       emit('codegen_identity', target, features, fn, 'cas_weak', 'identical_to_base', Number(byVariant.cas_weak.sha256_16 === byVariant.base.sha256_16), 'boolean');
       if (target.startsWith('x86_64')) {
         assert('links_relaxed' in byVariant, `${file}: missing links_relaxed row for ${k}`);
@@ -1703,7 +1838,7 @@ function modeSummary(args) {
   assert(wallclockLeg.provenance.target === wallclockLeg.provenance.rustcHost, `${wallclockLeg.csv.file}: wallclock target differs from rustc host`);
   const wcFile = wallclockLeg.csv.file;
   const wc = wallclockLeg.csv;
-  const wcHeader = ['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke'];
+  const wcHeader = ['target', 'variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke'];
   assert(JSON.stringify(wc.header) === JSON.stringify(wcHeader), `${wcFile}: unexpected header ${wc.header.join(',')}`);
   function median(arr) {
     const s = [...arr].sort((a, b) => a - b);
@@ -1716,12 +1851,19 @@ function modeSummary(args) {
     if (r.binary_kind === 'SUMMARY') {
       assert(WALLCLOCK_VARIANTS.includes(r.variant) && summaryRowsWc[r.variant] === undefined, `${wcFile}: duplicate or unexpected SUMMARY variant ${r.variant}`);
       assert(r.target === wallclockTarget, `${wcFile}: SUMMARY target ${r.target} != ${wallclockTarget}`);
+      assert(r.activation_probe === 'tag_only_retry', `${wcFile}: SUMMARY activation probe is not deterministic tag_only_retry`);
+      const expectedStoreCalls = r.variant === 'store_elided' ? 2 : 3;
+      assert(r.push_retries === '0' && r.pop_retries === '0', `${wcFile}: SUMMARY ordinary retry fields must be zero`);
+      assert(r.activation_push_retries === '1' && r.activation_pop_retries === '0', `${wcFile}: SUMMARY activation retry fields are not exact`);
+      assert(r.activation_store_next_calls === String(expectedStoreCalls), `${wcFile}: SUMMARY store_next_calls is not exact for ${r.variant}`);
       assert(r.smoke === 'false', `${wcFile}: SUMMARY row cannot be smoke evidence`);
       summaryRowsWc[r.variant] = r;
       continue;
     }
     assert(r.target === wallclockTarget && r.binary_kind === 'production' && WALLCLOCK_VARIANTS.includes(r.variant), `${wcFile}: non-production timing row`);
-    assert(r.source_inputs_at_head === 'true' && r.push_retries === '0' && r.pop_retries === '0' && r.smoke === 'false', `${wcFile}: timing row is not production evidence`);
+    assert(r.activation_probe === 'none' && r.source_inputs_at_head === 'true' && r.push_retries === '0' && r.pop_retries === '0', `${wcFile}: timing row is not production evidence`);
+    assert(r.activation_push_retries === '' && r.activation_pop_retries === '' && r.activation_store_next_calls === '', `${wcFile}: timing row contains activation evidence`);
+    assert(r.smoke === 'false', `${wcFile}: timing row is not production evidence`);
     assert(Number.isSafeInteger(Number(r.threads)) && Number(r.threads) >= 1 && Number(r.threads) <= MAX_THREADS, `${wcFile}: malformed threads`);
     assert(Number.isSafeInteger(Number(r.window_ms)) && Number(r.window_ms) >= 50 && Number(r.window_ms) <= MAX_WINDOW_MS, `${wcFile}: malformed window_ms`);
     assert(Number.isSafeInteger(Number(r.sample)) && Number(r.sample) >= 1 && Number(r.sample) <= MAX_SAMPLES, `${wcFile}: malformed sample id`);
@@ -1759,12 +1901,14 @@ function modeSummary(args) {
     const summary = summaryRowsWc[v];
     const summaryCell = (prefix) => Object.values(summary).find((c) => typeof c === 'string' && c.startsWith(`${prefix}=`))?.split('=')[1];
     const statedMedian = Number(summaryCell('median_ops_per_sec'));
-    const activationPush = Number(summaryCell('activation_push_delta'));
-    const activationPop = Number(summaryCell('activation_pop_delta'));
+    const activationPush = Number(summary.activation_push_retries);
+    const activationPop = Number(summary.activation_pop_retries);
+    const activationStores = Number(summary.activation_store_next_calls);
     assert(Number.isFinite(statedMedian) && statedMedian > 0, `${wcFile}: invalid median SUMMARY for ${v}`);
     assert(statedMedian.toFixed(2) === meds[v].toFixed(2), `${wcFile}: median SUMMARY disagrees for ${v}`);
-    assert(Number.isFinite(activationPush) && activationPush > 0, `${wcFile}: activation push must be positive for ${v}`);
-    assert(Number.isFinite(activationPop) && activationPop > 0, `${wcFile}: activation pop must be positive for ${v}`);
+    assert(activationPush === 1, `${wcFile}: activation push must equal 1 for ${v}`);
+    assert(activationPop === 0, `${wcFile}: activation pop must equal 0 for ${v}`);
+    assert(activationStores === (v === 'store_elided' ? 2 : 3), `${wcFile}: activation store_next_calls is not exact for ${v}`);
     const stated = Object.values(summaryRowsWc[v] ?? {}).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
     assert(stated !== undefined, `${wcFile}: no ratio_vs_base SUMMARY cell for variant ${v}`);
     const r = Math.round((meds[v] / meds.base) * 1000) / 1000;
