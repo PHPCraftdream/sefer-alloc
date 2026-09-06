@@ -1,10 +1,11 @@
-//! Regression pin for `#[track_caller]` on `push` and its cold panic
-//! helper: the guard's panic `Location` must name THIS file, not lib.rs.
+//! Regression coverage for `#[track_caller]` on `push`'s guard and the
+//! `ArrayLinks` load/store bounds panic helper: all three panic locations must
+//! name THIS file, not lib.rs, and all three messages must stay exact.
 //!
-//! This lives in its own one-`#[test]` binary because reading the panic
-//! `Location` requires mutating the process-global panic hook; with a
-//! one-test binary there are no concurrent sibling tests to race against,
-//! so no serialization machinery is needed (same reasoning as
+//! This lives in its own one-`#[test]` binary because reading panic locations
+//! requires mutating the process-global panic hook. With one test in the
+//! binary there are no concurrent sibling tests to race against, so no
+//! serialization machinery is needed (same reasoning as
 //! `tests/threaded_conservation.rs`'s one-#[test]-per-binary note).
 //!
 //! These do NOT run under `--cfg loom` (matching `tests/stack_unit.rs`,
@@ -12,86 +13,87 @@
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::{ArrayIndexStack, TaggedIndex, TAIL};
+use tagged_index_stack::{ArrayIndexStack, ArrayLinks, TaggedIndex};
 
-/// push's `index < INDEX_MASK` guard at a NON-degenerate width, where the two
-/// things the guard exists to reject are DIFFERENT values: at
-/// `INDEX_BITS = 16`, `INDEX_MASK` is `0xFFFF` (the reserved empty sentinel)
-/// while `TAIL` is `u32::MAX`. (At the old legal maximum `INDEX_BITS = 32`
-/// the two coincided and the guard's purposes collapsed into one; the
-/// `1..=16` cap has made that coincidence impossible — see
-/// `max_legal_width_index_mask_never_equals_tail` in `tests/stack_unit.rs` —
-/// so this pins the guard's ordinary, out-of-range purpose in its own right.)
+/// `push`'s `index < INDEX_MASK` guard and `ArrayLinks`' load/store bounds
+/// checks, including each exact panic message and caller location.
 #[test]
-fn width_16_push_rejects_index_mask_itself() {
+fn push_guard_and_array_links_panics_report_exact_messages_and_callers() {
     type T = TaggedIndex<16>;
-    assert_ne!(
-        T::INDEX_MASK,
-        TAIL as u64,
-        "at width 16 INDEX_MASK (0xFFFF) and TAIL (u32::MAX) must differ — \
-         this test covers the guard's ordinary out-of-range case (no legal \
-         width has an INDEX_MASK/TAIL coincidence any more)"
-    );
 
     let stack = ArrayIndexStack::<16, 4>::new();
     // 0xFFFF == INDEX_MASK at this width: an in-range-looking u32 that the
     // guard must reject because it is the reserved empty sentinel. The full
-    // panic assertion (not a bare is_err()) means the message must name the
-    // guard's own contract, so an unrelated out-of-bounds panic (e.g. from
-    // `ArrayLinks`) cannot satisfy this test.
+    // panic assertion means the message must name the guard's own contract,
+    // so an unrelated out-of-bounds panic cannot satisfy this test.
     //
     // Also pins #[track_caller]'s effect: without it on both `push` and its
-    // `#[cold]` helper,
-    // this panic's Location would name lib.rs instead of this call site, and
-    // that regression would leave every OTHER assertion here green. The panic
-    // Location is observable ONLY through a panic hook (the caught payload
-    // carries the message, never the location), so the hook is swapped below.
+    // #[cold] helper, this panic's Location would name lib.rs instead of this
+    // call site, and that regression would leave the message assertions
+    // green. The panic Location is observable only through a panic hook; the
+    // caught payload carries the message, never the location.
+    //
     // This is the binary's only #[test], so no serialization, chaining, or
-    // thread-id filtering is needed — a plain capturing hook suffices. The
-    // original hook is restored BEFORE the post-assertions so a failing
-    // assertion reports through the normal hook and the test can never leave
-    // a swapped hook behind if anything is ever added after it.
-    // The hook fires on THIS thread (during `catch_unwind` below), so the
-    // capture site is a thread-local plain local — no `Arc`, no cross-thread
-    // sharing, nothing else in this process can touch it.
+    // thread-id filtering is needed. The original hook is restored BEFORE
+    // the post-assertions so a failing assertion reports through the normal
+    // hook and the test can never leave a swapped hook behind.
+    // The hook fires on THIS thread, so one thread-local Vec captures all
+    // three locations without cross-thread sharing.
     thread_local! {
-        static CAPTURED_FILE: std::cell::RefCell<Option<String>> =
-            const { std::cell::RefCell::new(None) };
+        static CAPTURED_FILES: std::cell::RefCell<Vec<String>> =
+            const { std::cell::RefCell::new(Vec::new()) };
     }
 
-    let result = {
+    fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+        payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .expect("panic payload should be a string message")
+    }
+
+    let links = ArrayLinks::<4>::new();
+    let (push_result, load_result, store_result) = {
         let original = std::panic::take_hook();
         std::panic::set_hook(Box::new(|info| {
-            if let Some(loc) = info.location() {
-                CAPTURED_FILE.with(|f| *f.borrow_mut() = Some(loc.file().to_string()));
+            if let Some(location) = info.location() {
+                CAPTURED_FILES.with(|files| files.borrow_mut().push(location.file().to_owned()));
             }
         }));
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // SAFETY: DELIBERATE contract violation under test — INDEX_MASK is the reserved empty
-            // sentinel, never a legal index; the guard panic this triggers is the test's subject.
-            // Result discarded: the index-range guard panics before
-            // push_index_impl would ever return a value here.
+
+        let push_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: DELIBERATE contract violation under test: INDEX_MASK is
+            // the reserved empty sentinel, never a legal index; the guard
+            // panic this triggers is the test's subject. Result discarded:
+            // the index-range guard panics before push_index_impl returns.
             let _ = unsafe { stack.push(T::INDEX_MASK as u32) };
         }));
+        let load_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = links.load_next(4);
+        }));
+        let store_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            links.store_next(4, 0);
+        }));
+
         std::panic::set_hook(original);
-        result
+        (push_result, load_result, store_result)
     };
 
-    let captured_file = CAPTURED_FILE.with(|f| f.borrow_mut().take());
-    let err = result.expect_err("pushing index == INDEX_MASK must panic");
-    let message = err
-        .downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| err.downcast_ref::<String>().cloned())
-        .expect("panic payload should be a string message");
-    assert!(
-        message.contains("index must be < INDEX_MASK"),
-        "panic message did not name the push guard's own contract (got: {message:?})"
-    );
+    let messages = vec![
+        panic_message(push_result.expect_err("pushing index == INDEX_MASK must panic")),
+        panic_message(load_result.expect_err("out-of-range load must panic")),
+        panic_message(store_result.expect_err("out-of-range store must panic")),
+    ];
     assert_eq!(
-        captured_file.as_deref(),
-        Some(file!()),
-        "push's #[track_caller] should report THIS file as the panic \
-         location, not lib.rs -- #[track_caller] regressed"
+        messages,
+        vec![
+            "index must be < INDEX_MASK (the empty sentinel is reserved), got 65535 (INDEX_MASK = 0xffff)",
+            "ArrayLinks index out of bounds: index 4 >= capacity 4",
+            "ArrayLinks index out of bounds: index 4 >= capacity 4",
+        ]
     );
+
+    let captured_files =
+        CAPTURED_FILES.with(|files| files.borrow_mut().drain(..).collect::<Vec<_>>());
+    assert_eq!(captured_files, vec![file!().to_owned(); 3]);
 }

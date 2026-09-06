@@ -153,40 +153,20 @@ fn width_12_partitions() {
     assert_ne!(T::empty_index(), TAIL);
 }
 
-/// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
-/// narrower bound — independent of `INDEX_BITS`). Unlike
-/// `width_16_push_rejects_index_mask_itself` in
-/// `tests/push_guard_track_caller.rs` (which uses
-/// `catch_unwind` plus an explicit message assertion), this is a plain
-/// `#[should_panic(expected = ...)]`: the expected substring is Rust's own
-/// slice-indexing panic text (`self.next[index as usize]` in
-/// `ArrayLinks::load_next`), which is unambiguous enough on its own that the
-/// heavier `catch_unwind` pattern is not needed here.
+/// The owned stack accepts the exact capacity boundary (`N == INDEX_MASK`)
+/// and remains usable there; the reserved sentinel is an index value, not a
+/// capacity slot.
 #[test]
-#[should_panic(expected = "index out of bounds")]
-fn array_links_load_next_panics_on_index_out_of_range() {
-    let links = ArrayLinks::<4>::new();
-    let _ = links.load_next(4); // valid range is 0..=3
-}
+fn array_index_stack_accepts_index_mask_capacity_boundary() {
+    assert_eq!(TaggedIndex::<4>::INDEX_MASK, 15);
+    let stack = ArrayIndexStack::<4, 15>::new();
+    // SAFETY: fresh stack; index 14 is in the 0..15 backing domain and is not
+    // the reserved empty sentinel 15.
+    unsafe { stack.push(14) }.expect("fresh head has tag budget");
+    assert_eq!(stack.pop(), Some(14));
 
-/// [`ArrayLinks::store_next`] panics if `index >= N` — the same bound as
-/// `load_next` above, documented alongside it in `src/imp.rs`. Reached via
-/// the worked example in `push_index`'s own `# Panics` section: an
-/// `ArrayIndexStack::<16, 4>` accepts indices up to 65534 by `INDEX_BITS`,
-/// but its `ArrayLinks<4>` links hold only `0..=3`, so
-/// [`StackOps::push_index`](tagged_index_stack::StackOps::push_index)'s
-/// `store_next` call (which runs before the head
-/// CAS) panics on the links layer's own, narrower bound before the stack's
-/// wider `INDEX_BITS` guard is ever in play.
-#[test]
-#[should_panic(expected = "index out of bounds")]
-fn array_links_store_next_panics_on_index_out_of_range() {
-    let stack = ArrayIndexStack::<16, 4>::new();
-    // SAFETY: DELIBERATE contract violation under test — index 5 is outside the ArrayLinks<4> domain
-    // (0..4); the links-layer panic it triggers is this test's subject.
-    // Result discarded: the ArrayLinks bound panics before push_index_impl
-    // would ever return a value here.
-    let _ = unsafe { stack.push(5) }; // valid for the stack (< INDEX_MASK), not for ArrayLinks<4>
+    let default_stack: ArrayIndexStack<4, 15> = Default::default();
+    assert!(default_stack.is_empty());
 }
 
 /// The self-loop guard's SIMPLEST real-world trigger, pinned without any
