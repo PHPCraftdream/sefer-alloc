@@ -97,10 +97,66 @@ function makeScratchRoot() {
   // mkdtemp requires its parent directory to already exist.
   fs.mkdirSync(path.join(repoRoot, 'target'), { recursive: true });
   activeScratchBase = fs.mkdtempSync(path.join(repoRoot, 'target', 'tis_p3_ab-'));
+  runScratchRootTestHook(activeScratchBase);
   if (process.env.TIS_P3_AB_TEST_UNEXPECTED_AFTER_MKDTEMP === '1') {
     throw new Error('deliberate post-mkdtemp ordinary Error for scratch cleanup test');
   }
   return activeScratchBase;
+}
+
+// This hook is deliberately a synchronous helper protocol rather than a
+// timing window. It is inert unless the test names the exact protocol and a
+// victim path; production invocations never enable it.
+function runScratchRootTestHook(root) {
+  const hook = process.env.TIS_P3_AB_TEST_SCRATCH_ROOT_HOOK;
+  if (hook === undefined) return;
+  if (hook !== 'replace-root-with-directory-link-v1') {
+    fail(`unsupported scratch-root test hook ${JSON.stringify(hook)}`);
+  }
+  const victim = process.env.TIS_P3_AB_TEST_SCRATCH_ROOT_VICTIM;
+  if (typeof victim !== 'string' || !path.isAbsolute(victim)) {
+    fail('scratch-root test hook requires an absolute TIS_P3_AB_TEST_SCRATCH_ROOT_VICTIM');
+  }
+  const helper = String.raw`
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.env.TIS_P3_AB_TEST_HOOK_ROOT;
+const victim = process.env.TIS_P3_AB_TEST_HOOK_VICTIM;
+if (!path.isAbsolute(root) || !path.isAbsolute(victim)) throw new Error('hook paths must be absolute');
+const rootStat = fs.lstatSync(root);
+if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('hook root is not a real directory');
+const victimStat = fs.lstatSync(victim);
+if (!victimStat.isDirectory() || victimStat.isSymbolicLink()) throw new Error('hook victim is not a real directory');
+if (path.resolve(root) === path.resolve(victim)) throw new Error('hook victim equals root');
+fs.rmdirSync(root);
+try {
+  fs.symlinkSync(victim, root, process.platform === 'win32' ? 'junction' : 'dir');
+} catch (error) {
+  process.stdout.write('tis_p3_ab_test_hook_v1: unavailable\n');
+  process.stderr.write(error.message + '\n');
+  process.exitCode = 2;
+}
+if (process.exitCode !== 2) process.stdout.write('tis_p3_ab_test_hook_v1: ready\n');
+`;
+  const result = spawnSync(process.execPath, ['-e', helper], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      TIS_P3_AB_TEST_HOOK_ROOT: root,
+      TIS_P3_AB_TEST_HOOK_VICTIM: victim,
+    },
+  });
+  if (result.error) fail(`scratch-root test hook failed to start: ${result.error.message}`);
+  if (result.stdout === 'tis_p3_ab_test_hook_v1: unavailable\n') {
+    fail('directory symlinks/junctions unavailable for scratch-root test hook');
+  }
+  if (result.status !== 0 || result.stdout !== 'tis_p3_ab_test_hook_v1: ready\n') {
+    fail(
+      `scratch-root test hook protocol failed (status ${result.status}): ` +
+      `${result.stderr ?? ''}${result.stdout ?? ''}`,
+    );
+  }
 }
 
 function makeCargoInvocationCwd() {
@@ -992,6 +1048,35 @@ function validateScratchLeaf(name) {
   }
 }
 
+function samePath(left, right) {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function assertScratchRootOwned(root, phase) {
+  let metadata;
+  try {
+    metadata = fs.lstatSync(root);
+  } catch (e) {
+    fail(`${phase}: scratch root is unavailable: ${root}: ${e.message}`);
+  }
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    fail(`${phase}: scratch root is not a real directory owned by this invocation: ${root}`);
+  }
+  let resolved;
+  try {
+    resolved = fs.realpathSync(root);
+  } catch (e) {
+    fail(`${phase}: scratch root cannot be resolved: ${root}: ${e.message}`);
+  }
+  if (!samePath(resolved, root)) {
+    fail(`${phase}: scratch root redirects outside its owned directory: ${root} -> ${resolved}`);
+  }
+}
+
 function freshDir(dir, root) {
   // Fail-if-exists creation of ONE new child directory under THIS
   // invocation's mkdtemp scratch root. Every call site passes a leaf whose
@@ -1002,6 +1087,7 @@ function freshDir(dir, root) {
   // a symlink/junction/reparse point on the path before this process's own
   // first write to it. The lexical check below remains purely as a backstop
   // against caller bugs — it fails closed on anything at or outside `root`.
+  assertScratchRootOwned(root, 'before scratch materialization');
   const resolved = path.resolve(dir);
   const rel = path.relative(root, resolved);
   if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
@@ -1015,6 +1101,28 @@ function freshDir(dir, root) {
     }
     fail(`failed to create scratch directory ${resolved}: ${e.message}`);
   }
+}
+
+function removeScratchRoot(root) {
+  let metadata;
+  try {
+    metadata = fs.lstatSync(root);
+  } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw e;
+  }
+  if (!metadata.isDirectory() && !metadata.isSymbolicLink()) {
+    throw new Error(`refusing to remove non-directory scratch root ${root}`);
+  }
+  const resolved = fs.realpathSync(root);
+  if (!samePath(resolved, root)) {
+    // A test hook can replace the owned empty root with a link. Unlink only
+    // that link; never recursively remove its victim.
+    if (metadata.isSymbolicLink()) fs.unlinkSync(root);
+    else fs.rmdirSync(root);
+    return;
+  }
+  fs.rmSync(root, { recursive: true, force: true });
 }
 
 // The scratch tree has exactly one variable segment (args.target, validated
@@ -2422,7 +2530,7 @@ try {
     if (args !== null && args.keepScratch) {
       console.error(`tis_p3_ab_runner: --keep-scratch: scratch tree left in place for inspection: ${activeScratchBase}`);
     } else {
-      fs.rmSync(activeScratchBase, { recursive: true, force: true });
+      removeScratchRoot(activeScratchBase);
       console.error(`tis_p3_ab_runner: scratch tree removed: ${activeScratchBase}`);
     }
   }

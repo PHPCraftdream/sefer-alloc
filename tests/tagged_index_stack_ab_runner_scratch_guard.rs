@@ -333,6 +333,21 @@ fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
         .expect("spawn node for the runner copy")
 }
 
+fn run_build_check_with_scratch_root_hook(runner: &Path, victim: &Path) -> Output {
+    runner_command(runner)
+        .args(["--mode", "build-check"])
+        .env(
+            "TIS_P3_AB_TEST_SCRATCH_ROOT_HOOK",
+            "replace-root-with-directory-link-v1",
+        )
+        .env(
+            "TIS_P3_AB_TEST_SCRATCH_ROOT_VICTIM",
+            victim.to_string_lossy().as_ref(),
+        )
+        .output()
+        .expect("spawn node for the scratch-root hook oracle")
+}
+
 fn run_build_check_with_cargo_home(runner: &Path, cargo_home: &Path) -> Output {
     runner_command(runner)
         .args(["--mode", "build-check"])
@@ -704,9 +719,8 @@ fn wallclock_host_mismatch_is_rejected_before_scratch_or_build() {
     drop(parent);
 }
 
-/// A planted link at the scratch-root location must not redirect
-/// cleanup into an external victim. The runner must use a fresh private root,
-/// complete build-check, and preserve the victim canary.
+/// A link injected at the exact post-mkdtemp root must fail closed before
+/// materialization, and cleanup must not redirect into the external victim.
 #[test]
 fn scratch_root_junction_redirect_leaves_victim_canary_intact() {
     if !node_available() {
@@ -722,23 +736,36 @@ fn scratch_root_junction_redirect_leaves_victim_canary_intact() {
     )
     .expect("write victim canary");
 
-    let skeleton_target = root_guard.path().join("target");
-    fs::create_dir_all(&skeleton_target).expect("create skeleton target dir");
-    if !make_dir_symlink(&skeleton_target.join("tis_p3_ab"), &victim) {
+    let out = run_build_check_with_scratch_root_hook(&runner, &victim);
+    if String::from_utf8_lossy(&out.stderr).contains("directory symlinks/junctions unavailable") {
         eprintln!("skipping: directory symlinks/junctions unavailable in this environment");
         drop(parent);
         return;
     }
-
-    let out = run_build_check(&runner);
     assert!(
-        out.status.success(),
-        "runner failed against a planted scratch-root redirect; stderr:\n{}",
+        !out.status.success(),
+        "runner followed or accepted the exact post-mkdtemp scratch-root redirect; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("scratch root redirects outside its owned directory")
+            || stderr.contains("scratch root is not a real directory owned by this invocation"),
+        "runner did not fail closed on the redirected owned root; stderr:\n{stderr}"
     );
     assert!(
         victim.join("build-check").join("canary.txt").is_file(),
         "runner followed a planted scratch-root redirect and deleted the victim"
+    );
+    assert_eq!(
+        fs::read_to_string(victim.join("build-check").join("canary.txt"))
+            .expect("read victim canary after redirected run"),
+        "behind the scratch-root junction",
+        "runner changed the victim canary through the redirected root"
+    );
+    assert!(
+        scratch_roots_under(&root_guard.path().join("target")).is_empty(),
+        "runner left the test-injected scratch-root link behind"
     );
 }
 
