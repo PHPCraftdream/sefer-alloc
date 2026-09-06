@@ -149,10 +149,14 @@
 //! ceiling, a head's tag budget affords before that seal is reached:
 //!
 //! ```text
-//! seal_time = 2^TAG_BITS / aggregate_successful_push_rate
+//! seal_time = (2^TAG_BITS - 1) / aggregate_successful_push_rate
 //! ```
 //!
-//! and the rate term is bounded by hardware, not by the workload. The tag is
+//! The concrete `2^48 / rate`, `2^40 / rate`, and `2^32 / rate` forms below
+//! are approximation-only shorthand; the exact numerator is one less in each
+//! case.
+//!
+//! The rate term is bounded by hardware, not by the workload. The tag is
 //! global to the whole stack: every successful push is a compare-exchange (a
 //! locked RMW) on the one `AtomicU64` head word, so in the contended regime
 //! every push serializes on a single cache line whose exclusive ownership must

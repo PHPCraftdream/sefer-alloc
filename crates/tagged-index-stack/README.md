@@ -202,7 +202,7 @@ A 128-bit packed word was considered and explicitly rejected: `loom` has no
 `AtomicU128`, so the real type would lose its model-check; it would add an
 unsafe third-party dependency; and `cmpxchg16b` is not in the x86-64
 baseline. Full rationale in the repository ADR
-`docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`
+`docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md`.
 A genuine future need
 for >65535 indices should be a separate opt-in, feature-gated type — not a
 change to this default.
