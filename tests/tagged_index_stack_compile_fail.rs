@@ -291,18 +291,20 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 ///
 /// The compile-PASS guarantee is equally load-bearing: the `unsafe fn` hooks
 /// remain usable by legitimate implementors — a correct `unsafe impl` driving
-/// the stack only through the safe `StackOps` API — and that is pinned by
+/// the stack through the `StackOps` operations, with `StackOps::push_index`
+/// called only from justified `unsafe` blocks — and that is pinned by
 /// `vec_backed_storage_push_pop_round_trips` and
 /// `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. The
 /// hooks are a barrier to MISUSE, not to legitimate use.
 ///
-/// The fixture's implementor (`Pool`) is itself CORRECT — the only defects
-/// are its three bare, unsafe-context-free hook calls in `main` — and the
-/// calls are contract-shaped (index 2 was pushed through the same binding),
-/// so the ONLY errors are the three E0133s, one per hook, each naming the
-/// called method. (E0133 names the method, not the implementor type; the
-/// fixture-specific type anchor below is the source snippet of each call
-/// against `pool`, the `Pool` binding.)
+/// The fixture's hook bodies are structurally valid, but `main` deliberately
+/// includes a direct `store_next` after index 2 was published. That write
+/// violates `StackStorage::store_next`'s caller contract; it is included to
+/// pin the compiler boundary, not to claim contract-valid hook semantics.
+/// The three calls remain bare, so the ONLY errors are the three E0133s, one
+/// per hook, each naming the called method. (E0133 names the method, not the
+/// implementor type; the fixture-specific type anchor below is the source
+/// snippet of each call against `pool`, the `Pool` binding.)
 #[test]
 fn hook_call_requires_unsafe_block() {
     let output = build_fixture_with_json("hook_call_requires_unsafe", None);

@@ -910,8 +910,8 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
     if u64::from(index) >= mask {
         push_index_out_of_range(index, mask);
     }
-    // `head()` is read exactly once per operation — see StackStorage's
-    // `StackStorage` clause 5: use the same logical head for the operation.
+    // `head()` is read exactly once per operation — see StackStorage's clause
+    // 5: use the same logical head for the operation.
     // SAFETY: this operation uses one stable binding's head exactly once;
     // the caller forwarded `StackStorage::head`'s binding contract.
     let head_ref: &StackHead<B> = unsafe { s.head() };
@@ -1029,8 +1029,8 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
 #[allow(unsafe_code)]
 #[track_caller]
 pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) -> Option<u32> {
-    // `head()` is read exactly once per operation — see StackStorage's
-    // `StackStorage` clause 5: use the same logical head for the operation.
+    // `head()` is read exactly once per operation — see StackStorage's clause
+    // 5: use the same logical head for the operation.
     // SAFETY: this operation uses one stable binding's head exactly once;
     // the caller forwarded `StackStorage::head`'s binding contract.
     let head_ref: &StackHead<B> = unsafe { s.head() };

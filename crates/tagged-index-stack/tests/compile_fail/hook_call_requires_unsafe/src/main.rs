@@ -11,8 +11,9 @@
 //! implementor and caller.
 //!
 //! The compile-PASS counterpart: the hooks are a barrier to MISUSE, not to
-//! legitimate use — a correct `unsafe impl` driven only through the safe
-//! `push_index`/`pop_index` compiles and behaves correctly, pinned by
+//! legitimate use — a correct `unsafe impl` driven through the `StackOps`
+//! operations (with unsafe `StackOps::push_index` calls properly justified)
+//! compiles and behaves correctly, pinned by
 //! `vec_backed_storage_push_pop_round_trips` +
 //! `push_pop_through_dyn_storage` in `tests/custom_storage_impl.rs`. Pinned
 //! failing by root `tests/tagged_index_stack_compile_fail.rs`.
@@ -25,10 +26,10 @@ struct Pool {
     next: [AtomicU32; 8],
 }
 
-// SAFETY: this impl is CORRECT — it upholds every `# Safety` clause (privately
-// owned head, dedicated link cells, the stack driven only via
-// push_index/pop_index). The defects this fixture pins are the three BARE
-// CALLS in `main` below, not the impl.
+// SAFETY: these hook bodies are structurally valid for the privately owned
+// head and dedicated link cells. `main` deliberately includes a direct
+// `store_next` after publication, which violates that hook's caller contract;
+// the fixture pins only the compiler boundary at those bare calls below.
 unsafe impl StackStorage<16> for Pool {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -51,8 +52,11 @@ fn main() {
     // SAFETY: fresh pool (domain 0..8); indices 1 and 2 are in-domain and pushed exactly once.
     unsafe { pool.push_index(1) }.expect("fresh head has tag budget");
     unsafe { pool.push_index(2) }.expect("fresh head has tag budget");
-    // Each call below is contract-shaped (index 2 was pushed through this
-    // binding), so the ONLY compile error is the unsafe-call error itself.
+    // `head()` and `load_next(2)` are contract-shaped for the published index.
+    // The direct `store_next` below is deliberate contract misuse: it runs
+    // after publication instead of immediately before a publishing CAS. All
+    // three calls stay bare so this fixture proves only the E0133 compiler
+    // boundary, not contract-valid hook semantics.
     // Bare call outside an `unsafe` block. ERROR: E0133 — call to unsafe
     // function is unsafe.
     let _head = pool.head();
