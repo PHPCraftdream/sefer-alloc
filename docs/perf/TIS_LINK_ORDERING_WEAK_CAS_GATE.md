@@ -17,23 +17,21 @@ and store-elision await native ARM timing.
 
 ## Accepted measurement identity
 
-The final authoritative codegen artifacts were captured under source HEAD
-`ff081851f71f9d8e554e216b7ca925fff6a7643b`, tree
-`42c50f2219ccbc5fa63d1a15870d327b960162e6`, source-input digest
-`360d23ec7b20f6b2c96b4ed1274bc405127677911aaf69012bd05e997ef4fc7e`, and
+The final authoritative codegen artifacts were captured under the current
+run-25 remediation source HEAD
+`77fafc36234af838749a70c3ae5cb7c2ea877ee6`, tree
+`69ed043e90822c4bedda72fd9cf2ab64e3507fa1`, source-input digest
+`6295e69d5c983fc429eeaacf6f3accf2d1a6e5403772628096be2e3e9fedd1a6`, and
 `rustc 1.97.0` / `LLVM 22.1.6`. The ODB-pinned evidence capture is in
 `c00087f` plus its scratch-guard closure `393f81e`; host-receipt and
 natural-workload support was implemented in `b01580f`, and the earlier codegen
 artifact recording landed in `133d842`—both are intermediate implementation
-commits. The final runner identity binding is `ff081851f71f9d8e554e216b7ca925fff6a7643b`
-(host/profile/toolchain/flags), and the final recorded artifacts are in
-`59644b2c4b3ca3e1590f93dc399fe5feef83d507`. Both recorded codegen legs were
+commits. Current codegen artifact commit is `0203577`. Both recorded codegen legs are
 source-input-identical to that captured HEAD and use the exact
-`release-thin-lto-1cgu-no-incremental` profile. These are preserved historical
-receipts: the run-25 source/doc/unsafe refactor landed in `9215cba`, followed
-by `1b5ce46`, so the receipts are not
-source-input-identical to the current tree and must be regenerated before the
-ARM bundle.
+`release-thin-lto-1cgu-no-incremental` profile. The current run-25 remediation
+closure is represented by `21fc146`, `9215cba`, `1b5ce46`, `b67c550`,
+`3509ee6`, and `77fafc3`; these receipts are source-input-identical to the
+current run-25 remediation HEAD and do not imply native ARM timing.
 
 The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
 evidence modes pin HEAD before reading each source input with
@@ -77,8 +75,8 @@ The functions are `load_next`, `store_next`, `push_index_impl`, and
   `ldar`/`stlr` operations while preserving the head `Acquire`; native ARM
   timing is still required.
 - `store_elided` changes only `push_index_impl`: x86 instruction count
-  `62 → 71` (+14.5%), AArch64 default `79 → 77` (−2.5%), and AArch64 `+lse`
-  `72 → 69` (−4.2%). The relevant static CAS/`stlr` site count is `2 → 1`;
+  `62 → 71` (+14.5%), AArch64 default `78 → 77` (−1.3%), and AArch64 `+lse`
+  `71 → 69` (−2.8%). The relevant static CAS/`stlr` site count is `2 → 1`;
   that is a static assembly count, **not runtime frequency**.
 - The `store_elided` safety basis is unchanged ownership: the unpublished index
   remains exclusively owned; elision skips only an unchanged `next_link` store,

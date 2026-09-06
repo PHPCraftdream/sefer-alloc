@@ -2016,7 +2016,7 @@ lived inline).*
     §9-iii. The nightly-trigger re-enable decision remains gated on fixing the
     workflow self-lock documented in the archived card above.
 
-- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by final runner identity `ff081851f71f9d8e554e216b7ca925fff6a7643b` and artifact commit `59644b2c4b3ca3e1590f93dc399fe5feef83d507`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by current run-25 source HEAD `77fafc36234af838749a70c3ae5cb7c2ea877ee6`, tree `69ed043e90822c4bedda72fd9cf2ab64e3507fa1`, digest `6295e69d5c983fc429eeaacf6f3accf2d1a6e5403772628096be2e3e9fedd1a6`, and artifact commit `0203577`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
 
   - **Status:** CLOSED — static codegen NULL; no production change.
   - **Current number-or-verdict:** the authoritative `pop_success_relaxed`
@@ -2024,9 +2024,9 @@ lived inline).*
     `push_index_impl`, and `pop_index_impl` on x86 and on AArch64 with both
     default and `+lse` features. The exact matrix is 20 x86 rows and 40
     AArch64 rows, using source HEAD
-    `ff081851f71f9d8e554e216b7ca925fff6a7643b`, tree
-    `42c50f2219ccbc5fa63d1a15870d327b960162e6`, and source-input digest
-    `360d23ec7b20f6b2c96b4ed1274bc405127677911aaf69012bd05e997ef4fc7e`.
+    `77fafc36234af838749a70c3ae5cb7c2ea877ee6`, tree
+    `69ed043e90822c4bedda72fd9cf2ab64e3507fa1`, and source-input digest
+    `6295e69d5c983fc429eeaacf6f3accf2d1a6e5403772628096be2e3e9fedd1a6`.
   - **Closure rationale:** the candidate is a genuine static NULL, not a
     timing result. The failure ordering remains `Acquire` and is load-bearing:
     a failed pop CAS observes a newer head before the retry reads that head's
@@ -2038,7 +2038,9 @@ lived inline).*
     question or create a wall-clock verdict. Native ARM timing remains OPEN
     for `base`, `links_relaxed`, and the separate `store_elided` candidate.
   - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, the
-    authoritative codegen CSVs/raw logs/assembly bundles, final runner
-    identity `ff081851f71f9d8e554e216b7ca925fff6a7643b`, and artifact commit
-    `59644b2c4b3ca3e1590f93dc399fe5feef83d507`; the earlier ODB/implementation
+    authoritative codegen CSVs/raw logs/assembly bundles, current source-input
+    identity `77fafc36234af838749a70c3ae5cb7c2ea877ee6` / tree
+    `69ed043e90822c4bedda72fd9cf2ab64e3507fa1` / digest
+    `6295e69d5c983fc429eeaacf6f3accf2d1a6e5403772628096be2e3e9fedd1a6`, and
+    artifact commit `0203577`; the earlier ODB/implementation
     commits remain in the historical trail above.
