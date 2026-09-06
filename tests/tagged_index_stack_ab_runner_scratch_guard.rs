@@ -47,15 +47,17 @@ fn next_uid() -> u32 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Creates a private temp directory. Exclusive creation prevents a concurrent
-/// test or planted symlink from becoming a directory guard's target.
-fn exclusive_temp_dir(label: &str) -> DirGuard {
+/// Creates a private child under an existing directory. Exclusive creation
+/// prevents a concurrent test or planted symlink from becoming the target.
+fn exclusive_dir_under(base: &Path, label: &str) -> DirGuard {
+    fs::create_dir_all(base)
+        .unwrap_or_else(|e| panic!("create exclusive directory base {}: {e}", base.display()));
     loop {
         let subsec_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!(
+        let dir = base.join(format!(
             "tis_runner_guard_{}_{}_{}_{}",
             std::process::id(),
             subsec_nanos,
@@ -68,6 +70,10 @@ fn exclusive_temp_dir(label: &str) -> DirGuard {
             Err(e) => panic!("create exclusive temp dir {}: {e}", dir.display()),
         }
     }
+}
+
+fn exclusive_temp_dir(label: &str) -> DirGuard {
+    exclusive_dir_under(&std::env::temp_dir(), label)
 }
 
 fn node_available() -> bool {
@@ -85,7 +91,7 @@ fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatib
 
     let (read_git_source, _) = source
         .split_once("function readGitSourceBytes(headSha, relativePath)")
-        .and_then(|(_, rest)| rest.split_once("\nfunction requireCapturedCargoConfig"))
+        .and_then(|(_, rest)| rest.split_once("\nconst CARGO_CONFIG_BASENAMES"))
         .expect("runner is missing the bounded readGitSourceBytes body");
     assert!(
         read_git_source.contains("const result = spawnSync('git', ['show', `${headSha}:${relativePath}`], {")
@@ -113,6 +119,23 @@ fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatib
     assert!(
         !evidence.contains("captureSnapshotContext(args);") && evidence.contains(odb),
         "evidence capture must not use the plain dirty-worktree snapshot"
+    );
+
+    assert!(
+        source.contains("const CARGO_CONFIG_BASENAMES = ['config', 'config.toml'];")
+            && source.contains("function assertCargoConfigIsolation(cwd, cargoHome, phase)")
+            && source.contains("const repoRootRealPath = fs.realpathSync(repoRoot);")
+            && source.contains("const tempRoot = fs.realpathSync(path.resolve(os.tmpdir()));")
+            && source.contains("activeCargoInvocationCwd = fs.realpathSync(created);")
+            && source.contains("!withinOrEqual(repoRootRealPath, resolved) && !withinOrEqual(resolved, repoRootRealPath)")
+            && source.contains("assertCargoConfigIsolation(cwd, cargoHome, `after ${label}`);")
+            && source.contains("--manifest-path")
+            && source.contains("activeCargoInvocationCwd"),
+        "Cargo provenance isolation contract is missing"
+    );
+    assert!(
+        !source.contains("'.cargo/config.toml'") && !source.contains("requireCapturedCargoConfig"),
+        "tracked repository Cargo config must not be a live source/provenance input"
     );
 
     assert!(
@@ -192,7 +215,9 @@ fn copy_file(src: &Path, dst: &Path) {
 fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
     let repo_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = repo_dir.join("crates/tagged-index-stack");
-    let parent = exclusive_temp_dir(label);
+    // Keep the disposable repository outside the canonical system temp root:
+    // the runner must prove those roots are disjoint in both directions.
+    let parent = exclusive_dir_under(&repo_dir.join("target"), label);
     let root = parent.path().join("repo");
     fs::create_dir_all(&root).expect("create skeleton repo root");
 
@@ -308,6 +333,19 @@ fn run_build_check_with_cargo_home(runner: &Path, cargo_home: &Path) -> Output {
         .env("CARGO_HOME", cargo_home)
         .output()
         .expect("spawn node for the external-CARGO_HOME oracle")
+}
+
+fn run_build_check_with_temp_root(runner: &Path, temp_root: &Path) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(["--mode", "build-check"])
+        // Node's os.tmpdir() consults TMPDIR on Unix and TEMP/TMP on Windows;
+        // set all three so the disposable fixture is deterministic.
+        .env("TMPDIR", temp_root)
+        .env("TEMP", temp_root)
+        .env("TMP", temp_root)
+        .output()
+        .expect("spawn node for the Cargo config-chain oracle")
 }
 
 fn rustc_host() -> String {
@@ -728,6 +766,77 @@ fn scratch_roots_under(target_dir: &Path) -> Vec<PathBuf> {
     }
 }
 
+fn cargo_invocation_roots_under(temp_dir: &Path) -> Vec<PathBuf> {
+    let mut roots = fs::read_dir(temp_dir)
+        .unwrap_or_else(|e| panic!("read Cargo invocation parent {}: {e}", temp_dir.display()))
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("tis_p3_ab-cargo-"))
+        })
+        .collect::<Vec<_>>();
+    roots.sort();
+    roots
+}
+
+fn remove_kept_cargo_invocation(stderr: &str, expected_temp_root: &Path) {
+    const PREFIX: &str =
+        "tis_p3_ab_runner: --keep-scratch: Cargo invocation cwd left in place for inspection: ";
+    let path = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix(PREFIX))
+        .map(PathBuf::from)
+        .expect("--keep-scratch run must report its external Cargo cwd");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    assert!(
+        name.starts_with("tis_p3_ab-cargo-"),
+        "reported Cargo cwd is not a runner-owned mkdtemp path: {}",
+        path.display()
+    );
+    let metadata = fs::symlink_metadata(&path)
+        .unwrap_or_else(|e| panic!("inspect kept Cargo cwd {}: {e}", path.display()));
+    assert!(
+        metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+        "reported Cargo cwd is not a real directory: {}",
+        path.display()
+    );
+    let expected_root = fs::canonicalize(expected_temp_root).unwrap_or_else(|e| {
+        panic!(
+            "canonicalize expected temp root {}: {e}",
+            expected_temp_root.display()
+        )
+    });
+    let canonical = fs::canonicalize(&path)
+        .unwrap_or_else(|e| panic!("canonicalize kept Cargo cwd {}: {e}", path.display()));
+    assert_eq!(
+        canonical.parent(),
+        Some(expected_root.as_path()),
+        "kept Cargo cwd is not a direct child of the expected system temp root: {}",
+        canonical.display()
+    );
+    assert_eq!(
+        canonical.file_name().and_then(|name| name.to_str()),
+        Some(name),
+        "kept Cargo cwd changed name through canonicalization"
+    );
+    assert!(
+        canonical.join("cargo-home").is_dir(),
+        "reported Cargo cwd lacks its owned CARGO_HOME: {}",
+        canonical.display()
+    );
+    fs::remove_dir_all(&canonical)
+        .unwrap_or_else(|e| panic!("remove kept Cargo cwd {}: {e}", canonical.display()));
+    assert!(
+        !canonical.exists(),
+        "kept Cargo cwd survived explicit cleanup"
+    );
+}
+
 /// Appends a guaranteed top-level syntax error to the SKELETON's
 /// `src/imp.rs` copy — the controlled failure injection for the lifecycle
 /// oracles. The appended line cannot create or duplicate a template anchor
@@ -784,6 +893,14 @@ fn build_check_success_leaves_no_scratch_root() {
     let config = format!(
         "[build]\nrustc-wrapper = \"{missing_wrapper}\"\ntarget = \"riscv64gc-unknown-linux-gnu\"\n"
     );
+    let parent_config_path = parent.path().join(".cargo/config.toml");
+    fs::create_dir_all(
+        parent_config_path
+            .parent()
+            .expect("parent Cargo config dir"),
+    )
+    .expect("create harmful parent Cargo config dir");
+    fs::write(&parent_config_path, &config).expect("write harmful parent Cargo config");
     let config_path = external_home.path().join("config.toml");
     fs::write(&config_path, &config).expect("write harmful external Cargo config");
     let skeleton_target = root_guard.path().join("target");
@@ -810,11 +927,102 @@ fn build_check_success_leaves_no_scratch_root() {
         config,
         "runner mutated the caller's external Cargo config"
     );
+    assert_eq!(
+        fs::read_to_string(&parent_config_path).expect("read parent Cargo config after run"),
+        config,
+        "runner mutated the harmful parent Cargo config"
+    );
     let after = scratch_roots_under(&skeleton_target);
     assert_eq!(
         before, after,
         "successful build-check left a scratch root under <repo>/target"
     );
+    drop(parent);
+}
+
+/// A config in the fresh invocation cwd's ancestor chain must be reported
+/// before Cargo starts. The runner-owned external cwd must still be removed,
+/// while the disposable config itself remains untouched.
+#[test]
+fn cargo_config_ancestor_chain_fails_closed_and_cleans_external_cwd() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("cargo_config_chain");
+    let temp_parent = exclusive_temp_dir("cargo_invocation_parent");
+    let config_path = temp_parent.path().join(".cargo").join("config.toml");
+    let config = "[build]\nrustc-wrapper = \"definitely-missing-wrapper\"\n";
+    fs::create_dir_all(config_path.parent().expect("Cargo config parent"))
+        .expect("create invocation ancestor Cargo config dir");
+    fs::write(&config_path, config).expect("write invocation ancestor Cargo config");
+    let before = cargo_invocation_roots_under(temp_parent.path());
+
+    let out = run_build_check_with_temp_root(&runner, temp_parent.path());
+    assert!(
+        !out.status.success(),
+        "ancestor Cargo config unexpectedly passed"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let config_path_text = config_path.to_string_lossy().into_owned();
+    assert!(
+        stderr.contains("refusing Cargo because config files exist in the isolated Cargo chain"),
+        "ancestor config rejection lacked the chain oracle: {stderr}"
+    );
+    assert!(
+        stderr.contains("config.toml") && stderr.contains(&config_path_text),
+        "ancestor config rejection did not name the discovered config {}: {stderr}",
+        config_path_text
+    );
+    assert_eq!(
+        before,
+        cargo_invocation_roots_under(temp_parent.path()),
+        "failed config-chain run leaked its external invocation cwd"
+    );
+    assert_eq!(
+        fs::read_to_string(&config_path).expect("read invocation ancestor config after run"),
+        config,
+        "runner mutated the ancestor Cargo config"
+    );
+    assert!(
+        scratch_roots_under(&root_guard.path().join("target")).is_empty(),
+        "config-chain rejection left a repository scratch root"
+    );
+    drop(parent);
+}
+
+/// The external temp root itself must be disjoint from the repository in both
+/// directions: equal-to-repo and repo-ancestor paths are both rejected.
+#[test]
+fn cargo_temp_root_must_be_disjoint_from_repo() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("cargo_temp_disjoint");
+    for (label, temp_root) in [
+        ("equal", root_guard.path().to_path_buf()),
+        ("ancestor", parent.path().to_path_buf()),
+    ] {
+        let out = run_build_check_with_temp_root(&runner, &temp_root);
+        assert!(
+            !out.status.success(),
+            "{label} Cargo temp root unexpectedly passed"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Cargo temporary root must be outside the repository ancestry"),
+            "{label} path rejection had the wrong diagnostic: {stderr}"
+        );
+        assert!(
+            !stderr.contains("Cargo invocation cwd removed"),
+            "{label} path rejection created an external Cargo cwd: {stderr}"
+        );
+        assert!(
+            scratch_roots_under(&root_guard.path().join("target")).is_empty(),
+            "{label} path rejection left a repository scratch root"
+        );
+    }
     drop(parent);
 }
 
@@ -897,6 +1105,10 @@ fn keep_scratch_fatal_failure_keeps_exactly_one_owned_root() {
     );
     let out = run_build_check_with(&runner, &["--keep-scratch"]);
     assert_fatal_from_post_mkdtemp_cargo_build(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let expected_temp_root =
+        fs::canonicalize(std::env::temp_dir()).expect("canonicalize the expected system temp root");
+    remove_kept_cargo_invocation(&stderr, &expected_temp_root);
     let after = scratch_roots_under(&skeleton_target);
     assert_eq!(
         after.len(),

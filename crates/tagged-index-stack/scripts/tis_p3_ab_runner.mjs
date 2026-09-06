@@ -59,37 +59,39 @@ const scriptDir = path.dirname(scriptPath);
 // repo root is three levels up from this script
 // (<repoRoot>/crates/tagged-index-stack/scripts/).
 const repoRoot = path.resolve(scriptDir, '..', '..', '..');
+const repoRootRealPath = fs.realpathSync(repoRoot);
 const docsPerfDir = path.join(repoRoot, 'docs', 'perf');
 const SOURCE_INPUT_RELATIVE_PATHS = Object.freeze([
   'crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
-  '.cargo/config.toml',
   'crates/tagged-index-stack/src/lib.rs',
   'crates/tagged-index-stack/src/imp.rs',
   'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl',
   'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs',
   'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl',
 ]);
-const CARGO_CONFIG_RELATIVE_PATH = '.cargo/config.toml';
-// Dedicated scratch root: the ONLY directory tree this runner ever creates
-// or deletes inside. Created FRESH by each top-level mode invocation via
-// mkdtemp under <repoRoot>/target/: the full path is
+// Repository scratch root: the only tree this runner creates or deletes under
+// the checkout. Created FRESH by each top-level mode invocation via mkdtemp
+// under <repoRoot>/target/: the full path is
 // unpredictable (random mkdtemp suffix) and it is created exclusively by
 // THIS process, so nothing else could have planted a symlink/junction/
 // reparse point anywhere on the path before this process's own first write.
 // A fixed scratch path could be redirected by a planted reparse point; this
 // per-invocation root prevents that before the first write.
-// Each invocation removes its own root again on EVERY exit path — success,
-// fail()-driven fatal error, unexpected exception — via the top-level
-// finally around the dispatch; --keep-scratch opts out on purpose. A
-// hard-killed run's leftover root is inert garbage under
-// gitignored <repoRoot>/target/ (never re-entered, never deleted by a later
-// invocation — later invocations get their own mkdtemp root).
+// Each invocation also owns one fresh external Cargo cwd. Both roots are
+// removed on EVERY exit path — success, fail()-driven fatal error, unexpected
+// exception — via the top-level finally; --keep-scratch opts out on purpose.
+// Hard-killed leftovers are inert garbage under gitignored target/ or the OS
+// temp directory and are never re-entered or deleted by a later invocation.
 
 // Module-level handle for the top-level finally: the ONE scratch root this
 // invocation created (null until makeScratchRoot runs). Mode functions keep
 // their own local copy; this handle exists so the cleanup site lives in ONE
 // place around the dispatch instead of once per mode's success path.
 let activeScratchBase = null;
+// Cargo must start in a fresh directory outside the checkout's ancestry. Its
+// exact mkdtemp path is tracked separately so ordinary and --keep-scratch
+// cleanup have one ownership record for both trees.
+let activeCargoInvocationCwd = null;
 
 function makeScratchRoot() {
   // mkdtemp requires its parent directory to already exist.
@@ -99,6 +101,15 @@ function makeScratchRoot() {
     throw new Error('deliberate post-mkdtemp ordinary Error for scratch cleanup test');
   }
   return activeScratchBase;
+}
+
+function makeCargoInvocationCwd() {
+  const tempRoot = fs.realpathSync(path.resolve(os.tmpdir()));
+  assertOutsideRepoAncestry(tempRoot, 'Cargo temporary root');
+  const created = fs.mkdtempSync(path.join(tempRoot, 'tis_p3_ab-cargo-'));
+  activeCargoInvocationCwd = fs.realpathSync(created);
+  assertOutsideRepoAncestry(activeCargoInvocationCwd, 'Cargo invocation cwd');
+  return activeCargoInvocationCwd;
 }
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak', 'pop_success_relaxed', 'store_elided'];
@@ -618,36 +629,98 @@ function readGitSourceBytes(headSha, relativePath) {
   return result.stdout;
 }
 
-function requireCapturedCargoConfig(header, phase) {
-  const captured = header.sourceSnapshot.get(CARGO_CONFIG_RELATIVE_PATH);
-  assert(Buffer.isBuffer(captured), `${phase}: captured .cargo/config.toml bytes are missing`);
-  let live;
-  try {
-    live = fs.readFileSync(path.join(repoRoot, ...CARGO_CONFIG_RELATIVE_PATH.split('/')));
-  } catch (error) {
-    fail(`${phase}: live ancestor .cargo/config.toml could not be read: ${error.message}`);
-  }
-  assert(live.equals(captured), `${phase}: live ancestor .cargo/config.toml differs from the captured HEAD object`);
+const CARGO_CONFIG_BASENAMES = ['config', 'config.toml'];
+
+function assertOutsideRepoAncestry(candidate, label) {
+  const resolved = fs.realpathSync(candidate);
+  const withinOrEqual = (base, child) => {
+    const rel = path.relative(base, child);
+    return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
+  };
+  assert(
+    !withinOrEqual(repoRootRealPath, resolved) && !withinOrEqual(resolved, repoRootRealPath),
+    `${label} must be outside the repository ancestry: ${resolved}`,
+  );
 }
 
-function runEvidenceCargoBuild(header, rustflagTokens, cargoArgs, cwd, targetDir, label) {
-  // Cargo discovers the checkout's live ancestor config because evidence
-  // crates are deliberately materialized below repoRoot. The source files
-  // themselves come from the ODB snapshot; this check makes the config use
-  // explicit and fail closed instead of implying Cargo read ODB bytes.
-  requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `before ${label}`);
-  requireCapturedCargoConfig(header, `before ${label}`);
+function cargoConfigCandidatesAlongAncestors(cwd) {
+  const resolvedCwd = fs.realpathSync(cwd);
+  assert(path.isAbsolute(resolvedCwd), 'Cargo invocation cwd must be absolute');
+  const candidates = [];
+  let current = resolvedCwd;
+  while (true) {
+    for (const basename of CARGO_CONFIG_BASENAMES) {
+      candidates.push(path.join(current, '.cargo', basename));
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return candidates;
+}
+
+function existingPaths(paths, phase) {
+  const existing = [];
+  for (const candidate of paths) {
+    try {
+      fs.lstatSync(candidate);
+      existing.push(candidate);
+    } catch (error) {
+      if (error.code !== 'ENOENT') fail(`${phase}: cannot inspect ${candidate}: ${error.message}`);
+    }
+  }
+  return existing;
+}
+
+function assertCargoConfigIsolation(cwd, cargoHome, phase) {
+  const ancestorCandidates = cargoConfigCandidatesAlongAncestors(cwd);
+  const foundAncestors = existingPaths(ancestorCandidates, phase);
+  const cargoHomeCandidates = CARGO_CONFIG_BASENAMES.map((basename) => path.join(cargoHome, basename));
+  const foundCargoHome = existingPaths(cargoHomeCandidates, phase);
+  if (foundAncestors.length !== 0 || foundCargoHome.length !== 0) {
+    fail(
+      `${phase}: refusing Cargo because config files exist in the isolated Cargo chain; ` +
+      `ancestor chain checked ${ancestorCandidates.length} paths and CARGO_HOME checked ${cargoHomeCandidates.length}: ` +
+      [...foundAncestors, ...foundCargoHome].join(', '),
+    );
+  }
+}
+
+function runIsolatedCargoBuild(rustflagTokens, cargoArgs, cwd, targetDir, cargoHome, label) {
+  assertOutsideRepoAncestry(cwd, `${label} cwd`);
+  assert(path.isAbsolute(targetDir), `${label}: CARGO_TARGET_DIR must be absolute`);
+  const manifestIndex = cargoArgs.indexOf('--manifest-path');
+  assert(
+    manifestIndex >= 0 && manifestIndex + 1 < cargoArgs.length && path.isAbsolute(cargoArgs[manifestIndex + 1]),
+    `${label}: Cargo requires an absolute --manifest-path`,
+  );
+  assertCargoConfigIsolation(cwd, cargoHome, `before ${label}`);
   let result;
   try {
     result = spawnSync('cargo', cargoArgs, {
       cwd,
       encoding: 'utf8',
-      env: cargoChildEnv(rustflagTokens, targetDir, header.cargoHome),
+      env: cargoChildEnv(rustflagTokens, targetDir, cargoHome),
     });
   } finally {
-    requireCapturedCargoConfig(header, `after ${label}`);
+    assertCargoConfigIsolation(cwd, cargoHome, `after ${label}`);
   }
-  requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `after ${label}`);
+  return result;
+}
+
+function runEvidenceCargoBuild(header, rustflagTokens, cargoArgs, cwd, targetDir, label) {
+  // Evidence source files come from the ODB snapshot. Cargo configuration is
+  // deliberately irrelevant to that snapshot: every build starts outside the
+  // checkout ancestry, with a fresh CARGO_HOME, and an absolute manifest path.
+  requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `before ${label}`);
+  let result;
+  try {
+    result = runIsolatedCargoBuild(rustflagTokens, cargoArgs, cwd, targetDir, header.cargoHome, label);
+  } finally {
+    // Keep the ODB/worktree provenance check on both sides of Cargo; no live
+    // repository config is read here.
+    requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, `after ${label}`);
+  }
   return result;
 }
 
@@ -702,10 +775,20 @@ function canonicalSanitizedEnvJson(state) {
   });
 }
 
-function bindRunFlags(header, scratchBase) {
+function bindRunFlags(header, scratchBase, cargoInvocationCwd) {
   assert(header.cargoHome === undefined, 'CARGO_HOME must be created exactly once per invocation');
-  const cargoHome = path.join(scratchBase, 'cargo-home');
-  freshDir(cargoHome, scratchBase);
+  let cargoHome;
+  if (cargoInvocationCwd === undefined) {
+    // Direct rustc codegen has no Cargo process; keep its existing local
+    // metadata shape and do not create an external Cargo tree for it.
+    cargoHome = path.join(scratchBase, 'cargo-home');
+    freshDir(cargoHome, scratchBase);
+  } else {
+    assert(cargoInvocationCwd === activeCargoInvocationCwd, 'Cargo invocation cwd is not runner-owned');
+    assertOutsideRepoAncestry(cargoInvocationCwd, 'Cargo invocation cwd');
+    cargoHome = path.join(cargoInvocationCwd, 'cargo-home');
+    freshDir(cargoHome, cargoInvocationCwd);
+  }
   const production = rustcRemapArgs(scratchBase);
   const activation = [...production, '--cfg', 'tagged_index_stack_test'];
   header.actualRustflagTokens = { production, activation };
@@ -858,7 +941,7 @@ function headerComment(header) {
     `// source-input-digest: ${header.sourceInputDigest}`,
     `// source-inputs: ${JSON.stringify(header.sourceInputs)}`,
     `// source-inputs-at-head: ${header.sourceInputsAtHead}`,
-    '// cargo-config-policy: Cargo reads live ancestor .cargo/config.toml; evidence checks it byte-for-byte against the captured HEAD object immediately before and after each Cargo build',
+    '// cargo-config-policy: tracked repository config is irrelevant; every Cargo build uses an external fresh cwd, absolute manifest, fresh CARGO_HOME, isolated target, and a config-chain preflight',
     `// toolchain:    ${header.toolchain}`,
     `// effective-production-rustflags: ${JSON.stringify(header.effectiveRustflags.production)}`,
     `// effective-activation-rustflags: ${JSON.stringify(header.effectiveRustflags.activation)}`,
@@ -1471,7 +1554,8 @@ function modeWallclock(args, header) {
   const scratchBase = makeScratchRoot();
   const root = scratchRoot(args, scratchBase);
   freshDir(root, scratchBase);
-  bindRunFlags(header, scratchBase);
+  const cargoInvocationCwd = makeCargoInvocationCwd();
+  bindRunFlags(header, scratchBase, cargoInvocationCwd);
 
   const logLines = [headerComment(header)];
   logLines.push(`run params: threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
@@ -1498,8 +1582,8 @@ function modeWallclock(args, header) {
     const build = runEvidenceCargoBuild(
       header,
       header.actualRustflagTokens.production,
-      ['build', '--release', '--target', args.target],
-      cdir,
+      ['build', '--manifest-path', path.join(cdir, 'Cargo.toml'), '--release', '--target', args.target],
+      cargoInvocationCwd,
       path.join(cdir, 'target'),
       `production cargo build for variant ${variant}`,
     );
@@ -1525,8 +1609,8 @@ function modeWallclock(args, header) {
     const activationBuild = runEvidenceCargoBuild(
       header,
       header.actualRustflagTokens.activation,
-      ['build', '--release', '--target', args.target],
-      adir,
+      ['build', '--manifest-path', path.join(adir, 'Cargo.toml'), '--release', '--target', args.target],
+      cargoInvocationCwd,
       path.join(adir, 'target'),
       `activation cargo build for variant ${variant}`,
     );
@@ -1728,7 +1812,8 @@ function modeBuildCheck(args, snapshot) {
   const scratchBase = makeScratchRoot();
   const root = path.join(scratchBase, 'build-check');
   freshDir(root, scratchBase);
-  bindRunFlags(snapshot, scratchBase);
+  const cargoInvocationCwd = makeCargoInvocationCwd();
+  bindRunFlags(snapshot, scratchBase, cargoInvocationCwd);
   // Build every timing source variant. The production binaries are compile-
   // only; cfg activation binaries are executed through the deterministic
   // tag-only retry oracle, never through warmup or a timed window.
@@ -1742,20 +1827,26 @@ function modeBuildCheck(args, snapshot) {
     fs.writeFileSync(path.join(variantRoot, 'imp.rs'), materializeImp(impSrc, variant));
     fs.writeFileSync(path.join(variantRoot, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTmpl, variant).replaceAll('{{CRATE_NAME}}', crateName));
 
-    const productionBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
-      cwd: variantRoot,
-      encoding: 'utf8',
-      env: cargoChildEnv(snapshot.actualRustflagTokens.production, path.join(variantRoot, 'target-production'), snapshot.cargoHome),
-    });
+    const productionBuild = runIsolatedCargoBuild(
+      snapshot.actualRustflagTokens.production,
+      ['build', '--manifest-path', path.join(variantRoot, 'Cargo.toml'), '--target', rustcHost],
+      cargoInvocationCwd,
+      path.join(variantRoot, 'target-production'),
+      snapshot.cargoHome,
+      `production cargo build for ${variant} (build-check mode)`,
+    );
     if (productionBuild.status !== 0) {
       process.stderr.write(productionBuild.stderr ?? '');
       fail(`production cargo build --target ${rustcHost} failed for ${variant} (build-check mode, cwd ${variantRoot})`);
     }
-    const activationBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
-      cwd: variantRoot,
-      encoding: 'utf8',
-      env: cargoChildEnv(snapshot.actualRustflagTokens.activation, path.join(variantRoot, 'target-activation'), snapshot.cargoHome),
-    });
+    const activationBuild = runIsolatedCargoBuild(
+      snapshot.actualRustflagTokens.activation,
+      ['build', '--manifest-path', path.join(variantRoot, 'Cargo.toml'), '--target', rustcHost],
+      cargoInvocationCwd,
+      path.join(variantRoot, 'target-activation'),
+      snapshot.cargoHome,
+      `activation cargo build for ${variant} (build-check mode)`,
+    );
     if (activationBuild.status !== 0) {
       process.stderr.write(activationBuild.stderr ?? '');
       fail(`activation cargo build --target ${rustcHost} failed for ${variant} (build-check mode, cwd ${variantRoot})`);
@@ -2319,6 +2410,14 @@ try {
   console.error(`tis_p3_ab_runner: FATAL: ${e.message}`);
   process.exitCode = 1;
 } finally {
+  if (activeCargoInvocationCwd !== null) {
+    if (args !== null && args.keepScratch) {
+      console.error(`tis_p3_ab_runner: --keep-scratch: Cargo invocation cwd left in place for inspection: ${activeCargoInvocationCwd}`);
+    } else {
+      fs.rmSync(activeCargoInvocationCwd, { recursive: true, force: true });
+      console.error(`tis_p3_ab_runner: Cargo invocation cwd removed: ${activeCargoInvocationCwd}`);
+    }
+  }
   if (activeScratchBase !== null) {
     if (args !== null && args.keepScratch) {
       console.error(`tis_p3_ab_runner: --keep-scratch: scratch tree left in place for inspection: ${activeScratchBase}`);
