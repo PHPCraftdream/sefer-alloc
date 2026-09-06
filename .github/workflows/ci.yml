@@ -2570,6 +2570,9 @@ jobs:
       # The dedicated loom clippy row uses the same cfg and feature as the
       # model test, so loom-gated library and test code is linted as well.
       - run: cargo clippy -p tagged-index-stack --features loom --all-targets -- -D warnings
+      # Rustdoc must receive the cfg through RUSTDOCFLAGS; Cargo does not
+      # forward the job's RUSTFLAGS to the rustdoc invocation.
+      - run: RUSTDOCFLAGS="--cfg loom -D warnings" cargo doc -p tagged-index-stack --features loom --no-deps --document-private-items
       # CRATE-P3: real-type `OncePtrCell` loom suite (replaces the 4 shadow
       # models above). Includes the Relaxed-publish and spin-on-READY-livelock
       # `#[should_panic]` counterfactuals proving the harness is non-vacuous.

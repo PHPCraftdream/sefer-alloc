@@ -18,9 +18,12 @@
 //! coordinator-to-last-join ENVELOPE, not a tight pure-work time: the second
 //! barrier only prevents counted work from STARTING before the start timestamp,
 //! while the denominator still includes each worker's own release overhead, its
-//! last iteration's tail, the final `.join()` wait, and any OS-scheduling
-//! overshoot past the nominal deadline — an upper bound with real but bounded
-//! slack. Every `pop` is individually timed.
+//! last iteration's tail, the final `.join()` wait, and arbitrary
+//! OS-scheduling delay — with no timeout or deadline, that slack is unbounded.
+//! Every `pop` is individually timed: its sample is the elapsed time from
+//! immediately before `pop` to immediately after it and can include
+//! preemption during that call, while `wall_ms` also includes scheduling and
+//! join delay outside the call.
 //!
 //! The backoff cap itself is a private `const` in
 //! `src/imp.rs` in the crate source, so an arm at a non-shipped cap is
