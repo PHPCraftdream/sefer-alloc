@@ -78,18 +78,21 @@ whole life, never rebind it, and never let two bindings reach the same index
 through shared link cells. Sharing cells for disjoint reachable populations is
 fine; these binding-level obligations must be discharged by construction.
 
-Each link cell's contents may be mutated only by this binding's stack algorithm,
-while a push holds valid publish/recycle authority. A later legitimate pop
-followed by repush through the same binding may write that cell again; direct
-writes by storage owners, payload users, or another binding violate the
-contract even when they leave an acyclic, in-range chain.
+Each link cell's contents may be mutated only by the stack algorithm during a
+push through the binding currently receiving valid, unique publish/recycle
+authority. A successful pop through one binding may transfer that authority to
+another binding sharing the cells, provided reachable populations stay
+disjoint. Direct writes by storage owners, payload users, or a binding without
+the transferred authority violate the contract even when they leave an
+acyclic, in-range chain.
 
 All three `StackStorage` hooks are `unsafe fn` with caller-side `# Safety`
 contracts. The owned `ArrayIndexStack` does not implement the trait, so a
 competing binding around it is rejected by the type system; custom
 implementors can express that shape only behind an `unsafe impl`. The
-The `StackStorage` trait's `# Safety` contract is the source of truth for these
-binding obligations and the runtime detector's limits.
+`StackStorage` trait's `# Safety` contract is the source of truth for these
+binding obligations, the four shared-storage hazard shapes, and the runtime
+detector's limits.
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
@@ -120,10 +123,15 @@ impl SlotStorage {
     }
 }
 
-// SAFETY: one private head has one stable backing; each index in 0..8 has a
-// dedicated atomic link cell with Acquire/Release access; only this binding's
-// stack algorithm mutates those cells under valid publish/recycle authority;
-// and callers provide disjoint authority for the in-domain indices.
+// SAFETY: clause-by-clause proof for this implementor:
+// 1. The private head has one live binding for its whole life.
+// 2. `load_next`/`store_next` use the same stable cell mapping, and only
+//    algorithm pushes mutate cells with valid authority.
+// 3. This is the only binding over these cells, so populations are disjoint.
+// 4. Each cell is dedicated link storage and returns only published values.
+// 5. `head()` returns the same logical head every time.
+// 6. The fixed link domain is `0..8`.
+// 7. Cells are atomic with Acquire loads and Release stores.
 unsafe impl StackStorage<16> for SlotStorage {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -232,9 +240,11 @@ lock-freedom is not starvation-freedom: a call can lose arbitrarily many
 CASes in a row, and the exponential backoff deliberately makes an unlucky
 call wait longer between retries. The shipped backoff cap trades worse
 extreme outliers and a thread-count-dependent slow-pop tail-count band for
-better latency through p99.9 and roughly 4-5x aggregate wall-clock
-throughput. A latency-sensitive consumer must size its tolerance at its own
-thread count — neither single thread count's story generalizes. The cap
+better latency through p99.9. A historical repository contention sweep reported
+a roughly 4-5x aggregate wall-clock throughput difference on its measured host;
+this is historical evidence, not a current or portable performance guarantee.
+A latency-sensitive consumer must size its tolerance at its own thread count —
+neither single thread count's story generalizes. The cap
 counts `spin_loop` hint invocations, not portable time units, so this
 trade is specific to the measured host and can differ across
 microarchitectures and targets. Full measurements and per-thread-count

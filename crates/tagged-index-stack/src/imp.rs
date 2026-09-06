@@ -229,7 +229,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// that a popper parked since the previous cycle may still hold as its
     /// stale CAS expectation — see
     /// [`push_index`](StackOps::push_index)'s `# Errors` section and the
-    /// crate-root docs' "The tag is strictly monotonic" section.
+    /// crate-root docs' "Tag-width budget" section.
     /// [`pack`](Self::pack)`(_, TAG_MAX)` is `Some`; `pack(_, TAG_MAX + 1)`
     /// is `None`.
     pub const TAG_MAX: u64 = {
@@ -300,7 +300,7 @@ impl<const INDEX_BITS: u32> TaggedIndex<INDEX_BITS> {
     /// the tag back to 0, and must never be made to — wrap-on-truncation
     /// would reopen the exact stale-CAS double-issue the seal
     /// ([`TAG_MAX`](Self::TAG_MAX) + [`TagExhausted`]) exists to close
-    /// (see the crate-root docs' "The tag is strictly monotonic" section).
+    /// (see the crate-root docs' "Tag-width budget" section).
     #[must_use]
     pub(crate) const fn pack_truncating(index: u32, tag: u64) -> u64 {
         let () = Self::_CHECK_BITS;
@@ -635,15 +635,18 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// 2. Use one stable index↔cell mapping. After an `Acquire` observation of a
 ///    head published by a `Release` push, `load_next` must observe that push's
 ///    `store_next` or a later write in the cell's modification order, never an
-///    earlier write. Only this binding's stack algorithm may mutate a link
-///    cell's contents, and only during a push whose caller holds the valid
-///    publish/recycle authority required by [`StackOps::push_index`]. A later
-///    legitimate pop+repush by this binding may write the same cell again;
-///    that is the permitted later write, not an exception to this obligation.
-///    Direct writes by storage owners, payload users, or another binding are
-///    forbidden, even when they leave an acyclic, in-range chain.
+///    earlier write. A link cell may be mutated only by the stack-algorithm
+///    push that is about to publish its index through the binding currently
+///    receiving a valid, unique publish/recycle authority. That authority may
+///    be freshly issued or legitimately transferred by a successful pop from
+///    another binding sharing the cells. Later legitimate pop+repush operations
+///    may therefore write the same cell again. Out-of-band storage-owner,
+///    payload, direct, or forged writes are forbidden, even when they leave an
+///    acyclic, in-range chain.
 /// 3. Keep reachable index populations disjoint across bindings sharing link
-///    cells. Sharing cells with disjoint populations is allowed.
+///    cells. Sharing cells with disjoint populations is allowed, and a popped
+///    index may be transferred from one binding to another before the receiving
+///    binding publishes it.
 /// 4. Return only [`TAIL`] or a valid index from a dedicated, non-payload-
 ///    aliased link cell.
 /// 5. Return the same logical head from [`head`](Self::head) on every call.
@@ -653,6 +656,23 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 ///    caller contract guarantees the algorithm never supplies such an index.
 /// 7. Make every link-cell access atomic; a stale popper may read while a
 ///    concurrent push writes and then lose its head CAS.
+///
+/// # Shared-storage hazard class: detection boundary
+///
+/// The inventory counts binding relationships, not storage values. Shared cells
+/// are valid when reachable populations stay disjoint; a successful pop may
+/// transfer an index's authority to another binding, which may then publish it.
+/// The forbidden shapes are:
+///
+/// | Shape | Forbidden arrangement | Detector |
+/// |---|---|---|
+/// | 1 | One binding reads and writes different backings. | May eventually trip the self-loop guard. |
+/// | 2 | Two live bindings share one head but use different backings. | May trip the self-loop guard; not structural. |
+/// | 3 | Bindings share cells while an index is reachable from both. | Can remain acyclic and silently double-issue. |
+/// | 4 | A live head is rebound over time to a different backing. | Can leak first, then trip the self-loop guard. |
+///
+/// These are implementor obligations, not a complete runtime detector; direct
+/// forged writes and deeper acyclic corruption can pass every guard.
 ///
 /// # Ordering contract
 ///
@@ -699,9 +719,12 @@ pub unsafe trait StackStorage<const INDEX_BITS: u32> {
     /// # Safety
     ///
     /// The caller must be in the CAS-valid push phase: `index` satisfies
-    /// [`StackOps::push_index`]'s three caller obligations, `next` is
-    /// [`TAIL`] or the index observed as this binding's head, and this call
-    /// precedes the CAS that publishes `index`.
+    /// [`StackOps::push_index`]'s three caller obligations, including a unique
+    /// authority legitimately transferred from any binding sharing the cells;
+    /// `next` is [`TAIL`] or the index observed as this binding's head; and this
+    /// call is made by the stack algorithm immediately before the CAS that
+    /// publishes `index`. No storage-owner, payload, direct, or forged write
+    /// may substitute for this call.
     unsafe fn store_next(&self, index: u32, next: u32);
 }
 
@@ -728,18 +751,20 @@ pub trait StackOps<const INDEX_BITS: u32>: StackStorage<INDEX_BITS> {
     ///    this possibly narrower domain.
     /// 2. `index` is not reachable through any binding whose hooks touch the
     ///    same link cells. It was never pushed, or its latest push was followed
-    ///    by a successful [`pop_index`](Self::pop_index) returning it. A stale
-    ///    popper that observed the index but lost its CAS did not pop it and
-    ///    does not block this push; the tag makes that stale CAS fail, and this
-    ///    push overwrites the old link before publishing the index.
+    ///    by a successful [`pop_index`](Self::pop_index) returning it from any
+    ///    such binding. A stale popper that observed the index but lost its CAS
+    ///    did not pop it and does not block this push; the tag makes that stale
+    ///    CAS fail, and this push overwrites the old link before publishing the
+    ///    index through the receiving binding.
     /// 3. This call owns a unique, unconsumed publish/recycle authority: either
-    ///    a fresh index or one returned by a specific successful pop. The
-    ///    authority is consumed at this call's successful head CAS, not at
-    ///    physical return, so a later popper may republish the index with its
-    ///    own authority before this call returns. Two pushes may not consume the
-    ///    same authority without an intervening successful pop. These liveness
-    ///    and authority obligations are not runtime-checked; violating them
-    ///    can create a cycle or double-issue an index.
+    ///    a fresh index or one legitimately transferred by a specific
+    ///    successful pop, including a pop through another binding sharing the
+    ///    cells. The authority is consumed at this call's successful head CAS,
+    ///    not at physical return, so a later popper may republish the index with
+    ///    its own authority before this call returns. Two pushes may not consume
+    ///    the same authority without an intervening successful pop. These
+    ///    liveness and authority obligations are not runtime-checked; violating
+    ///    them can create a cycle or double-issue an index.
     ///
     /// # Errors
     ///
@@ -886,7 +911,7 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         push_index_out_of_range(index, mask);
     }
     // `head()` is read exactly once per operation — see StackStorage's
-    // "Mechanical requirement on `head()`".
+    // `StackStorage` clause 5: use the same logical head for the operation.
     // SAFETY: this operation uses one stable binding's head exactly once;
     // the caller forwarded `StackStorage::head`'s binding contract.
     let head_ref: &StackHead<B> = unsafe { s.head() };
@@ -950,8 +975,8 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
         //     prior cycle — already displaced by whichever pop won the
         //     head CAS and transferred ownership of `index` to ITS
         //     caller. The tag is strictly monotonic (it never wraps — see
-        //     the crate-root docs' "The tag is strictly monotonic"
-        //     section), so that stale expected value can never be
+        //     the crate-root docs' "Tag-width budget" section), so that
+        //     stale expected value can never be
         //     reinstalled: the stale popper's own CAS is guaranteed to
         //     fail regardless of what THIS push stores to the link cell
         //     or does with the head word.
@@ -1005,7 +1030,7 @@ pub(crate) unsafe fn push_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>
 #[track_caller]
 pub(crate) fn pop_index_impl<const B: u32, S: SealedStorage<B> + ?Sized>(s: &S) -> Option<u32> {
     // `head()` is read exactly once per operation — see StackStorage's
-    // "Mechanical requirement on `head()`".
+    // `StackStorage` clause 5: use the same logical head for the operation.
     // SAFETY: this operation uses one stable binding's head exactly once;
     // the caller forwarded `StackStorage::head`'s binding contract.
     let head_ref: &StackHead<B> = unsafe { s.head() };
@@ -1336,16 +1361,21 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// counterfactual uses it.
     ///
     /// `#[doc(hidden)]` per this crate's established test-only-forwarder
-    /// rationale (see [`raw_head`]). Gated: `loom` only — unlike
-    /// [`load_next_for_test`], this is a raw link-cell WRITE that bypasses
-    /// the stack algorithm entirely; under the repository test cfg it is a
-    /// safe `pub fn` reachable by any consumer, letting safe code construct a
-    /// cycle in the linked chain (e.g. double-issuing an index from `pop()`).
-    /// The loom-only model is its sole intended caller, so `loom` alone is the
-    /// correct and sufficient gate.
+    /// rationale (see [`raw_head`]). Gated: `loom` only. This is a raw
+    /// link-cell write that bypasses the stack algorithm and is therefore
+    /// unsafe; it exists only to construct the seal counterfactual's wrapped
+    /// publish. It is not a legal storage operation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide an in-domain `index` and use this only as the
+    /// loom counterfactual's deliberate stand-in for a stack-algorithm push,
+    /// immediately followed by the matching raw head CAS. It must not be used
+    /// by production code or to forge a live link outside that model.
     #[doc(hidden)]
     #[cfg(loom)]
-    pub fn store_next_for_test(&self, index: u32, next: u32) {
+    #[allow(unsafe_code)]
+    pub unsafe fn store_next_for_test(&self, index: u32, next: u32) {
         self.links.store_next(index, next);
     }
 

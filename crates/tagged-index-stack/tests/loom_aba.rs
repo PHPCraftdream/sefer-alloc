@@ -1372,7 +1372,11 @@ fn run_tiny_tag_seal(bypass_seal: bool) {
                 // for why the installed tag is p_stale_tag, not literal 0.
                 // Lazy links: write the link the way a real push into an EMPTY
                 // stack would (next[q_a] = TAIL) before publishing.
-                stack_q.store_next_for_test(q_a, TAIL);
+                // SAFETY: deliberate loom-only counterfactual for a wrapped
+                // push; q_a was just popped by Q, is in-domain, and this raw
+                // link write is immediately followed by its matching raw head
+                // CAS. It is not a legal production storage mutation.
+                unsafe { stack_q.store_next_for_test(q_a, TAIL) };
                 let current = stack_q.raw_head();
                 let wrapped_head = tag_pack(q_a, p_stale_tag);
                 stack_q

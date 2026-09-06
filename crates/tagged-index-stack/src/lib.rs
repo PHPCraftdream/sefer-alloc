@@ -84,9 +84,12 @@
 //! [`pop_index`](StackOps::pop_index)'s `None` remains the only authoritative
 //! empty check.
 //! The unsafe implementation must ensure that no other storage, payload, or
-//! binding writes a link cell: only this binding's algorithm may mutate it
-//! during a push with valid publish/recycle authority. A later legitimate
-//! pop+repush by this binding may write the cell again.
+//! binding without authority writes a link cell: only the stack algorithm may
+//! mutate it during a push through the binding currently receiving valid,
+//! unique publish/recycle authority. A successful pop through one binding may
+//! transfer that authority to another binding sharing the cells; reachable
+//! populations must remain disjoint before and after the transfer. Direct or
+//! forged writes remain forbidden.
 //!
 //! # Two correctness-critical subtleties
 //!
@@ -203,9 +206,10 @@
 //! starvation-freedom: a call can lose arbitrarily many CASes, and capped
 //! exponential backoff can make an unlucky call wait longer between retries.
 //! The shipped cap trades a small number of extreme outliers for better
-//! latency through p99.9 and roughly 4-5x aggregate throughput in the
-//! repository's contention sweep. A latency-sensitive consumer should size
-//! its tolerance at its own thread count; the trade is host- and
+//! latency through p99.9. A historical repository contention sweep reported a
+//! roughly 4-5x aggregate-throughput difference on its measured host; that is
+//! historical evidence, not a current or portable performance guarantee. A
+//! latency-sensitive consumer should size its tolerance at its own thread count; the trade is host- and
 //! microarchitecture-dependent because the cap counts `spin_loop` hints, not
 //! portable time units. Full measurements and the derivation are in
 //! [`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` §3.4](https://github.com/PHPCraftdream/sefer-alloc/blob/main/docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md).
@@ -225,7 +229,7 @@
 //!
 //! # Where unsafe lives
 //!
-//! The production library source (`src/`) contains exactly nine audited
+//! The production library source (`src/`) contains exactly ten audited
 //! `#[allow(unsafe_code)]` regions, all in `src/imp.rs`:
 //!
 //! 1. `StackStorage`'s unsafe-trait declaration;
@@ -237,8 +241,9 @@
 //! 7. the `SealedStorage` blanket bridge;
 //! 8. `ArrayIndexStack::push`;
 //! 9. `ArrayIndexStack`'s `SealedStorage` implementation.
+//! 10. the loom-only `ArrayIndexStack::store_next_for_test` probe.
 //!
-//! The production contents are exactly one unsafe trait, sixteen unsafe
+//! The production contents are exactly one unsafe trait, seventeen unsafe
 //! function declarations, zero unsafe impls, and nine local `unsafe {}`
 //! blocks. The inventory covers only the published library source.
 //!

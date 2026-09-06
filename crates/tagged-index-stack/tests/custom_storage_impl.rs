@@ -61,13 +61,18 @@ impl VecStorage {
     }
 }
 
-// SAFETY: upholds the whole contract (the reference model for a correct
-// implementor): the struct owns its StackHead privately (one binding per
-// head, no other route to it); load_next/store_next touch the same `next`
-// Vec cell per index for its whole life (stable 1:1 mapping, coherence
-// holds); no other binding exists over these cells; load_next answers only
-// what a push stored (TAIL or an in-range index) from a dedicated cell;
-// head() returns &self.head every call.
+// SAFETY: clause-by-clause proof for this correct implementor:
+// 1. `head` is private and this value creates the only binding around it.
+// 2. `load_next`/`store_next` use the same stable `next[index]` mapping, and
+//    only stack-algorithm pushes mutate it with the caller's authority.
+// 3. No other binding reaches these cells, so reachable populations are
+//    disjoint.
+// 4. Each cell is dedicated link storage and returns only values published by
+//    a push (`TAIL` or an in-range index).
+// 5. `head()` returns the same logical head on every call.
+// 6. The fixed per-value domain is `0..self.next.len()`, within the packed
+//    index range for every test instance.
+// 7. Every access is an `AtomicU32` Acquire load or Release store.
 unsafe impl StackStorage<16> for VecStorage {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -140,9 +145,11 @@ struct SharedHeadView<'a> {
     links: &'a ArrayLinks<64>,
 }
 
-// SAFETY: DELIBERATE contract violation — clause 1 (one live binding per
-// head): the borrowed head is handed to TWO live implementor values with
-// different links.
+// SAFETY: deliberate violation of clause 1 (one live binding per head): the
+// same borrowed head is handed to two live values with different links.
+// Clauses 2 and 4–7 hold for each value in isolation; clause 3 is vacuous
+// because the values do not share link cells. The test isolates the
+// cross-binding shared-head hazard.
 unsafe impl StackStorage<16> for SharedHeadView<'_> {
     unsafe fn head(&self) -> &StackHead<16> {
         self.head
@@ -215,13 +222,10 @@ struct ForgedAcyclicLinks {
     links: ArrayLinks<64>,
 }
 
-// SAFETY: DELIBERATE contract violation — clause 2's mutation-authority
-// obligation: these direct stores bypass this binding's stack algorithm and
-// carry no valid publish/recycle authority. Clause 2's publication-relative
-// lower bound is still satisfied: both writes are later than the publishing
-// push's store_next in the cell's modification order. The in-range values
-// deliberately keep clause 4 satisfied, so this test isolates the forbidden
-// direct mutation rather than merely violating the valid-answer obligation.
+// SAFETY: deliberate violation of clause 2: the direct stores bypass the
+// stack algorithm and carry no valid publish/recycle authority. Clauses 1, 3,
+// 4, 5, 6, and 7 hold; the in-range values keep clause 4 satisfied, so this
+// isolates forbidden direct mutation rather than invalid answers.
 unsafe impl StackStorage<16> for ForgedAcyclicLinks {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -258,34 +262,43 @@ fn hand_crafted_acyclic_forgery_still_double_issues() {
     assert_eq!(forged.pop_index(), Some(0));
 }
 
+/// A pair of values may share these cells legally when callers preserve
+/// disjoint reachable populations, including across authority transfer.
+struct SharedLinksView<'a> {
+    head: StackHead<16>,
+    links: &'a ArrayLinks<64>,
+}
+
+// SAFETY: clause-by-clause proof for the mechanics of this view:
+// 1. each value owns one private head;
+// 2. both hooks use the same stable shared-cell mapping and only the stack
+//    algorithm writes it;
+// 3. callers must maintain disjoint populations across views;
+// 4. cells are dedicated and return only published values;
+// 5. `head()` is stable;
+// 6. the domain is the fixed `0..64` backing; and
+// 7. all cell accesses are atomic Acquire/Release operations.
+// The negative test below deliberately violates clause 3; the positive
+// transfer test upholds it.
+unsafe impl StackStorage<16> for SharedLinksView<'_> {
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.links.load_next(index)
+    }
+
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.links.store_next(index, next)
+    }
+}
+
 /// Two independent heads sharing link cells and overlapping index reachability
 /// violate clause 3. The corruption remains acyclic, so the runtime detector
 /// cannot catch it; draining both bindings documents the resulting duplicates.
-///
 #[test]
 fn two_stacks_sharing_link_storage_still_double_issue() {
-    struct SharedLinksView<'a> {
-        head: StackHead<16>,
-        links: &'a ArrayLinks<64>,
-    }
-
-    // SAFETY: DELIBERATE contract violation — clause 3 (no index reachable
-    // from two live bindings over shared cells): two live bindings, separate
-    // heads, same cells, overlapping reachability.
-    unsafe impl StackStorage<16> for SharedLinksView<'_> {
-        unsafe fn head(&self) -> &StackHead<16> {
-            &self.head
-        }
-
-        unsafe fn load_next(&self, index: u32) -> u32 {
-            self.links.load_next(index)
-        }
-
-        unsafe fn store_next(&self, index: u32, next: u32) {
-            self.links.store_next(index, next)
-        }
-    }
-
     let links = ArrayLinks::<64>::new();
     let a = SharedLinksView {
         head: StackHead::new(),
@@ -328,6 +341,41 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
     );
 }
 
+/// Shared cells are valid when reachable populations are disjoint. A
+/// successful pop transfers the returned index's authority, so a different
+/// binding may legally publish that index through the same cells.
+#[test]
+fn shared_link_storage_allows_pop_to_push_cross_binding_transfer() {
+    let links = ArrayLinks::<64>::new();
+    let a = SharedLinksView {
+        head: StackHead::new(),
+        links: &links,
+    };
+    let b = SharedLinksView {
+        head: StackHead::new(),
+        links: &links,
+    };
+
+    // SAFETY: fresh binding A; index 1 is in-domain and freshly authorized.
+    unsafe { a.push_index(1) }.expect("fresh head has tag budget");
+    // SAFETY: fresh binding B; index 2 is in-domain and freshly authorized;
+    // its reachable population is disjoint from A's.
+    unsafe { b.push_index(2) }.expect("fresh head has tag budget");
+
+    let transferred = a.pop_index().expect("A owns index 1");
+    assert_eq!(transferred, 1);
+
+    // SAFETY: the successful pop through A transferred unique publish/recycle
+    // authority for index 1 to this caller; it is no longer reachable from A,
+    // is in-domain, and B publishes it through the shared cells.
+    unsafe { b.push_index(transferred) }.expect("transferred authority is valid");
+
+    assert_eq!(a.pop_index(), None);
+    assert_eq!(b.pop_index(), Some(1));
+    assert_eq!(b.pop_index(), Some(2));
+    assert_eq!(b.pop_index(), None);
+}
+
 /// Inventory shape 1 — ONE implementor whose
 /// [`load_next`](StackStorage::load_next)/
 /// [`store_next`](StackStorage::store_next) read and write DIFFERENT
@@ -354,9 +402,9 @@ fn internally_disagreeing_storage_still_double_issue() {
         write_links: ArrayLinks<64>,
     }
 
-    // SAFETY: DELIBERATE contract violation — clause 2 (one backing,
-    // consistently): load_next and store_next read and write DIFFERENT
-    // backings.
+    // SAFETY: deliberate violation of clause 2: `load_next` and `store_next`
+    // read and write different backings. Clauses 1, 3–7 hold, including
+    // dedicated cells and atomic Acquire/Release access.
     unsafe impl StackStorage<16> for DisagreeingStorage {
         unsafe fn head(&self) -> &StackHead<16> {
             &self.head
@@ -409,8 +457,9 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
         links: ArrayLinks<64>,
     }
 
-    // SAFETY: DELIBERATE contract violation — clause 1's temporal half (a
-    // live head rebound to different links across time).
+    // SAFETY: deliberate violation of clauses 1 and 2: a live head is
+    // rebound across time to fresh links, changing the stable binding and the
+    // index-to-cell mapping. Clauses 3–7 hold for each individual binding.
     unsafe impl StackStorage<16> for Pool {
         unsafe fn head(&self) -> &StackHead<16> {
             &self.head
@@ -478,9 +527,10 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
         links: ArrayLinks<64>,
     }
 
-    // SAFETY: DELIBERATE contract violation for BOTH impls below — clause 3
-    // (disjoint reachable-index populations across shared cells): two
-    // bindings over ONE backing inside one value.
+    // SAFETY: deliberate violation of clause 3 for this binding: two
+    // different-width bindings in one value share cells and later overlap in
+    // reachable indices. Clauses 1, 2, and 4–7 hold for each impl; the second
+    // impl below makes the same clause-3 assertion for its binding.
     unsafe impl StackStorage<16> for DualWidth {
         unsafe fn head(&self) -> &StackHead<16> {
             &self.wide_head
@@ -495,6 +545,10 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
         }
     }
 
+    // SAFETY: same deliberate clause-3 violation as the width-16 impl:
+    // this binding shares cells with the other binding and later reaches an
+    // index that remains reachable there. Clauses 1, 2, and 4–7 hold for
+    // this hook set in isolation.
     unsafe impl StackStorage<12> for DualWidth {
         unsafe fn head(&self) -> &StackHead<12> {
             &self.narrow_head
@@ -572,10 +626,11 @@ struct AlwaysInvalidStorage {
     head: StackHead<16>,
 }
 
-// SAFETY: DELIBERATE contract violation — clause 4 (load_next must return
-// only TAIL or a currently-valid index): this implementor deliberately
-// answers INDEX_MASK, an out-of-range value, to fire pop_index's clause-4
-// guard.
+// SAFETY: deliberate violations, both intentional to this fixture. Clauses 1
+// and 5 hold for the private head; clause 3 is vacuous because no second
+// binding exists. Clause 2 has no real cell mapping, clause 4 is violated by
+// the forged answer, clause 6 is violated because no link domain is declared,
+// and clause 7 is violated because the link hook is not an atomic cell access.
 unsafe impl StackStorage<16> for AlwaysInvalidStorage {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -596,7 +651,7 @@ fn pop_rule_4_guard_fires_on_invalid_next_from_backing() {
     let storage = AlwaysInvalidStorage {
         head: StackHead::new(),
     };
-    // SAFETY: DELIBERATE double contract violation, both intentional to this
+    // SAFETY: deliberate double contract violation, both intentional to this
     // fixture: (1) clause 4 (valid answers) — load_next always answers
     // INDEX_MASK, neither TAIL nor a valid index, which is the guard this
     // test targets; (2) clause 6 (declared link domain) — this storage
