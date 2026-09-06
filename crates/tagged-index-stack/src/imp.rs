@@ -399,9 +399,8 @@ impl core::fmt::Display for TagExhausted {
 /// backing for its WHOLE life — the binding between this head and its links
 /// is established by that impl, not re-asserted per call; sharing one head
 /// between implementor values (clause 1) or rebinding a live head across time
-/// (inventory shape 4) are hazards — see the
-/// [`StackStorage`] trait doc's "The shared-storage hazard class" section
-/// for the full inventory. The stack operations themselves live
+/// are hazards — see the [`StackStorage`] trait's `# Safety` contract. The
+/// stack operations themselves live
 /// on [`StackOps`] (blanket-implemented by the crate), not here; this type
 /// is the bare atomic embedders inherit a cache line through.
 ///
@@ -575,9 +574,8 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
     /// `#[doc(hidden)]` + gated (this project's established test-only surface
     /// convention — every other `#[doc(hidden)]` item in this crate points
     /// here for the generic rationale): this is a `pub` item only so
-    /// `tests/` — an external crate from this crate's own perspective — can
-    /// reach it. Gated: compiled only under the repository test cfg or a
-    /// loom build — a default build (a downstream consumer, the docs.rs
+    /// An internal test harness can reach it. Gated: compiled only under the
+    /// repository test cfg or a loom build — a default build (a downstream consumer, the docs.rs
     /// render) does not contain this item at all, so unlike `#[doc(hidden)]`
     /// alone the gate makes it genuinely unnameable from safe downstream
     /// code, not merely hidden from rustdoc navigation. It is not exercised
@@ -590,8 +588,8 @@ impl<const INDEX_BITS: u32> StackHead<INDEX_BITS> {
         self.head.load(Ordering::Acquire)
     }
 
-    /// **loom-test-only** raw CAS on the head word, exposed so the shipped loom
-    /// proof (`tests/loom_aba.rs`) can split a pop's head-load from its CAS —
+    /// **loom-test-only** raw CAS on the head word, exposed so the loom model
+    /// can split a pop's head-load from its CAS —
     /// opening the ABA window the real `pop_index` closes internally — and
     /// drive the buggy-drain counterfactual, all against the REAL head atomic.
     /// Not part of the stable API: it is compiled only under `--cfg loom`.
@@ -637,7 +635,13 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// 2. Use one stable index↔cell mapping. After an `Acquire` observation of a
 ///    head published by a `Release` push, `load_next` must observe that push's
 ///    `store_next` or a later write in the cell's modification order, never an
-///    earlier write. A later pop+repush may legitimately be the observed write.
+///    earlier write. Only this binding's stack algorithm may mutate a link
+///    cell's contents, and only during a push whose caller holds the valid
+///    publish/recycle authority required by [`StackOps::push_index`]. A later
+///    legitimate pop+repush by this binding may write the same cell again;
+///    that is the permitted later write, not an exception to this obligation.
+///    Direct writes by storage owners, payload users, or another binding are
+///    forbidden, even when they leave an acyclic, in-range chain.
 /// 3. Keep reachable index populations disjoint across bindings sharing link
 ///    cells. Sharing cells with disjoint populations is allowed.
 /// 4. Return only [`TAIL`] or a valid index from a dedicated, non-payload-
@@ -658,10 +662,10 @@ impl<const INDEX_BITS: u32> Default for StackHead<INDEX_BITS> {
 /// keep an implementation independent of the stack's internal head orderings;
 /// see `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` for the measured status.
 ///
-/// The three hooks are `unsafe fn`: the compiler requires an unsafe call site,
-/// while the semantic obligations above remain the caller's responsibility.
-/// Their caller-side contracts are stated on the methods below. The complete
-/// design rationale is in
+/// The three hooks are `unsafe fn`: the compiler requires an unsafe call site.
+/// Their caller-side contracts are stated on the methods below; the
+/// implementation obligations above remain the unsafe impl's responsibility.
+/// The complete design rationale is in
 /// `docs/adr/2026-09-01-tagged-index-stack-storage-binding-closure.md`.
 ///
 /// # Stability
@@ -1161,19 +1165,12 @@ fn pop_link_out_of_range(index: u32, next: u32, mask: u64) -> ! {
 /// type deliberately does NOT implement the public [`StackStorage`] trait
 /// (its head↔links binding is served by a crate-internal sealed accessor
 /// instead), its `head` field is private, and no trait impl hands out a
-/// `&StackHead` for it — so building a competing binding around a
-/// standalone `ArrayIndexStack` does not COMPILE (E0277/E0599, pinned by
-/// `tests/compile_fail/array_index_stack_head/`). That fixture pins one
-/// instantiation (`<16, 64>`); the
-/// seal itself is instantiation-independent and held by COHERENCE, not by
-/// the fixture: any in-crate `impl StackStorage<B> for ArrayIndexStack<B, N>`
-/// fails with **E0119** (it would overlap the `pub(crate)` blanket bridge
-/// the stack's own algorithm is written against), and any out-of-crate
-/// attempt fails with **E0117** (orphan rule) — do not mistake the
-/// one-instantiation fixture for the only thing holding the seal. The
-/// remaining hazard class is over CUSTOM
-/// [`StackStorage`] implementors — see the trait doc's "The shared-storage
-/// hazard class" section.
+/// `&StackHead` for it — so the public API cannot construct a competing
+/// binding around a standalone `ArrayIndexStack`. The seal is
+/// instantiation-independent: the private head and the crate's coherence
+/// boundary enforce it for every `INDEX_BITS, N`. The remaining binding
+/// obligations apply to custom [`StackStorage`] implementors and are stated
+/// in that trait's `# Safety` contract.
 ///
 /// The simple [`push`](Self::push)/[`pop`](Self::pop) inherent methods exist
 /// for standalone callers (`push` is an `unsafe fn`, carrying
@@ -1283,7 +1280,7 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     }
 
     /// The raw packed head word (`Acquire`) — forwarder to
-    /// [`StackHead::raw_head`] (tests/loom suite need it).
+    /// [`StackHead::raw_head`] (the internal model and unit harnesses need it).
     ///
     /// Gated: same test-cfg/loom gate as [`StackHead::raw_head`] —
     /// it does not exist in a default build.
@@ -1314,11 +1311,9 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
 
     /// **test-only** read-only link forwarder — loads index `index`'s
     /// link cell (`Acquire`), forwarding to [`ArrayLinks::load_next`].
-    /// The shipped test suites read a link directly off the REAL
-    /// [`ArrayIndexStack`] (the loom suite `tests/loom_aba.rs` splits a
-    /// pop's link read from its CAS; `tests/stack_unit.rs`'s
-    /// `links_are_lazy` reads a never-pushed index's link): this type does
-    /// not implement the public [`StackStorage`] trait, so
+    /// Internal model and unit harnesses read links directly from the REAL
+    /// [`ArrayIndexStack`] (including a split pop and a never-pushed link probe):
+    /// this type does not implement the public [`StackStorage`] trait, so
     /// [`StackStorage::load_next`] cannot reach its links.
     /// `#[doc(hidden)]` per the crate's established test-only-forwarder
     /// rationale (see [`raw_head`] and [`cas_head_for_test`]): not part of the
@@ -1337,18 +1332,17 @@ impl<const B: u32, const N: usize> ArrayIndexStack<B, N> {
     /// ([`ArrayLinks::store_next`], `Release`), bypassing the stack
     /// algorithm entirely. Needed for a hand-inlined counterfactual that
     /// reproduces the tag-wrap behaviour the seal forbids, without going
-    /// through the real [`push`](Self::push) — see
-    /// `tests/loom_aba.rs`'s tiny-tag counterfactual.
+    /// through the real [`push`](Self::push) — the loom-only tiny-tag
+    /// counterfactual uses it.
     ///
     /// `#[doc(hidden)]` per this crate's established test-only-forwarder
     /// rationale (see [`raw_head`]). Gated: `loom` only — unlike
     /// [`load_next_for_test`], this is a raw link-cell WRITE that bypasses
     /// the stack algorithm entirely; under the repository test cfg it is a
     /// safe `pub fn` reachable by any consumer, letting safe code construct a
-    /// cycle in the linked chain (e.g. double-issuing an index from
-    /// `pop()`). Its only real caller is `tests/loom_aba.rs`, which is
-    /// itself `#![cfg(loom)]`-gated, so `loom` alone is the correct and
-    /// sufficient gate.
+    /// cycle in the linked chain (e.g. double-issuing an index from `pop()`).
+    /// The loom-only model is its sole intended caller, so `loom` alone is the
+    /// correct and sufficient gate.
     #[doc(hidden)]
     #[cfg(loom)]
     pub fn store_next_for_test(&self, index: u32, next: u32) {

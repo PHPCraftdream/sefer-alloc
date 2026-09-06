@@ -1,35 +1,65 @@
-//! Mirrors README.md's `## Example` section, and additionally asserts the
-//! drained-empty case the README's example does not show, so a future API
-//! change that breaks either fails CI instead of silently rotting the
-//! published docs.
-//!
-//! This repo bans doctests (`#[doc = include_str!(...)]` is not used to pull
-//! README.md into rustdoc either, so `cargo test --doc` never compiles the
-//! README's fenced ```rust``` block) -- see CLAUDE.md's "No doctests"
-//! section. A separate `tests/` file mirroring the example is the
-//! established alternative: `crates/size-classes/tests/builder.rs`'s
-//! `readme_example_compiles_and_derives_its_generics` does the identical
-//! thing for a sibling crate. This crate's own test suite is organized
-//! one-file-per-concern (`stack_unit.rs`, `proptest_pack_unpack.rs`,
-//! `custom_storage_impl.rs`, `loom_aba.rs`,
-//! `threaded_conservation.rs`), so the README mirror gets its own dedicated
-//! file rather than folding into an existing one.
+//! Mirrors README.md's `## Example` section, including its slot-resident
+//! `StackStorage` implementation, so the public example's imports, unsafe impl,
+//! and operations compile and run in CI.
 
 #![cfg(not(loom))]
 
-use tagged_index_stack::ArrayIndexStack;
+use core::sync::atomic::{AtomicU32, Ordering};
+
+use tagged_index_stack::{ArrayIndexStack, StackHead, StackOps as _, StackStorage, TAIL};
+
+struct SlotStorage {
+    head: StackHead<16>,
+    links: [AtomicU32; 8],
+}
+impl SlotStorage {
+    fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            links: [const { AtomicU32::new(TAIL) }; 8],
+        }
+    }
+}
+
+// SAFETY: one private head has one stable backing; each index in 0..8 has a
+// dedicated atomic link cell with Acquire/Release access; only this binding's
+// stack algorithm mutates those cells under valid publish/recycle authority;
+// and callers provide disjoint authority for the in-domain indices.
+unsafe impl StackStorage<16> for SlotStorage {
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.links[index as usize].load(Ordering::Acquire)
+    }
+
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.links[index as usize].store(next, Ordering::Release);
+    }
+}
 
 #[test]
-fn readme_example_compiles_and_runs() {
-    let stack = ArrayIndexStack::<16, 1024>::new(); // 16-bit index, 48-bit ABA tag
+fn owned_stack_readme_example_compiles_and_runs() {
+    let stack = ArrayIndexStack::<16, 1024>::new();
 
-    // SAFETY: fresh stack (domain 0..1024); index 7 is in-domain and this is its first push ("recycle").
-    unsafe { stack.push(7) }.expect("fresh head has tag budget"); // recycle index 7
-    assert_eq!(stack.pop(), Some(7)); // recycled index comes back out
+    // SAFETY: index 7 is in-domain, fresh, and published exactly once.
+    unsafe { stack.push(7) }.expect("fresh head has tag budget");
+    assert_eq!(stack.pop(), Some(7));
+    assert_eq!(stack.pop(), None);
+}
 
-    assert_eq!(
-        stack.pop(),
-        None,
-        "the stack held only the one pushed index -- draining it leaves the stack empty"
-    );
+#[test]
+fn slot_resident_readme_example_compiles_and_runs() {
+    let storage = SlotStorage::new();
+    for index in 0..4 {
+        // SAFETY: each index is in 0..8, fresh, and published exactly once.
+        unsafe { storage.push_index(index) }.expect("fresh head has tag budget");
+    }
+
+    assert_eq!(storage.pop_index(), Some(3));
+    assert_eq!(storage.pop_index(), Some(2));
+    assert_eq!(storage.pop_index(), Some(1));
+    assert_eq!(storage.pop_index(), Some(0));
+    assert_eq!(storage.pop_index(), None);
 }

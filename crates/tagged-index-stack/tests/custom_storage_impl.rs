@@ -10,7 +10,7 @@
 //!
 //! It also pins the shared-storage hazard class and its current detection
 //! coverage. The canonical statement of that inventory is the
-//! [`StackStorage`] trait doc's "The shared-storage hazard class" section —
+//! [`StackStorage`] trait's `# Safety` contract —
 //! this doc points there rather than re-deriving it. In file order: the
 //! shared-head shape over CUSTOM implementors (pinned `#[should_panic]`: the
 //! self-loop detector catches its zero-initialised sub-shape on the second
@@ -133,7 +133,7 @@ fn push_pop_through_dyn_storage() {
 /// A borrowed-head [`StackStorage`] implementor: the head reference and the
 /// link array are supplied independently at construction, so TWO values can
 /// share one [`StackHead`] while each carries its OWN links — the exact
-/// shape the [`StackStorage`] trait doc's clause 1 forbids and nothing (the
+/// shape the [`StackStorage`] trait's clause 1 forbids and nothing (the
 /// type system, the blanket impl, or a runtime guard) prevents.
 struct SharedHeadView<'a> {
     head: &'a StackHead<16>,
@@ -158,7 +158,7 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 }
 
 /// A deliberate, documented limitation — caller/implementor-enforced, NOT
-/// compiler-enforced (the [`StackStorage`] trait doc's clause 1).
+/// compiler-enforced (the [`StackStorage`] trait's clause 1).
 ///
 /// The hazard: two separately constructed, individually contract-abiding
 /// `StackStorage` values whose `head()` methods return the SAME
@@ -175,10 +175,10 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 /// and `pop_index`'s release-active clause-4 guard fires. This test pins the
 /// GUARD FIRING (the strict improvement from silent corruption to a loud
 /// panic), not the hazard class closing: what such a shape still evades is
-/// inventoried in the trait doc's "The shared-storage hazard class"
-/// section, and pinned by the two tests below. If a
+/// inventoried in the trait's `# Safety` contract, and pinned by the two
+/// tests below. If a
 /// future structural fix stops this shape from compiling, this test breaks
-/// by design and the trait doc's clause 1 must be updated with it.
+/// by design and the trait's clause 1 must be updated with it.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn two_implementor_values_sharing_one_head_still_double_issue() {
@@ -215,14 +215,13 @@ struct ForgedAcyclicLinks {
     links: ArrayLinks<64>,
 }
 
-// SAFETY: DELIBERATE contract violation — clause 4 (load_next must answer
-// only TAIL or a currently-valid index): the test overwrites the backing
-// behind the algorithm's back, so load_next answers values the crate never
-// stored. (Clause 2's coherence half is NOT the violated clause: the
-// forged write is LATER than the publishing push's own store_next in the
-// cell's modification order, and clause 2's lower bound forbids only
-// other clauses — the value-level clause-4 obligation is what the forgery
-// breaks.)
+// SAFETY: DELIBERATE contract violation — clause 2's mutation-authority
+// obligation: these direct stores bypass this binding's stack algorithm and
+// carry no valid publish/recycle authority. Clause 2's publication-relative
+// lower bound is still satisfied: both writes are later than the publishing
+// push's store_next in the cell's modification order. The in-range values
+// deliberately keep clause 4 satisfied, so this test isolates the forbidden
+// direct mutation rather than merely violating the valid-answer obligation.
 unsafe impl StackStorage<16> for ForgedAcyclicLinks {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -238,8 +237,9 @@ unsafe impl StackStorage<16> for ForgedAcyclicLinks {
 }
 
 /// The self-loop detector is a shape check, not a structural repair for every
-/// invalid backing. This deliberate clause-4 violation forges `1 -> 0 ->
-/// TAIL`, so the acyclic chain silently returns the never-pushed `0`.
+/// invalid backing. This deliberate clause-2 mutation-authority violation
+/// forges `1 -> 0 -> TAIL`, so the acyclic chain silently returns the
+/// never-pushed `0`.
 #[test]
 fn hand_crafted_acyclic_forgery_still_double_issues() {
     let forged = ForgedAcyclicLinks {
@@ -332,7 +332,7 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// [`load_next`](StackStorage::load_next)/
 /// [`store_next`](StackStorage::store_next) read and write DIFFERENT
 /// backings behind one head — a deliberate, documented limitation:
-/// implementor-enforced (the [`StackStorage`] trait doc's `# Safety` clause 2),
+/// implementor-enforced (the [`StackStorage`] trait's `# Safety` clause 2),
 /// not structurally impossible, auditable only inside the one impl block.
 /// The two `#[should_panic]` tests above pin shape 2; this test pins
 /// shape 1.
@@ -344,7 +344,7 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// `(0, tag)`. The second pop reads `read_links[0] == 0 == index`: a
 /// self-loop a contract-abiding chain can never contain, so the clause-4
 /// guard panics — one pop later than the corruption it names. See
-/// the trait doc's "Detection coverage" for the catch/miss boundary.
+/// the trait's `# Safety` contract for the catch/miss boundary.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn internally_disagreeing_storage_still_double_issue() {
@@ -455,7 +455,7 @@ fn head_moved_into_fresh_links_leaks_and_then_panics() {
 /// head↔links bindings over ONE shared backing, both inside a SINGLE
 /// implementor value via two `StackStorage` impls at different widths —
 /// falsifying "two implementor values" as the inventory's counting unit
-/// (the trait doc's inventory now counts BINDINGS). Implementor-enforced,
+/// (the trait's binding inventory counts BINDINGS). Implementor-enforced,
 /// not structurally impossible, like
 /// `two_stacks_sharing_link_storage_still_double_issue`: every link value
 /// stays numerically valid and the shared chain stays perfectly ACYCLIC,
@@ -557,7 +557,7 @@ fn one_value_two_bindings_shared_backing_still_double_issue() {
 /// [`pop_index`]'s clause-4 guard fires when a [`StackStorage`] implementor
 /// returns a `next` value that is neither `TAIL` nor a valid index — a
 /// caller-contract violation `pop_index` cannot otherwise detect (see the
-/// crate docs' "Storage requirement" section on `StackStorage`). A tiny
+/// `StackStorage` trait's `# Safety` contract). A tiny
 /// custom implementor whose `load_next` always answers `INDEX_MASK` (a value
 /// that is not `TAIL` and not `< INDEX_MASK`) triggers it directly.
 ///

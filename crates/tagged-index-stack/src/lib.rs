@@ -28,9 +28,8 @@
 //! `#![deny(unsafe_code)]`, with its `unsafe` surface confined to an audited
 //! set of item-scoped `#[allow(unsafe_code)]` lint-exception regions, all in
 //! `src/imp.rs` — see ["Where unsafe lives"](#where-unsafe-lives) below for
-//! the audited region count, the full region-by-region inventory, the
-//! unsafe-operation count those regions contain, and the separate
-//! test-fixture inventory.
+//! the audited region count, the full region-by-region inventory, and the
+//! unsafe-operation count those regions contain.
 //!
 //! Slab allocators, object pools, entity-component stores, and connection
 //! tables all need to recycle small integer ids, and commonly get two details
@@ -61,8 +60,8 @@
 //! already owns) instead of paying for a second array; the crate provides
 //! [`ArrayIndexStack`]`<INDEX_BITS, N>` for standalone use. The trait is
 //! `unsafe` to implement — see its `# Safety` section. Slot-resident does
-//! not mean payload-aliased — see the [`StackStorage`] trait doc's "Storage
-//! requirement" section (violating it defeats
+//! not mean payload-aliased — see the [`StackStorage`] trait's `# Safety`
+//! contract (violating it defeats
 //! [`pop_index`](StackOps::pop_index)'s corruption-detection guard; see its
 //! `# Panics`).
 //!
@@ -72,8 +71,8 @@
 //! the same head on a later call. The value-level obligations are one live
 //! binding per head for its whole life and disjoint reachable-index
 //! populations when link cells are shared; cell sharing itself is harmless.
-//! The [`StackStorage`] trait doc's "The shared-storage hazard class" section
-//! is the source of truth for that inventory and its detection boundary.
+//! The [`StackStorage`] trait's `# Safety` contract is the source of truth
+//! for those binding obligations.
 //!
 //! [`store_next`](StackStorage::store_next) is the only write the stack ever
 //! makes to a link, and it happens during
@@ -84,6 +83,10 @@
 //! make it stale the instant it returns, so
 //! [`pop_index`](StackOps::pop_index)'s `None` remains the only authoritative
 //! empty check.
+//! The unsafe implementation must ensure that no other storage, payload, or
+//! binding writes a link cell: only this binding's algorithm may mutate it
+//! during a push with valid publish/recycle authority. A later legitimate
+//! pop+repush by this binding may write the cell again.
 //!
 //! # Two correctness-critical subtleties
 //!
@@ -210,16 +213,15 @@
 //! # loom — the tests run against THIS type
 //!
 //! Under `--cfg loom` the stack's atomics alias to `loom::sync::atomic`, so
-//! the shipped loom suite (`tests/loom_aba.rs`) model-checks the real
-//! [`ArrayIndexStack`] / [`StackHead`] / [`TaggedIndex`] code exhaustively —
+//! the loom model suite model-checks the real [`ArrayIndexStack`] /
+//! [`StackHead`] / [`TaggedIndex`] code exhaustively —
 //! no `preemption_bound`, so loom explores every interleaving these small
 //! models admit. Several models run end-to-end through the shipped
 //! [`push`](StackOps::push_index)/[`pop`](StackOps::pop_index); most of the
 //! rest drive the real head atomic and real packing through
 //! `cas_head_for_test` — the one exception is the untagged-ABA counterfactual,
 //! which drives a locally-defined buggy stand-in stack. `#[should_panic]`
-//! counterfactuals prove the harness is non-vacuous. See
-//! `tests/loom_aba.rs`'s own module doc for the per-model breakdown.
+//! counterfactuals prove the harness is non-vacuous.
 //!
 //! # Where unsafe lives
 //!
@@ -238,12 +240,7 @@
 //!
 //! The production contents are exactly one unsafe trait, sixteen unsafe
 //! function declarations, zero unsafe impls, and nine local `unsafe {}`
-//! blocks. Paths under `docs/` and the repository-root `tests/` are repository
-//! files, not part of the published package.
-//!
-//! Integration tests are separate crate targets and intentionally contain
-//! additional `unsafe impl StackStorage` fixtures; they are outside this
-//! production inventory.
+//! blocks. The inventory covers only the published library source.
 //!
 //! ```text
 //! rg -n '^\s*#\[allow\(unsafe_code\)\]' src/imp.rs
@@ -270,7 +267,7 @@
 //! callee's own caller-side `# Safety` contract (`push_index`'s is the
 //! three-clause link-domain + liveness + exclusive-ownership contract); `pop_index` deliberately
 //! stays safe, because an unauthorized pop can only LEAK an index, never
-//! double-issue one. See the [`StackStorage`] trait doc's unsafe-fn hooks,
+//! double-issue one. See the [`StackStorage`] trait's unsafe-fn hooks,
 //! `# Safety`, and `# Stability` sections.
 //!
 //! # Portability limit — requires 64-bit atomics

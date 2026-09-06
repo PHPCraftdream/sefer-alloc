@@ -78,12 +78,18 @@ whole life, never rebind it, and never let two bindings reach the same index
 through shared link cells. Sharing cells for disjoint reachable populations is
 fine; these binding-level obligations must be discharged by construction.
 
+Each link cell's contents may be mutated only by this binding's stack algorithm,
+while a push holds valid publish/recycle authority. A later legitimate pop
+followed by repush through the same binding may write that cell again; direct
+writes by storage owners, payload users, or another binding violate the
+contract even when they leave an acyclic, in-range chain.
+
 All three `StackStorage` hooks are `unsafe fn` with caller-side `# Safety`
 contracts. The owned `ArrayIndexStack` does not implement the trait, so a
 competing binding around it is rejected by the type system; custom
 implementors can express that shape only behind an `unsafe impl`. The
-`StackStorage` trait doc's "The shared-storage hazard class" section is the
-source of truth for the full inventory and its runtime detection boundary.
+The `StackStorage` trait's `# Safety` contract is the source of truth for these
+binding obligations and the runtime detector's limits.
 
 A production allocator keeps its links **slot-resident** (an `AtomicU32` field
 inside a slot it already owns) rather than paying for a second array, via a
@@ -115,8 +121,9 @@ impl SlotStorage {
 }
 
 // SAFETY: one private head has one stable backing; each index in 0..8 has a
-// dedicated atomic link cell with Acquire/Release access, and callers provide
-// disjoint publish/recycle authority for the in-domain indices.
+// dedicated atomic link cell with Acquire/Release access; only this binding's
+// stack algorithm mutates those cells under valid publish/recycle authority;
+// and callers provide disjoint authority for the in-domain indices.
 unsafe impl StackStorage<16> for SlotStorage {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
@@ -160,8 +167,7 @@ first bytes (the classic free-block-header idiom) is not supported. `pop_index`'
 corruption-detection guard panics (release-active, not debug-only) on TWO
 value shapes — an out-of-range link and a self-loop (`next == index`) — so a
 corrupted-but-in-range ACYCLIC backing still passes silently; see the
-[`StackStorage`] trait doc's "Storage requirement" and "The shared-storage
-hazard class" sections for the exact catch/miss boundary.
+[`StackStorage`] trait's `# Safety` contract for the exact catch/miss boundary.
 
 `StackHead::is_empty()` (also reachable through `ArrayIndexStack::is_empty()`)
 is an advisory, `Relaxed` emptiness check —
