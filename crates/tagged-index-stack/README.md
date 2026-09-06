@@ -313,10 +313,11 @@ undocumented empty-word helper.
 Rust 1.79 — the measured LIBRARY-surface floor (the newest API the published
 library itself uses is the inline `const` block in `ArrayLinks::new`'s array
 repeat, stable in 1.79; verified with `cargo +1.79 check`, default and
-`RUSTFLAGS="--cfg tagged_index_stack_test"`). The crate's own test/clippy target set needs
-newer toolchains (dev-dependency graph, `std::panic::PanicHookInfo` at 1.81)
-— dev-only needs do not raise the floor a library consumer pays. Details:
-the `rust-version` comment in this crate's `Cargo.toml`.
+`RUSTFLAGS="--cfg tagged_index_stack_test"`). The crate's dev/test/bench graph
+is measured separately on Rust 1.88 by the pinned `cargo check`, `cargo test
+--no-run`, and `cargo bench --no-run` rows; dev-only needs do not raise the
+floor a library consumer pays. Details: the `rust-version` comment in this
+crate's `Cargo.toml`.
 
 ## License
 

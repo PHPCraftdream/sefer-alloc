@@ -35,10 +35,13 @@ current run-25 remediation HEAD and do not imply native ARM timing.
 
 The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
 evidence modes pin HEAD before reading each source input with
-`git show <HEAD>:<path>` and retain those ODB bytes; the live ancestor
-`.cargo/config.toml` is checked byte-for-byte against its captured HEAD object
-immediately before and after each Cargo build. This closes provenance only;
-it does not create native ARM timing evidence.
+`git show <HEAD>:<path>` and retain those ODB bytes. The runner's intended
+parent-config closure is narrow: each evidence Cargo build starts from a fresh
+cwd outside the checkout ancestry, uses an absolute manifest path, a fresh
+`CARGO_HOME`, and an isolated target; a preflight rejects `config`/`config.toml`
+anywhere in the cwd ancestor chain or in `CARGO_HOME`. Tracked repository
+config is therefore irrelevant to the evidence build. This closes provenance
+only; it does not create native ARM timing evidence.
 
 The current receipt is a local Windows codegen context, not an ARM host:
 `platform=win32`, `release=10.0.19045`, `arch=x64`, CPU model
@@ -143,8 +146,9 @@ No wall-clock CSV or summary is current.
 ```text
 node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target x86_64-unknown-linux-gnu
 node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode codegen --target aarch64-unknown-linux-gnu
-node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary
+node crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs --mode summary --target aarch64-unknown-linux-gnu
 ```
 
-The summary command is expected to reject the current checkout until a fresh
-native-arm64 wall-clock leg is present.
+The summary command reaches the missing native ARM wall-clock artifact
+validation (rather than failing at argument parsing) and is expected to reject
+the current checkout until a fresh native-arm64 wall-clock leg is present.

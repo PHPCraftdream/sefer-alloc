@@ -32,10 +32,10 @@ exclude = [
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tagged_index_stack_test)'] }
 
-# Allowed: dev-only tests use APIs newer than the library-surface MSRV floor
-# (`std::panic::PanicHookInfo`, stable 1.81); the library target is not
-# MSRV-linted by clippy, so the floor's real oracle is the msrv job's pinned
-# `cargo +1.79 check` rows in `.github/workflows/ci.yml`.
+# Allowed: the measured dev/test/bench graph is checked on Rust 1.88 by the
+# pinned `cargo check`, `cargo test --no-run`, and `cargo bench --no-run` rows;
+# the library target is not MSRV-linted by clippy, so its floor's real oracle
+# is the pinned `cargo +1.79 check` rows in `.github/workflows/ci.yml`.
 # MSRV policy + measured re-derivation:
 # docs/adr/2026-09-01-tagged-index-stack-doc-consolidation-and-review-history.md.
 [lints.clippy]
