@@ -1,0 +1,12 @@
+# Compile-fail fixture — compiled ONLY by root tests/tagged_index_stack_compile_fail.rs
+# (never by the workspace: the detached [workspace] table opts it out).
+[workspace]
+
+[package]
+name = "tis_compile_fail_array_index_stack_capacity_new"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tagged-index-stack = { path = "../../.." }

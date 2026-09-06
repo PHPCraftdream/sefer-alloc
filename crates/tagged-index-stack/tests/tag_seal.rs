@@ -18,10 +18,10 @@ use tagged_index_stack::TaggedIndex;
 #[cfg(tagged_index_stack_test)]
 use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 
-/// `TAG_MAX == 2^TAG_BITS - 1` at width 16, pinned as a `const` assertion so
-/// a future arithmetic regression in the constant's definition is a compile
-/// error, not a runtime surprise.
-const _: () = assert!(TaggedIndex::<16>::TAG_MAX == (1u64 << TaggedIndex::<16>::TAG_BITS) - 1);
+/// The width and ceiling at the production width are pinned independently as
+/// literal const assertions, so either constant can regress on its own.
+const _: () = assert!(TaggedIndex::<16>::TAG_BITS == 48);
+const _: () = assert!(TaggedIndex::<16>::TAG_MAX == (1u64 << 48) - 1);
 
 /// The core seal sequence: seed `TAG_MAX - 2` (2 pushes of headroom), three
 /// pushes onto a fresh 1-slot chain-building sequence produce exactly

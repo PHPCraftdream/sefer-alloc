@@ -195,7 +195,10 @@ fn double_push_of_current_head_panics_on_first_pop() {
 
 // Compile-fail coverage: out-of-range `INDEX_BITS` (the
 // `tests/compile_fail/index_bits_zero/` and `index_bits_seventeen/`
-// fixtures) and the cfg-without-feature fast-fail are pinned
+// fixtures), over-capacity `ArrayIndexStack` construction and `Default`
+// (the `array_index_stack_capacity_new/` and
+// `array_index_stack_capacity_default/` fixtures), and the
+// cfg-without-feature fast-fail are pinned
 // out-of-process by the root `tests/tagged_index_stack_compile_fail.rs`, which
 // asserts each failure
 // is `_CHECK_BITS`'s E0080 / the named `compile_error!` with no secondary

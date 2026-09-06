@@ -384,25 +384,23 @@ fn index_bits_seventeen_must_not_compile() {
 }
 
 /// Negative compile-fail regression: an owned array-backed stack must reject
-/// N > TaggedIndex::<B>::INDEX_MASK when its constructor is instantiated.
-/// The fixture also type-checks Default::default() for the same invalid
-/// shape; both paths are required to route through the checked constructor.
-/// For B = 4, the mask is 15, so N = 16 is the first invalid capacity.
-///
-/// This asserts the exact crate-owned const-evaluation diagnostic and the
-/// single error-level diagnostic multiset. A bare stderr substring would also
-/// pass if an unrelated error happened to mention INDEX_MASK.
-#[test]
-fn array_index_stack_capacity_above_index_mask_must_not_compile() {
-    let output = build_fixture_with_json("array_index_stack_capacity", None);
-    let manifest = fixture_manifest("array_index_stack_capacity");
+/// N > TaggedIndex::<B>::INDEX_MASK through `new()` and `Default` independently.
+/// For B = 4, the mask is 15, so N = 16 is the first invalid capacity. Keeping
+/// one invalid instantiation per fixture makes either constructor regression
+/// fail independently.
+fn assert_invalid_capacity_fixture_must_not_compile(
+    fixture_dir: &str,
+    expected_note_source_suffix: &str,
+) {
+    let output = build_fixture_with_json(fixture_dir, None);
+    let manifest = fixture_manifest(fixture_dir);
     let context = failure_context(&manifest, &output);
     const EXPECTED_MESSAGE: &str =
         "evaluation panicked: ArrayIndexStack capacity N must be <= INDEX_MASK";
 
     assert!(
         !output.status.success(),
-        "the over-capacity ArrayIndexStack fixture COMPILED — N > INDEX_MASK was not \
+        "the over-capacity ArrayIndexStack fixture {fixture_dir} COMPILED — N > INDEX_MASK was not \
          checked at construction:\n{context}"
     );
     let errors = cargo_error_diagnostics(&output);
@@ -423,20 +421,62 @@ fn array_index_stack_capacity_above_index_mask_must_not_compile() {
         "expected the exact crate-owned capacity diagnostic:\n{context}"
     );
     assert!(
-        error
+        error.rendered.contains(
+            "evaluation of `tagged_index_stack::ArrayIndexStack::<4, 16>::_CHECK_N` failed here",
+        ) && error
             .rendered
-            .contains("ArrayIndexStack::<4, 16>::_CHECK_N")
-            && error
-                .rendered
-                .contains("ArrayIndexStack capacity N must be <= INDEX_MASK"),
+            .contains("ArrayIndexStack capacity N must be <= INDEX_MASK"),
         "expected the diagnostic to identify this invalid instantiation and \
-        the named crate assertion:\n{context}"
+         the named crate assertion:\n{context}"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // `Default::default()` delegates to `Self::new()`, so rustc names the
+    // forwarded constructor; the source suffix distinguishes both routes.
+    let instantiation_note = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|record| record.get("reason").and_then(serde_json::Value::as_str) == Some("compiler-message"))
+        .filter_map(|record| record.get("message").cloned())
+        .filter(|message| message.get("level").and_then(serde_json::Value::as_str) == Some("note"))
+        .find(|message| {
+            message
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                == Some("the above error was encountered while instantiating `fn ArrayIndexStack::<4, 16>::new`")
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "expected the fixture's `ArrayIndexStack::<4, 16>::new` instantiation note:\n{context}"
+            )
+        });
+    let note_source = instantiation_note
+        .get("spans")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|spans| spans.first())
+        .and_then(|span| span.get("file_name"))
+        .and_then(serde_json::Value::as_str)
+        .map(|path| path.replace('\\', "/"));
     assert!(
-        stdout.contains("ArrayIndexStack::<4, 16>::new()"),
-        "expected the error's instantiation note to point at the fixture's \
-         `new()` call:\n{context}"
+        note_source
+            .as_deref()
+            .is_some_and(|path| path.ends_with(expected_note_source_suffix)),
+        "the instantiation note came from the wrong call path for {fixture_dir}: \
+         expected a source ending in {expected_note_source_suffix:?}, got {note_source:?}:\n{context}"
+    );
+}
+
+#[test]
+fn array_index_stack_capacity_new_above_index_mask_must_not_compile() {
+    assert_invalid_capacity_fixture_must_not_compile(
+        "array_index_stack_capacity_new",
+        "src/main.rs",
+    );
+}
+
+#[test]
+fn array_index_stack_capacity_default_above_index_mask_must_not_compile() {
+    assert_invalid_capacity_fixture_must_not_compile(
+        "array_index_stack_capacity_default",
+        "crates/tagged-index-stack/src/imp.rs",
     );
 }
 
