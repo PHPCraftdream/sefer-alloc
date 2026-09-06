@@ -22,13 +22,13 @@ and store-elision await native ARM timing.
 ## Accepted measurement identity
 
 The authoritative codegen artifacts were captured under source HEAD
-`72f4f211368d65d69923bf5e93eb95df3735dc1f`, tree
-`14660dd3ba7453512ad075032ad0cbc0516953b6`, source-input digest
-`a07e4dab11610ab668555f394d7dd45b428f2d49c0f0794c9036d697df0e4f66`, and
+`b6b33c5665567dd21106efa749f9d5a5303db57c`, tree
+`13b2b5f4848e05b020ef27ec51d29a3f589c474f`, source-input digest
+`0f16a1bf7f48da2d6dedb6e879532c74ddb036e4a5a7808cc875ad46c4528a4d`, and
 `rustc 1.97.0` / `LLVM 22.1.6`. Both target legs are ODB-pinned to those exact
 bytes and use the `release-thin-lto-1cgu-no-incremental` profile. This refresh
 follows the storage-contract and codegen-probe corrections through
-`72f4f21`; artifact commit `236b9b6a60394f6e4a5142c7d8446659c7920f98`
+`b6b33c5`; artifact commit `e4ad8523f310b488c1f91b23a8129e577b28ea66`
 records the refreshed identity. This provides static assembly evidence only and does not imply native
 ARM timing.
 
