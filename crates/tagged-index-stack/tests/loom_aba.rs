@@ -23,7 +23,7 @@
 //!
 //! # What loom covers
 //!
-//! - `ArrayIndexStack<16, N>` — the fused stack: a `TaggedIndexStack`-style
+//! - `ArrayIndexStack<16, N>` — the fused stack: a tagged-index-stack implementation
 //!   head (`AtomicU64`, packed `(index | tag << 16)`) owning its `ArrayLinks<N>`
 //!   slot-resident `AtomicU32` links, `TAIL` end-of-chain.
 //! - `pop`: load tagged head, read the link, CAS head to `(next, SAME tag)` — a
@@ -436,7 +436,7 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
 }
 
 // ============================================================================
-// Counterfactual verification: confirm that the real TaggedIndexStack (with
+// Counterfactual verification: confirm that the real ArrayIndexStack (with
 // its tag) does NOT let index 1 resurrect under the EXACT same B-does-two-
 // pops-then-one-push pattern that corrupts the untagged model above. This
 // mirrors counterfactual_untagged_head_lets_aba_corrupt_free_list's scenario

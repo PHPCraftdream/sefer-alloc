@@ -2555,7 +2555,7 @@ jobs:
       # extracted crate aliases its atomics to `loom` under `--cfg loom`). It
       # runs against the crate directly (`-p once-ptr-cell`, no sefer
       # features) — see the `loom_once_ptr_cell` step below.
-      # Real-type `TaggedIndexStack` loom coverage runs with the job-level
+      # Real-type `ArrayIndexStack` loom coverage runs with the job-level
       # `RUSTFLAGS: "--cfg loom"` and the crate's optional `loom` feature.
       # The suite includes untagged-corruption and H-2 tag-reset
       # counterfactuals, so a broken model fails rather than passing
