@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // tis_p3_ab_runner.mjs — measurement driver for the link-ordering/CAS A/B study of
 // `crates/tagged-index-stack`:
-//   Link ordering: ArrayLinks::load_next/store_next Acquire/Release vs Relaxed.
+//   Link ordering: RegistryShapedStorage hook Acquire/Release vs Relaxed.
 //   CAS strength: strong compare_exchange vs compare_exchange_weak in the push/pop
 //         head CAS loops (relevant on LL/SC ISAs like non-LSE AArch64).
 //
@@ -9,18 +9,17 @@
 //   --mode codegen   — materialize the three variants, `rustc --emit=asm`
 //                      each DIRECTLY (no cargo), extract/normalize function
 //                      blocks, run per-ISA oracles, emit logs/CSV/table.
-//   --mode wallclock — materialize three scratch CARGO crates, `cargo build
-//                      --release`, run the harness per (variant, sample),
-//                      run wallclock oracles, emit logs/CSV/summary.
+//   --mode wallclock — materialize base/links_relaxed scratch CARGO crates,
+//                      run production timing and separate activation probes.
 //   --mode summary  — read every per-leg CSV + its own raw-log provenance
 //                      header and emit the compact summary CSV companion for
 //                      the gate report. No build, no measurement. Optional
-//                      `--target <triple>` re-points the wallclock ratio
-//                      oracle at that target's CSV (default: the committed
-//                      x86_64-pc-windows-msvc one).
-//   --mode build-check — materialize the base scratch CARGO crate from the
-//                      CURRENT src/{lib,imp}.rs and compile both production
-//                      and cfg-enabled activation harness shapes in separate
+//                      `--target <triple>` selects that target's wallclock
+//                      CSV. Without it, lookup uses the conventional
+//                      x86_64-pc-windows-msvc path and fails if absent.
+//   --mode build-check — materialize the base scratch CARGO crate from one
+//                      dirty-compatible immutable source snapshot and compile
+//                      production and cfg-enabled activation harnesses in separate
 //                      target dirs; ALSO materialize+`rustc
 //                      --emit=metadata` the separate `codegen_wrapper.rs.tmpl`
 //                      template against the same current sources (the wall-
@@ -28,8 +27,7 @@
 //                      independent templates with no shared materialization
 //                      code, so a break visible only through one is invisible
 //                      to a check of the other). No timing, no docs/perf
-//                      artifacts. Exists so an API break in `push`/`pop`
-//                      an API break in `push`/`pop` fails regular per-PR CI
+//                      artifacts. An API break in `push`/`pop` fails regular per-PR CI
 //                      instead of staying invisible until a measurement run.
 //
 // Node >= 20, zero npm dependencies, Windows-safe (no POSIX-only APIs).
@@ -49,7 +47,7 @@
 // outside it.
 
 import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +93,10 @@ function makeScratchRoot() {
 }
 
 const VARIANTS = ['base', 'links_relaxed', 'cas_weak'];
+const WALLCLOCK_VARIANTS = ['base', 'links_relaxed'];
+const CODEGEN_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
+const MIN_COMPARATIVE_SAMPLES = 4;
+const PROFILE_ID = 'release-thin-lto-1cgu-no-incremental';
 const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_impl'];
 
 // ── Practical upper bounds ─────────────────────────────────────────────────
@@ -106,7 +108,7 @@ const FUNCTION_KEYS = ['load_next', 'store_next', 'push_index_impl', 'pop_index_
 // Mirrors harness_bin.rs's TIS_AB_THREADS bound exactly.
 const MAX_THREADS = 256;
 // 60 s: ~600x the largest documented run of this study (window_ms=100,
-// docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_REPORT.md) and 60x the default
+// docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md) and 60x the default
 // (1000 ms), so no real measurement is excluded, while a fat-fingered
 // `--window-ms 99999999999999` is rejected at argument validation instead of
 // committing CI/a dev machine to a multi-year "measurement". At this cap the
@@ -114,9 +116,8 @@ const MAX_THREADS = 256;
 // trivially representable on any platform, so the Rust-side checked-deadline
 // guard is unreachable noise rather than a real limit.
 const MAX_WINDOW_MS = 60_000;
-// 100 samples: committed runs use 1 and the default is 3; the cap bounds the
-// worst-case run at 3 variants x 100 samples x (200 ms warm-up + 60 s window
-// + bounded overshoot) ≈ 5 hours — finite and loud rather than unbounded.
+// 100 samples: smoke uses 1 and comparative runs default to 4; the cap bounds
+// two wall-clock variants to under 4 hours at the maximum window and timeout.
 const MAX_SAMPLES = 100;
 // Child timeout for ONE harness invocation (one variant, one sample),
 // derived the same way harness_bin.rs derives its margins: the fixed
@@ -140,14 +141,6 @@ const LABEL_MATCHERS = {
 
 // ── Text-exact substitution anchors (must each occur EXACTLY ONCE) ─────────
 const ANCHORS = {
-  LINK_LOAD: {
-    find: 'self.next[index as usize].load(Ordering::Acquire)',
-    replace: 'self.next[index as usize].load(Ordering::Relaxed)',
-  },
-  LINK_STORE: {
-    find: 'self.next[index as usize].store(next, Ordering::Release)',
-    replace: 'self.next[index as usize].store(next, Ordering::Relaxed)',
-  },
   PUSH_CAS: {
     find: 'match head_ref.compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed) {',
     replace:
@@ -162,13 +155,18 @@ const ANCHORS = {
 
 const VARIANT_ANCHORS = {
   base: [],
-  links_relaxed: ['LINK_LOAD', 'LINK_STORE'],
   cas_weak: ['PUSH_CAS', 'POP_CAS'],
+  links_relaxed: [],
 };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const args = { mode: null, target: null, threads: 4, windowMs: 1000, samples: 3, smoke: false, keepScratch: false };
+  const args = { mode: null, target: null, threads: 4, windowMs: 1000, samples: MIN_COMPARATIVE_SAMPLES, smoke: false, keepScratch: false };
+  const provided = new Set();
+  const markProvided = (option) => {
+    if (provided.has(option)) fail(`duplicate option: ${option}`);
+    provided.add(option);
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = () => {
@@ -176,16 +174,17 @@ function parseArgs(argv) {
       return argv[++i];
     };
     switch (a) {
-      case '--mode': args.mode = need(); break;
-      case '--target': args.target = need(); break;
+      case '--mode': markProvided(a); args.mode = need(); break;
+      case '--target': markProvided(a); args.target = need(); break;
       case '--out-dir':
         // Scratch output is created only under the runner-owned root.
         fail('--out-dir is not supported; scratch output goes to a fresh <repo>/target/tis_p3_ab-<mkdtemp>/<target> directory created by the runner.');
-      case '--threads': args.threads = Number(need()); break;
-      case '--window-ms': args.windowMs = Number(need()); break;
-      case '--samples': args.samples = Number(need()); break;
-      case '--smoke': args.smoke = true; break;
+      case '--threads': markProvided(a); args.threads = Number(need()); break;
+      case '--window-ms': markProvided(a); args.windowMs = Number(need()); break;
+      case '--samples': markProvided(a); args.samples = Number(need()); break;
+      case '--smoke': markProvided(a); args.smoke = true; break;
       case '--keep-scratch':
+        markProvided(a);
         // Deliberate opt-out from scratch-tree removal for inspection.
         // Without this flag, cleanup runs on every exit path.
         args.keepScratch = true;
@@ -196,8 +195,16 @@ function parseArgs(argv) {
   if (args.mode !== 'codegen' && args.mode !== 'wallclock' && args.mode !== 'summary' && args.mode !== 'build-check') {
     fail(`--mode must be "codegen", "wallclock", "summary" or "build-check" (got ${JSON.stringify(args.mode)})`);
   }
+  for (const option of ['--threads', '--window-ms', '--samples', '--smoke']) {
+    if (provided.has(option) && args.mode !== 'wallclock') {
+      fail(`${option} is valid only with --mode wallclock`);
+    }
+  }
+  if (args.mode === 'build-check' && provided.has('--target')) {
+    fail('--target is not accepted with --mode build-check; the verified rustc host is selected internally');
+  }
   // build-check runs `cargo build` natively (no cross target); summary reads
-  // committed artifacts. Both skip the target-triple requirement.
+  // provided artifacts. Both skip the target-triple requirement.
   if (args.mode !== 'summary' && args.mode !== 'build-check') {
     if (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target)) {
       fail('--target must be a rust target triple');
@@ -207,13 +214,14 @@ function parseArgs(argv) {
     // root (both pass the charset check above). validateScratchLeaf() rejects
     // them here, before any filesystem access.
     validateScratchLeaf(args.target);
+    if (args.mode === 'codegen' && !CODEGEN_TARGETS.includes(args.target)) {
+      fail(`--mode codegen supports only ${CODEGEN_TARGETS.join(' or ')} (got ${JSON.stringify(args.target)})`);
+    }
   }
-  // Summary mode accepts an optional --target to
-  // point the wallclock ratio oracle at a different leg's CSV (e.g. the
-  // aarch64 CSV a CI job just produced) instead of the committed
-  // x86_64-pc-windows-msvc default. Same charset as the producing modes'
-  // triples; also rejected as a bare `.`/`..` path segment (the value is
-  // spliced into a docs/perf filename below).
+  // Summary mode accepts an optional --target to select another provided or
+  // newly-produced wallclock CSV. Without it, the conventional lookup target
+  // is x86_64-pc-windows-msvc; no existing artifact is implied. The value uses
+  // the producer target charset and becomes part of a docs/perf filename.
   if (args.mode === 'summary' && args.target !== null) {
     if (!/^[A-Za-z0-9_.-]+$/.test(args.target) || args.target === '.' || args.target === '..') {
       fail(`--target (summary mode) must be a single rust target triple (got ${JSON.stringify(args.target)})`);
@@ -240,10 +248,22 @@ function assert(cond, msg) {
 
 const sha256hex = (s) => createHash('sha256').update(s, 'utf8').digest('hex');
 const utf8Base64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+const CARGO_ENCODED_SEPARATOR = '\u001f';
+const CANONICAL_CARGO_SET_KEYS = [
+  'CARGO_ENCODED_RUSTFLAGS',
+  'CARGO_HOME',
+  'CARGO_INCREMENTAL',
+  'CARGO_NET_OFFLINE',
+  'CARGO_TARGET_DIR',
+];
+const CANONICAL_PRODUCTION_RUSTFLAGS =
+  '--remap-path-prefix REPO=REPO --remap-path-prefix SCRATCH=SCRATCH';
+const CANONICAL_ACTIVATION_RUSTFLAGS =
+  `${CANONICAL_PRODUCTION_RUSTFLAGS} --cfg tagged_index_stack_test`;
 
 function stripMeasurementCfgs(raw) {
   if (raw.includes('\u001f')) {
-    fail('RUSTFLAGS contains encoded separators; use CARGO_ENCODED_RUSTFLAGS (the measurement child removes that override) or clear the flags');
+    fail('RUSTFLAGS contains encoded separators; clear foreign RUSTFLAGS before running the A/B driver');
   }
   if (/["']/.test(raw)) {
     fail('RUSTFLAGS contains quotes; refusing ambiguous measurement flag parsing (use unquoted whitespace-separated flags or clear RUSTFLAGS)');
@@ -280,27 +300,73 @@ function effectiveMeasurementRustflags() {
     fail('measurement requires empty production RUSTFLAGS after removing only loom/test cfgs; clear RUSTFLAGS before running the A/B driver');
   }
   return {
-    production: '',
-    activation: '--cfg tagged_index_stack_test',
-    cargoEncodedRustflags: 'removed',
+    production: CANONICAL_PRODUCTION_RUSTFLAGS,
+    activation: CANONICAL_ACTIVATION_RUSTFLAGS,
+    cargoEncodedRustflags: 'canonical',
   };
 }
 
-function cargoChildEnv(rustflags, targetDir) {
-  const childEnv = {
-    ...process.env,
-    RUSTFLAGS: rustflags,
-    CARGO_TARGET_DIR: targetDir,
+const SANITIZED_ENV_NAMES = [
+  'RUSTFLAGS', 'RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
+  'CARGO_HOME', 'CARGO_INCREMENTAL', 'CARGO_NET_OFFLINE', 'RUSTDOCFLAGS', 'RUSTC_BOOTSTRAP',
+  'CARGO_ENCODED_RUSTFLAGS',
+];
+
+function isSanitizedEnvKey(key) {
+  const normalized = key.toUpperCase();
+  return SANITIZED_ENV_NAMES.includes(normalized) || /^CARGO_(PROFILE|BUILD|TARGET)_/.test(normalized);
+}
+
+function isForbiddenChildEnvKey(key) {
+  return isSanitizedEnvKey(key) && !CANONICAL_CARGO_SET_KEYS.includes(key.toUpperCase());
+}
+
+function sanitizedEnvState() {
+  const removed = [...new Set(
+    Object.keys(process.env).filter(isSanitizedEnvKey).map((key) => key.toUpperCase()),
+  )].sort();
+  return {
+    removedKeys: removed,
+    setKeys: CANONICAL_CARGO_SET_KEYS,
+    secretValuesLogged: false,
   };
-  delete childEnv.CARGO_ENCODED_RUSTFLAGS;
+}
+
+function sanitizedBaseChildEnv() {
+  const childEnv = { ...process.env };
+  for (const key of Object.keys(childEnv)) {
+    if (isSanitizedEnvKey(key)) delete childEnv[key];
+  }
+  return childEnv;
+}
+
+function cargoChildEnv(rustflagTokens, targetDir, cargoHome) {
+  assert(Array.isArray(rustflagTokens), 'canonical encoded RUSTFLAGS must be an argv array');
+  assert(rustflagTokens.every((token) => typeof token === 'string' && !token.includes(CARGO_ENCODED_SEPARATOR)), 'canonical encoded RUSTFLAGS contain an invalid token');
+  assert(path.isAbsolute(cargoHome) && fs.statSync(cargoHome).isDirectory(), 'canonical CARGO_HOME must be an existing absolute directory');
+  const childEnv = sanitizedBaseChildEnv();
+  childEnv.CARGO_ENCODED_RUSTFLAGS = rustflagTokens.join(CARGO_ENCODED_SEPARATOR);
+  childEnv.CARGO_HOME = cargoHome;
+  childEnv.CARGO_TARGET_DIR = targetDir;
+  childEnv.CARGO_NET_OFFLINE = 'true';
+  childEnv.CARGO_INCREMENTAL = '0';
+  assert(childEnv.RUSTFLAGS === undefined, 'sanitized cargo environment retained RUSTFLAGS');
+  assert(childEnv.CARGO_ENCODED_RUSTFLAGS === rustflagTokens.join(CARGO_ENCODED_SEPARATOR), 'cargo encoded RUSTFLAGS differ from canonical tokens');
+  assert(!Object.keys(childEnv).some(isForbiddenChildEnvKey), 'sanitized cargo environment retained a forbidden override');
+  return childEnv;
+}
+
+function directRustcChildEnv() {
+  const childEnv = sanitizedBaseChildEnv();
+  assert(!Object.keys(childEnv).some(isSanitizedEnvKey), 'sanitized rustc environment retained a foreign override');
   return childEnv;
 }
 
 function sourceInputManifest() {
+  // Cargo discovers the repository config through the scratch path's ancestors.
   const files = [
     scriptPath,
-    path.join(repoRoot, 'scripts', 'capture-measurement-identity.mjs'),
-    path.join(repoRoot, 'scripts', 'lib.mjs'),
+    path.join(repoRoot, '.cargo', 'config.toml'),
     path.join(srcDir, 'lib.rs'),
     path.join(srcDir, 'imp.rs'),
   ];
@@ -317,6 +383,7 @@ function sourceInputManifest() {
       path: path.relative(repoRoot, file).replaceAll(path.sep, '/'),
       bytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
+      snapshotBytes: bytes,
       file,
     };
   });
@@ -333,25 +400,29 @@ function sourceInputManifest() {
   }
   return {
     digest: digest.digest('hex'),
-    files: manifest.map(({ file, ...item }) => item),
+    files: manifest.map(({ file, snapshotBytes, ...item }) => item),
+    snapshot: new Map(manifest.map((item) => [item.path, item.snapshotBytes])),
   };
 }
 
-function requireSourceInputsAtHead(sourceInputs) {
+function requireSourceInputsAtHead(sourceInputs, expectedHead, phase) {
+  assert(/^[0-9a-f]{40}$/.test(expectedHead), `${phase}: malformed expected HEAD`);
+  const currentHead = runCapture('git', ['rev-parse', 'HEAD']).trim();
+  assert(currentHead === expectedHead, `${phase}: HEAD changed from ${expectedHead} to ${currentHead}`);
   const paths = sourceInputs.files.map((input) => input.path);
-  const result = spawnSync('git', ['diff', '--quiet', 'HEAD', '--', ...paths], {
+  const result = spawnSync('git', ['diff', '--quiet', expectedHead, '--', ...paths], {
     cwd: repoRoot,
     encoding: 'utf8',
     shell: false,
   });
   if (result.error) {
-    fail(`git diff --quiet HEAD could not start: ${result.error.message}`);
+    fail(`${phase}: source-input revalidation could not start: ${result.error.message}`);
   }
   if (result.status === 1) {
-    fail('evidence source inputs differ from HEAD; commit them before running codegen/wallclock');
+    fail(`${phase}: evidence source inputs differ from captured HEAD ${expectedHead}`);
   }
   if (result.status !== 0) {
-    fail(`git diff --quiet HEAD failed (${result.status}): ${result.stderr}`);
+    fail(`${phase}: source-input revalidation failed (${result.status}): ${result.stderr}`);
   }
 }
 
@@ -363,36 +434,128 @@ function runCapture(cmd, args, opts = {}) {
   return r.stdout;
 }
 
-// ── Header data (captured BEFORE building anything) ─────────────────────────
-function captureHeader(args) {
+function rustcHostFromVerbose(rustcVersion) {
+  const hostFields = rustcVersion.split(/\r?\n/).filter((line) => line.startsWith('host:'));
+  assert(hostFields.length === 1, `rustc --version --verbose must contain exactly one host field (found ${hostFields.length})`);
+  const match = /^host:\s+([A-Za-z0-9_.-]+)$/.exec(hostFields[0]);
+  assert(match !== null, `rustc --version --verbose has malformed host field ${JSON.stringify(hostFields[0])}`);
+  return match[1];
+}
+
+function snapshotText(header, relativePath) {
+  const bytes = header.sourceSnapshot.get(relativePath);
+  assert(bytes !== undefined, `source snapshot is missing ${relativePath}`);
+  return bytes.toString('utf8');
+}
+
+function canonicalSanitizedEnvJson(state) {
+  return JSON.stringify({
+    removedKeys: state.removedKeys,
+    setKeys: state.setKeys,
+    secretValuesLogged: state.secretValuesLogged,
+  });
+}
+
+function bindRunFlags(header, scratchBase) {
+  assert(header.cargoHome === undefined, 'CARGO_HOME must be created exactly once per invocation');
+  const cargoHome = path.join(scratchBase, 'cargo-home');
+  freshDir(cargoHome, scratchBase);
+  const production = rustcRemapArgs(scratchBase);
+  const activation = [...production, '--cfg', 'tagged_index_stack_test'];
+  header.actualRustflagTokens = { production, activation };
+  header.cargoHome = cargoHome;
+  header.effectiveRustflags = {
+    production: CANONICAL_PRODUCTION_RUSTFLAGS,
+    activation: CANONICAL_ACTIVATION_RUSTFLAGS,
+    cargoEncodedRustflags: 'canonical',
+  };
+  header.sanitizedEnv = sanitizedEnvState();
+  header.sanitizedEnvJson = canonicalSanitizedEnvJson(header.sanitizedEnv);
+  header.sanitizedEnvSha256 = sha256hex(header.sanitizedEnvJson);
+  header.sanitizedEnvB64 = utf8Base64(header.sanitizedEnvJson);
+}
+
+function rustcRemapArgs(scratchBase) {
+  return [
+    '--remap-path-prefix', `${repoRoot}=REPO`,
+    '--remap-path-prefix', `${scratchBase}=SCRATCH`,
+  ];
+}
+
+function materializeTemplate(template, variant) {
+  const relaxed = variant === 'links_relaxed';
+  return template
+    .replaceAll('{{LINK_LOAD_ORDERING}}', relaxed ? 'Ordering::Relaxed' : 'Ordering::Acquire')
+    .replaceAll('{{LINK_STORE_ORDERING}}', relaxed ? 'Ordering::Relaxed' : 'Ordering::Release');
+}
+
+function stageAndPublishArtifacts(header, scratchBase, artifacts) {
+  if (header !== null) {
+    requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, 'before artifact staging');
+  }
+  const stage = path.join(scratchBase, 'publish');
+  freshDir(stage, scratchBase);
+  const forbiddenPaths = [repoRoot, repoRoot.replaceAll('\\', '/'), scratchBase, scratchBase.replaceAll('\\', '/')];
+  for (const [name, text] of Object.entries(artifacts)) {
+    assert(!forbiddenPaths.some((forbidden) => text.includes(forbidden)), `${name}: artifact contains an absolute checkout or scratch path`);
+    fs.writeFileSync(path.join(stage, name), text);
+  }
+  if (header !== null) {
+    requireSourceInputsAtHead({ files: header.sourceInputs }, header.identity.headSha, 'before artifact publish');
+  }
+  fs.mkdirSync(docsPerfDir, { recursive: true });
+  for (const [name] of Object.entries(artifacts)) {
+    fs.copyFileSync(path.join(stage, name), path.join(docsPerfDir, name));
+  }
+}
+
+// ── Snapshot and evidence capture ───────────────────────────────────────────
+// Build-check consumes this dirty-compatible snapshot directly.
+function captureSnapshotContext(args) {
   const effectiveRustflags = effectiveMeasurementRustflags();
   const sourceInputs = sourceInputManifest();
-  // Step 1: immutable source identity, from the repo root.
-  const identityRaw = runCapture(process.execPath, ['scripts/capture-measurement-identity.mjs', '--json']);
-  let identity;
-  try {
-    identity = JSON.parse(identityRaw);
-  } catch (e) {
-    fail(`capture-measurement-identity.mjs did not emit JSON: ${e.message}\nraw: ${identityRaw}`);
-  }
-  requireSourceInputsAtHead(sourceInputs);
-  const checkedHead = runCapture('git', ['rev-parse', 'HEAD']).trim();
-  assert(checkedHead === identity.headSha, 'HEAD changed while source provenance was captured');
-  // Step 2: toolchain + run parameters.
-  const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
   return {
-    identity,
-    rustcVersion,
-    toolchain: rustcVersion.replace(/\r?\n/g, ' | '),
     sourceInputDigest: sourceInputs.digest,
     sourceInputs: sourceInputs.files,
-    sourceInputsAtHead: true,
+    sourceSnapshot: sourceInputs.snapshot,
     effectiveRustflags,
+    sanitizedEnv: sanitizedEnvState(),
+    profileId: PROFILE_ID,
+    smoke: args.smoke,
     target: args.target,
     mode: args.mode,
     anchors: Object.fromEntries(Object.entries(ANCHORS).map(([k, v]) => [k, { find: v.find, replace: v.replace }])),
-    generatedAt: new Date().toISOString(),
     driver: 'crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs',
+  };
+}
+
+// Evidence modes require the captured paths to match HEAD before scratch exists.
+function captureEvidenceHeader(args) {
+  const context = captureSnapshotContext(args);
+  const headSha = runCapture('git', ['rev-parse', 'HEAD']).trim();
+  requireSourceInputsAtHead({ files: context.sourceInputs }, headSha, 'initial evidence capture');
+  const treeSha = runCapture('git', ['rev-parse', 'HEAD^{tree}']).trim();
+  const checkedHead = runCapture('git', ['rev-parse', 'HEAD']).trim();
+  assert(checkedHead === headSha, 'HEAD changed while source snapshot was captured');
+  const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
+  const rustcHost = rustcHostFromVerbose(rustcVersion);
+  const identity = {
+    capturedAt: new Date().toISOString(),
+    headSha,
+    treeSha,
+    sourceSnapshotDigest: context.sourceInputDigest,
+    sourceInputsAtHead: true,
+  };
+  const bundleId = sha256hex(`${headSha}\0${treeSha}\0${context.sourceInputDigest}\0${args.target}\0${args.mode}`);
+  return {
+    ...context,
+    identity,
+    rustcVersion,
+    rustcHost,
+    toolchain: rustcVersion.replace(/\r?\n/g, ' | '),
+    sourceInputsAtHead: true,
+    bundleId,
+    generatedAt: identity.capturedAt,
   };
 }
 
@@ -405,7 +568,11 @@ function headerComment(header) {
     `// mode:        ${header.mode}`,
     `// target:      ${header.target}`,
     `// rustc:       ${header.rustcVersion.replace(/\n/g, ' | ')}`,
+    `// rustc-host:  ${header.rustcHost}`,
     `// identity:    ${JSON.stringify(header.identity)}`,
+    `// bundle-id:   ${header.bundleId}`,
+    `// profile-id:  ${header.profileId}`,
+    `// smoke:       ${header.smoke}`,
     `// source-input-digest: ${header.sourceInputDigest}`,
     `// source-inputs: ${JSON.stringify(header.sourceInputs)}`,
     `// source-inputs-at-head: ${header.sourceInputsAtHead}`,
@@ -413,7 +580,8 @@ function headerComment(header) {
     `// effective-production-rustflags: ${JSON.stringify(header.effectiveRustflags.production)}`,
     `// effective-activation-rustflags: ${JSON.stringify(header.effectiveRustflags.activation)}`,
     `// cargo-encoded-rustflags: ${header.effectiveRustflags.cargoEncodedRustflags}`,
-    '// rustflags-policy: production empty; activation exactly --cfg tagged_index_stack_test',
+    `// sanitized-cargo-env: ${header.sanitizedEnvJson}`,
+    '// rustflags-policy: canonical CARGO_ENCODED_RUSTFLAGS remap argv; activation adds --cfg tagged_index_stack_test',
     '// substitution anchors (text-exact, each verified to occur exactly once):',
     ...Object.values(header.anchors).map((a) => `//   ${a.find}  ->  ${a.replace}`),
     '// =====================================================================',
@@ -595,7 +763,7 @@ function extractFunctions(asmText, target) {
 //   * -C target-feature=+lse: each CAS lowers to a single casl/casa
 //     instruction (2 casa + 2 casl across push+pop), zero __aarch64_cas8
 //     calls, zero ldaxr/stlxr. cas_weak == base here too.
-  //   * Links ordering: base has ldar/stlr for ArrayLinks accesses
+//   * Links ordering: base has ldar/stlr for RegistryShapedStorage accesses
 //     (residual ldar in relaxed = pop_index_impl's own 64-bit Acquire HEAD
 //     load (`head_ref.load(Ordering::Acquire)`), which must remain); links_relaxed drops link ldar to 0 / link stlr to 0.
 // The cas_weak identity asserts below are DELIBERATE and load-bearing: they
@@ -603,16 +771,17 @@ function extractFunctions(asmText, target) {
 // LL/SC lowering where weak differs from strong, these asserts FAIL loudly
 // and make the CAS lowering change visible instead of silently hiding it.
 function modeCodegen(args, header) {
-  const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
-  const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
+  const impSrc = snapshotText(header, 'crates/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(header, 'crates/tagged-index-stack/src/lib.rs');
+  const wrapperTemplate = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
   verifyAllAnchorsOnce(impSrc);
 
   const scratchBase = makeScratchRoot();
   const root = scratchRoot(args, scratchBase);
-  fs.mkdirSync(docsPerfDir, { recursive: true });
+  bindRunFlags(header, scratchBase);
 
   const isAarch64 = args.target.startsWith('aarch64');
-  // aarch64 gets a second feature-set axis; other targets compile default only.
+  // aarch64 gets a second feature-set axis; supported x86_64 uses default only.
   const featureSets = isAarch64 ? ['default', 'lse'] : ['default'];
 
   const logLines = [headerComment(header)];
@@ -635,7 +804,7 @@ function modeCodegen(args, header) {
     );
   }
 
-  const csvRows = [['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags']];
+  const csvRows = [['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64']];
 
   // Compile one feature set: variant -> { asmText, funcs, fallback }.
   function compileFeatureSet(fset) {
@@ -646,7 +815,7 @@ function modeCodegen(args, header) {
       const vdir = path.join(froot, variant);
       freshDir(vdir, scratchBase);
       const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
-      const wrapperSrc = fs.readFileSync(path.join(tmplDir, 'codegen_wrapper.rs.tmpl'), 'utf8');
+      const wrapperSrc = materializeTemplate(wrapperTemplate, variant);
       fs.writeFileSync(path.join(vdir, 'lib.rs'), libSrc);
       fs.writeFileSync(path.join(vdir, 'imp.rs'), imp);
       fs.writeFileSync(path.join(vdir, 'force_codegen.rs'), wrapperSrc);
@@ -655,17 +824,20 @@ function modeCodegen(args, header) {
       let fallback = false;
       const baseArgs = [
         '--edition=2021', '--crate-type=lib', `--crate-name=tis_p3ab_${variant}`,
-        '--emit=asm', '-C', 'opt-level=3', '-C', 'codegen-units=1',
-        '-C', 'debug-assertions=off', '-C', 'symbol-mangling-version=v0',
+         '--emit=asm', '-C', 'opt-level=3', '-C', 'lto=thin', '-C', 'embed-bitcode=yes',
+         '-C', 'codegen-units=1',
+         '-C', 'debug-assertions=off', '-C', 'symbol-mangling-version=v0',
+         ...rustcRemapArgs(scratchBase),
         ...(fset === 'lse' ? ['-C', 'target-feature=+lse'] : []),
         '--target', args.target, '-o', outFile, path.join(vdir, 'force_codegen.rs'),
       ];
-      let r = spawnSync('rustc', baseArgs, { cwd: vdir, encoding: 'utf8' });
+      const directEnv = directRustcChildEnv();
+      let r = spawnSync('rustc', baseArgs, { cwd: vdir, encoding: 'utf8', env: directEnv });
       if (r.status !== 0) {
         if (r.stderr.includes('symbol-mangling-version')) {
           fallback = true;
           const retryArgs = baseArgs.filter((a, i) => !(baseArgs[i] === 'symbol-mangling-version=v0' || (a === '-C' && baseArgs[i + 1] === 'symbol-mangling-version=v0')));
-          r = spawnSync('rustc', retryArgs, { cwd: vdir, encoding: 'utf8' });
+          r = spawnSync('rustc', retryArgs, { cwd: vdir, encoding: 'utf8', env: directEnv });
         }
         if (r.status !== 0) {
           process.stderr.write(r.stderr ?? '');
@@ -828,7 +1000,7 @@ function modeCodegen(args, header) {
         printNorm('base', key);
         printNorm('cas_weak', key);
         logLines.push(`CAS equivalence reopened: weak CAS now diverges from strong on ${tag} (${key}).`);
-        fail(shaFail('cas_weak', key, 'deliberate strong==weak codegen identity assert (self-updating oracle)'));
+        fail(`${shaFail('cas_weak', key, 'deliberate strong==weak codegen identity assert')} Add cas_weak back to WALLCLOCK_VARIANTS before timing it.`);
       }
     }
   }
@@ -844,7 +1016,7 @@ function modeCodegen(args, header) {
       logLines.push('');
       runAarch64Oracles(fset, variants);
     } else {
-      // x86_64 (and other) targets: all-sha-identity vs base (unchanged).
+      // Supported x86_64 target: all-sha-identity vs base.
       for (const key of FUNCTION_KEYS) {
         for (const variant of ['links_relaxed', 'cas_weak']) {
           if (variants[variant].funcs[key].sha256_16 !== variants.base.funcs[key].sha256_16) {
@@ -894,7 +1066,7 @@ function modeCodegen(args, header) {
 
   // ── Derived markdown table (with asserted arithmetic) ─────────────────────
   const md = [];
-  md.push(`# TIS link-ordering/CAS A/B codegen table — target ${args.target}`);
+  md.push(`# TIS registry-shaped link-ordering/CAS codegen table — target ${args.target}`);
   md.push('');
   md.push('delta% is instr_count relative to base for the same function (derived, rounded to 3 decimals).');
   md.push('');
@@ -918,37 +1090,44 @@ function modeCodegen(args, header) {
           }
         }
         md.push(`| ${args.target} | ${fset} | ${key} | ${variant} | ${f.sha256_16} | ${f.instrCount} | ${f.counts.ldar} | ${f.counts.stlr} | ${f.counts.ldaxr} | ${f.counts.stlxr} | ${f.counts.cmpxchg} | ${f.counts.cas} | ${f.counts.cas8} | ${deltaPct} |`);
-        csvRows.push([args.target, fset, key, variant, f.sha256_16, f.instrCount, f.counts.ldar, f.counts.stlr, f.counts.ldaxr, f.counts.stlxr, f.counts.cmpxchg, f.counts.cas, f.counts.cas8, String(identical(variant, key)), header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags]);
+        csvRows.push([args.target, fset, key, variant, f.sha256_16, f.instrCount, f.counts.ldar, f.counts.stlr, f.counts.ldaxr, f.counts.stlxr, f.counts.cmpxchg, f.counts.cas, f.counts.cas8, String(identical(variant, key)), header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64]);
       }
     }
   }
   const mdText = md.join('\n') + '\n';
   logLines.push(mdText);
+  const expectedCodegenRows = featureSets.length * VARIANTS.length * FUNCTION_KEYS.length;
+  assert(csvRows.length - 1 === expectedCodegenRows, `codegen row count ${csvRows.length - 1} != exact Cartesian count ${expectedCodegenRows}`);
 
   // ── Artifacts ─────────────────────────────────────────────────────────────
   const csvText = csvRows.map((r) => r.join(',')).join('\n') + '\n';
-  logLines.push(`// csv-sha256: ${sha256hex(csvText)}`);
-  fs.writeFileSync(path.join(docsPerfDir, `_raw_tis_p3_ab_${args.target}_codegen.log`), logLines.join('\n') + '\n');
   const asmAll = featureSets
     .map((fset) => VARIANTS.map((v) => `# ===== features: ${fset} variant: ${v} =====\n` + allRuns[fset].variants[v].asmText).join('\n'))
     .join('\n');
-  fs.writeFileSync(path.join(docsPerfDir, `_raw_tis_p3_ab_${args.target}_codegen.s.all`), asmAll);
-  fs.writeFileSync(
-    path.join(docsPerfDir, `TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_${args.target}.csv`),
-    csvText,
-  );
+  logLines.push(`// csv-sha256: ${sha256hex(csvText)}`);
+  logLines.push(`// asm-sha256: ${sha256hex(asmAll)}`);
+  logLines.push(`// artifact-state: complete`);
+  const codegenLog = logLines.join('\n') + '\n';
+  stageAndPublishArtifacts(header, scratchBase, {
+    [`_raw_tis_p3_ab_${args.target}_codegen.log`]: codegenLog,
+    [`_raw_tis_p3_ab_${args.target}_codegen.s.all`]: asmAll,
+    [`TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_${args.target}.csv`]: csvText,
+  });
 
   console.log(mdText);
-  console.log(`codegen mode OK: target=${args.target} scratch=${root} (artifacts in docs/perf/)`);
+  console.log(`registry-shaped codegen OK: target=${args.target} (artifacts staged and published)`);
 }
 
 // ── Wallclock mode ──────────────────────────────────────────────────────────
 function modeWallclock(args, header) {
-  const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
-  const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
-  const cargoTmpl = fs.readFileSync(path.join(tmplDir, 'scratch_Cargo.toml.tmpl'), 'utf8');
-  const harnessTmpl = fs.readFileSync(path.join(tmplDir, 'harness_bin.rs'), 'utf8');
+  const impSrc = snapshotText(header, 'crates/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(header, 'crates/tagged-index-stack/src/lib.rs');
+  const cargoTmpl = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
+  const harnessTemplate = snapshotText(header, 'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
   verifyAllAnchorsOnce(impSrc);
+  if (args.target !== header.rustcHost) {
+    fail(`--mode wallclock builds natively for rustc host ${header.rustcHost}; --target must match it exactly (got ${JSON.stringify(args.target)})`);
+  }
 
   let { threads, windowMs, samples } = args;
   let smoke = args.smoke;
@@ -957,7 +1136,8 @@ function modeWallclock(args, header) {
     windowMs = 100;
     samples = 1;
   } else {
-    assert(samples % VARIANTS.length === 0, `--samples must be a multiple of VARIANTS.length=${VARIANTS.length} for comparative evidence (got ${samples})`);
+    assert(samples >= MIN_COMPARATIVE_SAMPLES, `--samples must be >= ${MIN_COMPARATIVE_SAMPLES} for comparative evidence (got ${samples})`);
+    assert(samples % WALLCLOCK_VARIANTS.length === 0, `--samples must be a multiple of WALLCLOCK_VARIANTS.length=${WALLCLOCK_VARIANTS.length} (got ${samples})`);
   }
   assert(
     Number.isSafeInteger(threads) && threads >= 1 && threads <= MAX_THREADS,
@@ -975,17 +1155,17 @@ function modeWallclock(args, header) {
   const scratchBase = makeScratchRoot();
   const root = scratchRoot(args, scratchBase);
   freshDir(root, scratchBase);
-  fs.mkdirSync(docsPerfDir, { recursive: true });
+  bindRunFlags(header, scratchBase);
 
   const logLines = [headerComment(header)];
   logLines.push(`run params: threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
-  logLines.push(`variant schedule: balanced rotation — sample s (1-based) runs [${VARIANTS.join(', ')}] rotated left by (s-1) % ${VARIANTS.length}; see the per-sample "realized variant order" lines`);
+  logLines.push(`variant schedule: production variants [${WALLCLOCK_VARIANTS.join(', ')}], rotated by sample position`);
   logLines.push('');
 
   // Materialize a production timing crate and a separate cfg-enabled
-  // activation crate for every variant.
+  // activation crate for each wall-clock variant.
   const crates = {};
-  for (const variant of VARIANTS) {
+  for (const variant of WALLCLOCK_VARIANTS) {
     const crateName = `tis_p3ab_${variant}`;
     const cdir = path.join(root, variant);
     freshDir(cdir, scratchBase);
@@ -994,24 +1174,24 @@ function modeWallclock(args, header) {
     const imp = applyAnchors(impSrc, VARIANT_ANCHORS[variant]);
     fs.writeFileSync(path.join(cdir, 'lib.rs'), libSrc);
     fs.writeFileSync(path.join(cdir, 'imp.rs'), imp);
-    fs.writeFileSync(path.join(cdir, 'src', 'bin', 'harness.rs'), harnessTmpl.replaceAll('{{CRATE_NAME}}', crateName));
+    fs.writeFileSync(path.join(cdir, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTemplate, variant).replaceAll('{{CRATE_NAME}}', crateName));
 
     // Pin the target dir INSIDE the scratch crate: a global CARGO_TARGET_DIR
-    // (common on dev machines) would otherwise send all three variants'
+    // (common on dev machines) would otherwise send both variants'
     // artifacts to one shared directory — collisions and wrong exe paths.
-    const build = spawnSync('cargo', ['build', '--release'], {
+    const build = spawnSync('cargo', ['build', '--release', '--target', args.target], {
       cwd: cdir,
       encoding: 'utf8',
-      env: cargoChildEnv(header.effectiveRustflags.production, path.join(cdir, 'target')),
+      env: cargoChildEnv(header.actualRustflagTokens.production, path.join(cdir, 'target'), header.cargoHome),
     });
     if (build.status !== 0) {
       process.stderr.write(build.stderr ?? '');
-      fail(`cargo build --release failed for variant ${variant} (cwd ${cdir})`);
+      fail(`cargo build --release --target ${args.target} failed for variant ${variant} (cwd ${cdir})`);
     }
-    logLines.push(`built variant ${variant}: cargo build --release OK (cwd ${cdir})`);
+    logLines.push(`built variant ${variant}: cargo build --release --target ${args.target} OK (cwd SCRATCH/${variant})`);
     const exeName = `harness${process.platform === 'win32' ? '.exe' : ''}`;
     crates[variant] = {
-      productionExe: path.join(cdir, 'target', 'release', exeName),
+      productionExe: path.join(cdir, 'target', args.target, 'release', exeName),
       samples: [],
     };
 
@@ -1022,18 +1202,18 @@ function modeWallclock(args, header) {
     fs.mkdirSync(path.join(adir, 'src', 'bin'), { recursive: true });
     fs.writeFileSync(path.join(adir, 'lib.rs'), libSrc);
     fs.writeFileSync(path.join(adir, 'imp.rs'), imp);
-    fs.writeFileSync(path.join(adir, 'src', 'bin', 'harness.rs'), harnessTmpl.replaceAll('{{CRATE_NAME}}', activationName));
-    const activationBuild = spawnSync('cargo', ['build', '--release'], {
+    fs.writeFileSync(path.join(adir, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTemplate, variant).replaceAll('{{CRATE_NAME}}', activationName));
+    const activationBuild = spawnSync('cargo', ['build', '--release', '--target', args.target], {
       cwd: adir,
       encoding: 'utf8',
-      env: cargoChildEnv(header.effectiveRustflags.activation, path.join(adir, 'target')),
+      env: cargoChildEnv(header.actualRustflagTokens.activation, path.join(adir, 'target'), header.cargoHome),
     });
     if (activationBuild.status !== 0) {
       process.stderr.write(activationBuild.stderr ?? '');
-      fail(`instrumented cargo build --release failed for variant ${variant} (cwd ${adir})`);
+      fail(`instrumented cargo build --release --target ${args.target} failed for variant ${variant} (cwd ${adir})`);
     }
-    crates[variant].activationExe = path.join(adir, 'target', 'release', exeName);
-    logLines.push(`built variant ${variant}: production + cfg-enabled activation binaries`);
+    crates[variant].activationExe = path.join(adir, 'target', args.target, 'release', exeName);
+    logLines.push(`built variant ${variant}: production + cfg-enabled activation binaries (cwd SCRATCH/${variant})`);
   }
   logLines.push('');
 
@@ -1074,16 +1254,19 @@ function modeWallclock(args, header) {
 
   if (smoke) {
     logLines.push('SMOKE: non-comparative build/activation check; no timing ratio or verdict emitted.');
-    for (const variant of VARIANTS) {
+    for (const variant of WALLCLOCK_VARIANTS) {
       const activation = runHarness(crates[variant].activationExe, variant, 'smoke-activation', 1);
       assert(activation.rec.activation === true, `smoke activation binary missing cfg marker for variant=${variant}`);
       assert(activation.rec.push_retries > 0, `smoke activation push retry oracle failed for variant=${variant}`);
       assert(activation.rec.pop_retries > 0, `smoke activation pop retry oracle failed for variant=${variant}`);
       logLines.push(`--- variant=${variant} smoke activation stdout (not timing evidence) ---`);
-      logLines.push(activation.stdout);
+      logLines.push(activation.stdout.replaceAll(repoRoot, 'REPO'));
     }
-    fs.writeFileSync(path.join(docsPerfDir, `_raw_tis_p3_ab_${args.target}_wallclock_smoke.log`), logLines.join('\n') + '\n');
-    console.log(`smoke mode OK: target=${args.target} (non-comparative; no ratio/verdict)`);
+    logLines.push('// artifact-state: complete');
+    stageAndPublishArtifacts(header, scratchBase, {
+      [`_raw_tis_p3_ab_${args.target}_wallclock_smoke.log`]: logLines.join('\n') + '\n',
+    });
+    console.log(`registry-shaped smoke OK: target=${args.target} (non-comparative; no evidence)`);
     return;
   }
 
@@ -1098,8 +1281,8 @@ function modeWallclock(args, header) {
   // of trusting independent per-variant block medians as if they were
   // sampled under identical conditions.
   for (let sample = 1; sample <= samples; sample++) {
-    const shift = (sample - 1) % VARIANTS.length;
-    const order = VARIANTS.map((_, i) => VARIANTS[(i + shift) % VARIANTS.length]);
+    const shift = (sample - 1) % WALLCLOCK_VARIANTS.length;
+    const order = WALLCLOCK_VARIANTS.map((_, i) => WALLCLOCK_VARIANTS[(i + shift) % WALLCLOCK_VARIANTS.length]);
     logLines.push(`--- sample=${sample} realized variant order: ${order.join(' -> ')} ---`);
     for (const variant of order) {
       // Bounded child runtime. A harness that never exits (worker gone before
@@ -1111,7 +1294,7 @@ function modeWallclock(args, header) {
       assert(rec.activation === false, `timing binary unexpectedly reports activation for variant=${variant}`);
       assert(rec.push_retries === 0 && rec.pop_retries === 0, `timing binary exposed retry counters for variant=${variant}`);
       logLines.push(`--- variant=${variant} sample=${sample} harness stdout (verbatim) ---`);
-      logLines.push(stdout);
+      logLines.push(stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
       // Re-derive the ratio the harness printed (asserted arithmetic).
       const derived = rec.ops_total / (rec.elapsed_ms / 1000);
       assert(
@@ -1125,14 +1308,14 @@ function modeWallclock(args, header) {
   }
   // Activation is a separate binary and a separate observed window. Its
   // counters are never part of the production timing samples.
-  for (const variant of VARIANTS) {
+  for (const variant of WALLCLOCK_VARIANTS) {
     const activation = runHarness(crates[variant].activationExe, variant, 'activation', 'observed');
     assert(activation.rec.activation === true, `activation binary missing cfg marker for variant=${variant}`);
     assert(activation.rec.push_retries > 0, `activation oracle failed: push_delta=0 for variant=${variant}`);
     assert(activation.rec.pop_retries > 0, `activation oracle failed: pop_delta=0 for variant=${variant}`);
     crates[variant].activation = activation.rec;
     logLines.push(`--- variant=${variant} activation stdout (separate observed window) ---`);
-    logLines.push(activation.stdout);
+    logLines.push(activation.stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
   }
 
   // ── Summary (median; derived ratios) ──────────────────────────────────────
@@ -1141,7 +1324,7 @@ function modeWallclock(args, header) {
     const n = s.length;
     return n % 2 === 1 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
   }
-  const med = Object.fromEntries(VARIANTS.map((v) => [v, median(crates[v].samples.map((s) => s.ops_per_sec))]));
+  const med = Object.fromEntries(WALLCLOCK_VARIANTS.map((v) => [v, median(crates[v].samples.map((s) => s.ops_per_sec))]));
   function ratioOf(v) {
     // Plain rounded computation, not a checked oracle:
     // an assert recomputing this exact expression and comparing it to
@@ -1152,104 +1335,88 @@ function modeWallclock(args, header) {
   }
 
   const md = [];
-  md.push(`# TIS link-ordering/CAS A/B wallclock summary — target ${args.target}`);
+  md.push(`# TIS production registry-shaped wallclock summary — target ${args.target}`);
+  md.push('cas_weak is excluded from timing because codegen identity keeps it as a negative control.');
   md.push('');
   md.push(`threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
   md.push('');
   md.push('| target | variant | median_ops_per_sec | ratio vs base | activation_push_delta | activation_pop_delta |');
   md.push('|---|---|---|---|---|---|');
-  for (const v of VARIANTS) {
+  for (const v of WALLCLOCK_VARIANTS) {
     md.push(`| ${args.target} | ${v} | ${med[v].toFixed(2)} | ${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)} | ${crates[v].activation.push_retries} | ${crates[v].activation.pop_retries} |`);
   }
   const mdText = md.join('\n') + '\n';
   logLines.push(mdText);
 
   // ── Artifacts ─────────────────────────────────────────────────────────────
-  const csv = [['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags']];
-  for (const v of VARIANTS) {
+  const csv = [['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke']];
+  for (const v of WALLCLOCK_VARIANTS) {
     for (const s of crates[v].samples) {
-      csv.push([args.target, v, 'production', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, 0, 0, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags]);
+      csv.push([args.target, v, 'production', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, 0, 0, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
     }
   }
-  for (const v of VARIANTS) {
-    csv.push([args.target, v, 'SUMMARY', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', `activation_push_delta=${crates[v].activation.push_retries}`, `activation_pop_delta=${crates[v].activation.pop_retries}`, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags]);
+  for (const v of WALLCLOCK_VARIANTS) {
+    csv.push([args.target, v, 'SUMMARY', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', `activation_push_delta=${crates[v].activation.push_retries}`, `activation_pop_delta=${crates[v].activation.pop_retries}`, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
   }
   const csvText = csv.map((r) => r.join(',')).join('\n') + '\n';
   logLines.push(`// csv-sha256: ${sha256hex(csvText)}`);
-  fs.writeFileSync(path.join(docsPerfDir, `_raw_tis_p3_ab_${args.target}_wallclock.log`), logLines.join('\n') + '\n');
-  fs.writeFileSync(
-    path.join(docsPerfDir, `TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_${args.target}.csv`),
-    csvText,
-  );
+  logLines.push(`// artifact-state: complete`);
+  stageAndPublishArtifacts(header, scratchBase, {
+    [`_raw_tis_p3_ab_${args.target}_wallclock.log`]: logLines.join('\n') + '\n',
+    [`TIS_LINK_ORDERING_WEAK_CAS_GATE_wallclock_${args.target}.csv`]: csvText,
+  });
 
   console.log(mdText);
-  console.log(`wallclock mode OK: target=${args.target} scratch=${root} (artifacts in docs/perf/)`);
+  console.log(`production wallclock OK: target=${args.target} variants=${WALLCLOCK_VARIANTS.join(',')} (cas_weak negative control excluded)`);
 }
 
 // ── Build-check mode ────────────────────────────────────────────────────────
-// Static regression gate, NOT a measurement: materializes the `base` variant
-// scratch crate exactly like wallclock mode does and compiles both harness
-// shapes in separate target dirs. This is the cheapest reuse of the real
-// materialization path — reusing it (rather than a hand-rolled shell check)
-// is the point: a drift-catching gate that exercises different code than the
-// real wallclock mode could itself go stale the same way the mode it guards
-// did. Only the `base` variant is built: the three VARIANT_ANCHORS differ
-// only in atomic Ordering/CAS-strength substitutions inside `imp.rs`, never
-// in the harness template's own `push`/`pop` call sites, so building all
-// three would be redundant compile cost for zero extra API-break coverage.
-//
-// This mode ALSO covers the separate `codegen_wrapper.rs.tmpl` template
-// That template is compiled directly by
-// `rustc` (no cargo) in `--mode codegen`, shares zero materialization code
-// with the harness template above, and is otherwise reachable only from the
-// arm64-only, `workflow_dispatch`-only weak-memory job — so an API break
-// visible only through it (as `push`'s unsafe/fallible signature was) stayed
-// invisible to every regular per-PR run. Reuses the exact `lib.rs`+`imp.rs`
-// pair already read above, mirrors `modeCodegen`'s own `base`-variant
-// materialization (no anchors), and compiles for the HOST target (no
-// `--target`, no cross-compiler needed) with `--emit=metadata` — the
-// cheapest invocation that still proves the source type-checks;
-// `--emit=asm` stays codegen-mode-only, since only codegen mode needs the
-// generated instructions.
-function modeBuildCheck() {
-  const impSrc = fs.readFileSync(path.join(srcDir, 'imp.rs'), 'utf8');
-  const libSrc = fs.readFileSync(path.join(srcDir, 'lib.rs'), 'utf8');
-  const cargoTmpl = fs.readFileSync(path.join(tmplDir, 'scratch_Cargo.toml.tmpl'), 'utf8');
-  const harnessTmpl = fs.readFileSync(path.join(tmplDir, 'harness_bin.rs'), 'utf8');
-  const codegenWrapperTmpl = fs.readFileSync(path.join(tmplDir, 'codegen_wrapper.rs.tmpl'), 'utf8');
-  const effectiveRustflags = effectiveMeasurementRustflags();
+// Static regression gate, not measurement evidence. It materializes one dirty-
+// compatible snapshot and compiles production and activation harness shapes.
+// Only `base` is needed: storage ordering and weak CAS do not change the API.
+// Both Cargo builds name the verified rustc host explicitly. The same snapshot
+// also materializes the independent codegen wrapper for metadata-only checking.
+function modeBuildCheck(args, snapshot) {
+  const impSrc = snapshotText(snapshot, 'crates/tagged-index-stack/src/imp.rs');
+  const libSrc = snapshotText(snapshot, 'crates/tagged-index-stack/src/lib.rs');
+  const cargoTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/scratch_Cargo.toml.tmpl');
+  const harnessTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs');
+  const codegenWrapperTmpl = snapshotText(snapshot, 'crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl');
   verifyAllAnchorsOnce(impSrc);
+  const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
+  const rustcHost = rustcHostFromVerbose(rustcVersion);
 
   const crateName = 'tis_p3ab_build_check';
   const scratchBase = makeScratchRoot();
   const root = path.join(scratchBase, 'build-check');
   freshDir(root, scratchBase);
+  bindRunFlags(snapshot, scratchBase);
   fs.writeFileSync(path.join(root, 'Cargo.toml'), cargoTmpl.replaceAll('{{CRATE_NAME}}', crateName));
   fs.mkdirSync(path.join(root, 'src', 'bin'), { recursive: true });
   fs.writeFileSync(path.join(root, 'lib.rs'), libSrc);
   fs.writeFileSync(path.join(root, 'imp.rs'), impSrc);
-  fs.writeFileSync(path.join(root, 'src', 'bin', 'harness.rs'), harnessTmpl.replaceAll('{{CRATE_NAME}}', crateName));
+  fs.writeFileSync(path.join(root, 'src', 'bin', 'harness.rs'), materializeTemplate(harnessTmpl, 'base').replaceAll('{{CRATE_NAME}}', crateName));
 
   // Dev-profile builds prove both harness shapes without producing evidence.
-  const productionBuild = spawnSync('cargo', ['build'], {
+  const productionBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
     cwd: root,
     encoding: 'utf8',
-    env: cargoChildEnv(effectiveRustflags.production, path.join(root, 'target-production')),
+    env: cargoChildEnv(snapshot.actualRustflagTokens.production, path.join(root, 'target-production'), snapshot.cargoHome),
   });
   if (productionBuild.status !== 0) {
     process.stderr.write(productionBuild.stderr ?? '');
-    fail(`production cargo build failed for the wall-clock harness template (build-check mode, cwd ${root})`);
+    fail(`production cargo build --target ${rustcHost} failed for the wall-clock harness template (build-check mode, cwd ${root})`);
   }
-  const activationBuild = spawnSync('cargo', ['build'], {
+  const activationBuild = spawnSync('cargo', ['build', '--target', rustcHost], {
     cwd: root,
     encoding: 'utf8',
-    env: cargoChildEnv(effectiveRustflags.activation, path.join(root, 'target-activation')),
+    env: cargoChildEnv(snapshot.actualRustflagTokens.activation, path.join(root, 'target-activation'), snapshot.cargoHome),
   });
   if (activationBuild.status !== 0) {
     process.stderr.write(activationBuild.stderr ?? '');
-    fail(`activation cargo build failed for the wall-clock harness template (build-check mode, cwd ${root})`);
+    fail(`activation cargo build --target ${rustcHost} failed for the wall-clock harness template (build-check mode, cwd ${root})`);
   }
-  console.log(`build-check mode OK: production + activation harness shapes scratch=${root}`);
+  console.log(`build-check mode OK: production + activation harness shapes target=${rustcHost} scratch=${root}`);
 
   // Second, independent check: the codegen wrapper template, compiled
   // directly with rustc (matching how --mode codegen actually invokes it),
@@ -1259,12 +1426,14 @@ function modeBuildCheck() {
   freshDir(cgRoot, scratchBase);
   fs.writeFileSync(path.join(cgRoot, 'lib.rs'), libSrc);
   fs.writeFileSync(path.join(cgRoot, 'imp.rs'), impSrc);
-  fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), codegenWrapperTmpl);
+  fs.writeFileSync(path.join(cgRoot, 'force_codegen.rs'), materializeTemplate(codegenWrapperTmpl, 'base'));
   const cgBuild = spawnSync('rustc', [
     '--edition=2021', '--crate-type=lib', '--crate-name=tis_p3ab_build_check_codegen',
-    '--emit=metadata', '-C', 'opt-level=3', '-D', 'warnings',
+    '--emit=metadata', '-C', 'opt-level=3', '-C', 'lto=thin', '-C', 'embed-bitcode=yes',
+    '-C', 'codegen-units=1', '-D', 'warnings',
+    ...rustcRemapArgs(scratchBase),
     '-o', path.join(cgRoot, 'force_codegen.rmeta'), path.join(cgRoot, 'force_codegen.rs'),
-  ], { cwd: cgRoot, encoding: 'utf8' });
+  ], { cwd: cgRoot, encoding: 'utf8', env: directRustcChildEnv() });
   if (cgBuild.status !== 0) {
     process.stderr.write(cgBuild.stderr ?? '');
     fail(`rustc --emit=metadata failed for the codegen A/B wrapper template (build-check mode, cwd ${cgRoot})`);
@@ -1277,11 +1446,10 @@ function modeBuildCheck() {
 // one compact machine-readable companion CSV for the gate report. Fails
 // loudly if any referenced artifact is missing. Every emitted ratio is
 // re-derived from the CSV's own sample rows and asserted against the ratio
-// the leg itself recorded. The wallclock leg defaults to the committed
-// x86_64-pc-windows-msvc CSV; an explicit `--target <triple>` re-points it
-// at that target's CSV so a CI job can
-// check the leg it just produced rather than the pinned evidence corpus.
-const CODEGEN_CSV_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
+// the leg itself recorded. The conventional wallclock lookup target is
+// x86_64-pc-windows-msvc; an explicit `--target <triple>` selects another
+// provided or newly-produced artifact. Missing files fail closed below.
+// Conventional lookup target only; it does not assert that the file exists.
 const WALLCLOCK_CSV_TARGET = 'x86_64-pc-windows-msvc';
 
 function readCsvOrDie(file) {
@@ -1290,59 +1458,117 @@ function readCsvOrDie(file) {
   const lines = fs.readFileSync(p, 'utf8').split(/\r?\n/).filter((l) => l !== '');
   if (lines.length < 2) fail(`summary mode: ${file} has no data rows`);
   const header = lines[0].split(',');
+  assert(header.every((name, i) => name !== '' && header.indexOf(name) === i), `${file}: malformed or duplicate CSV header`);
   return { file, header, rows: lines.slice(1).map((l) => {
     const cells = l.split(',');
-    // SUMMARY rows in the wallclock CSV carry fewer cells than the header
-    // (key=value summary cells); tolerate short rows, never long ones.
-    assert(cells.length <= header.length, `${file}: row has ${cells.length} cells, header has ${header.length}`);
+    assert(cells.length === header.length, `${file}: row has ${cells.length} cells, header has ${header.length}`);
     return Object.fromEntries(header.map((h, i) => [h, cells[i] ?? '']));
   }) };
 }
 
-function readRawProvenance(file) {
+function parseSanitizedEnv(raw, file) {
+  let state;
+  try {
+    state = JSON.parse(raw);
+  } catch (error) {
+    fail(`${file}: malformed sanitized-cargo-env JSON: ${error.message}`);
+  }
+  assert(state !== null && typeof state === 'object' && !Array.isArray(state), `${file}: sanitized-cargo-env must be an object`);
+  assert(JSON.stringify(Object.keys(state).sort()) === JSON.stringify(['removedKeys', 'secretValuesLogged', 'setKeys']), `${file}: sanitized-cargo-env has unexpected fields`);
+  assert(Array.isArray(state.removedKeys) && state.removedKeys.every((key) => typeof key === 'string' && isSanitizedEnvKey(key)), `${file}: sanitized-cargo-env has malformed removedKeys`);
+  assert(new Set(state.removedKeys).size === state.removedKeys.length && JSON.stringify([...state.removedKeys].sort()) === JSON.stringify(state.removedKeys), `${file}: sanitized-cargo-env removedKeys are not unique and sorted`);
+  assert(JSON.stringify(state.setKeys) === JSON.stringify(CANONICAL_CARGO_SET_KEYS), `${file}: sanitized-cargo-env setKeys differ from canonical policy`);
+  assert(state.secretValuesLogged === false, `${file}: sanitized-cargo-env logged secret values`);
+  const canonicalJson = canonicalSanitizedEnvJson(state);
+  assert(raw === canonicalJson, `${file}: sanitized-cargo-env JSON is not canonical`);
+  return {
+    state,
+    json: canonicalJson,
+    sha256: sha256hex(canonicalJson),
+    base64: utf8Base64(canonicalJson),
+  };
+}
+
+function readRawProvenance(file, asmFile = null) {
   const p = path.join(docsPerfDir, file);
   if (!fs.existsSync(p)) fail(`summary mode: required raw log missing: docs/perf/${file}`);
   const text = fs.readFileSync(p, 'utf8');
   const line = (prefix) => text.split(/\r?\n/).find((entry) => entry.startsWith(prefix));
   const identityLine = line('// identity:');
+  const bundleLine = line('// bundle-id:');
+  const profileLine = line('// profile-id:');
+  const modeLine = line('// mode:');
+  const targetLine = line('// target:');
+  const stateLine = line('// artifact-state:');
+  const smokeLine = line('// smoke:');
   const sourceLine = line('// source-input-digest:');
   const sourceAtHeadLine = line('// source-inputs-at-head:');
   const toolchainLine = line('// toolchain:');
+  const rustcHostLine = line('// rustc-host:');
   const productionRustflagsLine = line('// effective-production-rustflags:');
   const activationRustflagsLine = line('// effective-activation-rustflags:');
   const encodedRustflagsLine = line('// cargo-encoded-rustflags:');
+  const sanitizedEnvLine = line('// sanitized-cargo-env:');
   const csvLine = line('// csv-sha256:');
-  assert(identityLine && sourceLine && sourceAtHeadLine && toolchainLine && productionRustflagsLine && activationRustflagsLine && encodedRustflagsLine && csvLine, `${file}: incomplete provenance header`);
+  const asmLine = line('// asm-sha256:');
+  assert(identityLine && bundleLine && profileLine && modeLine && targetLine && stateLine && smokeLine && sourceLine && sourceAtHeadLine && toolchainLine && rustcHostLine && productionRustflagsLine && activationRustflagsLine && encodedRustflagsLine && sanitizedEnvLine && csvLine, `${file}: incomplete provenance header`);
   const identity = JSON.parse(identityLine.slice('// identity:'.length).trim());
+  const sanitizedEnv = parseSanitizedEnv(sanitizedEnvLine.slice('// sanitized-cargo-env:'.length).trim(), file);
   const provenance = {
     sourceInputDigest: sourceLine.slice('// source-input-digest:'.length).trim(),
+    bundleId: bundleLine.slice('// bundle-id:'.length).trim(),
+    profileId: profileLine.slice('// profile-id:'.length).trim(),
+    mode: modeLine.slice('// mode:'.length).trim(),
+    target: targetLine.slice('// target:'.length).trim(),
+    artifactState: stateLine.slice('// artifact-state:'.length).trim(),
+    smoke: smokeLine.slice('// smoke:'.length).trim() === 'true',
     sourceInputsAtHead: sourceAtHeadLine.slice('// source-inputs-at-head:'.length).trim() === 'true',
     headSha: identity.headSha,
     treeSha: identity.treeSha,
     toolchain: toolchainLine.slice('// toolchain:'.length).trim(),
+    rustcHost: rustcHostLine.slice('// rustc-host:'.length).trim(),
     productionRustflags: JSON.parse(productionRustflagsLine.slice('// effective-production-rustflags:'.length).trim()),
     activationRustflags: JSON.parse(activationRustflagsLine.slice('// effective-activation-rustflags:'.length).trim()),
     cargoEncodedRustflags: encodedRustflagsLine.slice('// cargo-encoded-rustflags:'.length).trim(),
+    sanitizedEnv: sanitizedEnv.state,
+    sanitizedEnvSha256: sanitizedEnv.sha256,
+    sanitizedEnvB64: sanitizedEnv.base64,
     csvSha256: csvLine.slice('// csv-sha256:'.length).trim(),
+    asmSha256: asmLine ? asmLine.slice('// asm-sha256:'.length).trim() : null,
   };
   assert(/^[0-9a-f]{64}$/.test(provenance.sourceInputDigest), `${file}: malformed source-input digest`);
+  assert(identity.sourceSnapshotDigest === provenance.sourceInputDigest && identity.sourceInputsAtHead === true, `${file}: identity is not tied to the captured source snapshot`);
   assert(provenance.sourceInputsAtHead === true, `${file}: source inputs are not canonical HEAD bytes`);
   assert(/^[0-9a-f]{40}$/.test(provenance.headSha), `${file}: malformed HEAD identity`);
   assert(/^[0-9a-f]{40}$/.test(provenance.treeSha), `${file}: malformed tree identity`);
+  assert(/^[0-9a-f]{64}$/.test(provenance.bundleId), `${file}: malformed bundle id`);
+  assert(provenance.bundleId === sha256hex(`${provenance.headSha}\0${provenance.treeSha}\0${provenance.sourceInputDigest}\0${provenance.target}\0${provenance.mode}`), `${file}: bundle id does not bind raw target/mode and source identity`);
+  assert(provenance.profileId === PROFILE_ID, `${file}: non-canonical profile id`);
+  assert(provenance.artifactState === 'complete', `${file}: artifact is not complete`);
   assert(provenance.toolchain.length > 0, `${file}: empty toolchain identity`);
+  assert(provenance.rustcHost === rustcHostFromVerbose(provenance.toolchain.replaceAll(' | ', '\n')), `${file}: rustc host differs from toolchain identity`);
   assert(typeof provenance.productionRustflags === 'string', `${file}: malformed production RUSTFLAGS`);
   assert(typeof provenance.activationRustflags === 'string', `${file}: malformed activation RUSTFLAGS`);
-  assert(provenance.cargoEncodedRustflags === 'removed', `${file}: encoded RUSTFLAGS were not removed`);
-  assert(provenance.productionRustflags === '', `${file}: production RUSTFLAGS must be empty`);
-  assert(provenance.activationRustflags === '--cfg tagged_index_stack_test', `${file}: activation RUSTFLAGS must contain exactly the repository test cfg`);
+  assert(provenance.cargoEncodedRustflags === 'canonical', `${file}: encoded RUSTFLAGS are not canonical`);
+  assert(provenance.productionRustflags === CANONICAL_PRODUCTION_RUSTFLAGS, `${file}: production RUSTFLAGS display differs from canonical remap argv`);
+  assert(provenance.activationRustflags === CANONICAL_ACTIVATION_RUSTFLAGS, `${file}: activation RUSTFLAGS display differs from canonical argv`);
+  assert(/^[0-9a-f]{64}$/.test(provenance.sanitizedEnvSha256) && provenance.sanitizedEnvB64.length > 0, `${file}: malformed sanitized-env evidence`);
   assert(/^[0-9a-f]{64}$/.test(provenance.csvSha256), `${file}: malformed CSV digest`);
+  if (asmFile !== null) {
+    assert(provenance.mode === 'codegen', `${file}: codegen raw mode mismatch`);
+    assert(provenance.asmSha256 !== null && /^[0-9a-f]{64}$/.test(provenance.asmSha256), `${file}: missing assembly digest`);
+    const asmText = fs.readFileSync(path.join(docsPerfDir, asmFile), 'utf8');
+    assert(sha256hex(asmText) === provenance.asmSha256, `${file}: assembly digest does not match ${asmFile}`);
+  } else {
+    assert(provenance.mode === 'wallclock', `${file}: wallclock raw mode mismatch`);
+  }
   return provenance;
 }
 
 function assertCsvProvenance(csv, file, rawFile, provenance) {
   const csvText = fs.readFileSync(path.join(docsPerfDir, file), 'utf8');
   assert(sha256hex(csvText) === provenance.csvSha256, `${file}: CSV digest does not match ${rawFile}`);
-  const required = ['source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags'];
+  const required = ['source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64'];
   for (const column of required) assert(csv.header.includes(column), `${file}: missing ${column} provenance column`);
   for (const row of csv.rows) {
     assert(row.source_input_digest === provenance.sourceInputDigest, `${file}: source digest differs from ${rawFile}`);
@@ -1350,9 +1576,13 @@ function assertCsvProvenance(csv, file, rawFile, provenance) {
     assert(row.head_sha === provenance.headSha, `${file}: HEAD differs from ${rawFile}`);
     assert(row.tree_sha === provenance.treeSha, `${file}: tree differs from ${rawFile}`);
     assert(row.toolchain === provenance.toolchain, `${file}: toolchain differs from ${rawFile}`);
+    assert(row.profile_id === provenance.profileId, `${file}: profile differs from ${rawFile}`);
+    assert(row.bundle_id === provenance.bundleId, `${file}: bundle differs from ${rawFile}`);
     assert(row.production_rustflags_b64 === utf8Base64(provenance.productionRustflags), `${file}: production RUSTFLAGS differ from ${rawFile}`);
     assert(row.activation_rustflags_b64 === utf8Base64(provenance.activationRustflags), `${file}: activation RUSTFLAGS differ from ${rawFile}`);
     assert(row.cargo_encoded_rustflags === provenance.cargoEncodedRustflags, `${file}: encoded RUSTFLAGS contract differs from ${rawFile}`);
+    assert(row.sanitized_env_sha256 === provenance.sanitizedEnvSha256, `${file}: sanitized-env fingerprint differs from ${rawFile}`);
+    assert(row.sanitized_env_b64 === provenance.sanitizedEnvB64, `${file}: sanitized-env base64 differs from ${rawFile}`);
   }
 }
 
@@ -1363,10 +1593,11 @@ function modeSummary(args) {
 
   const wallclockTarget = args.target ?? WALLCLOCK_CSV_TARGET;
   const legSpecs = [
-    ...CODEGEN_CSV_TARGETS.map((target) => ({
+    ...CODEGEN_TARGETS.map((target) => ({
       kind: 'codegen', target,
       csvFile: `TIS_LINK_ORDERING_WEAK_CAS_GATE_codegen_${target}.csv`,
       rawFile: `_raw_tis_p3_ab_${target}_codegen.log`,
+      asmFile: `_raw_tis_p3_ab_${target}_codegen.s.all`,
     })),
     {
       kind: 'wallclock', target: wallclockTarget,
@@ -1375,24 +1606,34 @@ function modeSummary(args) {
     },
   ];
   const legs = legSpecs.map((spec) => {
-    const provenance = readRawProvenance(spec.rawFile);
+    const provenance = readRawProvenance(spec.rawFile, spec.asmFile ?? null);
     const csv = readCsvOrDie(spec.csvFile);
     assertCsvProvenance(csv, spec.csvFile, spec.rawFile, provenance);
+    assert(provenance.target === spec.target, `${spec.rawFile}: raw target mismatch`);
     return { ...spec, provenance, csv };
   });
   const reference = legs[0].provenance;
   for (const leg of legs) {
-    for (const key of ['sourceInputDigest', 'sourceInputsAtHead', 'headSha', 'treeSha', 'toolchain', 'productionRustflags', 'activationRustflags', 'cargoEncodedRustflags']) {
+    // Per-leg removedKeys reflect harmless ambient noise and may differ. Each
+    // leg validates its own canonical sanitized-env form above; cross-leg
+    // equality applies only to the effective child contract and provenance.
+    for (const key of ['sourceInputDigest', 'sourceInputsAtHead', 'headSha', 'treeSha', 'toolchain', 'profileId', 'smoke', 'productionRustflags', 'activationRustflags', 'cargoEncodedRustflags']) {
       assert(leg.provenance[key] === reference[key], `summary mode: leg ${leg.target} mixes ${key} with another leg`);
     }
+    assert(leg.provenance.bundleId.length === 64, `summary mode: ${leg.target} lacks a complete run/bundle id`);
     emit('identity', leg.target, '', '', '', 'source_input_digest', leg.provenance.sourceInputDigest, 'sha256');
     emit('identity', leg.target, '', '', '', 'source_inputs_at_head', leg.provenance.sourceInputsAtHead, 'boolean');
     emit('identity', leg.target, '', '', '', 'head_sha', leg.provenance.headSha, 'sha');
     emit('identity', leg.target, '', '', '', 'tree_sha', leg.provenance.treeSha, 'sha');
     emit('identity', leg.target, '', '', '', 'toolchain', leg.provenance.toolchain, 'identity');
+    emit('identity', leg.target, '', '', '', 'rustc_host', leg.provenance.rustcHost, 'target');
     emit('identity', leg.target, '', '', '', 'production_rustflags_b64', utf8Base64(leg.provenance.productionRustflags), 'base64');
     emit('identity', leg.target, '', '', '', 'activation_rustflags_b64', utf8Base64(leg.provenance.activationRustflags), 'base64');
     emit('identity', leg.target, '', '', '', 'cargo_encoded_rustflags', leg.provenance.cargoEncodedRustflags, 'state');
+    emit('identity', leg.target, '', '', '', 'sanitized_env_sha256', leg.provenance.sanitizedEnvSha256, 'sha256');
+    emit('identity', leg.target, '', '', '', 'sanitized_env_b64', leg.provenance.sanitizedEnvB64, 'base64');
+    emit('identity', leg.target, '', '', '', 'profile_id', leg.provenance.profileId, 'profile');
+    emit('identity', leg.target, '', '', '', 'bundle_id', leg.provenance.bundleId, 'sha256');
   }
 
   // (a)+(b) codegen legs.
@@ -1406,10 +1647,23 @@ function modeSummary(args) {
   }
   for (const { target, csv } of codegenCsvs) {
     const file = csv.file;
-    const expectedHeader = ['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags'];
+    const expectedHeader = ['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64'];
     assert(JSON.stringify(csv.header) === JSON.stringify(expectedHeader), `${file}: unexpected header ${csv.header.join(',')}`);
+    const expectedFeatures = target.startsWith('aarch64') ? ['default', 'lse'] : ['default'];
+    const expectedKeys = new Set(expectedFeatures.flatMap((features) => FUNCTION_KEYS.flatMap((fn) => VARIANTS.map((variant) => `${features}|${fn}|${variant}`))));
+    const seenKeys = new Set();
+    assert(csv.rows.length === expectedKeys.size, `${file}: expected exact Cartesian row count ${expectedKeys.size}, got ${csv.rows.length}`);
     for (const r of csv.rows) {
       assert(r.target === target, `${file}: row target ${r.target} != ${target}`);
+      const key = `${r.features}|${r.function}|${r.variant}`;
+      assert(expectedKeys.has(key) && !seenKeys.has(key), `${file}: duplicate, missing, or extra key ${key}`);
+      seenKeys.add(key);
+      assert(expectedFeatures.includes(r.features) && FUNCTION_KEYS.includes(r.function) && VARIANTS.includes(r.variant), `${file}: malformed codegen key ${key}`);
+      for (const numeric of ['instr_count', ...familyCols]) {
+        const value = Number(r[numeric]);
+        assert(Number.isSafeInteger(value) && value >= 0, `${file}: malformed ${numeric} for ${key}`);
+      }
+      assert(/^[0-9a-f]{16}$/.test(r.sha256_16) && (r.identical_to_base === 'true' || r.identical_to_base === 'false'), `${file}: malformed codegen identity for ${key}`);
       emit('codegen', target, r.features, r.function, r.variant, 'instr_count', r.instr_count, 'instructions');
       for (const fam of familyCols) {
         if (familyNonzero.has(fam) && Number(r[fam]) !== 0) {
@@ -1422,29 +1676,34 @@ function modeSummary(args) {
     for (const r of csv.rows) {
       const k = `${r.features}|${r.function}`;
       if (!groups.has(k)) groups.set(k, {});
-      groups.get(k)[r.variant] = r.identical_to_base === 'true' ? 1 : 0;
+      groups.get(k)[r.variant] = r;
     }
     for (const [k, byVariant] of groups) {
       const [features, fn] = k.split('|');
+      assert(Object.keys(byVariant).length === VARIANTS.length, `${file}: incomplete variant set for ${k}`);
       assert('cas_weak' in byVariant, `${file}: missing cas_weak row for ${k}`);
-      emit('codegen_identity', target, features, fn, 'cas_weak', 'identical_to_base', byVariant.cas_weak, 'boolean');
+      for (const variant of VARIANTS) {
+        const expectedIdentity = byVariant[variant].sha256_16 === byVariant.base.sha256_16;
+        assert(byVariant[variant].identical_to_base === String(expectedIdentity), `${file}: identical_to_base disagrees with SHA equality for ${k}/${variant}`);
+      }
+      emit('codegen_identity', target, features, fn, 'cas_weak', 'identical_to_base', Number(byVariant.cas_weak.sha256_16 === byVariant.base.sha256_16), 'boolean');
       if (target.startsWith('x86_64')) {
         assert('links_relaxed' in byVariant, `${file}: missing links_relaxed row for ${k}`);
-        emit('codegen_identity', target, features, fn, 'links_relaxed', 'identical_to_base', byVariant.links_relaxed, 'boolean');
+        emit('codegen_identity', target, features, fn, 'links_relaxed', 'identical_to_base', Number(byVariant.links_relaxed.sha256_16 === byVariant.base.sha256_16), 'boolean');
       }
     }
   }
 
   // (c) wallclock production leg: medians re-derived from sample rows, ratios
   // re-derived from the medians, both asserted against the leg's own SUMMARY.
-  // `--target` (optional) re-points the wallclock
-  // oracle at that target's CSV; absent, the committed windows-msvc default
-  // is checked exactly as before (backward compatible with every documented
-  // invocation).
+  // `--target` selects a provided wallclock CSV. Without it, the oracle uses
+  // the conventional windows-msvc lookup path; readCsvOrDie fails if absent.
   const wallclockLeg = legs.find((leg) => leg.kind === 'wallclock');
+  assert(wallclockLeg.provenance.smoke === false, `${wallclockLeg.csv.file}: smoke output cannot be evidence`);
+  assert(wallclockLeg.provenance.target === wallclockLeg.provenance.rustcHost, `${wallclockLeg.csv.file}: wallclock target differs from rustc host`);
   const wcFile = wallclockLeg.csv.file;
   const wc = wallclockLeg.csv;
-  const wcHeader = ['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags'];
+  const wcHeader = ['target', 'variant', 'binary_kind', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke'];
   assert(JSON.stringify(wc.header) === JSON.stringify(wcHeader), `${wcFile}: unexpected header ${wc.header.join(',')}`);
   function median(arr) {
     const s = [...arr].sort((a, b) => a - b);
@@ -1452,42 +1711,82 @@ function modeSummary(args) {
     return n % 2 === 1 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
   }
   const summaryRowsWc = {};
+  const timingRows = [];
   for (const r of wc.rows) {
     if (r.binary_kind === 'SUMMARY') {
+      assert(WALLCLOCK_VARIANTS.includes(r.variant) && summaryRowsWc[r.variant] === undefined, `${wcFile}: duplicate or unexpected SUMMARY variant ${r.variant}`);
+      assert(r.target === wallclockTarget, `${wcFile}: SUMMARY target ${r.target} != ${wallclockTarget}`);
+      assert(r.smoke === 'false', `${wcFile}: SUMMARY row cannot be smoke evidence`);
       summaryRowsWc[r.variant] = r;
       continue;
     }
-    assert(r.target === wallclockTarget && r.binary_kind === 'production', `${wcFile}: non-production timing row`);
+    assert(r.target === wallclockTarget && r.binary_kind === 'production' && WALLCLOCK_VARIANTS.includes(r.variant), `${wcFile}: non-production timing row`);
+    assert(r.source_inputs_at_head === 'true' && r.push_retries === '0' && r.pop_retries === '0' && r.smoke === 'false', `${wcFile}: timing row is not production evidence`);
+    assert(Number.isSafeInteger(Number(r.threads)) && Number(r.threads) >= 1 && Number(r.threads) <= MAX_THREADS, `${wcFile}: malformed threads`);
+    assert(Number.isSafeInteger(Number(r.window_ms)) && Number(r.window_ms) >= 50 && Number(r.window_ms) <= MAX_WINDOW_MS, `${wcFile}: malformed window_ms`);
+    assert(Number.isSafeInteger(Number(r.sample)) && Number(r.sample) >= 1 && Number(r.sample) <= MAX_SAMPLES, `${wcFile}: malformed sample id`);
+    for (const field of ['ops_total', 'elapsed_ms', 'ops_per_sec']) {
+      const value = Number(r[field]);
+      assert(Number.isFinite(value) && value > 0, `${wcFile}: ${field} must be finite and positive`);
+    }
     const derived = Number(r.ops_total) / (Number(r.elapsed_ms) / 1000);
     const reported = Number(r.ops_per_sec);
     assert(Math.abs(derived - reported) < 0.02 * reported, `${wcFile}: ops_per_sec mismatch for ${r.variant}: reported ${reported}, derived ${derived}`);
+    timingRows.push(r);
+  }
+  assert(Object.keys(summaryRowsWc).length === WALLCLOCK_VARIANTS.length, `${wcFile}: expected exactly one SUMMARY per production variant`);
+  assert(timingRows.length >= MIN_COMPARATIVE_SAMPLES * WALLCLOCK_VARIANTS.length, `${wcFile}: fewer than ${MIN_COMPARATIVE_SAMPLES} samples per variant`);
+  assert(timingRows.length % WALLCLOCK_VARIANTS.length === 0, `${wcFile}: timing row count is not divisible by ${WALLCLOCK_VARIANTS.length}`);
+  const parameterSets = new Set(timingRows.map((r) => `${r.threads}|${r.window_ms}|false`));
+  assert(parameterSets.size === 1, `${wcFile}: timing rows do not share threads/window/smoke=false`);
+  const sampleIds = new Map(WALLCLOCK_VARIANTS.map((v) => [v, timingRows.filter((r) => r.variant === v).map((r) => Number(r.sample))]));
+  const sampleCount = sampleIds.get(WALLCLOCK_VARIANTS[0]).length;
+  assert(sampleCount >= MIN_COMPARATIVE_SAMPLES && sampleCount % WALLCLOCK_VARIANTS.length === 0, `${wcFile}: invalid configured sample count ${sampleCount}`);
+  const expectedSampleSet = Array.from({ length: sampleCount }, (_, i) => i + 1).join(',');
+  for (const variant of WALLCLOCK_VARIANTS) {
+    const ids = sampleIds.get(variant).sort((a, b) => a - b);
+    assert(ids.join(',') === expectedSampleSet, `${wcFile}: variant ${variant} does not have the same sequential sample set`);
   }
   const meds = {};
-  for (const v of VARIANTS) {
+  for (const v of WALLCLOCK_VARIANTS) {
     const samples = wc.rows.filter((r) => r.binary_kind !== 'SUMMARY' && r.variant === v);
-    assert(samples.length >= 1, `${wcFile}: no sample rows for variant ${v}`);
+    assert(samples.length === sampleCount, `${wcFile}: variant ${v} has inconsistent sample count`);
     meds[v] = median(samples.map((s) => Number(s.ops_per_sec)));
+    assert(Number.isFinite(meds[v]) && meds[v] > 0, `${wcFile}: invalid median for ${v}`);
     emit('wallclock', wallclockTarget, '', '', v, 'median_ops_per_sec', meds[v].toFixed(2), 'ops/s');
   }
-  for (const v of VARIANTS) {
+  for (const v of WALLCLOCK_VARIANTS) {
+    const summary = summaryRowsWc[v];
+    const summaryCell = (prefix) => Object.values(summary).find((c) => typeof c === 'string' && c.startsWith(`${prefix}=`))?.split('=')[1];
+    const statedMedian = Number(summaryCell('median_ops_per_sec'));
+    const activationPush = Number(summaryCell('activation_push_delta'));
+    const activationPop = Number(summaryCell('activation_pop_delta'));
+    assert(Number.isFinite(statedMedian) && statedMedian > 0, `${wcFile}: invalid median SUMMARY for ${v}`);
+    assert(statedMedian.toFixed(2) === meds[v].toFixed(2), `${wcFile}: median SUMMARY disagrees for ${v}`);
+    assert(Number.isFinite(activationPush) && activationPush > 0, `${wcFile}: activation push must be positive for ${v}`);
+    assert(Number.isFinite(activationPop) && activationPop > 0, `${wcFile}: activation pop must be positive for ${v}`);
     const stated = Object.values(summaryRowsWc[v] ?? {}).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
     assert(stated !== undefined, `${wcFile}: no ratio_vs_base SUMMARY cell for variant ${v}`);
     const r = Math.round((meds[v] / meds.base) * 1000) / 1000;
+    assert(Number.isFinite(r) && r > 0, `${wcFile}: non-finite or non-positive ratio for ${v}`);
+    assert(Number.isFinite(Number(stated)) && Number(stated) > 0, `${wcFile}: non-finite or non-positive stated ratio for ${v}`);
     assert(Math.abs(r - Number(stated)) < 5e-4, `${wcFile}: ratio_vs_base for ${v}: leg says ${stated}, re-derived ${r}`);
     emit('wallclock', wallclockTarget, '', '', v, 'ratio_vs_base', r.toFixed(3), 'ratio');
   }
 
-  const outPath = path.join(docsPerfDir, 'TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv');
-  fs.writeFileSync(outPath, summaryRows.map((r) => r.join(',')).join('\n') + '\n');
-  console.log(`summary mode OK: ${summaryRows.length - 1} data rows -> ${path.relative(repoRoot, outPath)}`);
+  const summaryText = summaryRows.map((r) => r.join(',')).join('\n') + '\n';
+  const scratchBase = makeScratchRoot();
+  stageAndPublishArtifacts(null, scratchBase, {
+    'TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv': summaryText,
+  });
+  console.log(`exact summary OK: ${summaryRows.length - 1} validated rows -> docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE_summary.csv`);
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 // The whole dispatch lives in one try/catch/finally so
 // the invocation's scratch root is removed on EVERY exit path — success,
-// fail()-driven fatal error (fail() throws; see its comment above),
-  // unexpected exception — replacing success-only cleanup sites
-// sites inside the mode functions. --keep-scratch opts out deliberately
+// fail()-driven fatal error, or unexpected exception. This replaces
+// success-only cleanup inside mode functions. --keep-scratch opts out
 // (inspect a failed run's scratch tree); the default must never leak.
 // The finally block is also the only place reporting the scratch-tree
 // lifecycle: the outcome is reported here, after it
@@ -1498,9 +1797,9 @@ try {
   if (args.mode === 'summary') {
     modeSummary(args);
   } else if (args.mode === 'build-check') {
-    modeBuildCheck();
+    modeBuildCheck(args, captureSnapshotContext(args));
   } else {
-    const header = captureHeader(args);
+    const header = captureEvidenceHeader(args);
     if (args.mode === 'codegen') modeCodegen(args, header);
     else modeWallclock(args, header);
   }

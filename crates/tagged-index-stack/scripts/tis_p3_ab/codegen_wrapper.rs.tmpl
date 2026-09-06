@@ -1,76 +1,154 @@
-// Codegen-forcing wrapper for the link-ordering/CAS A/B mode.
-//
-// Why this file exists: `rustc --emit=asm --crate-type=lib` on the bare
-// `lib.rs` monomorphizes NOTHING — every interesting function in the crate
-// (`push_index`/`pop_index`/`ArrayLinks::load_next`/`store_next` and the
-// stack's push/pop entry points) is generic (over the storage type or const
-// parameters), so without a concrete use LLVM emits only the panic-path
-// helpers and the extraction finds no function blocks. This wrapper forces
-// exactly one monomorphization of each function we study through explicit
-// `#[inline(never)]` probe symbols with extractable labels.
-//
-// The lib.rs/imp.rs pair next to this file is a VERBATIM copy of the crate
-// sources (or the variant substitution applied to imp.rs); this wrapper is
-// only the instantiation vehicle and contributes no logic of its own.
-//
-// `push` is `pub unsafe fn` (see `crates/tagged-index-stack/src/imp.rs`'s
-// `StackOps::push_index` doc for the three-clause caller contract: link domain
-// + liveness + exclusive ownership). Same statement-scoped `#[allow(unsafe_code)]` + `// SAFETY:`
-// convention as the sibling `scripts/tis_p3_ab/harness_bin.rs`;
-// `#![deny(unsafe_code)]` below still covers every other line in this file.
+// Codegen probes for the production-shaped registry storage.
 
 #![deny(unsafe_code)]
 
-// `lib.rs` is a verbatim crate-root copy, so its own `#![no_std]` is an inner
-// attribute meant for that position; included here as a submodule, rustc
-// warns `unused_attributes` (attribute only valid at crate root). Allow it on
-// this one declaration rather than editing the copied source.
 #[allow(unused_attributes)]
 #[path = "lib.rs"]
 pub mod tis;
 
 use core::hint::black_box;
+use core::sync::atomic::{AtomicU32, Ordering};
+use tis::{StackHead, StackOps, StackStorage, TAIL};
+
+const LINKS: usize = 256;
+
+#[repr(align(64))]
+struct RegistrySlot {
+    next_free: AtomicU32,
+}
+
+impl RegistrySlot {
+    const fn new() -> Self {
+        Self { next_free: AtomicU32::new(0) }
+    }
+}
+
+struct RegistryShapedStorage {
+    head: StackHead<16>,
+    slots: [RegistrySlot; LINKS],
+}
+
+// This models Registry's ownership shape, not HeapSlot's byte layout.
+
+impl RegistryShapedStorage {
+    fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            slots: [const { RegistrySlot::new() }; LINKS],
+        }
+    }
+
+    fn slot(&self, index: u32) -> &RegistrySlot {
+        &self.slots[index as usize]
+    }
+}
+
+// SAFETY:
+// 1. `self.head` has one binding for this storage value's lifetime.
+// 2. `slots[index]` is a stable mapping used by both link hooks.
+// 3. Distinct values share neither heads, cells, nor populations.
+// 4. Every valid index has one dedicated cell holding TAIL or a domain index.
+// 5. `head()` always returns this value's same head.
+// 6. The domain is exactly 0..256, within the 16-bit index domain.
+// 7. AtomicU32 makes races atomic; placeholders select Acquire/Release for
+//    base and the intentional Relaxed candidate.
+#[allow(unsafe_code)]
+unsafe impl StackStorage<16> for RegistryShapedStorage {
+    /// # Safety
+    ///
+    /// The caller uses this head only with this storage's own link binding.
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    /// # Safety
+    ///
+    /// `index` is in 0..256 and was initialized through this same binding.
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
+    }
+
+    /// # Safety
+    ///
+    /// `index` is in-domain, non-live, and uniquely owned; `next` is TAIL or
+    /// the observed in-domain head, and this store precedes publication.
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
+    }
+}
 
 #[inline(never)]
 #[allow(unsafe_code)]
-/// Calls the production push path for codegen extraction.
+/// Forces the crate-owned push monomorphization.
 ///
 /// # Safety
 ///
-/// `index` is in this stack's link domain, is not currently reachable from
-/// the stack, and this call owns its exclusive publish/recycle epoch.
-pub unsafe fn tis_probe_push_index_impl(
-    stack: &tis::ArrayIndexStack<16, 256>,
-    index: u32,
-) {
-    // SAFETY: the caller upholds the stack push contract.
-    #[allow(unsafe_code)]
-    unsafe { tis::ArrayIndexStack::push(stack, index) }
-    .expect("codegen probe push must not hit tag seal");
+/// `index` is in this binding's 0..256 domain, is not live in any binding
+/// sharing its cells, and the caller owns one unique fresh or recycled publish
+/// authority that this call consumes.
+unsafe fn tis_probe_push_index_impl(stack: &RegistryShapedStorage, index: u32) {
+    // SAFETY: the caller guarantees domain membership, non-liveness, and one
+    // unique publish authority, forwarded unchanged to StackOps.
+    unsafe { StackOps::push_index(stack, index) }
+        .expect("codegen probe push must not seal");
 }
 
 #[inline(never)]
-pub fn tis_probe_pop_index_impl(stack: &tis::ArrayIndexStack<16, 256>) {
-    let _ = tis::ArrayIndexStack::pop(stack);
+fn tis_probe_pop_index_impl(stack: &RegistryShapedStorage) {
+    let _ = StackOps::pop_index(stack);
 }
 
 #[inline(never)]
-pub fn tis_probe_load_next(links: &tis::ArrayLinks<256>, index: u32) -> u32 {
-    tis::ArrayLinks::load_next(links, index)
+#[allow(unsafe_code)]
+/// Forces the custom storage's load hook.
+///
+/// # Safety
+///
+/// `index` is in this binding's 0..256 domain and its dedicated link cell was
+/// initialized by a prior store through this same binding.
+unsafe fn tis_probe_load_next(stack: &RegistryShapedStorage, index: u32) -> u32 {
+    // SAFETY: the caller guarantees an in-domain cell initialized through this
+    // exact head-to-links binding.
+    unsafe { StackStorage::load_next(stack, index) }
 }
 
 #[inline(never)]
-pub fn tis_probe_store_next(links: &tis::ArrayLinks<256>, index: u32, next: u32) {
-    tis::ArrayLinks::store_next(links, index, next);
+#[allow(unsafe_code)]
+/// Forces the custom storage's store hook.
+///
+/// # Safety
+///
+/// `index` is in this binding's 0..256 domain, is non-live, and is covered by
+/// one unique publish authority. `next` is TAIL or the current in-domain head,
+/// and the call occurs before the CAS that publishes `index`.
+unsafe fn tis_probe_store_next(stack: &RegistryShapedStorage, index: u32, next: u32) {
+    // SAFETY: the caller guarantees the in-domain non-live index, unique
+    // authority, valid next value, and before-publication phase.
+    unsafe { StackStorage::store_next(stack, index, next) }
 }
 
+#[allow(unsafe_code)]
 pub fn instantiate() {
-    let stack: tis::ArrayIndexStack<16, 256> = tis::ArrayIndexStack::new();
-    // SAFETY: `stack` is fresh and index 1 is in-domain and exclusively owned.
-    #[allow(unsafe_code)]
-    unsafe { black_box(tis_probe_push_index_impl)(black_box(&stack), black_box(1u32)); }
+    let stack = RegistryShapedStorage::new();
+    // SAFETY: index 1 is in the fresh binding's 0..256 domain, is non-live,
+    // has one unique initial authority, next is TAIL for the empty head, and
+    // this initializes the cell before its later publication.
+    unsafe {
+        black_box(tis_probe_store_next)(
+            black_box(&stack),
+            black_box(1u32),
+            black_box(TAIL),
+        );
+    }
+    // SAFETY: index 1 is in-domain and the preceding store initialized its
+    // dedicated cell through this same binding.
+    unsafe {
+        black_box(tis_probe_load_next)(black_box(&stack), black_box(1u32));
+    }
+    // SAFETY: index 1 is in this binding's domain, remains non-live, and its
+    // unique initial publish authority is consumed exactly once here.
+    unsafe {
+        black_box(tis_probe_push_index_impl)(black_box(&stack), black_box(1u32));
+    }
     black_box(tis_probe_pop_index_impl)(black_box(&stack));
-    let links = tis::ArrayLinks::<256>::new();
-    black_box(tis_probe_load_next)(black_box(&links), black_box(0u32));
-    black_box(tis_probe_store_next)(black_box(&links), black_box(0u32), black_box(1u32));
 }

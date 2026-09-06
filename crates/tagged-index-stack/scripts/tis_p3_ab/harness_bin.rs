@@ -1,26 +1,87 @@
-//! Wall-clock harness for the tagged-index-stack link-ordering/CAS study.
-//!
-//! The production binary is built without `tagged_index_stack_test` and is
-//! the only binary whose samples enter the timing CSV. A separate cfg-enabled
-//! binary observes retry activation after warm-up; its result is never mixed
-//! with timing samples.
+//! Wall-clock harness for the production-shaped registry storage study.
 
 #![deny(unsafe_code)]
 
 use std::env;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Barrier, OnceLock};
 use std::time::{Duration, Instant};
 
-use {{CRATE_NAME}}::ArrayIndexStack;
+use {{CRATE_NAME}}::{StackHead, StackOps, StackStorage};
 
-type Stack = ArrayIndexStack<16, LINKS>;
 const LINKS: usize = 256;
 const PREFILL: u32 = 64;
 const DEADLINE_CHECK_INTERVAL: u32 = 64;
 const WARMUP: Duration = Duration::from_millis(200);
-const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
 const MAX_WINDOW_MS: u64 = 60_000;
+const MAX_WINDOW_ENTRY_LATENESS: Duration = Duration::from_millis(100);
+
+#[repr(align(64))]
+struct RegistrySlot {
+    next_free: AtomicU32,
+}
+
+impl RegistrySlot {
+    const fn new() -> Self {
+        Self { next_free: AtomicU32::new(0) }
+    }
+}
+
+struct RegistryShapedStorage {
+    head: StackHead<16>,
+    slots: [RegistrySlot; LINKS],
+}
+
+// This models Registry's ownership shape, not HeapSlot's byte layout.
+
+impl RegistryShapedStorage {
+    fn new() -> Self {
+        Self {
+            head: StackHead::new(),
+            slots: [const { RegistrySlot::new() }; LINKS],
+        }
+    }
+
+    fn slot(&self, index: u32) -> &RegistrySlot {
+        &self.slots[index as usize]
+    }
+}
+
+// SAFETY:
+// 1. `self.head` has one binding for this storage value's lifetime.
+// 2. `slots[index]` is a stable mapping used by both link hooks.
+// 3. Distinct values share neither heads, cells, nor populations.
+// 4. Every valid index has one dedicated cell holding TAIL or a domain index.
+// 5. `head()` always returns this value's same head.
+// 6. The domain is exactly 0..256, within the 16-bit index domain.
+// 7. AtomicU32 makes races atomic; placeholders select Acquire/Release for
+//    base and the intentional Relaxed candidate.
+#[allow(unsafe_code)]
+unsafe impl StackStorage<16> for RegistryShapedStorage {
+    /// # Safety
+    ///
+    /// The caller uses this head only with this storage's own link binding.
+    unsafe fn head(&self) -> &StackHead<16> {
+        &self.head
+    }
+
+    /// # Safety
+    ///
+    /// `index` is in 0..256 and was initialized through this same binding.
+    unsafe fn load_next(&self, index: u32) -> u32 {
+        self.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
+    }
+
+    /// # Safety
+    ///
+    /// `index` is in-domain, non-live, and uniquely owned; `next` is TAIL or
+    /// the observed in-domain head, and this store precedes publication.
+    unsafe fn store_next(&self, index: u32, next: u32) {
+        self.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
+    }
+}
+
+type Stack = RegistryShapedStorage;
 
 fn die(msg: String) -> ! {
     eprintln!("error: {msg}");
@@ -48,11 +109,12 @@ fn retry_counts() -> (usize, usize) {
 }
 
 fn cycle(stack: &Stack) -> bool {
-    let Some(index) = stack.pop() else { return false };
-    // SAFETY: `index` was removed by this pop, so it is in-domain,
-    // unreachable, and exclusively owned by this thread for the repush.
+    let Some(index) = stack.pop_index() else { return false };
+    // SAFETY: this binding returned an in-domain index; the successful pop
+    // removed it from the live chain and gave this thread its unique recycle
+    // authority, which this push consumes exactly once.
     #[allow(unsafe_code)]
-    unsafe { stack.push(index) }
+    unsafe { stack.push_index(index) }
         .expect("bounded measurement run never reaches TAG_MAX");
     true
 }
@@ -75,9 +137,11 @@ fn main() {
 
     let stack = Stack::new();
     for index in 0..PREFILL {
-        // SAFETY: each fresh in-domain index is pushed once before sharing.
+        // SAFETY: 0..PREFILL is inside this binding's 0..256 domain; the fresh
+        // stack makes every index non-live, and this loop owns and consumes one
+        // unique initial publish authority for each index exactly once.
         #[allow(unsafe_code)]
-        unsafe { stack.push(index) }
+        unsafe { stack.push_index(index) }
             .expect("bounded measurement run never reaches TAG_MAX");
     }
 

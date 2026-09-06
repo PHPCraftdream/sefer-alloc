@@ -9,6 +9,12 @@ rust-version = "1.79"
 # real workspace's members or lockfile.
 [workspace]
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+incremental = false
+opt-level = 3
+
 # The retry-count oracle accessors in the substituted copy of
 # `tagged-index-stack/src/imp.rs` are enabled only for the separately-built
 # instrumented binary with `--cfg tagged_index_stack_test`. The production
