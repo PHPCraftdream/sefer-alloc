@@ -2019,23 +2019,6 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 static BACKOFF_SPIN_COUNT: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
-/// **test-only** activation oracle: reads `POP_RETRY_COUNT` — the
-/// number of times `pop_index`'s CAS-retry branch has executed in this
-/// process. The loom suite asserts this counter ADVANCES across an exploration
-/// so a model whose schedules never actually reach `pop_index`'s retry path
-/// fails loudly instead of passing vacuously (see the assertion in
-/// `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`).
-///
-/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
-/// Never reset: process-global and cumulative — see `POP_RETRY_COUNT`'s doc
-/// (the shipped loom suite's `MODEL_LOCK` serializes tests that read it).
-#[cfg(any(tagged_index_stack_test, loom))]
-#[doc(hidden)]
-#[must_use]
-pub fn pop_retry_count_for_test() -> usize {
-    POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
-}
-
 /// **test-only** activation oracle for [`Backoff::spin`].
 #[cfg(loom)]
 #[doc(hidden)]
@@ -2051,28 +2034,11 @@ pub fn backoff_spin_count_for_test() -> usize {
 #[cfg(any(tagged_index_stack_test, loom))]
 static PUSH_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-/// **test-only** activation oracle: reads `PUSH_RETRY_COUNT` — the
-/// number of times `push_index`'s CAS-retry branch has executed in this
-/// process. The loom suite asserts this counter ADVANCES across an exploration
-/// so a model whose schedules never actually reach `push_index`'s retry path
-/// fails loudly instead of passing vacuously (see the assertion in
-/// `push_push_conservation`).
-///
-/// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
-/// Never reset: process-global and cumulative — see `POP_RETRY_COUNT`'s doc
-/// (the shipped loom suite's `MODEL_LOCK` serializes tests that read it).
-#[cfg(any(tagged_index_stack_test, loom))]
-#[doc(hidden)]
-#[must_use]
-pub fn push_retry_count_for_test() -> usize {
-    PUSH_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
-}
-
-/// **test-only** measurement observability: reads both cumulative CAS-retry
-/// counters as `(pop, push)`. The deterministic probe pins `(pop, push) ==
-/// (0, 1)`; the natural probe accepts zero retries and checks only
-/// `natural_push_attempts == ops_total + push_retries`. Loom's per-side
-/// accessors above provide deterministic retry-branch activation oracles.
+/// **test-only** retry-count oracle: reads cumulative CAS-retry counters as
+/// `(pop, push)`. Loom indexes `.0`/`.1` to assert activation of the relevant
+/// retry branch. The deterministic A/B probe pins `(pop, push) == (0, 1)`;
+/// the natural workload permits zero retries and derives
+/// `natural_push_attempts = ops_total + push_retries`.
 ///
 /// `#[doc(hidden)]`: see [`raw_head`](StackHead::raw_head)'s rationale.
 /// Gated with the counters, absent from default builds, and never reset.

@@ -679,7 +679,7 @@ fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
 /// ever regresses.
 ///
 /// The live activation oracle asserted on every run — the process-global
-/// `pop_retry_count_for_test` counter (incremented in `pop`'s own retry arm)
+/// `retry_counts_for_test().0` counter (incremented in `pop`'s own retry arm)
 /// must advance across this model's explored schedules — proves the retry
 /// branch actually executed, so a green run is not vacuous.
 #[test]
@@ -694,7 +694,7 @@ fn pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type() {
     // increment the same counter, making this assertion pass on cross-test
     // noise instead of on this test's own model.
     model_with_oracle(
-        tagged_index_stack::pop_retry_count_for_test,
+        || tagged_index_stack::retry_counts_for_test().0,
         || {
             let stack = Arc::new(ArrayIndexStack::<16, N>::new());
             // SAFETY: fresh stack (domain 0..2); index 1 is in-domain and this is its first push.
@@ -876,7 +876,7 @@ fn counterfactual_relaxed_cas_failure_corrupts_free_list() {
 #[test]
 fn push_push_conservation() {
     model_with_oracle(
-        tagged_index_stack::push_retry_count_for_test,
+        || tagged_index_stack::retry_counts_for_test().1,
         || {
             let stack = Arc::new(ArrayIndexStack::<16, N>::new());
 
@@ -953,7 +953,7 @@ fn push_push_conservation() {
 /// `#[should_panic]` passes without demonstrating the claimed scenario. The
 /// fix is a per-schedule gate on `PUSH_RETRY_COUNT` (the process-global
 /// counter `push`'s CAS-retry arm increments on every failed CAS, read via
-/// `push_retry_count_for_test`): the closure snapshots the counter BEFORE
+/// `retry_counts_for_test().1`): the closure snapshots the counter BEFORE
 /// spawning the threads and computes the delta AFTER both joins, and only a
 /// schedule with a POSITIVE delta proceeds to the drain. The discriminator
 /// is sound: a genuinely-overlapping push that loses its first CAS MUST
@@ -997,7 +997,7 @@ fn push_push_conservation() {
 #[should_panic(expected = "the index's own link points back to itself — a self-loop")]
 fn counterfactual_same_index_concurrent_push_self_loops() {
     model(|| {
-        let retries_before = tagged_index_stack::push_retry_count_for_test();
+        let retries_before = tagged_index_stack::retry_counts_for_test().1;
         let stack = Arc::new(ArrayIndexStack::<16, N>::new());
 
         let stack_a = Arc::clone(&stack);
@@ -1036,7 +1036,7 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
 
         // Retry gate: drain reached ONLY on
         // gate-passing (genuinely-overlapping) schedules.
-        let retried = tagged_index_stack::push_retry_count_for_test() - retries_before;
+        let retried = tagged_index_stack::retry_counts_for_test().1 - retries_before;
         if retried == 0 {
             // Sequential schedule (one push fully finished before the other
             // began): B's entry read saw A's published head, making B an
@@ -1206,7 +1206,7 @@ fn pop_repush_after_publish_conserves() {
 #[test]
 fn pop_pop_conservation() {
     model_with_oracle(
-        tagged_index_stack::pop_retry_count_for_test,
+        || tagged_index_stack::retry_counts_for_test().0,
         || {
             let stack = both_free();
 
@@ -1300,7 +1300,7 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
     model_with_oracle(
         || {
             (
-                tagged_index_stack::pop_retry_count_for_test(),
+                tagged_index_stack::retry_counts_for_test().0,
                 tagged_index_stack::backoff_spin_count_for_test(),
             )
         },

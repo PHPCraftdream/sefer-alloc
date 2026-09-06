@@ -170,23 +170,15 @@ authoritative empty check.
   docs).
 
 - **No duplicate authority over the same index (exclusive ownership epoch,
-  caller-side `# Safety` clause 3).** Each push of an index must be backed
-  by a unique, not-yet-consumed publish/recycle authority epoch over that
-  index — freshly minted, or obtained from one specific successful `pop`
-  that returned the index to this caller. Clause 2's "not reachable" is a
-  point-in-time check at call entry only. The push consumes its epoch at its
-  own successful head CAS — the linearization point, not physical return —
-  so another thread MAY legitimately pop the just-published index and push
-  it again (backed by its own epoch from that pop) even before the original
-  push call has physically returned: that overlap is permitted. What
-  clause 3 forbids is two pushes acting on the SAME epoch (no intervening
-  successful pop): both satisfy the entry checks and still corrupt the
-  free-list into a self-loop (`next[index] == index`), which `pop_index`'s
-  detector panics on; pinned from both sides in the loom suite by
-  `counterfactual_same_index_concurrent_push_self_loops` (the forbidden
-  duplicate-authority race) and
-  `pop_repush_after_publish_conserves` (the permitted overlap).
-  Full contract: `push_index`'s `# Safety` section (crate docs).
+  caller-side `# Safety` clause 3).** Each push must consume a unique,
+  not-yet-consumed publish/recycle epoch (fresh or returned by that caller's
+  successful pop): clause 2's entry check is point-in-time, the epoch is
+  consumed at the successful head CAS (so a pop-then-repush with a new epoch
+  may overlap the original return), while two pushes reusing one epoch are
+  forbidden and can self-loop the list; pinned by
+  `counterfactual_same_index_concurrent_push_self_loops` and
+  `pop_repush_after_publish_conserves`; full contract:
+  `push_index`'s `# Safety` section (crate docs).
 
 ## Tag-width budget
 
@@ -295,8 +287,8 @@ deliberately not re-quoted here so they cannot drift from it.
 
 This crate's hidden test probes are absent from default builds. Under
 `tagged_index_stack_test` or `loom`, the read/counter probes include
-`raw_head`, `load_next_for_test`, `with_tag_for_test`, both retry-counter
-accessors, `retry_counts_for_test`, and `backoff_spin_depths_for_test`;
+`raw_head`, `load_next_for_test`, `with_tag_for_test`, `retry_counts_for_test`,
+and `backoff_spin_depths_for_test`;
 `backoff_spin_count_for_test` is loom-only. The raw CAS/write probes
 (`cas_head_for_test`, `store_next_for_test`) remain loom-only. All are
 `#[doc(hidden)]`
