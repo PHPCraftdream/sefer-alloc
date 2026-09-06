@@ -2833,10 +2833,10 @@ for completeness.
       deterministic tag-only oracle is exact: push retries `= 1`, pop retries
       `= 0`, and `store_next` calls `base/links_relaxed/store_elided`
       `= 3/3/2`. The current codegen receipt is source-input-identical to the
-      run-25 remediation HEAD `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`,
-      tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest
-      `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`,
-      artifact commit `1fff43a`, and host receipt hash remains
+      source HEAD `b5f4abd58a01dc00de3b58299727fb6a07292345`, tree
+      `8df9d231796796bcf5ac1386147743e260374278`, source-input digest
+      `2bec66d4c15756955f78a04ecd094f249018d7a2b6e0605414286b0ad2787081`,
+      artifact commit `f74b2e6a142019886fb24d4b02f6df01a0409878`, and host receipt hash remains
       `cc1db78be23882bb367b3e2120eefe377396f30046fbcb8f7362240849af72f7`.
       The current bundle is codegen-only: item 61 is instrument-ready, but
       natural ARM has not been executed. Matrix/static deltas are unchanged
@@ -2852,10 +2852,10 @@ for completeness.
       `base` and `links_relaxed`, and stores `< attempts`/elisions `> 0` for
       `store_elided`. No hot-path change before a gate report.
     - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`; source-input
-      identity `5549e8db57b5ab6a8ba276c58dbfa6e23529413d` / tree
-      `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d` / digest
-      `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`;
-      current codegen artifact commit `1fff43a`; and the historical ODB/HS
+      identity `b5f4abd58a01dc00de3b58299727fb6a07292345` / tree
+      `8df9d231796796bcf5ac1386147743e260374278` / digest
+      `2bec66d4c15756955f78a04ecd094f249018d7a2b6e0605414286b0ad2787081`;
+      current codegen artifact commit `f74b2e6a142019886fb24d4b02f6df01a0409878`; and the historical ODB/HS
       trail `c00087f`, `393f81e`, `b01580f`, `133d842`.
 
 62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B.**
@@ -2863,15 +2863,14 @@ for completeness.
     - **Status:** OPEN — measurement-only; production Acquire/Release links
       and strong CAS remain unchanged.
     - **Current-number-or-verdict:** authoritative codegen is source-input
-      identical to the current run-25 remediation HEAD
-      `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree
-      `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest
-      `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`,
+      identical to source HEAD `b5f4abd58a01dc00de3b58299727fb6a07292345`,
+      tree `8df9d231796796bcf5ac1386147743e260374278`, source-input digest
+      `2bec66d4c15756955f78a04ecd094f249018d7a2b6e0605414286b0ad2787081`,
       rustc `1.97.0` / LLVM `22.1.6`: exact x86 matrix 20 rows and AArch64
       matrix 40 rows. x86 `links_relaxed` is identity; AArch64 removes link
       `ldar`/`stlr` only in the Relaxed candidate. Item 63 remains a static
       NULL, and `cas_weak` and `pop_success_relaxed` retain their identity
-      results. The current artifact commit is `1fff43a`; the host receipt
+      results. The current artifact commit is `f74b2e6a142019886fb24d4b02f6df01a0409878`; the host receipt
       hash remains `cc1db78be23882bb367b3e2120eefe377396f30046fbcb8f7362240849af72f7`.
       The current host receipt is local Windows x64 with topology and governor
       unavailable; the AArch64 rows are cross-target codegen only.
@@ -2889,10 +2888,10 @@ for completeness.
       raw↔CSV linkage, stable across fresh legs and immediately before/after
       timing.
     - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` and its two
-      current codegen CSVs/raw logs/asm; source HEAD `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`,
-      tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest
-      `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`;
-      artifact commit `1fff43a`; and historical ODB/HS commits `c00087f`,
+      current codegen CSVs/raw logs/asm; source HEAD `b5f4abd58a01dc00de3b58299727fb6a07292345`,
+      tree `8df9d231796796bcf5ac1386147743e260374278`, digest
+      `2bec66d4c15756955f78a04ecd094f249018d7a2b6e0605414286b0ad2787081`;
+      artifact commit `f74b2e6a142019886fb24d4b02f6df01a0409878`; and historical ODB/HS commits `c00087f`,
       `393f81e`, `b01580f`, `133d842`.
 
 ## Recently resolved (closure trail — do not re-list as open)
@@ -2936,7 +2935,7 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F11 [P2] — Round 32 has no `### Round 32` heading in CHANGELOG.md; a bolded "Runtime improvements this round: 0" sits directly above eight runtime improvements.** Closed (PARTIALLY) by R33-7 (task #512, commit `182b222`) — split Round 32's runtime improvements into their own `#### Runtime improvements` subsection with an accurate "Runtime improvements this round: 7" line. RESIDUAL (Round-33 review G6 [P3]): Round 31's section still carries the same collision shape ("Runtime improvements this round: 0" two lines above a heading listing R31-10's promoted runtime improvement), and Rounds 31/32 are out of section order (`grep -n "^### Round"` gives 33, 31, 32, 30…). The residual is filed in `docs/CORRECTNESS_OPEN_ITEMS.md` (reporting-honesty/process scope).
 - **Item 32 — the "wrong allocator layer" defect class: a gate report must name the exact entry point under test and why that layer is decision-relevant (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).** CLOSED — codified as a standing CLAUDE.md rule (see "Active rules"), not a pending remeasurement; moved here by task #1143 (2026-08-19) per R34-24 — the card's own Status already read "CLOSED this round" with "Next trigger: none" but had been left sitting in the `[D]` tier (a tier defined as "implement only if trigger/victim materializes", which does not describe a rule-codification with no further action) with no "Recently resolved" pointer, the exact stale-tier-placement defect the R34-24 rule targets. Third instance of one meta-pattern: R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this rule) — R30-3 (task #452) satisfied every rule that existed at the time, including R30-8's own path-activation oracle, and still shipped a wrong NO-GO verdict because it measured `AllocCore::alloc_zeroed` (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s `#[global_allocator]` actually uses, retaining virginity across a magazine refill via `PerClass::virgin_mask`). Caught and reopened in R31-0 (task #471, commit `dece4a7`; see this file's item 25). See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
 - **Item 56 — the unexplained ~10-13% Ir regression (range `42d8d223..42d42061`).** CLOSED (RESOLVED 2026-09-01, task #1091) — attributed by dual bisect to `5df56d3` (repr(C) PerClass, one-time +759 Ir/`HeapCore`, zero per-op cost, 15.49 Ir/PerClass) + `5289c66` (OWN_CACHE_SIZE 16, whose +3/`contains_base`-call residual is the gate's own `bench-internals`-gated Tier-1 hit/miss counters — a measurement artifact compiled out of plain production); counterfactuals A/A' confirm nothing else in the 153-commit range contributed beyond jitter; verdict (b) accepted-cost + (c) measurement-artifact, no production fix. See `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md` (+ its asserted summary CSV and derive script).
- - **Item 63 — `tagged-index-stack` `pop_index` CAS-success Relaxed candidate.** RESOLVED (2026-09-06, current run-25 source HEAD `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, artifact commit `1fff43a`; earlier implementation commits `c00087f`, `393f81e`, `b01580f`, `133d842` remain historical/intermediate) — `pop_success_relaxed` is byte-identical to `base` for all four functions on x86 and AArch64 default/`+lse`; NULL, with production `Acquire` retained for proof clarity and no current codegen cost. Full closure: `docs/perf/OPEN_ITEMS_ARCHIVE.md` “Recently resolved — full closure trail”.
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success Relaxed candidate.** RESOLVED (2026-09-06, source HEAD `b5f4abd58a01dc00de3b58299727fb6a07292345`, tree `8df9d231796796bcf5ac1386147743e260374278`, digest `2bec66d4c15756955f78a04ecd094f249018d7a2b6e0605414286b0ad2787081`, artifact commit `f74b2e6a142019886fb24d4b02f6df01a0409878`; earlier implementation commits `c00087f`, `393f81e`, `b01580f`, `133d842` remain historical/intermediate) — `pop_success_relaxed` is byte-identical to `base` for all four functions on x86 and AArch64 default/`+lse`; NULL, with production `Acquire` retained for proof clarity and no current codegen cost. Full closure: `docs/perf/OPEN_ITEMS_ARCHIVE.md` “Recently resolved — full closure trail”.
 
 ### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
 
