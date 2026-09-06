@@ -10,7 +10,7 @@
 //                      each DIRECTLY (no cargo), extract/normalize function
 //                      blocks, run per-ISA oracles, emit logs/CSV/table.
 //   --mode wallclock — materialize the three timing variants, run production
-//                      timing, and run separate deterministic activation probes.
+//                      timing, then deterministic and natural activation probes.
 //   --mode summary  — read every per-leg CSV + its own raw-log provenance
 //                      header and emit the compact summary CSV companion for
 //                      the gate report. No build, no measurement. Optional
@@ -50,6 +50,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -287,18 +288,38 @@ function assertActivationRecord(rec, variant, context, expectedSmoke) {
   assert(rec.variant === variant && rec.source_variant === variant, `${context}: materialized variant identity mismatch`);
   assert(rec.activation === true && rec.activation_probe === 'tag_only_retry', `${context}: not the deterministic activation record`);
   assert(rec.threads === 0 && rec.window_ms === 0 && rec.elapsed_ms === 0 && rec.ops_total === 0 && rec.ops_per_sec === 0, `${context}: activation record contains timing data`);
-  assert(rec.push_retries === 0 && rec.pop_retries === 0 && rec.smoke === expectedSmoke, `${context}: activation ordinary fields are not exact`);
+  assert(rec.smoke === expectedSmoke && !Object.hasOwn(rec, 'natural_push_attempts'), `${context}: activation record has unexpected ordinary/natural fields`);
   assert(rec.activation_push_retries === 1 && rec.activation_pop_retries === 0, `${context}: activation retry fields are not exact`);
   assert(rec.activation_store_next_calls === (variant === 'store_elided' ? 2 : 3), `${context}: activation store field is not exact`);
 }
 
+function assertNaturalActivationRecord(rec, variant, context, threads, windowMs) {
+  assert(rec.variant === variant && rec.source_variant === variant, `${context}: materialized variant identity mismatch`);
+  assert(rec.activation === true && rec.activation_probe === 'natural_workload' && rec.smoke === false, `${context}: not the natural workload activation record`);
+  assert(!Object.hasOwn(rec, 'activation_push_retries') && !Object.hasOwn(rec, 'activation_pop_retries') && !Object.hasOwn(rec, 'activation_store_next_calls'), `${context}: natural record contains deterministic fields`);
+  assert(rec.threads === threads && rec.window_ms === windowMs, `${context}: natural workload parameters differ from timing parameters`);
+  assert(Number.isSafeInteger(rec.elapsed_ms) && rec.elapsed_ms > 0 && Number.isSafeInteger(rec.ops_total) && rec.ops_total > 0, `${context}: invalid natural elapsed/ops counters`);
+  assert(Number.isFinite(rec.ops_per_sec) && rec.ops_per_sec > 0, `${context}: invalid natural ops_per_sec`);
+  for (const field of ['natural_push_attempts', 'natural_store_next_calls', 'natural_store_elisions', 'push_retries', 'pop_retries']) {
+    assert(Number.isSafeInteger(rec[field]) && rec[field] >= 0, `${context}: invalid ${field}`);
+  }
+  assert(rec.natural_push_attempts === rec.ops_total + rec.push_retries, `${context}: natural push attempts are not ops_total + push retries`);
+  assert(rec.natural_store_next_calls <= rec.natural_push_attempts, `${context}: natural store calls exceed push attempts`);
+  assert(rec.natural_store_elisions === rec.natural_push_attempts - rec.natural_store_next_calls, `${context}: natural store elisions arithmetic mismatch`);
+  if (variant === 'store_elided') {
+    assert(rec.natural_push_attempts > 0 && rec.natural_store_next_calls < rec.natural_push_attempts && rec.natural_store_elisions > 0, `${context}: store_elided did not elide a natural store`);
+  } else {
+    assert(rec.natural_push_attempts > 0 && rec.natural_store_next_calls === rec.natural_push_attempts && rec.natural_store_elisions === 0, `${context}: ${variant} natural store arithmetic is not exact`);
+  }
+}
+
 function assertProductionRecord(rec, variant, context) {
-  assert(rec.variant === variant && rec.activation === false && rec.smoke === false, `${context}: not the production timing record`);
-  assert(!Object.hasOwn(rec, 'source_variant') && !Object.hasOwn(rec, 'activation_probe'), `${context}: production record contains activation-only fields`);
+  assert(rec.variant === variant && rec.smoke === false, `${context}: not the production timing record`);
+  assert(!Object.hasOwn(rec, 'activation') && !Object.hasOwn(rec, 'source_variant') && !Object.hasOwn(rec, 'activation_probe') && !Object.hasOwn(rec, 'push_retries') && !Object.hasOwn(rec, 'pop_retries'), `${context}: production record contains activation/counter fields`);
   assert(Number.isSafeInteger(rec.threads) && rec.threads >= 1 && rec.threads <= MAX_THREADS, `${context}: invalid production threads`);
   assert(Number.isSafeInteger(rec.window_ms) && rec.window_ms >= 50 && rec.window_ms <= MAX_WINDOW_MS, `${context}: invalid production window`);
   assert(Number.isSafeInteger(rec.elapsed_ms) && rec.elapsed_ms > 0 && Number.isSafeInteger(rec.ops_total) && rec.ops_total > 0, `${context}: invalid production counters`);
-  assert(Number.isFinite(rec.ops_per_sec) && rec.ops_per_sec > 0 && rec.push_retries === 0 && rec.pop_retries === 0, `${context}: invalid production metric/retry fields`);
+  assert(Number.isFinite(rec.ops_per_sec) && rec.ops_per_sec > 0, `${context}: invalid production metric`);
 }
 
 const sha256hex = (s) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -315,6 +336,130 @@ const CANONICAL_PRODUCTION_RUSTFLAGS =
   '--remap-path-prefix REPO=REPO --remap-path-prefix SCRATCH=SCRATCH';
 const CANONICAL_ACTIVATION_RUSTFLAGS =
   `${CANONICAL_PRODUCTION_RUSTFLAGS} --cfg tagged_index_stack_test`;
+const HOST_GITHUB_FIELDS = ['ImageOS', 'ImageVersion', 'RUNNER_ARCH'];
+const HOST_CONTEXT_KEYS = ['platform', 'release', 'arch', 'cpu_model_set', 'logical_cpu_count', 'online_topology', 'physical_topology', 'github', 'scaling_governor'];
+
+function hostUnavailable() {
+  return { status: 'unavailable' };
+}
+
+function hostAvailable(value) {
+  return { status: 'available', value };
+}
+
+function captureHostContext() {
+  const cpus = os.cpus();
+  const models = [...new Set(cpus.map((cpu) => cpu.model.trim()).filter((model) => model !== ''))].sort();
+  const github = Object.fromEntries(HOST_GITHUB_FIELDS.map((name) => {
+    const value = process.env[name];
+    return [name, typeof value === 'string' && value.length > 0 ? hostAvailable(value) : hostUnavailable()];
+  }));
+
+  let onlineTopology = hostUnavailable();
+  if (os.platform() === 'linux') {
+    try {
+      const raw = fs.readFileSync('/sys/devices/system/cpu/online', 'utf8').trim();
+      onlineTopology = /^(?:\d+(?:-\d+)?)(?:,(?:\d+(?:-\d+)?))*$/.test(raw) ? hostAvailable(raw) : hostUnavailable();
+    } catch {
+      onlineTopology = hostUnavailable();
+    }
+  }
+
+  let physicalTopology = hostUnavailable();
+  if (os.platform() === 'linux') {
+    try {
+      const cpuDirs = fs.readdirSync('/sys/devices/system/cpu', { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && /^cpu\d+$/.test(entry.name))
+        .sort((a, b) => Number(a.name.slice(3)) - Number(b.name.slice(3)));
+      const records = [];
+      let readable = cpuDirs.length > 0;
+      for (const entry of cpuDirs) {
+        try {
+          const packageId = fs.readFileSync(path.join('/sys/devices/system/cpu', entry.name, 'topology', 'physical_package_id'), 'utf8').trim();
+          const coreId = fs.readFileSync(path.join('/sys/devices/system/cpu', entry.name, 'topology', 'core_id'), 'utf8').trim();
+          if (!/^\d+$/.test(packageId) || !/^\d+$/.test(coreId)) readable = false;
+          records.push({ cpu: entry.name, package: packageId, core: coreId });
+        } catch {
+          readable = false;
+        }
+      }
+      physicalTopology = readable ? hostAvailable(records) : hostUnavailable();
+    } catch {
+      physicalTopology = hostUnavailable();
+    }
+  }
+
+  let scalingGovernor = hostUnavailable();
+  // Record policy only; never read dynamic frequency files.
+  if (os.platform() === 'linux') {
+    try {
+      const cpuDirs = fs.readdirSync('/sys/devices/system/cpu', { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && /^cpu\d+$/.test(entry.name))
+        .sort((a, b) => Number(a.name.slice(3)) - Number(b.name.slice(3)));
+      const values = [];
+      let readable = cpuDirs.length > 0;
+      for (const entry of cpuDirs) {
+        try {
+          const value = fs.readFileSync(path.join('/sys/devices/system/cpu', entry.name, 'cpufreq', 'scaling_governor'), 'utf8').trim();
+          if (value === '') readable = false;
+          else values.push(value);
+        } catch {
+          readable = false;
+        }
+      }
+      const uniqueValues = [...new Set(values)].sort();
+      scalingGovernor = readable && uniqueValues.length > 0 ? hostAvailable(uniqueValues) : hostUnavailable();
+    } catch {
+      scalingGovernor = hostUnavailable();
+    }
+  }
+
+  return {
+    platform: os.platform(),
+    release: os.release(),
+    arch: os.arch(),
+    cpu_model_set: models.length > 0 ? hostAvailable(models) : hostUnavailable(),
+    logical_cpu_count: cpus.length > 0 ? hostAvailable(cpus.length) : hostUnavailable(),
+    online_topology: onlineTopology,
+    physical_topology: physicalTopology,
+    github,
+    scaling_governor: scalingGovernor,
+  };
+}
+
+function hostContextEvidence(context, file = 'host context') {
+  assert(context !== null && typeof context === 'object' && !Array.isArray(context), `${file}: host context must be an object`);
+  assert(JSON.stringify(Object.keys(context)) === JSON.stringify(HOST_CONTEXT_KEYS), `${file}: host context keys are not canonical`);
+  for (const key of ['platform', 'release', 'arch']) {
+    assert(typeof context[key] === 'string' && context[key].length > 0, `${file}: host ${key} is unavailable or malformed`);
+  }
+  const checkAvailability = (field, valueCheck) => {
+    assert(valueCheck === undefined || valueCheck === null || typeof valueCheck === 'function', `${file}: internal host validator error`);
+    assert(field !== null && typeof field === 'object' && !Array.isArray(field), `${file}: host availability field is malformed`);
+    assert(JSON.stringify(Object.keys(field)) === JSON.stringify(field.status === 'available' ? ['status', 'value'] : ['status']), `${file}: host availability shape is not canonical`);
+    assert(field.status === 'available' || field.status === 'unavailable', `${file}: host availability status is invalid`);
+    if (field.status === 'available' && valueCheck !== undefined && valueCheck !== null) assert(valueCheck(field.value), `${file}: available host field value is malformed`);
+  };
+  checkAvailability(context.cpu_model_set, (value) => Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && v.length > 0) && JSON.stringify([...value].sort()) === JSON.stringify(value));
+  checkAvailability(context.logical_cpu_count, (value) => Number.isSafeInteger(value) && value > 0);
+  checkAvailability(context.online_topology, (value) => typeof value === 'string' && /^(?:\d+(?:-\d+)?)(?:,(?:\d+(?:-\d+)?))*$/.test(value));
+  checkAvailability(context.physical_topology, (value) => Array.isArray(value) && value.length > 0 && value.every((record) => (
+    record !== null && typeof record === 'object' && !Array.isArray(record) &&
+    JSON.stringify(Object.keys(record)) === JSON.stringify(['cpu', 'package', 'core']) &&
+    /^cpu\d+$/.test(record.cpu) && /^\d+$/.test(record.package) && /^\d+$/.test(record.core)
+  )) && value.every((record, index) => index === 0 || Number(record.cpu.slice(3)) > Number(value[index - 1].cpu.slice(3))));
+  assert(context.github !== null && typeof context.github === 'object' && !Array.isArray(context.github), `${file}: host github fields are malformed`);
+  assert(JSON.stringify(Object.keys(context.github)) === JSON.stringify(HOST_GITHUB_FIELDS), `${file}: host github fields are not allowlisted/canonical`);
+  for (const name of HOST_GITHUB_FIELDS) checkAvailability(context.github[name], (value) => typeof value === 'string' && value.length > 0);
+  checkAvailability(context.scaling_governor, (value) => Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string' && v.length > 0) && JSON.stringify([...value].sort()) === JSON.stringify(value));
+  return context;
+}
+
+function hostContextEvidenceParts(context, file = 'host context') {
+  hostContextEvidence(context, file);
+  const json = JSON.stringify(context);
+  return { json, sha256: sha256hex(json), b64: utf8Base64(json) };
+}
 
 function stripMeasurementCfgs(raw) {
   if (raw.includes('\u001f')) {
@@ -649,12 +794,14 @@ function captureEvidenceHeader(args) {
   assert(checkedHead === headSha, 'HEAD changed while source snapshot was captured');
   const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
   const rustcHost = rustcHostFromVerbose(rustcVersion);
+  const hostContext = hostContextEvidenceParts(captureHostContext(), 'initial evidence host context');
   const identity = {
     capturedAt: new Date().toISOString(),
     headSha,
     treeSha,
     sourceSnapshotDigest: context.sourceInputDigest,
     sourceInputsAtHead: true,
+    hostContext,
   };
   const bundleId = sha256hex(`${headSha}\0${treeSha}\0${context.sourceInputDigest}\0${args.target}\0${args.mode}`);
   return {
@@ -665,6 +812,9 @@ function captureEvidenceHeader(args) {
     toolchain: rustcVersion.replace(/\r?\n/g, ' | '),
     sourceInputsAtHead: true,
     bundleId,
+    hostContextJson: hostContext.json,
+    hostContextSha256: hostContext.sha256,
+    hostContextB64: hostContext.b64,
     generatedAt: identity.capturedAt,
   };
 }
@@ -682,6 +832,9 @@ function headerComment(header) {
     `// identity:    ${JSON.stringify(header.identity)}`,
     `// bundle-id:   ${header.bundleId}`,
     `// profile-id:  ${header.profileId}`,
+    `// host-context: ${header.hostContextJson}`,
+    `// host-context-sha256: ${header.hostContextSha256}`,
+    `// host-context-b64: ${header.hostContextB64}`,
     `// smoke:       ${header.smoke}`,
     `// source-input-digest: ${header.sourceInputDigest}`,
     `// source-inputs: ${JSON.stringify(header.sourceInputs)}`,
@@ -917,7 +1070,7 @@ function modeCodegen(args, header) {
     );
   }
 
-  const csvRows = [['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64']];
+  const csvRows = [['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'host_context_sha256', 'host_context_b64', 'host_context_before_timing_sha256', 'host_context_before_timing_b64', 'host_context_after_timing_sha256', 'host_context_after_timing_b64']];
 
   // Compile one feature set: variant -> { asmText, funcs, fallback }.
   function compileFeatureSet(fset) {
@@ -1234,7 +1387,7 @@ function modeCodegen(args, header) {
           }
         }
         md.push(`| ${args.target} | ${fset} | ${key} | ${variant} | ${f.sha256_16} | ${f.instrCount} | ${f.counts.ldar} | ${f.counts.stlr} | ${f.counts.ldaxr} | ${f.counts.stlxr} | ${f.counts.cmpxchg} | ${f.counts.cas} | ${f.counts.cas8} | ${deltaPct} |`);
-        csvRows.push([args.target, fset, key, variant, f.sha256_16, f.instrCount, f.counts.ldar, f.counts.stlr, f.counts.ldaxr, f.counts.stlxr, f.counts.cmpxchg, f.counts.cas, f.counts.cas8, String(identical(variant, key)), header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64]);
+        csvRows.push([args.target, fset, key, variant, f.sha256_16, f.instrCount, f.counts.ldar, f.counts.stlr, f.counts.ldaxr, f.counts.stlxr, f.counts.cmpxchg, f.counts.cas, f.counts.cas8, String(identical(variant, key)), header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, header.hostContextSha256, header.hostContextB64, '', '', '', '']);
       }
     }
   }
@@ -1366,6 +1519,12 @@ function modeWallclock(args, header) {
     logLines.push(`built variant ${variant}: production + cfg-enabled activation binaries (cwd SCRATCH/${variant})`);
   }
   logLines.push('');
+  const hostContextBeforeTiming = hostContextEvidenceParts(captureHostContext(), 'wallclock before-timing host context');
+  assert(hostContextBeforeTiming.sha256 === header.hostContextSha256 && hostContextBeforeTiming.b64 === header.hostContextB64, 'host context changed before wallclock timing');
+  header.hostContextBeforeTiming = hostContextBeforeTiming;
+  logLines.push(`// host-context-before-timing: ${hostContextBeforeTiming.json}`);
+  logLines.push(`// host-context-before-timing-sha256: ${hostContextBeforeTiming.sha256}`);
+  logLines.push(`// host-context-before-timing-b64: ${hostContextBeforeTiming.b64}`);
 
   function runHarness(exe, variant, label, sample) {
     const env = {
@@ -1394,13 +1553,15 @@ function modeWallclock(args, header) {
     for (const line of r.stdout.split(/\r?\n/)) {
       try {
         const json = JSON.parse(line);
-        if (json && typeof json === 'object' && Object.hasOwn(json, 'ops_per_sec') && Object.hasOwn(json, 'activation')) records.push(json);
+        if (json && typeof json === 'object' && Object.hasOwn(json, 'ops_per_sec') && Object.hasOwn(json, 'variant')) records.push(json);
       } catch { /* ignore non-JSON diagnostics */ }
     }
     assert(records.length === 1, `harness emitted ${records.length} matching JSON records; expected exactly one for variant=${variant} label=${label}`);
     const rec = records[0];
     const activation = label === 'activation' || label === 'smoke-activation';
+    const natural = label === 'natural-activation';
     if (activation) assertActivationRecord(rec, variant, `harness variant=${variant} label=${label}`, label === 'smoke-activation');
+    else if (natural) assertNaturalActivationRecord(rec, variant, `harness variant=${variant} label=${label}`, threads, windowMs);
     else assertProductionRecord(rec, variant, `harness variant=${variant} label=${label}`);
     return { rec, stdout: r.stdout };
   }
@@ -1442,8 +1603,6 @@ function modeWallclock(args, header) {
       // allowed to hang CI/a dev machine indefinitely; never retried, never
       // reported as a sample.
       const { rec, stdout } = runHarness(crates[variant].productionExe, variant, 'production-timing', sample);
-      assert(rec.activation === false, `timing binary unexpectedly reports activation for variant=${variant}`);
-      assert(rec.push_retries === 0 && rec.pop_retries === 0, `timing binary exposed retry counters for variant=${variant}`);
       logLines.push(`--- variant=${variant} sample=${sample} harness stdout (verbatim) ---`);
       logLines.push(stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
       // Re-derive the ratio the harness printed (asserted arithmetic).
@@ -1457,13 +1616,25 @@ function modeWallclock(args, header) {
       crates[variant].samples.push({ sample, ...rec });
     }
   }
-  // Activation is a separate binary and a separate observed window. Its
-  // counters are never part of the production timing samples.
+  const hostContextAfterTiming = hostContextEvidenceParts(captureHostContext(), 'wallclock after-timing host context');
+  assert(hostContextAfterTiming.sha256 === hostContextBeforeTiming.sha256 && hostContextAfterTiming.b64 === hostContextBeforeTiming.b64, 'stable host context changed around wallclock timing');
+  header.hostContextAfterTiming = hostContextAfterTiming;
+  logLines.push(`// host-context-after-timing: ${hostContextAfterTiming.json}`);
+  logLines.push(`// host-context-after-timing-sha256: ${hostContextAfterTiming.sha256}`);
+  logLines.push(`// host-context-after-timing-b64: ${hostContextAfterTiming.b64}`);
+  // Activation is a separate binary and separate observed windows. Its
+  // counters and natural workload are never part of the production timing samples.
   for (const variant of WALLCLOCK_VARIANTS) {
     const activation = runHarness(crates[variant].activationExe, variant, 'activation', 'observed');
     crates[variant].activation = activation.rec;
     logLines.push(`--- variant=${variant} activation stdout (separate observed window) ---`);
     logLines.push(activation.stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
+  }
+  for (const variant of WALLCLOCK_VARIANTS) {
+    const natural = runHarness(crates[variant].activationExe, variant, 'natural-activation', 'observed');
+    crates[variant].natural = natural.rec;
+    logLines.push(`--- variant=${variant} natural workload activation stdout (not timing evidence) ---`);
+    logLines.push(natural.stdout.replaceAll(repoRoot, 'REPO').replaceAll(scratchBase, 'SCRATCH'));
   }
 
   // ── Summary (median; derived ratios) ──────────────────────────────────────
@@ -1488,23 +1659,24 @@ function modeWallclock(args, header) {
   md.push('');
   md.push(`threads=${threads} window_ms=${windowMs} samples=${samples} smoke=${smoke}`);
   md.push('');
-  md.push('| target | variant | median_ops_per_sec | ratio vs base | activation_push_retries | activation_pop_retries | activation_store_next_calls |');
-  md.push('|---|---|---|---|---|---|');
+  md.push('| target | variant | median_ops_per_sec | ratio vs base | activation_push_retries | activation_pop_retries | activation_store_next_calls | natural_push_attempts | natural_store_next_calls | natural_store_elisions | natural_push_retries | natural_pop_retries |');
+  md.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const v of WALLCLOCK_VARIANTS) {
-    md.push(`| ${args.target} | ${v} | ${med[v].toFixed(2)} | ${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)} | ${crates[v].activation.activation_push_retries} | ${crates[v].activation.activation_pop_retries} | ${crates[v].activation.activation_store_next_calls} |`);
+    md.push(`| ${args.target} | ${v} | ${med[v].toFixed(2)} | ${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)} | ${crates[v].activation.activation_push_retries} | ${crates[v].activation.activation_pop_retries} | ${crates[v].activation.activation_store_next_calls} | ${crates[v].natural.natural_push_attempts} | ${crates[v].natural.natural_store_next_calls} | ${crates[v].natural.natural_store_elisions} | ${crates[v].natural.push_retries} | ${crates[v].natural.pop_retries} |`);
   }
   const mdText = md.join('\n') + '\n';
   logLines.push(mdText);
 
   // ── Artifacts ─────────────────────────────────────────────────────────────
-  const csv = [['target', 'variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke']];
+  const csv = [['target', 'variant', 'source_variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'natural_push_attempts', 'natural_store_next_calls', 'natural_store_elisions', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'host_context_sha256', 'host_context_b64', 'host_context_before_timing_sha256', 'host_context_before_timing_b64', 'host_context_after_timing_sha256', 'host_context_after_timing_b64', 'smoke']];
   for (const v of WALLCLOCK_VARIANTS) {
     for (const s of crates[v].samples) {
-      csv.push([args.target, v, 'production', 'none', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, 0, 0, '', '', '', header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
+      csv.push([args.target, v, '', 'production', 'none', s.threads, s.window_ms, s.sample, s.ops_total, s.elapsed_ms, s.ops_per_sec, '', '', '', '', '', '', '', '', header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, header.hostContextSha256, header.hostContextB64, hostContextBeforeTiming.sha256, hostContextBeforeTiming.b64, header.hostContextAfterTiming.sha256, header.hostContextAfterTiming.b64, 'false']);
     }
   }
   for (const v of WALLCLOCK_VARIANTS) {
-    csv.push([args.target, v, 'SUMMARY', 'tag_only_retry', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', 0, 0, crates[v].activation.activation_push_retries, crates[v].activation.activation_pop_retries, crates[v].activation.activation_store_next_calls, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, 'false']);
+    csv.push([args.target, v, v, 'SUMMARY', 'tag_only_retry', '', `median_ops_per_sec=${med[v].toFixed(2)}`, `ratio_vs_base=${v === 'base' ? '1.0' : ratioOf(v).toFixed(3)}`, '', '', '', '', '', crates[v].activation.activation_push_retries, crates[v].activation.activation_pop_retries, crates[v].activation.activation_store_next_calls, '', '', '', header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, header.hostContextSha256, header.hostContextB64, hostContextBeforeTiming.sha256, hostContextBeforeTiming.b64, header.hostContextAfterTiming.sha256, header.hostContextAfterTiming.b64, 'false']);
+    csv.push([args.target, v, v, 'SUMMARY', 'natural_workload', crates[v].natural.threads, crates[v].natural.window_ms, 'natural', '', '', '', crates[v].natural.push_retries, crates[v].natural.pop_retries, '', '', '', crates[v].natural.natural_push_attempts, crates[v].natural.natural_store_next_calls, crates[v].natural.natural_store_elisions, header.sourceInputDigest, header.sourceInputsAtHead, header.identity.headSha, header.identity.treeSha, header.toolchain, header.profileId, header.bundleId, utf8Base64(header.effectiveRustflags.production), utf8Base64(header.effectiveRustflags.activation), header.effectiveRustflags.cargoEncodedRustflags, header.sanitizedEnvSha256, header.sanitizedEnvB64, header.hostContextSha256, header.hostContextB64, hostContextBeforeTiming.sha256, hostContextBeforeTiming.b64, header.hostContextAfterTiming.sha256, header.hostContextAfterTiming.b64, 'false']);
   }
   const csvText = csv.map((r) => r.join(',')).join('\n') + '\n';
   logLines.push(`// csv-sha256: ${sha256hex(csvText)}`);
@@ -1694,11 +1866,48 @@ function readRawProvenance(file, asmFile = null) {
   const activationRustflagsLine = line('// effective-activation-rustflags:');
   const encodedRustflagsLine = line('// cargo-encoded-rustflags:');
   const sanitizedEnvLine = line('// sanitized-cargo-env:');
+  const hostContextLine = line('// host-context:');
+  const hostContextShaLine = line('// host-context-sha256:');
+  const hostContextB64Line = line('// host-context-b64:');
+  const hostContextBeforeLine = line('// host-context-before-timing:');
+  const hostContextBeforeShaLine = line('// host-context-before-timing-sha256:');
+  const hostContextBeforeB64Line = line('// host-context-before-timing-b64:');
+  const hostContextAfterLine = line('// host-context-after-timing:');
+  const hostContextAfterShaLine = line('// host-context-after-timing-sha256:');
+  const hostContextAfterB64Line = line('// host-context-after-timing-b64:');
   const csvLine = line('// csv-sha256:');
   const asmLine = line('// asm-sha256:');
-  assert(identityLine && bundleLine && profileLine && modeLine && targetLine && stateLine && smokeLine && sourceLine && sourceAtHeadLine && toolchainLine && rustcHostLine && productionRustflagsLine && activationRustflagsLine && encodedRustflagsLine && sanitizedEnvLine && csvLine, `${file}: incomplete provenance header`);
+  assert(identityLine && bundleLine && profileLine && modeLine && targetLine && stateLine && smokeLine && sourceLine && sourceAtHeadLine && toolchainLine && rustcHostLine && productionRustflagsLine && activationRustflagsLine && encodedRustflagsLine && sanitizedEnvLine && hostContextLine && hostContextShaLine && hostContextB64Line && csvLine, `${file}: incomplete provenance header`);
   const identity = JSON.parse(identityLine.slice('// identity:'.length).trim());
   const sanitizedEnv = parseSanitizedEnv(sanitizedEnvLine.slice('// sanitized-cargo-env:'.length).trim(), file);
+  let hostContext;
+  try {
+    hostContext = JSON.parse(hostContextLine.slice('// host-context:'.length).trim());
+  } catch (error) {
+    fail(`${file}: malformed host-context JSON: ${error.message}`);
+  }
+  const hostEvidence = hostContextEvidenceParts(hostContext, file);
+  const hostContextSha256 = hostContextShaLine.slice('// host-context-sha256:'.length).trim();
+  const hostContextB64 = hostContextB64Line.slice('// host-context-b64:'.length).trim();
+  assert(hostEvidence.sha256 === hostContextSha256, `${file}: host-context SHA256 does not match canonical JSON`);
+  assert(hostEvidence.b64 === hostContextB64, `${file}: host-context base64 does not match canonical JSON`);
+  const parseOptionalHost = (jsonLine, shaLine, b64Line, prefix) => {
+    assert((jsonLine === undefined) === (shaLine === undefined) && (jsonLine === undefined) === (b64Line === undefined), `${file}: incomplete ${prefix} host context linkage`);
+    if (jsonLine === undefined) return null;
+    let context;
+    try {
+      context = JSON.parse(jsonLine.slice(`// ${prefix}:`.length).trim());
+    } catch (error) {
+      fail(`${file}: malformed ${prefix} host-context JSON: ${error.message}`);
+    }
+    const evidence = hostContextEvidenceParts(context, file);
+    const sha256 = shaLine.slice(`// ${prefix}-sha256:`.length).trim();
+    const b64 = b64Line.slice(`// ${prefix}-b64:`.length).trim();
+    assert(evidence.sha256 === sha256 && evidence.b64 === b64, `${file}: ${prefix} host-context linkage does not match canonical JSON`);
+    return { json: evidence.json, sha256, b64 };
+  };
+  const hostContextBeforeTiming = parseOptionalHost(hostContextBeforeLine, hostContextBeforeShaLine, hostContextBeforeB64Line, 'host-context-before-timing');
+  const hostContextAfterTiming = parseOptionalHost(hostContextAfterLine, hostContextAfterShaLine, hostContextAfterB64Line, 'host-context-after-timing');
   const provenance = {
     sourceInputDigest: sourceLine.slice('// source-input-digest:'.length).trim(),
     bundleId: bundleLine.slice('// bundle-id:'.length).trim(),
@@ -1718,6 +1927,12 @@ function readRawProvenance(file, asmFile = null) {
     sanitizedEnv: sanitizedEnv.state,
     sanitizedEnvSha256: sanitizedEnv.sha256,
     sanitizedEnvB64: sanitizedEnv.base64,
+    hostContextJson: hostEvidence.json,
+    hostContextSha256,
+    hostContextB64,
+    hostContextBeforeTiming,
+    hostContextAfterTiming,
+    rawText: text,
     csvSha256: csvLine.slice('// csv-sha256:'.length).trim(),
     asmSha256: asmLine ? asmLine.slice('// asm-sha256:'.length).trim() : null,
   };
@@ -1739,6 +1954,12 @@ function readRawProvenance(file, asmFile = null) {
   assert(provenance.activationRustflags === CANONICAL_ACTIVATION_RUSTFLAGS, `${file}: activation RUSTFLAGS display differs from canonical argv`);
   assert(/^[0-9a-f]{64}$/.test(provenance.sanitizedEnvSha256) && provenance.sanitizedEnvB64.length > 0, `${file}: malformed sanitized-env evidence`);
   assert(/^[0-9a-f]{64}$/.test(provenance.csvSha256), `${file}: malformed CSV digest`);
+  if (provenance.mode === 'wallclock') {
+    assert(provenance.hostContextBeforeTiming !== null && provenance.hostContextAfterTiming !== null, `${file}: wallclock raw log lacks before/after host context`);
+    assert(provenance.hostContextBeforeTiming.sha256 === provenance.hostContextSha256 && provenance.hostContextAfterTiming.sha256 === provenance.hostContextSha256, `${file}: wallclock stable host context changed around timing`);
+  } else {
+    assert(provenance.hostContextBeforeTiming === null && provenance.hostContextAfterTiming === null, `${file}: non-wallclock raw log contains timing host context`);
+  }
   if (asmFile !== null) {
     assert(provenance.mode === 'codegen', `${file}: codegen raw mode mismatch`);
     assert(provenance.asmSha256 !== null && /^[0-9a-f]{64}$/.test(provenance.asmSha256), `${file}: missing assembly digest`);
@@ -1753,7 +1974,7 @@ function readRawProvenance(file, asmFile = null) {
 function assertCsvProvenance(csv, file, rawFile, provenance) {
   const csvText = fs.readFileSync(path.join(docsPerfDir, file), 'utf8');
   assert(sha256hex(csvText) === provenance.csvSha256, `${file}: CSV digest does not match ${rawFile}`);
-  const required = ['source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64'];
+  const required = ['source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'host_context_sha256', 'host_context_b64', 'host_context_before_timing_sha256', 'host_context_before_timing_b64', 'host_context_after_timing_sha256', 'host_context_after_timing_b64'];
   for (const column of required) assert(csv.header.includes(column), `${file}: missing ${column} provenance column`);
   for (const row of csv.rows) {
     assert(row.source_input_digest === provenance.sourceInputDigest, `${file}: source digest differs from ${rawFile}`);
@@ -1768,6 +1989,14 @@ function assertCsvProvenance(csv, file, rawFile, provenance) {
     assert(row.cargo_encoded_rustflags === provenance.cargoEncodedRustflags, `${file}: encoded RUSTFLAGS contract differs from ${rawFile}`);
     assert(row.sanitized_env_sha256 === provenance.sanitizedEnvSha256, `${file}: sanitized-env fingerprint differs from ${rawFile}`);
     assert(row.sanitized_env_b64 === provenance.sanitizedEnvB64, `${file}: sanitized-env base64 differs from ${rawFile}`);
+    assert(row.host_context_sha256 === provenance.hostContextSha256, `${file}: host context SHA256 differs from ${rawFile}`);
+    assert(row.host_context_b64 === provenance.hostContextB64, `${file}: host context base64 differs from ${rawFile}`);
+    if (provenance.mode === 'wallclock') {
+      assert(row.host_context_before_timing_sha256 === provenance.hostContextBeforeTiming.sha256 && row.host_context_before_timing_b64 === provenance.hostContextBeforeTiming.b64, `${file}: before-timing host context differs from ${rawFile}`);
+      assert(row.host_context_after_timing_sha256 === provenance.hostContextAfterTiming.sha256 && row.host_context_after_timing_b64 === provenance.hostContextAfterTiming.b64, `${file}: after-timing host context differs from ${rawFile}`);
+    } else {
+      assert(row.host_context_before_timing_sha256 === '' && row.host_context_before_timing_b64 === '' && row.host_context_after_timing_sha256 === '' && row.host_context_after_timing_b64 === '', `${file}: non-wallclock CSV contains timing host context`);
+    }
   }
 }
 
@@ -1802,7 +2031,7 @@ function modeSummary(args) {
     // Per-leg removedKeys reflect harmless ambient noise and may differ. Each
     // leg validates its own canonical sanitized-env form above; cross-leg
     // equality applies only to the effective child contract and provenance.
-    for (const key of ['sourceInputDigest', 'sourceInputsAtHead', 'headSha', 'treeSha', 'toolchain', 'profileId', 'smoke', 'productionRustflags', 'activationRustflags', 'cargoEncodedRustflags']) {
+    for (const key of ['sourceInputDigest', 'sourceInputsAtHead', 'headSha', 'treeSha', 'toolchain', 'profileId', 'smoke', 'productionRustflags', 'activationRustflags', 'cargoEncodedRustflags', 'hostContextSha256', 'hostContextB64']) {
       assert(leg.provenance[key] === reference[key], `summary mode: leg ${leg.target} mixes ${key} with another leg`);
     }
     assert(leg.provenance.bundleId.length === 64, `summary mode: ${leg.target} lacks a complete run/bundle id`);
@@ -1817,6 +2046,8 @@ function modeSummary(args) {
     emit('identity', leg.target, '', '', '', 'cargo_encoded_rustflags', leg.provenance.cargoEncodedRustflags, 'state');
     emit('identity', leg.target, '', '', '', 'sanitized_env_sha256', leg.provenance.sanitizedEnvSha256, 'sha256');
     emit('identity', leg.target, '', '', '', 'sanitized_env_b64', leg.provenance.sanitizedEnvB64, 'base64');
+    emit('identity', leg.target, '', '', '', 'host_context_sha256', leg.provenance.hostContextSha256, 'sha256');
+    emit('identity', leg.target, '', '', '', 'host_context_b64', leg.provenance.hostContextB64, 'base64');
     emit('identity', leg.target, '', '', '', 'profile_id', leg.provenance.profileId, 'profile');
     emit('identity', leg.target, '', '', '', 'bundle_id', leg.provenance.bundleId, 'sha256');
   }
@@ -1832,7 +2063,7 @@ function modeSummary(args) {
   }
   for (const { target, csv } of codegenCsvs) {
     const file = csv.file;
-    const expectedHeader = ['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64'];
+    const expectedHeader = ['target', 'features', 'function', 'variant', 'sha256_16', 'instr_count', 'ldar', 'stlr', 'ldaxr', 'stlxr', 'cmpxchg', 'cas', 'cas8', 'identical_to_base', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'host_context_sha256', 'host_context_b64', 'host_context_before_timing_sha256', 'host_context_before_timing_b64', 'host_context_after_timing_sha256', 'host_context_after_timing_b64'];
     assert(JSON.stringify(csv.header) === JSON.stringify(expectedHeader), `${file}: unexpected header ${csv.header.join(',')}`);
     const expectedFeatures = target.startsWith('aarch64') ? ['default', 'lse'] : ['default'];
     const expectedKeys = new Set(expectedFeatures.flatMap((features) => FUNCTION_KEYS.flatMap((fn) => VARIANTS.map((variant) => `${features}|${fn}|${variant}`))));
@@ -1895,7 +2126,22 @@ function modeSummary(args) {
   assert(wallclockLeg.provenance.target === wallclockLeg.provenance.rustcHost, `${wallclockLeg.csv.file}: wallclock target differs from rustc host`);
   const wcFile = wallclockLeg.csv.file;
   const wc = wallclockLeg.csv;
-  const wcHeader = ['target', 'variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'smoke'];
+  const rawActivationRecords = [];
+  for (const line of wallclockLeg.provenance.rawText.split(/\r?\n/)) {
+    try {
+      const record = JSON.parse(line);
+      if (record && typeof record === 'object' && record.activation === true) rawActivationRecords.push(record);
+    } catch { /* raw logs also contain prose and markdown */ }
+  }
+  assert(rawActivationRecords.length === WALLCLOCK_VARIANTS.length * 2, `${wcFile}: raw log must contain exactly two activation records per variant`);
+  for (const variant of WALLCLOCK_VARIANTS) {
+    const deterministic = rawActivationRecords.filter((record) => record.variant === variant && record.activation_probe === 'tag_only_retry');
+    const natural = rawActivationRecords.filter((record) => record.variant === variant && record.activation_probe === 'natural_workload');
+    assert(deterministic.length === 1 && natural.length === 1, `${wcFile}: raw log activation record count is not exact for ${variant}`);
+    assertActivationRecord(deterministic[0], variant, `${wcFile}: raw deterministic activation ${variant}`, false);
+    assertNaturalActivationRecord(natural[0], variant, `${wcFile}: raw natural activation ${variant}`, natural[0].threads, natural[0].window_ms);
+  }
+  const wcHeader = ['target', 'variant', 'source_variant', 'binary_kind', 'activation_probe', 'threads', 'window_ms', 'sample', 'ops_total', 'elapsed_ms', 'ops_per_sec', 'push_retries', 'pop_retries', 'activation_push_retries', 'activation_pop_retries', 'activation_store_next_calls', 'natural_push_attempts', 'natural_store_next_calls', 'natural_store_elisions', 'source_input_digest', 'source_inputs_at_head', 'head_sha', 'tree_sha', 'toolchain', 'profile_id', 'bundle_id', 'production_rustflags_b64', 'activation_rustflags_b64', 'cargo_encoded_rustflags', 'sanitized_env_sha256', 'sanitized_env_b64', 'host_context_sha256', 'host_context_b64', 'host_context_before_timing_sha256', 'host_context_before_timing_b64', 'host_context_after_timing_sha256', 'host_context_after_timing_b64', 'smoke'];
   assert(JSON.stringify(wc.header) === JSON.stringify(wcHeader), `${wcFile}: unexpected header ${wc.header.join(',')}`);
   function median(arr) {
     const s = [...arr].sort((a, b) => a - b);
@@ -1906,20 +2152,41 @@ function modeSummary(args) {
   const timingRows = [];
   for (const r of wc.rows) {
     if (r.binary_kind === 'SUMMARY') {
-      assert(WALLCLOCK_VARIANTS.includes(r.variant) && summaryRowsWc[r.variant] === undefined, `${wcFile}: duplicate or unexpected SUMMARY variant ${r.variant}`);
+      assert(WALLCLOCK_VARIANTS.includes(r.variant) && r.source_variant === r.variant, `${wcFile}: malformed SUMMARY variant identity`);
       assert(r.target === wallclockTarget, `${wcFile}: SUMMARY target ${r.target} != ${wallclockTarget}`);
-      assert(r.activation_probe === 'tag_only_retry', `${wcFile}: SUMMARY activation probe is not deterministic tag_only_retry`);
-      const expectedStoreCalls = r.variant === 'store_elided' ? 2 : 3;
-      assert(r.push_retries === '0' && r.pop_retries === '0', `${wcFile}: SUMMARY ordinary retry fields must be zero`);
-      assert(r.activation_push_retries === '1' && r.activation_pop_retries === '0', `${wcFile}: SUMMARY activation retry fields are not exact`);
-      assert(r.activation_store_next_calls === String(expectedStoreCalls), `${wcFile}: SUMMARY store_next_calls is not exact for ${r.variant}`);
+      assert(r.activation_probe === 'tag_only_retry' || r.activation_probe === 'natural_workload', `${wcFile}: SUMMARY activation probe is not recognized`);
+      const summaryKey = `${r.variant}|${r.activation_probe}`;
+      assert(summaryRowsWc[summaryKey] === undefined, `${wcFile}: duplicate SUMMARY ${summaryKey}`);
+      if (r.activation_probe === 'tag_only_retry') {
+        const expectedStoreCalls = r.variant === 'store_elided' ? 2 : 3;
+        assert(r.threads === '' && r.window_ms.startsWith('median_ops_per_sec=') && r.sample.startsWith('ratio_vs_base='), `${wcFile}: deterministic SUMMARY timing cells are malformed`);
+        assert(r.push_retries === '' && r.pop_retries === '', `${wcFile}: deterministic SUMMARY ordinary retry fields must be blank`);
+        assert(r.activation_push_retries === '1' && r.activation_pop_retries === '0', `${wcFile}: deterministic SUMMARY retry fields are not exact`);
+        assert(r.activation_store_next_calls === String(expectedStoreCalls), `${wcFile}: deterministic SUMMARY store_next_calls is not exact for ${r.variant}`);
+        assert(r.natural_push_attempts === '' && r.natural_store_next_calls === '' && r.natural_store_elisions === '', `${wcFile}: deterministic SUMMARY contains natural fields`);
+      } else {
+        assert(r.threads !== '' && r.window_ms !== '' && r.sample === 'natural', `${wcFile}: natural SUMMARY parameter cells are malformed`);
+        assert(r.ops_total === '' && r.elapsed_ms === '' && r.ops_per_sec === '', `${wcFile}: natural SUMMARY mixes throughput/elapsed into timing columns`);
+        assert(r.activation_push_retries === '' && r.activation_pop_retries === '' && r.activation_store_next_calls === '', `${wcFile}: natural SUMMARY contains deterministic fields`);
+        assert(Number.isSafeInteger(Number(r.push_retries)) && Number(r.push_retries) >= 0 && Number.isSafeInteger(Number(r.pop_retries)) && Number(r.pop_retries) >= 0, `${wcFile}: natural SUMMARY retry counts are malformed`);
+        for (const field of ['natural_push_attempts', 'natural_store_next_calls', 'natural_store_elisions']) {
+          const value = Number(r[field]);
+          assert(Number.isSafeInteger(value) && value >= 0, `${wcFile}: natural SUMMARY ${field} is malformed`);
+        }
+        const attempts = Number(r.natural_push_attempts);
+        const stores = Number(r.natural_store_next_calls);
+        const elisions = Number(r.natural_store_elisions);
+        assert(attempts > 0 && stores <= attempts && elisions === attempts - stores, `${wcFile}: natural SUMMARY store arithmetic is invalid`);
+        if (r.variant === 'store_elided') assert(stores < attempts && elisions > 0, `${wcFile}: natural SUMMARY store_elided has no elisions`);
+        else assert(stores === attempts && elisions === 0, `${wcFile}: natural SUMMARY ${r.variant} store arithmetic is not exact`);
+      }
       assert(r.smoke === 'false', `${wcFile}: SUMMARY row cannot be smoke evidence`);
-      summaryRowsWc[r.variant] = r;
+      summaryRowsWc[summaryKey] = r;
       continue;
     }
-    assert(r.target === wallclockTarget && r.binary_kind === 'production' && WALLCLOCK_VARIANTS.includes(r.variant), `${wcFile}: non-production timing row`);
-    assert(r.activation_probe === 'none' && r.source_inputs_at_head === 'true' && r.push_retries === '0' && r.pop_retries === '0', `${wcFile}: timing row is not production evidence`);
-    assert(r.activation_push_retries === '' && r.activation_pop_retries === '' && r.activation_store_next_calls === '', `${wcFile}: timing row contains activation evidence`);
+    assert(r.target === wallclockTarget && r.source_variant === '' && r.binary_kind === 'production' && WALLCLOCK_VARIANTS.includes(r.variant), `${wcFile}: non-production timing row`);
+    assert(r.activation_probe === 'none' && r.source_inputs_at_head === 'true' && r.push_retries === '' && r.pop_retries === '', `${wcFile}: timing row is not production evidence`);
+    assert(r.activation_push_retries === '' && r.activation_pop_retries === '' && r.activation_store_next_calls === '' && r.natural_push_attempts === '' && r.natural_store_next_calls === '' && r.natural_store_elisions === '', `${wcFile}: timing row contains activation evidence`);
     assert(r.smoke === 'false', `${wcFile}: timing row is not production evidence`);
     assert(Number.isSafeInteger(Number(r.threads)) && Number(r.threads) >= 1 && Number(r.threads) <= MAX_THREADS, `${wcFile}: malformed threads`);
     assert(Number.isSafeInteger(Number(r.window_ms)) && Number(r.window_ms) >= 50 && Number(r.window_ms) <= MAX_WINDOW_MS, `${wcFile}: malformed window_ms`);
@@ -1933,11 +2200,16 @@ function modeSummary(args) {
     assert(Math.abs(derived - reported) < 0.02 * reported, `${wcFile}: ops_per_sec mismatch for ${r.variant}: reported ${reported}, derived ${derived}`);
     timingRows.push(r);
   }
-  assert(Object.keys(summaryRowsWc).length === WALLCLOCK_VARIANTS.length, `${wcFile}: expected exactly one SUMMARY per production variant`);
+  assert(Object.keys(summaryRowsWc).length === WALLCLOCK_VARIANTS.length * 2, `${wcFile}: expected exactly two SUMMARY activation records per production variant`);
   assert(timingRows.length >= MIN_COMPARATIVE_SAMPLES * WALLCLOCK_VARIANTS.length, `${wcFile}: fewer than ${MIN_COMPARATIVE_SAMPLES} samples per variant`);
   assert(timingRows.length % WALLCLOCK_VARIANTS.length === 0, `${wcFile}: timing row count is not divisible by ${WALLCLOCK_VARIANTS.length}`);
   const parameterSets = new Set(timingRows.map((r) => `${r.threads}|${r.window_ms}|false`));
   assert(parameterSets.size === 1, `${wcFile}: timing rows do not share threads/window/smoke=false`);
+  const [timingThreads, timingWindow] = [...parameterSets][0].split('|');
+  for (const variant of WALLCLOCK_VARIANTS) {
+    const naturalSummary = summaryRowsWc[`${variant}|natural_workload`];
+    assert(naturalSummary.threads === timingThreads && naturalSummary.window_ms === timingWindow, `${wcFile}: natural SUMMARY parameters differ from timing parameters for ${variant}`);
+  }
   const sampleIds = new Map(WALLCLOCK_VARIANTS.map((v) => [v, timingRows.filter((r) => r.variant === v).map((r) => Number(r.sample))]));
   const sampleCount = sampleIds.get(WALLCLOCK_VARIANTS[0]).length;
   assert(sampleCount >= MIN_COMPARATIVE_SAMPLES && sampleCount % WALLCLOCK_VARIANTS.length === 0, `${wcFile}: invalid configured sample count ${sampleCount}`);
@@ -1955,7 +2227,10 @@ function modeSummary(args) {
     emit('wallclock', wallclockTarget, '', '', v, 'median_ops_per_sec', meds[v].toFixed(2), 'ops/s');
   }
   for (const v of WALLCLOCK_VARIANTS) {
-    const summary = summaryRowsWc[v];
+    const summary = summaryRowsWc[`${v}|tag_only_retry`];
+    const naturalSummary = summaryRowsWc[`${v}|natural_workload`];
+    const rawDeterministic = rawActivationRecords.find((record) => record.variant === v && record.activation_probe === 'tag_only_retry');
+    const rawNatural = rawActivationRecords.find((record) => record.variant === v && record.activation_probe === 'natural_workload');
     const summaryCell = (prefix) => Object.values(summary).find((c) => typeof c === 'string' && c.startsWith(`${prefix}=`))?.split('=')[1];
     const statedMedian = Number(summaryCell('median_ops_per_sec'));
     const activationPush = Number(summary.activation_push_retries);
@@ -1966,7 +2241,14 @@ function modeSummary(args) {
     assert(activationPush === 1, `${wcFile}: activation push must equal 1 for ${v}`);
     assert(activationPop === 0, `${wcFile}: activation pop must equal 0 for ${v}`);
     assert(activationStores === (v === 'store_elided' ? 2 : 3), `${wcFile}: activation store_next_calls is not exact for ${v}`);
-    const stated = Object.values(summaryRowsWc[v] ?? {}).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
+    assert(summary.activation_push_retries === String(rawDeterministic.activation_push_retries) && summary.activation_pop_retries === String(rawDeterministic.activation_pop_retries) && summary.activation_store_next_calls === String(rawDeterministic.activation_store_next_calls), `${wcFile}: deterministic SUMMARY differs from raw activation record for ${v}`);
+    assert(Number(naturalSummary.natural_push_attempts) > 0, `${wcFile}: natural SUMMARY missing attempts for ${v}`);
+    assert(naturalSummary.threads === String(rawNatural.threads) && naturalSummary.window_ms === String(rawNatural.window_ms), `${wcFile}: natural SUMMARY parameters differ from raw natural record for ${v}`);
+    assert(Number(naturalSummary.natural_push_attempts) === Number(rawNatural.ops_total) + Number(rawNatural.push_retries), `${wcFile}: natural SUMMARY attempts differ from raw ops_total + push_retries for ${v}`);
+    for (const field of ['natural_push_attempts', 'natural_store_next_calls', 'natural_store_elisions', 'push_retries', 'pop_retries']) {
+      assert(naturalSummary[field] === String(rawNatural[field]), `${wcFile}: natural SUMMARY ${field} differs from raw natural record for ${v}`);
+    }
+    const stated = Object.values(summary).find((c) => typeof c === 'string' && c.startsWith('ratio_vs_base='))?.split('=')[1];
     assert(stated !== undefined, `${wcFile}: no ratio_vs_base SUMMARY cell for variant ${v}`);
     const r = Math.round((meds[v] / meds.base) * 1000) / 1000;
     assert(Number.isFinite(r) && r > 0, `${wcFile}: non-finite or non-positive ratio for ${v}`);
