@@ -23,21 +23,24 @@ and store-elision await native ARM timing.
 
 The final authoritative codegen artifacts were captured under the current
 run-25 remediation source HEAD
-`4a410012fcff3ad308de988824462947e49f7ebf`, tree
-`4f5ea26d95352b3aaf689061a0252268062f68bc`, source-input digest
-`14909a43f6853f2a43137c25fc061741b7dc4e3654a3d7332ad2b58546a490c2`, and
+`5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree
+`f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, source-input digest
+`8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, and
 `rustc 1.97.0` / `LLVM 22.1.6`. The ODB-pinned evidence capture is in
 `c00087f` plus its scratch-guard closure `393f81e`; host-receipt and
 natural-workload support was implemented in `b01580f`, and the earlier codegen
 artifact recording landed in `133d842`—both are intermediate implementation
-commits. Current codegen artifact commit is `1cc7291`; both recorded codegen
+commits. The prior run-25 closure's codegen artifact was `1cc7291`; final P4
+documentation closure is `3d044ed` and `5549e8d`, with current codegen artifact
+commit `1fff43a`; both recorded codegen
 legs are source-input-identical to that captured HEAD and use the exact
-`release-thin-lto-1cgu-no-incremental` profile. The current run-25 remediation
-closure is represented by `21fc146`, `9215cba`, `1b5ce46`, `b67c550`,
-`3509ee6`, `77fafc3`, `0a33c7c`, `71182f8`, `4a41001`, and `1cc7291`; these
-receipts are source-input-identical to the current run-25 remediation HEAD and
-do not imply native ARM timing. Matrix and static deltas are unchanged from
-artifact `0203577`.
+`release-thin-lto-1cgu-no-incremental` profile. The prior run-25 remediation
+closure trail is represented by `21fc146`, `9215cba`, `1b5ce46`, `b67c550`,
+`3509ee6`, `77fafc3`, `0a33c7c`, `71182f8`, `4a41001`, and `1cc7291`;
+the final P4 documentation commits are `3d044ed` and `5549e8d`, and the
+current receipt is `1fff43a`. These receipts are source-input-identical to the
+current run-25 remediation HEAD and do not imply native ARM timing. Matrix and
+static deltas are unchanged from artifact `0203577`.
 
 The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
 evidence modes pin HEAD before reading each source input with

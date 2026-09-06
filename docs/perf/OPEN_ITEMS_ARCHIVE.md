@@ -2016,7 +2016,7 @@ lived inline).*
     §9-iii. The nightly-trigger re-enable decision remains gated on fixing the
     workflow self-lock documented in the archived card above.
 
-- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by current run-25 source HEAD `4a410012fcff3ad308de988824462947e49f7ebf`, tree `4f5ea26d95352b3aaf689061a0252268062f68bc`, digest `14909a43f6853f2a43137c25fc061741b7dc4e3654a3d7332ad2b58546a490c2`, and artifact commit `1cc7291`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by current run-25 source HEAD `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, digest `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, and artifact commit `1fff43a`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
 
   - **Status:** CLOSED — static codegen NULL; no production change.
   - **Current number-or-verdict:** the authoritative `pop_success_relaxed`
@@ -2024,9 +2024,9 @@ lived inline).*
     `push_index_impl`, and `pop_index_impl` on x86 and on AArch64 with both
     default and `+lse` features. The exact matrix is 20 x86 rows and 40
     AArch64 rows, using source HEAD
-    `4a410012fcff3ad308de988824462947e49f7ebf`, tree
-    `4f5ea26d95352b3aaf689061a0252268062f68bc`, and source-input digest
-    `14909a43f6853f2a43137c25fc061741b7dc4e3654a3d7332ad2b58546a490c2`.
+    `5549e8db57b5ab6a8ba276c58dbfa6e23529413d`, tree
+    `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d`, and source-input digest
+    `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`.
   - **Closure rationale:** the candidate is a genuine static NULL, not a
     timing result. The failure ordering remains `Acquire` and is load-bearing:
     a failed pop CAS observes a newer head before the retry reads that head's
@@ -2039,8 +2039,8 @@ lived inline).*
     for `base`, `links_relaxed`, and the separate `store_elided` candidate.
   - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, the
     authoritative codegen CSVs/raw logs/assembly bundles, current source-input
-    identity `4a410012fcff3ad308de988824462947e49f7ebf` / tree
-    `4f5ea26d95352b3aaf689061a0252268062f68bc` / digest
-    `14909a43f6853f2a43137c25fc061741b7dc4e3654a3d7332ad2b58546a490c2`, and
-    artifact commit `1cc7291`; the earlier ODB/implementation
+    identity `5549e8db57b5ab6a8ba276c58dbfa6e23529413d` / tree
+    `f7115e234e3a9093d0f8d0065a800a9ccf0a4f3d` / digest
+    `8a3fc4f23c90da88215f63194dd4c810ceca0c3d49ba3ccfa6bcf67c51944889`, and
+    artifact commit `1fff43a`; the earlier ODB/implementation
     commits remain in the historical trail above.
