@@ -17,13 +17,39 @@ and store-elision await native ARM timing.
 
 ## Accepted measurement identity
 
-The authoritative codegen artifacts use source HEAD
-`59bfa6a2720a27c3b32b12b0d935e0996a8290dc`, source-input digest
-`c4183d967e0f610aeb343c09ac3fb0ec43e1e6f1c17d2dc1757a350954290a98`, and
-`rustc 1.97.0` / `LLVM 22.1.6`. The runner/oracle updates are in `e1a1817` and
-`59bfa6a`; the recorded codegen artifacts are in `05be781`. Both current
-codegen legs are source-input-identical to that HEAD and use the exact
+The final authoritative codegen artifacts use source HEAD
+`ff081851f71f9d8e554e216b7ca925fff6a7643b`, tree
+`42c50f2219ccbc5fa63d1a15870d327b960162e6`, source-input digest
+`360d23ec7b20f6b2c96b4ed1274bc405127677911aaf69012bd05e997ef4fc7e`, and
+`rustc 1.97.0` / `LLVM 22.1.6`. The ODB-pinned evidence capture is in
+`c00087f` plus its scratch-guard closure `393f81e`; host-receipt and
+natural-workload support was implemented in `b01580f`, and the earlier codegen
+artifact recording landed in `133d842`—both are intermediate implementation
+commits. The final runner identity binding is `ff081851f71f9d8e554e216b7ca925fff6a7643b`
+(host/profile/toolchain/flags), and the final recorded artifacts are in
+`59644b2c4b3ca3e1590f93dc399fe5feef83d507`. Both current codegen legs are
+source-input-identical to the final HEAD and use the exact
 `release-thin-lto-1cgu-no-incremental` profile.
+
+The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
+evidence modes pin HEAD before reading each source input with
+`git show <HEAD>:<path>` and retain those ODB bytes; the live ancestor
+`.cargo/config.toml` is checked byte-for-byte against its captured HEAD object
+immediately before and after each Cargo build. This closes provenance only;
+it does not create native ARM timing evidence.
+
+The current receipt is a local Windows codegen context, not an ARM host:
+`platform=win32`, `release=10.0.19045`, `arch=x64`, CPU model
+`11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz`, logical CPU count `16`;
+online topology, physical/package-core topology, GitHub `ImageOS`,
+`ImageVersion`, `RUNNER_ARCH`, and scaling-governor policy are explicitly
+`unavailable`. Its canonical nonsecret JSON is pinned by SHA-256
+`cc1db78be23882bb367b3e2120eefe377396f30046fbcb8f7362240849af72f7` and the
+matching base64 bytes
+`eyJwbGF0Zm9ybSI6IndpbjMyIiwicmVsZWFzZSI6IjEwLjAuMTkwNDUiLCJhcmNoIjoieDY0IiwiY3B1X21vZGVsX3NldCI6eyJzdGF0dXMiOiJhdmFpbGFibGUiLCJ2YWx1ZSI6WyIxMXRoIEdlbiBJbnRlbChSKSBDb3JlKFRNKSBpNy0xMTgwMEggQCAyLjMwR0h6Il19LCJsb2dpY2FsX2NwdV9jb3VudCI6eyJzdGF0dXMiOiJhdmFpbGFibGUiLCJ2YWx1ZSI6MTZ9LCJvbmxpbmVfdG9wb2xvZ3kiOnsic3RhdHVzIjoidW5hdmFpbGFibGUifSwicGh5c2ljYWxfdG9wb2xvZ3kiOnsic3RhdHVzIjoidW5hdmFpbGFibGUifSwiZ2l0aHViIjp7IkltYWdlT1MiOnsic3RhdHVzIjoidW5hdmFpbGFibGUifSwiSW1hZ2VWZXJzaW9uIjp7InN0YXR1cyI6InVuYXZhaWxhYmxlIn0sIlJVTk5FUl9BUkNIIjp7InN0YXR1cyI6InVuYXZhaWxhYmxlIn19LCJzY2FsaW5nX2dvdmVybm9yIjp7InN0YXR1cyI6InVuYXZhaWxhYmxlIn19`.
+The raw logs and every codegen CSV row carry the exact same receipt JSON,
+SHA, and base64; codegen timing-before/after fields are empty. No hostname or
+dynamic-frequency value is part of the receipt.
 
 ## Codegen matrix and observations
 
@@ -63,6 +89,13 @@ A valid future wall-clock leg requires:
 - the deterministic tag-only activation oracle: exact push retries `= 1`, pop
   retries `= 0`, and `store_next` calls `base/links_relaxed/store_elided`
   `= 3/3/2`;
+- after production timing, a separate `cfg(tagged_index_stack_test)`
+  `natural_workload` activation run with the same thread count and timing
+  window; it is a path/counter oracle, never timing evidence. Its exact
+  arithmetic is `natural_push_attempts = ops_total + push_retries`,
+  `natural_store_next_calls = attempts` and `natural_store_elisions = 0` for
+  `base`/`links_relaxed`, and `natural_store_next_calls < attempts` with
+  `natural_store_elisions > 0` for `store_elided`;
 - production-only timing rows on the honest target host, with at least 6
   samples and a sample count that is a multiple of 3;
 - within each evidence bundle/run, all freshly generated codegen and timing legs
@@ -73,14 +106,24 @@ A valid future wall-clock leg requires:
   oracle build): no inherited behavioral flags are permitted; and
 - raw-log↔CSV linkage, with smoke output in a separate log and never used as
   evidence or a verdict.
+- the canonical nonsecret host receipt must include OS/kernel release, arch,
+  CPU-model set, logical CPU count, Linux package/core topology and online
+  mask, GitHub `ImageOS`/`ImageVersion`/`RUNNER_ARCH`, and governor policy;
+  unavailable fields stay explicitly unavailable. Its exact SHA-256 and
+  base64 bytes must match raw↔CSV, remain stable across fresh legs on the same
+  host, and match immediately before and after production timing. Hostname and
+  dynamic frequency are excluded.
 
 ## Next trigger
 
 After the commits are available to CI, run an explicit workflow dispatch of
 `tis-weak-memory-wallclock-gate` on native arm64. It must generate fresh x86
-and AArch64 codegen, time the three variants above, and write the summary from
-one checkout/toolchain. Until that run produces valid evidence, the current
-verdict remains **OPEN / no wall-clock evidence**.
+and AArch64 codegen, run the deterministic oracle, time the three production
+variants, then run the separate same-threads/same-window natural workload
+oracle, and write the summary from one checkout/toolchain. Until that run
+produces valid evidence, the current verdict remains **OPEN / no wall-clock
+evidence**. The present AArch64 rows are cross-target codegen only; no ARM
+host timing or natural ARM workload has been executed.
 
 ## Current artifacts
 

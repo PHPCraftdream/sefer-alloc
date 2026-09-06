@@ -2016,16 +2016,17 @@ lived inline).*
     §9-iii. The nightly-trigger re-enable decision remains gated on fixing the
     workflow self-lock documented in the archived card above.
 
-- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by commits `e1a1817`, `59bfa6a`, and `05be781`.
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success ordering (`Acquire` → `Relaxed`) — `docs/perf/OPEN_ITEMS.md`'s former item 63.** Resolved 2026-09-06 by final runner identity `ff081851f71f9d8e554e216b7ca925fff6a7643b` and artifact commit `59644b2c4b3ca3e1590f93dc399fe5feef83d507`; `c00087f`, `393f81e`, `b01580f`, and `133d842` are the ODB/implementation/intermediate trail.
 
   - **Status:** CLOSED — static codegen NULL; no production change.
   - **Current number-or-verdict:** the authoritative `pop_success_relaxed`
     variant is byte-identical to `base` for `load_next`, `store_next`,
     `push_index_impl`, and `pop_index_impl` on x86 and on AArch64 with both
     default and `+lse` features. The exact matrix is 20 x86 rows and 40
-    AArch64 rows, using source HEAD `59bfa6a2720a27c3b32b12b0d935e0996a8290dc`
-    and source-input digest
-    `c4183d967e0f610aeb343c09ac3fb0ec43e1e6f1c17d2dc1757a350954290a98`.
+    AArch64 rows, using source HEAD
+    `ff081851f71f9d8e554e216b7ca925fff6a7643b`, tree
+    `42c50f2219ccbc5fa63d1a15870d327b960162e6`, and source-input digest
+    `360d23ec7b20f6b2c96b4ed1274bc405127677911aaf69012bd05e997ef4fc7e`.
   - **Closure rationale:** the candidate is a genuine static NULL, not a
     timing result. The failure ordering remains `Acquire` and is load-bearing:
     a failed pop CAS observes a newer head before the retry reads that head's
@@ -2037,5 +2038,7 @@ lived inline).*
     question or create a wall-clock verdict. Native ARM timing remains OPEN
     for `base`, `links_relaxed`, and the separate `store_elided` candidate.
   - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`, the
-    authoritative codegen CSVs/raw logs/assembly bundles, and commits
-    `e1a1817`, `59bfa6a`, and `05be781`.
+    authoritative codegen CSVs/raw logs/assembly bundles, final runner
+    identity `ff081851f71f9d8e554e216b7ca925fff6a7643b`, and artifact commit
+    `59644b2c4b3ca3e1590f93dc399fe5feef83d507`; the earlier ODB/implementation
+    commits remain in the historical trail above.
