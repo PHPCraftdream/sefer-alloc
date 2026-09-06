@@ -2,7 +2,9 @@
 //! coverage for the shared `drive` loop + M1–M4 oracle code under strict
 //! provenance. Kept small (a few small allocations, no multi-MiB writes) so it
 //! finishes fast under the interpreter; the exhaustive shape is the native
-//! proptest/arbitrary tests. No feature gate — always available.
+//! proptest/arbitrary tests. No feature gate — always available. The CI job
+//! `globalalloc-model-miri` (added separately to ci.yml) actually runs this
+//! under miri with strict provenance.
 
 use std::alloc::System;
 

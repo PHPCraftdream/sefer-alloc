@@ -881,6 +881,37 @@ jobs:
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 
+  globalalloc-model-miri:
+    # Pre-publish review run 1 (2026-09-06), P2-9: `drive()`'s pointer
+    # arithmetic and the M1/M3 read-back loops are this crate's entire unsafe
+    # surface, and tests/miri_bounded.rs advertised "bounded-miri coverage"
+    # that no CI job actually provided (native execution cannot catch an
+    # out-of-bounds ptr.add()). Modeled on `once-ptr-cell-miri` above
+    # (per-PR cadence — the suite is small). MIRIFLAGS adds
+    # `-Zmiri-ignore-leaks`, the same accommodation `aligned-vmem-miri` makes
+    # for its own reason: tests/double_free_no_op.rs's LeakyAllocator leaks by
+    # design (its no-op dealloc IS the M2 contract under test), which the
+    # default leak checker reports as a failure with no bug present; every
+    # other test in the crate frees its memory (tests/oracle_negative.rs's
+    # arena frees in Drop even on panic-unwind). The second run adds
+    # `-Zmiri-strict-provenance`, matching every other miri job in this file;
+    # the crate's pointer-identity checks use the non-exposing `ptr.addr()`
+    # (never `ptr as usize`), so both forms were verified green locally before
+    # this job was added.
+    name: globalalloc-model under miri (interpreter, strict-provenance included)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test -p globalalloc-model --all-features
+        env:
+          MIRIFLAGS: "-Zmiri-ignore-leaks"
+      - run: cargo miri test -p globalalloc-model --all-features
+        env:
+          MIRIFLAGS: "-Zmiri-ignore-leaks -Zmiri-strict-provenance"
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
@@ -2045,6 +2076,13 @@ jobs:
       # the crate's own lib.rs doc comment), so it is deliberately excluded
       # from this bare-metal row.
       - run: cargo build -p globalalloc-model --target thumbv7em-none-eabi
+      # P2-4 (pre-publish review run 1, 2026-09-06): the `proptest` dependency
+      # is declared `default-features = false, features = ["alloc", "no_std"]`,
+      # so the `proptest` front-end is genuinely `no_std`-compatible; this row
+      # proves the claim the README makes about it (the row above covers only
+      # the default build). The `arbitrary` front-end stays excluded for the
+      # reason the comment above states.
+      - run: cargo build -p globalalloc-model --features proptest --target thumbv7em-none-eabi
       # The build above compiles no test target. `--all-features` runs both
       # optional front-ends (proptest + arbitrary) plus the always-on
       # miri_bounded test; both profiles since no debug_assert!-gated
@@ -2057,6 +2095,12 @@ jobs:
       # feature list exactly (both optional features together ARE
       # `--all-features` here), so this row is docs.rs's exact build.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --all-features --no-deps
+      # P3-13 (pre-publish review run 1, 2026-09-06): the row above is
+      # docs.rs's exact build, but the crate's ADVERTISED default is
+      # `default = []` — the same gate-blindness shape CLAUDE.md's feature-set
+      # doc-lint rule describes, inverted (the unbuilt configuration here is
+      # the default, not the published one). This row is that default build.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --no-deps
       # `tagged-index-stack` advertises a no-std/no-alloc category but its
       # head uses `AtomicU64`; use `x86_64-unknown-none`, which provides native
       # 64-bit atomics in a no-std sysroot, rather than the 32-bit-atomic
@@ -2260,6 +2304,17 @@ jobs:
       # `cargo test` does not build bench targets; this row type-checks the
       # tagged-index-stack bench under the pinned 1.88 toolchain.
       - run: cargo bench -p tagged-index-stack --no-run
+      # globalalloc-model-specific MSRV checks (pre-publish review run 1,
+      # 2026-09-06, P2-8): the workspace-root `--all-features` steps at the top
+      # of this job reach this crate only as a path-dependency LIBRARY (via the
+      # root's dev-dependency feature forwarding), never as its own tested
+      # workspace member — its four tests/ files and the `arbitrary` feature
+      # (arbitrary_stream.rs + derive_arbitrary) were never compiled on the
+      # pinned 1.88 toolchain by anything before these rows. The crate declares
+      # `rust-version = "1.85"` (bounded by proptest 1.11's own MSRV, review
+      # P3-23); 1.88 here is above that floor and matches the job's pin.
+      - run: cargo check -p globalalloc-model --all-features
+      - run: cargo test -p globalalloc-model --no-run --all-features
       # The published library surface has MSRV 1.79: `inline const`, used by
       # `ArrayLinks::new`, is stabilized there. The floor rows check the
       # library on both the host and the no_std `x86_64-unknown-none` target;

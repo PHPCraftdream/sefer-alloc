@@ -12,9 +12,9 @@ use crate::{Config, Op};
 /// A weighted size generator: mostly small (the hot free-list path),
 /// occasionally large (the dedicated-segment path), per `config`.
 fn size_strategy(config: Config) -> impl Strategy<Value = usize> {
-    let small = (1usize..=config.small_max.max(1)).prop_map(|s| s.max(1));
-    let large = (config.small_max.saturating_add(1)..=config.large_max.max(config.small_max + 1))
-        .prop_map(|s| s.max(1));
+    let small = 1usize..=config.small_max.max(1);
+    let large = config.small_max.saturating_add(1)
+        ..=config.large_max.max(config.small_max.saturating_add(1));
     prop_oneof![
         config.small_weight => small,
         config.large_weight => large,
@@ -23,9 +23,12 @@ fn size_strategy(config: Config) -> impl Strategy<Value = usize> {
 
 /// A power-of-two alignment generator up to `config.max_align`.
 fn align_strategy(config: Config) -> impl Strategy<Value = usize> {
+    debug_assert!(config.max_align.is_power_of_two());
     let mut aligns: Vec<usize> = Vec::new();
     let mut a = 1usize;
-    while a <= config.max_align {
+    // Both degenerate inputs are handled: `max_align == 0` yields an empty
+    // vec, and a `max_align >= 1<<63` stops the shift before it overflows to 0.
+    while a <= config.max_align && a != 0 {
         aligns.push(a);
         a <<= 1;
     }

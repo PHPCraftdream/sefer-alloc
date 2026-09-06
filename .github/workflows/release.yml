@@ -441,6 +441,12 @@ jobs:
           NAME='${{ steps.target.outputs.name }}'
           # Default-feature suite for whichever crate is being released.
           cargo test -p "$NAME" --no-fail-fast
+          # globalalloc-model: `default = []` cfg-gates both front-end test
+          # files to empty, so the default suite alone cannot see a break in
+          # either (pre-publish review run 1, 2026-09-06, P3-28).
+          if [[ "$NAME" == "globalalloc-model" ]]; then
+            cargo test -p "$NAME" --all-features --no-fail-fast
+          fi
           # `production` is a root-crate-only feature bundle; only add it when
           # the target IS the root crate (member crates have no such feature).
           if [[ "$NAME" == "sefer-alloc" ]]; then

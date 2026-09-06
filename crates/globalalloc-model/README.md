@@ -6,21 +6,29 @@ Apply a random stream of `alloc` / `dealloc` / `realloc` / `alloc_zeroed`
 operations to the allocator under test **and** to a reference model (a `Vec` of
 live blocks), asserting the **M1–M4 correctness oracles** on every step:
 
-- **M1 (validity):** every returned pointer is non-null, aligned to the
-  requested align, and writable for the requested size (fill-pattern read-back).
-- **M2 (no double-free / UAF):** a second `dealloc` of the same pointer is a
-  no-op that must not corrupt the allocator.
+- **M1 (validity):** every returned pointer is non-null and aligned to the
+  requested align; size fidelity is established indirectly (fill-pattern
+  read-back proves the requested size is writable, and the overlap check over
+  requested extents catches an undersized block once a neighbour lands inside
+  the missing tail).
+- **M2 (no double-free / UAF):** a second `dealloc` of the same pointer must
+  not corrupt the allocator (opt-in via `Config::double_free`; **off by
+  default** — a real system malloc treats double-free as UB, so the harness
+  only issues the second free when you ask for it).
 - **M3 (no overlap):** two simultaneously-live allocations never share a byte
-  (checked against every live block, plus per-block fill re-checked at run end).
-- **M4 (alignment & size fidelity):** the returned pointer satisfies the
-  requested size and align.
+  — the overlap check runs on **every block-creating op** (`alloc`,
+  `alloc_zeroed`, and `realloc`'s new extent), plus a per-block fill re-checked
+  at run end.
+- **M4 (alignment):** every returned pointer is aligned to the requested
+  align (extent fidelity is established indirectly — see M1).
 - **`alloc_zeroed` contract:** every byte of a zeroed allocation reads as 0.
 - **`realloc` prefix preservation:** the `min(old, new)` prefix is preserved.
 
 This is the correctness twin of
 [`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs) (the performance
-side). Nothing else on crates.io offers a ready "differential-test your
-`GlobalAlloc` against a model with UAF/overlap/zeroed/realloc oracles" kit.
+side): a ready-made op-stream driver plus reference-model oracles for
+differential-testing any `GlobalAlloc`. A normal build (no features) has
+**zero dependencies** — both front-ends are optional.
 
 ## One model, two front-ends
 
@@ -32,17 +40,19 @@ The same `drive()` loop powers both:
   / libFuzzer.
 
 So an oracle improvement reaches proptest, miri, and libFuzzer at once. A normal
-build (no features) has **zero non-dev dependencies** — both front-ends are
-optional.
+build (no features) has **zero dependencies** — both front-ends are optional.
 
 ## `no_std` by default
 
-The core model and the `proptest` front-end need only `core` + `alloc`, so
-this crate can differential-test a `no_std` allocator's own test suite
-without pulling in `std` — verified against a real bare-metal target
-(`thumbv7em-none-eabi`) for the default build. Enabling the `arbitrary`
-feature pulls `std` back in: `derive_arbitrary`'s generated recursion guard
-unconditionally references `std::thread_local!`, an upstream limitation.
+The core model needs only `core` + `alloc`, so this crate can
+differential-test a `no_std` allocator's own test suite without pulling in
+`std` — verified against a real bare-metal target (`thumbv7em-none-eabi`)
+for the default build AND for the `proptest` front-end (declared with
+`default-features = false, features = ["alloc", "no_std"]`, which routes
+proptest's float samplers through num-traits/libm). The one exception is
+the `arbitrary` front-end: `derive_arbitrary`'s generated recursion guard
+unconditionally references `std::thread_local!` — an upstream limitation,
+not this crate's choice.
 
 ## The allocator seam
 
@@ -51,21 +61,36 @@ unconditionally references `std::thread_local!`, an upstream limitation.
 which a blanket impl is provided. A plain owned allocator with the same four
 methods can implement the trait directly.
 
+Two caveats: `drive()` allocates its own bookkeeping through the *global*
+allocator, so if the allocator under test is also the installed
+`#[global_allocator]`, a reentrant allocator will deadlock or recurse — drive
+the *engine* behind your `GlobalAlloc`, not the installed global allocator
+itself. And because of the blanket impl, a type that already implements
+`GlobalAlloc` cannot ALSO implement `RawAllocator` — wrap it in a newtype if
+you need to override the forwarding.
+
+## Compatibility
+
+`Op`, `Config`, and `OpStream` are exhaustive types with public fields on
+purpose (so `Config { double_free: true, ..Config::default() }` stays
+ergonomic). Adding a field or variant is a breaking change and bumps the
+minor version under 0.x.
+
 ## Usage
 
-```text
-use globalalloc_model::{drive, Config};
+```rust
+use globalalloc_model::{drive, op_strategy, Config};
 use std::alloc::System;
 
-// proptest:
+// proptest (the `proptest!` macro comes from the `proptest` crate):
 proptest! {
     #[test]
-    fn matches_model(ops in globalalloc_model::op_strategy(Config::default(), 0..200)) {
+    fn matches_model(ops in op_strategy(Config::default(), 0..200)) {
         drive(&System, Config::default(), &ops);
     }
 }
 
-// libFuzzer:
+// libFuzzer (the `fuzz_target!` macro comes from `libfuzzer-sys`):
 fuzz_target!(|stream: globalalloc_model::OpStream| {
     drive(&System, Config::default(), &stream.ops);
 });
