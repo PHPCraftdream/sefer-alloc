@@ -57,8 +57,18 @@ impl HeadContentionStorage {
     }
 }
 
-// SAFETY: the head and the one-to-one link array belong to this storage value;
-// every link is a dedicated atomic cell in the fixed 0..LINKS_SIZE domain.
+// SAFETY:
+// 1. The head and one-to-one link array belong to this storage value; every
+//    link is a dedicated atomic cell in the fixed 0..LINKS_SIZE domain.
+// 2. Only this binding's stack algorithm mutates a link: `store_next` is
+//    reached by push in its valid pre-publication phase, while `load_next` is
+//    reached by pop only after a push through this exact binding published the
+//    observed index.
+// 3. A push consumes its unique publish/recycle authority at the successful
+//    head CAS, not at physical return. A successful pop may legally transfer
+//    that authority to another thread, which may repush before the earlier
+//    push returns; that later write uses the new authority and is not a
+//    competing use of the old one.
 #[allow(unsafe_code)]
 unsafe impl StackStorage<16> for HeadContentionStorage {
     unsafe fn head(&self) -> &StackHead<16> {

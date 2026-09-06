@@ -8,7 +8,7 @@ pub mod tis;
 
 use core::hint::black_box;
 use core::sync::atomic::{AtomicU32, Ordering};
-use tis::{StackHead, StackOps, StackStorage, TAIL};
+use tis::{StackHead, StackOps, StackStorage};
 
 const LINKS: usize = 256;
 const MATERIALIZED_VARIANT: &str = "{{VARIANT_NAME}}";
@@ -53,6 +53,14 @@ impl RegistryShapedStorage {
 // 6. The domain is exactly 0..256, within the 16-bit index domain.
 // 7. AtomicU32 makes races atomic; placeholders select Acquire/Release for
 //    base and the intentional Relaxed candidate.
+// 8. The private hook bodies below are reached only through this binding's
+//    stack algorithm: `store_next` is called by push before its publishing
+//    CAS, and `load_next` is called by pop only after a push through this
+//    exact binding has published the observed index.
+// 9. A push consumes its unique publish/recycle authority at its successful
+//    head CAS, not at physical return; a successful pop may transfer that
+//    authority to another thread, which may legally repush before the earlier
+//    push call returns.
 #[allow(unsafe_code)]
 unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// # Safety
@@ -66,7 +74,7 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     ///
     /// `index` is in 0..256 and was initialized through this same binding.
     unsafe fn load_next(&self, index: u32) -> u32 {
-        self.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
+        tis_probe_load_next(self, index)
     }
 
     /// # Safety
@@ -74,8 +82,21 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// `index` is in-domain, non-live, and uniquely owned; `next` is TAIL or
     /// the observed in-domain head, and this store precedes publication.
     unsafe fn store_next(&self, index: u32, next: u32) {
-        self.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
+        tis_probe_store_next(self, index, next)
     }
+}
+
+// These private, non-inlined bodies are the named codegen probes. The only
+// callers are the unsafe hook methods above, which the stack algorithm reaches
+// through its push/pop paths; no wrapper setup performs a direct link write.
+#[inline(never)]
+fn tis_probe_load_next(stack: &RegistryShapedStorage, index: u32) -> u32 {
+    stack.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
+}
+
+#[inline(never)]
+fn tis_probe_store_next(stack: &RegistryShapedStorage, index: u32, next: u32) {
+    stack.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
 }
 
 #[inline(never)]
@@ -99,56 +120,15 @@ fn tis_probe_pop_index_impl(stack: &RegistryShapedStorage) {
     let _ = StackOps::pop_index(stack);
 }
 
-#[inline(never)]
-#[allow(unsafe_code)]
-/// Forces the custom storage's load hook.
-///
-/// # Safety
-///
-/// `index` is in this binding's 0..256 domain and its dedicated link cell was
-/// initialized by a prior store through this same binding.
-unsafe fn tis_probe_load_next(stack: &RegistryShapedStorage, index: u32) -> u32 {
-    // SAFETY: the caller guarantees an in-domain cell initialized through this
-    // exact head-to-links binding.
-    unsafe { StackStorage::load_next(stack, index) }
-}
-
-#[inline(never)]
-#[allow(unsafe_code)]
-/// Forces the custom storage's store hook.
-///
-/// # Safety
-///
-/// `index` is in this binding's 0..256 domain, is non-live, and is covered by
-/// one unique publish authority. `next` is TAIL or the current in-domain head,
-/// and the call occurs before the CAS that publishes `index`.
-unsafe fn tis_probe_store_next(stack: &RegistryShapedStorage, index: u32, next: u32) {
-    // SAFETY: the caller guarantees the in-domain non-live index, unique
-    // authority, valid next value, and before-publication phase.
-    unsafe { StackStorage::store_next(stack, index, next) }
-}
-
 #[allow(unsafe_code)]
 pub fn instantiate() {
     let _ = MATERIALIZED_VARIANT;
     let stack = RegistryShapedStorage::new();
-    // SAFETY: index 1 is in the fresh binding's 0..256 domain, is non-live,
-    // has one unique initial authority, next is TAIL for the empty head, and
-    // this initializes the cell before its later publication.
-    unsafe {
-        black_box(tis_probe_store_next)(
-            black_box(&stack),
-            black_box(1u32),
-            black_box(TAIL),
-        );
-    }
-    // SAFETY: index 1 is in-domain and the preceding store initialized its
-    // dedicated cell through this same binding.
-    unsafe {
-        black_box(tis_probe_load_next)(black_box(&stack), black_box(1u32));
-    }
-    // SAFETY: index 1 is in this binding's domain, remains non-live, and its
-    // unique initial publish authority is consumed exactly once here.
+    // SAFETY: index 1 is in this binding's domain, is initially non-live, and
+    // its unique fresh publish authority is consumed by this stack-algorithm
+    // push. That push reaches the store probe before its publishing CAS; the
+    // following pop reaches the load probe only after that legitimate push
+    // through this exact head-to-links binding.
     unsafe {
         black_box(tis_probe_push_index_impl)(black_box(&stack), black_box(1u32));
     }

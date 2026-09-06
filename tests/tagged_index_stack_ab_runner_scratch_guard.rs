@@ -427,8 +427,8 @@ fn out_dir_rejection_is_value_independent() {
     let (parent, root_guard, runner) = build_repo_copy("out_dir_values");
     let root_str = root_guard.path().to_string_lossy().to_string();
 
-    // Fixtures for the values that point OUTSIDE the skeleton, planted the
-    // Plant the external values beside the disposable skeleton.
+    // Fixtures for values that point OUTSIDE the skeleton. Plant the external
+    // values beside the disposable skeleton.
     let victim = exclusive_temp_dir("victim");
     fs::write(victim.path().join("canary.txt"), "unrelated to the repo")
         .expect("write victim canary");

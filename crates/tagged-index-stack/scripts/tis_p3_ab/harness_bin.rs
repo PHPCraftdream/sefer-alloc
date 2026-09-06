@@ -100,6 +100,14 @@ impl RegistryShapedStorage {
 // 6. The domain is exactly 0..256, within the 16-bit index domain.
 // 7. AtomicU32 makes races atomic; placeholders select Acquire/Release for
 //    base and the intentional Relaxed candidate.
+// 8. Only this binding's stack algorithm may mutate a link cell: `store_next`
+//    is reached by push in its valid pre-publication phase, and `load_next`
+//    is reached by pop only after a push through this exact binding has
+//    published the observed index.
+// 9. Push authority is consumed at the successful head CAS, not at physical
+//    return. A successful pop may therefore transfer the authority to another
+//    thread, which may legally repush the index before the earlier push call
+//    returns; that is a new legitimate write, not a competing use.
 #[allow(unsafe_code)]
 unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// # Safety
@@ -188,8 +196,9 @@ fn checked_json_counter(value: u64, name: &str) -> u64 {
 fn cycle(stack: &Stack) -> bool {
     let Some(index) = stack.pop_index() else { return false };
     // SAFETY: this binding returned an in-domain index; the successful pop
-    // removed it from the live chain and gave this thread its unique recycle
-    // authority, which this push consumes exactly once.
+    // removed it from the live chain and transferred its unique recycle
+    // authority to this thread, which this push consumes at its successful
+    // CAS. Authority transfer at that CAS is legal even before push returns.
     #[allow(unsafe_code)]
     unsafe { stack.push_index(index) }
         .expect("bounded measurement run never reaches TAG_MAX");
@@ -213,8 +222,10 @@ fn run_activation_oracle() {
     let (pop_before, push_before) = retry_counts();
     let x_result = std::thread::scope(|scope| {
         let x = scope.spawn(|| {
-            // SAFETY: X is in-domain, non-live, and its unique publication
-            // authority belongs to this worker for the whole push call.
+            // SAFETY: X is in-domain and non-live, and this worker owns its
+            // unique publication authority until its successful CAS consumes
+            // it. A later pop may legally transfer a new authority before
+            // this call physically returns.
             {
                 #[allow(unsafe_code)]
                 unsafe { stack.push_index(ORACLE_X) }
