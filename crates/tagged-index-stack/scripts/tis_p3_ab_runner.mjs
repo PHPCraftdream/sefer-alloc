@@ -461,6 +461,14 @@ function hostContextEvidenceParts(context, file = 'host context') {
   return { json, sha256: sha256hex(json), b64: utf8Base64(json) };
 }
 
+// Stable evidence identity only: no timestamps, generatedAt, or scratch paths.
+// The order below is the canonical NUL-delimited bundle contract.
+function evidenceBundleId({ headSha, treeSha, sourceInputDigest, target, mode, profileId, toolchain, productionRustflags, activationRustflags, cargoEncodedRustflags, hostContextSha256 }) {
+  const fields = [headSha, treeSha, sourceInputDigest, target, mode, profileId, toolchain, productionRustflags, activationRustflags, cargoEncodedRustflags, hostContextSha256];
+  assert(fields.every((field) => typeof field === 'string' && !field.includes('\0')), 'bundle identity fields must be NUL-free strings');
+  return sha256hex(fields.join('\0'));
+}
+
 function stripMeasurementCfgs(raw) {
   if (raw.includes('\u001f')) {
     fail('RUSTFLAGS contains encoded separators; clear foreign RUSTFLAGS before running the A/B driver');
@@ -794,6 +802,7 @@ function captureEvidenceHeader(args) {
   assert(checkedHead === headSha, 'HEAD changed while source snapshot was captured');
   const rustcVersion = runCapture('rustc', ['--version', '--verbose']).trim();
   const rustcHost = rustcHostFromVerbose(rustcVersion);
+  const toolchain = rustcVersion.replace(/\r?\n/g, ' | ');
   const hostContext = hostContextEvidenceParts(captureHostContext(), 'initial evidence host context');
   const identity = {
     capturedAt: new Date().toISOString(),
@@ -801,15 +810,26 @@ function captureEvidenceHeader(args) {
     treeSha,
     sourceSnapshotDigest: context.sourceInputDigest,
     sourceInputsAtHead: true,
-    hostContext,
   };
-  const bundleId = sha256hex(`${headSha}\0${treeSha}\0${context.sourceInputDigest}\0${args.target}\0${args.mode}`);
+  const bundleId = evidenceBundleId({
+    headSha,
+    treeSha,
+    sourceInputDigest: context.sourceInputDigest,
+    target: args.target,
+    mode: args.mode,
+    profileId: PROFILE_ID,
+    toolchain,
+    productionRustflags: context.effectiveRustflags.production,
+    activationRustflags: context.effectiveRustflags.activation,
+    cargoEncodedRustflags: context.effectiveRustflags.cargoEncodedRustflags,
+    hostContextSha256: hostContext.sha256,
+  });
   return {
     ...context,
     identity,
     rustcVersion,
     rustcHost,
-    toolchain: rustcVersion.replace(/\r?\n/g, ' | '),
+    toolchain,
     sourceInputsAtHead: true,
     bundleId,
     hostContextJson: hostContext.json,
@@ -1879,6 +1899,8 @@ function readRawProvenance(file, asmFile = null) {
   const asmLine = line('// asm-sha256:');
   assert(identityLine && bundleLine && profileLine && modeLine && targetLine && stateLine && smokeLine && sourceLine && sourceAtHeadLine && toolchainLine && rustcHostLine && productionRustflagsLine && activationRustflagsLine && encodedRustflagsLine && sanitizedEnvLine && hostContextLine && hostContextShaLine && hostContextB64Line && csvLine, `${file}: incomplete provenance header`);
   const identity = JSON.parse(identityLine.slice('// identity:'.length).trim());
+  assert(JSON.stringify(Object.keys(identity)) === JSON.stringify(['capturedAt', 'headSha', 'treeSha', 'sourceSnapshotDigest', 'sourceInputsAtHead']), `${file}: identity JSON has non-canonical fields`);
+  assert(typeof identity.capturedAt === 'string' && Number.isFinite(Date.parse(identity.capturedAt)), `${file}: identity capturedAt is malformed`);
   const sanitizedEnv = parseSanitizedEnv(sanitizedEnvLine.slice('// sanitized-cargo-env:'.length).trim(), file);
   let hostContext;
   try {
@@ -1942,7 +1964,19 @@ function readRawProvenance(file, asmFile = null) {
   assert(/^[0-9a-f]{40}$/.test(provenance.headSha), `${file}: malformed HEAD identity`);
   assert(/^[0-9a-f]{40}$/.test(provenance.treeSha), `${file}: malformed tree identity`);
   assert(/^[0-9a-f]{64}$/.test(provenance.bundleId), `${file}: malformed bundle id`);
-  assert(provenance.bundleId === sha256hex(`${provenance.headSha}\0${provenance.treeSha}\0${provenance.sourceInputDigest}\0${provenance.target}\0${provenance.mode}`), `${file}: bundle id does not bind raw target/mode and source identity`);
+  assert(provenance.bundleId === evidenceBundleId({
+    headSha: provenance.headSha,
+    treeSha: provenance.treeSha,
+    sourceInputDigest: provenance.sourceInputDigest,
+    target: provenance.target,
+    mode: provenance.mode,
+    profileId: provenance.profileId,
+    toolchain: provenance.toolchain,
+    productionRustflags: provenance.productionRustflags,
+    activationRustflags: provenance.activationRustflags,
+    cargoEncodedRustflags: provenance.cargoEncodedRustflags,
+    hostContextSha256: provenance.hostContextSha256,
+  }), `${file}: bundle id does not bind the canonical source/target/profile/toolchain/flags/host contract`);
   assert(provenance.profileId === PROFILE_ID, `${file}: non-canonical profile id`);
   assert(provenance.artifactState === 'complete', `${file}: artifact is not complete`);
   assert(provenance.toolchain.length > 0, `${file}: empty toolchain identity`);
