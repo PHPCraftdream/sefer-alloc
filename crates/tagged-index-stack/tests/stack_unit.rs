@@ -12,15 +12,14 @@
 //! These do NOT run under `--cfg loom` (the loom real-type concurrency proof is
 //! `tests/loom_aba.rs`); they are the ordinary `cargo test` conformance smoke.
 //!
-//! Three white-box probes below (`empty_transition_preserves_running_tag`,
+//! White-box probes below (`empty_transition_preserves_running_tag`,
 //! `links_are_lazy`, `default_stack_head_behaves_like_new`) read through the
 //! repository-test-cfg/loom-gated raw accessors (`raw_head` /
 //! `load_next_for_test`) and carry the same
-//! `#[cfg(any(tagged_index_stack_test, loom))]` gate, so plain
+//! `#[cfg(tagged_index_stack_test)]` gate, so plain
 //! default-feature `cargo test` runs compile them out; CI runs this file
-//! under `RUSTFLAGS="--cfg tagged_index_stack_test"` to execute them (the same per-file row
-//! shape `tests/threaded_conservation.rs`'s activation-oracle assertions
-//! already use).
+//! under `RUSTFLAGS="--cfg tagged_index_stack_test"` to execute them (the
+//! same per-file cfg row shape used by `tests/threaded_conservation.rs`).
 
 #![cfg(not(loom))]
 
@@ -45,27 +44,13 @@ const _: () = {
         assert_send_sync::<ArrayLinks<4>>();
     }
     _check();
+    assert!(TaggedIndex::<16>::INDEX_MASK == 0xFFFF);
+    assert!(TaggedIndex::<16>::INDEX_MASK != TAIL as u64);
 };
 
 // ---------------------------------------------------------------------------
 // TaggedIndex packing.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn pack_unpack_round_trip_16() {
-    type T = TaggedIndex<16>;
-    assert_eq!(T::INDEX_MASK, 0xFFFF);
-    assert_eq!(T::TAG_BITS, 48);
-    for &idx in &[0u32, 1, 2748, 0xFFFE] {
-        for &tag in &[0u64, 1, 12345, (1u64 << 48) - 1] {
-            let w = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
-            let (v, t) = T::unpack(w);
-            assert_eq!(v, idx, "index round-trip (tag {tag})");
-            assert_eq!(t, tag, "tag round-trip (idx {idx})");
-            assert!(!T::is_empty(w), "a live index must not read empty");
-        }
-    }
-}
 
 /// The CHECKED `pack`'s acceptance boundary, pinned with literal expected
 /// words (an independent hand-computed oracle, not a comparison against
@@ -84,21 +69,50 @@ fn pack_unpack_round_trip_16() {
 fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
     type T = TaggedIndex<16>;
 
-    for &(idx, tag, word) in &[
-        (0u32, 0u64, 0u64),
-        (1, 1, (1u64 << 16) | 1),
-        (2748, 42, (42u64 << 16) | 2748),
-        (T::INDEX_MASK as u32, 7, (7u64 << 16) | T::INDEX_MASK),
+    for &(idx, tag, word, empty) in &[
+        (0u32, 0u64, 0u64, false),
+        (1, 1, (1u64 << 16) | 1, false),
+        (2748, 42, (42u64 << 16) | 2748, false),
         (
             0xFFFE,
             (1u64 << T::TAG_BITS) - 1,
             (((1u64 << T::TAG_BITS) - 1) << 16) | 0xFFFE,
+            false,
+        ),
+        (T::INDEX_MASK as u32, 0, T::INDEX_MASK, true),
+        (T::INDEX_MASK as u32, 1, (1u64 << 16) | T::INDEX_MASK, true),
+        (
+            T::INDEX_MASK as u32,
+            42,
+            (42u64 << 16) | T::INDEX_MASK,
+            true,
+        ),
+        (
+            T::INDEX_MASK as u32,
+            99,
+            (99u64 << 16) | T::INDEX_MASK,
+            true,
+        ),
+        (T::INDEX_MASK as u32, 7, (7u64 << 16) | T::INDEX_MASK, true),
+        (
+            T::INDEX_MASK as u32,
+            (1u64 << T::TAG_BITS) - 1,
+            (((1u64 << T::TAG_BITS) - 1) << 16) | T::INDEX_MASK,
+            true,
         ),
     ] {
         assert_eq!(
             T::pack(idx, tag),
             Some(word),
             "in-range (index {idx}, tag {tag}) must pack to the exact word"
+        );
+        let (unpacked_idx, unpacked_tag) = T::unpack(word);
+        assert_eq!(unpacked_idx, idx, "index {idx} must round-trip");
+        assert_eq!(unpacked_tag, tag, "tag {tag} must round-trip");
+        assert_eq!(
+            T::is_empty(word),
+            empty,
+            "empty classification for index {idx}"
         );
     }
 
@@ -120,24 +134,6 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
     assert_eq!(T::pack(9, 1u64 << T::TAG_BITS), None, "first invalid tag");
 }
 
-#[test]
-fn empty_sentinel_16() {
-    type T = TaggedIndex<16>;
-    let e = T::pack(T::empty_index(), 0).expect("bootstrap empty halves are in range");
-    assert!(T::is_empty(e));
-    let (v, tag) = T::unpack(e);
-    assert_eq!(v, 0xFFFF);
-    assert_eq!(tag, 0);
-    // empty_index packed with a running (non-zero) tag is STILL empty (H-2).
-    let running = T::pack(T::empty_index(), 99).expect("empty_index and 99 are both in range");
-    assert!(
-        T::is_empty(running),
-        "empty is index-only, tag-agnostic (H-2)"
-    );
-    let (_v, t) = T::unpack(running);
-    assert_eq!(t, 99, "the running tag survives on the empty word");
-}
-
 /// A different width (`INDEX_BITS = 12`) partitions the word correctly and the
 /// empty sentinel is width-appropriate — exercises the const generic at a
 /// mid-range legal width, distinct from this file's other widths 1 and 16.
@@ -155,91 +151,6 @@ fn width_12_partitions() {
     ));
     // TAIL (u32::MAX) differs from this width's empty_index (0xFFF).
     assert_ne!(T::empty_index(), TAIL);
-}
-
-/// An `INDEX_BITS = 32` configuration would make `INDEX_MASK` numerically
-/// equal `TAIL` (`u32::MAX`), collapsing `push`'s two reject-purposes
-/// (out-of-range and reject-`TAIL`) into one value, so the legal-width cap
-/// must keep the two values distinct.
-/// The `_CHECK_BITS` cap is now `1..=16`, so the coincidence is structurally
-/// impossible at EVERY legal width (`INDEX_MASK <= 0xFFFF`) — pinned here at
-/// the MAXIMUM legal width. The guard's panic path and its exact message
-/// remain pinned by `width_16_push_rejects_index_mask_itself` in
-/// `tests/push_guard_track_caller.rs`, which
-/// rejects the equally out-of-range `INDEX_MASK` itself.
-#[test]
-fn max_legal_width_index_mask_never_equals_tail() {
-    type T = TaggedIndex<16>;
-    assert_eq!(T::INDEX_MASK, 0xFFFF, "width 16 is the maximum legal width");
-    assert_ne!(
-        T::INDEX_MASK,
-        TAIL as u64,
-        "INDEX_MASK must never coincide with TAIL at any legal width — the \
-         1..=16 cap makes the old width-32 coincidence impossible"
-    );
-}
-
-/// 48-bit tag SEAL-boundary coverage for [`TaggedIndex`]: pins the
-/// `INDEX_BITS = 16` / `TAG_BITS = 48` split across the tag's `TAG_MAX`
-/// ceiling (`2^48 - 1`; push seals here rather than wrapping to `2^48`).
-/// [`pack_unpack_round_trip_16`] and
-/// [`pack_rejects_out_of_range_halves_and_accepts_the_full_index_range`]
-/// above already pin the width facts and the checked pack's boundary
-/// behaviour. The tests below provide a parametrized sweep over multiple
-/// (index, tag) pairs confirming the
-/// empty sentinel is never confused with a live one, including the
-/// pool-cap-relevance argument, and a check that the empty sentinel stays
-/// unambiguous at multiple tags spanning the `TAG_MAX` ceiling specifically.
-/// Non-vacuous: the `2^48 - 1` maximum must be representable at the legal
-/// maximum width, so these values exercise the full tag range.
-#[test]
-fn empty_sentinel_never_collides_with_a_live_index() {
-    type T = TaggedIndex<16>;
-    let empty = T::pack(T::empty_index(), 0).expect("bootstrap empty halves are in range");
-    assert!(T::is_empty(empty), "the empty sentinel reads as empty");
-    let (sentinel_idx, sentinel_tag) = T::unpack(empty);
-    assert_eq!(
-        sentinel_idx,
-        T::INDEX_MASK as u32,
-        "empty sentinel index is INDEX_MASK"
-    );
-    assert_eq!(sentinel_tag, 0, "bootstrap empty sentinel tag is 0");
-
-    // A representative pool cap: 4096. The sentinel (0xFFFF = 65535) is far
-    // above it, so it can never be a real slot index.
-    const CAP: u32 = 4096;
-    const _: () = assert!(
-        T::INDEX_MASK >= CAP as u64,
-        "the empty sentinel index must be >= the pool cap so it is a non-index"
-    );
-
-    for &idx in &[0u32, 1, CAP - 1] {
-        for &tag in &[0u64, 1, (1u64 << T::TAG_BITS) - 1] {
-            let word = T::pack(idx, tag).expect("in range: idx < INDEX_MASK, tag < 2^TAG_BITS");
-            assert!(
-                !T::is_empty(word),
-                "valid index {idx} (tag {tag}) is not empty"
-            );
-            let (v, t) = T::unpack(word);
-            assert_eq!(v, idx, "index {idx} round-trips (tag {tag})");
-            assert_eq!(t, tag, "tag {tag} round-trips (index {idx})");
-        }
-    }
-}
-
-/// The empty word carrying a NON-zero running tag (the H-2 shape) stays
-/// unambiguously empty at tags spanning up to the `TAG_MAX` ceiling.
-#[test]
-fn empty_word_with_running_tag_reads_empty_through_tag_max() {
-    type T = TaggedIndex<16>;
-    for &tag in &[0u64, 1, 42, (1u64 << T::TAG_BITS) - 1] {
-        let w =
-            T::pack(T::empty_index(), tag).expect("empty_index and every swept tag is in range");
-        assert!(
-            T::is_empty(w),
-            "empty_index packed with running tag {tag} must read empty (H-2)"
-        );
-    }
 }
 
 /// [`ArrayLinks::load_next`] panics if `index >= N` (this backing's own,
@@ -363,7 +274,7 @@ fn width_1_stack_push_pop_round_trips_its_sole_index() {
 /// the empty transition (H-2), NOT reset to 0. Observed via `raw_head` — a
 /// repository-test-cfg/loom-gated accessor, so this probe carries the same gate
 /// (see the module doc).
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn empty_transition_preserves_running_tag() {
     type T = TaggedIndex<16>;
@@ -406,7 +317,7 @@ fn empty_transition_preserves_running_tag() {
 /// eagerly-chained-but-empty-headed stack.)
 /// Gated like the accessor it reads through (`load_next_for_test`) — see the
 /// module doc.
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn links_are_lazy() {
     let stack = ArrayIndexStack::<16, 4>::new();
@@ -481,7 +392,7 @@ fn default_array_index_stack_behaves_like_new() {
 /// doc. (The sibling `default_array_links_behaves_like_new` /
 /// `default_array_index_stack_behaves_like_new` stay ungated: they read only
 /// through public API.)
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn default_stack_head_behaves_like_new() {
     let default_head = StackHead::<16>::default();
@@ -515,7 +426,7 @@ fn default_stack_head_behaves_like_new() {
 // loud panic — not a silently-truncated starting tag, which would let a
 // test oracle pass or fail for the wrong reason.
 
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
     let head = StackHead::<16>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX);
@@ -527,7 +438,7 @@ fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
     );
 }
 
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 #[should_panic(expected = "with_tag_for_test: tag out of range")]
 fn with_tag_for_test_panics_instead_of_silently_truncating_an_out_of_range_tag() {

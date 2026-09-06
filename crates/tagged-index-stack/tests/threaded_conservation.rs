@@ -57,23 +57,8 @@ const ITERS_PER_THREAD: u32 = 200_000;
 /// adds nor removes anything from the stack, and running it more than once
 /// cannot break the conservation check.
 fn contention_round(stack: &Stack) {
-    // Start-rendezvous barrier: without it, `s.spawn()` merely SCHEDULES a
-    // thread, it does not synchronize its start against its siblings. On a
-    // CI runner with few real cores (observed live: GitHub Actions'
-    // `ubuntu-latest`), thread creation can be slow enough relative to this
-    // loop's tiny per-iteration cost that early threads run a large chunk of
-    // their 200,000 iterations before a later thread is even scheduled for
-    // the first time -- collapsing what should be 8-way real contention into
-    // several near-sequential runs with little to no overlap. That is
-    // A staggered start against a shared stack still conserves the free-list
-    // (no thread ever needs a SECOND
-    // concurrent writer to stay correct), so only the oracle -- not the
-    // conservation check -- can tell "ran without contention" apart from
-    // "the retry path is broken". `NUM_THREADS + 1` participants (the
-    // workers plus the calling thread) release everyone into the
-    // contended loop at approximately the same instant, the same fix shape
-    // `benches/tagged_index_stack_bench.rs`'s contention phases already use
-    // for their own published-timing-window rendezvous.
+    // Release all workers together so this conservation run exercises
+    // concurrent access instead of depending on scheduler timing.
     let start_barrier = std::sync::Barrier::new(NUM_THREADS + 1);
 
     thread::scope(|s| {

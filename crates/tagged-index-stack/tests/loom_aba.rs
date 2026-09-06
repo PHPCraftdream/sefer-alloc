@@ -3,25 +3,23 @@
 //! Under `--cfg loom` the crate aliases its atomics to `loom::sync::atomic`,
 //! so the head atomic and the `TaggedIndex` packing loom explores here ARE the
 //! code that ships. How much of each model calls the shipped `push`/`pop`
-//! directly varies and is stated per model below: **seven** models
+//! directly varies and is stated per model below: **six** models
 //! (`pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
 //! `push_push_conservation`,
 //! `counterfactual_same_index_concurrent_push_self_loops`,
 //! `pop_repush_after_publish_conserves`,
 //! `pop_pop_conservation`,
-//! `pop_pop_single_element_loser_sees_empty_actual`,
-//! `tiny_tag_seal_rejects_stale_cas_at_the_real_width`) run end-to-end through
-//! ArrayIndexStack's shipped `push`/`pop` for their whole schedule (the
-//! eighth, `counterfactual_bypassed_seal_lets_stale_cas_double_issue`, runs
-//! the shipped `push`/`pop` for everything except its one deliberately
-//! bypassed final step — see section (h)); most of the rest hand-inline one
-//! side of an interaction through `cas_head_for_test` (real head atomic,
-//! real packing) to pin an interleaving — the one exception is the
-//! untagged-ABA counterfactual, which drives a locally-defined buggy
-//! stand-in stack instead of the real type, to prove the harness
-//! non-vacuous. This module doc is the source of truth for this per-model
-//! breakdown; other published copies (crate-root rustdoc, README.md,
-//! CHANGELOG.md) point back here rather than repeating a specific count.
+//! `pop_pop_single_element_loser_sees_empty_actual`) run end-to-end through
+//! ArrayIndexStack's shipped `push`/`pop` for their whole schedule. Two
+//! split-pop models (`tiny_tag_seal_rejects_stale_cas_at_the_real_width` and
+//! `counterfactual_bypassed_seal_lets_stale_cas_double_issue`) use shipped
+//! `push`/`pop` for Q while P hand-inlines one pop snapshot and CAS through
+//! the real head/link probes; the bypassed model replaces only Q's final
+//! push with its deliberate counterfactual. The untagged-ABA counterfactual
+//! instead uses a local buggy stand-in stack. This module doc is the source
+//! of truth for this per-model breakdown; other published copies (crate-root
+//! rustdoc, README.md, CHANGELOG.md) point back here rather than repeating a
+//! specific count.
 //!
 //! # What loom covers
 //!
@@ -100,20 +98,11 @@
 //!     stale CAS then SUCCEEDS and the free-list conservation check FAILS —
 //!     the load-bearing proof that the seal, not just the tag bump, is what
 //!     closes the stale-CAS double-issue hole.
-//! (i) **Same-index concurrent push (the caller contract's
-//!     exclusive-ownership clause):**
-//!     `counterfactual_same_index_concurrent_push_self_loops` races TWO
-//!     real `push`es of the SAME index on a fresh stack — a deliberate
-//!     violation of clause 3, with both calls satisfying the entry-time
-//!     clauses (link domain, liveness). Loom finds the corrupting
-//!     interleaving: the loser's CAS-retry observes the winner's
-//!     just-published head and chains `next[0] = 0`, a self-loop, and the
-//!     shipped `pop`'s self-loop detector panics on the schedules whose
-//!     drain observes it — proving clause 3 is load-bearing. A per-schedule
-//!     `PUSH_RETRY_COUNT` delta gate means only the
-//!     genuinely-overlapping schedules drain, so the sequential double-push
-//!     (a clause-2 violation at the second caller's own entry) can never be
-//!     the schedule that satisfies `#[should_panic]`.
+//! (i) **Same-index concurrent push:**
+//!     `counterfactual_same_index_concurrent_push_self_loops` races two real
+//!     pushes of one index, violating clause 3 while satisfying clauses 1–2
+//!     at entry; the retry gate selects that overlap before the drain's
+//!     self-loop panic, excluding the sequential clause-2 counterfactual.
 //!
 //! # How to run
 //!
@@ -200,27 +189,9 @@ where
     loom::model::Builder::new().check(f);
 }
 
-/// Variant of [`model`] for the tests whose activation-oracle
-/// snapshot/assert window must cover the entire `check()` call, not just
-/// wrap it: `pop_retry_after_failed_cas_sees_concurrent_pushs_link_real_type`,
-/// `push_push_conservation`, `pop_pop_conservation`,
-/// `pop_pop_single_element_loser_sees_empty_actual`. Each snapshots a
-/// process-global retry counter, runs its model, then asserts the counter
-/// advanced — and that delta is only exclusive to this call's own `check()`
-/// run if no other test's `check()` can interleave between the snapshot and
-/// the assert, which is exactly what holding `MODEL_LOCK` the whole time
-/// guarantees. Because the whole "snapshot -> `check` -> snapshot -> verify
-/// delta" sequence runs inside this function while the lock is held, the
-/// guard never needs to leave it — there is no `MutexGuard` for any caller
-/// to mishandle.
-///
-/// `snapshot` runs once AFTER the lock is acquired and BEFORE `check`
-/// starts (the "before" reading), and once more AFTER `check` returns (the
-/// "after" reading) — both inside the same critical section `check` itself
-/// runs under. `verify(before, after)` then runs, still holding the lock,
-/// before the guard is dropped at the end of this function: the full
-/// "acquire lock -> snapshot before -> run model -> snapshot after -> verify
-/// delta -> drop lock" ordering the oracle depends on, entirely internal.
+/// Variant of [`model`] for activation oracles whose snapshots and
+/// verification must remain exclusive to the entire `check()` call. It holds
+/// `MODEL_LOCK` across both snapshots, `check`, and `verify`.
 fn model_with_oracle<F, S, T>(snapshot: S, f: F, verify: impl FnOnce(T, T))
 where
     F: Fn() + Sync + Send + 'static,

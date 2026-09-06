@@ -1,7 +1,7 @@
 //! Per-call `pop` tail-latency probe for `BACKOFF_SPIN_CAP`'s CAS-retry
 //! backoff — the axis the cap sweep
-//! (`docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md` — a repository file, not part
-//! of the published package): per-thread ops over
+//! Backoff-cap measurements are described in
+//! `docs/perf/TIS_BACKOFF_CAP_SWEEP_GATE.md`: per-thread ops over
 //! a 1-second window cannot
 //! distinguish "one call starved for 100+ ms" from "every call uniformly 10x
 //! slow").
@@ -35,8 +35,7 @@
 //! before any output. The resolved-cap evidence for a run is the
 //! captured `const BACKOFF_SPIN_CAP: u32 = ...;` source line taken
 //! immediately before each build (see the raw log this probe's output is
-//! appended to, `docs/perf/_raw_tis_backoff_per_call_latency.log` — a
-//! repository file, not part of the published package).
+//! appended to `docs/perf/_raw_tis_backoff_per_call_latency.log`.
 //!
 //! Run (shipped cap 6, no source edit needed):
 //!
@@ -74,8 +73,7 @@
 //! Percentiles are nearest-rank over ALL pops in the run. Numbers published
 //! from this probe are derived, with
 //! in-script assertions, by
-//! `scripts/tis_backoff_cap_sweep_derive_report_data.mjs` (a repository
-//! script, not part of the published package).
+//! `scripts/tis_backoff_cap_sweep_derive_report_data.mjs`.
 
 use std::hint::black_box;
 use std::sync::Barrier;

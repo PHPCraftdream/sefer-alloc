@@ -100,35 +100,13 @@ fn checked_deadline_add(instant: Instant, add: Duration) -> Instant {
     })
 }
 
-// Published-window protocol shared by both contention phases
-// (contention/push_pop and contention/churn): workers announce readiness
-// at `barrier_ready`, the coordinator then computes the window from its
-// own clock and publishes it in a `OnceLock` cell, and `barrier_window`
-// releases everyone into their warm-up against the now-known window.
-// Because the window is computed only after full rendezvous, no fixed
-// spawn+rendezvous budget has to be trusted. A fixed lead time (window
-// computed before spawning) would silently trust
-// thread-spawn + rendezvous to finish within the lead; on a slow CI
-// runner or VM it could not, and part of the window was lost with no
-// signal. The window is now computed at/after
-// full rendezvous, so there is no fixed spawn+rendezvous budget left to
-// exceed, and the only residual stall path -- a worker descheduled
-// between the rendezvous and its window entry -- is covered by the
-// MAX_WINDOW_ENTRY_LATENESS guard the workers check before counting.
-// Each worker checks the clock only once per DEADLINE_CHECK_INTERVAL
-// iterations inside the timed loop (mechanism documented on the const
-// above), and runs an uncounted warm-up until the shared window opens.
-//
-// `setup` runs per thread BEFORE the ready barrier (so its cost, and
-// the thread's spawn latency, never land inside the measured window);
-// `iteration` performs ONE iteration of the workload and returns how
-// many ops it counted (0 or 2). The same `iteration` body is used for
-// both the uncounted warm-up and the timed loop. `elapsed` is measured
-// from the SHARED window anchor (`timed_start`), so it excludes all
-// spawn and setup time by construction. Measuring elapsed from the
-// shared anchor to the last join honestly includes any worker's
-// overshoot past `deadline` (up to DEADLINE_CHECK_INTERVAL - 1
-// unobserved iterations) instead of hiding it in the numerator.
+// Both contention phases use this published-window protocol: each worker runs
+// setup, rendezvous at `barrier_ready`, and waits while the coordinator stores
+// one shared `timed_start` in `OnceLock`.
+// `barrier_window` releases every worker into the same warm-up and timed
+// window. Setup stays outside the measurement; elapsed runs from that shared
+// anchor through the last join, so worker overshoot is retained in the
+// reported envelope.
 fn run_contention_phase(
     name: &str,
     extra_note: &str,

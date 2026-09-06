@@ -39,34 +39,9 @@
 //! competing-head case is covered by the compile-fail fixture
 //! `tests/compile_fail/array_index_stack_head/`.
 //!
-//! Per-test status, explicitly — this module doc is the source of truth for
-//! that per-test status list (the same pattern tests/loom_aba.rs's module
-//! doc establishes for its per-model breakdown). COMPILE-PASS side:
-//! `vec_backed_storage_push_pop_round_trips` +
-//! `push_pop_through_dyn_storage` — a correct `unsafe impl` from a
-//! separate test crate compiles and behaves correctly; `VecStorage` is the
-//! reference model for a correct implementor and the in-crate stand-in for
-//! the real external consumer (`sefer-alloc`'s `Registry`: implements the
-//! trait, drives the stack only through
-//! [`push_index`](StackOps::push_index)/[`pop_index`](StackOps::pop_index),
-//! never the three hooks directly). That the `unsafe impl` keyword itself
-//! is compiler-forced (a plain `impl` is E0200) is pinned by
-//! `tests/tagged_index_stack_compile_fail.rs`. UNSAFE-IMPL-WITH-VIOLATION
-//! side, each hazard moved into the unsafe contract rather than eliminated:
-//! `two_implementor_values_sharing_one_head_still_double_issue` (clause 1;
-//! guard fires), `hand_crafted_acyclic_forgery_still_double_issues`
-//! (clause 2; silent), `two_stacks_sharing_link_storage_still_double_issue`
-//! (clause 3; silent), `internally_disagreeing_storage_still_double_issue`
-//! (clause 2; guard fires), `head_moved_into_fresh_links_leaks_and_then_panics`
-//! (clause 1's temporal half; guard fires one index late), and
-//! `one_value_two_bindings_shared_backing_still_double_issue` (clause 3 at
-//! both widths; silent), and `pop_rule_4_guard_fires_on_invalid_next_from_backing`
-//! (clause 4 via `AlwaysInvalidStorage`; guard fires).
-//!
-//! `double_push_of_current_head_panics_on_first_pop` in `tests/stack_unit.rs`
-//! (no custom implementor — a caller-contract violation through
-//! [`ArrayIndexStack`]'s inherent API) completes the crate-level picture
-//! over there.
+//! Test status is pinned by the test names, `#[should_panic]` attributes, and
+//! the adjacent `unsafe impl` safety comments below; intentionally-invalid
+//! implementors remain explicit rather than being hidden by this module doc.
 
 #![cfg(not(loom))]
 
@@ -425,7 +400,7 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
 /// [`load_next`](StackStorage::load_next)/
 /// [`store_next`](StackStorage::store_next) read and write DIFFERENT
 /// backings behind one head — a deliberate, documented limitation:
-/// implementor-enforced (the [`StackStorage`] trait doc's `# Safety` clauses 3 and 4),
+/// implementor-enforced (the [`StackStorage`] trait doc's `# Safety` clause 2),
 /// not structurally impossible, auditable only inside the one impl block.
 /// The two `#[should_panic]` tests above pin shape 2; this test pins
 /// shape 1.

@@ -15,7 +15,7 @@
 #![cfg(not(loom))]
 
 use tagged_index_stack::TaggedIndex;
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 
 /// `TAG_MAX == 2^TAG_BITS - 1` at width 16, pinned as a `const` assertion so
@@ -32,7 +32,7 @@ const _: () = assert!(TaggedIndex::<16>::TAG_MAX == (1u64 << TaggedIndex::<16>::
 /// after the seal, pops drain every successfully pushed index and then
 /// return `None`; and a further push after the full drain still returns
 /// `Err` (the seal is permanent, not lifted by draining).
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn seal_sequence_ok_ok_err_with_permanent_seal_after_drain() {
     let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX - 2);
@@ -114,7 +114,7 @@ fn seal_sequence_ok_ok_err_with_permanent_seal_after_drain() {
 /// budget, phrased as the exact sequence the module doc's summary
 /// (`2, 1, 0, 0`) describes, isolated from the `raw_head`/drain assertions
 /// above so a failure here pinpoints the counter specifically.
-#[cfg(any(tagged_index_stack_test, loom))]
+#[cfg(tagged_index_stack_test)]
 #[test]
 fn pushes_remaining_counts_down_to_zero_and_stays_there() {
     let stack = ArrayIndexStack::<16, 4>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX - 2);
