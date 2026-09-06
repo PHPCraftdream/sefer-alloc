@@ -670,11 +670,11 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 8 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. Caller-facing `StackOps::push_index`, `push_index_impl`, and `ArrayIndexStack::push` are unsafe boundaries, and `SealedStorage::store_next` is an unsafe declaration. The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
-| [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 3 | Repository-only wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and two `push_index` call sites, with the storage and publish-authority contracts documented locally. Excluded from the published package under `scripts/`; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 6 | Repository-only wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and five `push_index` call-site blocks, with the storage and publish-authority contracts documented locally. Excluded from the published package under `scripts/`; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 | [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 5 | Repository-only codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, three unsafe push/load/store probe functions, and the `instantiate` call-site block. Excluded from the published package under `scripts/`; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 
 That's the full list (both tiers): **18** tier-1 module-level seams (12 in
-`src/`, 6 in `crates/`) plus **89** tier-2 item-scoped allows across **21**
+`src/`, 6 in `crates/`) plus **92** tier-2 item-scoped allows across **21**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
