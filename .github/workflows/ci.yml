@@ -2036,6 +2036,27 @@ jobs:
       # `--all-features` needed: the crate declares no Cargo features and no
       # `[package.metadata.docs.rs]`, so this row is docs.rs's exact build.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p once-ptr-cell --no-deps
+      # globalalloc-model publish-readiness prep: no CI row existed anywhere
+      # for this crate before this row (confirmed via grep). Default build
+      # (no features) is genuinely `no_std` (core+alloc only) -- proved with
+      # a real bare-metal target, not just `--no-default-features` (a no-op
+      # flag here, since `default = []` already). The `arbitrary` feature
+      # pulls `std` back in (an upstream `derive_arbitrary` limitation, see
+      # the crate's own lib.rs doc comment), so it is deliberately excluded
+      # from this bare-metal row.
+      - run: cargo build -p globalalloc-model --target thumbv7em-none-eabi
+      # The build above compiles no test target. `--all-features` runs both
+      # optional front-ends (proptest + arbitrary) plus the always-on
+      # miri_bounded test; both profiles since no debug_assert!-gated
+      # behavior exists here today, but the crate's own asserts are the
+      # oracle's entire purpose and cheap to double-check in release too.
+      - run: cargo test -p globalalloc-model --all-features --no-fail-fast
+      - run: cargo test -p globalalloc-model --all-features --release --no-fail-fast
+      - run: cargo clippy -p globalalloc-model --all-features --all-targets -- -D warnings
+      # `--all-features` matches this crate's `[package.metadata.docs.rs]`
+      # feature list exactly (both optional features together ARE
+      # `--all-features` here), so this row is docs.rs's exact build.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --all-features --no-deps
       # `tagged-index-stack` advertises a no-std/no-alloc category but its
       # head uses `AtomicU64`; use `x86_64-unknown-none`, which provides native
       # 64-bit atomics in a no-std sysroot, rather than the 32-bit-atomic

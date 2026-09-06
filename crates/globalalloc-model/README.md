@@ -18,7 +18,7 @@ live blocks), asserting the **M1–M4 correctness oracles** on every step:
 - **`realloc` prefix preservation:** the `min(old, new)` prefix is preserved.
 
 This is the correctness twin of
-[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs-rs) (the performance
+[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs) (the performance
 side). Nothing else on crates.io offers a ready "differential-test your
 `GlobalAlloc` against a model with UAF/overlap/zeroed/realloc oracles" kit.
 
@@ -34,6 +34,15 @@ The same `drive()` loop powers both:
 So an oracle improvement reaches proptest, miri, and libFuzzer at once. A normal
 build (no features) has **zero non-dev dependencies** — both front-ends are
 optional.
+
+## `no_std` by default
+
+The core model and the `proptest` front-end need only `core` + `alloc`, so
+this crate can differential-test a `no_std` allocator's own test suite
+without pulling in `std` — verified against a real bare-metal target
+(`thumbv7em-none-eabi`) for the default build. Enabling the `arbitrary`
+feature pulls `std` back in: `derive_arbitrary`'s generated recursion guard
+unconditionally references `std::thread_local!`, an upstream limitation.
 
 ## The allocator seam
 

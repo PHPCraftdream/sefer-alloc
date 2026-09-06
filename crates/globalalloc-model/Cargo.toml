@@ -12,6 +12,13 @@ documentation = "https://docs.rs/globalalloc-model"
 keywords = ["allocator", "differential", "proptest", "fuzz", "globalalloc"]
 categories = ["memory-management", "development-tools::testing", "no-std"]
 
+# Without this, docs.rs builds with `default = []` (empty) and the published
+# render would show neither `op_strategy` nor `OpStream` — both optional
+# features, together, exactly equal `--all-features` for this crate (there
+# are no others), so this is docs.rs's full API surface, not a subset.
+[package.metadata.docs.rs]
+features = ["proptest", "arbitrary"]
+
 [features]
 # The op-stream generator + reference model + oracles are always available and
 # pull in NO dependencies (a normal build has zero non-dev deps). The two

@@ -55,6 +55,14 @@ name: Release
 #   `cargo publish -p sefer-alloc` will fail to resolve until all three are
 #   on crates.io.
 #
+# - `globalalloc-model` is a LEAF crate (`[dependencies]` is only the
+#   optional, crates.io-hosted `proptest`/`arbitrary` -- no workspace path
+#   dependency either way), used only as a `[dev-dependencies]` path dep by
+#   `sefer-alloc` itself (not a real `[dependencies]` entry, so it does NOT
+#   block `sefer-alloc`'s own publish resolution the way the leaf crates
+#   above do -- `cargo publish` strips path-only dev-dependencies from the
+#   published manifest).
+#
 # ## Future improvements
 #
 # - Move to crates.io **trusted publishing** (OIDC) — removes the
@@ -71,6 +79,7 @@ on:
       - 'once-ptr-cell-v*'
       - 'size-classes-v*'
       - 'tagged-index-stack-v*'
+      - 'globalalloc-model-v*'
       - 'sefer-alloc-v*'
   workflow_dispatch:
     inputs:
@@ -86,6 +95,7 @@ on:
           - once-ptr-cell
           - size-classes
           - tagged-index-stack
+          - globalalloc-model
           - sefer-alloc
       dry-run:
         description: 'Dry-run only (do not push to crates.io)'

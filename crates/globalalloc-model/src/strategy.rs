@@ -4,6 +4,7 @@
 //! the size/align shape the in-tree differential tests used: a weighted small /
 //! large size arm plus power-of-two aligns.
 
+use alloc::vec::Vec;
 use proptest::prelude::*;
 
 use crate::{Config, Op};

@@ -6,6 +6,7 @@
 //! OS for gigabytes (which would OOM the fuzzer, not find a bug), mirroring the
 //! historical `global_alloc_ops` target.
 
+use alloc::vec::Vec;
 use arbitrary::{Arbitrary, Unstructured};
 
 use crate::Op;

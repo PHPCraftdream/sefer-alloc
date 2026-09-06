@@ -61,7 +61,19 @@
 // the oracle loop writes/reads through a pointer the allocator just returned for
 // the size it was asked for. Every such site carries a `// SAFETY:` note.
 #![allow(unsafe_code)]
+// The model itself (this file, `strategy`) needs only `core` + `alloc` (a
+// `Vec<Live>`/`Vec<Op>` to track live blocks and op streams) — no
+// allocator-under-test needs `std` to be differential-tested, so the default
+// build and the `proptest` front-end stay usable against a `no_std`
+// allocator's own test suite. The `arbitrary` front-end is the one exception:
+// `derive_arbitrary`'s generated recursion guard for `RawOp` unconditionally
+// references `std::thread_local!`, so enabling `arbitrary` pulls `std` back
+// in for this crate too (upstream limitation, not this crate's choice).
+#![cfg_attr(not(feature = "arbitrary"), no_std)]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
 
 /// A minimal raw-allocator surface: the four `GlobalAlloc` methods over
