@@ -66,6 +66,7 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// # Safety
     ///
     /// The caller uses this head only with this storage's own link binding.
+    #[inline(always)]
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
     }
@@ -73,22 +74,24 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     /// # Safety
     ///
     /// `index` is in 0..256 and was initialized through this same binding.
+    #[inline(always)]
     unsafe fn load_next(&self, index: u32) -> u32 {
-        tis_probe_load_next(self, index)
+        self.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
     }
 
     /// # Safety
     ///
     /// `index` is in-domain, non-live, and uniquely owned; `next` is TAIL or
     /// the observed in-domain head, and this store precedes publication.
+    #[inline(always)]
     unsafe fn store_next(&self, index: u32, next: u32) {
-        tis_probe_store_next(self, index, next)
+        self.slot(index).next_free.store(next, {{LINK_STORE_ORDERING}});
     }
 }
 
-// These private, non-inlined bodies are the named codegen probes. The only
-// callers are the unsafe hook methods above, which the stack algorithm reaches
-// through its push/pop paths; no wrapper setup performs a direct link write.
+// These private, non-inlined bodies are named codegen probes. `instantiate`
+// preserves their function pointers for assembly extraction but never invokes
+// them; the hook bodies above perform the algorithm's actual link accesses.
 #[inline(never)]
 fn tis_probe_load_next(stack: &RegistryShapedStorage, index: u32) -> u32 {
     stack.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
@@ -123,11 +126,15 @@ fn tis_probe_pop_index_impl(stack: &RegistryShapedStorage) {
 #[allow(unsafe_code)]
 pub fn instantiate() {
     let _ = MATERIALIZED_VARIANT;
+    black_box((
+        tis_probe_load_next as fn(&RegistryShapedStorage, u32) -> u32,
+        tis_probe_store_next as fn(&RegistryShapedStorage, u32, u32),
+    ));
     let stack = RegistryShapedStorage::new();
     // SAFETY: index 1 is in this binding's domain, is initially non-live, and
     // its unique fresh publish authority is consumed by this stack-algorithm
-    // push. That push reaches the store probe before its publishing CAS; the
-    // following pop reaches the load probe only after that legitimate push
+    // push. That push performs the hook store before its publishing CAS; the
+    // following pop performs the hook load only after that legitimate push
     // through this exact head-to-links binding.
     unsafe {
         black_box(tis_probe_push_index_impl)(black_box(&stack), black_box(1u32));
