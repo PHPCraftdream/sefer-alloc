@@ -464,12 +464,12 @@ disclaimer):
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
-The verification stack is also honest: 111 integration test files, 11 loom
-models, proptest differential against a reference model, miri with
-strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
-aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
-[Verification evidence](#verification-evidence) section spells out what each
-one actually proves.
+The verification stack is also honest: proptest differential against a
+reference model, miri with strict-provenance, ThreadSanitizer (×3 clean runs),
+Valgrind memcheck (clean), aarch64 (qemu), libFuzzer, soak / RSS /
+tokio-burn-in harnesses. The [Verification evidence](#verification-evidence)
+section records the current file inventory and spells out what each layer
+actually proves.
 
 ---
 
@@ -670,10 +670,11 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 | [`crates/tagged-index-stack/src/imp.rs`](crates/tagged-index-stack/src/imp.rs) | 8 | `StackStorage` is an unsafe trait with unsafe hooks. The crate-private `SealedStorage` bridge contains their three call-site `unsafe` blocks, each with a `// SAFETY:` proof. Caller-facing `StackOps::push_index`, `push_index_impl`, and `ArrayIndexStack::push` are unsafe boundaries, and `SealedStorage::store_next` is an unsafe declaration. The library otherwise uses `#![deny(unsafe_code)]`; implementor obligations live in `StackStorage`'s `# Safety` documentation and caller obligations in each unsafe function's `# Safety` section. |
-| [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 2 | Repository-only wall-clock A/B template. Its two `stack.push(...)` call sites have item-scoped `unsafe` blocks with concise `// SAFETY:` proofs for link domain, liveness, and exclusive ownership. Excluded from the published crate by the `scripts/` package exclusion; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs`](crates/tagged-index-stack/scripts/tis_p3_ab/harness_bin.rs) | 3 | Repository-only wall-clock A/B harness template: the `StackStorage<16>` unsafe impl and two `push_index` call sites, with the storage and publish-authority contracts documented locally. Excluded from the published package under `scripts/`; materialized by `scripts/tis_p3_ab_runner.mjs`. |
+| [`crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl`](crates/tagged-index-stack/scripts/tis_p3_ab/codegen_wrapper.rs.tmpl) | 5 | Repository-only codegen A/B wrapper template: the `StackStorage<16>` unsafe impl, three unsafe push/load/store probe functions, and the `instantiate` call-site block. Excluded from the published package under `scripts/`; materialized by `scripts/tis_p3_ab_runner.mjs`. |
 
 That's the full list (both tiers): **18** tier-1 module-level seams (12 in
-`src/`, 6 in `crates/`) plus **83** tier-2 item-scoped allows across **20**
+`src/`, 6 in `crates/`) plus **89** tier-2 item-scoped allows across **21**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -1303,20 +1304,20 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **111 integration test files** ship
-in `tests/` (100 conventional + 11 loom models — counted separately below);
-**5 example binaries** in `examples/`; **9 benches** in `benches/`
-(`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
-`large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
-**3 libFuzzer targets** in `fuzz/`
+a test file, and a reproducible command. **252 integration test files** ship
+in `tests/`; **83 example binaries** in `examples/`; **25 benches** in
+`benches/`; **15 root Loom models** in `tests/`, plus two member-crate
+real-type suites; **3 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (111 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (252 files) |
+| Examples | Executable soak, burn-in, RSS, and macro verification harnesses | `examples/*.rs` (83 files) |
+| Benches | Reproducible performance and gate harnesses | `benches/*.rs` (25 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_deferred_large.rs`, `loom_dirty_multi_segment.rs`, `loom_dirty_publish.rs`, `loom_epoch.rs`, `loom_heap_overflow.rs`, `loom_heap_overflow_drain_guard.rs`, `loom_magazine_ring_compose.rs`, `loom_overflow_first_retry.rs`, `loom_remote_ring.rs`, `loom_remote_ring_drain_guard.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (13 in-tree models), plus the extracted crates' real-type suites `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (CRATE-P3/P7 — replacing the former in-tree `loom_bootstrap_cas`/`loom_chunk_cas`/`loom_fallback_init`/`loom_overflow_sidecar_cas`/`loom_free_slots_aba` shadow models) |
-| `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
+| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | **Root (15 files):** `tests/loom_class_aware_dirty.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_registry_free_slots.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs`; **member suites:** `crates/once-ptr-cell/tests/loom_once_ptr_cell.rs`, `crates/tagged-index-stack/tests/loom_aba.rs` (real-type coverage; the latter exercises the shipping `TaggedIndexStack`) |
+| `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit`; package-specific `tagged-index-stack` target `narrow_domain_unchecked_storage` in `scripts/miri.mjs` executes in-domain unchecked accesses only |
 | Safe-surface stress (pure-safe API) | M1/M3 soundness: `alloc` never hands out aliasing pointers, so no purely-safe `Box`/`Vec`/`Arc` usage can trigger double-free/UAF | `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes; zero `unsafe`; 30+ runs) |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |

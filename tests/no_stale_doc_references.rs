@@ -38,6 +38,22 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Collect Rust sources and `*.rs.tmpl` source templates recursively.
+fn rust_inventory_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).expect("read_dir") {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            rust_inventory_files(&path, out);
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".rs") || name.ends_with(".rs.tmpl"))
+        {
+            out.push(path);
+        }
+    }
+}
+
 fn src_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
@@ -344,19 +360,13 @@ fn cargo_toml_alloc_global_panic_contract_is_accurate() {
 /// Regression-guard for a checkable NUMERIC claim in the overview docs.
 ///
 /// `docs/ARCHITECTURE.md` states the count of integration-test files as
-/// `tests/*.rs (<N> files, as of commit ...)`. That number silently rots every
+/// `tests/*.rs (<N> files)`. That number silently rots every
 /// time a test file is added or removed. This test recomputes the true count
 /// and asserts the exact `(<N> files` token is present in ARCHITECTURE.md, so a
 /// drift fails CI at the source rather than being discovered by a human reader.
 ///
 /// Doc-only guard: it reads file names + doc text, never links the crate, so it
-/// runs in every feature configuration. It is deliberately anchored to ONE
-/// easy-to-automate claim (a file count via directory listing) rather than
-/// attempting to parse every benchmark number out of markdown — wall-clock
-/// numbers are host-dependent and their prose is too free-form to assert
-/// robustly, so those are instead pinned to a dated "as of commit" freshness
-/// stamp in the doc (an honest "may have drifted, re-verify" marker) rather than
-/// a brittle exact-match test.
+/// runs in every feature configuration.
 #[test]
 fn architecture_test_file_count_matches_reality() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -379,8 +389,109 @@ fn architecture_test_file_count_matches_reality() {
         text.contains(&needle),
         "docs/ARCHITECTURE.md test-file count is stale: there are {count} \
          `tests/*.rs` files but the doc does not contain the token `{needle}`. \
-         Update the `tests/*.rs (<N> files, as of commit ...)` line to {count}.",
+         Update the `tests/*.rs (<N> files)` line to {count}.",
     );
+}
+
+fn markdown_section<'a>(text: &'a str, heading: &str) -> &'a str {
+    let start = text.find(heading).expect("markdown heading");
+    let body = &text[start..];
+    body.find("\n## ").map_or(body, |end| &body[..end])
+}
+
+#[test]
+fn verification_inventory_matches_docs() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let count_rs = |dir: &Path| {
+        fs::read_dir(dir)
+            .expect("read inventory directory")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let path = entry.path();
+                path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs")
+            })
+            .count()
+    };
+
+    let tests_count = count_rs(&manifest.join("tests"));
+    let examples_count = count_rs(&manifest.join("examples"));
+    let benches_count = count_rs(&manifest.join("benches"));
+    let mut root_loom = fs::read_dir(manifest.join("tests"))
+        .expect("read tests dir")
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            (path.is_file() && path.extension()?.to_str()? == "rs" && name.starts_with("loom_"))
+                .then(|| name.to_owned())
+        })
+        .collect::<Vec<_>>();
+    root_loom.sort();
+
+    let readme = fs::read_to_string(manifest.join("README.md")).expect("read README.md");
+    let architecture = fs::read_to_string(manifest.join("docs").join("ARCHITECTURE.md"))
+        .expect("read ARCHITECTURE.md");
+    let readme_verification = markdown_section(&readme, "## Verification evidence");
+    let architecture_verification = markdown_section(&architecture, "## 8. Verification stack");
+
+    for token in [
+        format!("**{tests_count} integration test files**"),
+        format!("**{examples_count} example binaries**"),
+        format!("**{benches_count} benches**"),
+        format!("**{} root Loom models**", root_loom.len()),
+        format!("`tests/*.rs` ({tests_count} files)"),
+        format!("`examples/*.rs` ({examples_count} files)"),
+        format!("`benches/*.rs` ({benches_count} files)"),
+    ] {
+        assert!(
+            readme_verification.contains(&token),
+            "README verification inventory is missing canonical token `{token}`"
+        );
+    }
+
+    for file in &root_loom {
+        let path = format!("tests/{file}");
+        assert!(
+            readme_verification.contains(&path),
+            "README Loom inventory is missing `{path}`"
+        );
+        assert!(
+            architecture_verification.contains(&path),
+            "ARCHITECTURE Loom inventory is missing `{path}`"
+        );
+    }
+
+    for suite in [
+        "crates/once-ptr-cell/tests/loom_once_ptr_cell.rs",
+        "crates/tagged-index-stack/tests/loom_aba.rs",
+    ] {
+        assert!(
+            readme_verification.contains(suite),
+            "README Loom inventory is missing member suite `{suite}`"
+        );
+        assert!(
+            architecture_verification.contains(suite),
+            "ARCHITECTURE Loom inventory is missing member suite `{suite}`"
+        );
+    }
+
+    for text in [readme_verification, architecture_verification] {
+        assert!(
+            text.contains("narrow_domain_unchecked_storage"),
+            "verification docs must name the tagged-index-stack narrow-domain Miri target"
+        );
+    }
+    for stale in [
+        "111 integration test files",
+        "5 example binaries",
+        "9 benches",
+        "11 loom models",
+    ] {
+        assert!(
+            !readme_verification.contains(stale),
+            "README verification evidence retains stale inventory claim `{stale}`"
+        );
+    }
 }
 
 /// Regression-guard against doc-drift in the `unsafe` inventory counts in
@@ -408,11 +519,10 @@ fn architecture_test_file_count_matches_reality() {
 fn readme_unsafe_inventory_counts_match_reality() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    // Collect every `*.rs` file under src/ AND crates/ recursively (the same
-    // two trees the README's grep command spans).
+    // Include repository-only Rust templates in the canonical grep domain.
     let mut files = Vec::new();
-    rs_files(&manifest.join("src"), &mut files);
-    rs_files(&manifest.join("crates"), &mut files);
+    rust_inventory_files(&manifest.join("src"), &mut files);
+    rust_inventory_files(&manifest.join("crates"), &mut files);
     assert!(
         !files.is_empty(),
         "no source files found under src/ or crates/"
