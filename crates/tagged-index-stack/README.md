@@ -237,6 +237,13 @@ target without native 64-bit atomic support — notably `thumbv6m-none-eabi`,
 targets are `no_std` yet lack `AtomicU64` entirely. An unsupported-target
 build fails fast with an explicit `compile_error!` naming the requirement.
 
+On AArch64, the portable baseline may lower atomic CAS operations to outlined
+compiler/runtime atomic calls; baseline code must not assume LSE instructions.
+Consumers may select `-C target-feature=+lse` (or an equivalent `target-cpu`)
+only when their deployment guarantees LSE support. That is an explicit
+deployment choice, not a crate requirement. Static assembly differences are
+codegen observations only and do not constitute a runtime speedup claim.
+
 ## loom — real-type model-check
 
 Under `--cfg loom` the atomics alias to `loom::sync::atomic`, so the loom suite

@@ -2824,41 +2824,41 @@ for completeness.
 61. **[D] `tagged-index-stack` store-elision candidate in the `push_index`
     retry loop.**
 
-    - **Status:** OPEN — measurement-only; no production change.
-    - **Current-number-or-verdict:** unmeasured. The current runner does not
-      include a store-elision variant.
-    - **Next trigger:** add a dedicated variant and activation oracle, then
-      include it in the native-arm64 wall-clock dispatch with items 62/63.
-      No hot-path change before a gate report.
-    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
+    - **Status:** OPEN — instrument-ready, measurement-only; no production
+      change.
+    - **Current-number-or-verdict:** `store_elided` changes only
+      `push_index_impl`: x86 `62 → 71` (+14.5%), AArch64 default `79 → 77`
+      (−2.5%), and AArch64 `+lse` `72 → 69` (−4.2%). The relevant static
+      CAS/`stlr` site count is `2 → 1`, not a runtime-frequency result. Its
+      deterministic tag-only oracle is exact: push retries `= 1`, pop retries
+      `= 0`, and `store_next` calls `base/links_relaxed/store_elided`
+      `= 3/3/2`.
+    - **Next trigger:** include `base`, `links_relaxed`, and `store_elided` in
+      the native-arm64 wall-clock leg with at least 6 samples and a sample
+      count multiple of 3, using the exact thin-LTO/1CGU/no-incremental
+      profile, source-input identity, and honest target host. No hot-path
+      change before a gate report.
+    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`; runner
+      updates `e1a1817`, `59bfa6a`; codegen artifacts `05be781`.
 
 62. **[D] `tagged-index-stack` link-cell ordering (P3-1) wall-clock A/B.**
 
     - **Status:** OPEN — measurement-only; production Acquire/Release links
       and strong CAS remain unchanged.
-    - **Current-number-or-verdict:** harness P3 defects were repaired in
-      `7e5ea47` and codegen was refreshed in `4a2a178`. The authoritative
-      result is x86 identity; AArch64 removes link `ldar`/`stlr` only in the
-      Relaxed candidate, while weak CAS is identity. Native arm64 timing is
-      still OPEN.
-    - **Next trigger:** after commits are available to CI, explicit
-      `workflow_dispatch` of `tis-weak-memory-wallclock-gate` on native arm64;
-      it generates fresh x86+AArch64 codegen plus ARM wall-clock and summary
-      from one checkout/toolchain.
+    - **Current-number-or-verdict:** authoritative codegen is source-input
+      HEAD-identical at source HEAD `59bfa6a2720a27c3b32b12b0d935e0996a8290dc`,
+      digest `c4183d967e0f610aeb343c09ac3fb0ec43e1e6f1c17d2dc1757a350954290a98`,
+      rustc `1.97.0` / LLVM `22.1.6`: exact x86 matrix 20 rows and AArch64
+      matrix 40 rows. x86 `links_relaxed` is identity; AArch64 removes link
+      `ldar`/`stlr` only in the Relaxed candidate. Native ARM timing is still
+      OPEN, with no wall-clock verdict.
+    - **Next trigger:** explicit `workflow_dispatch` of
+      `tis-weak-memory-wallclock-gate` on native arm64; it must time the three
+      variants with the exact profile, at least 6 samples and a sample count
+      multiple of 3, from one checkout/toolchain and honest target host.
     - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md` and its two
-      current codegen CSVs/raw logs/asm.
-
-63. **[D] `tagged-index-stack` `pop_index` CAS-success ordering as a Relaxed
-    candidate.**
-
-    - **Status:** OPEN — measurement-only; not landed.
-    - **Current-number-or-verdict:** technically valid but unmeasured. The
-      current runner does not include this variant; no timing or codegen claim
-      is made for it.
-    - **Next trigger:** add a dedicated variant with an oracle proving only
-      pop's success ordering changed, then measure it in the native-arm64 gate
-      with items 61/62. No hot-path change before a gate report.
-    - **Evidence:** `docs/perf/TIS_LINK_ORDERING_WEAK_CAS_GATE.md`.
+      current codegen CSVs/raw logs/asm; commits `e1a1817`, `59bfa6a`,
+      `05be781`.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
@@ -2901,6 +2901,7 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F11 [P2] — Round 32 has no `### Round 32` heading in CHANGELOG.md; a bolded "Runtime improvements this round: 0" sits directly above eight runtime improvements.** Closed (PARTIALLY) by R33-7 (task #512, commit `182b222`) — split Round 32's runtime improvements into their own `#### Runtime improvements` subsection with an accurate "Runtime improvements this round: 7" line. RESIDUAL (Round-33 review G6 [P3]): Round 31's section still carries the same collision shape ("Runtime improvements this round: 0" two lines above a heading listing R31-10's promoted runtime improvement), and Rounds 31/32 are out of section order (`grep -n "^### Round"` gives 33, 31, 32, 30…). The residual is filed in `docs/CORRECTNESS_OPEN_ITEMS.md` (reporting-honesty/process scope).
 - **Item 32 — the "wrong allocator layer" defect class: a gate report must name the exact entry point under test and why that layer is decision-relevant (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).** CLOSED — codified as a standing CLAUDE.md rule (see "Active rules"), not a pending remeasurement; moved here by task #1143 (2026-08-19) per R34-24 — the card's own Status already read "CLOSED this round" with "Next trigger: none" but had been left sitting in the `[D]` tier (a tier defined as "implement only if trigger/victim materializes", which does not describe a rule-codification with no further action) with no "Recently resolved" pointer, the exact stale-tier-placement defect the R34-24 rule targets. Third instance of one meta-pattern: R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this rule) — R30-3 (task #452) satisfied every rule that existed at the time, including R30-8's own path-activation oracle, and still shipped a wrong NO-GO verdict because it measured `AllocCore::alloc_zeroed` (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s `#[global_allocator]` actually uses, retaining virginity across a magazine refill via `PerClass::virgin_mask`). Caught and reopened in R31-0 (task #471, commit `dece4a7`; see this file's item 25). See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
 - **Item 56 — the unexplained ~10-13% Ir regression (range `42d8d223..42d42061`).** CLOSED (RESOLVED 2026-09-01, task #1091) — attributed by dual bisect to `5df56d3` (repr(C) PerClass, one-time +759 Ir/`HeapCore`, zero per-op cost, 15.49 Ir/PerClass) + `5289c66` (OWN_CACHE_SIZE 16, whose +3/`contains_base`-call residual is the gate's own `bench-internals`-gated Tier-1 hit/miss counters — a measurement artifact compiled out of plain production); counterfactuals A/A' confirm nothing else in the 153-commit range contributed beyond jitter; verdict (b) accepted-cost + (c) measurement-artifact, no production fix. See `docs/perf/R56_ITEM56_IR_REGRESSION_ATTRIBUTION.md` (+ its asserted summary CSV and derive script).
+- **Item 63 — `tagged-index-stack` `pop_index` CAS-success Relaxed candidate.** RESOLVED (2026-09-06, commits `e1a1817`, `59bfa6a`, `05be781`) — `pop_success_relaxed` is byte-identical to `base` for all four functions on x86 and AArch64 default/`+lse`; NULL, with production `Acquire` retained for proof clarity and no current codegen cost. Full closure: `docs/perf/OPEN_ITEMS_ARCHIVE.md` “Recently resolved — full closure trail”.
 
 ### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
 
