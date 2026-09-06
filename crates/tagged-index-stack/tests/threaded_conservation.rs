@@ -105,7 +105,7 @@ fn conservation_under_real_thread_contention() {
 
     // Prefill a fresh (already-empty) stack with 0..LINKS_SIZE -- mirrors the
     // bench's `contention/churn` prefill discipline. No drain-first needed:
-    // `Stack::new()` starts empty (RAD-1 lazy links).
+    // `Stack::new()` starts empty (lazy links).
     for i in 0..LINKS_SIZE {
         // SAFETY: fresh stack (domain 0..LINKS_SIZE); each index is in-domain,
         // never pushed before, and pushed exactly once here, so its

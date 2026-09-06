@@ -50,7 +50,7 @@
 //!     re-pushes only the first, holding the second) via
 //!     `counterfactual_untagged_head_lets_aba_corrupt_free_list` and its
 //!     tagged companion `tagged_stack_survives_the_same_resurrection_pattern`.
-//! (d) **H-2 empty-transition:** the REAL `pop` preserves the running tag across
+//! (d) **Empty-transition tag preservation:** the REAL `pop` preserves the running tag across
 //!     a drain-to-empty, so a stalled popper's CAS fails (fixed); a buggy pop
 //!     that packs the bootstrap empty word (tag 0) on the drain lets the stale CAS
 //!     recur — the `#[should_panic]` counterfactual
@@ -103,6 +103,9 @@
 //!     pushes of one index, violating clause 3 while satisfying clauses 1–2
 //!     at entry; the retry gate selects that overlap before the drain's
 //!     self-loop panic, excluding the sequential clause-2 counterfactual.
+//! (j) **Permitted republish:** `pop_repush_after_publish_conserves` proves
+//!     that a successful pop may transfer an index to a later push without
+//!     duplication, and that the resulting drain still conserves the list.
 //!
 //! # How to run
 //!
@@ -531,7 +534,7 @@ fn tagged_stack_survives_the_same_resurrection_pattern() {
 }
 
 // ============================================================================
-// (d) H-2 empty-transition. The FIXED side runs the REAL `stack.pop` (which
+// (d) Empty-transition tag preservation. The FIXED side runs the REAL `stack.pop` (which
 // preserves the running tag on drain). The BUGGY side inlines a pop whose drain
 // branch packs the bootstrap empty word (tag 0) — the exact buggy behaviour this
 // counterfactual exists to expose — using the crate's own packing primitives.
@@ -617,14 +620,14 @@ fn run_h2(preserve_tag_on_drain: bool) {
             "stale CAS succeeded: thread A's compare_exchange used a head \
              snapshot captured BEFORE thread B's full pop+push cycle, yet \
              succeeded AFTER that cycle completed — an empty-transition \
-             tag-reset ABA collision (H-2)"
+             empty-transition tag-reset ABA collision"
         );
     });
 }
 
 /// A pop whose drain-to-empty branch resets the tag to 0 (the bootstrap empty
 /// word)
-/// — the exact pre-H-2-fix behaviour, expressed with the crate's own packing so
+/// — the exact tag-reset behaviour, expressed with the crate's own packing so
 /// the counterfactual is faithful. NOT reachable through the shipped `pop`.
 fn bug_pop_drain_to_empty(stack: &ArrayIndexStack<16, 1>) -> Option<u32> {
     loop {
@@ -788,7 +791,7 @@ fn run_cas_retry(failure_ordering: Ordering) {
             let (idx2, tag2) = Tag::unpack(head);
             let next2 = stack_a.load_next_for_test(idx2);
             // Both candidate heads pack the tag actually observed off the
-            // head (`tag` / `tag2`), mirroring the real `pop`'s H-2
+            // head (`tag` / `tag2`), mirroring the real `pop`'s tag-preserving
             // tag-preservation rule exactly — the running tag is kept
             // across the empty transition and the non-empty transition
             // alike, with no hardcoded placeholder. (The end-to-end
@@ -928,71 +931,17 @@ fn push_push_conservation() {
 // two pushes acting on ONE duplicated authority epoch.
 // ============================================================================
 
-/// Counterfactual: two threads each do ONE real [`ArrayIndexStack::push`] of
-/// the SAME index onto a shared fresh stack, concurrently. Both calls
-/// literally satisfy the contract's entry-time clauses at their own
-/// invocation — `index` is in-domain (clause 1) and not reachable through
-/// the head at that instant (clause 2) — yet the race corrupts the
-/// free-list: whichever push loses its first CAS retries, observes the
-/// winner's just-published head (the same index), and chains
-/// `next[0] = 0` — a self-loop — and its own CAS can then succeed too.
-/// The shipped `pop`'s self-loop detector (`pop_link_out_of_range`) panics
-/// on the first drain pop. This pins the contract's THIRD clause
-/// (exclusive ownership epoch: each push must consume a unique,
-/// not-yet-consumed publish/recycle authority over the index — freshly
-/// minted, or obtained from one specific successful pop; two pushes acting
-/// on one duplicated epoch are forbidden) as load-bearing.
+/// Counterfactual: two concurrent real pushes of the same index satisfy the
+/// entry-time domain checks but duplicate one ownership epoch. The losing CAS
+/// retries against the winner's same-index head, creating a self-loop that
+/// the first drain pop must reject. A positive retry-count gate admits only
+/// genuinely overlapping schedules, excluding a sequential double-push.
 ///
-/// Why the retry gate: unchecked, loom may pick the schedule where A's
-/// `push(0)` completes
-/// ENTIRELY before B's begins. On that schedule B's own entry-time head read
-/// already observes index 0 as live, so B pushing anyway is an ordinary
-/// SEQUENTIAL double-push — a clause-2 violation at B's own entry, already
-/// covered elsewhere in this suite — NOT the clause-3 scenario. That schedule
-/// still writes `next[0] = 0` and still panics on drain, so
-/// `#[should_panic]` passes without demonstrating the claimed scenario. The
-/// fix is a per-schedule gate on `PUSH_RETRY_COUNT` (the process-global
-/// counter `push`'s CAS-retry arm increments on every failed CAS, read via
-/// `retry_counts_for_test().1`): the closure snapshots the counter BEFORE
-/// spawning the threads and computes the delta AFTER both joins, and only a
-/// schedule with a POSITIVE delta proceeds to the drain. The discriminator
-/// is sound: a genuinely-overlapping push that loses its first CAS MUST
-/// retry (its expected value — the empty head — no longer matches once the
-/// winner publishes), and exactly one CAS can fail per overlapping schedule
-/// (the loser's retry CAS then succeeds uncontested), so `delta == 1` on
-/// gate-passing schedules. A purely-sequential B reads A's published head
-/// `(0, tag+1)` on its FIRST entry read and its first CAS succeeds
-/// uncontested — zero retries, gate closed. And both entry reads seeing the
-/// empty head is FORCED, not assumed, on positive-delta schedules: the only
-/// head values this 2-thread fresh-stack model admits are `empty` then
-/// `(0, tag+1)`, so a CAS failure is only possible for a thread whose read
-/// saw the empty head, and a failure requires the other thread's publish to
-/// have interleaved. Hence the gate selects EXACTLY the
-/// both-clauses-satisfied-at-entry concurrent scenario and structurally
-/// excludes the sequential double-push. The counter reads are real
-/// `core::sync::atomic` loads, not loom-modeled state, so the explored
-/// state space does not grow; delta==0 schedules skip their drain ops
-/// entirely, shrinking it if anything.
+/// The retry gate admits only schedules where the two calls overlap: a
+/// sequential second call sees the first published index at entry and is
+/// skipped. On a gate-passing schedule the retry writes `next[0] = 0`, so the
+/// post-join drain deterministically reaches the self-loop.
 ///
-/// Plain [`model`], not [`model_with_oracle`]: the panic unwinds through
-/// `Builder::check`, so `model_with_oracle`'s after-snapshot could never
-/// run on the schedules that panic — an activation-oracle `verify` closure
-/// here would be partially unreachable code. This matches every other
-/// `#[should_panic]` counterfactual in this file. The before/after counter
-/// pair therefore lives INSIDE the per-schedule closure, where the panic
-/// cannot skip it.
-///
-/// Non-vacuousness needs only the retry gate plus `#[should_panic]`: loom
-/// explores every schedule this 2-thread model admits, the genuinely-
-/// overlapping ones pass the gate, and on each gate-passing schedule the
-/// drain panics DETERMINISTICALLY (coherence — see the drain comment in
-/// the body), so a body that completes panic-free means the gate never
-/// opened, and `#[should_panic]` fails the test loudly. Once the gate opens,
-/// a benign drain is not a possible outcome, so the gate itself is the
-/// non-vacuity oracle.
-/// The positive counterpart
-/// `pop_repush_after_publish_conserves` below independently
-/// proves the overlapping scenario is reachable in this suite's models.
 #[test]
 #[should_panic(expected = "the index's own link points back to itself — a self-loop")]
 fn counterfactual_same_index_concurrent_push_self_loops() {
@@ -1073,48 +1022,10 @@ fn counterfactual_same_index_concurrent_push_self_loops() {
 // doc.)
 // ============================================================================
 
-/// Positive counterpart of
-/// `counterfactual_same_index_concurrent_push_self_loops`: thread A does
-/// ONE real [`ArrayIndexStack::push`] of index 0 on a fresh stack; thread B
-/// pops and — when its pop returns the just-published 0 — re-pushes it.
-/// Proves exactly one property: the publish -> pop -> repush sequence
-/// CONSERVES the free-list — the drain yields exactly one 0, no panic, no
-/// double-issue — on EVERY schedule of the model, and the activation-oracle
-/// flag proves the interesting class (B's pop genuinely observing A's
-/// published index rather than popping before the publish and returning
-/// `None`) was actually among the explored schedules.
-///
-/// What this test does NOT prove: that B's pop+repush can run while A's
-/// push call is still physically executing (before it returns). After A's
-/// publishing CAS succeeds, `push` performs no further shared-memory
-/// operation before returning, so "B between A's CAS and A's return" and
-/// "B after A's return" have an IDENTICAL observable partial order — loom
-/// cannot distinguish them, and no harness gating short of a test-only hook
-/// inside the shipped `push` could. Physical-return timing is also
-/// irrelevant to the algorithm's correctness: A's authority over index 0
-/// ended at its own CAS (nothing it does afterward touches shared memory —
-/// push_index clause 3's ownership-epoch framing), and B's push is backed
-/// by B's OWN successful pop, a distinct later epoch, so no two pushes
-/// ever consume one epoch and the self-loop shape is structurally
-/// unconstructible. The contract states the not-yet-returned window as a
-/// PERMISSION (push_index clause 3); this test pins that the same
-/// publish -> pop -> repush sequence conserves the free-list, without
-/// claiming to observe that window.
-///
-/// Why a flag and not a retry counter: on this model no CAS EVER fails.
-/// The head's only possible transitions are `(empty, 0) -> (0, 1)` (A's
-/// push — nothing else can move an empty head, since `pop` returns `None`
-/// at loop-top on an empty observation and B's re-push cannot exist
-/// before B's successful pop) `-> (empty, 1)` (B's pop) `-> (0, 2)`
-/// (B's re-push), each uncontested by construction, so
-/// `PUSH_RETRY_COUNT`/`POP_RETRY_COUNT` stay at zero on every schedule
-/// and the contention-style oracles used by `push_push_conservation`/
-/// `pop_pop_conservation` would assert nothing here. The flag is a real
-/// `std::sync::atomic` (deliberately NOT loom-modeled — like the retry
-/// counters, it adds no schedules to explore and survives loom's
-/// re-runs), written only by this test's thread B on its pop-success path
-/// and read once after `model()` returns, so it needs no `MODEL_LOCK`
-/// exclusivity: no other test touches it.
+/// Positive counterpart of the same-index counterfactual: A publishes index
+/// 0, B pops that published index and repushes it, then the drain yields one
+/// 0. The activation flag requires B to observe A's publication; no retry
+/// counter is needed because each transition is uncontended.
 #[test]
 fn pop_repush_after_publish_conserves() {
     model(|| {
@@ -1274,7 +1185,7 @@ fn pop_pop_conservation() {
 /// loop, not assumed):** both poppers may read the same head snapshot
 /// `(0, t)`; only ONE `compare_exchange` against `(0, t)` can succeed. The
 /// winner installs `(empty, t)` — `pop` preserves the running tag across
-/// the drain (H-2). The loser's CAS therefore fails with an EMPTY `actual`,
+/// the drain. The loser's CAS therefore fails with an EMPTY `actual`,
 /// taking `pop`'s Err arm: the retry counter increments, then the
 /// `is_empty(actual) == true` guard SKIPS the exponential-backoff spin
 /// (spinning would be pure wasted latency before the loop-top `None`),
@@ -1459,7 +1370,7 @@ fn run_tiny_tag_seal(bypass_seal: bool) {
             let final_result: Result<(), TagExhausted> = if bypass_seal {
                 // Counterfactual bypass — see run_tiny_tag_seal's own doc
                 // for why the installed tag is p_stale_tag, not literal 0.
-                // RAD-1: write the link the way a real push into an EMPTY
+                // Lazy links: write the link the way a real push into an EMPTY
                 // stack would (next[q_a] = TAIL) before publishing.
                 stack_q.store_next_for_test(q_a, TAIL);
                 let current = stack_q.raw_head();

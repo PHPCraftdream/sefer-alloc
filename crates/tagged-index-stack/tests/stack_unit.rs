@@ -5,17 +5,18 @@
 //! `Err(TagExhausted)` before the tag could ever reach `2^48`; this file
 //! pins that ceiling by rejection through the checked `pack`) and the
 //! sentinel-boundary sweep, plus the
-//! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the H-2
+//! [`ArrayIndexStack`] fused head+links LIFO push/pop (including the
 //! empty transition observed single-threaded: drain to empty then refill,
 //! and confirm the tag keeps climbing).
 //!
 //! These do NOT run under `--cfg loom` (the loom real-type concurrency proof is
 //! `tests/loom_aba.rs`); they are the ordinary `cargo test` conformance smoke.
 //!
-//! White-box probes below (`empty_transition_preserves_running_tag`,
-//! `links_are_lazy`, `default_stack_head_behaves_like_new`) read through the
-//! repository-test-cfg/loom-gated raw accessors (`raw_head` /
-//! `load_next_for_test`) and carry the same
+//! Five white-box probes below (`empty_transition_preserves_running_tag`,
+//! `links_are_lazy`, `default_stack_head_behaves_like_new`,
+//! `with_tag_for_test_accepts_the_exact_tag_max_boundary`, and
+//! `with_tag_for_test_panics_instead_of_silently_truncating_an_out_of_range_tag`)
+//! read through repository-test-cfg/loom-gated accessors and carry the same
 //! `#[cfg(tagged_index_stack_test)]` gate, so plain
 //! default-feature `cargo test` runs compile them out; CI runs this file
 //! under `RUSTFLAGS="--cfg tagged_index_stack_test"` to execute them (the
@@ -57,7 +58,7 @@ const _: () = {
 /// `pack` itself) at the exact boundary values of BOTH halves. Index half:
 /// `INDEX_MASK` itself is IN range — pack's acceptance boundary is
 /// `< 2^INDEX_BITS`, NOT `push`'s stricter `< INDEX_MASK` reserve-sentinel
-/// bound (packing the empty index with a tag is the legitimate H-2 shape) —
+/// bound (packing the empty index with a tag is the legitimate tag-preserving shape) —
 /// and `1 << INDEX_BITS` is the first rejected index. Tag half: `TAG_MAX`
 /// is IN range (the `(0xFFFE, TAG_MAX)` table row) and `TAG_MAX + 1`
 /// (`2^TAG_BITS`) is the first rejected tag; production `push` never
@@ -136,7 +137,8 @@ fn pack_rejects_out_of_range_halves_and_accepts_the_full_index_range() {
 
 /// A different width (`INDEX_BITS = 12`) partitions the word correctly and the
 /// empty sentinel is width-appropriate — exercises the const generic at a
-/// mid-range legal width, distinct from this file's other widths 1 and 16.
+/// mid-range legal width, distinct from this file's other exercised widths 1,
+/// 4, and 16.
 #[test]
 fn width_12_partitions() {
     type T = TaggedIndex<12>;
@@ -193,24 +195,13 @@ fn double_push_of_current_head_panics_on_first_pop() {
     let _ = stack.pop(); // first pop: self-loop -> panic
 }
 
-// Compile-fail coverage: out-of-range `INDEX_BITS` (the
-// `tests/compile_fail/index_bits_zero/` and `index_bits_seventeen/`
-// fixtures), over-capacity `ArrayIndexStack` construction and `Default`
-// (the `array_index_stack_capacity_new/` and
-// `array_index_stack_capacity_default/` fixtures), and the
-// cfg-without-feature fast-fail are pinned
-// out-of-process by the root `tests/tagged_index_stack_compile_fail.rs`, which
-// asserts each failure
-// is `_CHECK_BITS`'s E0080 / the named `compile_error!` with no secondary
-// name-resolution error. This hand-rolled setup is the workspace's
-// established alternative to `trybuild` (`compile_fail` doctests are
-// banned; find the notes with
-// `grep -rn trybuild --include=*.rs .` from the workspace root).
-// Revisit only if `_CHECK_BITS`'s const-evaluation routing is ever
-// refactored.
+// Compile-fail coverage for invalid widths, over-capacity construction and
+// the cfg-without-feature fast-fail is driven out-of-process by the root
+// `tests/tagged_index_stack_compile_fail.rs`, which checks each fixture's
+// expected diagnostic and rejects unrelated build failures.
 
 // ---------------------------------------------------------------------------
-// ArrayIndexStack — fused head+links LIFO order + H-2 single-threaded.
+// ArrayIndexStack — fused head+links LIFO order and tag-preserving empty transition.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -254,7 +245,7 @@ fn width_1_stack_push_pop_round_trips_its_sole_index() {
 }
 
 /// Drain to empty then refill the SAME index: the tag must have advanced across
-/// the empty transition (H-2), NOT reset to 0. Observed via `raw_head` — a
+/// the empty transition, NOT reset to 0. Observed via `raw_head` — a
 /// repository-test-cfg/loom-gated accessor, so this probe carries the same gate
 /// (see the module doc).
 #[cfg(tagged_index_stack_test)]
@@ -275,7 +266,7 @@ fn empty_transition_preserves_running_tag() {
     let (_ev, empty_tag) = T::unpack(empty_head);
     assert_eq!(
         empty_tag, 1,
-        "H-2: the empty transition preserves the running tag (1), not 0 — \
+        "the empty transition preserves the running tag (1), not 0 — \
          resetting to 0 would reopen ABA"
     );
 
@@ -289,7 +280,7 @@ fn empty_transition_preserves_running_tag() {
     );
 }
 
-/// The link storage is only ever written by a push (RAD-1 lazy discipline):
+/// The link storage is only ever written by a push (lazy-link discipline):
 /// after construction every link is the zero value, and popping never writes
 /// a link. Observed directly through the test-only inherent accessor
 /// (`load_next_for_test`), not
@@ -325,7 +316,7 @@ fn links_are_lazy() {
 
 /// Both `Default` impls must behave like `new()`.
 /// `ArrayLinks::<N>::default()` must behave exactly like `new()`: every link
-/// at the zero value (RAD-1 — no eager chaining), readable through the
+/// at the zero value (no eager chaining), readable through the
 /// inherent `load_next`, verified here link-for-link across all `N` indices.
 /// (A bare `ArrayLinks` is not itself a `StackStorage`; push/pop behavior is
 /// the stack-level tests' subject, e.g. `default_array_index_stack_behaves_like_new`.)
@@ -342,13 +333,13 @@ fn default_array_links_behaves_like_new() {
         assert_eq!(
             default_links.load_next(i),
             0,
-            "link {i}: a fresh backing's links are the zero value (RAD-1)"
+            "link {i}: a fresh backing's links are the zero value (lazy links)"
         );
     }
 }
 
 /// `ArrayIndexStack::<INDEX_BITS, N>::default()` must behave exactly like
-/// `new()`: a fresh, EMPTY stack (RAD-1 lazy links) that pushes and pops
+/// `new()`: a fresh, EMPTY stack with lazy links that pushes and pops
 /// normally.
 #[test]
 fn default_array_index_stack_behaves_like_new() {
@@ -425,9 +416,6 @@ fn with_tag_for_test_accepts_the_exact_tag_max_boundary() {
 #[test]
 #[should_panic(expected = "with_tag_for_test: tag out of range")]
 fn with_tag_for_test_panics_instead_of_silently_truncating_an_out_of_range_tag() {
-    // Before the fix this call packed through `pack_truncating`, which
-    // silently drops the tag's high bits — TAG_MAX + 1 truncates straight
-    // back to 0, an in-range-looking but WRONG starting tag. It must now
-    // panic instead of returning a mis-seeded head.
+    // An out-of-range starting tag must be rejected rather than truncated.
     let _ = StackHead::<16>::with_tag_for_test(TaggedIndex::<16>::TAG_MAX + 1);
 }

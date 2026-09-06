@@ -2,16 +2,11 @@
 //! implementation" (slot-resident links in caller-owned storage is the whole
 //! design point), and the crate blanket-implements [`StackOps`] for every
 //! `S: StackStorage<B> + ?Sized` — precisely so `&dyn StackStorage` works.
-//! Every other test in this crate exercises only [`ArrayIndexStack`] (the
-//! exceptions are not working implementors: this file's own
-//! `AlwaysInvalidStorage` below deliberately violates the contract to fire
-//! [`pop_index`](StackOps::pop_index)'s clause-4 guard, and
-//! `tests/compile_fail/unsafe_impl_required/` deliberately fails to
-//! compile), so this file is where those claims are exercised by a real,
-//! WORKING second implementor. This file
-//! pins both: a small `Vec`-backed `StackStorage` impl used directly, and the
-//! same storage driven through `&dyn StackStorage<16>` to pin the blanket
-//! impl's `?Sized` coverage.
+//! Most other tests exercise only [`ArrayIndexStack`]. The working
+//! `UncheckedPool<8>` implementor in `narrow_domain_unchecked_storage.rs` is
+//! the other exception; this file adds a small `Vec`-backed implementation and
+//! drives it both directly and through `&dyn StackStorage<16>` to pin the
+//! blanket impl's `?Sized` coverage.
 //!
 //! It also pins the shared-storage hazard class and its current detection
 //! coverage. The canonical statement of that inventory is the
@@ -95,11 +90,16 @@ unsafe impl StackStorage<16> for VecStorage {
 #[test]
 fn vec_backed_storage_push_pop_round_trips() {
     let storage = VecStorage::new(8);
+    assert!(storage.head.is_empty(), "a custom storage starts empty");
 
     for i in 0..4u32 {
         // SAFETY: fresh storage (domain 0..8); each index 0..4 is in-domain and pushed exactly once.
         unsafe { storage.push_index(i) }.expect("fresh head has tag budget");
     }
+    assert!(
+        !storage.head.is_empty(),
+        "a custom storage becomes non-empty after push"
+    );
     let mut got = Vec::new();
     while let Some(i) = storage.pop_index() {
         got.push(i);
@@ -110,6 +110,10 @@ fn vec_backed_storage_push_pop_round_trips() {
         "LIFO order over a non-ArrayLinks storage"
     );
     assert_eq!(storage.pop_index(), None);
+    assert!(
+        storage.head.is_empty(),
+        "a custom storage is empty after draining"
+    );
 }
 
 /// The [`StackOps`] blanket impl covers `S: StackStorage<B> + ?Sized`, so
@@ -204,15 +208,9 @@ fn two_implementor_values_sharing_one_head_still_double_issue() {
     let _ = via_b.pop_index();
 }
 
-/// A self-sufficient implementor that OWNS its head and its links — the
-/// same shape a hand-rolled third-party `StackStorage` impl takes. The
-/// implementation owns its head and links; extracting a head from
-/// `ArrayIndexStack` is not part of the public API
-/// (`ArrayIndexStack` no longer implements `StackStorage` — see the
-/// compile-fail fixture `tests/compile_fail/array_index_stack_head/`), so
-/// this struct now constructs its own `StackHead` like any other custom
-/// implementor.
-struct Parasite {
+/// A self-contained implementor whose links are deliberately forged after a
+/// real push, exercising an acyclic invalid chain.
+struct ForgedAcyclicLinks {
     head: StackHead<16>,
     links: ArrayLinks<64>,
 }
@@ -225,7 +223,7 @@ struct Parasite {
 // cell's modification order, and clause 2's lower bound forbids only
 // other clauses — the value-level clause-4 obligation is what the forgery
 // breaks.)
-unsafe impl StackStorage<16> for Parasite {
+unsafe impl StackStorage<16> for ForgedAcyclicLinks {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
     }
@@ -239,93 +237,31 @@ unsafe impl StackStorage<16> for Parasite {
     }
 }
 
-/// The self-loop detector's LIMIT — a hand-crafted ACYCLIC
-/// forgery still double-issues silently. KNOWN, INTENTIONAL limitation,
-/// same register as the `#[should_panic]` tests around it: this pins that
-/// `pop_index`'s clause-4 guard is a SHAPE detector (the
-/// zero-initialised-foreign-backing shape, whose `next == index` self-loop
-/// is unreachable for a contract-abiding chain), NOT a structural fix for
-/// the shared-storage hazard class — see the [`StackStorage`] trait doc's
-/// "The shared-storage hazard class" section for the full catch/miss
-/// boundary.
-///
-/// The head no longer comes from `ArrayIndexStack::head()` — that
-/// extraction route is CLOSED (see the compile-fail fixture
-/// `tests/compile_fail/array_index_stack_head/`). What this test now
-/// demonstrates is the pure hand-forged-acyclic-backing shape: the
-/// implementor's backing is overwritten BEHIND the algorithm's back, so
-/// its `load_next` answers with values the crate never stored (a violation
-/// of `# Safety` clause 4 — the valid-answers obligation; clause 2's
-/// coherence lower bound is not crossed, since the forged write is later
-/// in the cell's modification order than the publishing push's own
-/// `store_next`) — and the acyclic forgery evades the self-loop detector.
-/// The detector's limit, unchanged.
-///
-/// Mechanism: the parasite pushes index `1` for real (`links[1] = TAIL`,
-/// head `(1, tag)`), then forges its own links before popping —
-/// `links[1] = 0`, `links[0] = TAIL`. The chain it hands `pop_index` is
-/// perfectly acyclic and numerically valid (`1 -> 0 -> TAIL`): the first
-/// pop legitimately returns the head index `1`, and the second pop returns
-/// the never-pushed `0` — a phantom index, in a parent allocator a second
-/// owner for a live slot — with NO panic, because no link ever points
-/// back to its own index. If a future structural fix detects
-/// forged-but-acyclic chains too, this test breaks by design and
-/// `pop_index`'s `# Panics` must be updated with it.
+/// The self-loop detector is a shape check, not a structural repair for every
+/// invalid backing. This deliberate clause-4 violation forges `1 -> 0 ->
+/// TAIL`, so the acyclic chain silently returns the never-pushed `0`.
 #[test]
 fn hand_crafted_acyclic_forgery_still_double_issues() {
-    let parasite = Parasite {
+    let forged = ForgedAcyclicLinks {
         head: StackHead::<16>::new(),
         links: ArrayLinks::<64>::new(),
     };
 
-    // A REAL push through the implementor: links[1] = TAIL, head = (1, tag).
-    // SAFETY: fresh parasite links (domain 0..64); index 1 is in-domain and this is its first push.
-    unsafe { parasite.push_index(1) }.expect("fresh head has tag budget");
+    // SAFETY: fresh links (domain 0..64); index 1 is in-domain and this is its first push.
+    unsafe { forged.push_index(1) }.expect("fresh head has tag budget");
 
-    // Forge an acyclic chain in the parasite's own links BEFORE popping:
-    // index 1 (the head) chains to 0, 0 chains to TAIL.
-    parasite.links.store_next(1, 0);
-    parasite.links.store_next(0, TAIL);
+    // Forge an acyclic chain before popping: 1 -> 0 -> TAIL.
+    forged.links.store_next(1, 0);
+    forged.links.store_next(0, TAIL);
 
-    assert_eq!(parasite.pop_index(), Some(1));
-    // The never-pushed 0, handed out silently — no self-loop anywhere in
-    // 1 -> 0 -> TAIL, so the detector stays quiet.
-    assert_eq!(parasite.pop_index(), Some(0));
+    assert_eq!(forged.pop_index(), Some(1));
+    assert_eq!(forged.pop_index(), Some(0));
 }
 
-/// A borrowed-LINKS [`StackStorage`] implementor with its OWN head value:
-/// the fourth variant of the double-issue family, and the first that does
-/// NOT involve a shared head at all. KNOWN, INTENTIONAL limitation —
-/// documented, not detected: no cheap
-/// runtime detector exists for this shape (the [`StackStorage`] trait
-/// doc's clause 3 binding-level invariant; the trait doc's hazard inventory lists
-/// it as the one shape with no detection at all).
+/// Two independent heads sharing link cells and overlapping index reachability
+/// violate clause 3. The corruption remains acyclic, so the runtime detector
+/// cannot catch it; draining both bindings documents the resulting duplicates.
 ///
-/// The hazard: TWO stacks built over the SAME link cells — each with a
-/// completely separate, freshly constructed, individually contract-abiding
-/// [`StackHead`] — where one index is REACHABLE from both (cell sharing
-/// per se is harmless with disjoint index populations — each
-/// `store_next`/`load_next` touches only its own cell — see clause 3's
-/// binding-level invariant): the second stack's push of an index live in
-/// the first overwrites a link the first still chains through. Concretely:
-/// `a` pushes 1 then 2 (`links[1] = TAIL`, `links[2] = 1`); `b` pushes 3
-/// then 1 (`links[3] = TAIL`, then `links[1] = 3`, CLOBBERING the `TAIL`
-/// `a` stored there). `a`'s chain has silently become `2 -> 1 -> 3 ->
-/// TAIL` and `b`'s is `1 -> 3 -> TAIL`. Draining `a` yields `2, 1, 3`;
-/// draining `b` yields `1, 3` — indices 1 AND 3 are each handed out
-/// TWICE, across two stacks that appear individually correct by every
-/// clause. In a parent allocator that is two live slots with two
-/// owners each. Every link value stays numerically valid and the shared
-/// chain stays perfectly ACYCLIC, so `pop_index`'s clause-4 guard —
-/// including the self-loop detector — cannot fire; only clause 3's
-/// binding-level invariant NAMES the obligation — implementor/caller
-/// discipline, not something the type system, the blanket impl, or a
-/// runtime guard enforces. Discharge it by construction: disjoint index
-/// populations per binding over any shared cell population. If a future
-/// revision adds a detector for
-/// cross-stack cell sharing (or stops this shape from compiling), this
-/// test breaks by design and the trait doc's clause 3 must be updated with
-/// it.
 #[test]
 fn two_stacks_sharing_link_storage_still_double_issue() {
     struct SharedLinksView<'a> {
@@ -363,14 +299,10 @@ fn two_stacks_sharing_link_storage_still_double_issue() {
     // SAFETY: fresh shared links (domain 0..64); indices 1 and 2 are each pushed exactly once, in-domain.
     unsafe { a.push_index(1) }.expect("fresh head has tag budget");
     unsafe { a.push_index(2) }.expect("fresh head has tag budget");
-    // `b`'s push of 1 clobbers `links[1]` — the TAIL `a` stored there —
-    // with 3, splicing `a`'s chain onto `b`'s tail.
+    // `b`'s push of 1 overwrites `a`'s link and splices the chains.
     // SAFETY: index 3 is in-domain and not yet pushed.
     unsafe { b.push_index(3) }.expect("fresh head has tag budget");
-    // SAFETY: DELIBERATE contract violation under test — index 1 is still live (pushed via `a`); the
-    // resulting shared-links corruption is this test's subject. Push itself
-    // still succeeds (liveness is not checked by push_index) — only the
-    // LATER corruption is this test's subject.
+    // SAFETY: deliberate clause-3 violation under test; index 1 is still live in `a`.
     unsafe { b.push_index(1) }.expect("fresh head has tag budget");
 
     let mut from_a = Vec::new();

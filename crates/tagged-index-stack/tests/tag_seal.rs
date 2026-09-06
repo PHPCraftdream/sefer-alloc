@@ -4,7 +4,8 @@
 //!
 //! Concurrent seal coverage lives in `tests/loom_aba.rs`; this file covers
 //! the single-threaded API contract: the exact
-//! `Ok, Ok, Err` sequence at the ceiling, `pushes_remaining()`'s readback,
+//! `Ok, Ok, Err` sequence at the ceiling, fresh and seeded
+//! `pushes_remaining()` readback,
 //! that a refused push has no observable side effect, that pops keep
 //! working after a seal, and that the seal is permanent.
 //!
@@ -22,6 +23,22 @@ use tagged_index_stack::{ArrayIndexStack, TagExhausted};
 /// literal const assertions, so either constant can regress on its own.
 const _: () = assert!(TaggedIndex::<16>::TAG_BITS == 48);
 const _: () = assert!(TaggedIndex::<16>::TAG_MAX == (1u64 << 48) - 1);
+
+#[cfg(tagged_index_stack_test)]
+#[test]
+fn fresh_pushes_remaining_equals_tag_max() {
+    let stack = ArrayIndexStack::<16, 4>::new();
+    assert_eq!(stack.pushes_remaining(), TaggedIndex::<16>::TAG_MAX);
+}
+
+#[cfg(tagged_index_stack_test)]
+#[test]
+fn tag_exhausted_display_is_stable() {
+    assert_eq!(
+        TagExhausted.to_string(),
+        "tagged-index-stack: push refused, the head's tag has reached TaggedIndex::TAG_MAX; the stack is sealed (pops still work, pushes are refused permanently)"
+    );
+}
 
 /// The core seal sequence: seed `TAG_MAX - 2` (2 pushes of headroom), three
 /// pushes onto a fresh 1-slot chain-building sequence produce exactly

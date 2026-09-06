@@ -100,7 +100,7 @@ impl<const N: usize> UncheckedPool<N> {
 //    storage (never payload-aliased) and answers only what a push stored:
 //    [`TAIL`] or an in-range index (fresh cells hold 0, and 0 is only ever
 //    read after a push through this binding initialised it — the lazy-link
-//    RAD-1 discipline).
+//    lazy-link discipline).
 // 5. **Same logical head every call.** `head()` returns `&self.head` on
 //    every call.
 // 6. **Declared link domain.** The declared link domain of this impl is

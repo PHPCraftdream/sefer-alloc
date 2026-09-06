@@ -1,14 +1,11 @@
 //! Property-based round-trip tests for `TaggedIndex::pack`/`unpack`, covering
 //! several widths (including the degenerate `INDEX_BITS = 1`) with randomly
 //! generated `(index, tag)` pairs — complementing `stack_unit.rs`'s
-//! hand-picked-literal tests: `pack_unpack_round_trip_16` (width 16 only),
-//! `width_12_partitions` (width 12), and
-//! `max_legal_width_index_mask_never_equals_tail` (width 16).
+//! fixed-width and boundary tests.
 //!
 //! Every width stays inside the legal `1..=16` range enforced by
-//! `TaggedIndex::_CHECK_BITS`; width 15 probes just under the ceiling the way
-//! 31 once sat against the old 32 ceiling, and width 16 is the ceiling itself
-//! (the minimum 48-bit-tag configuration).
+//! `TaggedIndex::_CHECK_BITS`; width 15 exercises the near-ceiling layout, and
+//! width 16 is the ceiling itself (the minimum 48-bit-tag configuration).
 //!
 //! Per this repo's fast-proptest convention (CLAUDE.md: "modest number of
 //! cases by default (around 64) — this is a smoke-check for conformance, not
@@ -79,10 +76,8 @@ proptest! {
 
     #[test]
     fn rejects_out_of_range_index_width_16(
-        // Strictly OUTSIDE the index half: the first invalid index
-        // (1 << INDEX_BITS) is the smallest possible reject, u32::MAX the
-        // largest — the exact values the old truncating pack silently
-        // masked into different valid-looking indices.
+        // Strictly outside the index half: start at the first invalid index
+        // and cover the rest of the u32 domain.
         // `INDEX_BITS` is the const generic parameter, not an associated
         // const, so the shift amount is spelled literally: width 16.
         index in (1u32 << 16)..=u32::MAX,
@@ -94,9 +89,8 @@ proptest! {
     #[test]
     fn rejects_out_of_range_tag_width_16(
         index in 0u32..((1u32 << 16) - 1),
-        // Strictly OUTSIDE the tag half: the first invalid tag
-        // (1 << TAG_BITS) is the value whose high bit the old truncating
-        // pack's shift silently dropped, wrapping the tag to 0.
+        // Strictly outside the tag half: start at the first invalid tag and
+        // cover the rest of the u64 domain.
         tag in (1u64 << TaggedIndex::<16>::TAG_BITS)..=u64::MAX,
     ) {
         prop_assert_eq!(TaggedIndex::<16>::pack(index, tag), None);
