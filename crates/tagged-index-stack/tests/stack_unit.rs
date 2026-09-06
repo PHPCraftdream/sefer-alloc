@@ -397,7 +397,8 @@ fn empty_transition_preserves_running_tag() {
 
 /// The link storage is only ever written by a push (RAD-1 lazy discipline):
 /// after construction every link is the zero value, and popping never writes
-/// a link. Observed DIRECTLY through the storage trait (`load_next`), not
+/// a link. Observed directly through the test-only inherent accessor
+/// (`load_next_for_test`), not
 /// inferred from push/pop behaviour: a never-pushed index's link reads 0
 /// before AND after other indices are pushed and popped, so an eager
 /// link-chaining pass (at construction or on the first push) fails here.

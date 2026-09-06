@@ -2982,9 +2982,11 @@ jobs:
     runs-on: ubuntu-24.04-arm
     if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      # Pin the toolchain for which this runner carries the exact lowering oracles.
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
+          toolchain: 1.97.0
           targets: x86_64-unknown-linux-gnu
       # No Rust-test grep sentinel is needed: bash `pipefail` propagates the
       # runner's exit status through `tee`, and the runner's Node output is not
