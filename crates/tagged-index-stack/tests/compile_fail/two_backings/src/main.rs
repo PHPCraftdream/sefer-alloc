@@ -8,7 +8,7 @@
 //! still expressible through a custom `unsafe impl StackStorage` that
 //! asserts and then violates its `# Safety` contract (shape 2 of the trait
 //! doc's hazard inventory; pinned by
-//! `two_implementor_values_sharing_one_head_still_double_issue` in
+//! `two_implementor_values_sharing_one_head_guard_panics` in
 //! `tests/custom_storage_impl.rs`). Pinned failing by
 //! root `tests/tagged_index_stack_compile_fail.rs`.
 use tagged_index_stack::{ArrayLinks, StackHead};

@@ -182,7 +182,8 @@ fn array_index_stack_accepts_index_mask_capacity_boundary() {
 /// guard against a caller-contract violation OUTSIDE the shared-storage
 /// hazard class entirely, so a future narrowing of the detector to that
 /// class's specific sub-shape (e.g. only a zero-initialised backing) fails
-/// here too. See `StackStorage`'s "Detection coverage" section.
+/// here too. See `StackStorage`'s "Shared-storage hazard class: detection
+/// boundary" section.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
 fn double_push_of_current_head_panics_on_first_pop() {

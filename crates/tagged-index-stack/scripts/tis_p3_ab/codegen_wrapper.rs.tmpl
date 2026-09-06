@@ -89,9 +89,9 @@ unsafe impl StackStorage<16> for RegistryShapedStorage {
     }
 }
 
-// These private, non-inlined bodies are named codegen probes. `instantiate`
-// preserves their function pointers for assembly extraction but never invokes
-// them; the hook bodies above perform the algorithm's actual link accesses.
+// These private, non-inlined bodies are the standalone load/store probes.
+// `instantiate` preserves their function pointers but invokes neither one;
+// the separately named push/pop probes below exercise the actual hooks.
 #[inline(never)]
 fn tis_probe_load_next(stack: &RegistryShapedStorage, index: u32) -> u32 {
     stack.slot(index).next_free.load({{LINK_LOAD_ORDERING}})
