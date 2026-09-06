@@ -1,12 +1,9 @@
 //! Root integration tests for the runner's containment and scratch-lifecycle
 //! contracts.
 //!
-//! The oracles cover rejected output/target paths, unsupported
-//! codegen targets, strict mode-specific options, wallclock host mismatch, a
-//! planted scratch-root redirect, external CARGO_HOME isolation, successful
-//! cleanup, fatal cleanup, ordinary-error cleanup, and the explicit
-//! `--keep-scratch` opt-out. Every run uses a disposable skeleton, so a
-//! containment regression can only damage that test's copy.
+//! The oracles cover runner containment, external CARGO_HOME isolation, and
+//! scratch lifecycle. Every run uses a disposable skeleton, so a containment
+//! regression can only damage that test's copy.
 //! Counterfactuals are explicit: rejected paths must fail before mutation;
 //! a planted redirect must not reach its victim; post-creation failures must
 //! clean their root; and `--keep-scratch` must retain exactly one owned root.
@@ -496,6 +493,19 @@ fn mode_specific_options_are_rejected_before_scratch() {
             ],
             "tis_p3_ab_runner: FATAL: --smoke is valid only with --mode wallclock",
         ),
+        (
+            "wallclock --smoke --threads",
+            &[
+                "--mode",
+                "wallclock",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "--smoke",
+                "--threads",
+                "8",
+            ],
+            "--threads cannot be provided with --smoke; smoke fixes threads=4, window-ms=100, samples=1",
+        ),
     ];
     let target = root_guard.path().join("target");
     for &(what, args, diagnostic) in cases {
@@ -644,15 +654,16 @@ fn assert_fatal_from_post_mkdtemp_cargo_build(out: &Output) {
         "broken-source run lacked the runner's FATAL diagnostics; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("production cargo build --target")
-            && stderr.contains("failed for the wall-clock harness template (build-check mode"),
-        "FATAL did not come from post-creation cargo build; no-leak oracle is vacuous; \
-         stderr:\n{stderr}"
+        stderr.contains("production cargo build --target ")
+            && stderr.contains(" failed for base (build-check mode, cwd "),
+        "FATAL did not come from the post-mkdtemp base production Cargo build; \
+         no-leak oracle is vacuous; stderr:\n{stderr}"
     );
 }
 
-/// A successful build-check must leave no new scratch root. A cleanup
-/// regression leaves the root created by this invocation.
+/// A successful build-check must ignore harmful external Cargo config and
+/// leave no new scratch root. A cleanup or isolation regression is observable
+/// from this single invocation.
 #[test]
 fn build_check_success_leaves_no_scratch_root() {
     if !node_available() {
@@ -660,43 +671,6 @@ fn build_check_success_leaves_no_scratch_root() {
         return;
     }
     let (parent, root_guard, runner) = build_repo_copy("lifecycle_ok");
-    let skeleton_target = root_guard.path().join("target");
-    let before = scratch_roots_under(&skeleton_target);
-    assert!(
-        before.is_empty(),
-        "fixture: a fresh skeleton must have no scratch roots yet: {before:?}"
-    );
-    let out = run_build_check(&runner);
-    assert!(
-        out.status.success(),
-        "build-check must succeed against an unbroken skeleton for this oracle to mean \
-         anything; stderr:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("build-check mode OK"),
-        "run exited 0 but never printed build-check's success line (mechanism oracle); \
-         stdout:\n{stdout}"
-    );
-    let after = scratch_roots_under(&skeleton_target);
-    assert_eq!(
-        before, after,
-        "successful build-check left a scratch root under <repo>/target"
-    );
-    drop(parent);
-}
-
-/// A harmful user config must be ignored because build-check binds a fresh
-/// scratch CARGO_HOME. The green build and absent scratch root are the
-/// mechanism and lifecycle oracles; the external config must remain intact.
-#[test]
-fn build_check_uses_scratch_cargo_home_and_leaves_no_scratch_root() {
-    if !node_available() {
-        eprintln!("skipping: node not on PATH");
-        return;
-    }
-    let (parent, root_guard, runner) = build_repo_copy("external_cargo_home");
     let external_home = exclusive_temp_dir("harmful_cargo_home");
     let missing_wrapper = external_home
         .path()
@@ -708,33 +682,34 @@ fn build_check_uses_scratch_cargo_home_and_leaves_no_scratch_root() {
     );
     let config_path = external_home.path().join("config.toml");
     fs::write(&config_path, &config).expect("write harmful external Cargo config");
-    let target = root_guard.path().join("target");
-    let before = scratch_roots_under(&target);
+    let skeleton_target = root_guard.path().join("target");
+    let before = scratch_roots_under(&skeleton_target);
     assert!(
         before.is_empty(),
-        "fixture: external-CARGO_HOME skeleton has scratch roots: {before:?}"
+        "fixture: a fresh skeleton must have no scratch roots yet: {before:?}"
     );
-
     let out = run_build_check_with_cargo_home(&runner, external_home.path());
     assert!(
         out.status.success(),
-        "build-check inherited the harmful external Cargo config instead of using scratch CARGO_HOME; stderr:\n{}",
+        "build-check must succeed with harmful external Cargo config for this oracle to mean \
+         anything; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("build-check mode OK"),
-        "build-check did not report its successful scratch build; stdout:\n{stdout}"
+        "run exited 0 but never printed build-check's success line (mechanism oracle); \
+         stdout:\n{stdout}"
     );
     assert_eq!(
         fs::read_to_string(&config_path).expect("read external Cargo config after run"),
         config,
         "runner mutated the caller's external Cargo config"
     );
+    let after = scratch_roots_under(&skeleton_target);
     assert_eq!(
-        before,
-        scratch_roots_under(&target),
-        "build-check with external CARGO_HOME leaked a scratch root"
+        before, after,
+        "successful build-check left a scratch root under <repo>/target"
     );
     drop(parent);
 }
