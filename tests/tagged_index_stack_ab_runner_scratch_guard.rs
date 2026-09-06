@@ -80,6 +80,15 @@ fn node_available() -> bool {
     Command::new("node").arg("--version").output().is_ok()
 }
 
+fn runner_command(runner: &Path) -> Command {
+    let mut command = Command::new("node");
+    command
+        .arg(runner)
+        .env_remove("RUSTFLAGS")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS");
+    command
+}
+
 /// Pins the evidence source to one HEAD while preserving build-check's dirty
 /// worktree-compatible snapshot path.
 #[test]
@@ -87,7 +96,8 @@ fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatib
     let runner_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates/tagged-index-stack/scripts/tis_p3_ab_runner.mjs");
     let source = fs::read_to_string(&runner_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", runner_path.display()));
+        .unwrap_or_else(|e| panic!("read {}: {e}", runner_path.display()))
+        .replace("\r\n", "\n");
 
     let (read_git_source, _) = source
         .split_once("function readGitSourceBytes(headSha, relativePath)")
@@ -129,6 +139,7 @@ fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatib
             && source.contains("activeCargoInvocationCwd = fs.realpathSync(created);")
             && source.contains("!withinOrEqual(repoRootRealPath, resolved) && !withinOrEqual(resolved, repoRootRealPath)")
             && source.contains("assertCargoConfigIsolation(cwd, cargoHome, `after ${label}`);")
+            && source.contains("return bytes.toString('utf8').replace(/\\r\\n/g, '\\n');")
             && source.contains("--manifest-path")
             && source.contains("activeCargoInvocationCwd"),
         "Cargo provenance isolation contract is missing"
@@ -282,8 +293,7 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
 /// The rejection is mode-independent (argument parsing), so every case uses
 /// the cheapest mode; the target value is charset-valid but never reached.
 fn run_codegen(runner: &Path, extra: &[&str]) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "codegen", "--target", "x86_64-unknown-linux-gnu"])
         .args(extra)
         .output()
@@ -291,16 +301,14 @@ fn run_codegen(runner: &Path, extra: &[&str]) -> Output {
 }
 
 fn run_args(runner: &Path, args: &[&str]) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(args)
         .output()
         .expect("spawn node for the parse-only CLI oracle")
 }
 
 fn run_wallclock(runner: &Path, target: &str) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "wallclock", "--target", target])
         .output()
         .expect("spawn node for the wallclock host-mismatch oracle")
@@ -318,8 +326,7 @@ fn run_build_check(runner: &Path) -> Output {
 /// [`run_build_check`] with extra CLI arguments (e.g. `--keep-scratch` for
 /// the lifecycle oracles at the bottom of this file).
 fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "build-check"])
         .args(extra)
         .output()
@@ -327,8 +334,7 @@ fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
 }
 
 fn run_build_check_with_cargo_home(runner: &Path, cargo_home: &Path) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "build-check"])
         .env("CARGO_HOME", cargo_home)
         .output()
@@ -336,8 +342,7 @@ fn run_build_check_with_cargo_home(runner: &Path, cargo_home: &Path) -> Output {
 }
 
 fn run_build_check_with_temp_root(runner: &Path, temp_root: &Path) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "build-check"])
         // Node's os.tmpdir() consults TMPDIR on Unix and TEMP/TMP on Windows;
         // set all three so the disposable fixture is deterministic.
@@ -378,8 +383,7 @@ fn different_target(host: &str) -> String {
 }
 
 fn run_build_check_unexpected_error(runner: &Path) -> Output {
-    Command::new("node")
-        .arg(runner)
+    runner_command(runner)
         .args(["--mode", "build-check"])
         .env("TIS_P3_AB_TEST_UNEXPECTED_AFTER_MKDTEMP", "1")
         .output()

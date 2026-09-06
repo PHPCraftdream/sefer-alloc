@@ -764,7 +764,7 @@ function rustcHostFromVerbose(rustcVersion) {
 function snapshotText(header, relativePath) {
   const bytes = header.sourceSnapshot.get(relativePath);
   assert(bytes !== undefined, `source snapshot is missing ${relativePath}`);
-  return bytes.toString('utf8');
+  return bytes.toString('utf8').replace(/\r\n/g, '\n');
 }
 
 function canonicalSanitizedEnvJson(state) {
