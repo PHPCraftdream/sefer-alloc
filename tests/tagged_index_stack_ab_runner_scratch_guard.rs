@@ -1,10 +1,12 @@
 //! Root integration tests for the runner's containment and scratch-lifecycle
 //! contracts.
 //!
-//! Seven oracles cover rejected output/target paths, a planted scratch-root
-//! redirect, successful cleanup, fatal cleanup, ordinary-error cleanup, and
-//! the explicit `--keep-scratch` opt-out. Every run uses a disposable
-//! skeleton, so a containment regression can only damage that test's copy.
+//! The oracles cover rejected output/target paths, unsupported
+//! codegen targets, strict mode-specific options, wallclock host mismatch, a
+//! planted scratch-root redirect, external CARGO_HOME isolation, successful
+//! cleanup, fatal cleanup, ordinary-error cleanup, and the explicit
+//! `--keep-scratch` opt-out. Every run uses a disposable skeleton, so a
+//! containment regression can only damage that test's copy.
 //! Counterfactuals are explicit: rejected paths must fail before mutation;
 //! a planted redirect must not reach its victim; post-creation failures must
 //! clean their root; and `--keep-scratch` must retain exactly one owned root.
@@ -123,12 +125,8 @@ fn build_repo_copy(label: &str) -> (DirGuard, DirGuard, PathBuf) {
         &root.join("crates/tagged-index-stack/src/imp.rs"),
     );
     copy_file(
-        &repo_dir.join("scripts/capture-measurement-identity.mjs"),
-        &root.join("scripts/capture-measurement-identity.mjs"),
-    );
-    copy_file(
-        &repo_dir.join("scripts/lib.mjs"),
-        &root.join("scripts/lib.mjs"),
+        &repo_dir.join(".cargo/config.toml"),
+        &root.join(".cargo/config.toml"),
     );
 
     // Disposable-copy git state ONLY (never the shared workspace repo): the
@@ -166,6 +164,22 @@ fn run_codegen(runner: &Path, extra: &[&str]) -> Output {
         .expect("spawn node for the runner copy")
 }
 
+fn run_args(runner: &Path, args: &[&str]) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(args)
+        .output()
+        .expect("spawn node for the parse-only CLI oracle")
+}
+
+fn run_wallclock(runner: &Path, target: &str) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(["--mode", "wallclock", "--target", target])
+        .output()
+        .expect("spawn node for the wallclock host-mismatch oracle")
+}
+
 /// Run the runner copy in `--mode build-check`: the cheapest mode that
 /// actually REACHES the scratch machinery (the `--out-dir`/`--target`
 /// rejection cases above die in argument parsing, before any filesystem
@@ -184,6 +198,44 @@ fn run_build_check_with(runner: &Path, extra: &[&str]) -> Output {
         .args(extra)
         .output()
         .expect("spawn node for the runner copy")
+}
+
+fn run_build_check_with_cargo_home(runner: &Path, cargo_home: &Path) -> Output {
+    Command::new("node")
+        .arg(runner)
+        .args(["--mode", "build-check"])
+        .env("CARGO_HOME", cargo_home)
+        .output()
+        .expect("spawn node for the external-CARGO_HOME oracle")
+}
+
+fn rustc_host() -> String {
+    let out = Command::new("rustc")
+        .args(["--version", "--verbose"])
+        .output()
+        .expect("spawn rustc to identify the current host");
+    assert!(
+        out.status.success(),
+        "rustc --version --verbose failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .map(str::to_owned)
+        .expect("rustc --version --verbose must contain a host line")
+}
+
+fn different_target(host: &str) -> String {
+    [
+        "riscv64gc-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+    ]
+    .into_iter()
+    .find(|target| *target != host)
+    .expect("the host must differ from at least one fixed wallclock target")
+    .to_string()
 }
 
 fn run_build_check_unexpected_error(runner: &Path) -> Output {
@@ -367,6 +419,135 @@ fn target_dot_and_dotdot_are_rejected_and_scratch_canary_survives() {
     drop(parent);
 }
 
+/// An unsupported codegen target must be rejected by argument parsing, with
+/// no scratch root or skeleton mutation before the exact diagnostic.
+#[test]
+fn unsupported_codegen_target_is_rejected_before_scratch() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("unsupported_codegen_target");
+    let target = root_guard.path().join("target");
+    let out = run_args(
+        &runner,
+        &[
+            "--mode",
+            "codegen",
+            "--target",
+            "riscv64gc-unknown-linux-gnu",
+        ],
+    );
+    assert_fatal(
+        &out,
+        "unsupported codegen target riscv64gc-unknown-linux-gnu",
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(
+            "tis_p3_ab_runner: FATAL: --mode codegen supports only x86_64-unknown-linux-gnu or aarch64-unknown-linux-gnu (got \"riscv64gc-unknown-linux-gnu\")"
+        ),
+        "unsupported codegen target used the wrong diagnostic; stderr:\n{stderr}"
+    );
+    assert_repo_intact(
+        root_guard.path(),
+        &runner,
+        "unsupported codegen target riscv64gc-unknown-linux-gnu",
+    );
+    assert!(
+        scratch_roots_under(&target).is_empty(),
+        "unsupported codegen target created a scratch root before parse rejection"
+    );
+    assert!(
+        root_guard.path().join(".cargo/config.toml").is_file(),
+        "unsupported codegen target mutated the source-input config fixture"
+    );
+    drop(parent);
+}
+
+/// Mode-specific options that would otherwise be silently ignored must fail
+/// in parseArgs, before any scratch root or build/load work exists.
+#[test]
+fn mode_specific_options_are_rejected_before_scratch() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("mode_specific_options");
+    let cases: &[(&str, &[&str], &str)] = &[
+        (
+            "build-check --target",
+            &[
+                "--mode",
+                "build-check",
+                "--target",
+                "x86_64-pc-windows-msvc",
+            ],
+            "tis_p3_ab_runner: FATAL: --target is not accepted with --mode build-check; the verified rustc host is selected internally",
+        ),
+        (
+            "codegen --smoke",
+            &[
+                "--mode",
+                "codegen",
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--smoke",
+            ],
+            "tis_p3_ab_runner: FATAL: --smoke is valid only with --mode wallclock",
+        ),
+    ];
+    let target = root_guard.path().join("target");
+    for &(what, args, diagnostic) in cases {
+        let out = run_args(&runner, args);
+        assert_fatal(&out, what);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(diagnostic),
+            "{what} used the wrong diagnostic; expected fragment:\n{diagnostic}\nstderr:\n{stderr}"
+        );
+        assert_repo_intact(root_guard.path(), &runner, what);
+        assert!(
+            scratch_roots_under(&target).is_empty(),
+            "{what} created a scratch root before parse rejection"
+        );
+    }
+    drop(parent);
+}
+
+/// A wallclock target different from the current rustc host must fail in the
+/// host-mismatch guard, before scratch creation or any wallclock build/load.
+#[test]
+fn wallclock_host_mismatch_is_rejected_before_scratch_or_build() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("wallclock_host_mismatch");
+    let host = rustc_host();
+    let target = different_target(&host);
+    let out = run_wallclock(&runner, &target);
+    assert_fatal(&out, "wallclock host mismatch");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let expected = format!(
+        "tis_p3_ab_runner: FATAL: --mode wallclock builds natively for rustc host {host}; --target must match it exactly (got \"{target}\")"
+    );
+    assert!(
+        stderr.contains(&expected),
+        "wallclock host mismatch used the wrong diagnostic; expected fragment:\n{expected}\nstderr:\n{stderr}"
+    );
+    assert_repo_intact(root_guard.path(), &runner, "wallclock host mismatch");
+    assert!(
+        scratch_roots_under(&root_guard.path().join("target")).is_empty(),
+        "wallclock host mismatch created a scratch root before rejection"
+    );
+    assert!(
+        !stderr.contains("built variant") && !stderr.contains("production wallclock"),
+        "wallclock host mismatch reached a wallclock build/load path; stderr:\n{stderr}"
+    );
+    drop(parent);
+}
+
 /// A planted link at the scratch-root location must not redirect
 /// cleanup into an external victim. The runner must use a fresh private root,
 /// complete build-check, and preserve the victim canary.
@@ -405,8 +586,8 @@ fn scratch_root_junction_redirect_leaves_victim_canary_intact() {
     );
 }
 
-// The first four tests pin containment; the three tests below pin cleanup.
-// Each compares the scratch-root set before and after one runner invocation.
+// The containment, external-CARGO_HOME, and lifecycle tests below compare the
+// scratch-root set before and after one runner invocation.
 
 /// Sorted list of the `tis_p3_ab-` prefixed entries directly under the
 /// skeleton's `target/` — exactly the per-invocation `mkdtemp` scratch roots
@@ -463,7 +644,8 @@ fn assert_fatal_from_post_mkdtemp_cargo_build(out: &Output) {
         "broken-source run lacked the runner's FATAL diagnostics; stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("cargo build failed"),
+        stderr.contains("production cargo build --target")
+            && stderr.contains("failed for the wall-clock harness template (build-check mode"),
         "FATAL did not come from post-creation cargo build; no-leak oracle is vacuous; \
          stderr:\n{stderr}"
     );
@@ -501,6 +683,58 @@ fn build_check_success_leaves_no_scratch_root() {
     assert_eq!(
         before, after,
         "successful build-check left a scratch root under <repo>/target"
+    );
+    drop(parent);
+}
+
+/// A harmful user config must be ignored because build-check binds a fresh
+/// scratch CARGO_HOME. The green build and absent scratch root are the
+/// mechanism and lifecycle oracles; the external config must remain intact.
+#[test]
+fn build_check_uses_scratch_cargo_home_and_leaves_no_scratch_root() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("external_cargo_home");
+    let external_home = exclusive_temp_dir("harmful_cargo_home");
+    let missing_wrapper = external_home
+        .path()
+        .join("definitely-missing-rustc-wrapper")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let config = format!(
+        "[build]\nrustc-wrapper = \"{missing_wrapper}\"\ntarget = \"riscv64gc-unknown-linux-gnu\"\n"
+    );
+    let config_path = external_home.path().join("config.toml");
+    fs::write(&config_path, &config).expect("write harmful external Cargo config");
+    let target = root_guard.path().join("target");
+    let before = scratch_roots_under(&target);
+    assert!(
+        before.is_empty(),
+        "fixture: external-CARGO_HOME skeleton has scratch roots: {before:?}"
+    );
+
+    let out = run_build_check_with_cargo_home(&runner, external_home.path());
+    assert!(
+        out.status.success(),
+        "build-check inherited the harmful external Cargo config instead of using scratch CARGO_HOME; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("build-check mode OK"),
+        "build-check did not report its successful scratch build; stdout:\n{stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(&config_path).expect("read external Cargo config after run"),
+        config,
+        "runner mutated the caller's external Cargo config"
+    );
+    assert_eq!(
+        before,
+        scratch_roots_under(&target),
+        "build-check with external CARGO_HOME leaked a scratch root"
     );
     drop(parent);
 }
