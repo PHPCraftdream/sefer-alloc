@@ -18,7 +18,7 @@
 //! this file when that type stopped implementing `StackStorage` and lives on
 //! as the compile-fail fixture `tests/compile_fail/array_index_stack_head/`,
 //! so the shared-head shapes are covered here by
-//! `two_implementor_values_sharing_one_head_still_double_issue` only), that
+//! `two_implementor_values_sharing_one_head_guard_panics` only), that
 //! detector's LIMIT (a hand-crafted acyclic forgery still double-issues
 //! silently), and the shared-LINK-STORAGE variant, which no detector catches
 //! at all. Three further pins: the ONE-implementor
@@ -188,7 +188,7 @@ unsafe impl StackStorage<16> for SharedHeadView<'_> {
 /// by design and the trait's clause 1 must be updated with it.
 #[test]
 #[should_panic(expected = "self-loop, corrupting the free-list into a cycle")]
-fn two_implementor_values_sharing_one_head_still_double_issue() {
+fn two_implementor_values_sharing_one_head_guard_panics() {
     let head = StackHead::<16>::new();
     let links_a = ArrayLinks::<64>::new();
     let links_b = ArrayLinks::<64>::new();
@@ -382,8 +382,7 @@ fn shared_link_storage_allows_pop_to_push_cross_binding_transfer() {
 /// backings behind one head — a deliberate, documented limitation:
 /// implementor-enforced (the [`StackStorage`] trait's `# Safety` clause 2),
 /// not structurally impossible, auditable only inside the one impl block.
-/// The two `#[should_panic]` tests above pin shape 2; this test pins
-/// shape 1.
+/// The `#[should_panic]` test above pins shape 2; this test pins shape 1.
 ///
 /// Mechanism (the zero-initialised sub-shape): pushing 1 stores
 /// `write_links[1] = TAIL`, but every pop READS `read_links`, which

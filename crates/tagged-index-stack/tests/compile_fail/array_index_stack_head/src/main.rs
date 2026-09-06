@@ -8,7 +8,9 @@
 use tagged_index_stack::{ArrayIndexStack, StackHead, StackStorage};
 
 fn steal_head<S: StackStorage<16>>(s: &S) -> &StackHead<16> {
-    s.head()
+    // SAFETY: this generic route uses the returned reference only as this
+    // binding's head and never creates a competing head↔links binding.
+    unsafe { s.head() }
 }
 
 fn main() {

@@ -168,7 +168,7 @@ fn is_tagged_index_stack_source(span: &compile_fail_support::CargoDiagnosticSpan
 /// test and is NOT closed by the type system: it is re-expressible through
 /// a custom `unsafe impl` that asserts the trait's `# Safety`
 /// contract and then violates it (inventory shape 2; pinned at runtime by
-/// `two_implementor_values_sharing_one_head_still_double_issue` in
+/// `two_implementor_values_sharing_one_head_guard_panics` in
 /// `tests/custom_storage_impl.rs`). The structural closure that DOES exist —
 /// no route from a shipped [`ArrayIndexStack`] to a `&StackHead`, so no
 /// competing binding around its head — is proven by the compile-fail
@@ -232,7 +232,7 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// that does NOT involve this type — own a `StackHead`, hand it to two
 /// custom `unsafe impl` values — remains expressible by design and is pinned
 /// at runtime by
-/// `two_implementor_values_sharing_one_head_still_double_issue` in
+/// `two_implementor_values_sharing_one_head_guard_panics` in
 /// `tests/custom_storage_impl.rs`.
 ///
 /// # The seal does not rest on this fixture alone
@@ -244,10 +244,10 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
 /// out-of-crate attempt fails with **E0117** (orphan rule).
 #[test]
 fn competing_binding_around_array_index_stack_head_must_not_compile() {
-    let output = build_fixture("array_index_stack_head", None);
+    let output = build_fixture_with_json("array_index_stack_head", None);
     let manifest = fixture_manifest("array_index_stack_head");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
+    let errors = cargo_error_diagnostics(&output);
 
     assert!(
         !output.status.success(),
@@ -255,24 +255,29 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
          NOT implement the public `StackStorage` trait (the sealing regressed):\n{context}"
     );
     assert!(
-        stderr.contains("E0277"),
-        "expected E0277 (unsatisfied `StackStorage` bound) in the fixture's \
-         compile errors — it failed for some OTHER reason:\n{context}"
+        !errors
+            .iter()
+            .any(|error| error.code.as_deref() == Some("E0133")),
+        "the head-extraction fixture emitted an unrelated E0133; the generic \
+         `StackStorage::head` call must be justified so the failure stays on \
+         the missing-implementation/extraction routes:\n{context}"
+    );
+    assert_exact_fixture_diagnostics(
+        &output,
+        "array_index_stack_head",
+        &[("E0277", "&owned"), ("E0599", "head"), ("E0277", "&owned")],
     );
     assert!(
-        stderr.contains("ArrayIndexStack<16, 64>")
-            && stderr.contains("steal_head(&owned)")
-            && stderr.contains("&dyn StackStorage<16>"),
-        "expected E0277 at THIS fixture's generic and dyn `StackStorage` routes:\n{context}"
+        context.contains("steal_head(&owned)"),
+        "expected the first E0277 at the generic `StackStorage` route:\n{context}"
     );
     assert!(
-        stderr.contains("E0599"),
-        "expected E0599 (no method named `head`) in the fixture's compile \
-         errors — it failed for some OTHER reason:\n{context}"
+        context.contains("owned.head()"),
+        "expected the E0599 at the direct inherent-method route:\n{context}"
     );
     assert!(
-        stderr.contains("owned.head()"),
-        "expected E0599 at THIS fixture's direct `owned.head()` call:\n{context}"
+        context.contains("&dyn StackStorage<16>"),
+        "expected the second E0277 at the trait-object coercion route:\n{context}"
     );
 }
 
