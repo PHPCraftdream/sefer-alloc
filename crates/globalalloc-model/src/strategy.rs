@@ -26,8 +26,16 @@ fn align_strategy(config: Config) -> impl Strategy<Value = usize> {
     debug_assert!(config.max_align.is_power_of_two());
     let mut aligns: Vec<usize> = Vec::new();
     let mut a = 1usize;
-    // Both degenerate inputs are handled: `max_align == 0` yields an empty
-    // vec, and a `max_align >= 1<<63` stops the shift before it overflows to 0.
+    // `max_align == 0` is REJECTED, not handled: the loop yields an empty
+    // vec and `proptest::sample::select` panics on it at construction
+    // ("Cannot select from empty collection") — in release too, where the
+    // `debug_assert!` above is compiled out. `Config::validate` (called by
+    // `op_strategy` before any generation) rejects the same input with a
+    // message naming the field. A `max_align >= 1<<63` IS handled: the
+    // `a != 0` guard stops the loop before a wrapped shift yields a
+    // duplicate/zero entry (64 entries at exactly 1<<63; `validate` caps
+    // `max_align` at `isize::MAX`, so the shift at 2^63 is unreachable
+    // through the front-end).
     while a <= config.max_align && a != 0 {
         aligns.push(a);
         a <<= 1;
@@ -41,10 +49,16 @@ fn align_strategy(config: Config) -> impl Strategy<Value = usize> {
 /// Feed the result to [`crate::drive`]. The default `Config` reproduces the
 /// historical in-tree shape (9:1 small:large, small ≤ 4 KiB, large ≤ 128 KiB,
 /// aligns 1..=4096).
+///
+/// # Panics
+///
+/// Panics before generating anything if `config` violates a generator
+/// precondition (see [`Config::validate`]).
 pub fn op_strategy(
     config: Config,
     len_range: core::ops::Range<usize>,
 ) -> impl Strategy<Value = Vec<Op>> {
+    config.validate();
     let alloc = (size_strategy(config), align_strategy(config))
         .prop_map(|(size, align)| Op::Alloc { size, align });
     let alloc_zeroed = (size_strategy(config), align_strategy(config))

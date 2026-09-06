@@ -51,6 +51,20 @@ fn layout_for(size: usize, align: usize, op_idx: usize) -> Layout {
     })
 }
 
+/// Reject an op align that `Layout` can never admit — zero, not a power of
+/// two, or one whose round-up overflows `isize` — naming the op index.
+/// Unlike a size, an align cannot be clamped into range, so this stays a
+/// harness rejection (see `drive`'s `# Panics` section). Called before any
+/// size is clamped against a ceiling derived from the align.
+fn validate_align(align: usize, op_idx: usize) {
+    if Layout::from_size_align(1, align).is_err() {
+        panic!(
+            "op #{op_idx}: align {align} is not a usable Layout alignment \
+             (must be a non-zero power of two whose round-up fits isize)"
+        );
+    }
+}
+
 /// M3 incremental check: no two live blocks share a byte.
 ///
 /// Two roles, both load-bearing:
@@ -109,9 +123,15 @@ unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: 
 
 /// Check every byte of an `alloc_zeroed` block reads as 0.
 ///
-/// Uses raw single-byte reads, NOT a slice: a broken allocator's
-/// `alloc_zeroed` may return never-written (uninitialized) memory, and a
-/// slice over uninitialized memory would make the harness itself unsound.
+/// Reads raw single bytes, NOT a slice: the failure message can name the
+/// exact failing byte offset, and no reference to the whole block is
+/// materialized. That is a message-quality choice, not a soundness one —
+/// a read of memory the allocator never initialized is undefined through
+/// either form. The definedness of these reads rests on exactly one thing:
+/// the [`RawAllocator`](crate::RawAllocator) contract, which makes a
+/// non-null return valid for reads of `layout.size()` bytes. What the read
+/// is FOR is the zero oracle: a broken `alloc_zeroed` that hands back
+/// bytes which are not 0 is reported here, never tolerated.
 ///
 /// # Safety
 /// `ptr` must be valid for reads of `size` bytes.
@@ -129,8 +149,9 @@ unsafe fn verify_zeroed_block(ptr: *mut u8, size: usize, op_idx: usize) {
 
 /// Check the preserved `min(old, new)` realloc prefix byte by byte.
 ///
-/// Raw reads (not a slice): a broken realloc may return never-written memory —
-/// same justification as [`verify_zeroed_block`].
+/// Raw reads (not a slice): same rationale as [`verify_zeroed_block`] —
+/// the message names the exact lost byte, and the reads' definedness
+/// rests on the `RawAllocator` contract, not on the read form.
 ///
 /// # Safety
 /// `ptr` must be valid for reads of `len` bytes.
@@ -162,10 +183,13 @@ unsafe fn verify_prefix_block(
 /// double-free-is-no-op oracle is exercised (off by default — a real malloc
 /// would corrupt); the other `config` fields shape the generators, not `drive`.
 ///
-/// `drive` is total over every hand-built `Op` value: sizes of `0`, `new_size`
-/// of `0`, and overflowing `new_size`s are clamped into the range
-/// `GlobalAlloc`'s own contract permits (P0-1), so the allocator is never
-/// invoked outside its documented preconditions.
+/// `drive` is total over every hand-built `Op` value: a size of `0`, an
+/// oversized size, a `new_size` of `0`, and a `new_size` whose round-up
+/// overflows `isize` are all clamped into the range `GlobalAlloc`'s own
+/// contract permits, so the allocator is never invoked outside its
+/// documented preconditions. The one input that cannot be clamped is an
+/// op's align: a never-admissible align panics as a harness rejection
+/// (see the `# Panics` section).
 ///
 /// # Reentrancy
 ///
@@ -190,8 +214,9 @@ unsafe fn verify_prefix_block(
 /// - a lost realloc prefix byte.
 ///
 /// Every message names the op index and its operands. Also panics when an op
-/// carries a size/align pair `Layout::from_size_align` rejects (align 0 or
-/// non-power-of-two, or an overflowing size).
+/// carries an align `Layout` can never admit (zero, non-power-of-two, or one
+/// whose round-up overflows `isize`): unlike sizes, an align cannot be
+/// clamped into range.
 pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
     // Every entry in `live` traces to exactly one `Op::Alloc`/`Op::AllocZeroed`
     // in `ops` that hasn't since been freed, so `live.len() <= ops.len()`
@@ -205,10 +230,19 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
     for (op_idx, op) in ops.iter().enumerate() {
         match *op {
             Op::Alloc { size, align } => {
-                // P0-1: `GlobalAlloc` requires a non-zero layout size; clamp
-                // before building the `Layout` so a hand-built `size: 0` op
-                // never reaches the allocator outside its contract.
-                let size = size.max(1);
+                // Review run 2, P2-4 (extending review run 1's P0-1
+                // zero-clamp): `GlobalAlloc` requires a non-zero layout size
+                // whose round-up to `align` does not overflow `isize`.
+                // Reject a never-admissible align FIRST, naming the op (an
+                // align cannot be clamped into range); then clamp the size
+                // into the admissible ceiling — the same
+                // `(isize::MAX / align) * align` bound the realloc arm
+                // clamps to — so a hand-built op of ANY size stays inside
+                // the allocator's contract (the "total over every
+                // hand-built `Op`" promise).
+                validate_align(align, op_idx);
+                let size = size.clamp(1, (isize::MAX as usize / align) * align);
+                // Infallible after the two steps above.
                 let layout = layout_for(size, align, op_idx);
                 // SAFETY: `layout` is valid; the returned pointer is checked for
                 // null and used only for `size` bytes, as the contract permits.
@@ -239,8 +273,10 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 });
             }
             Op::AllocZeroed { size, align } => {
-                // P0-1: clamp zero sizes, as in the `Alloc` arm.
-                let size = size.max(1);
+                // Same two-step clamp as the `Alloc` arm.
+                validate_align(align, op_idx);
+                let size = size.clamp(1, (isize::MAX as usize / align) * align);
+                // Infallible after the two steps above.
                 let layout = layout_for(size, align, op_idx);
                 // SAFETY: `layout` valid; pointer checked for null, used only for
                 // `size` bytes.
@@ -299,6 +335,16 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     // `isize`; clamp into that range. An oversized `new_size`
                     // then simply OOM-fails to null, which `drive` already
                     // tolerates as realloc failure.
+                    //
+                    // The upward end is deliberately the maximal admissible
+                    // size, not a smaller "sane" cap — any lower bound would
+                    // be arbitrary and would mask a genuine growth request —
+                    // so a bogus near-`usize::MAX` `new_size` becomes a
+                    // ~8 EiB REQUEST. An allocator is expected to answer
+                    // that with null (tolerated here as documented realloc
+                    // failure); one that ABORTS on OOM instead aborts by its
+                    // own OOM policy, which is not an oracle failure. The
+                    // alloc arms clamp to the same ceiling.
                     let new_size = new_size.clamp(
                         1,
                         (isize::MAX as usize / old_layout.align()) * old_layout.align(),

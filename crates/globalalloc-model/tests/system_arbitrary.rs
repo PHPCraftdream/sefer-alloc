@@ -9,15 +9,33 @@
 
 use std::alloc::System;
 
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Unstructured;
 use globalalloc_model::{drive, Config, Op, OpStream};
 
 /// Decode a handful of deterministic byte buffers into `OpStream`s and drive
 /// each against `System`. This is the crate-side smoke test for the same
 /// front-end libFuzzer uses; libFuzzer supplies the fuzzed bytes, here we supply
 /// fixed ones so the test is deterministic and cheap.
+///
+/// Under miri the byte-at-a-time fill/verify of default-sized blocks (up to
+/// 128 KiB) makes this the dominant cost of the CI miri job — which runs it
+/// TWICE (plain, then strict-provenance) — so the generator bounds shrink
+/// under miri, mirroring tests/system_proptest.rs's CASES/MAX_LEN
+/// reduction. The seed sweep and byte buffers stay IDENTICAL either way:
+/// `Config` shapes sizes/aligns, not the decoded variant mix, so the
+/// per-variant non-vacuity asserts below see the same op stream under both
+/// configurations.
 #[test]
 fn system_matches_arbitrary_stream() {
+    let config = if cfg!(miri) {
+        Config {
+            small_max: 256,
+            large_max: 4096,
+            ..Config::default()
+        }
+    } else {
+        Config::default()
+    };
     // A spread of seeds — enough distinct bytes to decode non-trivial streams
     // (allocs, reallocs, deallocs) without a fuzzer.
     let mut total_ops = 0usize;
@@ -27,7 +45,7 @@ fn system_matches_arbitrary_stream() {
             .map(|i| (i as u8).wrapping_add(seed).wrapping_mul(31))
             .collect();
         let mut u = Unstructured::new(&bytes);
-        let stream = OpStream::arbitrary(&mut u).expect("decode op stream");
+        let stream = OpStream::arbitrary_with_config(&mut u, config).expect("decode op stream");
         total_ops += stream.ops.len();
         for op in &stream.ops {
             let idx = match op {
@@ -38,7 +56,7 @@ fn system_matches_arbitrary_stream() {
             };
             seen[idx] += 1;
         }
-        drive(&System, Config::default(), &stream.ops);
+        drive(&System, config, &stream.ops);
     }
     // Non-vacuity: every op variant must actually appear across the seeds.
     assert!(total_ops > 0, "no ops decoded across seeds 0..32");

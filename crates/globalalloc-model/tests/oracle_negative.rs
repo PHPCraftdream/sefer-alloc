@@ -7,8 +7,11 @@
 //!
 //! The fake arena owns its memory through raw pointers only (no `Vec`/references
 //! into it), so all writes through the pointers `drive` hands around are sound
-//! and this file is miri/strict-provenance clean. The arena frees in `Drop`
-//! even on panic-unwind, so no `-Zmiri-ignore-leaks` is needed.
+//! and this file is miri/strict-provenance clean. Every pointer handed to
+//! `drive` is length-checked against the arena (`Arena::at_len`), so a future
+//! fault that would run past the arena panics in the harness instead of
+//! writing past the allocation. The arena frees in `Drop` even on
+//! panic-unwind, so no `-Zmiri-ignore-leaks` is needed.
 
 use core::alloc::Layout;
 use core::cell::Cell;
@@ -26,7 +29,11 @@ struct Arena {
 
 impl Arena {
     fn new(cap: usize) -> Self {
-        let layout = Layout::from_size_align(cap, 16).unwrap();
+        // 4096-aligned base: an offset aligned to any power of two <= 4096
+        // is then absolutely aligned, so `bump_aligned`'s offset rounding
+        // makes honest paths satisfy M1/M4 for every align these tests use
+        // (a larger align would need a larger base; none exist here).
+        let layout = Layout::from_size_align(cap, 4096).unwrap();
         // SAFETY: `layout` has non-zero size; the memory is immediately
         // zero-filled so all reads through returned pointers are defined.
         let base = unsafe { std::alloc::alloc(layout) };
@@ -42,16 +49,49 @@ impl Arena {
     }
 
     /// Advance the cursor by `n` bytes, returning the previous offset.
+    /// (Fault paths only; honest paths use [`Arena::bump_aligned`] so a
+    /// handed-out block always satisfies its requested align.)
     fn bump(&self, n: usize) -> usize {
         let p = self.cursor.get();
-        assert!(p + n <= self.cap, "arena exhausted");
+        assert!(
+            p.checked_add(n).is_some_and(|end| end <= self.cap),
+            "arena exhausted"
+        );
         self.cursor.set(p + n);
         p
     }
 
-    fn at(&self, off: usize) -> *mut u8 {
-        assert!(off <= self.cap);
-        // SAFETY: `base + off` stays within the allocation for `off <= cap`.
+    /// Advance the cursor to the next multiple of `align`, then by `n`
+    /// bytes, returning the aligned offset. Honest allocation paths use
+    /// this so every handed-out block satisfies its requested
+    /// `layout.align()` regardless of earlier ops' sizes — without it, an
+    /// unaligned landing offset makes a NO-FAULT test fail M1/M4
+    /// spuriously (this file would have to be hand-tuned op by op).
+    fn bump_aligned(&self, n: usize, align: usize) -> usize {
+        assert!(align.is_power_of_two(), "align must be a power of two");
+        let p = self.cursor.get().next_multiple_of(align);
+        assert!(
+            p.checked_add(n).is_some_and(|end| end <= self.cap),
+            "arena exhausted"
+        );
+        self.cursor.set(p + n);
+        p
+    }
+
+    /// Pointer at `off`, checked to keep `off + len` inside the arena. Every
+    /// path that hands `drive` a pointer the harness will read or write for
+    /// a known length goes through this, so a future fault (or a longer op
+    /// stream) that would run past the arena panics HERE — a detected
+    /// failure — instead of writing past the allocation, which is real UB
+    /// in the harness rather than an oracle report.
+    fn at_len(&self, off: usize, len: usize) -> *mut u8 {
+        assert!(
+            off.checked_add(len).is_some_and(|end| end <= self.cap),
+            "arena access [{off}..{off}+{len}) exceeds cap {}",
+            self.cap
+        );
+        // SAFETY: `base + off` stays within the allocation for
+        // `off + len <= cap`.
         unsafe { self.base.add(off) }
     }
 }
@@ -75,22 +115,31 @@ enum Fault {
     /// `alloc_zeroed` hands out an honest block but scribbles 0xAA instead of
     /// zeroing.
     NotZeroed,
-    /// `alloc` registers `size - 1` bytes with the arena but returns the old
-    /// cursor, so the NEXT allocation starts 1 byte inside the previous
-    /// block's model extent (a short block).
+    /// `alloc` registers `size - 1` bytes with the arena but returns
+    /// `(cursor - 1)` rounded DOWN to the requested align, so the align
+    /// oracle passes and the SHORTNESS is what fires: the next allocation
+    /// starts INSIDE this block's model extent (8 bytes inside in the
+    /// actual test below).
     ShortBlock,
-    /// `alloc_zeroed` returns `base + off` (inside block 0's extent). The
-    /// arena is zero-filled, so if the overlap check were missing the
-    /// zero-check would pass and only the run-end sweep would notice.
+    /// `alloc_zeroed` returns `base + off` (inside block 0's extent). Not
+    /// an isolation argument: if the overlap check were deleted, the ZERO
+    /// check would fire immediately — `drive` filled block 0 with 0x01 at
+    /// op 0, so the overlapping block's first byte reads 0x01, not 0, and
+    /// the panic message becomes `alloc_zeroed:` instead of `M3: op #`.
+    /// That message change is exactly what the `#[should_panic]` pin needs:
+    /// the test still fails without the overlap assert, just via the other
+    /// oracle.
     OverlapZeroedAt(usize),
-    /// `realloc` copies the prefix to `base + off` and returns that pointer:
-    /// a foreign block overlapping another live allocation. The copy makes
-    /// every check EXCEPT overlap pass, so the overlap assert is the only
-    /// thing that can fire.
-    ReallocToForeign { off: usize },
-    /// `realloc` copies the prefix to `base + off` and returns it — a legal
-    /// in-place shape whose new extent overlaps only the OLD block.
-    ReallocInPlace(usize),
+    /// `realloc` copies the prefix to `base + off` and returns that pointer.
+    /// The two tests using it differ only in the offset and in the outcome
+    /// they pin: `overlap_on_realloc_panics` picks an offset inside ANOTHER
+    /// live block (a foreign block — the M3 oracle must fire), and there
+    /// the copy makes every check EXCEPT overlap pass, so the overlap
+    /// assert is the only thing that can fire;
+    /// `in_place_realloc_inside_own_old_block_passes` picks one inside the
+    /// OLD block only (a legal in-place shape the `skip: Some(i)` exclusion
+    /// must tolerate).
+    ReallocAt(usize),
     /// `realloc` hands out a fresh honest block WITHOUT copying (loses the
     /// prefix).
     ReallocNoCopy,
@@ -110,7 +159,12 @@ unsafe impl RawAllocator for Faulty {
         let size = layout.size();
         match self.fault {
             Fault::NullAlloc => ptr::null_mut(),
-            Fault::MisalignedBy(k) => self.arena.at(k),
+            Fault::MisalignedBy(k) => {
+                // Length-checked even though `drive` panics at the align
+                // check before any access: the fault must stay a
+                // well-formed pointer for the extent `drive` WOULD use.
+                self.arena.at_len(k, size)
+            }
             Fault::ShortBlock => {
                 // Register size - 1 with the arena but return a pointer at
                 // (cursor - 1) rounded DOWN to the requested align, so the
@@ -119,11 +173,11 @@ unsafe impl RawAllocator for Faulty {
                 let align = layout.align();
                 let p = (self.arena.cursor.get().saturating_sub(1)) / align * align;
                 let _ = self.arena.bump(size - 1);
-                self.arena.at(p)
+                self.arena.at_len(p, size)
             }
             _ => {
-                let p = self.arena.bump(size);
-                self.arena.at(p)
+                let p = self.arena.bump_aligned(size, layout.align());
+                self.arena.at_len(p, size)
             }
         }
     }
@@ -131,10 +185,10 @@ unsafe impl RawAllocator for Faulty {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         if let Fault::OverlapZeroedAt(off) = self.fault {
-            return self.arena.at(off);
+            return self.arena.at_len(off, size);
         }
-        let p = self.arena.bump(size);
-        let ptr = self.arena.at(p);
+        let p = self.arena.bump_aligned(size, layout.align());
+        let ptr = self.arena.at_len(p, size);
         if let Fault::NotZeroed = self.fault {
             // Hand out the honest block but scribble instead of zeroing.
             // SAFETY: `ptr` is valid for `size` bytes inside the arena.
@@ -154,28 +208,22 @@ unsafe impl RawAllocator for Faulty {
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         let keep = old_layout.size().min(new_size);
         match self.fault {
-            Fault::ReallocToForeign { off } => {
-                let dst = self.arena.at(off);
+            Fault::ReallocAt(off) => {
+                let dst = self.arena.at_len(off, keep);
                 // SAFETY: `ptr` is valid for `keep` reads; `dst` for `keep`
                 // writes inside the arena.
                 unsafe { ptr::copy(ptr, dst, keep) };
                 dst
             }
-            Fault::ReallocInPlace(off) => {
-                let dst = self.arena.at(off);
-                // SAFETY: as above.
-                unsafe { ptr::copy(ptr, dst, keep) };
-                dst
-            }
             Fault::ReallocNoCopy => {
-                // Honest fresh bump WITHOUT copying: loses the prefix.
-                let p = self.arena.bump(new_size);
-                self.arena.at(p)
+                // Honest fresh aligned bump WITHOUT copying: loses the prefix.
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                self.arena.at_len(p, new_size)
             }
             _ => {
-                // Honest: a fresh block with the prefix copied.
-                let p = self.arena.bump(new_size);
-                let dst = self.arena.at(p);
+                // Honest: a fresh aligned block with the prefix copied.
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
                 // SAFETY: `ptr` is valid for `keep` reads; `dst` for `keep`
                 // writes inside the arena.
                 unsafe { ptr::copy(ptr, dst, keep) };
@@ -215,7 +263,7 @@ fn overlap_on_realloc_panics() {
         Op::Realloc { i: 0, new_size: 64 },
     ];
     drive(
-        &faulty(4096, Fault::ReallocToForeign { off: 80 }), // inside block 1's [64..128), disjoint from the old block
+        &faulty(4096, Fault::ReallocAt(80)), // inside block 1's [64..128), disjoint from the old block
         Config::default(),
         &ops,
     );
@@ -305,9 +353,21 @@ fn in_place_realloc_inside_own_old_block_passes() {
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc { i: 0, new_size: 64 },
     ];
-    drive(
-        &faulty(4096, Fault::ReallocInPlace(8)),
-        Config::default(),
-        &ops,
-    );
+    drive(&faulty(4096, Fault::ReallocAt(8)), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(expected = "arena exhausted")]
+fn oversized_size_is_clamped_not_rejected() {
+    // Pins `drive`'s P2-4 totality clamp on the alloc arms: a hand-built
+    // oversized size must be CLAMPED into the admissible ceiling and reach
+    // the allocator (here: the fake arena, which legitimately cannot serve
+    // ~8 EiB and exhausts), never rejected by the harness with the old
+    // `Layout::from_size_align(size=..., align=...) rejected` panic. Before
+    // the fix this test failed with that harness-rejection message instead.
+    let ops = [Op::Alloc {
+        size: usize::MAX,
+        align: 8,
+    }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
 }

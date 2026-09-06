@@ -7,7 +7,7 @@
 /// applied, so they are always in range regardless of the value generated;
 /// when the model is EMPTY the op is silently skipped entirely (index
 /// reduction happens only against a non-empty live set).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     /// Allocate `size` bytes at `align` (a power of two).
     Alloc {

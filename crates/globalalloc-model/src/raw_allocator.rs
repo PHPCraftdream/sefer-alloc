@@ -13,14 +13,17 @@ use core::alloc::{GlobalAlloc, Layout};
 ///
 /// # Safety
 ///
-/// This trait is `unsafe` to implement. An implementor must behave as a correct
-/// allocator so the oracles are testing the allocator, not papering over a
-/// broken trait impl:
+/// This trait is `unsafe` to implement. The implementor must guarantee
+/// exactly this and nothing more — it is the minimal contract `drive`'s
+/// soundness rests on. A broken allocator that violates the *behavioral*
+/// oracles below is precisely what this crate exists to detect, and
+/// detecting one must not itself be undefined behavior:
 ///
 /// - [`alloc`](RawAllocator::alloc) / [`alloc_zeroed`](RawAllocator::alloc_zeroed)
-///   return either null (allocation failed) or a pointer valid for reads and
-///   writes over `layout.size()` bytes and aligned to `layout.align()`. A
-///   non-null pointer from `alloc_zeroed` points at `layout.size()` zero bytes.
+///   return either null (allocation failed) or a pointer valid for reads
+///   and writes of `layout.size()` bytes, inside one live allocation that
+///   [`dealloc`](RawAllocator::dealloc) can reclaim later with that same
+///   `layout`.
 /// - [`dealloc`](RawAllocator::dealloc) is called only with a pointer previously
 ///   returned by a matching `alloc`/`alloc_zeroed`/`realloc` on `self` with the
 ///   same `layout`. When
@@ -29,9 +32,24 @@ use core::alloc::{GlobalAlloc, Layout};
 ///   frees the SAME pointer a second time (the M2 no-op oracle) — enable it only
 ///   for an allocator whose contract makes that a safe no-op.
 /// - [`realloc`](RawAllocator::realloc) either returns null (leaving the old
-///   block live and valid) or a pointer valid for `new_size` bytes whose first
-///   `min(old_size, new_size)` bytes equal the old block's, consuming the old
-///   pointer on a non-null return.
+///   block live and valid) or a pointer valid for reads and writes of
+///   `new_size` bytes, inside one live allocation reclaimable by `dealloc`
+///   with the old layout adjusted to `new_size`, consuming the old pointer
+///   on a non-null return.
+///
+/// # What the oracles check
+///
+/// Everything beyond that minimal contract is an *oracle*, not a safety
+/// obligation. `drive` verifies these behaviorally and panics on a
+/// violation; an implementor MAY return values that fail them (the
+/// crate's own negative-oracle suite does exactly that):
+///
+/// - **Alignment:** a non-null pointer is aligned to `layout.align()`.
+/// - **Zeroing:** a non-null pointer from `alloc_zeroed` points at
+///   `layout.size()` zero bytes.
+/// - **Prefix preservation:** `realloc`'s non-null result's first
+///   `min(old_size, new_size)` bytes equal the old block's contents.
+/// - **No overlap:** two simultaneously-live blocks never share a byte.
 pub unsafe trait RawAllocator {
     /// Allocate `layout.size()` bytes at `layout.align()`; null on failure.
     ///

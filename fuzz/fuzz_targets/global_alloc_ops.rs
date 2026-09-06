@@ -7,9 +7,11 @@
 //! `globalalloc-model` crate — this is the third consumer of that one harness
 //! (the sibling proptest copies are `tests/alloc_core_differential.rs` and
 //! `tests/heap_differential.rs`). This target keeps ONLY the sefer-specific
-//! wiring: the `AllocCore`-under-test adapter and the fuzz size/align
-//! distribution (via the crate's `OpStream` `Arbitrary` front-end). An oracle
-//! improvement in the crate reaches proptest, miri, AND this fuzzer at once.
+//! wiring: the `AllocCore`-under-test adapter and the fuzz size/align reach
+//! (an explicit `Config` handed to `OpStream::arbitrary_with_config`,
+//! restoring this target's historical 2 MiB size / 2^21 align bounds — see
+//! the note above the `fuzz_target!` body). An oracle improvement in the
+//! crate reaches proptest, miri, AND this fuzzer at once.
 //!
 //! ## Why `AllocCore`, not the installed `SeferAlloc` global allocator
 //!
@@ -43,6 +45,7 @@
 use std::alloc::Layout;
 use std::cell::RefCell;
 
+use arbitrary::Unstructured;
 use globalalloc_model::{drive, Config, OpStream, RawAllocator};
 use libfuzzer_sys::fuzz_target;
 use sefer_alloc::AllocCore;
@@ -71,14 +74,31 @@ unsafe impl RawAllocator for CoreUnderTest {
     }
 }
 
-fuzz_target!(|stream: OpStream| {
+// Review run 2, P2-2: drive `OpStream::arbitrary_with_config` directly with
+// an explicit Config instead of consuming the `Arbitrary` impl (which
+// delegates to `Config::default()`). The default is proptest-shaped (sizes
+// 1..=128 KiB, aligns 2^0..=2^12), which had silently narrowed this target's
+// reach by ~9 octaves when the front-end was centralized; `large_max` /
+// `max_align` at 2 MiB restore the historical bounds (sizes 1..=2 MiB,
+// aligns 2^0..=2^21) while keeping the small-heavy weighting that
+// concentrates the budget on allocator state space.
+fuzz_target!(|data: &[u8]| {
     let alloc = match AllocCore::new() {
         Some(a) => CoreUnderTest(RefCell::new(a)),
         None => return, // primordial bootstrap failed (OS refused mmap); skip.
     };
-    // `double_free: true` — `AllocCore`'s M2 contract is that a redundant free
-    // of an already-freed pointer is a safe no-op; the crate's `OpStream` front
-    // end already bounds sizes (1..=2 MiB) and aligns (2^0..2^21).
-    let config = Config { double_free: true, ..Config::default() };
+    let config = Config {
+        large_max: 2 * 1024 * 1024,
+        max_align: 2 * 1024 * 1024,
+        // `AllocCore`'s M2 contract is that a redundant free of an
+        // already-freed pointer is a safe no-op.
+        double_free: true,
+        ..Config::default()
+    };
+    let mut u = Unstructured::new(data);
+    // Undecodable input (too short for even one op): nothing to drive.
+    let Ok(stream) = OpStream::arbitrary_with_config(&mut u, config) else {
+        return;
+    };
     drive(&alloc, config, &stream.ops);
 });

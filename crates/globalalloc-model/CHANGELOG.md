@@ -37,14 +37,17 @@ before it.
   both at once: `op_strategy()` (feature `proptest`) — a
   `Strategy<Value = Vec<Op>>` for `cargo test` and a bounded miri run — and
   `OpStream` (feature `arbitrary`) — an `impl Arbitrary` for `cargo fuzz` /
-  libFuzzer, with fuzzer-derived sizes/aligns bounded (`1..=2 MiB` size,
-  `2^0..2^21` align) so a single input cannot OOM the fuzzer instead of
-  finding a bug. The fuzz size distribution is weighted small-heavy (default
-  9:1, mirroring the proptest front-end) rather than uniform `1..=2 MiB` so
-  the budget lands on allocator state space, not multi-megabyte byte fills;
+  libFuzzer, with fuzzer-derived sizes/aligns bounded so a single input
+  cannot OOM the fuzzer instead of finding a bug. The DEFAULT bounds are
+  the proptest-shaped distribution (sizes `1..=128 KiB`, small-heavy 9:1;
+  aligns `2^0..=2^12`), so the budget lands on allocator state space rather
+  than multi-megabyte byte fills; generated values never exceed
+  `Config::large_max` or `min(2^21, Config::max_align)`.
   `OpStream::arbitrary_with_config` accepts a `Config` for front-ends that
-  need non-default shaping. Both features are additive and independent; a
-  normal build with neither enabled has **zero dependencies**.
+  need non-default shaping — the in-tree `global_alloc_ops` fuzz target
+  passes one that restores its historical 2 MiB size / 2^21 align reach.
+  Both features are additive and independent; a normal build with neither
+  enabled has **zero dependencies**.
 - **`no_std` by default.** The core model (`drive`, `RawAllocator`, `Op`,
   `Config`) needs only `core` + `alloc`, so this crate can
   differential-test a `no_std` allocator's own test suite without pulling
@@ -52,7 +55,11 @@ before it.
   (`thumbv7em-none-eabi`) for the default build AND for the `proptest`
   front-end (declared with `default-features = false, features = ["alloc",
   "no_std"]`, which routes proptest's float samplers through
-  num-traits/libm). The one exception is the `arbitrary` front-end:
+  num-traits/libm). One consequence worth knowing: without `std`, proptest
+  seeds its RNG from a hardcoded constant, so a consumer relying on the
+  `proptest` feature alone gets deterministic seeding; this crate's own test
+  suite dev-depends on a default-featured `proptest` so its runs are randomly
+  seeded. The one exception is the `arbitrary` front-end:
   `derive_arbitrary`'s generated recursion guard for the crate's internal
   `RawOp` enum unconditionally references `std::thread_local!` — an
   upstream limitation, not this crate's own choice.

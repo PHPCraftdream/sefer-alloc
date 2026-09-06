@@ -39,8 +39,7 @@ The same `drive()` loop powers both:
 - an **`impl Arbitrary for OpStream`** (feature `arbitrary`) — for `cargo fuzz`
   / libFuzzer.
 
-So an oracle improvement reaches proptest, miri, and libFuzzer at once. A normal
-build (no features) has **zero dependencies** — both front-ends are optional.
+So an oracle improvement reaches proptest, miri, and libFuzzer at once.
 
 ## `no_std` by default
 
@@ -49,7 +48,11 @@ differential-test a `no_std` allocator's own test suite without pulling in
 `std` — verified against a real bare-metal target (`thumbv7em-none-eabi`)
 for the default build AND for the `proptest` front-end (declared with
 `default-features = false, features = ["alloc", "no_std"]`, which routes
-proptest's float samplers through num-traits/libm). The one exception is
+proptest's float samplers through num-traits/libm). One consequence of that
+no_std mode: without `std`, proptest seeds its RNG from a hardcoded constant,
+so a consumer relying on this feature alone gets *deterministic* seeding;
+this crate's own test suite dev-depends on a default-featured `proptest` so
+its property runs are randomly seeded. The one exception is
 the `arbitrary` front-end: `derive_arbitrary`'s generated recursion guard
 unconditionally references `std::thread_local!` — an upstream limitation,
 not this crate's choice.
@@ -78,7 +81,7 @@ minor version under 0.x.
 
 ## Usage
 
-```rust
+```text
 use globalalloc_model::{drive, op_strategy, Config};
 use std::alloc::System;
 

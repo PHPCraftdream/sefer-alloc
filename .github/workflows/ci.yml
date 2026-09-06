@@ -887,17 +887,21 @@ jobs:
     # surface, and tests/miri_bounded.rs advertised "bounded-miri coverage"
     # that no CI job actually provided (native execution cannot catch an
     # out-of-bounds ptr.add()). Modeled on `once-ptr-cell-miri` above
-    # (per-PR cadence — the suite is small). MIRIFLAGS adds
-    # `-Zmiri-ignore-leaks`, the same accommodation `aligned-vmem-miri` makes
-    # for its own reason: tests/double_free_no_op.rs's LeakyAllocator leaks by
-    # design (its no-op dealloc IS the M2 contract under test), which the
-    # default leak checker reports as a failure with no bug present; every
-    # other test in the crate frees its memory (tests/oracle_negative.rs's
-    # arena frees in Drop even on panic-unwind). The second run adds
-    # `-Zmiri-strict-provenance`, matching every other miri job in this file;
-    # the crate's pointer-identity checks use the non-exposing `ptr.addr()`
-    # (never `ptr as usize`), so both forms were verified green locally before
-    # this job was added.
+    # (per-PR cadence — the suite is small). Two passes over the whole suite:
+    # plain, then with `-Zmiri-strict-provenance`, matching every other miri
+    # job in this file (the crate's pointer-identity checks use the
+    # non-exposing `ptr.addr()`, never `ptr as usize`; both forms were
+    # verified green locally before this job was added). P3-8 (review run 2,
+    # 2026-09-06): `-Zmiri-ignore-leaks` is scoped to the ONE test target
+    # that needs it — tests/double_free_no_op.rs's LeakyAllocator leaks by
+    # design (its no-op dealloc IS the M2 contract under test, which the
+    # default leak checker reports as a failure with no bug present) — while
+    # the other four targets keep the default leak check ON: that check is
+    # precisely the "all survivors are freed, model dropped before returning"
+    # property drive advertises, so a break in the teardown free-walk is
+    # still reported by the very job that exists to police it.
+    # (tests/oracle_negative.rs's arena frees in Drop even on panic-unwind;
+    # the other targets free normally.)
     name: globalalloc-model under miri (interpreter, strict-provenance included)
     runs-on: ubuntu-latest
     steps:
@@ -905,12 +909,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo miri test -p globalalloc-model --all-features
+      - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks"
-      - run: cargo miri test -p globalalloc-model --all-features
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
+      - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks -Zmiri-strict-provenance"
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
 
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
@@ -2327,6 +2337,18 @@ jobs:
       - run: cargo check -p tagged-index-stack
       - run: RUSTFLAGS="--cfg tagged_index_stack_test" cargo check -p tagged-index-stack
       - run: cargo check -p tagged-index-stack --target x86_64-unknown-none
+      # P3-7 (pre-publish review run 2, 2026-09-06): the crate DECLARES
+      # `rust-version = "1.85"` (bounded by proptest 1.11's own MSRV) but
+      # the globalalloc-model rows above run on this job's 1.88 pin — above
+      # that floor — so the published floor was verified only by manual
+      # local runs. Same per-crate floor-toolchain pattern as
+      # tagged-index-stack above: check the crate on exactly 1.85.
+      # `--all-features` (both optional front-ends) is the right scope: it
+      # compiles proptest and arbitrary as real dependencies, so a future
+      # proptest 1.x whose rust-version rises above 1.85 fails THIS row,
+      # not a user's build.
+      - uses: dtolnay/rust-toolchain@1.85
+      - run: cargo check -p globalalloc-model --all-features
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +

@@ -17,9 +17,13 @@ use crate::{Config, Op};
 /// Maximum ops decoded from one fuzz input (caps sequence length so a single
 /// input can't OOM the fuzzer with a giant stream).
 const MAX_OPS: usize = 2048;
-/// Alignment exponent cap: powers `2^0 ..= 2^21` (1 ..= 2 MiB), staying below a
-/// typical 4 MiB segment so large-align routing is exercised without hitting a
-/// rejected corridor. Further clamped by `Config::max_align`.
+/// Absolute alignment exponent cap, independent of `Config`: generated
+/// aligns never exceed `2^21` (2 MiB) even when `max_align` is larger —
+/// staying below a typical 4 MiB segment so large-align routing is
+/// exercised without hitting a rejected corridor. The EFFECTIVE cap is
+/// `min(2^ALIGN_POW_CAP_EXP, Config::max_align)`: with the default
+/// `max_align` (4096) aligns stop at `2^12`; a front-end wanting the full
+/// 2 MiB reach passes `max_align: 2 MiB` (the in-tree fuzz target does).
 const ALIGN_POW_CAP_EXP: u32 = 21;
 
 /// Bound a fuzzer-derived raw size into `1..=small_max` or
@@ -105,7 +109,7 @@ impl RawOp {
 
 /// A bounded op stream decoded from fuzzer bytes. Feed `OpStream::ops` to
 /// `crate::drive`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OpStream {
     /// The decoded, bounded operations.
     pub ops: Vec<Op>,
@@ -117,13 +121,20 @@ impl OpStream {
     /// `small_weight`, `large_weight`, `max_align`; `drive` additionally reads
     /// `Config::double_free`).
     ///
-    /// The `Arbitrary` impl — what `fuzz_target!(|stream: OpStream|)` drives —
-    /// delegates here with `Config::default()`; the trait's signature is
-    /// fixed, so this inherent constructor is the config-aware route.
+    /// The `Arbitrary` impl delegates here with `Config::default()`; this
+    /// inherent constructor is the config-aware route, and the in-tree
+    /// `global_alloc_ops` fuzz target drives it directly with an explicit
+    /// `Config` (its historical 2 MiB size / 2^21 align reach).
+    ///
+    /// # Panics
+    ///
+    /// Panics before decoding anything if `config` violates a generator
+    /// precondition (see [`Config::validate`]).
     pub fn arbitrary_with_config(
         u: &mut Unstructured<'_>,
         config: Config,
     ) -> arbitrary::Result<Self> {
+        config.validate();
         // Each item is a `Result<RawOp>`; skip undecodable items (a truncated
         // trailing op at the end of the input) and cap the length (mirrors the
         // historical `arbitrary_iter().take(2048)`).

@@ -32,7 +32,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 #   - `proptest`  — a `Strategy<Value = Vec<Op>>` for `cargo test` / miri
 #     (no_std-compatible via `default-features = false, features =
 #     ["alloc", "no_std"]`, which routes its float samplers through
-#     num-traits/libm; verified on `thumbv7em-none-eabi`).
+#     num-traits/libm; verified on `thumbv7em-none-eabi`). NOTE: without
+#     `std`, proptest seeds its RNG from a hardcoded constant — see
+#     `[dev-dependencies]` below for how this crate's own tests avoid that.
 #   - `arbitrary` — `impl Arbitrary for OpStream` for `cargo fuzz` / libFuzzer.
 # Both are additive and independent; enable whichever front-end you need.
 default = []
@@ -42,3 +44,17 @@ arbitrary = ["dep:arbitrary"]
 [dependencies]
 proptest = { version = "1", optional = true, default-features = false, features = ["alloc", "no_std"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+# Review run 2, P2-1: this crate's OWN property test must run on proptest's
+# default (std-enabled) feature set. Without `std`, proptest 1.11's
+# `TestRng::default_rng` takes its `#[cfg(not(feature = "std"))]` branch and
+# seeds from a hardcoded constant, which silently turned
+# `system_matches_reference_model` into a fixed-seed regression suite. The
+# `[dependencies]` entry above stays no_std-only for the bare-metal proof;
+# resolver v2 keeps dev-dependency features out of non-test builds, so
+# `cargo build -p globalalloc-model --features proptest --target
+# thumbv7em-none-eabi` still proves the no_std claim. A consumer who enables
+# the `proptest` feature WITHOUT their own std-featured proptest still gets
+# that deterministic seeding (documented in README).
+proptest = { version = "1" }
