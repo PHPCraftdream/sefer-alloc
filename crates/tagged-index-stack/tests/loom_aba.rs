@@ -161,6 +161,7 @@ use tagged_index_stack::{ArrayIndexStack, TagExhausted, TaggedIndex, TAIL};
 /// model (e.g. `push_push_conservation` itself, if its own assertion failed
 /// while holding the lock) would otherwise poison this mutex for every test
 /// that acquires it afterward.
+/// Also serializes the empty-actual spin-counter snapshot.
 static MODEL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Activation oracle for
@@ -1326,7 +1327,12 @@ fn pop_pop_conservation() {
 #[test]
 fn pop_pop_single_element_loser_sees_empty_actual() {
     model_with_oracle(
-        tagged_index_stack::pop_retry_count_for_test,
+        || {
+            (
+                tagged_index_stack::pop_retry_count_for_test(),
+                tagged_index_stack::backoff_spin_count_for_test(),
+            )
+        },
         || {
             // Seed exactly ONE element: slot 0 on a fresh (lazy, empty)
             // stack via the REAL push — running tag ends at exactly 1.
@@ -1366,13 +1372,18 @@ fn pop_pop_single_element_loser_sees_empty_actual() {
                  fabricated an index"
             );
         },
-        |before, after| {
+        |(before_retry, before_spin), (after_retry, after_spin)| {
             assert!(
-                after - before > 0,
+                after_retry - before_retry > 0,
                 "activation oracle: `pop`'s CAS-retry branch was never reached in \
                  any explored schedule — this test is vacuously green, since its \
                  loser-returns-None assertion cannot catch a broken skip-backoff \
                  arm if no retry ever executes"
+            );
+            assert_eq!(
+                after_spin - before_spin,
+                0,
+                "empty-actual loser must skip `Backoff::spin` on every explored schedule"
             );
         },
     );

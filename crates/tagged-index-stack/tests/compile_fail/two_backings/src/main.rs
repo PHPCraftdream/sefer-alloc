@@ -19,5 +19,4 @@ fn main() {
     let stack = StackHead::<16>::new();
     stack.push(&a, 1); // ERROR: no method named `push` on StackHead<16>
     assert_eq!(stack.pop(&b), Some(0)); // ERROR: no method named `pop` on StackHead<16>
-    assert_eq!(stack.pop(&b), Some(0)); // ERROR: no method named `pop` on StackHead<16>
 }

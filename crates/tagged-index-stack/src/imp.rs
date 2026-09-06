@@ -86,6 +86,8 @@ impl Backoff {
     /// shift, so no `.min` guard is needed on the shift expression.
     #[inline]
     fn spin(&mut self) {
+        #[cfg(loom)]
+        BACKOFF_SPIN_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         for _ in 0..(1u32 << self.0) {
             core::hint::spin_loop();
         }
@@ -2032,6 +2034,11 @@ impl<const N: usize> Default for ArrayLinks<N> {
 #[cfg(any(tagged_index_stack_test, loom))]
 static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
+/// Loom-only activation counter for entries into [`Backoff::spin`].
+#[cfg(loom)]
+static BACKOFF_SPIN_COUNT: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
 /// **test-only** activation oracle: reads `POP_RETRY_COUNT` — the
 /// number of times `pop_index`'s CAS-retry branch has executed in this
 /// process. The loom suite asserts this counter ADVANCES across an exploration
@@ -2047,6 +2054,14 @@ static POP_RETRY_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::At
 #[must_use]
 pub fn pop_retry_count_for_test() -> usize {
     POP_RETRY_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// **test-only** activation oracle for [`Backoff::spin`].
+#[cfg(loom)]
+#[doc(hidden)]
+#[must_use]
+pub fn backoff_spin_count_for_test() -> usize {
+    BACKOFF_SPIN_COUNT.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 /// Push-side twin of `POP_RETRY_COUNT` — identical rationale, gate, ordering

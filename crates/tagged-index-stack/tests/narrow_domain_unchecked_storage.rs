@@ -6,13 +6,11 @@
 //!
 //! The executable proof: `UncheckedPool`'s
 //! [`load_next`]/[`store_next`](StackStorage::store_next) use
-//! `get_unchecked` INSIDE their declared domain, so under miri every single
-//! link access the stack algorithm performs is validated against the real
-//! 8-cell bound — the trait's clause-6 permission (unchecked access
-//! OUT-of-domain) is exercised by construction, because there IS no cell
-//! for any index >= 8 and any out-of-domain hook call would be an
-//! immediate miri UB report (out-of-bounds access under
-//! strict provenance/bounds checking).
+//! `get_unchecked` inside their declared domain. Miri checks the executed
+//! in-domain accesses against the real 8-cell bound; it does not prove that
+//! an out-of-domain access would be safe. The trait's clause-6 permission
+//! (unchecked access OUT-of-domain) is exercised by construction, because
+//! there IS no cell for any index >= 8.
 //!
 //! # Why the negative case is NOT demonstrated at runtime
 //!
@@ -67,8 +65,8 @@ use tagged_index_stack::{StackHead, StackOps, StackStorage};
 
 /// A fixed-capacity, array-backed pool with UNCHECKED cell access: cells
 /// exist only for the declared domain `0..N` (N = 8 here, far below the
-/// 16-bit `INDEX_MASK` of 0xFFFF). Anything the stack algorithm touches is
-/// validated by miri against the REAL array bound.
+/// 16-bit `INDEX_MASK` of 0xFFFF). The executed in-domain accesses are
+/// checked by Miri against the real array bound.
 struct UncheckedPool<const N: usize> {
     head: StackHead<16>,
     cells: [AtomicU32; N],
@@ -84,7 +82,7 @@ impl<const N: usize> UncheckedPool<N> {
 }
 
 // SAFETY: clause-by-clause assertion of `StackStorage`'s `# Safety` list for
-// THIS implementor (N = 8):
+// this fixed 8-cell implementor:
 //
 // 1. **One live binding per head.** `head` is a private field of this
 //    struct; `head()` hands out `&self.head`, and no other binding is ever
@@ -106,35 +104,35 @@ impl<const N: usize> UncheckedPool<N> {
 // 5. **Same logical head every call.** `head()` returns `&self.head` on
 //    every call.
 // 6. **Declared link domain.** The declared link domain of this impl is
-//    `0..N` — here `0..8`, a fixed subset of `0..INDEX_MASK`, documented
-//    HERE, fixed for the impl's whole life (const-generic array, never
-//    resized). The cells exist by construction (`[AtomicU32; N]`), so
+//    `0..8`, a fixed subset of `0..INDEX_MASK`, documented HERE and fixed
+//    for the impl's whole life. The cells exist by construction
+//    (`[AtomicU32; 8]`), so
 //    `load_next`/`store_next` are memory-safe for every in-domain index —
 //    and they deliberately use UNCHECKED access
-//    (`get_unchecked`), which miri validates against the real 8-cell
-//    bound on every call. Out-of-domain indices have NO cell; the hooks
+//    (`get_unchecked`). Miri checks the executed accesses against the real
+//    8-cell bound. Out-of-domain indices have NO cell; the hooks
 //    rely on clause-6's guarantee that the stack never calls them
 //    out-of-domain (discharged by `push_index`'s caller-side clause 1).
 // 7. **Atomic cells.** Every cell is an `AtomicU32`, accessed only via
 //    atomic `load`/`store` — a racing stale popper's `load_next` against a
 //    push's `store_next` is a race on atomics, not UB.
-unsafe impl<const N: usize> StackStorage<16> for UncheckedPool<N> {
+unsafe impl StackStorage<16> for UncheckedPool<8> {
     unsafe fn head(&self) -> &StackHead<16> {
         &self.head
     }
 
     unsafe fn load_next(&self, index: u32) -> u32 {
-        // SAFETY: `index` is in this impl's declared domain 0..N (the
+        // SAFETY: `index` is in this impl's declared domain 0..8 (the
         // stack algorithm only calls the hooks in-domain, per trait `#
         // Safety` clause 6 and `push_index`'s caller-side clause 1), and
         // the domain cells exist by construction — the unchecked bound is
-        // the clause-6 permission, miri-checked against the real array.
+        // the clause-6 permission, checked by Miri for executed accesses.
         unsafe { self.cells.get_unchecked(index as usize) }.load(Ordering::Acquire)
     }
 
     unsafe fn store_next(&self, index: u32, next: u32) {
         // SAFETY: same domain argument as `load_next` above — `index` is
-        // in the declared domain 0..N whose cells exist by construction.
+        // in the declared domain 0..8 whose cells exist by construction.
         unsafe { self.cells.get_unchecked(index as usize) }.store(next, Ordering::Release);
     }
 }
@@ -142,9 +140,8 @@ unsafe impl<const N: usize> StackStorage<16> for UncheckedPool<N> {
 /// Seed every in-domain index exactly once, interleave pops and re-pushes
 /// (only re-pushing an index `pop()` just RETURNED — the liveness clause),
 /// then drain to empty and assert full conservation and LIFO order where
-/// deterministic. Every link access the algorithm performs lands in one of
-/// the 8 real cells, so miri validates the whole cycle against the
-/// declared domain.
+/// deterministic. The accesses executed by this cycle land in the 8 real
+/// cells, so Miri checks this cycle against the declared domain.
 #[test]
 fn narrow_domain_unchecked_storage_seed_interleave_drain_conserves() {
     let pool: UncheckedPool<8> = UncheckedPool::new();

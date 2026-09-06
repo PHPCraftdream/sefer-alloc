@@ -64,87 +64,96 @@
 #[path = "support/tagged_index_stack_compile_fail.rs"]
 mod compile_fail_support;
 
-use compile_fail_support::{build_fixture, failure_context, fixture_manifest};
-use std::path::PathBuf;
-use std::process::{Command, Output};
+use compile_fail_support::{
+    build_fixture, build_fixture_with_json, cargo_error_diagnostics, failure_context,
+    fixture_manifest, CargoErrorDiagnostic,
+};
 
-/// Builds the loom-cfg fixture with Cargo's machine-readable diagnostics.
-fn build_fixture_with_json(fixture_dir: &str, rustflags: &str) -> Output {
-    let manifest = fixture_manifest(fixture_dir);
-    assert!(
-        manifest.is_file(),
-        "compile-fail fixture missing from checkout: {}",
-        manifest.display()
+fn assert_exact_fixture_diagnostics(
+    output: &std::process::Output,
+    fixture_dir: &str,
+    expected: &[(&str, &str)],
+) {
+    let errors = cargo_error_diagnostics(output);
+    assert_eq!(
+        errors.len(),
+        expected.len(),
+        "unexpected number of Cargo error diagnostics for {fixture_dir}: {errors:#?}"
     );
-
-    let child_target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(fixture_dir);
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    Command::new(&cargo)
-        .args([
-            "build",
-            "--offline",
-            "--message-format=json",
-            "--manifest-path",
-        ])
-        .arg(&manifest)
-        .env("CARGO_TARGET_DIR", child_target)
-        .env("RUSTFLAGS", rustflags)
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env("CARGO_TERM_COLOR", "never")
-        .output()
-        .expect("failed to spawn cargo for the compile-fail fixture")
-}
-
-#[derive(Debug)]
-struct CargoErrorDiagnostic {
-    code: Option<String>,
-    code_is_null: bool,
-    message: String,
-    rendered: String,
-    spans: Vec<serde_json::Value>,
-}
-
-fn cargo_error_diagnostics(output: &Output) -> Vec<CargoErrorDiagnostic> {
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| line.trim_start().starts_with('{'))
-        .map(|line| {
-            serde_json::from_str::<serde_json::Value>(line)
-                .expect("Cargo JSON output contained invalid JSON")
-        })
-        .filter_map(|record| {
-            if record.get("reason").and_then(serde_json::Value::as_str) != Some("compiler-message")
-            {
-                return None;
-            }
-            let message = record.get("message")?.as_object()?;
-            if message.get("level").and_then(serde_json::Value::as_str) != Some("error") {
-                return None;
-            }
-            Some(CargoErrorDiagnostic {
-                code_is_null: message.get("code").is_some_and(serde_json::Value::is_null),
-                code: message
-                    .get("code")
-                    .and_then(|code| code.get("code"))
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned),
-                message: message.get("message")?.as_str()?.to_owned(),
-                rendered: message
-                    .get("rendered")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                spans: message.get("spans")?.as_array()?.clone(),
+    let mut matched = vec![false; expected.len()];
+    for error in &errors {
+        let (code, highlighted) = diagnostic_parts(error, fixture_dir);
+        let index = expected
+            .iter()
+            .enumerate()
+            .find_map(|(index, &(expected_code, expected_source))| {
+                (!matched[index]
+                    && expected_code == code.as_str()
+                    && expected_source == highlighted.as_str())
+                .then_some(index)
             })
-        })
-        .collect()
+            .unwrap_or_else(|| {
+                panic!(
+                    "diagnostic has no unmatched expected code/source pair for {fixture_dir}: \
+                     code={code}, primary highlight={highlighted:?}"
+                )
+            });
+        matched[index] = true;
+    }
+    assert!(
+        matched.into_iter().all(|was_matched| was_matched),
+        "diagnostic multiset omitted an expected code/source pair for {fixture_dir}"
+    );
 }
 
-fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
-    span.get("file_name")
-        .and_then(serde_json::Value::as_str)
-        .map(|path| path.replace('\\', "/"))
-        .is_some_and(|path| path.ends_with("/crates/tagged-index-stack/src/lib.rs"))
+fn diagnostic_parts(error: &CargoErrorDiagnostic, fixture_dir: &str) -> (String, String) {
+    assert!(
+        !error.code_is_null,
+        "expected a non-null Rust error code: {error:#?}"
+    );
+    let code = error
+        .code
+        .as_deref()
+        .expect("expected every fixture diagnostic to carry a Rust error code");
+    let primary = error
+        .spans
+        .iter()
+        .filter(|span| span.is_primary)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        primary.len(),
+        1,
+        "each expected diagnostic must have exactly one primary span: {error:#?}"
+    );
+    let primary = primary[0];
+    let path = primary.file_name.replace('\\', "/");
+    assert_eq!(
+        path, "src/main.rs",
+        "primary span came from the wrong source path for {fixture_dir}"
+    );
+    assert_eq!(
+        primary.line_start, primary.line_end,
+        "expected a single-line primary span: {primary:#?}"
+    );
+    assert!(
+        primary.column_end > primary.column_start,
+        "expected a non-empty primary span: {primary:#?}"
+    );
+    let highlighted = primary
+        .highlighted_text()
+        .expect("expected source text and highlight structure for primary span");
+    let highlighted = highlighted.trim();
+    assert!(
+        !highlighted.is_empty() && !primary.text[0].text.is_empty(),
+        "expected non-empty primary source text: {primary:#?}"
+    );
+    (code.to_owned(), highlighted.to_owned())
+}
+
+fn is_tagged_index_stack_source(span: &compile_fail_support::CargoDiagnosticSpan) -> bool {
+    span.file_name
+        .replace('\\', "/")
+        .ends_with("/crates/tagged-index-stack/src/lib.rs")
 }
 
 /// API-boundary regression: two `ArrayLinks` backings plus one `StackHead`
@@ -176,9 +185,8 @@ fn is_tagged_index_stack_source(span: &serde_json::Value) -> bool {
 /// `StackHead<16>`").
 #[test]
 fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
-    let output = build_fixture("two_backings", None);
+    let output = build_fixture_with_json("two_backings", None);
     let manifest = fixture_manifest("two_backings");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
 
     assert!(
@@ -187,18 +195,10 @@ fn two_arraylinks_backings_against_one_stackhead_must_not_compile() {
          push/pop with a caller-supplied backing) has resurfaced; `StackHead` \
          must have no push/pop:\n{context}"
     );
-    assert!(
-        stderr.contains("E0599"),
-        "expected E0599 (no method named `push`/`pop`) in the fixture's \
-         compile errors — it failed for some OTHER reason:\n{context}"
-    );
-    assert!(
-        stderr.contains("StackHead") && stderr.contains("stack.push(&a, 1)"),
-        "expected E0599 at THIS fixture's `StackHead` push call:\n{context}"
-    );
-    assert!(
-        stderr.contains("StackHead") && stderr.contains("stack.pop(&b)"),
-        "expected E0599 at THIS fixture's `StackHead` pop call:\n{context}"
+    assert_exact_fixture_diagnostics(
+        &output,
+        "two_backings",
+        &[("E0599", "push"), ("E0599", "pop")],
     );
 }
 
@@ -305,9 +305,8 @@ fn competing_binding_around_array_index_stack_head_must_not_compile() {
 /// against `pool`, the `Pool` binding.)
 #[test]
 fn hook_call_requires_unsafe_block() {
-    let output = build_fixture("hook_call_requires_unsafe", None);
+    let output = build_fixture_with_json("hook_call_requires_unsafe", None);
     let manifest = fixture_manifest("hook_call_requires_unsafe");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
 
     assert!(
@@ -315,16 +314,14 @@ fn hook_call_requires_unsafe_block() {
         "the unsafe-call fixture COMPILED — the hooks became callable from \
          safe code (the caller-side `unsafe fn` boundary regressed):\n{context}"
     );
-    assert!(
-        stderr.contains("E0133"),
-        "expected E0133 (call to unsafe function is unsafe) in the fixture's \
-         compile errors — it failed for some OTHER reason:\n{context}"
-    );
-    assert!(
-        stderr.contains("pool.head()")
-            && stderr.contains("pool.load_next(2)")
-            && stderr.contains("pool.store_next(2, TAIL)"),
-        "expected E0133 at all THREE unsafe hook call sites in THIS fixture:\n{context}"
+    assert_exact_fixture_diagnostics(
+        &output,
+        "hook_call_requires_unsafe",
+        &[
+            ("E0133", "pool.head()"),
+            ("E0133", "pool.load_next(2)"),
+            ("E0133", "pool.store_next(2, TAIL)"),
+        ],
     );
 }
 
@@ -415,7 +412,7 @@ fn index_bits_seventeen_must_not_compile() {
 /// it silently cancels the override).
 #[test]
 fn loom_cfg_without_feature_fails_with_only_the_named_error() {
-    let output = build_fixture_with_json("loom_cfg_without_feature", "--cfg loom");
+    let output = build_fixture_with_json("loom_cfg_without_feature", Some("--cfg loom"));
     let manifest = fixture_manifest("loom_cfg_without_feature");
     let context = failure_context(&manifest, &output);
     const EXPECTED_MESSAGE: &str =
@@ -524,9 +521,8 @@ fn plain_impl_of_unsafe_stack_storage_must_not_compile() {
 /// `pool` and `owned`.)
 #[test]
 fn push_index_requires_unsafe_block() {
-    let output = build_fixture("push_index_requires_unsafe", None);
+    let output = build_fixture_with_json("push_index_requires_unsafe", None);
     let manifest = fixture_manifest("push_index_requires_unsafe");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     let context = failure_context(&manifest, &output);
 
     assert!(
@@ -535,13 +531,9 @@ fn push_index_requires_unsafe_block() {
          callable from safe code (the caller-side `unsafe fn` boundary on \
          `push_index`/`push` regressed):\n{context}"
     );
-    assert!(
-        stderr.contains("E0133"),
-        "expected E0133 (call to unsafe function is unsafe) in the fixture's \
-         compile errors — it failed for some OTHER reason:\n{context}"
-    );
-    assert!(
-        stderr.contains("pool.push_index(0)") && stderr.contains("owned.push(0)"),
-        "expected E0133 at BOTH unsafe push call sites in THIS fixture:\n{context}"
+    assert_exact_fixture_diagnostics(
+        &output,
+        "push_index_requires_unsafe",
+        &[("E0133", "pool.push_index(0)"), ("E0133", "owned.push(0)")],
     );
 }
