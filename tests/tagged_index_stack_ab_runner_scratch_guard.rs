@@ -123,6 +123,61 @@ fn evidence_snapshot_source_shape_is_pinned_and_build_check_stays_dirty_compatib
     );
 }
 
+/// Summary parsing must reject a bare invocation before it can read artifacts;
+/// an explicit target must pass parsing and reach the missing-artifact guard.
+#[test]
+fn summary_target_is_required_before_artifacts() {
+    if !node_available() {
+        eprintln!("skipping: node not on PATH");
+        return;
+    }
+    let (parent, root_guard, runner) = build_repo_copy("summary_target");
+    let target = root_guard.path().join("target");
+    let docs_perf = root_guard.path().join("docs/perf");
+
+    let bare = run_args(&runner, &["--mode", "summary"]);
+    assert_eq!(bare.status.code(), Some(1), "bare summary must fail");
+    assert_eq!(
+        String::from_utf8_lossy(&bare.stderr),
+        "tis_p3_ab_runner: FATAL: --target is required with --mode summary\n",
+        "bare summary used the wrong diagnostic"
+    );
+    assert!(
+        scratch_roots_under(&target).is_empty(),
+        "bare summary created a scratch root before parse rejection"
+    );
+    assert!(
+        !docs_perf.exists(),
+        "bare summary read or created the artifact directory before parse rejection"
+    );
+
+    let explicit = run_args(
+        &runner,
+        &["--mode", "summary", "--target", "x86_64-pc-windows-msvc"],
+    );
+    assert_fatal(&explicit, "summary with explicit target");
+    let stderr = String::from_utf8_lossy(&explicit.stderr);
+    assert!(
+        stderr.contains(
+            "summary mode: required raw log missing: docs/perf/_raw_tis_p3_ab_x86_64-unknown-linux-gnu_codegen.log"
+        ),
+        "explicit summary target did not reach artifact validation; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("--target is required with --mode summary"),
+        "explicit summary target was rejected during argument parsing; stderr:\n{stderr}"
+    );
+    assert!(
+        scratch_roots_under(&target).is_empty(),
+        "summary artifact rejection created a scratch root"
+    );
+    assert!(
+        !stderr.contains("production wallclock") && !stderr.contains("rustc --emit=asm"),
+        "summary artifact validation reached measurement/codegen work; stderr:\n{stderr}"
+    );
+    drop(parent);
+}
+
 fn copy_file(src: &Path, dst: &Path) {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent).expect("create skeleton parent dir");

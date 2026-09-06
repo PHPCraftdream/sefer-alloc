@@ -13,10 +13,9 @@
 //                      timing, then deterministic and natural activation probes.
 //   --mode summary  — read every per-leg CSV + its own raw-log provenance
 //                      header and emit the compact summary CSV companion for
-//                      the gate report. No build, no measurement. Optional
-//                      `--target <triple>` selects that target's wallclock
-//                      CSV. Without it, lookup uses the conventional
-//                      x86_64-pc-windows-msvc path and fails if absent.
+//                      the gate report. No build, no measurement. The
+//                      required `--target <triple>` selects that target's
+//                      wallclock CSV.
 //   --mode build-check — materialize all timing-variant scratch CARGO crates
 //                      from one dirty-compatible immutable source snapshot and
 //                      compile production and cfg-enabled activation harnesses
@@ -234,8 +233,10 @@ function parseArgs(argv) {
   if (args.mode === 'build-check' && provided.has('--target')) {
     fail('--target is not accepted with --mode build-check; the verified rustc host is selected internally');
   }
-  // build-check runs `cargo build` natively (no cross target); summary reads
-  // provided artifacts. Both skip the target-triple requirement.
+  if (args.mode === 'summary' && !provided.has('--target')) {
+    fail('--target is required with --mode summary');
+  }
+  // build-check runs `cargo build` natively (no cross target).
   if (args.mode !== 'summary' && args.mode !== 'build-check') {
     if (!args.target || !/^[A-Za-z0-9_.-]+$/.test(args.target)) {
       fail('--target must be a rust target triple');
@@ -256,10 +257,8 @@ function parseArgs(argv) {
       }
     }
   }
-  // Summary mode accepts an optional --target to select another provided or
-  // newly-produced wallclock CSV. Without it, the conventional lookup target
-  // is x86_64-pc-windows-msvc; no existing artifact is implied. The value uses
-  // the producer target charset and becomes part of a docs/perf filename.
+  // The summary target uses the producer target charset and becomes part of a
+  // docs/perf filename.
   if (args.mode === 'summary' && args.target !== null) {
     if (!/^[A-Za-z0-9_.-]+$/.test(args.target) || args.target === '.' || args.target === '..') {
       fail(`--target (summary mode) must be a single rust target triple (got ${JSON.stringify(args.target)})`);
@@ -1823,11 +1822,7 @@ function modeBuildCheck(args, snapshot) {
 // one compact machine-readable companion CSV for the gate report. Fails
 // loudly if any referenced artifact is missing. Every emitted ratio is
 // re-derived from the CSV's own sample rows and asserted against the ratio
-// the leg itself recorded. The conventional wallclock lookup target is
-// x86_64-pc-windows-msvc; an explicit `--target <triple>` selects another
-// provided or newly-produced artifact. Missing files fail closed below.
-// Conventional lookup target only; it does not assert that the file exists.
-const WALLCLOCK_CSV_TARGET = 'x86_64-pc-windows-msvc';
+// the leg itself recorded. Missing files fail closed below.
 
 function readCsvOrDie(file) {
   const p = path.join(docsPerfDir, file);
@@ -2039,7 +2034,7 @@ function modeSummary(args) {
   const emit = (kind, target, features, fov, variant, metric, value, unit) =>
     summaryRows.push([kind, target, features, fov, variant, metric, String(value), unit]);
 
-  const wallclockTarget = args.target ?? WALLCLOCK_CSV_TARGET;
+  const wallclockTarget = args.target;
   const legSpecs = [
     ...CODEGEN_TARGETS.map((target) => ({
       kind: 'codegen', target,
@@ -2153,8 +2148,7 @@ function modeSummary(args) {
 
   // (c) wallclock production leg: medians re-derived from sample rows, ratios
   // re-derived from the medians, both asserted against the leg's own SUMMARY.
-  // `--target` selects a provided wallclock CSV. Without it, the oracle uses
-  // the conventional windows-msvc lookup path; readCsvOrDie fails if absent.
+  // `--target` selects the provided wallclock CSV.
   const wallclockLeg = legs.find((leg) => leg.kind === 'wallclock');
   assert(wallclockLeg.provenance.smoke === false, `${wallclockLeg.csv.file}: smoke output cannot be evidence`);
   assert(wallclockLeg.provenance.target === wallclockLeg.provenance.rustcHost, `${wallclockLeg.csv.file}: wallclock target differs from rustc host`);
