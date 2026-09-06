@@ -10,6 +10,10 @@ codegen NULL (item 63): it is byte-identical to `base` for every probed
 function on x86 and AArch64 default/`+lse`, so production keeps `Acquire` for
 proof clarity with no current codegen cost.
 
+The final-HS P2/P3/P4 findings are remediated locally. Fresh HS confirmation
+is still pending; the only remaining evidence work is native ARM timing for
+items 61/62. No ARM timing claim is inferred from the current codegen bundle.
+
 `store_elided` is an instrument-ready timing candidate. `cas_weak` and
 `pop_success_relaxed` are already static NULL controls and are excluded from
 timing; production CAS is unchanged on that NULL evidence. Only link-ordering
@@ -19,29 +23,32 @@ and store-elision await native ARM timing.
 
 The final authoritative codegen artifacts were captured under the current
 run-25 remediation source HEAD
-`77fafc36234af838749a70c3ae5cb7c2ea877ee6`, tree
-`69ed043e90822c4bedda72fd9cf2ab64e3507fa1`, source-input digest
-`6295e69d5c983fc429eeaacf6f3accf2d1a6e5403772628096be2e3e9fedd1a6`, and
+`4a410012fcff3ad308de988824462947e49f7ebf`, tree
+`4f5ea26d95352b3aaf689061a0252268062f68bc`, source-input digest
+`14909a43f6853f2a43137c25fc061741b7dc4e3654a3d7332ad2b58546a490c2`, and
 `rustc 1.97.0` / `LLVM 22.1.6`. The ODB-pinned evidence capture is in
 `c00087f` plus its scratch-guard closure `393f81e`; host-receipt and
 natural-workload support was implemented in `b01580f`, and the earlier codegen
 artifact recording landed in `133d842`—both are intermediate implementation
-commits. Current codegen artifact commit is `0203577`. Both recorded codegen legs are
-source-input-identical to that captured HEAD and use the exact
+commits. Current codegen artifact commit is `1cc7291`; both recorded codegen
+legs are source-input-identical to that captured HEAD and use the exact
 `release-thin-lto-1cgu-no-incremental` profile. The current run-25 remediation
 closure is represented by `21fc146`, `9215cba`, `1b5ce46`, `b67c550`,
-`3509ee6`, and `77fafc3`; these receipts are source-input-identical to the
-current run-25 remediation HEAD and do not imply native ARM timing.
+`3509ee6`, `77fafc3`, `0a33c7c`, `71182f8`, `4a41001`, and `1cc7291`; these
+receipts are source-input-identical to the current run-25 remediation HEAD and
+do not imply native ARM timing. Matrix and static deltas are unchanged from
+artifact `0203577`.
 
 The HS P4 source-byte/provenance finding is closed by `c00087f` and `393f81e`:
 evidence modes pin HEAD before reading each source input with
 `git show <HEAD>:<path>` and retain those ODB bytes. The runner's intended
-parent-config closure is narrow: each evidence Cargo build starts from a fresh
-cwd outside the checkout ancestry, uses an absolute manifest path, a fresh
-`CARGO_HOME`, and an isolated target; a preflight rejects `config`/`config.toml`
-anywhere in the cwd ancestor chain or in `CARGO_HOME`. Tracked repository
-config is therefore irrelevant to the evidence build. This closes provenance
-only; it does not create native ARM timing evidence.
+parent-config closure is exact: each evidence Cargo build starts from a fresh
+external realpath-disjoint cwd, uses an absolute manifest path, an isolated
+fresh `CARGO_HOME`, and an isolated target; a preflight rejects both config
+names, `config` and `config.toml`, across the cwd ancestor chain and
+`CARGO_HOME` immediately before and after Cargo. Tracked repository config is
+therefore irrelevant to the evidence build. This closes provenance only; it
+does not create native ARM timing evidence.
 
 The current receipt is a local Windows codegen context, not an ARM host:
 `platform=win32`, `release=10.0.19045`, `arch=x64`, CPU model
