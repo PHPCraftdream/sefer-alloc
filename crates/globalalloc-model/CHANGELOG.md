@@ -13,21 +13,18 @@ before it.
 
 - **`drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op])`** — the one
   differential-testing loop: replays an op stream against `alloc` and a
-  trivial reference model (a `Vec` of live blocks), asserting the **M1-M4
-  correctness oracles** on every step — M1 validity (non-null, aligned,
-  fill-byte read-back), M2 double-free-is-a-no-op (opt-in via
-  `Config::double_free`, since a real `malloc` treats this as UB), M3 no
-  live-block byte overlap (checked on all three block-creating paths —
-  `alloc`, `alloc_zeroed`, and `realloc` — and again at run end), M4
-  alignment/size fidelity, plus the `alloc_zeroed` zeroed-contract and
-  `realloc` `min(old, new)`-prefix-preservation checks. Total over every
-  hand-built `Op` value: zero/oversized sizes are clamped into
-  `GlobalAlloc`'s own contract, so the allocator is never invoked outside it.
-  Panics — the natural oracle-failure signal for both proptest and libFuzzer
-  — the moment any oracle is violated, with every failure message naming the
-  op index and its operands. All survivors are freed and the model dropped
-  before returning, so a passing run itself proves no UAF in the teardown
-  walk too.
+  trivial reference model (a `Vec` of live blocks). It checks the **M1-M4
+  correctness oracles at their observation points**: non-null allocation
+  results and fill read-back; the explicitly authorized immediate double-free
+  no-op; live-extent overlap on block-creating returns; alignment before
+  access; zero bytes from `alloc_zeroed`; and the initialized
+  `min(old, new)` realloc prefix. Live fills are checked before deallocation,
+  reallocation, and each teardown deallocation. Zero and oversized sizes in
+  hand-built operations are clamped into `GlobalAlloc`'s size preconditions;
+  an inadmissible alignment (including zero or non-power-of-two) is rejected
+  instead. A null `alloc` or `alloc_zeroed` is an oracle failure, while a null
+  `realloc` is accepted and leaves the old block live. On normal return all
+  survivors are freed and the model is dropped.
 - **`unsafe trait RawAllocator`** — the minimal four-method `alloc` /
   `alloc_zeroed` / `dealloc` / `realloc` surface `drive` is generic over,
   with a blanket impl for every `GlobalAlloc`. A plain owned allocator with
@@ -37,12 +34,17 @@ before it.
   both at once: `op_strategy()` (feature `proptest`) — a
   `Strategy<Value = Vec<Op>>` for `cargo test` and a bounded miri run — and
   `OpStream` (feature `arbitrary`) — an `impl Arbitrary` for `cargo fuzz` /
-  libFuzzer, with fuzzer-derived sizes/aligns bounded so a single input
-  cannot OOM the fuzzer instead of finding a bug. The DEFAULT bounds are
+  libFuzzer, with fuzzer-derived sizes and alignments bounded to keep an
+  individual request practical. Bounds cannot guarantee the absence of OOM:
+  live requests can accumulate and allocators may impose tighter limits. The
+  DEFAULT bounds are
   the proptest-shaped distribution (sizes `1..=128 KiB`, small-heavy 9:1;
   aligns `2^0..=2^12`), so the budget lands on allocator state space rather
-  than multi-megabyte byte fills; generated values never exceed
-  `Config::large_max` or `min(2^21, Config::max_align)`.
+  than multi-megabyte byte fills. In non-degenerate configurations, generated
+  values do not exceed `Config::large_max` or
+  `min(2^21, Config::max_align)`. With `small_max == 0`, the small arm is size
+  1; with `large_max <= small_max`, the large arm is `small_max + 1` and may
+  therefore exceed `large_max`.
   `OpStream::arbitrary_with_config` accepts a `Config` for front-ends that
   need non-default shaping — the in-tree `global_alloc_ops` fuzz target
   passes one that restores its historical 2 MiB size / 2^21 align reach.
@@ -63,6 +65,13 @@ before it.
   `derive_arbitrary`'s generated recursion guard for the crate's internal
   `RawOp` enum unconditionally references `std::thread_local!` — an
   upstream limitation, not this crate's own choice.
+- **Dedicated publication CI** — tests all four feature combinations on
+  Windows and Linux, executes the portable System/front-end tests with all
+  features on 32-bit i686, checks the library on the exact declared Rust 1.85
+  MSRV, validates docs.rs-style nightly documentation, and
+  tests/lints/documents the extracted package plus a standalone path consumer.
+  The repository-wide workflow remains the home of the existing bare-metal and
+  Miri coverage.
 - **`Config`** — the size/align/double-free knobs shaping the generators:
   weighted small/large size arms (default 9:1, small ≤ 4 KiB, large ≤
   128 KiB — the historical in-tree shape this crate unifies), power-of-two
@@ -72,6 +81,13 @@ before it.
   token, see Changed below).
 
 ### Changed (breaking relative to earlier drafts of this unreleased crate)
+
+- Arbitrary decoding uses a full-width weight sum and separate size draws;
+  large weights and size ranges remain reachable. Existing fuzz bytes can
+  decode differently. Zero-weight arms are also excluded during proptest
+  shrinking.
+- Fill checks before deallocation, reallocation and each teardown free detect
+  corruption that a later destructive operation could previously hide.
 
 - **`Config::double_free` is now `Option<DoubleFreeOk>` (was `bool`).** The
   M2 double-free-is-no-op oracle is undefined behaviour against any ordinary
@@ -97,6 +113,15 @@ the correctness twin of [`malloc-bench-rs`](https://crates.io/crates/malloc-benc
 A negative-oracle test suite exists in this crate's own `tests/`
 (`tests/oracle_negative.rs`): a deliberately-broken allocator per oracle,
 pinning each failure message as behaviour.
+
+Oracle checks are observations rather than continuous monitoring. Transient
+corruption restored between checks is invisible, and fill bytes cycle after
+255 assignments, so two live blocks can share a marker. More fundamentally,
+an invalid extent or genuinely uninitialized byte violates `RawAllocator`'s
+safety contract: accessing it is undefined behavior natively and under Miri,
+not a reliably reportable oracle failure. If an oracle panics, allocations may
+be leaked deliberately because no generic cleanup can safely deallocate a set
+that may contain invalid or overlapping pointers.
 
 `Op`, `Config`, and `OpStream` are exhaustive by design with public fields;
 adding a field or variant is a breaking change and bumps the minor version

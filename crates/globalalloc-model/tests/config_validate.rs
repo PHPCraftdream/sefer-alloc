@@ -1,15 +1,24 @@
-//! `Config::validate()`'s documented `# Panics` contract, pinned as behavior
-//! (review run 3, P3-3 + P3-4): a well-formed config passes, each documented
-//! precondition panics with the documented message, and BOTH front-ends
-//! (`op_strategy` and `OpStream::arbitrary_with_config`) reject a degenerate
-//! config BEFORE generating or decoding anything. As in
-//! `tests/oracle_negative.rs`, the pins are message-level on purpose.
+//! `Config::validate()`'s documented `# Panics` contract: a well-formed
+//! config passes, each documented precondition names its field, and both
+//! front-ends reject invalid weights before generating or decoding anything.
 
 use globalalloc_model::Config;
 
 #[test]
 fn default_config_passes_validation() {
     Config::default().validate();
+}
+
+#[test]
+fn zero_single_arm_and_max_weights_pass_validation() {
+    for (small_weight, large_weight) in [(0, 1), (1, 0), (u32::MAX, u32::MAX)] {
+        Config {
+            small_weight,
+            large_weight,
+            ..Config::default()
+        }
+        .validate();
+    }
 }
 
 #[test]
@@ -43,7 +52,7 @@ fn all_zero_weights_panics() {
     .validate();
 }
 
-// Review run 3, P3-4: `usize::MAX`, the natural spelling of "no limit", is a
+// `usize::MAX`, the natural spelling of "no limit", is a
 // precondition violation for the size bounds exactly as it already was for
 // `max_align` — a bound that large only generates guaranteed M1 null reports
 // (the harness does not model OOM).

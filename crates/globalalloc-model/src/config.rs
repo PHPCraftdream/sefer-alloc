@@ -60,13 +60,15 @@ pub struct Config {
     /// `small_max + 1`.
     pub large_max: usize,
     /// Relative weight of the small arm in the generators' size choice.
+    /// Zero disables this arm, including during proptest shrinking.
     pub small_weight: u32,
     /// Relative weight of the large arm in the generators' size choice.
     ///
     /// Precondition (checked by [`Config::validate`], which both front-ends
     /// call): `small_weight + large_weight >= 1` — an all-zero weight sum
-    /// would make the generators' weighted pick undefined, and each
-    /// front-end reinterprets it differently.
+    /// would make the generators' weighted pick undefined. Zero disables this
+    /// arm, including during proptest shrinking; the full `u32` range is
+    /// accepted for either weight.
     pub large_weight: u32,
     /// Maximum alignment (a power of two) offered by the align strategy.
     ///
@@ -131,7 +133,7 @@ impl Config {
             self.max_align
         );
         assert!(
-            self.small_weight.saturating_add(self.large_weight) > 0,
+            self.small_weight > 0 || self.large_weight > 0,
             "Config::small_weight and Config::large_weight must not both be zero, \
              got {} and {}",
             self.small_weight,

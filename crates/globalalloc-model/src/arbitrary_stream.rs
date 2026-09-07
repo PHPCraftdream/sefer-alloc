@@ -26,28 +26,25 @@ const MAX_OPS: usize = 2048;
 /// 2 MiB reach passes `max_align: 2 MiB` (the in-tree fuzz target does).
 const ALIGN_POW_CAP_EXP: u32 = 21;
 
-/// Bound a fuzzer-derived raw size into `1..=small_max` or
-/// `small_max+1..=large_max`, choosing the arm with `Config`'s own weight
-/// ratio (default 9:1 small:large) and driving the magnitude from the
-/// remaining high bits so arm choice and size vary independently.
-fn bound_size(raw: u32, config: &Config) -> usize {
-    // Sum >= 1 is guaranteed by `Config::validate`, which
-    // `arbitrary_with_config` runs before decoding (an all-zero weight sum
-    // panics there).
-    let total = config.small_weight.saturating_add(config.large_weight) as usize;
-    let bucket = (raw as usize) % total;
-    let magnitude = (raw as usize) / total;
-    if bucket < config.small_weight as usize {
-        magnitude % config.small_max.max(1) + 1
+/// Draw a size from the configured weighted arms.
+///
+/// Arm selection uses the complete, non-overflowing `u64` weight sum. The
+/// size is a separate `Unstructured` range draw, so its reach is not limited
+/// by the arm-choice bits or by `u32`. Exact byte-to-value reduction belongs
+/// to `arbitrary`; this API promises bounds and relative buckets, not a stable
+/// or statistically uniform fuzz-input encoding.
+fn bound_size(u: &mut Unstructured<'_>, config: &Config) -> arbitrary::Result<usize> {
+    let small_weight = u64::from(config.small_weight);
+    let total = small_weight + u64::from(config.large_weight);
+    // `arbitrary_with_config` validates that at least one arm is enabled.
+    let bucket = u.int_in_range(0..=total - 1)?;
+
+    if bucket < small_weight {
+        u.int_in_range(1..=config.small_max.max(1))
     } else {
         let lo = config.small_max.saturating_add(1);
         let hi = config.large_max.max(lo);
-        // Saturating: `large_max <= small_max` (degenerate but accepted,
-        // e.g. both at the `isize::MAX` ceiling `validate()` enforces) makes
-        // `hi == lo`, so the plain `hi - lo` would underflow and the modulo
-        // would panic on a zero divisor; the saturating ops degrade that
-        // arm to exactly `lo`.
-        lo + magnitude % hi.saturating_sub(lo).saturating_add(1)
+        u.int_in_range(lo..=hi)
     }
 }
 
@@ -64,15 +61,11 @@ fn bound_align(raw: u8, config: &Config) -> usize {
 enum RawOp {
     /// Raw `Alloc` before bounding.
     Alloc {
-        /// Raw size.
-        size: u32,
         /// Raw alignment exponent.
         align_pow: u8,
     },
     /// Raw `AllocZeroed` before bounding.
     AllocZeroed {
-        /// Raw size.
-        size: u32,
         /// Raw alignment exponent.
         align_pow: u8,
     },
@@ -85,28 +78,26 @@ enum RawOp {
     Realloc {
         /// Index into the live set.
         i: u16,
-        /// Raw new size.
-        new_size: u32,
     },
 }
 
 impl RawOp {
-    fn bound(self, config: &Config) -> Op {
-        match self {
-            RawOp::Alloc { size, align_pow } => Op::Alloc {
-                size: bound_size(size, config),
+    fn bound(self, u: &mut Unstructured<'_>, config: &Config) -> arbitrary::Result<Op> {
+        Ok(match self {
+            RawOp::Alloc { align_pow } => Op::Alloc {
+                size: bound_size(u, config)?,
                 align: bound_align(align_pow, config),
             },
-            RawOp::AllocZeroed { size, align_pow } => Op::AllocZeroed {
-                size: bound_size(size, config),
+            RawOp::AllocZeroed { align_pow } => Op::AllocZeroed {
+                size: bound_size(u, config)?,
                 align: bound_align(align_pow, config),
             },
             RawOp::Dealloc(i) => Op::Dealloc(i as usize),
-            RawOp::Realloc { i, new_size } => Op::Realloc {
+            RawOp::Realloc { i } => Op::Realloc {
                 i: i as usize,
-                new_size: bound_size(new_size, config),
+                new_size: bound_size(u, config)?,
             },
-        }
+        })
     }
 }
 
@@ -128,6 +119,8 @@ impl OpStream {
     /// inherent constructor is the config-aware route, and the in-tree
     /// `global_alloc_ops` fuzz target drives it directly with an explicit
     /// `Config` (its historical 2 MiB size / 2^21 align reach).
+    /// Byte-to-op decoding is not a stable format; generator changes may
+    /// reinterpret existing corpus bytes while preserving these bounds.
     ///
     /// `Arbitrary` takes no parameters, so a custom [`Config`] cannot be
     /// threaded through the plain `fuzz_target!(|stream: OpStream| ...)`
@@ -164,15 +157,17 @@ impl OpStream {
         config: Config,
     ) -> arbitrary::Result<Self> {
         config.validate();
-        // Each item is a `Result<RawOp>`; skip undecodable items (a truncated
-        // trailing op at the end of the input) and cap the length (mirrors the
-        // historical `arbitrary_iter().take(2048)`).
-        let ops = u
-            .arbitrary_iter::<RawOp>()?
-            .take(MAX_OPS)
-            .filter_map(Result::ok)
-            .map(|raw| raw.bound(&config))
-            .collect();
+        let mut ops = Vec::new();
+        for _ in 0..MAX_OPS {
+            // Keep `arbitrary_iter`'s continuation-bit and truncated-item
+            // behavior while allowing each op's size to draw from `u`.
+            if !u.arbitrary::<bool>().unwrap_or(false) {
+                break;
+            }
+            if let Ok(op) = RawOp::arbitrary(u).and_then(|raw| raw.bound(u, &config)) {
+                ops.push(op);
+            }
+        }
         Ok(OpStream { ops })
     }
 }

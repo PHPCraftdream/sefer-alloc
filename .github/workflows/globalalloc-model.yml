@@ -1,0 +1,186 @@
+name: globalalloc-model
+
+on:
+  push:
+    paths:
+      - "crates/globalalloc-model/**"
+      - ".github/workflows/globalalloc-model.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - "crates/globalalloc-model/**"
+      - ".github/workflows/globalalloc-model.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+concurrency:
+  group: globalalloc-model-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: "1"
+  RUSTC_WRAPPER: ""
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target/globalalloc-model-ci
+
+jobs:
+  feature-tests:
+    name: test (${{ matrix.os }}, ${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            features: default
+            args: --no-default-features
+          - os: ubuntu-latest
+            features: proptest
+            args: --no-default-features --features proptest
+          - os: ubuntu-latest
+            features: arbitrary
+            args: --no-default-features --features arbitrary
+          - os: ubuntu-latest
+            features: all
+            args: --all-features
+          - os: windows-latest
+            features: default
+            args: --no-default-features
+          - os: windows-latest
+            features: proptest
+            args: --no-default-features --features proptest
+          - os: windows-latest
+            features: arbitrary
+            args: --no-default-features --features arbitrary
+          - os: windows-latest
+            features: all
+            args: --all-features
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p globalalloc-model ${{ matrix.args }} --no-fail-fast
+
+  i686-tests:
+    name: core tests (i686-unknown-linux-gnu, all features)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - name: Install 32-bit linker support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-multilib
+      - name: Run every integration target on 32-bit usize
+        run: >-
+          cargo test -p globalalloc-model --target i686-unknown-linux-gnu
+          --all-features --no-fail-fast
+
+  package:
+    name: packaged crate and standalone consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Package and extract
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo package -p globalalloc-model
+          extract_dir=$(mktemp -d)
+          crate_file=$(find "$CARGO_TARGET_DIR/package" -maxdepth 1 -type f -name 'globalalloc-model-*.crate' -print -quit)
+          test -n "$crate_file"
+          tar xzf "$crate_file" -C "$extract_dir"
+          package_dir=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -name 'globalalloc-model-*' -print -quit)
+          test -n "$package_dir"
+          echo "dir=$package_dir" >> "$GITHUB_OUTPUT"
+      - name: Test extracted package
+        working-directory: ${{ steps.package.outputs.dir }}
+        run: |
+          cargo test --no-default-features --no-fail-fast
+          cargo test --all-features --no-fail-fast
+      - name: Clippy extracted package
+        working-directory: ${{ steps.package.outputs.dir }}
+        run: |
+          cargo clippy --no-default-features --all-targets -- -D warnings
+          cargo clippy --all-features --all-targets -- -D warnings
+      - name: Document extracted package
+        working-directory: ${{ steps.package.outputs.dir }}
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --no-default-features --no-deps
+          cargo doc --all-features --no-deps
+      - name: Create standalone consumer
+        id: consumer
+        shell: bash
+        env:
+          PACKAGE_DIR: ${{ steps.package.outputs.dir }}
+        run: |
+          set -euo pipefail
+          consumer_dir=$(mktemp -d)
+          mkdir -p "$consumer_dir/src"
+          cat > "$consumer_dir/Cargo.toml" <<EOF
+          [package]
+          name = "globalalloc-model-consumer"
+          version = "0.0.0"
+          edition = "2021"
+
+          [features]
+          all = ["globalalloc-model/proptest", "globalalloc-model/arbitrary"]
+
+          [dependencies]
+          globalalloc-model = { path = "$PACKAGE_DIR" }
+          EOF
+          cat > "$consumer_dir/src/main.rs" <<'EOF'
+          use globalalloc_model::{drive, Config, Op};
+          use std::alloc::System;
+
+          fn main() {
+              let ops = [
+                  Op::Alloc { size: 64, align: 8 },
+                  Op::Realloc { i: 0, new_size: 96 },
+                  Op::Dealloc(0),
+              ];
+              drive(&System, Config::default(), &ops);
+          }
+          EOF
+          echo "dir=$consumer_dir" >> "$GITHUB_OUTPUT"
+      - name: Test standalone consumer
+        working-directory: ${{ steps.consumer.outputs.dir }}
+        run: |
+          cargo run --no-default-features
+          cargo run --features all
+
+  msrv:
+    name: library check (MSRV 1.85)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.85
+      - run: cargo check -p globalalloc-model --lib --no-default-features
+      - run: cargo check -p globalalloc-model --lib --all-features
+
+  docsrs:
+    name: docs.rs configuration (nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Build docs.rs surface
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+        run: cargo doc -p globalalloc-model --all-features --no-deps

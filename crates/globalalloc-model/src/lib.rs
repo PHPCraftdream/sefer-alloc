@@ -1,104 +1,120 @@
-//! `globalalloc-model` — differential-test any allocator against a reference model.
+//! Reference-model testing for raw Rust allocators.
 //!
-//! Apply a random stream of `alloc` / `dealloc` / `realloc` / `alloc_zeroed`
-//! operations to the allocator under test AND to a trivial reference model
-//! (a `Vec` of live blocks), asserting the **M1–M4 oracles** on every step:
+//! [`drive`] applies `alloc`, `dealloc`, `realloc`, and `alloc_zeroed`
+//! operations while tracking the expected live blocks. It checks each property
+//! when that property is observable:
 //!
-//! - **M1 (validity):** every returned pointer is non-null, aligned to the
-//!   requested align, and writable for the requested size (write a distinctive
-//!   fill byte, read it back — failures name the op index, byte offset, and
-//!   both byte values).
-//! - **M2 (no double-free / UAF):** the model only frees live pointers; with
-//!   `Config::double_free: Some(DoubleFreeOk::new())` (opt-in via an
-//!   unforgeable token whose constructor is `const unsafe`, **off by default**
-//!   — a real system malloc treats a double-free as undefined behaviour) a
-//!   second `dealloc` of the same pointer is issued and must not corrupt the
-//!   allocator.
-//! - **M3 (no overlap):** two simultaneously-live allocations never share a
-//!   byte — checked on EVERY block-creating op (`alloc`, `alloc_zeroed`, and
-//!   `realloc`'s new extent) against every live block, and re-checked at run
-//!   end via a per-block fill (see the fill-cycle limit below).
-//! - **M4 (alignment & size fidelity):** every returned pointer satisfies the
-//!   requested align. Size fidelity is established indirectly: the fill
-//!   read-back proves the requested size is writable, and M3's overlap check
-//!   over the requested extents catches an undersized block once a neighbour
-//!   lands inside the missing tail.
-//! - **`alloc_zeroed` contract:** every byte of a zeroed allocation reads as 0.
-//! - **`realloc` prefix preservation:** the `min(old, new)` prefix is preserved.
+//! - **M1 (allocation response and read-back):** the driver treats null from
+//!   `alloc` or `alloc_zeroed` as a test failure even though `GlobalAlloc`
+//!   permits it as an allocation-failure result. A written fill is then read
+//!   back from each non-null extent. Null `realloc` is accepted and leaves the
+//!   old block live.
+//! - **M2 (authorized double-free is a no-op):** an unsafe, off-by-default
+//!   [`DoubleFreeOk`] token authorizes one immediate repeated `dealloc`. The
+//!   oracle can observe only corruption visible at a later check; it cannot
+//!   directly prove that the repeated call did nothing.
+//! - **M3 (no live-block overlap):** each non-null block-creating return is
+//!   compared with the other live extents before entering the model.
+//! - **M4 (alignment):** each non-null return is checked before access.
+//! - `alloc_zeroed` bytes are checked for zero, and a non-null `realloc` result
+//!   is checked for preservation of its initialized old prefix.
 //!
-//! One model, two front-ends. The same `drive` loop powers both:
-//! - a proptest `op_strategy` over `Vec<Op>` (the `proptest` feature) — for
-//!   `cargo test` and the bounded miri run, and
-//! - an `Arbitrary` impl for `OpStream` (the `arbitrary` feature) — for
-//!   `cargo fuzz` / libFuzzer.
+//! Live fills are verified before a block is passed to `dealloc` or `realloc`
+//! and before each teardown deallocation. These are discrete observation
+//! points, not continuous monitoring.
 //!
-//! (These two names are intentionally plain code, not intra-doc links: they
-//! are feature-gated and must not break the default-feature docs build.)
+//! # Front-ends and features
 //!
-//! An oracle improvement thus reaches proptest, miri, AND libFuzzer at once.
+//! The core API and hand-built [`Op`] streams need no feature. The optional
+//! `proptest` feature exposes `op_strategy`; consumers also need their own
+//! `proptest` dependency for its macros and traits. The optional `arbitrary`
+//! feature exposes `OpStream` for cargo-fuzz/libFuzzer consumers. The two
+//! features are independent and additive.
 //!
-//! # The fill-cycle limit (M3, run-end sweep)
+//! The names `op_strategy` and `OpStream` are intentionally plain code rather
+//! than intra-doc links because they are absent from a default-feature docs
+//! build.
 //!
-//! The fill byte is a `u8` cycling `1..=255`, so once blocks beyond the first
-//! 255 fill assignments are simultaneously live, two live blocks can share a
-//! fill byte and a cross-contamination between exactly those two is invisible
-//! to the run-end sweep (it stays sound: no false positives). The incremental
-//! overlap check above still guards allocation-time overlap.
+//! # `no_std`
 //!
-//! # Limitations
+//! Without `arbitrary`, the crate uses only `core` and `alloc`. The `proptest`
+//! dependency is configured for its `alloc` and `no_std` modes. A no-std
+//! proptest consumer gets deterministic seeding unless another dependency
+//! enables proptest's `std` support. The `arbitrary` front-end currently needs
+//! `std` because derive-generated code uses `std::thread_local!`.
 //!
-//! `drive` reads bytes it has not itself written in exactly two places: the
-//! `alloc_zeroed` zero-check and the `realloc` prefix check. Those reads are
-//! defined only if the allocator under test honours the *initialization*
-//! half of the [`RawAllocator`] contract (see the
-//! trait's `# Safety`: initialized bytes are a safety obligation, distinct
-//! from the zero/prefix *values*, which are oracles). An allocator whose
-//! `alloc_zeroed` hands back genuinely uninitialized memory, or whose
-//! `realloc` moves a block without copying the old bytes, violates that
-//! obligation: natively, `drive` still reports the oracle failure correctly,
-//! but under miri it reports undefined behaviour inside `drive` itself
-//! rather than a clean oracle failure. (`read_volatile` is not a fix: it is
-//! equally UB on uninitialized memory in the abstract machine, so it would
-//! only hide the report.)
+//! # Safety and oracle limits
 //!
-//! # The allocator seam
+//! [`RawAllocator`] is unsafe because the driver cannot safely discover every
+//! invalid allocator result. A non-null pointer must already denote a live
+//! allocation with the promised extent. A dangling or undersized result can
+//! make the driver's first access undefined behavior instead of producing an
+//! oracle failure.
 //!
-//! The driver is generic over a minimal `RawAllocator` trait — exactly the
-//! `alloc` / `dealloc` / `realloc` / `alloc_zeroed` surface of
-//! `core::alloc::GlobalAlloc`, for which a blanket impl is provided. A plain
-//! owned allocator with the same four methods (e.g. sefer's `AllocCore`) can
-//! implement the trait directly. (Coherence note: because of that blanket
-//! impl, a type that already implements `GlobalAlloc` cannot ALSO implement
-//! `RawAllocator` — wrap it in a newtype if you need to override the
-//! forwarding.)
+//! The driver reads bytes it did not write in the `alloc_zeroed` zero check and
+//! the `realloc` prefix check. The former bytes, and the old prefix supplied to
+//! the latter operation, must be initialized under the [`RawAllocator`]
+//! contract. Reading genuinely uninitialized memory is undefined behavior both
+//! natively and under Miri; neither execution mode reliably reports it as an
+//! oracle failure.
 //!
-//! # Reentrancy
+//! Fill bytes cycle through `1..=255`. Once more than 255 fill assignments are
+//! represented among live blocks, two can share a marker, so corruption from
+//! one such block into the other may collide with the expected value. Direct
+//! extent-overlap checks still run when each block is created. Corruption that
+//! occurs and is restored between observation points is also invisible.
 //!
-//! `drive` allocates its own bookkeeping (one `Vec<Live>`) through the
-//! *global* allocator. If the allocator under test is also the installed
-//! `#[global_allocator]`, those internal allocations interleave with the ops
-//! under test, and a reentrant allocator will deadlock or recurse. Drive the
-//! *engine* behind your `GlobalAlloc`, not the installed global allocator
-//! itself.
+//! On normal return, every surviving modeled block is deallocated. An oracle
+//! panic may intentionally leak tracked and candidate allocations: after an
+//! invalid or overlapping pointer is observed, there is no generic cleanup
+//! sequence that can deallocate every suspect pointer without risking undefined
+//! behavior or a double-free. Callers that catch the panic and continue the
+//! process must account for those leaks.
 //!
-//! # Example
+//! The generators bound individual allocation requests, but cannot guarantee
+//! the absence of OOM: live requests can accumulate and allocators may have
+//! tighter limits. [`drive`] treats null from `alloc` or `alloc_zeroed` as a
+//! test failure. Null from `realloc` is the supported failure result and leaves
+//! the old block live.
+//!
+//! Hand-built zero and oversized sizes are clamped into the common
+//! `GlobalAlloc` size preconditions. An inadmissible alignment (including zero
+//! or a non-power-of-two value) is rejected instead. For generated streams,
+//! `small_max == 0` produces a size-1 small arm, while
+//! `large_max <= small_max` produces a large arm at `small_max + 1`; that
+//! degenerate arm can exceed `large_max`.
+//!
+//! # Allocator seam and reentrancy
+//!
+//! Every `GlobalAlloc` has a blanket [`RawAllocator`] implementation. A plain
+//! allocator engine can implement the trait directly; a type that already
+//! implements `GlobalAlloc` needs a newtype to override the blanket behavior.
+//!
+//! [`drive`] allocates its `Vec` bookkeeping through the installed global
+//! allocator. If that allocator is also under test, bookkeeping allocations
+//! can interleave with the explicit stream. This does not inherently deadlock
+//! (driving `std::alloc::System` is a normal use), but it can perturb allocator
+//! state, and an implementation unsafe against its own re-entry may recurse or
+//! deadlock. Drive the underlying engine directly when bookkeeping must be
+//! isolated from the operations under test.
+//!
+//! # Manual example
+//!
+//! Add `globalalloc-model = "0.1"` under `[dev-dependencies]`, then use a
+//! complete program of this shape:
 //!
 //! ```text
-//! use globalalloc_model::{drive, op_strategy, Config};
+//! use globalalloc_model::{drive, Config, Op};
 //! use std::alloc::System;
 //!
-//! // proptest (`proptest!` comes from the `proptest` crate):
-//! proptest! {
-//!     #[test]
-//!     fn matches_model(ops in op_strategy(Config::default(), 0..200)) {
-//!         drive(&System, Config::default(), &ops);
-//!     }
+//! fn main() {
+//!     let ops = [
+//!         Op::Alloc { size: 64, align: 8 },
+//!         Op::Realloc { i: 0, new_size: 96 },
+//!         Op::Dealloc(0),
+//!     ];
+//!     drive(&System, Config::default(), &ops);
 //! }
-//!
-//! // libFuzzer (`fuzz_target!` comes from `libfuzzer-sys`):
-//! fuzz_target!(|stream: globalalloc_model::OpStream| {
-//!     drive(&System, Config::default(), &stream.ops);
-//! });
 //! ```
 
 // This crate holds `unsafe` for two reasons. (1) Its one job includes calling

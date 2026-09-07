@@ -106,11 +106,13 @@ unsafe fn fill_block(ptr: *mut u8, size: usize, byte: u8) {
 /// Read the fill back, byte by byte, naming the oracle/op/offset on mismatch.
 ///
 /// # Safety
-/// `ptr` must be valid for reads of `size` bytes AND fully initialized — only
-/// call immediately after [`fill_block`].
+/// `ptr` must remain valid for reads of `size` bytes, and every byte in that
+/// range must be initialized. The fill may have happened earlier: callers
+/// rely on the [`RawAllocator`] contract keeping a live block valid and on
+/// [`fill_block`] having initialized its whole modeled extent.
 unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: usize, what: &str) {
-    // SAFETY: caller guarantees `ptr` is valid for reads of `size` bytes and
-    // fully initialized (just filled).
+    // SAFETY: caller guarantees `ptr` is valid for reads of `size` fully
+    // initialized bytes in one live allocation.
     let block = unsafe { core::slice::from_raw_parts(ptr, size) };
     if let Some(off) = block.iter().position(|&read| read != byte) {
         panic!(
@@ -133,16 +135,19 @@ unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: 
 /// `alloc_zeroed`) obliges those bytes to be *initialized* — whether they
 /// are zero is the oracle checked here; initializedness is the obligation.
 /// An allocator that hands back genuinely uninitialized memory violates the
-/// obligation: natively the zero-check still reports it, under miri it is
-/// UB inside `drive` itself (see the crate-level Limitations). What the read
+/// obligation: the read is UB both natively and under Miri; a diagnostic is
+/// not guaranteed (see the crate-level Limitations). What the read
 /// is FOR is the zero oracle: a broken `alloc_zeroed` that hands back
 /// bytes which are not 0 is reported here, never tolerated.
 ///
 /// # Safety
-/// `ptr` must be valid for reads of `size` bytes.
+/// `ptr` must be valid for reads of `size` fully initialized bytes. For a
+/// non-null `alloc_zeroed` result, initializedness is a [`RawAllocator`]
+/// safety guarantee; whether each byte is zero is the oracle checked here.
 unsafe fn verify_zeroed_block(ptr: *mut u8, size: usize, op_idx: usize) {
     for b in 0..size {
-        // SAFETY: caller guarantees `ptr` is valid for reads of `size` bytes.
+        // SAFETY: caller guarantees `ptr` is valid for reads of `size` fully
+        // initialized bytes.
         let read = unsafe { ptr.add(b).read() };
         assert_eq!(
             read, 0,
@@ -161,7 +166,9 @@ unsafe fn verify_zeroed_block(ptr: *mut u8, size: usize, op_idx: usize) {
 /// read form.
 ///
 /// # Safety
-/// `ptr` must be valid for reads of `len` bytes.
+/// `ptr` must be valid for reads of `len` fully initialized bytes. A non-null
+/// realloc result's preserved prefix has that initializedness guarantee under
+/// [`RawAllocator`]; equality with `expected` is the oracle checked here.
 unsafe fn verify_prefix_block(
     ptr: *mut u8,
     len: usize,
@@ -171,7 +178,8 @@ unsafe fn verify_prefix_block(
     new_size: usize,
 ) {
     for b in 0..len {
-        // SAFETY: caller guarantees `ptr` is valid for reads of `len` bytes.
+        // SAFETY: caller guarantees `ptr` is valid for reads of `len` fully
+        // initialized bytes.
         let read = unsafe { ptr.add(b).read() };
         assert!(
             read == expected,
@@ -182,8 +190,8 @@ unsafe fn verify_prefix_block(
 }
 
 /// Run the op stream against `alloc` and the reference model, asserting the
-/// M1–M4 oracles on every step. Panics (the natural oracle-failure signal for
-/// both proptest and libFuzzer) the moment any oracle is violated.
+/// M1–M4 oracles at allocation and block-lifecycle observation points.
+/// Panics on detected violations, the failure signal for proptest and libFuzzer.
 ///
 /// All survivors are freed and the model dropped before returning (no UAF in a
 /// teardown walk). `config.double_free` — `Some(DoubleFreeOk::new())` vs
@@ -192,7 +200,7 @@ unsafe fn verify_prefix_block(
 /// unforgeable in safe code); the other `config` fields shape the
 /// generators, not `drive`.
 ///
-/// `drive` is total over every hand-built `Op` value: a size of `0`, an
+/// `drive` normalizes sizes in hand-built `Op` values: a size of `0`, an
 /// oversized size, a `new_size` of `0`, and a `new_size` whose round-up
 /// overflows `isize` are all clamped into the range `GlobalAlloc`'s own
 /// contract permits, so the allocator is never invoked outside its
@@ -203,11 +211,16 @@ unsafe fn verify_prefix_block(
 /// # Reentrancy
 ///
 /// `drive` allocates its own bookkeeping (one `Vec<Live>`) through the
-/// *global* allocator. If the allocator under test is also the installed
-/// `#[global_allocator]`, those internal allocations interleave with the ops
-/// under test and a reentrant allocator will deadlock or recurse — drive the
-/// *engine* behind your `GlobalAlloc`, not the installed global allocator
-/// itself.
+/// *global* allocator. If it is also the allocator under test, bookkeeping
+/// allocations interleave with the modeled operations. Calling this driver
+/// from inside an allocation hook can recurse or deadlock; invoke it from
+/// ordinary test code and use a separate global allocator for bookkeeping
+/// when isolation is needed.
+///
+/// After an oracle panic, outstanding tested allocations are not freed by
+/// this driver: invalid or overlapping allocator results cannot be reclaimed
+/// generically with confidence. Reclaim a test arena or discard the test
+/// process before replaying failing cases repeatedly.
 ///
 /// # Panics
 ///
@@ -217,7 +230,8 @@ unsafe fn verify_prefix_block(
 ///   so any such null is a failure — a null from `realloc` is the documented
 ///   failure signal and is instead skipped, leaving the old block live),
 /// - a misaligned pointer (M1/M4),
-/// - a live-block overlap (M3, incremental or at run end),
+/// - a live-block overlap or clobbered fill (M3, incrementally, before a
+///   destructive op, at run end, or during teardown),
 /// - a byte that does not read back (M1),
 /// - a non-zero byte from `alloc_zeroed`,
 /// - a lost realloc prefix byte.
@@ -368,6 +382,22 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
             Op::Dealloc(i) => {
                 if !live.is_empty() {
                     let i = i % live.len();
+                    let l = live[i];
+                    // A later allocator operation may have clobbered this
+                    // block. Verify its full modeled extent before removing
+                    // the only record that can expose that corruption.
+                    // SAFETY: `l.ptr` is still live and all `l.size` bytes
+                    // were initialized by the most recent fill.
+                    unsafe {
+                        verify_block(
+                            l.ptr,
+                            l.size,
+                            l.fill,
+                            "M3",
+                            op_idx,
+                            "before dealloc: live block clobbered",
+                        )
+                    };
                     let l = live.swap_remove(i);
                     let layout = layout_for(l.size, l.align, op_idx);
                     // SAFETY: `l.ptr` is a live block allocated with `layout`,
@@ -392,6 +422,21 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 if !live.is_empty() {
                     let i = i % live.len();
                     let l = live[i];
+                    // Verify the whole old block before realloc can consume
+                    // it. This must precede shrinking too: prefix validation
+                    // cannot observe corruption in a discarded suffix.
+                    // SAFETY: `l.ptr` is still live and all `l.size` bytes
+                    // were initialized by the most recent fill.
+                    unsafe {
+                        verify_block(
+                            l.ptr,
+                            l.size,
+                            l.fill,
+                            "M3",
+                            op_idx,
+                            "before realloc: live block clobbered",
+                        )
+                    };
                     let old_layout = layout_for(l.size, l.align, op_idx);
                     // P0-1: `GlobalAlloc::realloc` requires `new_size > 0` and
                     // its round-up to `old_layout.align()` not to overflow
@@ -403,11 +448,11 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     // size, not a smaller "sane" cap — any lower bound would
                     // be arbitrary and would mask a genuine growth request —
                     // so a bogus near-`usize::MAX` `new_size` becomes a
-                    // ~8 EiB REQUEST. An allocator is expected to answer
-                    // that with null (tolerated here as documented realloc
-                    // failure); one that ABORTS on OOM instead aborts by its
-                    // own OOM policy, which is not an oracle failure. The
-                    // alloc arms clamp to the same ceiling.
+                    // near-`isize::MAX` REQUEST. An allocator is expected to
+                    // answer that with null (tolerated here as documented
+                    // realloc failure); one that ABORTS on OOM instead aborts
+                    // by its own OOM policy, which is not an oracle failure.
+                    // The alloc arms clamp to the same ceiling.
                     let new_size = new_size.clamp(
                         1,
                         (isize::MAX as usize / old_layout.align()) * old_layout.align(),
@@ -476,7 +521,22 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
 
     // Free all survivors (the model drops right after — M2: no double-free,
     // no UAF in a teardown walk).
-    for l in &live {
+    for (block_idx, l) in live.iter().enumerate() {
+        // Each survivor is checked immediately before its own free: an
+        // earlier teardown dealloc may have corrupted a later survivor after
+        // the run-end sweep already passed.
+        // SAFETY: `l.ptr` remains live until the dealloc below, and all
+        // `l.size` bytes were initialized by the most recent fill.
+        unsafe {
+            verify_block(
+                l.ptr,
+                l.size,
+                l.fill,
+                "M3",
+                block_idx,
+                "teardown: live block clobbered before dealloc",
+            )
+        };
         let layout = Layout::from_size_align(l.size, l.align)
             .expect("teardown: every model layout was validated when its block was created");
         // SAFETY: `l.ptr` is a live block allocated with `layout`, freed exactly

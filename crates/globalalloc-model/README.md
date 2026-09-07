@@ -1,111 +1,219 @@
 # globalalloc-model
 
-Differential-test any Rust allocator against a trivial reference model.
+`globalalloc-model` drives a Rust allocator with allocation, deallocation,
+reallocation, and zeroed-allocation operations while tracking the expected live
+blocks in a small reference model.
 
-Apply a random stream of `alloc` / `dealloc` / `realloc` / `alloc_zeroed`
-operations to the allocator under test **and** to a reference model (a `Vec` of
-live blocks), asserting the **M1–M4 correctness oracles** on every step:
+The driver checks the M1-M4 oracles at the points where each property is
+observable:
 
-- **M1 (validity):** every returned pointer is non-null and aligned to the
-  requested align; size fidelity is established indirectly (fill-pattern
-  read-back proves the requested size is writable, and the overlap check over
-  requested extents catches an undersized block once a neighbour lands inside
-  the missing tail).
-- **M2 (no double-free / UAF):** a second `dealloc` of the same pointer must
-  not corrupt the allocator (opt-in via `Config::double_free: Some(unsafe { DoubleFreeOk::new() })`; **off by
-  default** — a real system malloc treats double-free as UB, so the harness
-  only issues the second free when you hand it this `unsafe`-constructed token).
-- **M3 (no overlap):** two simultaneously-live allocations never share a byte
-  — the overlap check runs on **every block-creating op** (`alloc`,
-  `alloc_zeroed`, and `realloc`'s new extent), plus a per-block fill re-checked
-  at run end.
-- **M4 (alignment):** every returned pointer is aligned to the requested
-  align (extent fidelity is established indirectly — see M1).
-- **`alloc_zeroed` contract:** every byte of a zeroed allocation reads as 0.
-- **`realloc` prefix preservation:** the `min(old, new)` prefix is preserved.
+- **M1 (allocation response and read-back):** the driver treats null from
+  `alloc` or `alloc_zeroed` as a test failure, even though `GlobalAlloc` permits
+  null as its allocation-failure result. The driver fills each non-null extent
+  and reads the fill back. A null `realloc` is accepted and leaves the old
+  block live.
+- **M2 (authorized double-free is a no-op):** when explicitly enabled with
+  `Config::double_free: Some(unsafe { DoubleFreeOk::new() })`, the driver
+  immediately repeats a completed `dealloc`. This is off by default because an
+  ordinary `GlobalAlloc`, including `System`, makes double-free undefined
+  behavior. The oracle observes only later corruption; it cannot directly prove
+  that the repeated call did nothing.
+- **M3 (no live-block overlap):** every non-null extent returned by `alloc`,
+  `alloc_zeroed`, or `realloc` is compared with the other currently live
+  extents before it is accepted into the model.
+- **M4 (alignment):** every non-null return is checked against the requested
+  alignment before the driver accesses it.
+- **`alloc_zeroed`:** every returned byte is checked for zero before the block
+  receives its fill pattern.
+- **`realloc`:** the initialized `min(old_size, new_size)` prefix is checked for
+  preservation on a non-null return.
 
-This is the correctness twin of
-[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs) (the performance
-side): a ready-made op-stream driver plus reference-model oracles for
-differential-testing any `GlobalAlloc`. A normal build (no features) has
-**zero dependencies** — both front-ends are optional.
+Live fills are checked before a block is passed to `dealloc` or `realloc`, and
+again before each teardown deallocation. These are observation points, not
+continuous monitoring: corruption that occurs and is repaired between checks
+is invisible.
 
-## One model, two front-ends
+This is the correctness counterpart to
+[`malloc-bench-rs`](https://crates.io/crates/malloc-bench-rs), the performance
+harness. The default build has no dependencies.
 
-The same `drive()` loop powers both:
+## Installation and features
 
-- a **proptest** `Strategy<Value = Vec<Op>>` (feature `proptest`) — for
-  `cargo test` and the bounded miri run, and
-- an **`impl Arbitrary for OpStream`** (feature `arbitrary`) — for `cargo fuzz`
-  / libFuzzer.
+For a manual operation stream, no feature is needed:
 
-So an oracle improvement reaches proptest, miri, and libFuzzer at once.
+```toml
+[dev-dependencies]
+globalalloc-model = "0.1"
+```
 
-Need a custom `Config` for the fuzz front-end? `Arbitrary` takes no
-parameters, so a config cannot be threaded through the plain
-`fuzz_target!(|stream: OpStream| ...)` form. Wrap the stream in a local
-newtype whose `Arbitrary` impl delegates to
-`OpStream::arbitrary_with_config` (keeping libFuzzer's structured crash
-report) and pass the newtype to `fuzz_target!` — the pattern is spelled
-out in `OpStream::arbitrary_with_config`'s rustdoc.
+The optional front-ends are independent:
 
-## `no_std` by default
+| Feature | Adds | Intended use |
+| --- | --- | --- |
+| `proptest` | `op_strategy(Config, Range<usize>)` | Property tests |
+| `arbitrary` | `Arbitrary` for `OpStream` | `cargo fuzz` / libFuzzer |
 
-The core model needs only `core` + `alloc`, so this crate can
-differential-test a `no_std` allocator's own test suite without pulling in
-`std` — verified against a real bare-metal target (`thumbv7em-none-eabi`)
-for the default build AND for the `proptest` front-end (declared with
-`default-features = false, features = ["alloc", "no_std"]`, which routes
-proptest's float samplers through num-traits/libm). One consequence of that
-no_std mode: without `std`, proptest seeds its RNG from a hardcoded constant,
-so a consumer relying on this feature alone gets *deterministic* seeding;
-this crate's own test suite dev-depends on a default-featured `proptest` so
-its property runs are randomly seeded. The one exception is
-the `arbitrary` front-end: `derive_arbitrary`'s generated recursion guard
-unconditionally references `std::thread_local!` — an upstream limitation,
-not this crate's choice.
+For proptest, enable the crate feature and add `proptest` itself because the
+test uses its macros and traits:
 
-## The allocator seam
+```toml
+[dev-dependencies]
+globalalloc-model = { version = "0.1", features = ["proptest"] }
+proptest = "1"
+```
 
-`drive()` is generic over a minimal `unsafe trait RawAllocator` — exactly the
-`alloc` / `dealloc` / `realloc` / `alloc_zeroed` surface of `GlobalAlloc`, for
-which a blanket impl is provided. A plain owned allocator with the same four
-methods can implement the trait directly.
+For a cargo-fuzz target:
 
-Two caveats: `drive()` allocates its own bookkeeping through the *global*
-allocator, so if the allocator under test is also the installed
-`#[global_allocator]`, a reentrant allocator will deadlock or recurse — drive
-the *engine* behind your `GlobalAlloc`, not the installed global allocator
-itself. And because of the blanket impl, a type that already implements
-`GlobalAlloc` cannot ALSO implement `RawAllocator` — wrap it in a newtype if
-you need to override the forwarding.
+```toml
+[dependencies]
+globalalloc-model = { version = "0.1", features = ["arbitrary"] }
+libfuzzer-sys = "0.4"
+```
 
-## Compatibility
+## Runnable manual `System` example
 
-`Op`, `Config`, and `OpStream` are exhaustive types with public fields on
-purpose (so `Config { double_free: Some(unsafe { DoubleFreeOk::new() }), ..Config::default() }` stays
-ergonomic). Adding a field or variant is a breaking change and bumps the
-minor version under 0.x.
+This complete program uses only the default feature set. Put it in
+`examples/manual_system.rs` and run `cargo run --example manual_system`:
 
-## Usage
-
-```text
-use globalalloc_model::{drive, op_strategy, Config};
+```rust
+use globalalloc_model::{drive, Config, Op};
 use std::alloc::System;
 
-// proptest (the `proptest!` macro comes from the `proptest` crate):
+fn main() {
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::AllocZeroed {
+            size: 128,
+            align: 16,
+        },
+        Op::Realloc {
+            i: 0,
+            new_size: 96,
+        },
+        Op::Dealloc(1),
+        Op::Dealloc(0),
+    ];
+
+    drive(&System, Config::default(), &ops);
+}
+```
+
+Do not enable the double-free oracle for `System`.
+
+## Proptest example
+
+With the `proptest` setup above:
+
+```rust
+use globalalloc_model::{drive, op_strategy, Config};
+use proptest::prelude::*;
+use std::alloc::System;
+
 proptest! {
     #[test]
-    fn matches_model(ops in op_strategy(Config::default(), 0..200)) {
+    fn system_matches_model(ops in op_strategy(Config::default(), 0..200)) {
         drive(&System, Config::default(), &ops);
     }
 }
+```
 
-// libFuzzer (the `fuzz_target!` macro comes from `libfuzzer-sys`):
-fuzz_target!(|stream: globalalloc_model::OpStream| {
+## libFuzzer example
+
+With the `arbitrary` setup above, a cargo-fuzz target can be:
+
+```rust
+#![no_main]
+
+use globalalloc_model::{drive, Config, OpStream};
+use libfuzzer_sys::fuzz_target;
+use std::alloc::System;
+
+fuzz_target!(|stream: OpStream| {
     drive(&System, Config::default(), &stream.ops);
 });
 ```
+
+`Arbitrary` itself has no configuration parameter. For a custom distribution,
+wrap `OpStream` in a local newtype and delegate its `Arbitrary` implementation
+to `OpStream::arbitrary_with_config`.
+
+## `no_std` and portability
+
+The default model uses only `core` and `alloc`. The `proptest` dependency is
+also configured with its `alloc` and `no_std` features, so both configurations
+can be used in a `no_std` allocator's test setup. The `arbitrary` front-end
+currently requires `std` because its derive-generated recursion guard uses
+`std::thread_local!`.
+
+Without `std`, proptest uses deterministic seeding. Consumers that want random
+OS-seeded property runs should also depend on a std-enabled `proptest`, as this
+crate's own test suite does. CI runs all integration targets on 32-bit i686
+and all feature combinations on 64-bit Windows and Linux, while the
+repository's broad CI retains the bare-metal and Miri checks.
+
+## The allocator seam and reentrancy
+
+`drive` is generic over the unsafe `RawAllocator` trait, the four-method
+`GlobalAlloc` surface. Every `GlobalAlloc` receives a blanket implementation;
+an allocator engine may implement `RawAllocator` directly. Because of that
+blanket implementation, a type that already implements `GlobalAlloc` needs a
+newtype if it also needs custom `RawAllocator` behavior.
+
+The driver allocates its `Vec` bookkeeping through the installed global
+allocator. If that allocator is also under test, bookkeeping allocations can
+interleave with the explicit operation stream. This does not inherently
+deadlock: `System` in the runnable example is a normal case. It can, however,
+perturb allocator state, and an implementation that is not safe against its
+own re-entry may recurse or deadlock. Drive the underlying engine directly
+when the test needs to isolate allocator operations from driver bookkeeping.
+
+## Limits of the oracle
+
+`RawAllocator` is unsafe because several properties cannot be diagnosed safely.
+A non-null return must already denote a live allocation with the documented
+extent. If it is dangling, undersized, or otherwise invalid, the driver's first
+write or read can itself be undefined behavior rather than a useful failure.
+
+Likewise, `alloc_zeroed` must return initialized bytes, and the old prefix passed
+to `realloc` must be initialized. Reading genuinely uninitialized bytes is
+undefined behavior both natively and under Miri; neither environment is
+promised to turn that contract violation into a reliable oracle report.
+
+Fill patterns are bytes in `1..=255`. After 255 fill assignments, two live
+blocks can have the same marker, so corruption from one such block into the
+other can collide with the expected fill. Direct extent-overlap checks still
+run when a block is created. Any corruption that is restored between
+observation points is also undetectable.
+
+On normal return, every surviving modeled block is deallocated. On an oracle
+panic, allocations may be leaked deliberately. Generic cleanup is not safe
+after faults such as an invalid or overlapping pointer because attempting to
+deallocate the suspect set could cause undefined behavior or a double-free.
+This matters if a caller catches oracle panics and keeps the process alive.
+
+The generators bound individual requests, but that cannot guarantee that the
+allocator or process will not run out of memory: many live operations can
+accumulate, and an allocator may impose tighter limits. `drive` treats null
+from `alloc` or `alloc_zeroed` as a test failure; null from `realloc` is the
+supported failure result and leaves the old block live.
+
+`Config::validate` rejects an invalid `max_align`, all-zero weights, and size
+bounds above `isize::MAX`. Hand-built operations with zero or oversized sizes
+are clamped into the `GlobalAlloc` size contract, but a zero, non-power-of-two,
+or otherwise inadmissible alignment is rejected. Two accepted degenerate
+generator configurations are worth calling out: `small_max == 0` produces a
+size-1 small arm, and `large_max <= small_max` produces a large arm at
+`small_max + 1`, which can exceed the configured `large_max`.
+
+## Compatibility
+
+Fuzzer bytes are not a stable serialized operation format. Decoder changes
+can reinterpret existing corpus entries; retain an `Op` stream when an exact
+sequence must be replayed.
+
+`Op`, `Config`, and `OpStream` are exhaustive types with public fields by
+design. Adding a field or variant is a breaking change and requires a minor
+version bump while the crate is on 0.x.
 
 ## License
 

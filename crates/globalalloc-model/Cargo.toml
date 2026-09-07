@@ -9,7 +9,7 @@ rust-version = "1.85"
 # (proptest 1.11 declares `rust-version = "1.85"`). The workspace root's
 # uniform `1.88` is one release train above that floor.
 license = "MIT OR Apache-2.0"
-description = "Differential-test any GlobalAlloc against a reference model: one drive() loop asserting the M1-M4 correctness oracles (validity/alignment, double-free-is-no-op, no live-block overlap, fill read-back, alloc_zeroed, realloc prefix) over an op stream, with proptest and arbitrary front-ends behind optional features (a default build has zero dependencies). The correctness twin of malloc-bench-rs."
+description = "Reference-model and property-testing harness for Rust GlobalAlloc implementations."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/globalalloc-model"

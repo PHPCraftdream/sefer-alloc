@@ -9,16 +9,20 @@ use proptest::prelude::*;
 
 use crate::{Config, Op};
 
-/// A weighted size generator: mostly small (the hot free-list path),
-/// occasionally large (the dedicated-segment path), per `config`.
-fn size_strategy(config: Config) -> impl Strategy<Value = usize> {
+/// A weighted size generator. A zero weight structurally removes that arm, so
+/// shrinking cannot enter a disabled range. Non-zero weights retain their full
+/// `u32` ratio; proptest's tuple union accumulates them in `u64`.
+fn size_strategy(config: Config) -> BoxedStrategy<usize> {
     let small = 1usize..=config.small_max.max(1);
     let large = config.small_max.saturating_add(1)
         ..=config.large_max.max(config.small_max.saturating_add(1));
-    prop_oneof![
-        config.small_weight => small,
-        config.large_weight => large,
-    ]
+    match (config.small_weight, config.large_weight) {
+        (0, _) => large.boxed(),
+        (_, 0) => small.boxed(),
+        (small_weight, large_weight) => {
+            prop_oneof![small_weight => small, large_weight => large].boxed()
+        }
+    }
 }
 
 /// A power-of-two alignment generator up to `config.max_align`.

@@ -194,6 +194,10 @@ enum Fault {
     /// insertion; only the run-end M3 sweep ever re-reads the clobbered
     /// block's bytes. This is the counterfactual for the run-end sweep.
     ClobberOnLaterAlloc,
+    /// Every later `alloc`/`alloc_zeroed` corrupts only the final half of the
+    /// first block. A shrink below that half used to discard the evidence
+    /// before the run-end sweep could observe it.
+    ClobberSuffixOnLaterAlloc,
     /// Every `alloc`/`alloc_zeroed` call after the first silently re-zeroes
     /// the FIRST block the arena ever handed out: whatever `drive` wrote
     /// there "does not stick". Honest at hand-out, invisible to the
@@ -205,6 +209,10 @@ enum Fault {
     /// live and verifying, proving the null-realloc `continue` skip keeps
     /// the bookkeeping coherent instead of skipping it.
     NullRealloc,
+    /// Every `dealloc` corrupts one initialized arena byte at `off`. The
+    /// teardown test points this at the next survivor, proving one teardown
+    /// free cannot silently damage a block that has not yet been freed.
+    ClobberAtOnDealloc(usize),
 }
 
 /// A bump-arena allocator with one injected fault.
@@ -212,14 +220,15 @@ struct Faulty {
     arena: Arena,
     fault: Fault,
     /// Offset and size of the FIRST block the arena handed out — the
-    /// corruption target of `ClobberOnLaterAlloc` and `WritesDoNotStick`.
+    /// corruption target of `ClobberOnLaterAlloc`,
+    /// `ClobberSuffixOnLaterAlloc`, and `WritesDoNotStick`.
     first_block: Cell<Option<(usize, usize)>>,
 }
 
 impl Faulty {
     /// Shared bookkeeping for the honest hand-out paths of `alloc` and
     /// `alloc_zeroed`: remember the first handed-out block, and — for the
-    /// two corruption faults — silently corrupt it on every LATER hand-out.
+    /// three corruption faults — silently corrupt it on every LATER hand-out.
     /// The block being handed out by THIS call is always honest.
     fn fault_touch_first_block(&self, new_off: usize, new_size: usize) {
         match (self.first_block.get(), self.fault) {
@@ -230,6 +239,15 @@ impl Faulty {
                 // `at_len` on the alloc path runs AFTER this corruption,
                 // so it is not what bounds this write.
                 unsafe { ptr::write_bytes(self.arena.base.add(off), 0xCC, len) };
+            }
+            (Some((off, len)), Fault::ClobberSuffixOnLaterAlloc) => {
+                let suffix = len / 2;
+                // SAFETY: `off..off+len` was bounds-checked when the first
+                // block was handed out; `suffix <= len` keeps this subrange
+                // within that initialized block.
+                unsafe {
+                    ptr::write_bytes(self.arena.base.add(off).add(suffix), 0xCD, len - suffix)
+                };
             }
             (Some((off, len)), Fault::WritesDoNotStick) => {
                 // The earlier block's writes are "lost": the fake re-zeroes
@@ -316,6 +334,11 @@ unsafe impl RawAllocator for Faulty {
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
         // Bump arena: never frees; `drive` never hands out duplicate pointers
         // unless a fault makes it, and the overlap oracle catches that first.
+        if let Fault::ClobberAtOnDealloc(off) = self.fault {
+            let target = self.arena.at_len(off, 1);
+            // SAFETY: `target` names one initialized byte inside the arena.
+            unsafe { target.write(0xDD) };
+        }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
@@ -334,7 +357,7 @@ unsafe impl RawAllocator for Faulty {
         let keep = old_layout.size().min(new_size);
         match self.fault {
             Fault::ReallocAt(off) => {
-                let dst = self.arena.at_len(off, keep);
+                let dst = self.arena.at_len(off, new_size);
                 // SAFETY: `ptr` is valid for `keep` reads; `dst` for `keep`
                 // writes inside the arena.
                 unsafe { ptr::copy(ptr, dst, keep) };
@@ -651,6 +674,18 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
+/// Run `drive` and require its entire panic message to equal `expected`.
+fn assert_drive_panic_eq(fault: Fault, ops: &[Op], expected: &str) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drive(&faulty(4096, fault), Config::default(), ops);
+    }));
+    let err = match result {
+        Ok(()) => panic!("drive completed; expected panic {expected:?}"),
+        Err(err) => err,
+    };
+    assert_eq!(panic_message(&*err), expected);
+}
+
 #[test]
 #[should_panic(expected = "alloc_zeroed:")]
 fn alloc_zeroed_garbage_panics() {
@@ -699,6 +734,59 @@ fn honest_arena_passes_drive() {
 }
 
 #[test]
+#[should_panic(expected = "M3: step #2 before dealloc: live block clobbered")]
+fn corruption_cannot_escape_through_dealloc() {
+    // Red before the targeted pre-dealloc verification: op 1 corrupts block
+    // 0, then op 2 removes it from `live`, leaving nothing for the run-end
+    // sweep to inspect except the untouched second block.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Alloc { size: 32, align: 8 },
+        Op::Dealloc(0),
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberOnLaterAlloc),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #2 before realloc: live block clobbered")]
+fn corrupt_suffix_cannot_escape_through_shrink_realloc() {
+    // Red before the targeted pre-realloc verification: only bytes 32..64
+    // are corrupt, while the shrink preserves bytes 0..16 and discards the
+    // corrupt suffix. Prefix verification and the run-end sweep then pass.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Alloc { size: 32, align: 8 },
+        Op::Realloc { i: 0, new_size: 16 },
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberSuffixOnLaterAlloc),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #1 teardown: live block clobbered before dealloc")]
+fn teardown_dealloc_cannot_corrupt_a_later_survivor_unobserved() {
+    // Red before per-survivor teardown verification: the run-end sweep sees
+    // both fills intact, then freeing block 0 corrupts byte 0 of block 1.
+    // Without an immediate check before block 1's free, the run completes.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Alloc { size: 32, align: 8 },
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberAtOnDealloc(64)),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
 fn in_place_realloc_inside_own_old_block_passes() {
     // A legal in-place realloc whose new extent overlaps the OLD block only.
     // Pins the `skip: Some(i)` behaviour: if the skip were dropped, the
@@ -716,9 +804,10 @@ fn oversized_size_is_clamped_not_rejected() {
     // Pins `drive`'s P2-4 totality clamp on the alloc arms: a hand-built
     // oversized size must be CLAMPED into the admissible ceiling and reach
     // the allocator (here: the fake arena, which legitimately cannot serve
-    // ~8 EiB and exhausts), never rejected by the harness with the old
-    // `Layout::from_size_align(size=..., align=...) rejected` panic. Before
-    // the fix this test failed with that harness-rejection message instead.
+    // a near-`isize::MAX` request and exhausts), never rejected by the harness
+    // with the old `Layout::from_size_align(size=..., align=...) rejected`
+    // panic. Before the fix this test failed with that harness-rejection
+    // message instead.
     let ops = [Op::Alloc {
         size: usize::MAX,
         align: 8,
@@ -733,11 +822,11 @@ fn oversized_realloc_new_size_is_clamped_not_rejected() {
     // (review run 5, P4-3 — the one clamp direction still without a test): a
     // hand-built `new_size: usize::MAX` must be CLAMPED into the admissible
     // ceiling and reach the allocator (here: the fake arena, which
-    // legitimately cannot serve ~8 EiB and exhausts), never rejected by the
-    // harness with `Faulty::realloc`'s own upper-bound precondition assert —
-    // that assert is `GlobalAlloc::realloc`'s contract, and `drive`'s clamp
-    // is what upholds it. Deleting the clamp fails this test with the
-    // "GlobalAlloc precondition violated" message instead.
+    // legitimately cannot serve a near-`isize::MAX` request and exhausts),
+    // never rejected by the harness with `Faulty::realloc`'s own upper-bound
+    // precondition assert — that assert is `GlobalAlloc::realloc`'s contract,
+    // and `drive`'s clamp is what upholds it. Deleting the clamp fails this
+    // test with the "GlobalAlloc precondition violated" message instead.
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -838,21 +927,26 @@ fn zero_size_realloc_is_clamped_up_not_rejected() {
 }
 
 #[test]
-#[should_panic(
-    expected = "[clamped from 18446744073709551615], align=8) returned null — note: the harness does not model"
-)]
 fn clamped_down_null_alloc_names_oom_note() {
     // Pins the clamp-DOWN null message from a simulated null-returning
     // allocator: `oversized_size_is_clamped_not_rejected` pins only the fake
     // arena's own "arena exhausted" failure, so the OOM-note message itself
     // had no content pin. `Fault::NullAlloc` returns null before touching
     // the arena, so the huge clamped size never exhausts anything and the
-    // M1 message is what fires (18446744073709551615 = usize::MAX).
+    // M1 message is what fires. Its exact numbers are derived from this
+    // target's pointer width instead of embedding a 64-bit `usize::MAX`.
     let ops = [Op::Alloc {
         size: usize::MAX,
         align: 8,
     }];
-    drive(&faulty(4096, Fault::NullAlloc), Config::default(), &ops);
+    let clamped = (isize::MAX as usize / 8) * 8;
+    let expected = format!(
+        "M1: op #0 alloc(size={clamped} [clamped from {}], align=8) returned null — note: \
+         the harness does not model OOM, so a hand-built size beyond the allocator's real \
+         capacity reports here",
+        usize::MAX
+    );
+    assert_drive_panic_eq(Fault::NullAlloc, &ops, &expected);
 }
 
 #[test]
@@ -890,23 +984,23 @@ fn clamped_up_null_alloc_zeroed_gets_no_oom_note() {
 }
 
 #[test]
-#[should_panic(
-    expected = "[clamped from 18446744073709551615], align=8) returned null — note: the harness does not model"
-)]
 fn clamped_down_null_alloc_zeroed_names_oom_note() {
     // The alloc_zeroed twin of `clamped_down_null_alloc_names_oom_note`:
     // `Fault::NullAllocZeroed` returns null before touching the arena, so
     // the huge clamped size never exhausts anything and the M1 DOWN message
-    // is what fires (18446744073709551615 = usize::MAX).
+    // is what fires; its exact numbers are computed for the target width.
     let ops = [Op::AllocZeroed {
         size: usize::MAX,
         align: 8,
     }];
-    drive(
-        &faulty(4096, Fault::NullAllocZeroed),
-        Config::default(),
-        &ops,
+    let clamped = (isize::MAX as usize / 8) * 8;
+    let expected = format!(
+        "M1: op #0 alloc_zeroed(size={clamped} [clamped from {}], align=8) returned null — \
+         note: the harness does not model OOM, so a hand-built size beyond the allocator's \
+         real capacity reports here",
+        usize::MAX
     );
+    assert_drive_panic_eq(Fault::NullAllocZeroed, &ops, &expected);
 }
 
 // Review run 7, P3-1: `validate_align` is load-bearing — it is the only thing
@@ -944,17 +1038,18 @@ fn non_power_of_two_align_is_rejected_not_layout_matched() {
 }
 
 #[test]
-#[should_panic(expected = "op #0: align 9223372036854775808 is not a usable Layout alignment")]
 fn overflowing_align_is_rejected_not_clamped_into_a_panic() {
-    // 1 << 63 (9223372036854775808): without the guard,
+    // The top `usize` bit: without the guard,
     // `(isize::MAX as usize / align) * align` evaluates to 0, so
     // `size.clamp(1, 0)` trips `Ord::clamp`'s min <= max assertion — an
     // internal arithmetic panic with no op index and no explanation.
-    let ops = [Op::Alloc {
-        size: 32,
-        align: 1 << 63,
-    }];
-    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+    let align = 1usize << (usize::BITS - 1);
+    let ops = [Op::Alloc { size: 32, align }];
+    let expected = format!(
+        "op #0: align {align} is not a usable Layout alignment (must be a non-zero power \
+         of two whose round-up fits isize)"
+    );
+    assert_drive_panic_eq(Fault::Honest, &ops, &expected);
 }
 
 #[test]
