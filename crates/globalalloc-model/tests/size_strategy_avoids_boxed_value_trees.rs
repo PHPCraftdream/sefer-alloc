@@ -41,6 +41,14 @@
 //! meaningless under Miri regardless of platform, so skipping here loses no
 //! real coverage; the native (non-Miri) run is the only environment this
 //! counting technique is meant to observe.
+//!
+//! Beyond allocation counting, the paired test below also pins the shrink
+//! TRAJECTORY: the enum tree and its boxed counterpart are driven in lockstep
+//! by a fixed decision schedule, and after every `simplify()`/`complicate()`
+//! call both the returned bool and the full `current()` stream must match
+//! step-for-step (both `Single` delegation arms included, over a bounded
+//! prefix of each walk), with `complicate()` guarded by a path-activation
+//! oracle (Sol-codex round-5 review P4-1).
 
 #![cfg(all(feature = "proptest", not(miri)))]
 
@@ -180,8 +188,30 @@ fn op_strategy_marginal_allocation_cost_stays_below_boxed_threshold() {
     );
 }
 
+/// Verifies three things about the crate's enum-based `op_strategy` against
+/// its faithful boxed counterpart (`op_strategy_boxed` above):
+///
+/// 1. Per-seed INITIAL stream equality: for 64 seeds x 2 configs, the
+///    `current()` `Vec<Op>` of a fresh draw must be identical between the
+///    enum arm and the boxed arm.
+/// 2. LOCKSTEP shrink walks (Sol-codex round-5 review P4-1): the enum tree
+///    and the boxed counterpart are driven by the same fixed decision
+///    schedule, and after EVERY `simplify()` AND every `complicate()` call
+///    the returned bool AND the full `current()` `Vec<Op>` must be identical
+///    between the two arms — trajectory equivalence over the bounded prefix
+///    of each walk, not merely matching step counts and endpoints.
+///    It covers the weighted default `Config` AND both zero-weight `Single`
+///    configs (`small_weight: 0` selects the `SizeValueTree::Single`
+///    large-range arm, `large_weight: 0` the small-range arm), because those
+///    select different delegation arms in the private `SizeValueTree`
+///    `simplify`/`complicate` impls.
+/// 3. A path-activation oracle: `complicate()` must actually be called
+///    `MAX_COMPLICATES` times per walk and return true at least
+///    `MIN_TRUE_COMPLICATES` times, so the backoff branch cannot silently
+///    stop being exercised (proving a config is wrong is not enough — the
+///    intended mechanism must be shown to fire).
 #[test]
-fn paired_ab_enum_and_boxed_counterpart_produce_identical_streams() {
+fn paired_ab_enum_and_boxed_counterpart_streams_and_shrink_steps_match_step_for_step() {
     // Not a counting test itself, but its draws would pollute the global
     // allocation counter while a counting test measures — serialize too.
     let _serial = MEASURE_LOCK.lock().unwrap();
@@ -213,33 +243,127 @@ fn paired_ab_enum_and_boxed_counterpart_produce_identical_streams() {
         }
     }
 
-    // Full-shrink walks agree too (default config): same step count and the
-    // same final simplified value.
-    let boxed_strategy = op_strategy_boxed(Config::default(), LEN);
-    for seed in 0..4u64 {
-        let mut enum_tree = op_strategy(Config::default(), LEN)
-            .new_tree(&mut TestRunner::new(guard_config(seed)))
-            .expect("generate a tree");
-        let mut boxed_tree = boxed_strategy
-            .new_tree(&mut TestRunner::new(guard_config(seed)))
-            .expect("generate a tree");
-        let mut enum_steps = 0usize;
-        let mut boxed_steps = 0usize;
-        while enum_tree.simplify() {
-            enum_steps += 1;
+    // Cap on seeds per lockstep walk: fixed seeds + a fixed decision schedule
+    // are fully deterministic, and 4 seeds x 3 configs already observe
+    // complicate() behavior densely enough to calibrate the oracle.
+    //
+    // Cap on simplify steps per walk: full trajectories of a 200-op stream
+    // are ~15.5k simplify steps per draw (S3 measurement in
+    // examples/perf_probe_p4_measurements.rs), so STEP_CAP truncates
+    // deliberately and the run stays bounded on a loaded machine.
+    //
+    // Drive a complicate() back-off every COMPLICATE_EVERY-th successful
+    // simplify, capped at MAX_COMPLICATES backoffs per walk — enough
+    // invocations that the backoff branch is well exercised per walk.
+    //
+    // Oracle floors: the walk must reach STEP_CAP, call complicate() EXACTLY
+    // MAX_COMPLICATES times (fixed cadence + cap make this deterministic), and
+    // see at least MIN_TRUE_COMPLICATES true returns (calibrated at ~3/4 of
+    // the observed minimum across all config/seed walks) — the caps are NOT
+    // so low that complicate never fires.
+    const SEEDS_LOCKSTEP: u64 = 4;
+    const STEP_CAP: usize = 1024;
+    const COMPLICATE_EVERY: usize = 8;
+    const MAX_COMPLICATES: usize = 32;
+    const MIN_TRUE_COMPLICATES: usize = 24;
+
+    let configs = [
+        ("default", Config::default()),
+        (
+            "single-small-disabled",
+            Config {
+                small_weight: 0,
+                ..Config::default()
+            },
+        ),
+        (
+            "single-large-disabled",
+            Config {
+                large_weight: 0,
+                ..Config::default()
+            },
+        ),
+    ];
+    for (name, config) in configs {
+        let enum_strategy = op_strategy(config, LEN);
+        let boxed_strategy = op_strategy_boxed(config, LEN);
+        for seed in 0..SEEDS_LOCKSTEP {
+            let mut enum_tree = enum_strategy
+                .new_tree(&mut TestRunner::new(guard_config(seed)))
+                .expect("generate a tree");
+            let mut boxed_tree = boxed_strategy
+                .new_tree(&mut TestRunner::new(guard_config(seed)))
+                .expect("generate a tree");
+            assert_eq!(
+                enum_tree.current(),
+                boxed_tree.current(),
+                "seed {seed}, config {name}: paired enum/boxed trees diverged"
+            );
+            let mut steps = 0usize;
+            let mut complicate_calls = 0usize;
+            let mut true_complicates = 0usize;
+            loop {
+                let enum_simplified = enum_tree.simplify();
+                let boxed_simplified = boxed_tree.simplify();
+                assert_eq!(
+                    enum_simplified, boxed_simplified,
+                    "seed {seed}, config {name}, step {steps}: simplify() return values \
+                     diverged (enum {enum_simplified}, boxed {boxed_simplified})"
+                );
+                if !enum_simplified {
+                    break;
+                }
+                steps += 1;
+                assert_eq!(
+                    enum_tree.current(),
+                    boxed_tree.current(),
+                    "seed {seed}, config {name}, step {steps}: current() diverged after \
+                     simplify()"
+                );
+                // Accept/reject backoff in the shape a real TestRunner uses:
+                // on every COMPLICATE_EVERY-th successful simplify, treat the
+                // candidate as accepted and complicate() to back off one
+                // step, until MAX_COMPLICATES backoffs have been exercised.
+                if steps % COMPLICATE_EVERY == 0 && complicate_calls < MAX_COMPLICATES {
+                    let enum_complicated = enum_tree.complicate();
+                    let boxed_complicated = boxed_tree.complicate();
+                    complicate_calls += 1;
+                    true_complicates += usize::from(enum_complicated);
+                    assert_eq!(
+                        enum_complicated, boxed_complicated,
+                        "seed {seed}, config {name}, step {steps}: complicate() return values \
+                         diverged (enum {enum_complicated}, boxed {boxed_complicated})"
+                    );
+                    assert_eq!(
+                        enum_tree.current(),
+                        boxed_tree.current(),
+                        "seed {seed}, config {name}, step {steps}: current() diverged after \
+                         complicate()"
+                    );
+                }
+                if steps >= STEP_CAP {
+                    break;
+                }
+            }
+            assert_eq!(
+                steps, STEP_CAP,
+                "seed {seed}, config {name}: walk ended after {steps} steps, short of the \
+                 {STEP_CAP}-step promised prefix — trajectories are shorter than the cap, \
+                 recalibrate instead of silently shrinking coverage"
+            );
+            assert_eq!(
+                complicate_calls, MAX_COMPLICATES,
+                "seed {seed}, config {name}: complicate() called {complicate_calls} times, expected \
+                 exactly {MAX_COMPLICATES} (STEP_CAP/{COMPLICATE_EVERY} backoff slots, capped) — the \
+                 backoff schedule changed, recalibrate"
+            );
+            assert!(
+                true_complicates >= MIN_TRUE_COMPLICATES,
+                "seed {seed}, config {name}: complicate() returned true only \
+                 {true_complicates}/{complicate_calls} times (floor {MIN_TRUE_COMPLICATES}) — \
+                 back-off is not really happening"
+            );
         }
-        while boxed_tree.simplify() {
-            boxed_steps += 1;
-        }
-        assert_eq!(
-            enum_tree.current(),
-            boxed_tree.current(),
-            "seed {seed}: fully-shrunk values diverged"
-        );
-        assert_eq!(
-            enum_steps, boxed_steps,
-            "seed {seed}: shrink trajectories diverged"
-        );
     }
 }
 
