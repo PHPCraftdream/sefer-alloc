@@ -273,7 +273,8 @@ resolved" in RESOLVED.md.)_
     own `cargo publish -p tagged-index-stack` packaging/verification exercises),
     and confirming the exact OS-level mechanism (vs. ruling it out and finding a
     real bug instead) needs a dedicated investigation this task did not have
-    scope for. **Status:** OPEN — needs a dedicated session to either (a) reproduce
+    scope for. **Status (2026-09-06):** OPEN — needs a dedicated session to either
+    (a) reproduce
     with `RUST_BACKTRACE=1` / process-level tooling (e.g. Windows Performance
     Recorder, `VMMap`) to confirm the OS-level constraint directly, or (b) rule
     that out and find a genuine bookkeeping regression. **Next trigger:** any
@@ -286,3 +287,57 @@ resolved" in RESOLVED.md.)_
     TotalVirtualMemorySize` and `wmic pagefile get AllocatedBaseSize,CurrentUsage`
     output from the same session; `git log --oneline -- src/alloc_core/
     segment_table.rs src/alloc_core/os.rs` showing no recent commits.
+
+    **UPDATE 2026-09-07 — mechanism CONFIRMED, hypothesis above upgraded from
+    "evidence points at" to established, and one of its own premises corrected.**
+    Reproduced a third and fourth time (`npm run check` ahead of the
+    globalalloc-model round-5 push: `achieved` 1092; then standalone
+    `--test-threads=1`: 2127 — so it is NOT contention with parallel test
+    binaries). A scratch probe replicating the test's loop and reading the
+    always-compiled `AllocCore::dbg_segments_reserved_total()` /
+    `dbg_segments_released_total()` counters at the first null settles the
+    open question (a)/(b) above in favour of (a), with a hard OS error code:
+
+    ```text
+    achieved      = 2125
+    live segments = 2126      table full? = false   (MAX_SEGMENTS = 4096)
+    last OS error = Os { code: 1455, "The paging file is too small for this
+                    operation to complete." }
+    ```
+
+    Error 1455 is `ERROR_COMMITMENT_LIMIT`. The segment table was barely half
+    full when the allocation failed, so the null came from the OS refusing on
+    the system-wide commit limit — NOT from a slot lost or gained in the
+    register/recycle bookkeeping. This rules out (b).
+
+    **Correction to this card's own arithmetic.** The reasoning above ("~16 GiB
+    of real reservation/commit", "ample free memory ... 17-18 GiB free
+    physical") was wrong on both halves. (i) `Segment::reserve` goes through
+    `aligned_vmem::reserve_aligned`, which on an alignment miss **over-reserves
+    `size + align` and keeps the whole mapping** (`crates/aligned-vmem/src/lib.rs:28`),
+    so each 4 MiB segment can cost 8 MiB — the test's true worst-case demand is
+    `MAX_SEGMENTS * 2 * SEGMENT` ≈ **32 GiB**, double what this card assumed.
+    (ii) Free *physical* memory is the wrong quantity entirely: error 1455 is
+    the commit limit (RAM + pagefile), which fluctuates with whatever else the
+    machine is running — which is exactly why the count differs run to run
+    (1092/1188/2125/2127/2171) instead of being stable. The observed failure
+    points correspond to 8.5-17.0 GiB of over-reserved VA.
+
+    **Remaining work is now a bounded fix, not an investigation.** The test's
+    real defect is that it cannot distinguish its two possible causes: it treats
+    "first null" as "slot table full", when a null also arrives when the OS
+    refuses. The existing counters do not separate them either (they count
+    reservation *successes*; a lost-slot bug and an OS refusal both leave
+    `live < MAX_SEGMENTS`). The principled fix is a diagnostic counter for
+    FAILED OS segment reservations in `src/alloc_core/os.rs`, symmetric to the
+    existing `segments_reserved_total` (one relaxed atomic on an already-cold
+    OOM path), letting the test assert the ceiling when the allocator's own
+    table refused, and report an explicit environment-limited skip when the OS
+    did. **Status:** OPEN — mechanism settled, fix not yet implemented (it
+    touches root-crate production source and was out of scope for the
+    globalalloc-model round-5 task that reproduced it). **Evidence:** scratch
+    probe output above (probe not committed — it only reads existing public
+    `dbg_*` counters and can be rewritten from this card in a few lines);
+    `wmic OS get FreePhysicalMemory,FreeVirtualMemory,TotalVirtualMemorySize`
+    at reproduction time (17.4 GiB free physical, 41.3 GiB free commit —
+    neither is what the failure is bounded by, per the correction above).
