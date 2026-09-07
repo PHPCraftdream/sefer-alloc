@@ -31,10 +31,10 @@ const ALIGN_POW_CAP_EXP: u32 = 21;
 /// ratio (default 9:1 small:large) and driving the magnitude from the
 /// remaining high bits so arm choice and size vary independently.
 fn bound_size(raw: u32, config: &Config) -> usize {
-    let total = config
-        .small_weight
-        .saturating_add(config.large_weight)
-        .max(1) as usize;
+    // Sum >= 1 is guaranteed by `Config::validate`, which
+    // `arbitrary_with_config` runs before decoding (an all-zero weight sum
+    // panics there).
+    let total = config.small_weight.saturating_add(config.large_weight) as usize;
     let bucket = (raw as usize) % total;
     let magnitude = (raw as usize) / total;
     if bucket < config.small_weight as usize {
@@ -42,8 +42,11 @@ fn bound_size(raw: u32, config: &Config) -> usize {
     } else {
         let lo = config.small_max.saturating_add(1);
         let hi = config.large_max.max(lo);
-        // Saturating: an extreme `large_max` (e.g. `usize::MAX`) must not
-        // overflow this arithmetic into a division-by-zero panic.
+        // Saturating: `large_max <= small_max` (degenerate but accepted,
+        // e.g. both at the `isize::MAX` ceiling `validate()` enforces) makes
+        // `hi == lo`, so the plain `hi - lo` would underflow and the modulo
+        // would panic on a zero divisor; the saturating ops degrade that
+        // arm to exactly `lo`.
         lo + magnitude % hi.saturating_sub(lo).saturating_add(1)
     }
 }
@@ -125,6 +128,32 @@ impl OpStream {
     /// inherent constructor is the config-aware route, and the in-tree
     /// `global_alloc_ops` fuzz target drives it directly with an explicit
     /// `Config` (its historical 2 MiB size / 2^21 align reach).
+    ///
+    /// `Arbitrary` takes no parameters, so a custom [`Config`] cannot be
+    /// threaded through the plain `fuzz_target!(|stream: OpStream| ...)`
+    /// form — and the obvious workaround, an untyped
+    /// `fuzz_target!(|data: &[u8]|)` closure that decodes by hand, silently
+    /// loses libFuzzer's structured crash report (the `Debug`-based
+    /// rendering behind `cargo fuzz fmt`). Wrap the stream in a local
+    /// newtype whose `Arbitrary` impl delegates here instead; the typed
+    /// fuzz target keeps the crash report:
+    ///
+    /// ```text
+    /// #[derive(Debug)]
+    /// struct MyStream(OpStream);
+    ///
+    /// impl<'a> arbitrary::Arbitrary<'a> for MyStream {
+    ///     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+    ///         OpStream::arbitrary_with_config(u, my_config()).map(Self)
+    ///     }
+    /// }
+    ///
+    /// // `MyStream`'s `Debug` output renders on a crash, exactly as with
+    /// // the default-config form:
+    /// fuzz_target!(|s: MyStream| {
+    ///     drive(&allocator_under_test, my_config(), &s.0.ops);
+    /// });
+    /// ```
     ///
     /// # Panics
     ///

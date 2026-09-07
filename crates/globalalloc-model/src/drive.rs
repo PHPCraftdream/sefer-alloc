@@ -249,7 +249,23 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 // null and used only for `size` bytes, as the contract permits.
                 let ptr = unsafe { alloc.alloc(layout) };
                 if ptr.is_null() {
-                    if size != original_size {
+                    if size > original_size {
+                        // Clamped UP from 0: `GlobalAlloc` forbids a
+                        // zero-size layout, so the request that reached the
+                        // allocator was the minimal 1-byte one — a null here
+                        // is a genuine allocator defect, not a harness
+                        // artifact, so NO OOM note (review run 4, P3-1).
+                        panic!(
+                            "M1: op #{op_idx} alloc(size={size} [clamped from {original_size} — \
+                             GlobalAlloc forbids a zero-size layout], align={align}) returned null"
+                        );
+                    }
+                    if size < original_size {
+                        // Clamped DOWN from something absurd (e.g.
+                        // `usize::MAX`): a null is the expected outcome for
+                        // a size no real allocator can serve, so the note
+                        // explains the harness artifact rather than blaming
+                        // the allocator.
                         panic!(
                             "M1: op #{op_idx} alloc(size={size} [clamped from {original_size}], \
                              align={align}) returned null — note: the harness does not model \
@@ -291,7 +307,17 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 // `size` bytes.
                 let ptr = unsafe { alloc.alloc_zeroed(layout) };
                 if ptr.is_null() {
-                    if size != original_size {
+                    if size > original_size {
+                        // Clamped UP from 0: same split as the `Alloc` arm
+                        // — no OOM note for a 1-byte request.
+                        panic!(
+                            "M1: op #{op_idx} alloc_zeroed(size={size} [clamped from {original_size} — \
+                             GlobalAlloc forbids a zero-size layout], align={align}) returned null"
+                        );
+                    }
+                    if size < original_size {
+                        // Clamped DOWN: same message shape as the `Alloc`
+                        // arm above.
                         panic!(
                             "M1: op #{op_idx} alloc_zeroed(size={size} [clamped from {original_size}], \
                              align={align}) returned null — note: the harness does not model \

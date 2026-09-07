@@ -887,16 +887,23 @@ jobs:
     # surface, and tests/miri_bounded.rs advertised "bounded-miri coverage"
     # that no CI job actually provided (native execution cannot catch an
     # out-of-bounds ptr.add()). Modeled on `once-ptr-cell-miri` above
-    # (per-PR cadence — the suite is small). Two passes over the whole suite:
-    # plain, then with `-Zmiri-strict-provenance`, matching every other miri
-    # job in this file (the crate's pointer-identity checks use the
-    # non-exposing `ptr.addr()`, never `ptr as usize`; both forms were
-    # verified green locally before this job was added). P3-8 (review run 2,
+    # (per-PR cadence — the suite is small). Two passes over the whole test
+    # suite: plain, then with `-Zmiri-strict-provenance`, matching every
+    # other miri job in this file (the crate's pointer-identity checks use
+    # the non-exposing `ptr.addr()`, never `ptr as usize`; both forms were
+    # verified green locally before this job was added). That whole-suite
+    # claim is ENFORCED, not hand-asserted (review run 4, P2-1): the
+    # hand-listed target set had silently dropped a newly added test file —
+    # the same drift recurred across three consecutive review rounds while
+    # the job stayed green — so the job's first step mechanically diffs the
+    # targets named in the run lines below against the crate's actual
+    # tests/ directory and fails on any drift in either direction.
+    # P3-8 (review run 2,
     # 2026-09-06): `-Zmiri-ignore-leaks` is scoped to the ONE test target
     # that needs it — tests/double_free_no_op.rs's LeakyAllocator leaks by
     # design (its no-op dealloc IS the M2 contract under test, which the
     # default leak checker reports as a failure with no bug present) — while
-    # the other four targets keep the default leak check ON: that check is
+    # every other target keeps the default leak check ON: that check is
     # precisely the "all survivors are freed, model dropped before returning"
     # property drive advertises, so a break in the teardown free-walk is
     # still reported by the very job that exists to police it.
@@ -906,6 +913,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Drift-proofing (review run 4, P2-1, third recurrence of this class):
+      # the per-target filters in the run lines below exist solely to scope
+      # `-Zmiri-ignore-leaks`, and a hand-listed set must be re-edited every
+      # time a test file is added — which is exactly how a newly added test
+      # file silently fell out of this job (while it stayed green) in review
+      # run 3. Enforce the file/target agreement mechanically instead of
+      # asserting it in a comment: this step fails if the targets named in
+      # this job's own run lines and the crate's actual tests/ directory
+      # ever disagree, in either direction.
+      - name: miri target list covers every tests/*.rs
+        run: |
+          set -euo pipefail
+          job=$(awk '/^  globalalloc-model-miri:/{seen=1; next} seen && /^  [^ ]/{seen=0} seen{print}' .github/workflows/ci.yml)
+          if [ -z "$job" ]; then
+            echo "could not extract the globalalloc-model-miri job block from ci.yml" >&2
+            exit 1
+          fi
+          listed=$(printf '%s\n' "$job" \
+            | grep 'run: cargo miri test -p globalalloc-model' \
+            | grep -o -- '--test [a-zA-Z0-9_]*' \
+            | awk '{print $2}' \
+            | sort -u)
+          actual=$(ls crates/globalalloc-model/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//' | sort)
+          if ! diff <(printf '%s\n' "$listed") <(printf '%s\n' "$actual"); then
+            echo "LEFT: targets named by this job's run lines; RIGHT: crates/globalalloc-model/tests/*.rs on disk" >&2
+            echo "Add every new test file to BOTH target-filtered miri steps above (or remove the entry when a file is deleted)." >&2
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -913,12 +948,12 @@ jobs:
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks"
       # Plain pass (review run 3, P2-1: this step's MIRIFLAGS had drifted to strict-provenance, running the strict pass twice and the plain pass never).
-      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate
       - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks -Zmiri-strict-provenance"
       # Strict-provenance pass.
-      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 

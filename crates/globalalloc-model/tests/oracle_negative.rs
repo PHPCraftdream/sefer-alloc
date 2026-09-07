@@ -2,12 +2,17 @@
 //!
 //! This crate's product is *detection*: each test here proves the matching
 //! oracle in `drive` actually fires, and pins the exact failure-message prefix
-//! as behaviour. Every case is counterfactual — deleting the corresponding
-//! assert in `drive` must fail the matching test (verified during
-//! development). One check genuinely has no in-op counterfactual and is
+//! as behaviour. Every case is counterfactual — deleting the corresponding assert (or,
+//! for the clamp and realloc-skip pins, the corresponding branch) in
+//! `drive` must fail the matching test (verified during development); the
+//! one infrastructure exception is `honest_arena_passes_drive`, which
+//! proves the fake itself is oracle-clean rather than pinning a `drive`
+//! check. Two checks genuinely have no in-op counterfactual and are
 //! pinned at its next observable read instead: the M1 fill read-back's
-//! op-time check cannot be broken by any sound sequential fault (no
-//! allocator call can intervene between `fill_block` and `verify_block`),
+//! op-time check and the alloc_zeroed arm's identical fill read-back
+//! (review run 3, P3-1) cannot be broken by any sound sequential fault
+//! (no allocator call can intervene between `fill_block` and
+//! `verify_block`),
 //! so the fill-persistence tests below corrupt the block AFTER its
 //! read-back passed and pin the run-end sweep — the next read of the
 //! block, and the check a lost write would otherwise escape through.
@@ -150,7 +155,7 @@ enum Fault {
     /// `realloc` hands out a fresh honest block WITHOUT copying (loses the
     /// prefix).
     ReallocNoCopy,
-    /// Every `alloc` call after the first behaves honestly for ITS OWN
+    /// Every `alloc`/`alloc_zeroed` call after the first behaves honestly for ITS OWN
     /// block, but silently scribbles the FIRST block the arena ever handed
     /// out with a foreign byte (0xCC). The returned pointer is honest and
     /// model-disjoint, so `drive`'s INCREMENTAL overlap check passes at
@@ -187,8 +192,11 @@ impl Faulty {
     fn fault_touch_first_block(&self, new_off: usize, new_size: usize) {
         match (self.first_block.get(), self.fault) {
             (Some((off, len)), Fault::ClobberOnLaterAlloc) => {
-                // SAFETY: `off..off+len` is inside the arena (it was handed
-                // out length-checked through `at_len`).
+                // SAFETY: `off..off+len` is inside the arena: the offset
+                // was bounds-asserted by `bump_aligned` (its `p + n <= cap`
+                // check) before it was ever handed out — the later
+                // `at_len` on the alloc path runs AFTER this corruption,
+                // so it is not what bounds this write.
                 unsafe { ptr::write_bytes(self.arena.base.add(off), 0xCC, len) };
             }
             (Some((off, len)), Fault::WritesDoNotStick) => {
@@ -209,6 +217,11 @@ impl Faulty {
 unsafe impl RawAllocator for Faulty {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
+        assert!(
+            size > 0,
+            "GlobalAlloc precondition violated: Faulty::alloc called with a zero-size \
+             layout (drive's zero-clamp must run before the allocator is reached)"
+        );
         match self.fault {
             Fault::NullAlloc => ptr::null_mut(),
             Fault::MisalignedBy(k) => {
@@ -236,6 +249,12 @@ unsafe impl RawAllocator for Faulty {
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        assert!(
+            layout.size() > 0,
+            "GlobalAlloc precondition violated: Faulty::alloc_zeroed called with a \
+             zero-size layout (drive's zero-clamp must run before the allocator is \
+             reached)"
+        );
         let size = layout.size();
         if let Fault::OverlapZeroedAt(off) = self.fault {
             return self.arena.at_len(off, size);
@@ -260,6 +279,18 @@ unsafe impl RawAllocator for Faulty {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+        assert!(
+            new_size > 0,
+            "GlobalAlloc precondition violated: Faulty::realloc called with new_size=0 \
+             (drive's zero-clamp must run before the allocator is reached)"
+        );
+        assert!(
+            new_size <= (isize::MAX as usize / old_layout.align()) * old_layout.align(),
+            "GlobalAlloc precondition violated: Faulty::realloc called with new_size={} \
+             whose round-up to align {} overflows isize (drive's clamp must run first)",
+            new_size,
+            old_layout.align()
+        );
         let keep = old_layout.size().min(new_size);
         match self.fault {
             Fault::ReallocAt(off) => {
@@ -503,4 +534,71 @@ fn null_realloc_completes_with_old_block_intact() {
         Op::Realloc { i: 1, new_size: 16 }, // null again, on the second block
     ];
     drive(&faulty(4096, Fault::NullRealloc), Config::default(), &ops);
+}
+
+#[test]
+fn zero_size_alloc_is_clamped_up_not_rejected() {
+    // Counterfactual for the UP direction of `drive`'s P0-1 totality clamp:
+    // a hand-built `size: 0` must be clamped to the 1-byte minimum
+    // `GlobalAlloc` permits, so the op REACHES the allocator as a
+    // well-formed request instead of violating its precondition.
+    // `Faulty::alloc`'s assert documents that precondition — deleting the
+    // clamp fails this test natively with "GlobalAlloc precondition
+    // violated" instead of handing a zero-size layout to a real allocator
+    // (UB).
+    let ops = [Op::Alloc { size: 0, align: 8 }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+fn zero_size_alloc_zeroed_is_clamped_up_not_rejected() {
+    // The same zero-clamp counterfactual through the alloc_zeroed arm.
+    let ops = [Op::AllocZeroed { size: 0, align: 8 }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+fn zero_size_realloc_is_clamped_up_not_rejected() {
+    // The same zero-clamp counterfactual for `new_size: 0` through the
+    // realloc arm: clamped to a well-formed 1-byte resize, which must
+    // complete cleanly (old block freed at teardown, prefix verified).
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc { i: 0, new_size: 0 },
+    ];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(
+    expected = "[clamped from 18446744073709551615], align=8) returned null — note: the harness does not model"
+)]
+fn clamped_down_null_alloc_names_oom_note() {
+    // Pins the clamp-DOWN null message from a simulated null-returning
+    // allocator: `oversized_size_is_clamped_not_rejected` pins only the fake
+    // arena's own "arena exhausted" failure, so the OOM-note message itself
+    // had no content pin. `Fault::NullAlloc` returns null before touching
+    // the arena, so the huge clamped size never exhausts anything and the
+    // M1 message is what fires (18446744073709551615 = usize::MAX).
+    let ops = [Op::Alloc {
+        size: usize::MAX,
+        align: 8,
+    }];
+    drive(&faulty(4096, Fault::NullAlloc), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(
+    expected = "M1: op #0 alloc(size=1 [clamped from 0 — GlobalAlloc forbids a zero-size layout], align=8) returned null"
+)]
+fn clamped_up_null_alloc_gets_no_oom_note() {
+    // Pins the clamp-UP null message (review run 4, P3-1): a null for a
+    // size clamped UP from 0 is a genuine allocator defect — a 1-byte
+    // allocation failed — so the message must carry the zero-layout
+    // bracket and NO "harness does not model OOM" note (the pre-fix shared
+    // message blamed the allocator for the harness's own rewrite). The pin
+    // matches the new bracket text, which the old message lacks, so
+    // reverting the message split fails this test.
+    let ops = [Op::Alloc { size: 0, align: 8 }];
+    drive(&faulty(4096, Fault::NullAlloc), Config::default(), &ops);
 }

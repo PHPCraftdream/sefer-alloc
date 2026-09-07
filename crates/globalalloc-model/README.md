@@ -41,6 +41,14 @@ The same `drive()` loop powers both:
 
 So an oracle improvement reaches proptest, miri, and libFuzzer at once.
 
+Need a custom `Config` for the fuzz front-end? `Arbitrary` takes no
+parameters, so a config cannot be threaded through the plain
+`fuzz_target!(|stream: OpStream| ...)` form. Wrap the stream in a local
+newtype whose `Arbitrary` impl delegates to
+`OpStream::arbitrary_with_config` (keeping libFuzzer's structured crash
+report) and pass the newtype to `fuzz_target!` — the pattern is spelled
+out in `OpStream::arbitrary_with_config`'s rustdoc.
+
 ## `no_std` by default
 
 The core model needs only `core` + `alloc`, so this crate can

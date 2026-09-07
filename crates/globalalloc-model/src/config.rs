@@ -28,11 +28,12 @@ pub struct Config {
     /// Precondition (checked by [`Config::validate`], which both front-ends
     /// call): `<= isize::MAX` — `usize::MAX`, the natural spelling of "no
     /// limit", is a precondition violation here exactly as it is for
-    /// [`Config::max_align`], because no `Layout`-based allocator can ever
-    /// serve such a size and `drive` reports its null return as an M1
-    /// failure (the harness does not model OOM). Even below that ceiling,
-    /// bounds far past what the allocator under test can plausibly serve
-    /// turn every reached op into an OOM-shaped false positive — size the
+    /// [`Config::max_align`]. This is a sanity ceiling, NOT an admissibility
+    /// guarantee: the largest size any `Layout` can admit is align-dependent —
+    /// `(isize::MAX / align) * align`, exactly the ceiling `drive` clamps
+    /// sizes to and strictly below `isize::MAX` for any `align > 1` — so a
+    /// bound at or near this ceiling still turns every reached op into a
+    /// guaranteed M1 null report (the harness does not model OOM). Size the
     /// arms to what the target actually supports.
     ///
     /// Degenerate value `0` is NOT a precondition violation: both front-ends
@@ -43,11 +44,12 @@ pub struct Config {
     /// Precondition (checked by [`Config::validate`], which both front-ends
     /// call): `<= isize::MAX` — `usize::MAX`, the natural spelling of "no
     /// limit", is a precondition violation here exactly as it is for
-    /// [`Config::max_align`], because no `Layout`-based allocator can ever
-    /// serve such a size and `drive` reports its null return as an M1
-    /// failure (the harness does not model OOM). Even below that ceiling,
-    /// bounds far past what the allocator under test can plausibly serve
-    /// turn every reached op into an OOM-shaped false positive — size the
+    /// [`Config::max_align`]. This is a sanity ceiling, NOT an admissibility
+    /// guarantee: the largest size any `Layout` can admit is align-dependent —
+    /// `(isize::MAX / align) * align`, exactly the ceiling `drive` clamps
+    /// sizes to and strictly below `isize::MAX` for any `align > 1` — so a
+    /// bound at or near this ceiling still turns every reached op into a
+    /// guaranteed M1 null report (the harness does not model OOM). Size the
     /// arms to what the target actually supports.
     ///
     /// Degenerate value `<= small_max` is NOT a precondition violation: both
@@ -104,12 +106,15 @@ impl Config {
     ///   clamps sizes to).
     /// - `small_weight` and `large_weight` are both zero (the weighted
     ///   pick over the two arms would be undefined).
-    /// - `small_max` or `large_max` is greater than `isize::MAX` (a larger
-    ///   size is never admissible by `Layout::from_size_align` — the same
-    ///   ceiling `drive` clamps sizes to — so such a bound could only
-    ///   generate ops whose null return is reported as a guaranteed M1
-    ///   oracle failure; `usize::MAX`, the natural spelling of "no limit",
-    ///   is rejected here exactly as it is for `max_align`).
+    /// - `small_max` or `large_max` is greater than `isize::MAX` — a sanity
+    ///   ceiling that closes the "no limit" spelling (`usize::MAX` is
+    ///   rejected here exactly as it is for `max_align`), NOT an
+    ///   admissibility guarantee: the largest size `Layout::from_size_align`
+    ///   admits is align-dependent — `(isize::MAX / align) * align`, the
+    ///   same ceiling `drive` clamps sizes to and strictly below
+    ///   `isize::MAX` for any `align > 1` — so even a config this bound
+    ///   accepts can generate sizes `drive` clamps, whose null return is
+    ///   reported as a guaranteed M1 oracle failure.
     pub fn validate(&self) {
         assert!(
             self.max_align.is_power_of_two() && self.max_align <= isize::MAX as usize,

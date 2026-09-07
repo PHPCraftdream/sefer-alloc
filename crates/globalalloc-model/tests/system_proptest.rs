@@ -1,7 +1,10 @@
 //! The proptest front-end, driven against the always-correct `System`
 //! allocator: proves the harness itself (model + M1–M4 oracles + strategy) is
 //! sound — a correct allocator must pass every oracle. Requires the `proptest`
-//! feature.
+//! feature. (One test below,
+//! `two_default_test_runners_seed_independently`, drives nothing: it pins a
+//! build-configuration property — that proptest's std feature resolved ON,
+//! so seeding is OS-entropy rather than a hardcoded constant.)
 
 #![cfg(feature = "proptest")]
 

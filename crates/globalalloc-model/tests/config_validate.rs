@@ -70,7 +70,14 @@ fn unbounded_small_max_panics() {
 
 #[test]
 fn bounds_at_the_ceiling_pass_validation() {
-    // The new bound is inclusive: `isize::MAX` itself stays Layout-admissible.
+    // The new bound is inclusive: `isize::MAX` itself passes `validate()`.
+    // This pins the sanity ceiling, NOT Layout-admissibility: whether
+    // `Layout::from_size_align(isize::MAX, align)` succeeds is
+    // align-dependent (true only at align == 1). This config inherits
+    // `Config::default()`'s `max_align: 4096`, for which the admissible
+    // ceiling is `(isize::MAX / 4096) * 4096`; the front-ends would emit
+    // `small_max + 1 = 2^63` sizes past it, and `drive` clamps those down
+    // to the ceiling before the allocator ever sees them.
     Config {
         small_max: isize::MAX as usize,
         large_max: isize::MAX as usize,

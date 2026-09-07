@@ -43,13 +43,16 @@ use core::alloc::{GlobalAlloc, Layout};
 ///   is set the harness deliberately
 ///   frees the SAME pointer a second time (the M2 no-op oracle) — enable it only
 ///   for an allocator whose contract makes that a safe no-op.
+/// - [`realloc`](RawAllocator::realloc) is called only with a pointer previously
+///   returned by a matching `alloc`/`alloc_zeroed`/`realloc` on `self` with
+///   `old_layout`, and not yet freed or consumed.
 /// - A caller going through the blanket [`GlobalAlloc`] impl must additionally
-///   uphold `GlobalAlloc`'s stricter preconditions: a **non-zero** `Layout`
-///   size, a **non-zero** `realloc` `new_size`, and no `isize` overflow
-///   after the alignment round-up. [`drive`](crate::drive) upholds them by
-///   construction (it clamps every op into that range before calling); any
-///   other caller of this trait through that impl carries the obligation
-///   itself.
+///   uphold `GlobalAlloc`'s stricter preconditions (non-zero `Layout` size,
+///   non-zero `realloc` `new_size`, no `isize` overflow after round-up) —
+///   stated normatively once, in that impl's `# Safety` note on this page.
+///   [`drive`](crate::drive) upholds them by construction (it clamps every op
+///   into that range before calling); any other caller of this trait through
+///   that impl carries the obligation itself.
 ///
 /// # What the oracles check
 ///
@@ -82,14 +85,17 @@ pub unsafe trait RawAllocator {
     /// # Safety
     /// `ptr` must be a pointer previously returned by a matching
     /// `alloc`/`alloc_zeroed`/`realloc` on `self` with the same `layout`
-    /// (see the [trait-level contract](RawAllocator#safety), caller
-    /// obligations).
+    /// (see the [trait-level contract](RawAllocator#safety), [caller
+    /// obligations](RawAllocator#guarantees-the-implementor-may-rely-on-from-callers)).
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout);
 
     /// Resize the block `ptr` (allocated with `old_layout`) to `new_size` bytes.
     ///
     /// # Safety
-    /// See the [trait-level contract](RawAllocator#safety).
+    /// `ptr` must be a pointer previously returned by a matching
+    /// `alloc`/`alloc_zeroed`/`realloc` on `self` with `old_layout`, and not
+    /// yet freed or consumed (see the
+    /// [trait-level contract](RawAllocator#safety), caller obligations).
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8;
 }
 
