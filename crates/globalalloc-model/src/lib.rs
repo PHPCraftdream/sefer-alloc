@@ -74,8 +74,15 @@
 //! unshifted copy — taken from the START of a foreign live block carrying a
 //! DIFFERENT identifier — is always caught at offset 0, no matter how short
 //! the preserved prefix, because byte 0 is the identifier verbatim and the
-//! identifiers are mutually distinct; the marker byte can likewise never be
-//! confused with zeroed or unwritten memory. A shifted copy is NOT covered
+//! identifiers are mutually distinct. The marker byte is never zero —
+//! identifiers cycle through `1..=255` — so a byte still carrying the
+//! pattern can never pass the `alloc_zeroed` zero check as a legitimately
+//! zeroed byte. That is the entire claim. No not-written-here detection is
+//! promised: a byte whose last write predates the operation under test can
+//! hold any value, a coincidental match with the marker included, and
+//! genuinely uninitialized memory is not a diagnosable input at all —
+//! reading it is undefined behavior, which the [`RawAllocator`] contract
+//! earlier in this section already states. A shifted copy is NOT covered
 //! by that guarantee: the hash tail can coincide with another identifier's
 //! marker byte. Concrete counterexample, writing the scheme's expected byte
 //! as `pattern(fill, offset)`: `pattern(1, 1)` and `pattern(202, 0)` are
@@ -84,7 +91,18 @@
 //! 202, still matches. The scheme closes the specific correlations that let
 //! earlier wrong-source realloc copies slip through every check — a fixed
 //! phase shift between adjacent identifiers, and short fixed-offset
-//! collisions between unrelated identifiers — not shifted copies in general.
+//! collisions between unrelated identifiers — not shifted copies in
+//! general. Nor does it distinguish every repeat or permutation from the
+//! genuine pattern — a finite one-byte-per-offset scheme cannot. Exactly 2
+//! of the 255 identifiers have a uniform first two bytes: `pattern(66, 0)`
+//! and `pattern(66, 1)` are both `0x42` (212 is the same shape, `0xd4`).
+//! For such an identifier a two-byte preserved prefix reads identically
+//! under the genuine pattern, a repeated first byte, and a swapped pair —
+//! and the swap stays invisible at any prefix length, because transposing
+//! two equal bytes changes nothing. The repeat, shift, and permutation
+//! regressions pinned in `tests/oracle_negative.rs` remain true: they pin
+//! identifiers and shapes on which the pattern genuinely differs (fill 1's
+//! first two bytes are `0x01` and `0xca`), not a universal promise.
 //!
 //! The period claim, stated precisely: the tail's offset enters the mix
 //! truncated to `u32`, so the positive-offset tail (offsets >= 1 ONLY)

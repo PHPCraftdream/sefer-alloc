@@ -188,13 +188,17 @@ carries a mixed (non-additive) hash of the identifier and the offset. A
 realloc's preserved prefix is never empty, so the offset-0 marker is always
 checked. What it guarantees, precisely: an unshifted copy taken from the
 start of a live block carrying a different identifier is always caught at
-offset 0, no matter how short the prefix, and neither a repeated single
-byte, a whole-block phase shift between adjacent identifiers, nor a permuted
-prefix reads back as a whole block's expectation. A shifted copy is NOT
-covered by that guarantee: the hash tail can coincide with another
-identifier's marker byte (concretely, the byte at offset 1 of a fill-1
-block and the offset-0 marker of a fill-202 block are both `0xca`, so a
-one-byte shifted copy still matches). The pattern's 2^32 period on 64-bit
+offset 0, no matter how short the prefix. No universal promise is made
+beyond that marker: a finite one-byte-per-offset scheme cannot distinguish
+every shifted, repeated, or permuted copy from the genuine pattern. A
+shifted copy can match (the byte at offset 1 of a fill-1 block and the
+offset-0 marker of a fill-202 block are both `0xca`, so a one-byte shifted
+copy still matches), and a repeated or permuted short prefix can match too
+when the pattern is uniform on those bytes (identifier 66's first two
+bytes are both `0x42`). The repeat, shift, and permutation regressions
+pinned in `tests/oracle_negative.rs` are scenarios where the pattern
+genuinely differs, not instances of a universal guarantee. The pattern's
+2^32 period on 64-bit
 platforms belongs to the positive-offset hash tail only: offset 0 is
 special-cased on the literal zero, not on `offset mod 2^32`, so the
 sequence including the first byte has no such period. The canonical
