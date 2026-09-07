@@ -926,9 +926,10 @@ jobs:
       # file added to only one configuration fails), run-line matching is
       # anchored at "- run:" (a commented-out step no longer donates its
       # targets; it fails the run-line count assert instead), the job must
-      # keep exactly its 4 expected run lines, and exactly 2 MIRIFLAGS lines
-      # must enable strict provenance (the run-3 P2-1 drift: plain silently
-      # became a second strict pass).
+      # keep exactly its 4 expected run lines, and each step's MIRIFLAGS shape
+      # is pinned per step (review run 6, P4-1: a global strict-count passed a
+      # compensating pair of drifts — one step flipped to strict, another
+      # flipped to plain — while the total stayed at 2).
       - name: miri target list covers every tests/*.rs in BOTH miri passes
         run: |
           set -euo pipefail
@@ -968,14 +969,46 @@ jobs:
               exit 1
             fi
           done
-          # Each pass must still BE one plain and one strict pass (this job's
-          # own history: the plain multi-target step once drifted to strict,
-          # running strict twice and plain never — review run 3, P2-1).
-          strict=$(printf '%s\n' "$job" | grep -cE 'MIRIFLAG[S]:.*-Zmiri-strict-provenance' || true)
-          if [ "$strict" -ne 2 ]; then
-            echo "expected exactly 2 MIRIFLAGS lines enabling -Zmiri-strict-provenance (one per pass), found $strict" >&2
+          # Each step's MIRIFLAGS shape is pinned PER STEP, not counted
+          # globally (review run 6, P4-1: a global count passed a
+          # compensating PAIR of drifts — one step flipped to strict while
+          # another was flipped to plain — because the total stayed at 2).
+          # Each run line is extracted together with its following
+          # MIRIFLAGS: line, so a flag value can never be attributed to the
+          # wrong step. (This job's own history: the plain multi-target step
+          # once drifted to strict, running strict twice and plain never —
+          # review run 3, P2-1.)
+          steps=$(printf '%s\n' "$job" | awk '
+            /^[[:space:]]*- run: cargo miri test -p globalalloc-model/ {
+              if (rec != "") print rec
+              rec = "-"
+              next
+            }
+            rec != "" && /^[[:space:]]+MIRIFLAGS:/ {
+              sub(/^[[:space:]]+MIRIFLAGS:[[:space:]]*/, "")
+              gsub(/"/, "")
+              rec = rec "|" $0
+            }
+            END { if (rec != "") print rec }
+          ')
+          stepcount=$(printf '%s\n' "$steps" | grep -c . || true)
+          if [ "$stepcount" -ne 4 ]; then
+            echo "expected exactly 4 miri run steps, found $stepcount" >&2
             exit 1
           fi
+          expect_flags() {
+            got=$(printf '%s\n' "$steps" | sed -n "$1p")
+            if [ "$got" != "$2" ]; then
+              echo "miri run step $1: MIRIFLAGS drifted from its expected shape" >&2
+              echo "  expected: $2" >&2
+              echo "  actual:   $got" >&2
+              exit 1
+            fi
+          }
+          expect_flags 1 '-|-Zmiri-ignore-leaks'
+          expect_flags 2 '-'
+          expect_flags 3 '-|-Zmiri-ignore-leaks -Zmiri-strict-provenance'
+          expect_flags 4 '-|-Zmiri-strict-provenance'
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri

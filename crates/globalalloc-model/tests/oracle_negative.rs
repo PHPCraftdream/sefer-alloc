@@ -17,16 +17,23 @@
 //! read-back passed and pin the run-end sweep — the next read of the
 //! block, and the check a lost write would otherwise escape through.
 //!
-//! The null/align oracles of the three block-creating arms are pinned
-//! together in one exhaustive grid (`Arm × Shape` in `null_align_cell`,
-//! replayed by a single test over every cell): a fourth block-creating arm —
-//! or a third fault shape — is a compile error there until its cell exists,
-//! so the coverage question is forced structurally. That is the fix for the
-//! per-arm gap review run 5's P3-1 documented (three consecutive rounds each
-//! found a block-creating arm edited without matching coverage; the
-//! `alloc_zeroed` null branch's removal is outright undefined behaviour — a
-//! null dereference in `verify_zeroed_block` — so its cell must fail with a
-//! crash, not a message mismatch, if that branch is ever deleted).
+//! The null/align oracles of the block-creating arms are pinned together in
+//! one exhaustive grid (`Arm × Shape` in `null_align_cell`, replayed by a
+//! single test over every cell). The coverage question is forced
+//! structurally, at two compile-time links: `arm_of` classifies every `Op`
+//! variant exhaustively, so a new `Op` variant is a compile error HERE until
+//! it is classified block-creating or not — the decision whether it needs
+//! its own grid cells cannot be skipped silently; and each axis enum is
+//! defined together with its `ALL` slice from one variant list
+//! (`grid_axis!`), so a new `Arm`/`Shape` variant is replayed by the grid
+//! loop automatically and is a compile error in `null_align_cell` until its
+//! cells are written — no hand-kept list left to forget. Every cell also
+//! asserts its op stream really issues its own arm's op. That is the fix
+//! for the per-arm gap review run 5's P3-1 documented (three consecutive
+//! rounds each found a block-creating arm edited without matching coverage;
+//! the `alloc_zeroed` null branch's removal is outright undefined behaviour
+//! — a null dereference in `verify_zeroed_block` — so its cell must fail
+//! with a crash, not a message mismatch, if that branch is ever deleted).
 //!
 //! The fake arena owns its memory through raw pointers only (no `Vec`/references
 //! into it), so all writes through the pointers `drive` hands around are sound
@@ -425,48 +432,88 @@ struct NullAlignCase {
     expect: Expect,
 }
 
-/// The block-creating arms of [`Op`], one axis of the grid below.
-#[derive(Clone, Copy, Debug)]
-enum Arm {
-    /// [`Op::Alloc`].
-    Alloc,
-    /// [`Op::AllocZeroed`].
-    AllocZeroed,
-    /// [`Op::Realloc`].
-    Realloc,
+/// Defines a grid-axis enum together with its `ALL` slice from ONE variant
+/// list, so the two cannot drift: a variant added to the invocation is
+/// automatically in `ALL` and so replayed by the grid loop below, while
+/// `null_align_cell`'s exhaustive match refuses to compile until its cells
+/// are written. This replaces `Arm::ALL`'s hand-written "keep in sync"
+/// array, which nothing enforced (review run 6, P3-1, second link).
+macro_rules! grid_axis {
+    (
+        $(#[$enum_meta:meta])*
+        $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident
+            ),* $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant
+            ),*
+        }
+
+        impl $name {
+            /// Every value of this axis (the grid loop iterates `ALL`).
+            /// Generated from the same variant list as the enum, so it
+            /// cannot forget a variant.
+            const ALL: &'static [Self] = &[$(Self::$variant),*];
+        }
+    };
 }
 
-impl Arm {
-    /// Every block-creating arm (grid loop axis). Keep in sync with the
-    /// exhaustive match in `null_align_cell`: adding a block-creating arm is
-    /// a compile error there until this list and that match are extended
-    /// together.
-    const ALL: [Arm; 3] = [Arm::Alloc, Arm::AllocZeroed, Arm::Realloc];
-}
+grid_axis!(
+    /// The block-creating arms of [`Op`], one axis of the grid below.
+    Arm {
+        /// [`Op::Alloc`].
+        Alloc,
+        /// [`Op::AllocZeroed`].
+        AllocZeroed,
+        /// [`Op::Realloc`].
+        Realloc,
+    }
+);
 
-/// The fault shapes, the other axis of the grid below.
-#[derive(Clone, Copy, Debug)]
-enum Shape {
-    /// The op returns null.
-    Null,
-    /// The op returns an in-arena pointer at a non-conforming offset.
-    Misaligned,
-}
+grid_axis!(
+    /// The fault shapes, the other axis of the grid below.
+    Shape {
+        /// The op returns null.
+        Null,
+        /// The op returns an in-arena pointer at a non-conforming offset.
+        Misaligned,
+    }
+);
 
-impl Shape {
-    /// Every fault shape (see [`Arm::ALL`] for the keep-in-sync contract).
-    const ALL: [Shape; 2] = [Shape::Null, Shape::Misaligned];
+/// The grid arm an op belongs to (`None` = not block-creating). Exhaustive
+/// over `Op`: a new variant is a compile error HERE until it is classified,
+/// which is the event that forces the grid-coverage decision a new
+/// block-creating op needs — the grid's own match is exhaustive over `Arm`
+/// only, so without this classifier an `Op` change would compile everywhere
+/// in this file (review run 6, P3-1, first link).
+fn arm_of(op: &Op) -> Option<Arm> {
+    match op {
+        Op::Alloc { .. } => Some(Arm::Alloc),
+        Op::AllocZeroed { .. } => Some(Arm::AllocZeroed),
+        Op::Realloc { .. } => Some(Arm::Realloc),
+        Op::Dealloc(_) => None,
+    }
 }
 
 /// The ONE grid cell for `(arm, shape)`. The match is exhaustive over
-/// `Arm × Shape`: a fourth block-creating arm, or a third fault shape, is a
-/// compile error HERE until its cell is written — the coverage question is
-/// forced by the compiler instead of by the next review round. This is the
-/// structural fix for review run 5's P3-1 meta-pattern: three consecutive
-/// rounds each found a block-creating arm edited without matching null/align
-/// coverage, and the `alloc_zeroed` null branch this grid now covers was the
-/// one whose removal is undefined behaviour (a null dereference in
-/// `verify_zeroed_block`), not just an unpinned message.
+/// `Arm × Shape`: a new variant on either axis is a compile error HERE until
+/// its cells are written, and the `grid_axis!` definitions put every variant
+/// in its `ALL` slice, so those cells are then replayed by the grid loop —
+/// the coverage question is forced by the compiler instead of by the next
+/// review round (`arm_of` is the matching link on the `Op` side). This is
+/// the structural fix for review run 5's P3-1 meta-pattern: three
+/// consecutive rounds each found a block-creating arm edited without
+/// matching null/align coverage, and the `alloc_zeroed` null branch this
+/// grid now covers was the one whose removal is undefined behaviour (a null
+/// dereference in `verify_zeroed_block`), not just an unpinned message.
 fn null_align_cell(arm: Arm, shape: Shape) -> NullAlignCase {
     match (arm, shape) {
         (Arm::Alloc, Shape::Null) => NullAlignCase {
@@ -544,9 +591,16 @@ fn null_align_cell(arm: Arm, shape: Shape) -> NullAlignCase {
 /// file stays leak-free under miri's default leak check.
 #[test]
 fn null_and_align_oracles_fire_for_every_block_creating_arm() {
-    for arm in Arm::ALL {
-        for shape in Shape::ALL {
+    for &arm in Arm::ALL {
+        for &shape in Shape::ALL {
             let case = null_align_cell(arm, shape);
+            // Cell/stream consistency (review run 6, P3-1): the cell must
+            // actually issue its own arm's block-creating op — a stream that
+            // never reaches the arm under test would make the cell vacuous.
+            assert!(
+                case.ops.iter().filter_map(arm_of).any(|a| a == arm),
+                "grid cell {arm:?}x{shape:?}: op stream never issues its own arm's op"
+            );
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 drive(&faulty(4096, case.fault), Config::default(), case.ops);
             }));
@@ -583,12 +637,10 @@ fn null_and_align_oracles_fire_for_every_block_creating_arm() {
 /// covered: a plain `panic!("literal")` arrives as a `&'static str`, and
 /// `drive`'s formatted `panic!("... {x}")` arrives as a `String` (both
 /// probe-verified on rustc 1.97.0; toolchains have swapped which shape a
-/// formatted panic carries across releases, so both arms stay). The call
-/// sites pass `&*err`, NOT `&err`: `err` is a `Box<dyn Any + Send>`, and
-/// `&err` silently unsizes into a trait object whose concrete type is the
-/// BOX itself, so downcasting finds neither arm — the coercion trap this
-/// helper's first two implementations each misdiagnosed as payload
-/// re-wrapping.
+/// formatted panic carries across releases, so both arms stay). Call sites
+/// pass `&*err`: with `err: Box<dyn Any + Send>` that is a
+/// `&(dyn Any + Send)` pointing at the payload, which is exactly what the
+/// two downcast arms below search.
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
