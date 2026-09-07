@@ -51,32 +51,54 @@ fn next_fill(cycle: &mut u8) -> u8 {
     current
 }
 
-/// The per-byte expected value for a block carrying fill identifier `fill`:
-/// a position-dependent pattern computed from `(fill, offset)` by an
-/// integer-hash mixing finalizer (similar in spirit to FxHash / Murmur3's
-/// finalizer), computed on the fly; no second copy of a block's expected
-/// contents is stored. The position-dependence keeps a repeated single byte,
-/// a shifted copy, or a permuted prefix from reading back as a whole block's
-/// expectation.
+/// The per-byte expected value for a block carrying fill identifier `fill`.
+/// Two-part scheme: offset 0 is the RAW fill identifier itself, and every
+/// offset >= 1 is a hash-mixed (integer-finalizer, similar in spirit to
+/// FxHash / Murmur3's finalizer) position-dependent function of `(fill,
+/// offset)`, computed on the fly; no second copy of a block's expected
+/// contents is stored.
 ///
-/// The mix closes the review-run-3 P3-1 hole in the previous formula
-/// `fill.wrapping_add(offset as u8)`, which satisfied `pattern(1, o + 1) ==
+/// Offset 0 must be raw because it is ALWAYS verified: `drive` clamps every
+/// size to `>= 1` before the allocator is reached, so a realloc's preserved
+/// prefix length `keep = min(old, new)` is always `>= 1` and the prefix
+/// check never skips offset 0. `next_fill` only produces identifiers in
+/// `1..=255`, so the raw marker byte is mutually unique across ALL 255
+/// identifiers simultaneously and can never be confused with zeroed or
+/// unwritten memory — any realloc that copies the preserved prefix from a
+/// live block carrying a DIFFERENT fill identifier is therefore caught at
+/// offset 0 no matter how short the prefix.
+///
+/// The mix closes two concrete hole classes, each with a regression test in
+/// tests/oracle_negative.rs. Review run 3, P3-1: the previous formula
+/// `fill.wrapping_add(offset as u8)` satisfied `pattern(1, o + 1) ==
 /// pattern(2, o)` for EVERY `o` — adjacent fill identifiers were fixed
-/// one-byte phase shifts of each other, so a defective `realloc` that copied
-/// from a FOREIGN block (fill 1) starting at its second byte, instead of
-/// from the real source (fill 2), reproduced the real source's entire
-/// expected pattern. Do not reintroduce an additive/offset scheme here.
+/// one-byte phase shifts of each other, so a defective realloc copying from
+/// a foreign block one byte in reproduced the real source's entire expected
+/// pattern. Do not reintroduce an additive/offset scheme here. Review run 4,
+/// P3-1: the u8 truncation of the then-uniform hash did not preserve
+/// injectivity by identifier at a fixed offset — `pattern_byte(5, 0) ==
+/// pattern_byte(30, 0)`, and even the first TWO bytes of identifiers 60 and
+/// 92 agreed — so a 1-2-byte wrong-source prefix from a different live block
+/// could coincide; the raw offset-0 marker closes that class.
 ///
-/// As a design goal, NOT a proof: with an 8-bit output space, pigeonhole
-/// guarantees some collisions exist; the goal is only that no FIXED shift
-/// between two DIFFERENT fill identifiers reproduces a whole block.
-///
-/// Residual limitation, stated honestly: the pattern has period 256 in the
-/// offset (`offset as u8` truncates), so a corruption that shifts or permutes
-/// bytes by an EXACT multiple of 256 positions can still collide with the
-/// expected values, and marker reuse after 255 fill assignments (see the
-/// crate-level limits section) still applies — the scheme is not airtight.
+/// Residual limits, stated honestly. Offsets >= 1 produce an 8-bit value: by
+/// pigeonhole, collisions between different `(fill, offset)` pairs remain
+/// possible in general — what is covered is the specific classes named
+/// above (fixed shifts, permutations, repeated single bytes, wrong-source
+/// copies from a differently-identified block), not the absence of all
+/// collisions. The offset enters the mix truncated to `u32`, so the
+/// pattern's guaranteed period in the offset is 2^32 on 64-bit platforms
+/// (`pattern_byte(f, o + 2^32) == pattern_byte(f, o)`; NOT 256 — e.g.
+/// `pattern_byte(1, 0) = 0x01` while `pattern_byte(1, 256) = 0xd0`), and a
+/// single allocation spanning 2^32 offsets is outside any realistic test's
+/// reach; on 32-bit platforms `offset as u32` is lossless and that period
+/// does not exist. Marker reuse after 255 fill assignments (see the
+/// crate-level limits section) is unchanged: two live blocks sharing an
+/// identifier are indistinguishable to this scheme.
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
+    if offset == 0 {
+        return fill;
+    }
     let mut x = (fill as u32) ^ (offset as u32).wrapping_mul(0x9E37_79B1);
     x = x.wrapping_mul(0x85EB_CA6B);
     x ^= x >> 13;

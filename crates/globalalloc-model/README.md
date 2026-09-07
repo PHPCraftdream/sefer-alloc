@@ -147,9 +147,11 @@ currently requires `std` because its derive-generated recursion guard uses
 
 Without `std`, proptest uses deterministic seeding. Consumers that want random
 OS-seeded property runs should also depend on a std-enabled `proptest`, as this
-crate's own test suite does. CI runs all integration targets on 32-bit i686
-and all feature combinations on 64-bit Windows and Linux, while the
-repository's broad CI retains the bare-metal and Miri checks.
+crate's own test suite does. CI runs all integration targets on 32-bit i686,
+and on 64-bit Windows and Linux tests the default build, each front-end
+feature alone, and all features together (plus the exact docs.rs feature set
+as a doc-lint row), while the repository's broad CI retains the bare-metal
+and Miri checks.
 
 ## The allocator seam and reentrancy
 
@@ -179,18 +181,22 @@ to `realloc` must be initialized. Reading genuinely uninitialized bytes is
 undefined behavior both natively and under Miri; neither environment is
 promised to turn that contract violation into a reliable oracle report.
 
-Each block's expected contents are a position-dependent pattern derived from a
-fill identifier in `1..=255`: the per-byte expectation is a mixed
-(non-additive) function of the identifier and the byte offset, so one
-identifier's byte sequence is never a fixed phase shift of another's. A
-repeated single byte, a shifted copy, or a permuted prefix no longer reads
-back as a whole block's expectation. Residual collisions remain: the pattern
-has period 256 in the
-offset, and after 255 fill assignments two live blocks can share an
-identifier, so corruption aligned to that period (or from one such block into
-the other) can still collide with the expected values. Direct extent-overlap
-checks still run when a block is created. Any corruption that is restored
-between observation points is also undetectable.
+Each block's expected contents are a position-dependent pattern derived from
+a fill identifier in `1..=255`: byte 0 carries the raw identifier (mutually
+unique across all 255 identifiers, and never zero) and every later byte
+carries a mixed (non-additive) hash of the identifier and the offset. A
+realloc's preserved prefix is never empty, so the offset-0 marker is always
+checked: a wrong-source copy from a live block carrying a different
+identifier is caught no matter how short the prefix, and neither a repeated
+single byte, a shifted copy, nor a permuted prefix reads back as a whole
+block's expectation. The exact scheme and its residual limits — including
+the pattern's true period of 2^32 offsets on 64-bit platforms — are
+documented on the driver's internal `pattern_byte` helper. Residual
+collisions remain possible in general, and after 255 fill assignments two
+live blocks can share an identifier, so corruption from one such block into
+the other can still go undetected. Direct extent-overlap checks still run
+when a block is created. Any corruption that is restored between observation
+points is also undetectable.
 
 On normal return, every surviving modeled block is deallocated. On an oracle
 panic, allocations may be leaked deliberately. Generic cleanup is not safe

@@ -58,19 +58,21 @@
 //! natively and under Miri; neither execution mode reliably reports it as an
 //! oracle failure.
 //!
-//! Each block's expected contents are a position-dependent pattern derived
-//! from a fill identifier that cycles through `1..=255`: the per-byte
-//! expectation is a mixed (non-additive) function of the identifier and the
-//! byte offset, so changing the identifier does not produce a fixed phase
-//! shift of another identifier's sequence — the specific additive correlation
-//! that let a wrong-source realloc copy slip through every check (Sol-codex
-//! review run 3, P3-1) is closed. A repeated single byte, a shifted copy, or
-//! a permuted prefix therefore no longer reads back as a whole block's
-//! expectation. Residual collisions remain: the pattern has
-//! period 256 in the offset, and once more than 255 fill assignments are
-//! represented among live blocks two can share an identifier, so corruption
-//! aligned to that period (or from one such block into the other) may still
-//! collide with the expected values. Direct extent-overlap checks still run
+//! Each block's expected contents are a position-dependent pattern derived from
+//! a fill identifier that cycles through `1..=255`. Byte 0 of every block
+//! carries the raw identifier — mutually unique across all 255 identifiers, and
+//! never zero — and every later byte carries a mixed (non-additive) hash of the
+//! identifier and the offset. A realloc's preserved prefix is never empty, so
+//! the offset-0 marker is always checked: a wrong-source copy from a live block
+//! carrying a different identifier is caught no matter how short the prefix.
+//! The specific correlations that let earlier wrong-source realloc copies slip
+//! through every check — a fixed phase shift between adjacent identifiers, and
+//! short fixed-offset collisions between unrelated identifiers — are closed;
+//! the exact scheme and its residual limits are documented on the driver's
+//! internal `pattern_byte` helper. Residual collisions remain possible in
+//! general, and once more than 255 fill assignments are represented among live
+//! blocks two can share an identifier, so corruption from one such block into
+//! the other may still go undetected. Direct extent-overlap checks still run
 //! when each block is created. Corruption that occurs and is restored between
 //! observation points is also invisible.
 //!

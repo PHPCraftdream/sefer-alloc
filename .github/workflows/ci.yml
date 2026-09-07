@@ -2221,15 +2221,19 @@ jobs:
       - run: cargo test -p globalalloc-model --all-features --no-fail-fast
       - run: cargo test -p globalalloc-model --all-features --release --no-fail-fast
       - run: cargo clippy -p globalalloc-model --all-features --all-targets -- -D warnings
-      # `--all-features` matches this crate's `[package.metadata.docs.rs]`
-      # feature list exactly (both optional features together ARE
-      # `--all-features` here), so this row is docs.rs's exact build.
+      # `--all-features` is NO LONGER this crate's docs.rs build: since the
+      # `internals` feature was added there are THREE features, while
+      # `[package.metadata.docs.rs]` pins only ["proptest", "arbitrary"].
+      # This row is the all-features internal configuration (a superset of
+      # the docs.rs build); the EXACT published feature set is built by
+      # globalalloc-model.yml's `docsrs` job ("Build EXACT docs.rs feature
+      # set" step), the canonical home for that check.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --all-features --no-deps
-      # P3-13 (pre-publish review run 1, 2026-09-06): the row above is
-      # docs.rs's exact build, but the crate's ADVERTISED default is
-      # `default = []` — the same gate-blindness shape CLAUDE.md's feature-set
-      # doc-lint rule describes, inverted (the unbuilt configuration here is
-      # the default, not the published one). This row is that default build.
+      # P3-13 (pre-publish review run 1, 2026-09-06): the crate's ADVERTISED
+      # default is `default = []` — the same gate-blindness shape CLAUDE.md's
+      # feature-set doc-lint rule describes, inverted (the unbuilt
+      # configuration here is the default, not the published one). This row
+      # is that default build.
       - run: RUSTDOCFLAGS="-D warnings" cargo doc -p globalalloc-model --no-deps
       # `tagged-index-stack` advertises a no-std/no-alloc category but its
       # head uses `AtomicU64`; use `x86_64-unknown-none`, which provides native

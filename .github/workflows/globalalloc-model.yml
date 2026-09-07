@@ -180,7 +180,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
-      - name: Build docs.rs surface
+      # The EXACT feature set docs.rs builds, per this crate's
+      # [package.metadata.docs.rs] features = ["proptest", "arbitrary"]
+      # (`internals` is deliberately excluded: its only export stays
+      # #[doc(hidden)] even when enabled). Required by the repo-wide CLAUDE.md
+      # doc-lint rule: a crate whose docs.rs feature list is narrower than
+      # --all-features must have a doc-lint row building EXACTLY that list,
+      # in addition to (not instead of) an --all-features row.
+      - name: Build EXACT docs.rs feature set
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+        run: cargo doc -p globalalloc-model --features proptest,arbitrary --no-deps
+      # The all-features row is the internal superset: it additionally turns
+      # on `internals`, catching doc breaks (e.g. intra-doc links) that exist
+      # only in that configuration. It is NOT docs.rs's build — the step
+      # above is.
+      - name: Build all-features configuration (internal superset, not docs.rs's set)
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
         run: cargo doc -p globalalloc-model --all-features --no-deps

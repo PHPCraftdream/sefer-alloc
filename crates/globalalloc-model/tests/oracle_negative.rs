@@ -211,6 +211,15 @@ enum Fault {
     /// handed-out block to still be live and at least `keep + 1` bytes long; the
     /// test using this fault arranges exactly that shape.
     ReallocFromForeignBlockPlusOne,
+    /// `realloc` ignores its real source pointer and instead copies from the
+    /// start of a DIFFERENT, already-allocated foreign block (identified by
+    /// its absolute arena offset) — the review-run-4 P3-1 counterexample: the
+    /// hash-mixed `pattern_byte` was not injective by fill-id at a FIXED
+    /// offset (e.g. `pattern_byte(5, 0) == pattern_byte(30, 0)` before the
+    /// offset-0-is-raw-fill fix), so a short (as short as 1 byte) prefix
+    /// copied from the WRONG live block could coincidentally match. Requires
+    /// the foreign block's offset to be recorded in advance by the test.
+    ReallocFromOtherLiveBlockAt(usize),
     /// Every `alloc`/`alloc_zeroed` call after the first behaves honestly for ITS OWN
     /// block, but silently scribbles the FIRST block the arena ever handed
     /// out with a foreign byte (0xCC). The returned pointer is honest and
@@ -454,6 +463,17 @@ unsafe impl RawAllocator for Faulty {
                 unsafe { ptr::copy(src, dst, keep) };
                 dst
             }
+            Fault::ReallocFromOtherLiveBlockAt(foreign_off) => {
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
+                let src = self.arena.at_len(foreign_off, keep);
+                // SAFETY: `src` is valid for `keep` reads (the test arranges the
+                // foreign block to be live and at least `keep` bytes,
+                // initialized by `drive`'s fill); `dst` is valid for `new_size`
+                // writes inside the arena.
+                unsafe { ptr::copy(src, dst, keep) };
+                dst
+            }
             Fault::NullRealloc => ptr::null_mut(),
             _ => {
                 // Honest: a fresh aligned block with the prefix copied.
@@ -481,7 +501,11 @@ fn faulty(cap: usize, fault: Fault) -> Faulty {
 /// exposed: an independent copy is the stronger oracle — if the crate's
 /// formula changes shape, every exact byte pin below fails and forces a
 /// conscious re-derivation instead of silently tracking the new scheme.
+/// Offset 0 returns the raw fill identifier, matching `drive`'s marker byte.
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
+    if offset == 0 {
+        return fill;
+    }
     let mut x = (fill as u32) ^ (offset as u32).wrapping_mul(0x9E37_79B1);
     x = x.wrapping_mul(0x85EB_CA6B);
     x ^= x >> 13;
@@ -808,16 +832,17 @@ fn realloc_without_copy_loses_prefix() {
 
 #[test]
 #[should_panic(
-    expected = "lost prefix byte 1 (preserved 64 of old 64 -> new 128): read 0xb7, \
+    expected = "lost prefix byte 1 (preserved 64 of old 64 -> new 128): read 0x01, \
                 expected 0xca (pattern fill 0x01, offset 1)"
 )]
 fn realloc_repeat_first_byte_is_caught_by_pattern() {
     // The review-run-2 P3-1 counterexample: the new range is filled with
     // old[0] instead of copying. Under the old uniform fill every checked
     // byte read back the expected constant and this allocator PASSED; the
-    // pattern check fires at byte 1 — byte 0 still happens to match
-    // (pattern_byte(1, 0) = the copied old[0]) — with read 0xb7 = old[0]
-    // where pattern_byte(1, 1) = 0xca is expected.
+    // pattern check fires at byte 1 — byte 0 now holds the raw fill marker
+    // (pattern_byte(1, 0) = 0x01, which the copied old[0] coincidentally
+    // also is) — with read 0x01 = old[0] where pattern_byte(1, 1) = 0xca is
+    // expected.
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -835,15 +860,15 @@ fn realloc_repeat_first_byte_is_caught_by_pattern() {
 #[test]
 #[should_panic(
     expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0xca, \
-                expected 0xb7 (pattern fill 0x01, offset 0)"
+                expected 0x01 (pattern fill 0x01, offset 0)"
 )]
 fn realloc_shifted_copy_is_caught_by_pattern() {
     // The prefix lands shifted left by one (tail patched so no read leaves
     // the initialized range). A uniform block is invariant under this fault
     // — under the old fill every byte still read back the one expected
     // constant — so only the position-dependent pattern sees it: byte 0
-    // reads 0xca (= pattern_byte(1, 1) = old[1]) where pattern_byte(1, 0)
-    // = 0xb7 is expected.
+    // reads 0xca (= pattern_byte(1, 1) = old[1]) where the raw fill marker
+    // pattern_byte(1, 0) = 0x01 is expected.
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -861,14 +886,14 @@ fn realloc_shifted_copy_is_caught_by_pattern() {
 #[test]
 #[should_panic(
     expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0xfc, \
-                expected 0xb7 (pattern fill 0x01, offset 0)"
+                expected 0x01 (pattern fill 0x01, offset 0)"
 )]
 fn realloc_permuted_copy_is_caught_by_pattern() {
     // The prefix is copied REVERSED — a permutation. Any permutation of a
     // uniform block is indistinguishable from the original, so the old fill
     // could not see this fault; the pattern fires at byte 0 (read
-    // 0xfc = pattern_byte(1, 63) = the reversed-in old[63], where
-    // pattern_byte(1, 0) = 0xb7 is expected).
+    // 0xfc = pattern_byte(1, 63) = the reversed-in old[63], where the raw
+    // fill marker pattern_byte(1, 0) = 0x01 is expected).
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -899,6 +924,58 @@ fn realloc_from_other_block_shifted_is_caught_by_pattern() {
     ];
     drive(
         &faulty(4096, Fault::ReallocFromForeignBlockPlusOne),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "lost prefix byte")]
+fn realloc_from_other_live_block_at_offset_zero_is_caught_by_pattern() {
+    // Review run 4, P3-1: the hash-mixed pattern_byte was not injective by
+    // fill-id at offset 0 (e.g. pattern_byte(5, 0) == pattern_byte(30, 0) ==
+    // 0xcd under the pre-fix formula). Thirty Allocs create A1..A30 (fill-id
+    // 1..30, no id reuse, no shift — a fresh bug class round 3's
+    // shift-collision fix did not cover; (5, 30) is the SMALLEST colliding
+    // fill-id pair, so fewer allocs cannot reproduce this). Realloc targets
+    // A30 (the last one) with new_size 1 (keep == 1, so only offset 0 is
+    // checked); the fault copies that one byte from A5 (arena offset 32)
+    // instead of A30.
+    let ops = [
+        Op::Alloc { size: 8, align: 8 }, // A1: op #0, fill 1, arena[0..8)
+        Op::Alloc { size: 8, align: 8 }, // A2: op #1, fill 2, arena[8..16)
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 }, // A5: op #4, fill 5, arena[32..40) — the copy SOURCE
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 },
+        Op::Alloc { size: 8, align: 8 }, // A30: op #29, fill 30, arena[232..240) — the realloc TARGET
+        Op::Realloc { i: 29, new_size: 1 }, // targets A30 (live[29 % 30] == A30)
+    ];
+    drive(
+        &faulty(4096, Fault::ReallocFromOtherLiveBlockAt(32)), // A5's arena offset
         Config::default(),
         &ops,
     );

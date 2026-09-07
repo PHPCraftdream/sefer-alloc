@@ -65,10 +65,14 @@ before it.
   `derive_arbitrary`'s generated recursion guard for the crate's internal
   `RawOp` enum unconditionally references `std::thread_local!` — an
   upstream limitation, not this crate's own choice.
-- **Dedicated publication CI** — tests all four feature combinations on
-  Windows and Linux, executes the portable System/front-end tests with all
-  features on 32-bit i686, checks the library on the exact declared Rust 1.85
-  MSRV, validates docs.rs-style nightly documentation, and
+- **Dedicated publication CI** — tests the default build, each front-end
+  feature alone, and all features together on Windows and Linux (the
+  front-end powerset; the internal `internals` feature is exercised by the
+  all-features rows rather than its own matrix entry), executes the portable
+  System/front-end tests with all features on 32-bit i686, checks the library
+  on the exact declared Rust 1.85 MSRV, validates docs.rs-style nightly
+  documentation with BOTH the exact `[package.metadata.docs.rs]` feature list
+  (`proptest`, `arbitrary`) and the all-features configuration, and
   tests/lints/documents the extracted package plus a standalone path consumer.
   The repository-wide workflow remains the home of the existing bare-metal and
   Miri coverage.
@@ -115,12 +119,15 @@ A negative-oracle test suite exists in this crate's own `tests/`
 pinning each failure message as behaviour.
 
 Oracle checks are observations rather than continuous monitoring. Transient
-corruption restored between checks is invisible. Each block's per-identifier
-byte pattern is a mixed (non-additive) function of the fill identifier and the
-byte offset, not a simple additive scheme — distinct identifiers' patterns are
-not fixed shifts of one another — but the pattern has period 256 in the offset
-and fill identifiers cycle after 255 assignments, so two live blocks can still
-share a marker. More fundamentally,
+corruption restored between checks is invisible. Each block's byte 0 carries
+its fill identifier verbatim and its later bytes a mixed (non-additive)
+function of the identifier and the offset — not a simple additive scheme, so
+distinct identifiers' patterns are not fixed shifts of one another, and a
+wrong-source copy from a live block carrying a different identifier is
+caught at offset 0 regardless of prefix length. Collisions remain possible
+in general (the driver's internal `pattern_byte` documentation lists the
+exact residual limits), and fill identifiers cycle after 255 assignments, so
+two live blocks can still share a marker. More fundamentally,
 an invalid extent or genuinely uninitialized byte violates `RawAllocator`'s
 safety contract: accessing it is undefined behavior natively and under Miri,
 not a reliably reportable oracle failure. If an oracle panics, allocations may
