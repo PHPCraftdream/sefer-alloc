@@ -536,6 +536,33 @@ const GRANDFATHERED = new Map([
       'one-word prefix fix. Durable record: item 78, sub-card 14 (task ' +
       'tis-sc3-Group5, #1771/#1772 merge).',
   ],
+  [
+    'f66b9f0',
+    'A GENUINE mis-slot, and the first one this list records that was ' +
+      'authored AFTER the taxonomy and this very lint already existed -- ' +
+      'not legacy history and not a heuristic false positive. ' +
+      '`perf(globalalloc-model):` is a bare/unscoped `perf(...)`, which the ' +
+      'taxonomy does not sanction. The commit changed 107 lines of real ' +
+      'code in crates/globalalloc-model/src/strategy.rs (replacing ' +
+      '`size_strategy`\'s `.boxed()` with the hand-rolled ' +
+      '`SizeStrategy`/`SizeValueTree` enum), which sits behind the OPTIONAL, ' +
+      'non-default `proptest` feature -- so the honest slot was ' +
+      '`perf(opt-in):`, exactly the case that slot exists for. PUSHED (it ' +
+      'reached origin/main in the d62f766 push), hence recorded rather than ' +
+      'amended, per R30-12\'s own non-retroactive posture and sub-cards ' +
+      '1/5/11\'s precedent for landed entries. Two process notes worth ' +
+      'keeping, because they are the actual lesson: (1) `npm run check` DOES ' +
+      'run this lint over `@{u}..HEAD`, so the local gate would have caught ' +
+      'this before the push -- it never reached the step, because the run ' +
+      'fail-fasted earlier on the environment-sensitive ' +
+      'tests/r14_7_max_segments_ceiling.rs failure (correctness item 143, ' +
+      'Windows commit limit), so a known flake concretely masked a real ' +
+      'defect; (2) the commit was written in the same session that later ' +
+      'pushed it, and its own zero-trust review checked the diff\'s ' +
+      'CONTENT but never re-read its own subject line against the ' +
+      'taxonomy. Durable record: docs/correctness-open-items/' +
+      'TRACKED_process_record.md item 78, sub-card 15.',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
