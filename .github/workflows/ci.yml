@@ -1033,12 +1033,12 @@ jobs:
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks"
       # Plain pass (review run 3, P2-1: this step's MIRIFLAGS had drifted to strict-provenance, running the strict pass twice and the plain pass never).
-      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count --test size_strategy_avoids_boxed_value_trees
       - run: cargo miri test -p globalalloc-model --all-features --test double_free_no_op
         env:
           MIRIFLAGS: "-Zmiri-ignore-leaks -Zmiri-strict-provenance"
       # Strict-provenance pass.
-      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count
+      - run: cargo miri test -p globalalloc-model --all-features --test miri_bounded --test oracle_negative --test system_arbitrary --test system_proptest --test config_validate --test peak_live_count --test size_strategy_avoids_boxed_value_trees
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 

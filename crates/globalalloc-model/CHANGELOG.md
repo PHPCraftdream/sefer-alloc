@@ -118,6 +118,15 @@ A negative-oracle test suite exists in this crate's own `tests/`
 (`tests/oracle_negative.rs`): a deliberately-broken allocator per oracle,
 pinning each failure message as behaviour.
 
+The `proptest` front-end's size generator draws from a hand-rolled enum
+`Strategy`/`ValueTree` (not `BoxedStrategy`): `TupleUnion` (the weighted-arm
+case) is already non-boxing, so the only heap allocation the old `.boxed()`
+form added was one `Box<dyn ValueTree>` per drawn `Alloc`/`AllocZeroed`/
+`Realloc` size. Measured (`examples/perf_probe_p4_measurements.rs`): ~1.585
+allocations per generated op with the enum, versus ~2.336 with `.boxed()`,
+each drawn 200-op stream costing roughly one avoidable allocation per
+size-bearing op under the old form.
+
 Oracle checks are observations rather than continuous monitoring. Transient
 corruption restored between checks is invisible. Each block's byte 0 carries
 its fill identifier verbatim and its later bytes a mixed (non-additive)
