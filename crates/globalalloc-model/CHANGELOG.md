@@ -128,22 +128,60 @@ Measured by a paired A/B (`examples/perf_probe_p4_measurements.rs`: identical
 generator shape, same fixed seeds, `failure_persistence: None` pinned
 explicitly — the earlier ~1.585 vs ~2.336 calibration inherited proptest's
 env-var-dependent failure-persistence default, ~1.64 allocs/op of clone
-overhead that masked the real gap): +0.75 boxing-attributable allocations per
-generated op (~150 per 200-op stream), and the regression guard
-(`tests/size_strategy_avoids_boxed_value_trees.rs`) now pins
+overhead that masked the real gap; the regression guard
+(`tests/size_strategy_avoids_boxed_value_trees.rs`) pins
 `failure_persistence: None` with its threshold re-derived to 0.35 from that
-paired run (enum 0.015, boxed 0.766).
+paired run, enum 0.015, boxed 0.766): the fresh run after the probe's
+realloc-honest corrections measured 0.000 vs 0.751 (default) / 0.750 (single)
+boxing-attributable allocations per generated op (~150 per 200-op stream) —
+small-count run-to-run drift on the enum arm; the ~+0.75 paired gap is the
+durable signal, and the 0.35 threshold stays valid.
 
 Memory axis, honestly: the inline representation is NOT transient — trees
 live in the stream's `Vec` for its whole life (including shrinking);
-`SizeValueTree` is 1152 B vs the 16 B box slot it replaced, making the
-per-op element tree 4240 B. At the default `Config` the enum still measured
-FEWER total and peak heap bytes per draw than boxed (848,124 B vs 915,594 B);
-at a zero-weight `Config` it costs ~384 KiB more per 200-op draw (848,124 B
-vs 464,204 B) because slots stay sized for the disabled weighted arm. Kept:
-bounded per drawn case, wins allocations at every config, and boxing only
-the weighted arm would reintroduce the per-draw allocation on the default
-path.
+`SizeValueTree` is 1152 B vs the box slot it replaced (2 words, i.e.
+`2 x size_of::<usize>()` — 16 B on this 64-bit target), the per-op element
+tree 4240 B, `SizeStrategy` 40 B, the `Single` arm's tree 24 B — all
+re-confirmed by the corrected run and specific to this target/toolchain
+(x86_64-windows, proptest 1.11.0), not portable contracts of the types. The
+corrected probe (review findings P3-1/P3-2/P4-3: realloc-honest byte
+counters; three separately-labeled scenarios instead of one mislabeled
+"draw"; every measurement window reports its realloc count) reports, per
+200-op stream draw, totals/peaks in heap bytes for enum vs boxed. Default
+`Config`: S1 (successful draw, `new_tree` -> `current` -> drop, no
+shrinking, n=64) 860,316/854,268 vs 639,120/633,072 — boxed SMALLER by
+221,196 B on both axes; S2 (simplify-only walk, n=64) 848,124/848,124 vs
+915,594/915,594 — enum smaller by 67,470 B on both axes, 0.0 reallocs per
+window; S3 (full shrink protocol: simplify plus per-step `current()` and
+accept/complicate backoff; n=8, ~15,493 steps/draw) 189,749,448/860,412 vs
+189,811,176/922,140 — enum smaller by 61,728 B on both axes (S3 totals are
+dominated by ~15.5k per-step `Vec<Op>` materializations; 92,963.2
+reallocs/window). Single `Config` (large_weight 0): S1 860,316/854,268 vs
+470,307/464,259 (boxed smaller by 390,009 B); S2 848,124/848,124 vs
+464,204/464,204 (enum smaller by 383,920 B, 0.0 reallocs); S3 (n=8,
+~15,767 steps) 193,091,580/860,412 vs 192,707,730/476,562 (enum smaller by
+383,850 B, 94,608.0 reallocs/window). The previously published figures
+(848,124 vs 915,594 default; 848,124 vs 464,204 single) reproduce EXACTLY
+as S2 totals under the corrected counter, and S2 windows contain 0.0
+reallocs — so the old counter bug (which only fired on realloc) did not
+numerically affect them; what was wrong was the label: those numbers are
+construction PLUS a full simplify-only walk, not a plain draw. The regime
+ordering therefore flips: at a plain successful draw the boxed form uses
+LESS memory at BOTH configs, because proptest's `TupleUnion` only
+materializes the boxed arms' extra size-Boxes while simplifying; the
+enum's inline stride is paid from construction — "the enum uses less
+memory" is true only in the shrink/simplify regimes. The enum's total/peak
+bytes are byte-identical across default and single configs in every
+scenario (860,316/854,268 in S1, 848,124 in S2, 860,412 peak in S3) — the
+`Weighted` slot dominates regardless of config — while the boxed
+counterpart varies by config. Kept: bounded per drawn case, wins
+allocations at every config, and boxing only the weighted arm would
+reintroduce the per-draw allocation on the default path. The corrected
+counters also separate attempted calls from successful ranges (a
+successful realloc replaces the old size with the new one in live state,
+TOTAL_BYTES counts the full new request on realloc, null calls leave live
+unchanged), so every memory claim above is per-scenario and
+realloc-audited.
 
 Oracle checks are observations rather than continuous monitoring. Transient
 corruption restored between checks is invisible. Each block's byte 0 carries

@@ -31,18 +31,27 @@ type WeightedSizeTree = <WeightedSizeStrategy as Strategy>::Tree;
 /// `BoxedStrategy::new_tree` always returns `Box<dyn ValueTree>`, so under the
 /// old `.boxed()` form every generated `Alloc`/`AllocZeroed`/`Realloc` size
 /// cost one avoidable heap allocation. Measured (P4-1 re-measurement,
-/// `examples/perf_probe_p4_measurements.rs`): a PAIRED A/B against a faithful
-/// boxed counterpart — identical generator shape, same per-seed RNG, asserted
-/// byte-identical `Vec<Op>` streams per seed — finds +0.75 boxing-attributable
-/// allocs per op (≈150 per 200-op stream draw) and ≈+67 KiB total/peak heap
-/// bytes per 200-op draw at the default `Config`. The earlier "~2x
+/// `examples/perf_probe_p4_measurements.rs`, corrected after review findings
+/// P3-1/P3-2/P4-3): a PAIRED A/B against a faithful boxed counterpart —
+/// identical generator shape, same per-seed RNG, asserted byte-identical
+/// `Vec<Op>` streams per seed — finds +0.75 boxing-attributable allocs per op
+/// (≈150 per 200-op stream draw; a fresh run measured 0.000 vs 0.751/0.750 —
+/// small-count run-to-run drift on the enum arm; the ~+0.75 paired gap is the
+/// durable signal). The heap-byte picture is regime-dependent, which is
+/// exactly why the probe's single mislabeled "draw" scenario was retired into
+/// three separately-labeled memory scenarios (probe-internal labels S1/S2/S3,
+/// described below and in the example): in the simplify-only regime the enum
+/// still measures +67,470 B total/peak per 200-op draw at the default
+/// `Config`, but at a plain successful draw the BOXED form uses LESS memory
+/// (-221,196 B at default, -390,009 B at single), and the shrink-protocol
+/// regime is +61,728 B enum-side at default. The earlier "~2x
 /// generation-time overhead" claim was retracted: that measurement compared
-/// against a differently-shaped baseline (confounded); wall-time in the
-/// paired run is mostly run-to-run noise; the one consistent signal across
-/// repeated runs is that at the default `Config` the boxed form paid slower
-/// full-shrink walks (~16-38% over three runs) and a 3-14x slower drop
-/// (freeing the ~150 per-draw heap blocks) — the allocation counts above are
-/// the durable part of the result.
+/// against a differently-shaped baseline (confounded). Wall-time in the
+/// paired run is NOT consistent across configs on this loaded host: at the
+/// default `Config` the boxed form measured slower full-shrink walks (~24%,
+/// 529,661 vs 428,006 ns/draw) and a ~13x slower drop, but at the single
+/// config the boxed form measured FASTER on both — only the allocation
+/// counts are the durable part of the result.
 ///
 /// Both variants delegate to proptest's own, already-correct
 /// `RangeInclusive`/`TupleUnion` implementations — this enum adds no shrink
@@ -66,33 +75,69 @@ enum SizeStrategy {
 /// `elements: Vec<T>` for the op-stream tree's ENTIRE lifetime, including
 /// shrinking — so this enum's inline representation grows every element's
 /// stride in that Vec: O(N) memory with a large constant, replacing the
-/// 16-byte (2-word) `Box<dyn ValueTree>` slot the `.boxed()` form used.
-/// Measured `size_of`s: `SizeValueTree` 1152 B (the `Weighted` arm IS the
+/// 2-word (`2 x size_of::<usize>()`, 16 B on 64-bit targets) slot the
+/// `.boxed()` form used. Measured `size_of`s (re-confirmed by the corrected
+/// run): `SizeValueTree` 1152 B (the `Weighted` arm IS the
 /// whole enum; it embeds two proptest `LazyValueTree`s, each of which can
 /// hold a whole `TestRunner` inline), the zero-weight `Single` arm's
-/// tree 24 B, and the per-op element tree of the stream 4240 B (the 4-arm
-/// `TupleUnionValueTree` whose size-tree slots make up that 1152 B).
+/// tree 24 B, the per-op element tree of the stream 4240 B (the 4-arm
+/// `TupleUnionValueTree` whose size-tree slots make up that 1152 B), and
+/// `SizeStrategy` itself 40 B. These are measurements of THIS
+/// target/toolchain/feature set (x86_64-pc-windows, 64-bit, proptest 1.11.0,
+/// `internals` enabled), NOT portable contracts of the types.
 ///
 /// Measured trade-off (P4-5 paired, same-seed A/B against the faithful
-/// boxed counterpart, 200-op stream draws) — BOTH config rows reported:
+/// boxed counterpart, 200-op stream draws; the probe's three scenarios:
+/// S1 = a successful draw from `new_tree` through `current()` to drop with
+/// NO shrinking, S2 = a full simplify-only shrink walk without per-step
+/// `current()`, S3 = the full shrink protocol — simplify plus per-step
+/// `current()` and accept/complicate backoff; "peak" = trajectory
+/// peak-live; per-window realloc counts from the corrected realloc-honest
+/// counters) — BOTH config rows reported, totals/peaks in heap bytes:
 ///
-/// - At the DEFAULT `Config` (the shape this crate's own test suite and the
-///   round-4 fix target) the enum measured FEWER total and peak-live heap
-///   bytes than the boxed counterpart (848,124 B vs 915,594 B per 200-op
-///   draw) AND far fewer allocations (0.015 vs 0.766 per op) — inline wins
-///   on every measured axis.
-/// - At a zero-weight/`Single` `Config` the enum still wins allocations
-///   (0.015 vs 0.765 per op) and wall-time, but costs ~384 KiB MORE heap
-///   per 200-op draw (848,124 B vs 464,204 B): every element's slot is
-///   sized for the `Weighted` variant even when only the 24 B `Single`
-///   tree is ever initialized — the enum's default-config and single-config
-///   rows are byte-identical at 848,124 B, which is exactly this
-///   layout-driven slot sizing. Accepted because it is bounded per drawn
-///   op-stream case (a testing harness holds one stream per active
-///   proptest case, not per unit of real work), and boxing only the
-///   `Weighted` variant would reintroduce the per-draw heap allocation on
-///   the DEFAULT config's common path — the exact cost the round-4 fix
-///   removed.
+/// - S1, default `Config` (n=64 draws): enum 860,316/854,268; boxed
+///   639,120/633,072; delta (boxed - enum) -221,196 on both axes; 6.0
+///   reallocs/window. S1, single `Config`: enum 860,316/854,268; boxed
+///   470,307/464,259; delta -390,009 on both; 6.0 reallocs/window.
+/// - S2, default (n=64): enum 848,124/848,124; boxed 915,594/915,594;
+///   delta +67,470 on both; 0.0 reallocs/window (boxed post-construct
+///   626,928 B, window max 951,036 B). S2, single: enum 848,124/848,124;
+///   boxed 464,204/464,204; delta -383,920 on both; 0.0 reallocs/window.
+/// - S3, default (n=8 draws; ~15,493 steps/draw; 15,492.6 accepts, 1.2
+///   complicates): enum 189,749,448 total/860,412 peak (dominated by
+///   ~15.5k per-step `Vec<Op>` materializations); boxed 189,811,176/
+///   922,140; delta +61,728 on both; 92,963.2 reallocs/window. S3,
+///   single (~15,767 steps; 1.4 complicates): enum 193,091,580/860,412;
+///   boxed 192,707,730/476,562; delta -383,850 on both; 94,608.0
+///   reallocs/window.
+///
+/// Three findings follow. (1) The previously published figures (848,124
+/// vs 915,594 default; 848,124 vs 464,204 single) reproduce EXACTLY as
+/// the S2 totals under the corrected counter, and S2 windows contain
+/// 0.0 reallocs — so the old counter bug (which only fired on realloc)
+/// did not numerically affect them; what was wrong was the label: those
+/// numbers are construction PLUS a full simplify-only walk, not a plain
+/// draw. (2) The regime ordering FLIPS: at a plain successful draw (S1)
+/// the boxed form uses LESS memory at BOTH configs, because proptest's
+/// `TupleUnion` only materializes the boxed arms' extra size-Boxes while
+/// simplifying; the enum's inline stride is paid from construction;
+/// "the enum uses less memory" is true ONLY in the shrink/simplify
+/// regimes (S2, and S3 peak). (3) The enum's total/peak bytes are
+/// byte-identical across default and single configs in EVERY scenario
+/// (860,316/854,268 in S1, 848,124 in S2, 860,412 peak in S3) — the
+/// `Weighted` slot dominates regardless of config — while the boxed
+/// counterpart varies by config.
+///
+/// Acceptance rationale, stated honestly: the enum does NOT win on every
+/// measured axis. It wins allocations at every config (~+0.75/op boxed;
+/// the regression-test 0.35 threshold stays valid), and it wins memory in
+/// the shrink regimes; but a plain successful draw costs it MORE heap than
+/// boxed at both configs (-221,196 B default, -390,009 B single), bounded
+/// per drawn op-stream case (a testing harness holds one stream per active
+/// proptest case, not per unit of real work). Boxing only the `Weighted`
+/// variant would still reintroduce the per-draw heap allocation on the
+/// DEFAULT config's common path — the exact cost the round-4 fix removed.
+/// This is measurement, not marketing, in either direction.
 ///
 /// `large_enum_variant` is silenced deliberately: the size gap is
 /// `WeightedSizeTree` carrying an uninitialized `TupleUnion` branch's own
@@ -256,19 +301,25 @@ pub struct SizeStrategyReprSizes {
     pub op_element_tree: usize,
 }
 
-/// See [`SizeStrategyReprSizes`].
+/// See [`SizeStrategyReprSizes`]. Takes no arguments: the result is a pure
+/// compile-time quantity over this module's tree TYPES, independent of any
+/// `Config`. The previous form built a whole element strategy just to read
+/// `size_of` off its tree type, allocating the outer `Arc` union branches
+/// (and, at default weights, an `Arc` per range branch of every size
+/// generator) for nothing. Passing the never-called factory keeps the
+/// concrete type opaque to the caller. Cold-path allocation hygiene, NOT a
+/// claimed speedup (this runs once per probe invocation).
 #[cfg(feature = "internals")]
 #[doc(hidden)]
-pub fn size_strategy_repr_sizes(config: Config) -> SizeStrategyReprSizes {
-    fn tree_size<S: Strategy>(_: &S) -> usize {
+pub fn size_strategy_repr_sizes() -> SizeStrategyReprSizes {
+    fn element_tree_size<S: Strategy<Value = Op>>(_: &impl Fn(Config) -> S) -> usize {
         core::mem::size_of::<S::Tree>()
     }
-    let element = op_element_strategy(config);
     SizeStrategyReprSizes {
         size_strategy: core::mem::size_of::<SizeStrategy>(),
         size_value_tree: core::mem::size_of::<SizeValueTree>(),
         single_tree: core::mem::size_of::<<RangeInclusive<usize> as Strategy>::Tree>(),
         weighted_tree: core::mem::size_of::<WeightedSizeTree>(),
-        op_element_tree: tree_size(&element),
+        op_element_tree: element_tree_size(&op_element_strategy),
     }
 }
