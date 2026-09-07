@@ -122,10 +122,28 @@ The `proptest` front-end's size generator draws from a hand-rolled enum
 `Strategy`/`ValueTree` (not `BoxedStrategy`): `TupleUnion` (the weighted-arm
 case) is already non-boxing, so the only heap allocation the old `.boxed()`
 form added was one `Box<dyn ValueTree>` per drawn `Alloc`/`AllocZeroed`/
-`Realloc` size. Measured (`examples/perf_probe_p4_measurements.rs`): ~1.585
-allocations per generated op with the enum, versus ~2.336 with `.boxed()`,
-each drawn 200-op stream costing roughly one avoidable allocation per
-size-bearing op under the old form.
+`Realloc` size.
+
+Measured by a paired A/B (`examples/perf_probe_p4_measurements.rs`: identical
+generator shape, same fixed seeds, `failure_persistence: None` pinned
+explicitly — the earlier ~1.585 vs ~2.336 calibration inherited proptest's
+env-var-dependent failure-persistence default, ~1.64 allocs/op of clone
+overhead that masked the real gap): +0.75 boxing-attributable allocations per
+generated op (~150 per 200-op stream), and the regression guard
+(`tests/size_strategy_avoids_boxed_value_trees.rs`) now pins
+`failure_persistence: None` with its threshold re-derived to 0.35 from that
+paired run (enum 0.015, boxed 0.766).
+
+Memory axis, honestly: the inline representation is NOT transient — trees
+live in the stream's `Vec` for its whole life (including shrinking);
+`SizeValueTree` is 1152 B vs the 16 B box slot it replaced, making the
+per-op element tree 4240 B. At the default `Config` the enum still measured
+FEWER total and peak heap bytes per draw than boxed (848,124 B vs 915,594 B);
+at a zero-weight `Config` it costs ~384 KiB more per 200-op draw (848,124 B
+vs 464,204 B) because slots stay sized for the disabled weighted arm. Kept:
+bounded per drawn case, wins allocations at every config, and boxing only
+the weighted arm would reintroduce the per-draw allocation on the default
+path.
 
 Oracle checks are observations rather than continuous monitoring. Transient
 corruption restored between checks is invisible. Each block's byte 0 carries

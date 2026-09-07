@@ -191,3 +191,10 @@ pub use raw_allocator::RawAllocator;
 #[cfg(feature = "proptest")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proptest")))]
 pub use strategy::op_strategy;
+// Test-only export, same rationale as `peak_live_count` above: static
+// size introspection for `strategy`'s private types, used only by
+// `examples/perf_probe_p4_measurements.rs`.
+#[cfg(all(feature = "proptest", feature = "internals"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "proptest", feature = "internals"))))]
+#[doc(hidden)]
+pub use strategy::{size_strategy_repr_sizes, SizeStrategyReprSizes};

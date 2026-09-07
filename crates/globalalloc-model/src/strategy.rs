@@ -30,11 +30,19 @@ type WeightedSizeTree = <WeightedSizeStrategy as Strategy>::Tree;
 /// object AND — the larger effect — for every drawn value tree:
 /// `BoxedStrategy::new_tree` always returns `Box<dyn ValueTree>`, so under the
 /// old `.boxed()` form every generated `Alloc`/`AllocZeroed`/`Realloc` size
-/// cost one avoidable heap allocation. Measured (Sol-codex review runs 2-4,
-/// P4-5): `examples/perf_probe_p4_measurements.rs` isolates this against a
-/// same-shape non-boxed baseline and finds ~154 avoidable allocations and
-/// roughly a 2x generation-time overhead per 200-op stream draw, entirely
-/// attributable to this boxing.
+/// cost one avoidable heap allocation. Measured (P4-1 re-measurement,
+/// `examples/perf_probe_p4_measurements.rs`): a PAIRED A/B against a faithful
+/// boxed counterpart — identical generator shape, same per-seed RNG, asserted
+/// byte-identical `Vec<Op>` streams per seed — finds +0.75 boxing-attributable
+/// allocs per op (≈150 per 200-op stream draw) and ≈+67 KiB total/peak heap
+/// bytes per 200-op draw at the default `Config`. The earlier "~2x
+/// generation-time overhead" claim was retracted: that measurement compared
+/// against a differently-shaped baseline (confounded); wall-time in the
+/// paired run is mostly run-to-run noise; the one consistent signal across
+/// repeated runs is that at the default `Config` the boxed form paid slower
+/// full-shrink walks (~16-38% over three runs) and a 3-14x slower drop
+/// (freeing the ~150 per-draw heap blocks) — the allocation counts above are
+/// the durable part of the result.
 ///
 /// Both variants delegate to proptest's own, already-correct
 /// `RangeInclusive`/`TupleUnion` implementations — this enum adds no shrink
@@ -51,6 +59,41 @@ enum SizeStrategy {
 /// same reason. Every method is a pure delegation to the active variant's own
 /// tree.
 ///
+/// Lifetime and memory reality (measured via
+/// `size_strategy_repr_sizes`, see `examples/perf_probe_p4_measurements.rs`):
+/// these trees are NOT short-lived transient stack values. proptest's
+/// `VecValueTree` stores one tree per generated op in its
+/// `elements: Vec<T>` for the op-stream tree's ENTIRE lifetime, including
+/// shrinking — so this enum's inline representation grows every element's
+/// stride in that Vec: O(N) memory with a large constant, replacing the
+/// 16-byte (2-word) `Box<dyn ValueTree>` slot the `.boxed()` form used.
+/// Measured `size_of`s: `SizeValueTree` 1152 B (the `Weighted` arm IS the
+/// whole enum; it embeds two proptest `LazyValueTree`s, each of which can
+/// hold a whole `TestRunner` inline), the zero-weight `Single` arm's
+/// tree 24 B, and the per-op element tree of the stream 4240 B (the 4-arm
+/// `TupleUnionValueTree` whose size-tree slots make up that 1152 B).
+///
+/// Measured trade-off (P4-5 paired, same-seed A/B against the faithful
+/// boxed counterpart, 200-op stream draws) — BOTH config rows reported:
+///
+/// - At the DEFAULT `Config` (the shape this crate's own test suite and the
+///   round-4 fix target) the enum measured FEWER total and peak-live heap
+///   bytes than the boxed counterpart (848,124 B vs 915,594 B per 200-op
+///   draw) AND far fewer allocations (0.015 vs 0.766 per op) — inline wins
+///   on every measured axis.
+/// - At a zero-weight/`Single` `Config` the enum still wins allocations
+///   (0.015 vs 0.765 per op) and wall-time, but costs ~384 KiB MORE heap
+///   per 200-op draw (848,124 B vs 464,204 B): every element's slot is
+///   sized for the `Weighted` variant even when only the 24 B `Single`
+///   tree is ever initialized — the enum's default-config and single-config
+///   rows are byte-identical at 848,124 B, which is exactly this
+///   layout-driven slot sizing. Accepted because it is bounded per drawn
+///   op-stream case (a testing harness holds one stream per active
+///   proptest case, not per unit of real work), and boxing only the
+///   `Weighted` variant would reintroduce the per-draw heap allocation on
+///   the DEFAULT config's common path — the exact cost the round-4 fix
+///   removed.
+///
 /// `large_enum_variant` is silenced deliberately: the size gap is
 /// `WeightedSizeTree` carrying an uninitialized `TupleUnion` branch's own
 /// `LazyValueTree`, which embeds a whole (not-yet-generated) `TestRunner` —
@@ -58,8 +101,7 @@ enum SizeStrategy {
 /// this enum introduces. Boxing this variant to silence the lint would
 /// reintroduce a heap allocation on every draw that reaches the weighted
 /// arm (the DEFAULT `Config`'s common case) — exactly the cost this enum
-/// exists to avoid. A short-lived, transient stack value is the correct
-/// trade against a per-draw heap allocation.
+/// exists to avoid.
 #[allow(clippy::large_enum_variant)]
 enum SizeValueTree {
     Single(<RangeInclusive<usize> as Strategy>::Tree),
@@ -164,6 +206,13 @@ pub fn op_strategy(
     len_range: core::ops::Range<usize>,
 ) -> impl Strategy<Value = Vec<Op>> {
     config.validate();
+    prop::collection::vec(op_element_strategy(config), len_range)
+}
+
+/// One op: the per-element strategy [`op_strategy`] collects into a stream.
+/// Same expression tree the previous inline body of `op_strategy` built, so
+/// behavior is identical.
+fn op_element_strategy(config: Config) -> impl Strategy<Value = Op> {
     let alloc = (size_strategy(config), align_strategy(config))
         .prop_map(|(size, align)| Op::Alloc { size, align });
     let alloc_zeroed = (size_strategy(config), align_strategy(config))
@@ -172,6 +221,54 @@ pub fn op_strategy(
     let realloc = (any::<usize>(), size_strategy(config))
         .prop_map(|(i, new_size)| Op::Realloc { i, new_size });
 
-    let op = prop_oneof![alloc, alloc_zeroed, dealloc, realloc];
-    prop::collection::vec(op, len_range)
+    prop_oneof![alloc, alloc_zeroed, dealloc, realloc]
+}
+
+// Second test-only export from this module, alongside `op_strategy` (the
+// established test-only-forwarder category — same rationale as
+// `crate::peak_live_count` in `src/lib.rs`): static size introspection for
+// this module's private `SizeStrategy`/`SizeValueTree` types, used only by
+// `examples/perf_probe_p4_measurements.rs`.
+
+/// Doc-hidden, `internals`-gated static size introspection for this module's
+/// private `SizeStrategy`/`SizeValueTree` types. Not stable public API; exists
+/// solely so memory-footprint measurements in
+/// `examples/perf_probe_p4_measurements.rs` can report exact compile-time
+/// sizes they cannot otherwise name (the types are private behind
+/// `impl Strategy`). Same test-only-export rationale as
+/// `crate::peak_live_count` (see `src/lib.rs`).
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub struct SizeStrategyReprSizes {
+    /// `size_of::<SizeStrategy>()` — the strategy object itself.
+    pub size_strategy: usize,
+    /// `size_of::<SizeValueTree>()` — one drawn size value tree, inline.
+    pub size_value_tree: usize,
+    /// `size_of` of the zero-weight `Single` arm's `RangeInclusive` tree.
+    pub single_tree: usize,
+    /// `size_of::<WeightedSizeTree>()` — the weighted-union tree (two
+    /// `LazyValueTree`s, each able to embed a whole `TestRunner`).
+    pub weighted_tree: usize,
+    /// `size_of` of ONE element of the op-stream `VecValueTree` (the per-op
+    /// 4-arm `TupleUnionValueTree` that embeds size-tree slots). This is the
+    /// stride item whose growth the enum's inline representation pays on
+    /// every element of a whole stream.
+    pub op_element_tree: usize,
+}
+
+/// See [`SizeStrategyReprSizes`].
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub fn size_strategy_repr_sizes(config: Config) -> SizeStrategyReprSizes {
+    fn tree_size<S: Strategy>(_: &S) -> usize {
+        core::mem::size_of::<S::Tree>()
+    }
+    let element = op_element_strategy(config);
+    SizeStrategyReprSizes {
+        size_strategy: core::mem::size_of::<SizeStrategy>(),
+        size_value_tree: core::mem::size_of::<SizeValueTree>(),
+        single_tree: core::mem::size_of::<<RangeInclusive<usize> as Strategy>::Tree>(),
+        weighted_tree: core::mem::size_of::<WeightedSizeTree>(),
+        op_element_tree: tree_size(&element),
+    }
 }
