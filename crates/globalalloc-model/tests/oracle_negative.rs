@@ -8,7 +8,7 @@
 //! one infrastructure exception is `honest_arena_passes_drive`, which
 //! proves the fake itself is oracle-clean rather than pinning a `drive`
 //! check. Two checks genuinely have no in-op counterfactual and are
-//! pinned at its next observable read instead: the M1 fill read-back's
+//! pinned at their next observable read instead: the M1 fill read-back's
 //! op-time check and the alloc_zeroed arm's identical fill read-back
 //! (review run 3, P3-1) cannot be broken by any sound sequential fault
 //! (no allocator call can intervene between `fill_block` and
@@ -16,6 +16,17 @@
 //! so the fill-persistence tests below corrupt the block AFTER its
 //! read-back passed and pin the run-end sweep — the next read of the
 //! block, and the check a lost write would otherwise escape through.
+//!
+//! The null/align oracles of the three block-creating arms are pinned
+//! together in one exhaustive grid (`Arm × Shape` in `null_align_cell`,
+//! replayed by a single test over every cell): a fourth block-creating arm —
+//! or a third fault shape — is a compile error there until its cell exists,
+//! so the coverage question is forced structurally. That is the fix for the
+//! per-arm gap review run 5's P3-1 documented (three consecutive rounds each
+//! found a block-creating arm edited without matching coverage; the
+//! `alloc_zeroed` null branch's removal is outright undefined behaviour — a
+//! null dereference in `verify_zeroed_block` — so its cell must fail with a
+//! crash, not a message mismatch, if that branch is ever deleted).
 //!
 //! The fake arena owns its memory through raw pointers only (no `Vec`/references
 //! into it), so all writes through the pointers `drive` hands around are sound
@@ -124,6 +135,15 @@ enum Fault {
     NullAlloc,
     /// `alloc` returns a pointer offset by `k` bytes (misaligned).
     MisalignedBy(usize),
+    /// `alloc_zeroed` returns null — the twin of [`Fault::NullAlloc`] on the
+    /// zeroed path (review run 5, P3-1: without it, `drive`'s alloc_zeroed
+    /// null branch had no counterfactual anywhere, and deleting that branch
+    /// is a null dereference in `verify_zeroed_block`, not just an
+    /// unpinned oracle).
+    NullAllocZeroed,
+    /// `alloc_zeroed` returns a pointer offset by `k` bytes (misaligned),
+    /// the twin of [`Fault::MisalignedBy`] on the zeroed path.
+    MisalignedZeroedBy(usize),
     /// `alloc_zeroed` hands out an honest block but scribbles 0xAA instead of
     /// zeroing.
     NotZeroed,
@@ -143,14 +163,19 @@ enum Fault {
     /// oracle.
     OverlapZeroedAt(usize),
     /// `realloc` copies the prefix to `base + off` and returns that pointer.
-    /// The two tests using it differ only in the offset and in the outcome
+    /// The tests using it differ only in the offset and in the outcome
     /// they pin: `overlap_on_realloc_panics` picks an offset inside ANOTHER
     /// live block (a foreign block — the M3 oracle must fire), and there
     /// the copy makes every check EXCEPT overlap pass, so the overlap
     /// assert is the only thing that can fire;
     /// `in_place_realloc_inside_own_old_block_passes` picks one inside the
     /// OLD block only (a legal in-place shape the `skip: Some(i)` exclusion
-    /// must tolerate).
+    /// must tolerate). A third use pins the realloc arm's ALIGN assert:
+    /// `ReallocAt(9)` against an `align: 8` block returns a misaligned
+    /// pointer that the align check rejects BEFORE the overlap check and the
+    /// prefix read run — and with that assert deleted the whole realloc
+    /// completes cleanly, so only that assert can make the misaligned grid
+    /// cell pass.
     ReallocAt(usize),
     /// `realloc` hands out a fresh honest block WITHOUT copying (loses the
     /// prefix).
@@ -256,21 +281,29 @@ unsafe impl RawAllocator for Faulty {
              reached)"
         );
         let size = layout.size();
-        if let Fault::OverlapZeroedAt(off) = self.fault {
-            return self.arena.at_len(off, size);
+        match self.fault {
+            Fault::OverlapZeroedAt(off) => self.arena.at_len(off, size),
+            // Null with no arena contact: only `drive`'s M1 null check can
+            // fire, which is exactly what the grid cell exercises.
+            Fault::NullAllocZeroed => ptr::null_mut(),
+            // Length-checked even though `drive` panics at the align check
+            // before any access (same shape as `MisalignedBy`).
+            Fault::MisalignedZeroedBy(k) => self.arena.at_len(k, size),
+            _ => {
+                let p = self.arena.bump_aligned(size, layout.align());
+                let ptr = self.arena.at_len(p, size);
+                if let Fault::NotZeroed = self.fault {
+                    // Hand out the honest block but scribble instead of zeroing.
+                    // SAFETY: `ptr` is valid for `size` bytes inside the arena.
+                    unsafe { ptr::write_bytes(ptr, 0xAA, size) };
+                } else {
+                    // SAFETY: `ptr` is valid for `size` bytes inside the arena.
+                    unsafe { ptr::write_bytes(ptr, 0, size) };
+                }
+                self.fault_touch_first_block(p, size);
+                ptr
+            }
         }
-        let p = self.arena.bump_aligned(size, layout.align());
-        let ptr = self.arena.at_len(p, size);
-        if let Fault::NotZeroed = self.fault {
-            // Hand out the honest block but scribble instead of zeroing.
-            // SAFETY: `ptr` is valid for `size` bytes inside the arena.
-            unsafe { ptr::write_bytes(ptr, 0xAA, size) };
-        } else {
-            // SAFETY: `ptr` is valid for `size` bytes inside the arena.
-            unsafe { ptr::write_bytes(ptr, 0, size) };
-        }
-        self.fault_touch_first_block(p, size);
-        ptr
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
@@ -366,15 +399,204 @@ fn undersized_block_overlap_panics() {
     drive(&faulty(4096, Fault::ShortBlock), Config::default(), &ops);
 }
 
+/// What a grid cell must observe when its op stream is replayed.
+#[derive(Clone, Copy, Debug)]
+enum Expect {
+    /// `drive` must panic, naming this oracle: the same substring pin a
+    /// standalone `#[should_panic(expected = ...)]` uses, asserted per cell
+    /// inside the loop.
+    Panics(&'static str),
+    /// `drive` must complete. The realloc-null cell: a null realloc is the
+    /// documented failure signal, the skip is the behaviour under test, and
+    /// if the skip were deleted the cell fails with a null dereference (a
+    /// crash), not a message mismatch.
+    Completes,
+}
+
+/// One cell of the exhaustive null/align grid: the fault that breaks the arm
+/// in that shape, the op stream that reaches the oracle, and what must be
+/// observed.
+struct NullAlignCase {
+    /// The injected fault.
+    fault: Fault,
+    /// The op stream replayed.
+    ops: &'static [Op],
+    /// What `drive` must do on that stream.
+    expect: Expect,
+}
+
+/// The block-creating arms of [`Op`], one axis of the grid below.
+#[derive(Clone, Copy, Debug)]
+enum Arm {
+    /// [`Op::Alloc`].
+    Alloc,
+    /// [`Op::AllocZeroed`].
+    AllocZeroed,
+    /// [`Op::Realloc`].
+    Realloc,
+}
+
+impl Arm {
+    /// Every block-creating arm (grid loop axis). Keep in sync with the
+    /// exhaustive match in `null_align_cell`: adding a block-creating arm is
+    /// a compile error there until this list and that match are extended
+    /// together.
+    const ALL: [Arm; 3] = [Arm::Alloc, Arm::AllocZeroed, Arm::Realloc];
+}
+
+/// The fault shapes, the other axis of the grid below.
+#[derive(Clone, Copy, Debug)]
+enum Shape {
+    /// The op returns null.
+    Null,
+    /// The op returns an in-arena pointer at a non-conforming offset.
+    Misaligned,
+}
+
+impl Shape {
+    /// Every fault shape (see [`Arm::ALL`] for the keep-in-sync contract).
+    const ALL: [Shape; 2] = [Shape::Null, Shape::Misaligned];
+}
+
+/// The ONE grid cell for `(arm, shape)`. The match is exhaustive over
+/// `Arm × Shape`: a fourth block-creating arm, or a third fault shape, is a
+/// compile error HERE until its cell is written — the coverage question is
+/// forced by the compiler instead of by the next review round. This is the
+/// structural fix for review run 5's P3-1 meta-pattern: three consecutive
+/// rounds each found a block-creating arm edited without matching null/align
+/// coverage, and the `alloc_zeroed` null branch this grid now covers was the
+/// one whose removal is undefined behaviour (a null dereference in
+/// `verify_zeroed_block`), not just an unpinned message.
+fn null_align_cell(arm: Arm, shape: Shape) -> NullAlignCase {
+    match (arm, shape) {
+        (Arm::Alloc, Shape::Null) => NullAlignCase {
+            // Null with no arena contact: only M1's null check can fire, and
+            // deleting it makes `fill_block(null, ..)` the first fault — the
+            // cell then fails with a crash, not a message mismatch.
+            fault: Fault::NullAlloc,
+            ops: &[Op::Alloc { size: 32, align: 8 }],
+            expect: Expect::Panics("M1: op #0 alloc(size=32, align=8) returned null"),
+        },
+        (Arm::Alloc, Shape::Misaligned) => NullAlignCase {
+            // Nothing else is live, so the overlap oracle cannot fire in this
+            // cell's place: the M1/M4 alloc align assert is the only thing
+            // that can (and with it deleted the run completes cleanly).
+            fault: Fault::MisalignedBy(1),
+            ops: &[Op::Alloc { size: 32, align: 8 }],
+            expect: Expect::Panics("M1/M4:"),
+        },
+        (Arm::AllocZeroed, Shape::Null) => NullAlignCase {
+            // The soundness-critical cell (review run 5, P3-1): a null passes
+            // the align check (0 % align == 0) and the overlap check (nothing
+            // else is live), so deleting `drive`'s alloc_zeroed null branch
+            // makes `verify_zeroed_block(null, ..)` dereference null — the
+            // cell fails with a crash, never silently.
+            fault: Fault::NullAllocZeroed,
+            ops: &[Op::AllocZeroed { size: 32, align: 8 }],
+            expect: Expect::Panics("M1: op #0 alloc_zeroed(size=32, align=8) returned null"),
+        },
+        (Arm::AllocZeroed, Shape::Misaligned) => NullAlignCase {
+            // Twin of the (Alloc, Misaligned) cell: single op, nothing else
+            // live, so only the M1/M4 alloc_zeroed align assert can fire.
+            fault: Fault::MisalignedZeroedBy(1),
+            ops: &[Op::AllocZeroed { size: 32, align: 8 }],
+            expect: Expect::Panics("M1/M4:"),
+        },
+        (Arm::Realloc, Shape::Null) => NullAlignCase {
+            // The realloc-null SKIP is this cell's behaviour under test: both
+            // null reallocs (one per live block) must be skipped with the
+            // bookkeeping left coherent — both blocks re-verified at the
+            // run-end sweep and freed exactly once at teardown. Deleting the
+            // skip dereferences the null in `verify_prefix_block` (crash).
+            fault: Fault::NullRealloc,
+            ops: &[
+                Op::Alloc { size: 64, align: 8 },
+                Op::Realloc {
+                    i: 0,
+                    new_size: 128,
+                }, // null: skipped, block 0 stays live
+                Op::Alloc { size: 32, align: 8 },
+                Op::Realloc { i: 1, new_size: 16 }, // null again, on the second block
+            ],
+            expect: Expect::Completes,
+        },
+        (Arm::Realloc, Shape::Misaligned) => NullAlignCase {
+            // Offset 9 against an align-8 block: a misaligned pointer the
+            // M1/M4 realloc align assert rejects BEFORE the overlap check and
+            // the prefix read run. With that assert deleted the realloc
+            // completes cleanly (the copy lands in bounds, the prefix is
+            // preserved), so only that assert can make this cell pass.
+            fault: Fault::ReallocAt(9),
+            ops: &[
+                Op::Alloc { size: 64, align: 8 },
+                Op::Realloc { i: 0, new_size: 64 },
+            ],
+            expect: Expect::Panics("M1/M4:"),
+        },
+    }
+}
+
+/// The exhaustive `{Alloc, AllocZeroed, Realloc} × {null, misaligned}`
+/// negative-oracle grid: every block-creating arm's null check and align
+/// assert must fire on its fault, and the realloc-null skip must hold. One
+/// run asserts all six cells and names the failing cell; each panicking
+/// cell's `Faulty` (and its arena) still drops during the unwind, so the
+/// file stays leak-free under miri's default leak check.
 #[test]
-#[should_panic(expected = "M1/M4:")]
-fn misaligned_alloc_panics() {
-    let ops = [Op::Alloc { size: 32, align: 8 }];
-    drive(
-        &faulty(4096, Fault::MisalignedBy(1)),
-        Config::default(),
-        &ops,
-    );
+fn null_and_align_oracles_fire_for_every_block_creating_arm() {
+    for arm in Arm::ALL {
+        for shape in Shape::ALL {
+            let case = null_align_cell(arm, shape);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drive(&faulty(4096, case.fault), Config::default(), case.ops);
+            }));
+            match case.expect {
+                Expect::Panics(prefix) => {
+                    let err = result.err().unwrap_or_else(|| {
+                        panic!(
+                            "grid cell {arm:?}x{shape:?}: drive COMPLETED; expected a \
+                             panic matching {prefix:?}"
+                        )
+                    });
+                    let msg = panic_message(&*err);
+                    assert!(
+                        msg.contains(prefix),
+                        "grid cell {arm:?}x{shape:?}: panic message does not name the \
+                         expected oracle\n  expected substring: {prefix:?}\n  actual: {msg}"
+                    );
+                }
+                Expect::Completes => {
+                    if let Err(err) = result {
+                        panic!(
+                            "grid cell {arm:?}x{shape:?}: drive must complete (the \
+                             null-realloc skip), but it panicked: {}",
+                            panic_message(&*err)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Extract a caught panic payload's message. Both observed shapes are
+/// covered: a plain `panic!("literal")` arrives as a `&'static str`, and
+/// `drive`'s formatted `panic!("... {x}")` arrives as a `String` (both
+/// probe-verified on rustc 1.97.0; toolchains have swapped which shape a
+/// formatted panic carries across releases, so both arms stay). The call
+/// sites pass `&*err`, NOT `&err`: `err` is a `Box<dyn Any + Send>`, and
+/// `&err` silently unsizes into a trait object whose concrete type is the
+/// BOX itself, so downcasting finds neither arm — the coercion trap this
+/// helper's first two implementations each misdiagnosed as payload
+/// re-wrapping.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
 }
 
 #[test]
@@ -395,13 +617,6 @@ fn realloc_without_copy_loses_prefix() {
         },
     ];
     drive(&faulty(4096, Fault::ReallocNoCopy), Config::default(), &ops);
-}
-
-#[test]
-#[should_panic(expected = "M1: op #0 alloc(size=32, align=8) returned null")]
-fn null_alloc_panics() {
-    let ops = [Op::Alloc { size: 32, align: 8 }];
-    drive(&faulty(4096, Fault::NullAlloc), Config::default(), &ops);
 }
 
 #[test]
@@ -460,6 +675,28 @@ fn oversized_size_is_clamped_not_rejected() {
 }
 
 #[test]
+#[should_panic(expected = "arena exhausted")]
+fn oversized_realloc_new_size_is_clamped_not_rejected() {
+    // The realloc arm's twin of `oversized_size_is_clamped_not_rejected`
+    // (review run 5, P4-3 — the one clamp direction still without a test): a
+    // hand-built `new_size: usize::MAX` must be CLAMPED into the admissible
+    // ceiling and reach the allocator (here: the fake arena, which
+    // legitimately cannot serve ~8 EiB and exhausts), never rejected by the
+    // harness with `Faulty::realloc`'s own upper-bound precondition assert —
+    // that assert is `GlobalAlloc::realloc`'s contract, and `drive`'s clamp
+    // is what upholds it. Deleting the clamp fails this test with the
+    // "GlobalAlloc precondition violated" message instead.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: usize::MAX,
+        },
+    ];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
 #[should_panic(expected = "M3: step #0 run-end sweep: live block clobbered")]
 fn clobbered_by_later_alloc_reaches_run_end_sweep() {
     // Counterfactual for `drive`'s RUN-END M3 sweep: the second alloc's
@@ -513,27 +750,6 @@ fn alloc_zeroed_fill_that_does_not_stick_is_caught_at_run_end() {
         Config::default(),
         &ops,
     );
-}
-
-#[test]
-fn null_realloc_completes_with_old_block_intact() {
-    // Counterfactual for the SOUNDNESS-CRITICAL null-realloc skip
-    // (`if new_ptr.is_null() { continue; }` in drive's Realloc arm): with
-    // the skip deleted, drive falls through to `verify_prefix_block(null,
-    // keep, ...)` and DEREFERENCES NULL. This test must complete cleanly
-    // instead: both reallocs return null, both old blocks stay live with
-    // their fills intact, and the run-end sweep plus teardown prove the
-    // skip left the bookkeeping coherent rather than skipping it.
-    let ops = [
-        Op::Alloc { size: 64, align: 8 },
-        Op::Realloc {
-            i: 0,
-            new_size: 128,
-        }, // null: skipped, block 0 stays live
-        Op::Alloc { size: 32, align: 8 },
-        Op::Realloc { i: 1, new_size: 16 }, // null again, on the second block
-    ];
-    drive(&faulty(4096, Fault::NullRealloc), Config::default(), &ops);
 }
 
 #[test]
@@ -601,4 +817,42 @@ fn clamped_up_null_alloc_gets_no_oom_note() {
     // reverting the message split fails this test.
     let ops = [Op::Alloc { size: 0, align: 8 }];
     drive(&faulty(4096, Fault::NullAlloc), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(
+    expected = "M1: op #0 alloc_zeroed(size=1 [clamped from 0 — GlobalAlloc forbids a zero-size layout], align=8) returned null"
+)]
+fn clamped_up_null_alloc_zeroed_gets_no_oom_note() {
+    // The alloc_zeroed twin of `clamped_up_null_alloc_gets_no_oom_note`
+    // (review run 5, P3-1: round 4 pinned the message split only in the
+    // alloc arm, leaving the alloc_zeroed copy unreachable by any test).
+    // Same division of labour: the pin matches the new zero-layout bracket,
+    // which the pre-split shared message lacks.
+    let ops = [Op::AllocZeroed { size: 0, align: 8 }];
+    drive(
+        &faulty(4096, Fault::NullAllocZeroed),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "[clamped from 18446744073709551615], align=8) returned null — note: the harness does not model"
+)]
+fn clamped_down_null_alloc_zeroed_names_oom_note() {
+    // The alloc_zeroed twin of `clamped_down_null_alloc_names_oom_note`:
+    // `Fault::NullAllocZeroed` returns null before touching the arena, so
+    // the huge clamped size never exhausts anything and the M1 DOWN message
+    // is what fires (18446744073709551615 = usize::MAX).
+    let ops = [Op::AllocZeroed {
+        size: usize::MAX,
+        align: 8,
+    }];
+    drive(
+        &faulty(4096, Fault::NullAllocZeroed),
+        Config::default(),
+        &ops,
+    );
 }

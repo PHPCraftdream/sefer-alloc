@@ -895,9 +895,10 @@ jobs:
     # claim is ENFORCED, not hand-asserted (review run 4, P2-1): the
     # hand-listed target set had silently dropped a newly added test file —
     # the same drift recurred across three consecutive review rounds while
-    # the job stayed green — so the job's first step mechanically diffs the
-    # targets named in the run lines below against the crate's actual
-    # tests/ directory and fails on any drift in either direction.
+    # the job stayed green — so the job's first step mechanically diffs, per miri
+    # pass, the targets named in that pass's run lines below against the
+    # crate's actual tests/ directory and fails on any drift in either
+    # direction.
     # P3-8 (review run 2,
     # 2026-09-06): `-Zmiri-ignore-leaks` is scoped to the ONE test target
     # that needs it — tests/double_free_no_op.rs's LeakyAllocator leaks by
@@ -918,11 +919,17 @@ jobs:
       # `-Zmiri-ignore-leaks`, and a hand-listed set must be re-edited every
       # time a test file is added — which is exactly how a newly added test
       # file silently fell out of this job (while it stayed green) in review
-      # run 3. Enforce the file/target agreement mechanically instead of
-      # asserting it in a comment: this step fails if the targets named in
-      # this job's own run lines and the crate's actual tests/ directory
-      # ever disagree, in either direction.
-      - name: miri target list covers every tests/*.rs
+      # run 3. Enforce the file/target agreement mechanically instead of asserting
+      # it in a comment. Review run 5, P3-2, closed the two false negatives
+      # the run-4 union check still had: the agreement is now verified PER
+      # PASS (each pass's two run lines must name exactly tests/*.rs — a
+      # file added to only one configuration fails), run-line matching is
+      # anchored at "- run:" (a commented-out step no longer donates its
+      # targets; it fails the run-line count assert instead), the job must
+      # keep exactly its 4 expected run lines, and exactly 2 MIRIFLAGS lines
+      # must enable strict provenance (the run-3 P2-1 drift: plain silently
+      # became a second strict pass).
+      - name: miri target list covers every tests/*.rs in BOTH miri passes
         run: |
           set -euo pipefail
           job=$(awk '/^  globalalloc-model-miri:/{seen=1; next} seen && /^  [^ ]/{seen=0} seen{print}' .github/workflows/ci.yml)
@@ -930,15 +937,43 @@ jobs:
             echo "could not extract the globalalloc-model-miri job block from ci.yml" >&2
             exit 1
           fi
-          listed=$(printf '%s\n' "$job" \
-            | grep 'run: cargo miri test -p globalalloc-model' \
-            | grep -o -- '--test [a-zA-Z0-9_]*' \
-            | awk '{print $2}' \
-            | sort -u)
+          # Anchored at "- run:" (review run 5, P3-2): a commented-out step
+          # must not donate its targets to the listed side — disabling a pass
+          # has to fail the count assert below instead.
+          found=$(printf '%s\n' "$job" \
+            | grep -cE '^[[:space:]]*- run: cargo miri test -p globalalloc-model' || true)
+          if [ "$found" -ne 4 ]; then
+            echo "expected exactly 4 'cargo miri test -p globalalloc-model' run lines in this job (2 passes, each = one -Zmiri-ignore-leaks step + one multi-target step), found $found" >&2
+            echo "If a step was added, removed, or commented out, restore it or reshape this check to the new step layout." >&2
+            exit 1
+          fi
           actual=$(ls crates/globalalloc-model/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//' | sort)
-          if ! diff <(printf '%s\n' "$listed") <(printf '%s\n' "$actual"); then
-            echo "LEFT: targets named by this job's run lines; RIGHT: crates/globalalloc-model/tests/*.rs on disk" >&2
-            echo "Add every new test file to BOTH target-filtered miri steps above (or remove the entry when a file is deleted)." >&2
+          # PER PASS, not per union (review run 5, P3-2): each pass's two run
+          # lines together must name exactly tests/*.rs, so a file added to
+          # only one of the two miri configurations fails. Pass 1 = run lines
+          # 1-2 (plain), pass 2 = run lines 3-4 (-Zmiri-strict-provenance).
+          # A target name may be spelled --test=name and may contain '-'.
+          pass=0
+          for range in 1,2 3,4; do
+            pass=$((pass + 1))
+            listed=$(printf '%s\n' "$job" \
+              | grep -E '^[[:space:]]*- run: cargo miri test -p globalalloc-model' \
+              | sed -n "${range}p" \
+              | grep -oE -- '--test[= ][A-Za-z0-9_-]+' \
+              | sed -E 's/^--test[= ]//' \
+              | sort -u)
+            if ! diff <(printf '%s\n' "$listed") <(printf '%s\n' "$actual"); then
+              echo "pass $pass: LEFT = targets named by this pass's two run lines; RIGHT = crates/globalalloc-model/tests/*.rs on disk" >&2
+              echo "Add every new test file to BOTH miri passes (each pass's -Zmiri-ignore-leaks step AND its multi-target step); remove entries when a file is deleted." >&2
+              exit 1
+            fi
+          done
+          # Each pass must still BE one plain and one strict pass (this job's
+          # own history: the plain multi-target step once drifted to strict,
+          # running strict twice and plain never — review run 3, P2-1).
+          strict=$(printf '%s\n' "$job" | grep -cE 'MIRIFLAG[S]:.*-Zmiri-strict-provenance' || true)
+          if [ "$strict" -ne 2 ]; then
+            echo "expected exactly 2 MIRIFLAGS lines enabling -Zmiri-strict-provenance (one per pass), found $strict" >&2
             exit 1
           fi
       - uses: dtolnay/rust-toolchain@nightly
