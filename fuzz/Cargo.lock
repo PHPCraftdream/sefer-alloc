@@ -169,6 +169,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "once-ptr-cell"
+version = "0.1.0"
+dependencies = [
+ "loom",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -205,13 +212,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
-name = "racy-ptr-cell"
-version = "0.1.0"
-dependencies = [
- "loom",
-]
-
-[[package]]
 name = "regex-automata"
 version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -245,7 +245,7 @@ name = "sefer-alloc"
 version = "0.3.0"
 dependencies = [
  "aligned-vmem",
- "racy-ptr-cell",
+ "once-ptr-cell",
  "sefer-region",
  "size-classes",
  "tagged-index-stack",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "sefer-region"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "slotmap",
 ]
@@ -316,9 +316,6 @@ dependencies = [
 [[package]]
 name = "tagged-index-stack"
 version = "0.1.0"
-dependencies = [
- "loom",
-]
 
 [[package]]
 name = "thread_local"
