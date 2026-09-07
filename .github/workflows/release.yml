@@ -429,6 +429,107 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "✓ CI workflow run for $SHA completed successfully."
 
+      - name: Guard — globalalloc-model workflow must be green for this commit
+        # Companion to the ci.yml guard above (Sol-codex review run 2,
+        # P3-2): `globalalloc-model` has its OWN workflow
+        # (.github/workflows/globalalloc-model.yml — feature matrix,
+        # i686-unknown-linux-gnu integration tests, packaged-crate +
+        # standalone-consumer, MSRV, docs.rs configuration) that the main
+        # `CI` workflow does not include, and that this file otherwise
+        # never consults. A regression visible only there — e.g. a
+        # 32-bit-incompatible literal that the i686 job catches at compile
+        # time — would previously have sailed through to `cargo publish`
+        # with every other guard green. Same design as the guard above:
+        # head_sha-scoped API poll, no long poll (hard fail with a re-run
+        # hint), dry-run untouched. Gated to the crate whose workflow it
+        # checks: publishing any other crate must not wait on it.
+        #
+        # The `head_sha` query parameter already scopes the lookup to this
+        # commit; the explicit `head_sha` re-check on the returned run is
+        # belt-and-braces so a past or future API-shape surprise cannot
+        # let a DIFFERENT commit's successful run authorize this publish.
+        if: ${{ steps.target.outputs.dry_run != 'true' && steps.target.outputs.name == 'globalalloc-model' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO='${{ github.repository }}'
+          SHA='${{ github.sha }}'
+
+          RUNS_JSON=$(gh api \
+            "repos/${REPO}/actions/workflows/globalalloc-model.yml/runs?head_sha=${SHA}&per_page=10" \
+            --jq '.workflow_runs')
+
+          RUN_COUNT=$(echo "$RUNS_JSON" | jq 'length')
+          if [[ "$RUN_COUNT" -eq 0 ]]; then
+            {
+              echo "## globalalloc-model-status guard: FAILED"
+              echo ""
+              echo "No \`globalalloc-model\` workflow run found for commit \`${SHA}\`."
+              echo "Push/land this commit on a branch \`globalalloc-model.yml\` runs on and wait for it to complete before publishing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::No globalalloc-model workflow run found for commit $SHA. Wait for it to run and go green before publishing." >&2
+            exit 1
+          fi
+
+          # Most recent run for this SHA (API returns newest first), with an
+          # explicit identity check: a successful run for a DIFFERENT SHA
+          # must never authorize this publish.
+          STATUS=$(echo "$RUNS_JSON" | jq -r '.[0].status')
+          CONCLUSION=$(echo "$RUNS_JSON" | jq -r '.[0].conclusion')
+          RUN_SHA=$(echo "$RUNS_JSON" | jq -r '.[0].head_sha')
+          RUN_URL=$(echo "$RUNS_JSON" | jq -r '.[0].html_url')
+
+          echo "globalalloc-model run for $SHA: status=$STATUS conclusion=$CONCLUSION ($RUN_URL)"
+
+          if [[ "$RUN_SHA" != "$SHA" ]]; then
+            {
+              echo "## globalalloc-model-status guard: FAILED"
+              echo ""
+              echo "The newest \`globalalloc-model\` run found belongs to \`${RUN_SHA}\`, not \`${SHA}\`."
+              echo "Run: ${RUN_URL}"
+              echo ""
+              echo "This should be unreachable (the query is scoped by head_sha) -- treat it as an API-shape regression and investigate."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::globalalloc-model workflow run for $SHA resolved to a run of a different commit ($RUN_SHA). Refusing to publish." >&2
+            exit 1
+          fi
+
+          if [[ "$STATUS" != "completed" ]]; then
+            {
+              echo "## globalalloc-model-status guard: FAILED"
+              echo ""
+              echo "\`globalalloc-model\` workflow run for \`${SHA}\` has not finished yet (status: \`${STATUS}\`)."
+              echo "Run: ${RUN_URL}"
+              echo ""
+              echo "Wait for the workflow to finish, then re-run this release job -- do not publish mid-run."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::globalalloc-model workflow run for $SHA is not completed yet (status: $STATUS). Wait for it to finish before publishing. Run: $RUN_URL" >&2
+            exit 1
+          fi
+
+          if [[ "$CONCLUSION" != "success" ]]; then
+            {
+              echo "## globalalloc-model-status guard: FAILED"
+              echo ""
+              echo "\`globalalloc-model\` workflow run for \`${SHA}\` completed with conclusion \`${CONCLUSION}\` (not \`success\`)."
+              echo "Run: ${RUN_URL}"
+              echo ""
+              echo "Fix the workflow and get it green on this commit before publishing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::globalalloc-model workflow run for $SHA concluded '$CONCLUSION', not 'success'. Fix it before publishing. Run: $RUN_URL" >&2
+            exit 1
+          fi
+
+          {
+            echo "## globalalloc-model-status guard: passed"
+            echo ""
+            echo "\`globalalloc-model\` workflow run for \`${SHA}\` completed successfully."
+            echo "Run: ${RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ globalalloc-model workflow run for $SHA completed successfully."
+
       - name: Test gate — do not publish a red tree
         # A tag must never publish an untested tree. Run the default suite and
         # the flagship `production` bundle for the target crate before the

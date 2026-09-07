@@ -35,9 +35,14 @@ pub struct Config {
     /// guarantee: the largest size any `Layout` can admit is align-dependent —
     /// `(isize::MAX / align) * align`, exactly the ceiling `drive` clamps
     /// sizes to and strictly below `isize::MAX` for any `align > 1` — so a
-    /// bound at or near this ceiling still turns every reached op into a
-    /// guaranteed M1 null report (the harness does not model OOM). Size the
-    /// arms to what the target actually supports.
+    /// bound at or near this ceiling makes LARGE requests possible, not
+    /// mandatory — every size within the arm's range stays reachable whatever
+    /// the ceiling (e.g. `small_max: isize::MAX, small_weight: 1,
+    /// large_weight: 0` still draws size 1) — and a generated request beyond
+    /// the allocator's real capacity returns null, which `drive` reports as
+    /// M1 (the harness does not model OOM): an accepted, documented outcome,
+    /// not one guaranteed for every op. Size the arms to what the target
+    /// actually supports.
     ///
     /// Degenerate value `0` is NOT a precondition violation: both front-ends
     /// clamp it identically to a small arm of exactly size 1.
@@ -51,9 +56,14 @@ pub struct Config {
     /// guarantee: the largest size any `Layout` can admit is align-dependent —
     /// `(isize::MAX / align) * align`, exactly the ceiling `drive` clamps
     /// sizes to and strictly below `isize::MAX` for any `align > 1` — so a
-    /// bound at or near this ceiling still turns every reached op into a
-    /// guaranteed M1 null report (the harness does not model OOM). Size the
-    /// arms to what the target actually supports.
+    /// bound at or near this ceiling makes LARGE requests possible, not
+    /// mandatory — every size within the arm's range stays reachable whatever
+    /// the ceiling (e.g. `small_max: isize::MAX, small_weight: 1,
+    /// large_weight: 0` still draws size 1) — and a generated request beyond
+    /// the allocator's real capacity returns null, which `drive` reports as
+    /// M1 (the harness does not model OOM): an accepted, documented outcome,
+    /// not one guaranteed for every op. Size the arms to what the target
+    /// actually supports.
     ///
     /// Degenerate value `<= small_max` is NOT a precondition violation: both
     /// front-ends clamp it identically to a large arm of exactly

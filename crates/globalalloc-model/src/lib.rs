@@ -58,11 +58,17 @@
 //! natively and under Miri; neither execution mode reliably reports it as an
 //! oracle failure.
 //!
-//! Fill bytes cycle through `1..=255`. Once more than 255 fill assignments are
-//! represented among live blocks, two can share a marker, so corruption from
-//! one such block into the other may collide with the expected value. Direct
-//! extent-overlap checks still run when each block is created. Corruption that
-//! occurs and is restored between observation points is also invisible.
+//! Each block's expected contents are a position-dependent pattern derived
+//! from a fill identifier that cycles through `1..=255` (byte at offset `o` of
+//! a block carrying identifier `f` is `f + o`, wrapping). A repeated single
+//! byte, a shifted copy, or a permuted prefix therefore no longer reads back
+//! as a whole block's expectation. Residual collisions remain: the pattern has
+//! period 256 in the offset, and once more than 255 fill assignments are
+//! represented among live blocks two can share an identifier, so corruption
+//! aligned to that period (or from one such block into the other) may still
+//! collide with the expected values. Direct extent-overlap checks still run
+//! when each block is created. Corruption that occurs and is restored between
+//! observation points is also invisible.
 //!
 //! On normal return, every surviving modeled block is deallocated. An oracle
 //! panic may intentionally leak tracked and candidate allocations: after an
@@ -150,6 +156,7 @@ mod config;
 mod double_free_ok;
 mod drive;
 mod op;
+mod peak_live_count;
 mod raw_allocator;
 #[cfg(feature = "proptest")]
 mod strategy;
@@ -161,6 +168,13 @@ pub use config::Config;
 pub use double_free_ok::DoubleFreeOk;
 pub use drive::drive;
 pub use op::Op;
+// Test-only export (established pattern, see e.g. the root crate's
+// `alloc_core` module doc): `peak_live_count` is `drive`'s own internal
+// capacity pre-pass, not stable public API. It is `pub` solely so
+// `tests/peak_live_count.rs` (a separate integration-test crate) can reach
+// and test it directly; `#[doc(hidden)]` keeps it out of the rendered docs.
+#[doc(hidden)]
+pub use peak_live_count::peak_live_count;
 pub use raw_allocator::RawAllocator;
 #[cfg(feature = "proptest")]
 #[cfg_attr(docsrs, doc(cfg(feature = "proptest")))]

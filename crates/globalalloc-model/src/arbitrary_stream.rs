@@ -1,10 +1,15 @@
 //! The `arbitrary` front-end: [`OpStream`], an [`Arbitrary`] wrapper decoding
 //! fuzzer bytes into a bounded `Vec<Op>` ready for [`crate::drive`].
 //!
-//! This is the `cargo fuzz` / libFuzzer front-end over the shared model. It
-//! bounds fuzzer-derived sizes and alignments so a single input cannot ask the
-//! OS for gigabytes (which would OOM the fuzzer, not find a bug), mirroring the
-//! historical `global_alloc_ops` target. Sizes are bounded AND weighted: a
+//! This is the `cargo fuzz` / libFuzzer front-end over the shared model.
+//! Its unconditional input bound is the op COUNT (`MAX_OPS`, below); per-op
+//! sizes and alignments are bounded by the [`Config`] handed in, so a
+//! default/small config keeps sizes modest, but the mechanism does not itself
+//! cap sizes below u32/gigabyte ranges — the config-aware constructor
+//! deliberately reaches above `u32::MAX` when configured to, and only the
+//! op-count bound is unconditional (mirroring the historical
+//! `global_alloc_ops` target, which passes an explicit config for its wider
+//! reach). Sizes are bounded AND weighted: a
 //! uniform `1..=2 MiB` draw spends the fuzz budget on multi-megabyte byte fills
 //! instead of allocator state space, so the size distribution is small-heavy by
 //! default (9:1), mirroring the proptest front-end.

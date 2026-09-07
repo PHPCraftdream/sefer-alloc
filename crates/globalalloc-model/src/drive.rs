@@ -6,10 +6,12 @@ use core::alloc::Layout;
 
 use crate::config::Config;
 use crate::op::Op;
+use crate::peak_live_count::peak_live_count;
 use crate::raw_allocator::RawAllocator;
 
 /// A live allocation in the reference model: its pointer, size, align, and the
-/// fill byte written across the whole block (so M3 contamination is detectable).
+/// fill identifier whose [`pattern_byte`] pattern covers the whole block (so
+/// M3 contamination is detectable).
 ///
 /// Deliberately private: publishing a struct carrying an owned allocation
 /// handle (let alone a `Send` impl) promises more than the model provides —
@@ -23,8 +25,13 @@ struct Live {
     size: usize,
     /// The allocation's alignment.
     align: usize,
-    /// The fill byte written over the whole block.
+    /// The fill identifier whose [`pattern_byte`] pattern covers the whole block.
     fill: u8,
+    /// The op index whose fill the block carries: the op that allocated it,
+    /// or the realloc that re-filled it. Reported by the run-end sweep and
+    /// teardown messages, where a position in the surviving vector would
+    /// shift with `swap_remove` and identify nothing.
+    fill_op: usize,
 }
 
 /// Whether `[a, a+asize)` and `[b, b+bsize)` overlap. Touching endpoints are
@@ -35,12 +42,30 @@ fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
     !(a.saturating_add(asize) <= b || b.saturating_add(bsize) <= a)
 }
 
-/// The next fill byte: always in `1..=255` (0 is reserved so a fill can never
+/// The next fill identifier: always in `1..=255` (0 is reserved so the
+/// identifier — and with it the byte at offset 0 of every block — can never
 /// be confused with zeroed memory), cycling.
 fn next_fill(cycle: &mut u8) -> u8 {
     let current = *cycle;
     *cycle = cycle.wrapping_add(1).max(1);
     current
+}
+
+/// The per-byte expected value for a block carrying fill identifier `fill`:
+/// `fill.wrapping_add(offset as u8)` — position-dependent, so a wrong copy
+/// algorithm can no longer reproduce a whole block by repeating one byte
+/// (an adversarial `realloc` that fills the new range with `old[0]`, or that
+/// shifts or permutes the copied prefix, now reads back wrong at almost every
+/// offset). The value is computed on the fly from `(fill, offset)` alone; no
+/// second copy of a block's expected contents is stored.
+///
+/// Residual limitation, stated honestly: the pattern has period 256 in the
+/// offset (`offset as u8` truncates), so a corruption that shifts or permutes
+/// bytes by an EXACT multiple of 256 positions can still collide with the
+/// expected values, and marker reuse after 255 fill assignments (see the
+/// crate-level limits section) still applies — the scheme is not airtight.
+fn pattern_byte(fill: u8, offset: usize) -> u8 {
+    fill.wrapping_add(offset as u8)
 }
 
 /// Build the `Layout` for an op's size/align pair, naming the op index if the
@@ -94,31 +119,44 @@ fn assert_no_overlap(live: &[Live], skip: Option<usize>, ptr: *mut u8, size: usi
     }
 }
 
-/// Write `byte` across the whole block.
+/// Write the [`pattern_byte`] pattern for `fill` across the whole block.
+///
+/// This used to be one `write_bytes` call over a uniform byte; it is now a
+/// per-byte pointer-write loop because the value varies by offset. That is a
+/// diagnostics-for-cost tradeoff (stronger copy-algorithm oracles for a
+/// slower fill) whose wall-clock cost has NOT been measured — no performance
+/// claim is made here.
 ///
 /// # Safety
 /// `ptr` must be valid for writes of `size` bytes.
-unsafe fn fill_block(ptr: *mut u8, size: usize, byte: u8) {
-    // SAFETY: caller guarantees `ptr` is valid for writes of `size` bytes.
-    unsafe { core::ptr::write_bytes(ptr, byte, size) }
+unsafe fn fill_block(ptr: *mut u8, size: usize, fill: u8) {
+    for offset in 0..size {
+        // SAFETY: caller guarantees `ptr` is valid for writes of `size`
+        // bytes; `offset < size` keeps every write in range.
+        unsafe { ptr.add(offset).write(pattern_byte(fill, offset)) };
+    }
 }
 
-/// Read the fill back, byte by byte, naming the oracle/op/offset on mismatch.
+/// Read the block's [`pattern_byte`] fill back, byte by byte, naming the
+/// oracle/op/offset on mismatch. The expected value varies by offset (it is
+/// `pattern_byte(fill, offset)`), so the message names the offset-derived
+/// expectation and the fill identifier it derives from.
 ///
 /// # Safety
 /// `ptr` must remain valid for reads of `size` bytes, and every byte in that
 /// range must be initialized. The fill may have happened earlier: callers
 /// rely on the [`RawAllocator`] contract keeping a live block valid and on
 /// [`fill_block`] having initialized its whole modeled extent.
-unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: usize, what: &str) {
+unsafe fn verify_block(ptr: *mut u8, size: usize, fill: u8, oracle: &str, step: usize, what: &str) {
     // SAFETY: caller guarantees `ptr` is valid for reads of `size` fully
     // initialized bytes in one live allocation.
     let block = unsafe { core::slice::from_raw_parts(ptr, size) };
-    if let Some(off) = block.iter().position(|&read| read != byte) {
-        panic!(
-            "{oracle}: step #{step} {what}: {ptr:p} (size {size}): byte {off} read {:#04x}, \
-             expected {byte:#04x}",
-            block[off]
+    for (off, &read) in block.iter().enumerate() {
+        let expected = pattern_byte(fill, off);
+        assert!(
+            read == expected,
+            "{oracle}: step #{step} {what}: {ptr:p} (size {size}): byte {off} read \
+             {read:#04x}, expected {expected:#04x} (pattern fill {fill:#04x} + offset {off})"
         );
     }
 }
@@ -136,7 +174,7 @@ unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: 
 /// are zero is the oracle checked here; initializedness is the obligation.
 /// An allocator that hands back genuinely uninitialized memory violates the
 /// obligation: the read is UB both natively and under Miri; a diagnostic is
-/// not guaranteed (see the crate-level Limitations). What the read
+/// not guaranteed (see the crate-level `Safety and oracle limits` section). What the read
 /// is FOR is the zero oracle: a broken `alloc_zeroed` that hands back
 /// bytes which are not 0 is reported here, never tolerated.
 ///
@@ -157,22 +195,25 @@ unsafe fn verify_zeroed_block(ptr: *mut u8, size: usize, op_idx: usize) {
     }
 }
 
-/// Check the preserved `min(old, new)` realloc prefix byte by byte.
+/// Check the preserved `min(old, new)` realloc prefix byte by byte against
+/// the old block's [`pattern_byte`] pattern. The expected value varies by
+/// offset; the message names the offset-derived expectation.
 ///
 /// Raw reads (not a slice): same rationale as [`verify_zeroed_block`] —
 /// the message names the exact lost byte, and the reads' definedness rests
 /// on the `RawAllocator` contract's initialization obligation for `realloc`'s
-/// first `min(old, new)` bytes (see the crate-level Limitations), not on the
-/// read form.
+/// first `min(old, new)` bytes (see the crate-level limits section), not on
+/// the read form.
 ///
 /// # Safety
 /// `ptr` must be valid for reads of `len` fully initialized bytes. A non-null
 /// realloc result's preserved prefix has that initializedness guarantee under
-/// [`RawAllocator`]; equality with `expected` is the oracle checked here.
+/// [`RawAllocator`]; equality with the offset-derived pattern is the oracle
+/// checked here.
 unsafe fn verify_prefix_block(
     ptr: *mut u8,
     len: usize,
-    expected: u8,
+    fill: u8,
     op_idx: usize,
     old_size: usize,
     new_size: usize,
@@ -181,10 +222,12 @@ unsafe fn verify_prefix_block(
         // SAFETY: caller guarantees `ptr` is valid for reads of `len` fully
         // initialized bytes.
         let read = unsafe { ptr.add(b).read() };
+        let expected = pattern_byte(fill, b);
         assert!(
             read == expected,
             "realloc: op #{op_idx}: {ptr:p} lost prefix byte {b} (preserved {len} of old \
-             {old_size} -> new {new_size}): read {read:#04x}, expected {expected:#04x}"
+             {old_size} -> new {new_size}): read {read:#04x}, expected {expected:#04x} \
+             (pattern fill {fill:#04x} + offset {b})"
         );
     }
 }
@@ -236,18 +279,24 @@ unsafe fn verify_prefix_block(
 /// - a non-zero byte from `alloc_zeroed`,
 /// - a lost realloc prefix byte.
 ///
-/// Every message names the op index and its operands. Also panics when an op
+/// Every message names the op being applied and its operands. During the live
+/// replay that is the op's index in `ops`; the run-end sweep and the teardown
+/// walk instead name the index of the op whose fill the surviving block
+/// carries (the op that allocated it or last realloc'd it) — after
+/// intervening deallocations that is deliberately NOT the block's position in
+/// the surviving vector, which `swap_remove` shifts and which identifies
+/// nothing. Also panics when an op
 /// carries an align `Layout` can never admit (zero, non-power-of-two, or one
 /// whose round-up overflows `isize`): unlike sizes, an align cannot be
 /// clamped into range.
 pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
-    // Every entry in `live` traces to exactly one `Op::Alloc`/`Op::AllocZeroed`
-    // in `ops` that hasn't since been freed, so `live.len() <= ops.len()`
-    // always holds -- `ops.len()` is therefore an exact, provably-sufficient
-    // upper bound, not an estimate. Pre-sizing to it makes `live` grow-once
-    // (or never grow at all) for the whole call, rather than reallocating
-    // repeatedly as the op stream is replayed.
-    let mut live: Vec<Live> = Vec::with_capacity(ops.len());
+    // `live` never holds more than the peak number of simultaneously-live
+    // blocks the stream can reach: every entry traces to exactly one
+    // `Op::Alloc`/`Op::AllocZeroed` that hasn't since been freed. Reserving
+    // that peak (see [`peak_live_count`]) rather than the whole history
+    // length makes `live` grow-once (or never grow at all) for the whole
+    // call, without paying for ops that only ever freed.
+    let mut live: Vec<Live> = Vec::with_capacity(peak_live_count(ops));
     let mut cycle: u8 = 1;
 
     for (op_idx, op) in ops.iter().enumerate() {
@@ -275,9 +324,13 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     if size > original_size {
                         // Clamped UP from 0: `GlobalAlloc` forbids a
                         // zero-size layout, so the request that reached the
-                        // allocator was the minimal 1-byte one — a null here
-                        // is a genuine allocator defect, not a harness
-                        // artifact, so NO OOM note (review run 4, P3-1).
+                        // allocator was the minimal 1-byte one. A null here
+                        // is NOT proof of a `GlobalAlloc` violation — the
+                        // trait permits null for any reason — but this
+                        // harness's deliberately strict POLICY is that any
+                        // null from `alloc` fails the run, so the message
+                        // carries NO OOM note (review run 4, P3-1; wording
+                        // Sol-codex run 2, P4-5).
                         panic!(
                             "M1: op #{op_idx} alloc(size={size} [clamped from {original_size} — \
                              GlobalAlloc forbids a zero-size layout], align={align}) returned null"
@@ -317,6 +370,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     size,
                     align,
                     fill,
+                    fill_op: op_idx,
                 });
             }
             Op::AllocZeroed { size, align } => {
@@ -377,6 +431,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     size,
                     align,
                     fill,
+                    fill_op: op_idx,
                 });
             }
             Op::Dealloc(i) => {
@@ -480,7 +535,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     // pointer must panic here, not be double-freed at teardown).
                     assert_no_overlap(&live, Some(i), new_ptr, new_size, op_idx);
                     let keep = l.size.min(new_size);
-                    // The preserved prefix must still hold the old fill byte.
+                    // The preserved prefix must still hold the old fill's position-dependent pattern.
                     // SAFETY: `new_ptr` is valid for `new_size >= keep` bytes.
                     unsafe { verify_prefix_block(new_ptr, keep, l.fill, op_idx, l.size, new_size) };
                     // Re-establish a fresh fill across the whole new extent so
@@ -497,6 +552,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                         size: new_size,
                         align: l.align,
                         fill,
+                        fill_op: op_idx,
                     };
                 }
             }
@@ -505,7 +561,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
 
     // M3 at run end: every survivor still holds its own fill (no block was
     // silently clobbered by another live allocation).
-    for (block_idx, l) in live.iter().enumerate() {
+    for l in live.iter() {
         // SAFETY: `l.ptr` is live and valid for `l.size` bytes.
         unsafe {
             verify_block(
@@ -513,7 +569,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 l.size,
                 l.fill,
                 "M3",
-                block_idx,
+                l.fill_op,
                 "run-end sweep: live block clobbered",
             )
         };
@@ -521,7 +577,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
 
     // Free all survivors (the model drops right after — M2: no double-free,
     // no UAF in a teardown walk).
-    for (block_idx, l) in live.iter().enumerate() {
+    for l in live.iter() {
         // Each survivor is checked immediately before its own free: an
         // earlier teardown dealloc may have corrupted a later survivor after
         // the run-end sweep already passed.
@@ -533,7 +589,7 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 l.size,
                 l.fill,
                 "M3",
-                block_idx,
+                l.fill_op,
                 "teardown: live block clobbered before dealloc",
             )
         };

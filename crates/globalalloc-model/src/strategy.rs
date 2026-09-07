@@ -25,26 +25,30 @@ fn size_strategy(config: Config) -> BoxedStrategy<usize> {
     }
 }
 
-/// A power-of-two alignment generator up to `config.max_align`.
+/// A power-of-two alignment generator up to `config.max_align`: the EXPONENT
+/// is generated from the plain integer range `0..=max_align.trailing_zeros()`
+/// and mapped to `1usize << exponent` — no `Vec` of candidates is
+/// materialized (the previous implementation built one per call and handed
+/// it to `proptest::sample::select`, twice per factory).
+///
+/// No shift can overflow: `op_strategy` calls `Config::validate` BEFORE any
+/// strategy is built, and `validate` rejects a `max_align` that is zero, not
+/// a power of two, or greater than `isize::MAX` — so the largest admissible
+/// `max_align` is the greatest power of two `<= isize::MAX`, i.e.
+/// `1 << (usize::BITS - 2)`, whose `trailing_zeros()` is `usize::BITS - 2`,
+/// strictly below `usize::BITS` on every pointer width. (Same reasoning as
+/// `bound_align` in the arbitrary front-end's exponent cap, one front-end
+/// over: `min(2^21, max_align)` there, plain `max_align` here.)
+///
+/// Values and shrink direction are unchanged: the exponent range yields
+/// exactly the powers of two `1..=max_align`, and proptest's range strategies
+/// shrink toward their start, so shrinking drives the exponent to 0 and the
+/// alignment to 1 — the same smallest-first direction
+/// `proptest::sample::select` had over the ascending candidate list.
 fn align_strategy(config: Config) -> impl Strategy<Value = usize> {
     debug_assert!(config.max_align.is_power_of_two());
-    let mut aligns: Vec<usize> = Vec::new();
-    let mut a = 1usize;
-    // `max_align == 0` is REJECTED, not handled: the loop yields an empty
-    // vec and `proptest::sample::select` panics on it at construction
-    // ("Cannot select from empty collection") — in release too, where the
-    // `debug_assert!` above is compiled out. `Config::validate` (called by
-    // `op_strategy` before any generation) rejects the same input with a
-    // message naming the field. A `max_align >= 1<<63` IS handled: the
-    // `a != 0` guard stops the loop before a wrapped shift yields a
-    // duplicate/zero entry (64 entries at exactly 1<<63; `validate` caps
-    // `max_align` at `isize::MAX`, so the shift at 2^63 is unreachable
-    // through the front-end).
-    while a <= config.max_align && a != 0 {
-        aligns.push(a);
-        a <<= 1;
-    }
-    proptest::sample::select(aligns)
+    let max_exp = config.max_align.trailing_zeros();
+    (0..=max_exp).prop_map(move |exponent| 1usize << exponent)
 }
 
 /// A proptest [`Strategy`] yielding a `Vec<Op>` whose length is drawn from
@@ -57,7 +61,9 @@ fn align_strategy(config: Config) -> impl Strategy<Value = usize> {
 /// # Panics
 ///
 /// Panics before generating anything if `config` violates a generator
-/// precondition (see [`Config::validate`]).
+/// precondition (see [`Config::validate`]), or if `len_range` is empty
+/// (e.g. `4..4`): `proptest::collection::vec` rejects an empty length
+/// range outright.
 pub fn op_strategy(
     config: Config,
     len_range: core::ops::Range<usize>,

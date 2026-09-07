@@ -162,8 +162,9 @@ enum Fault {
     ShortBlock,
     /// `alloc_zeroed` returns `base + off` (inside block 0's extent). Not
     /// an isolation argument: if the overlap check were deleted, the ZERO
-    /// check would fire immediately — `drive` filled block 0 with 0x01 at
-    /// op 0, so the overlapping block's first byte reads 0x01, not 0, and
+    /// check would fire immediately — `drive` filled block 0 (fill 1) at
+    /// op 0, so the overlapping block's first byte reads
+    /// `pattern_byte(1, 16)` = 0x11, not 0, and
     /// the panic message becomes `alloc_zeroed:` instead of `M3: op #`.
     /// That message change is exactly what the `#[should_panic]` pin needs:
     /// the test still fails without the overlap assert, just via the other
@@ -187,6 +188,21 @@ enum Fault {
     /// `realloc` hands out a fresh honest block WITHOUT copying (loses the
     /// prefix).
     ReallocNoCopy,
+    /// `realloc` hands out a fresh honest block but fills the ENTIRE new range
+    /// with a copy of the old block's byte 0, instead of copying the prefix —
+    /// the review-run-2 P3-1 "repeat first byte" allocator. Under the old
+    /// uniform fill this reproduced every expected byte and was invisible; under
+    /// the position-dependent pattern it mismatches at every offset except 0.
+    ReallocRepeatFirstByte,
+    /// `realloc` copies `old[1..keep]` to `new[0..keep-1]` and duplicates
+    /// `old[keep-1]` into `new[keep-1]` — the prefix copied SHIFTED LEFT by one
+    /// with the tail patched, so every read stays inside initialized memory. A
+    /// uniform block is invariant under this fault; the pattern is not.
+    ReallocShiftLeft,
+    /// `realloc` copies the old prefix REVERSED (`new[i] = old[keep-1-i]`) — a
+    /// permutation rather than a shift. A uniform block is invariant under any
+    /// permutation; the pattern is not.
+    ReallocPermute,
     /// Every `alloc`/`alloc_zeroed` call after the first behaves honestly for ITS OWN
     /// block, but silently scribbles the FIRST block the arena ever handed
     /// out with a foreign byte (0xCC). The returned pointer is honest and
@@ -226,6 +242,18 @@ struct Faulty {
 }
 
 impl Faulty {
+    /// Read one arena byte back, for test-side verification of what `drive`
+    /// actually left in the fake's memory after a clean run.
+    fn arena_byte(&self, off: usize) -> u8 {
+        assert!(
+            off < self.arena.cap,
+            "arena read [{off}] exceeds cap {}",
+            self.arena.cap
+        );
+        // SAFETY: `off` is bounds-checked against the arena allocation.
+        unsafe { self.arena.base.add(off).read() }
+    }
+
     /// Shared bookkeeping for the honest hand-out paths of `alloc` and
     /// `alloc_zeroed`: remember the first handed-out block, and — for the
     /// three corruption faults — silently corrupt it on every LATER hand-out.
@@ -368,6 +396,41 @@ unsafe impl RawAllocator for Faulty {
                 let p = self.arena.bump_aligned(new_size, old_layout.align());
                 self.arena.at_len(p, new_size)
             }
+            Fault::ReallocRepeatFirstByte => {
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
+                // SAFETY: `ptr` is valid for one initialized read (drive filled the
+                // block just before the realloc); `dst` for `new_size` writes inside
+                // the arena.
+                unsafe {
+                    let first = ptr.read();
+                    ptr::write_bytes(dst, first, new_size);
+                }
+                dst
+            }
+            Fault::ReallocShiftLeft => {
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
+                // SAFETY: `ptr..ptr+keep` are initialized reads (drive's fill); every
+                // write lands in `dst..dst+keep` inside the arena. `keep >= 1`
+                // (`drive` clamps both sizes to >= 1), so `keep - 1` cannot underflow.
+                unsafe {
+                    ptr::copy(ptr.add(1), dst, keep - 1);
+                    dst.add(keep - 1).write(ptr.add(keep - 1).read());
+                }
+                dst
+            }
+            Fault::ReallocPermute => {
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
+                // SAFETY: same read/write extent argument as `ReallocShiftLeft`.
+                unsafe {
+                    for b in 0..keep {
+                        dst.add(b).write(ptr.add(keep - 1 - b).read());
+                    }
+                }
+                dst
+            }
             Fault::NullRealloc => ptr::null_mut(),
             _ => {
                 // Honest: a fresh aligned block with the prefix copied.
@@ -388,6 +451,15 @@ fn faulty(cap: usize, fault: Fault) -> Faulty {
         fault,
         first_block: Cell::new(None),
     }
+}
+
+/// The test-side restatement of `drive`'s position-dependent expectation
+/// (`drive::pattern_byte` is private). Deliberately duplicated rather than
+/// exposed: an independent copy is the stronger oracle — if the crate's
+/// formula changes shape, every exact byte pin below fails and forces a
+/// conscious re-derivation instead of silently tracking the new scheme.
+fn pattern_byte(fill: u8, offset: usize) -> u8 {
+    fill.wrapping_add(offset as u8)
 }
 
 #[test]
@@ -707,6 +779,172 @@ fn realloc_without_copy_loses_prefix() {
 }
 
 #[test]
+#[should_panic(
+    expected = "lost prefix byte 1 (preserved 64 of old 64 -> new 128): read 0x01, \
+                expected 0x02 (pattern fill 0x01 + offset 1)"
+)]
+fn realloc_repeat_first_byte_is_caught_by_pattern() {
+    // The review-run-2 P3-1 counterexample: the new range is filled with
+    // old[0] instead of copying. Under the old uniform fill every checked
+    // byte read back the expected constant and this allocator PASSED; the
+    // pattern check fires at byte 1 (read 0x01 = old[0], expected
+    // 0x02 = pattern_byte(1, 1)).
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: 128,
+        },
+    ];
+    drive(
+        &faulty(4096, Fault::ReallocRepeatFirstByte),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0x02, \
+                expected 0x01 (pattern fill 0x01 + offset 0)"
+)]
+fn realloc_shifted_copy_is_caught_by_pattern() {
+    // The prefix lands shifted left by one (tail patched so no read leaves
+    // the initialized range). A uniform block is invariant under this fault
+    // — under the old fill every byte still read back the one expected
+    // constant — so only the position-dependent pattern sees it: byte 0
+    // reads 0x02 (= old[1]) where pattern_byte(1, 0) = 0x01 is expected.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: 128,
+        },
+    ];
+    drive(
+        &faulty(4096, Fault::ReallocShiftLeft),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0x40, \
+                expected 0x01 (pattern fill 0x01 + offset 0)"
+)]
+fn realloc_permuted_copy_is_caught_by_pattern() {
+    // The prefix is copied REVERSED — a permutation. Any permutation of a
+    // uniform block is indistinguishable from the original, so the old fill
+    // could not see this fault; the pattern fires at byte 0 (read
+    // 0x40 = pattern_byte(1, 63) = the reversed-in old[63], expected 0x01).
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: 128,
+        },
+    ];
+    drive(
+        &faulty(4096, Fault::ReallocPermute),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+fn pattern_fill_passes_honest_grow_realloc() {
+    // Positive control for the pattern oracles: an honest grow realloc must
+    // complete, and the fake's memory must afterwards hold the NEW fill
+    // identifier's pattern across the whole grown extent (drive re-fills it
+    // after the prefix check). Block 0 got fill 1; the realloc re-fill got
+    // fill 2. The bump arena never frees, so the grown block lands at arena
+    // offset 64 (right after the abandoned 64-byte old block, whose bytes
+    // still hold fill 1's pattern).
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: 128,
+        },
+    ];
+    let alloc = faulty(4096, Fault::Honest);
+    drive(&alloc, Config::default(), &ops);
+    for off in 0..128 {
+        assert_eq!(
+            alloc.arena_byte(64 + off),
+            pattern_byte(2, off),
+            "grown extent byte {off}"
+        );
+    }
+    for off in 0..64 {
+        assert_eq!(
+            alloc.arena_byte(off),
+            pattern_byte(1, off),
+            "abandoned old block byte {off}"
+        );
+    }
+}
+
+#[test]
+fn pattern_fill_passes_honest_shrink_realloc() {
+    // The shrink twin: after an honest shrink to 32 bytes, the fresh block
+    // (at arena offset 64, the bump arena never frees) holds fill 2's
+    // pattern over its surviving 32 bytes; the abandoned old block (offsets
+    // 0..64) still holds the fill-1 pattern, which nothing re-verifies and
+    // no oracle may false-positive on.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc { i: 0, new_size: 32 },
+    ];
+    let alloc = faulty(4096, Fault::Honest);
+    drive(&alloc, Config::default(), &ops);
+    for off in 0..32 {
+        assert_eq!(
+            alloc.arena_byte(64 + off),
+            pattern_byte(2, off),
+            "shrunk extent byte {off}"
+        );
+    }
+    for off in 0..64 {
+        assert_eq!(
+            alloc.arena_byte(off),
+            pattern_byte(1, off),
+            "abandoned old block byte {off}"
+        );
+    }
+}
+
+#[test]
+fn pattern_fill_passes_in_place_realloc() {
+    // The in-place shape from `in_place_realloc_inside_own_old_block_passes`
+    // (new extent = old extent shifted 8 bytes right, same size) under the
+    // pattern: must complete, the new extent must hold fill 2's pattern, and
+    // the 8 leading bytes of the old extent (outside the new one) must be
+    // untouched fill-1 pattern.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc { i: 0, new_size: 64 },
+    ];
+    let alloc = faulty(4096, Fault::ReallocAt(8));
+    drive(&alloc, Config::default(), &ops);
+    for b in 0..64 {
+        assert_eq!(
+            alloc.arena_byte(8 + b),
+            pattern_byte(2, b),
+            "in-place extent byte {b}"
+        );
+    }
+    for b in 0..8 {
+        assert_eq!(
+            alloc.arena_byte(b),
+            pattern_byte(1, b),
+            "old extent prefix byte {b}"
+        );
+    }
+}
+
+#[test]
 fn honest_arena_passes_drive() {
     // Proves the fake infrastructure itself is oracle-clean: a mixed stream
     // (alloc, alloc_zeroed, dealloc, realloc grow + shrink, double_free OFF)
@@ -955,8 +1193,11 @@ fn clamped_down_null_alloc_names_oom_note() {
 )]
 fn clamped_up_null_alloc_gets_no_oom_note() {
     // Pins the clamp-UP null message (review run 4, P3-1): a null for a
-    // size clamped UP from 0 is a genuine allocator defect — a 1-byte
-    // allocation failed — so the message must carry the zero-layout
+    // size clamped UP from 0 means a 1-byte allocation failed. That is not
+    // proof of a `GlobalAlloc` violation — the trait permits null for any
+    // reason — but this harness's deliberately strict POLICY is that any
+    // null from `alloc` fails the run, so the message must carry the
+    // zero-layout
     // bracket and NO "harness does not model OOM" note (the pre-fix shared
     // message blamed the allocator for the harness's own rewrite). The pin
     // matches the new bracket text, which the old message lacks, so

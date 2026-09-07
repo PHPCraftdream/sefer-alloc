@@ -54,8 +54,10 @@ fn all_zero_weights_panics() {
 
 // `usize::MAX`, the natural spelling of "no limit", is a
 // precondition violation for the size bounds exactly as it already was for
-// `max_align` — a bound that large only generates guaranteed M1 null reports
-// (the harness does not model OOM).
+// `max_align` — a bound that large does not force huge draws (sizes within
+// the arms stay reachable); it only makes large requests possible, whose
+// null refusal beyond the allocator's real capacity is the harness's
+// accepted, documented M1 outcome (the harness does not model OOM).
 
 #[test]
 #[should_panic(expected = "Config::large_max must be <= isize::MAX")]
