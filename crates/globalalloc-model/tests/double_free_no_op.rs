@@ -4,7 +4,7 @@
 //! Uses a trivial leak-everything allocator instead of `System`: `dealloc` is
 //! a complete no-op regardless of how many times (or with what pointer) it is
 //! called, which trivially satisfies the M2 contract by construction — the
-//! same category the crate's own doc names as a valid `double_free: true`
+//! same category the crate's own doc names as a valid `double_free`
 //! consumer ("an allocator whose documented contract is that this is a
 //! no-op").
 //!

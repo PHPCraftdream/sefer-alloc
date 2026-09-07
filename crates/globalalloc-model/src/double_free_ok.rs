@@ -14,9 +14,11 @@
 pub struct DoubleFreeOk(());
 
 // No `Default` impl on purpose: a safe default constructor would
-// reintroduce the exact hole this type closes.
-#[allow(clippy::new_without_default)]
+// reintroduce the exact hole this type closes. (No `#[allow(clippy::
+// new_without_default)]` needed: that lint skips `unsafe fn new` already.)
 impl DoubleFreeOk {
+    /// Construct the token.
+    ///
     /// # Safety
     /// The allocator subsequently passed to [`drive`](crate::drive) must
     /// document that a second `dealloc` of an already-freed pointer is a

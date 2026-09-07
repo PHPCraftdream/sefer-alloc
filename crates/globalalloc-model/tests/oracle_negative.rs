@@ -917,9 +917,10 @@ fn clamped_down_null_alloc_zeroed_names_oom_note() {
 // its own deletion risk (the same per-arm asymmetry runs 5 and 6 each found
 // once). Every test below pins the named rejection and is counterfactual:
 // deleting the arm's `validate_align(align, op_idx)` call changes its panic
-// into the internal-arithmetic failure named in its comment (all four
-// verified during development — see the drive.rs probe notes in the commit
-// history of this fix).
+// into the internal-arithmetic failure named in its own comment (each
+// failure mode is re-derivable directly from `validate_align`'s and the
+// surrounding clamp's arithmetic in `drive.rs`; review run 8 independently
+// re-derived and confirmed all four).
 
 #[test]
 #[should_panic(expected = "op #0: align 0 is not a usable Layout alignment")]

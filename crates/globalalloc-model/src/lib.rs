@@ -101,12 +101,15 @@
 //! });
 //! ```
 
-// This crate's one job includes calling the allocator-under-test's raw-pointer
-// API and dereferencing the pointers it hands back — inherently `unsafe`. That
-// is the single reason this crate holds `unsafe`: the `RawAllocator` trait is
-// `unsafe` (its impls must return valid pointers for the requested layout), and
-// the oracle loop writes/reads through a pointer the allocator just returned for
-// the size it was asked for. Every such site carries a `// SAFETY:` note.
+// This crate holds `unsafe` for two reasons. (1) Its one job includes calling
+// the allocator-under-test's raw-pointer API and dereferencing the pointers it
+// hands back — inherently `unsafe`: the `RawAllocator` trait is `unsafe` (its
+// impls must return valid pointers for the requested layout), and the oracle
+// loop writes/reads through a pointer the allocator just returned for the size
+// it was asked for. Every such site carries a `// SAFETY:` note. (2)
+// `DoubleFreeOk::new` is an unforgeable consent token for the M2 double-free
+// oracle — an `unsafe fn` declaration with no raw pointer involved, carrying
+// its own `# Safety` doc rather than a `// SAFETY:` note.
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
