@@ -27,22 +27,34 @@ use core::alloc::{GlobalAlloc, Layout};
 ///   return either null (allocation failed) or a pointer valid for reads
 ///   and writes of `layout.size()` bytes, inside one live allocation that
 ///   [`dealloc`](RawAllocator::dealloc) can reclaim later with that same
-///   `layout`.
+///   `layout`. For [`alloc_zeroed`](RawAllocator::alloc_zeroed), those
+///   `layout.size()` bytes must additionally be **initialized** — whether
+///   they are ZERO is the Zeroing oracle below, which `drive` checks and
+///   which may legitimately fail; whether they are initialized at all is a
+///   safety obligation `drive`'s byte reads rest on.
 /// - [`realloc`](RawAllocator::realloc) either returns null (leaving the old
 ///   block live and valid) or a pointer valid for reads and writes of
 ///   `new_size` bytes, inside one live allocation reclaimable by `dealloc`
 ///   with the old layout adjusted to `new_size`, consuming the old pointer
-///   on a non-null return.
+///   on a non-null return. Its first `min(old_layout.size(), new_size)`
+///   bytes must also be **initialized** — whether they EQUAL the old
+///   block's contents is the Prefix-preservation oracle below;
+///   initializedness is the obligation.
 ///
 /// ## Guarantees the implementor may rely on from callers
 ///
 /// - [`dealloc`](RawAllocator::dealloc) is called only with a pointer previously
 ///   returned by a matching `alloc`/`alloc_zeroed`/`realloc` on `self` with the
-///   same `layout`. When
-///   [`Config::double_free`](crate::Config::double_free)
-///   is set the harness deliberately
-///   frees the SAME pointer a second time (the M2 no-op oracle) — enable it only
-///   for an allocator whose contract makes that a safe no-op.
+///   same `layout`. The one deliberate exception — the M2 oracle's second
+///   `dealloc` of an already-freed pointer, enabled by
+///   [`Config::double_free`](crate::Config::double_free) holding a
+///   [`DoubleFreeOk`](crate::DoubleFreeOk) token — is a direct-implementor-only
+///   opt-in: the token's `unsafe` constructor contract requires the allocator's
+///   own documentation to declare a redundant `dealloc` a safe no-op. The
+///   blanket [`GlobalAlloc`] impl NEVER permits the relaxation — no value of
+///   `Option<DoubleFreeOk>` can be produced in safe code for `System` or any
+///   blanket-reached type — so a consumer driving a `GlobalAlloc` through it
+///   can never observe a double-free.
 /// - [`realloc`](RawAllocator::realloc) is called only with a pointer previously
 ///   returned by a matching `alloc`/`alloc_zeroed`/`realloc` on `self` with
 ///   `old_layout`, and not yet freed or consumed.
@@ -77,7 +89,10 @@ pub unsafe trait RawAllocator {
     /// Allocate zeroed `layout.size()` bytes at `layout.align()`; null on failure.
     ///
     /// # Safety
-    /// See the [trait-level contract](RawAllocator#safety).
+    /// See the [trait-level contract](RawAllocator#safety). A non-null return's
+    /// `layout.size()` bytes must be *initialized*: whether they are zero is the
+    /// oracle [`drive`](crate::drive) checks; initializedness is the obligation
+    /// its byte reads rest on.
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8;
 
     /// Free the block `ptr` that was allocated with `layout`.
@@ -96,6 +111,9 @@ pub unsafe trait RawAllocator {
     /// `alloc`/`alloc_zeroed`/`realloc` on `self` with `old_layout`, and not
     /// yet freed or consumed (see the
     /// [trait-level contract](RawAllocator#safety), caller obligations).
+    /// A non-null return must leave the first
+    /// `min(old_layout.size(), new_size)` bytes *initialized*: whether they equal
+    /// the old block's contents is the oracle; initializedness is the obligation.
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8;
 }
 
@@ -103,12 +121,21 @@ pub unsafe trait RawAllocator {
 ///
 /// `GlobalAlloc`'s contract is STRICTLY STRONGER than `RawAllocator`'s — a
 /// non-zero `Layout` size, a non-zero `realloc` `new_size`, and no `isize`
-/// overflow after the alignment round-up. Forwarding is sound only because
-/// this crate's sole generic caller, [`drive`](crate::drive), clamps every
-/// op into that stricter range before calling (see `drive`'s totality
-/// guarantee). A caller outside `drive` going through this impl carries
-/// those preconditions itself — see the caller-obligations half of the
-/// trait's `# Safety` contract.
+/// overflow after the alignment round-up — and its `dealloc` precondition is
+/// absolute: `ptr` must denote a block of memory currently allocated via this
+/// allocator. Forwarding `alloc`/`alloc_zeroed`/`realloc` is sound only
+/// because this crate's sole generic caller, [`drive`](crate::drive), clamps
+/// every op into that stricter range before calling (see `drive`'s totality
+/// guarantee). Forwarding `dealloc` is sound only under the ordinary
+/// matching-pointer precondition: `drive` frees each block exactly once (plus
+/// the teardown walk) unless `Config::double_free` holds a
+/// [`DoubleFreeOk`](crate::DoubleFreeOk) token — and this impl categorically
+/// cannot receive that permission, because `Option<DoubleFreeOk>::is_some()`
+/// is true only for a value constructed through the token's `const unsafe fn
+/// new()`, whose contract forbids constructing it for `System` or any
+/// blanket-reached type. A caller outside `drive` going through this impl
+/// carries those preconditions itself — see the caller-obligations half of
+/// the trait's `# Safety` contract.
 unsafe impl<A: GlobalAlloc> RawAllocator for A {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // SAFETY: see the impl-level note above — `drive` guarantees the

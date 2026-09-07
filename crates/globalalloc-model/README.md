@@ -12,9 +12,9 @@ live blocks), asserting the **M1–M4 correctness oracles** on every step:
   requested extents catches an undersized block once a neighbour lands inside
   the missing tail).
 - **M2 (no double-free / UAF):** a second `dealloc` of the same pointer must
-  not corrupt the allocator (opt-in via `Config::double_free`; **off by
+  not corrupt the allocator (opt-in via `Config::double_free: Some(unsafe { DoubleFreeOk::new() })`; **off by
   default** — a real system malloc treats double-free as UB, so the harness
-  only issues the second free when you ask for it).
+  only issues the second free when you hand it this `unsafe`-constructed token).
 - **M3 (no overlap):** two simultaneously-live allocations never share a byte
   — the overlap check runs on **every block-creating op** (`alloc`,
   `alloc_zeroed`, and `realloc`'s new extent), plus a per-block fill re-checked
@@ -83,7 +83,7 @@ you need to override the forwarding.
 ## Compatibility
 
 `Op`, `Config`, and `OpStream` are exhaustive types with public fields on
-purpose (so `Config { double_free: true, ..Config::default() }` stays
+purpose (so `Config { double_free: Some(unsafe { DoubleFreeOk::new() }), ..Config::default() }` stays
 ergonomic). Adding a field or variant is a breaking change and bumps the
 minor version under 0.x.
 

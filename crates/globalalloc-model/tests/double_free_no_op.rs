@@ -1,5 +1,5 @@
 //! Counterfactual test for the M2 double-free-is-a-no-op oracle path
-//! (`Config::double_free = true`) and drive's empty-model skip.
+//! (`Config::double_free = Some(DoubleFreeOk::new())`) and drive's empty-model skip.
 //!
 //! Uses a trivial leak-everything allocator instead of `System`: `dealloc` is
 //! a complete no-op regardless of how many times (or with what pointer) it is
@@ -9,7 +9,7 @@
 //! no-op").
 //!
 //! This is a counterfactual test, not just coverage: deleting the
-//! `if config.double_free` block in `drive` yields 3 dealloc calls instead of
+//! `if config.double_free.is_some()` block in `drive` yields 3 dealloc calls instead of
 //! 6 and fails the assertion below; breaking the empty-model skip in drive's
 //! `Dealloc` arm changes the count too.
 
@@ -17,7 +17,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use globalalloc_model::{drive, Config, Op, RawAllocator};
+use globalalloc_model::{drive, Config, DoubleFreeOk, Op, RawAllocator};
 
 /// Forwards `alloc`/`alloc_zeroed`/`realloc` to `System`; `dealloc` never
 /// frees anything, but records every pointer it is called with.
@@ -84,7 +84,10 @@ fn double_free_is_a_no_op_against_a_leaky_allocator() {
         frees: RefCell::new(Vec::new()),
     };
     let config = Config {
-        double_free: true,
+        // SAFETY: `LeakyAllocator`'s `dealloc` never frees anything, so a
+        // repeated `dealloc` is a no-op by construction — `DoubleFreeOk::new`'s
+        // contract holds.
+        double_free: Some(unsafe { DoubleFreeOk::new() }),
         ..Config::default()
     };
     drive(&alloc, config, &ops);

@@ -67,8 +67,22 @@ before it.
   weighted small/large size arms (default 9:1, small ≤ 4 KiB, large ≤
   128 KiB — the historical in-tree shape this crate unifies), power-of-two
   aligns up to `max_align` (default 4096), and `double_free` (default
-  `false`, since it is a *stronger-than-`GlobalAlloc`* guarantee that a real
-  system `malloc` does not provide).
+  `None`, since it is a *stronger-than-`GlobalAlloc`* guarantee that a real
+  system `malloc` does not provide — enabled by an unforgeable `DoubleFreeOk`
+  token, see Changed below).
+
+### Changed (breaking relative to earlier drafts of this unreleased crate)
+
+- **`Config::double_free` is now `Option<DoubleFreeOk>` (was `bool`).** The
+  M2 double-free-is-no-op oracle is undefined behaviour against any ordinary
+  `GlobalAlloc` (e.g. `System`), and `drive` is a safe function — a plain
+  public `bool` let 100%-safe code write
+  `Config { double_free: true, ..Config::default() }` and drive a real
+  double-free into `System` through the blanket `GlobalAlloc` impl. The field
+  now holds an unforgeable token whose only constructor is
+  `const unsafe fn DoubleFreeOk::new()`, so enabling the oracle always
+  crosses an explicit `unsafe` boundary in the allocator author's own code;
+  `double_free: None` (the default) leaves it off (review run 7, P0-1).
 
 ### Notes
 

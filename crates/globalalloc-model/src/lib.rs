@@ -9,9 +9,11 @@
 //!   fill byte, read it back — failures name the op index, byte offset, and
 //!   both byte values).
 //! - **M2 (no double-free / UAF):** the model only frees live pointers; with
-//!   `Config::double_free` (opt-in, **off by default** — a real system malloc
-//!   treats a double-free as undefined behaviour) a second `dealloc` of the
-//!   same pointer is issued and must not corrupt the allocator.
+//!   `Config::double_free: Some(DoubleFreeOk::new())` (opt-in via an
+//!   unforgeable token whose constructor is `const unsafe`, **off by default**
+//!   — a real system malloc treats a double-free as undefined behaviour) a
+//!   second `dealloc` of the same pointer is issued and must not corrupt the
+//!   allocator.
 //! - **M3 (no overlap):** two simultaneously-live allocations never share a
 //!   byte — checked on EVERY block-creating op (`alloc`, `alloc_zeroed`, and
 //!   `realloc`'s new extent) against every live block, and re-checked at run
@@ -42,6 +44,22 @@
 //! fill byte and a cross-contamination between exactly those two is invisible
 //! to the run-end sweep (it stays sound: no false positives). The incremental
 //! overlap check above still guards allocation-time overlap.
+//!
+//! # Limitations
+//!
+//! `drive` reads bytes it has not itself written in exactly two places: the
+//! `alloc_zeroed` zero-check and the `realloc` prefix check. Those reads are
+//! defined only if the allocator under test honours the *initialization*
+//! half of the [`RawAllocator`] contract (see the
+//! trait's `# Safety`: initialized bytes are a safety obligation, distinct
+//! from the zero/prefix *values*, which are oracles). An allocator whose
+//! `alloc_zeroed` hands back genuinely uninitialized memory, or whose
+//! `realloc` moves a block without copying the old bytes, violates that
+//! obligation: natively, `drive` still reports the oracle failure correctly,
+//! but under miri it reports undefined behaviour inside `drive` itself
+//! rather than a clean oracle failure. (`read_volatile` is not a fix: it is
+//! equally UB on uninitialized memory in the abstract machine, so it would
+//! only hide the report.)
 //!
 //! # The allocator seam
 //!
@@ -110,6 +128,7 @@ extern crate alloc;
 #[cfg(feature = "arbitrary")]
 mod arbitrary_stream;
 mod config;
+mod double_free_ok;
 mod drive;
 mod op;
 mod raw_allocator;
@@ -120,6 +139,7 @@ mod strategy;
 #[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 pub use arbitrary_stream::OpStream;
 pub use config::Config;
+pub use double_free_ok::DoubleFreeOk;
 pub use drive::drive;
 pub use op::Op;
 pub use raw_allocator::RawAllocator;

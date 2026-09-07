@@ -129,7 +129,12 @@ unsafe fn verify_block(ptr: *mut u8, size: usize, byte: u8, oracle: &str, step: 
 /// a read of memory the allocator never initialized is undefined through
 /// either form. The definedness of these reads rests on exactly one thing:
 /// the [`RawAllocator`](crate::RawAllocator) contract, which makes a
-/// non-null return valid for reads of `layout.size()` bytes. What the read
+/// non-null return valid for reads of `layout.size()` bytes AND (for
+/// `alloc_zeroed`) obliges those bytes to be *initialized* — whether they
+/// are zero is the oracle checked here; initializedness is the obligation.
+/// An allocator that hands back genuinely uninitialized memory violates the
+/// obligation: natively the zero-check still reports it, under miri it is
+/// UB inside `drive` itself (see the crate-level Limitations). What the read
 /// is FOR is the zero oracle: a broken `alloc_zeroed` that hands back
 /// bytes which are not 0 is reported here, never tolerated.
 ///
@@ -150,8 +155,10 @@ unsafe fn verify_zeroed_block(ptr: *mut u8, size: usize, op_idx: usize) {
 /// Check the preserved `min(old, new)` realloc prefix byte by byte.
 ///
 /// Raw reads (not a slice): same rationale as [`verify_zeroed_block`] —
-/// the message names the exact lost byte, and the reads' definedness
-/// rests on the `RawAllocator` contract, not on the read form.
+/// the message names the exact lost byte, and the reads' definedness rests
+/// on the `RawAllocator` contract's initialization obligation for `realloc`'s
+/// first `min(old, new)` bytes (see the crate-level Limitations), not on the
+/// read form.
 ///
 /// # Safety
 /// `ptr` must be valid for reads of `len` bytes.
@@ -179,9 +186,11 @@ unsafe fn verify_prefix_block(
 /// both proptest and libFuzzer) the moment any oracle is violated.
 ///
 /// All survivors are freed and the model dropped before returning (no UAF in a
-/// teardown walk). `config.double_free` selects whether the M2
-/// double-free-is-no-op oracle is exercised (off by default — a real malloc
-/// would corrupt); the other `config` fields shape the generators, not `drive`.
+/// teardown walk). `config.double_free` — `Some(DoubleFreeOk::new())` vs
+/// `None` — selects whether the M2 double-free-is-no-op oracle is exercised
+/// (off by default — a real malloc would corrupt; the enabling token is
+/// unforgeable in safe code); the other `config` fields shape the
+/// generators, not `drive`.
 ///
 /// `drive` is total over every hand-built `Op` value: a size of `0`, an
 /// oversized size, a `new_size` of `0`, and a `new_size` whose round-up
@@ -365,11 +374,14 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                     // freed exactly once here (the swap_remove drops it from the
                     // model), honoring the `dealloc` contract.
                     unsafe { alloc.dealloc(l.ptr, layout) };
-                    if config.double_free {
+                    if config.double_free.is_some() {
                         // M2: a second dealloc of the same pointer must be a
                         // no-op that does not corrupt the allocator. Opt-in
-                        // (`Config::double_free`) — a stronger-than-`GlobalAlloc`
-                        // guarantee; a real malloc would corrupt here.
+                        // via `Config::double_free: Some(DoubleFreeOk::new())`
+                        // — a stronger-than-`GlobalAlloc` guarantee; a real
+                        // malloc would corrupt here. The `Option<DoubleFreeOk>`
+                        // field type makes the enabling value unforgeable in
+                        // safe code (review run 7, P0-1).
                         // SAFETY: intentional M2 exercise — for an allocator whose
                         // documented contract is that this is a no-op.
                         unsafe { alloc.dealloc(l.ptr, layout) };

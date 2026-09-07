@@ -930,6 +930,9 @@ jobs:
       # is pinned per step (review run 6, P4-1: a global strict-count passed a
       # compensating pair of drifts — one step flipped to strict, another
       # flipped to plain — while the total stayed at 2).
+      # Review run 7, P3-2: each run line must also carry `--all-features` —
+      # a single deleted flag silently empties half the crate's test targets
+      # under `default = []` while every other check stays green.
       - name: miri target list covers every tests/*.rs in BOTH miri passes
         run: |
           set -euo pipefail
@@ -1009,6 +1012,20 @@ jobs:
           expect_flags 2 '-'
           expect_flags 3 '-|-Zmiri-ignore-leaks -Zmiri-strict-provenance'
           expect_flags 4 '-|-Zmiri-strict-provenance'
+          # `--all-features` is pinned PER RUN LINE too (review run 7, P3-2):
+          # this crate's `default = []` cfg-gates system_proptest.rs,
+          # system_arbitrary.rs and two config_validate tests to EMPTY, so a
+          # run line that silently loses `--all-features` keeps every existing
+          # check above green (the target list still matches, MIRIFLAGS is
+          # untouched) while miri covers 3 of 6 targets per pass.
+          missing=$(printf '%s\n' "$job" \
+            | grep -E '^[[:space:]]*- run: cargo miri test -p globalalloc-model' \
+            | grep -cv -- '--all-features' || true)
+          if [ "$missing" -ne 0 ]; then
+            echo "$missing miri run line(s) lack --all-features; the proptest/arbitrary" >&2
+            echo "test files are cfg-gated to EMPTY without it (default = [])." >&2
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri

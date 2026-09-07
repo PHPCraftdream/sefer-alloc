@@ -53,7 +53,7 @@ unsafe impl RawAllocator for CoreUnderTest {
 /// Size distribution for this copy: mostly small (`9`), occasionally large
 /// (`1`), capped at 128 KiB (SMALL_MAX is ~94 KiB) to keep the suite fast per
 /// the short-scenario policy (no multi-MiB byte-by-byte writes). Aligns up to
-/// 4096. `double_free: false` — matches the historical `heap_differential`.
+/// 4096. `double_free: None` — matches the historical `heap_differential`.
 fn config() -> Config {
     Config {
         small_max: 4096,
@@ -61,7 +61,7 @@ fn config() -> Config {
         small_weight: 9,
         large_weight: 1,
         max_align: 4096,
-        double_free: false,
+        double_free: None,
     }
 }
 

@@ -11,7 +11,8 @@
 //! Per the short-scenario policy (`CLAUDE.md`): ~64 cases, small sizes so the
 //! suite (and miri over it) finishes quickly. Sizes are kept small so most
 //! allocations exercise the small free-list path; a few large ones exercise the
-//! dedicated-segment path. `double_free: true` — `AllocCore`'s contract is that
+//! dedicated-segment path. `double_free: Some(unsafe { DoubleFreeOk::new() })`
+//! — `AllocCore`'s contract is that
 //! a redundant `dealloc` of an already-freed pointer is a safe no-op (M2), so
 //! the shared oracle is asked to exercise it here.
 
@@ -20,7 +21,7 @@
 use std::alloc::Layout;
 use std::cell::RefCell;
 
-use globalalloc_model::{drive, op_strategy, Config, RawAllocator};
+use globalalloc_model::{drive, op_strategy, Config, DoubleFreeOk, RawAllocator};
 use proptest::prelude::*;
 use sefer_alloc::AllocCore;
 
@@ -61,7 +62,9 @@ fn config() -> Config {
         small_weight: 1,
         large_weight: 1,
         max_align: 4096,
-        double_free: true,
+        // SAFETY: `AllocCore` documents a redundant `dealloc` as a safe no-op
+        // (M2), which is exactly `DoubleFreeOk::new`'s contract.
+        double_free: Some(unsafe { DoubleFreeOk::new() }),
     }
 }
 

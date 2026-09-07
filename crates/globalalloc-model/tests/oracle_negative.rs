@@ -908,3 +908,59 @@ fn clamped_down_null_alloc_zeroed_names_oom_note() {
         &ops,
     );
 }
+
+// Review run 7, P3-1: `validate_align` is load-bearing — it is the only thing
+// standing between a hand-built `Op` and an internal divide-by-zero (`align`
+// 0), a raw `Layout::from_size_align` rejection (non-power-of-two), or an
+// `Ord::clamp` min>max assertion (round-up overflow) — and it runs at a
+// SEPARATE call site in each block-creating arm, so each arm's site carries
+// its own deletion risk (the same per-arm asymmetry runs 5 and 6 each found
+// once). Every test below pins the named rejection and is counterfactual:
+// deleting the arm's `validate_align(align, op_idx)` call changes its panic
+// into the internal-arithmetic failure named in its comment (all four
+// verified during development — see the drive.rs probe notes in the commit
+// history of this fix).
+
+#[test]
+#[should_panic(expected = "op #0: align 0 is not a usable Layout alignment")]
+fn zero_align_is_rejected_not_divided_by() {
+    // Without the guard, the very next line divides by this align:
+    // `(isize::MAX as usize / align) * align` — "attempt to divide by zero".
+    // This also pins the guard's ORDER: before any size is clamped against a
+    // ceiling derived from the align.
+    let ops = [Op::Alloc { size: 32, align: 0 }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(expected = "op #0: align 3 is not a usable Layout alignment")]
+fn non_power_of_two_align_is_rejected_not_layout_matched() {
+    // Without the guard the panic degrades to the raw
+    // "Layout::from_size_align(size=32, align=3) rejected" message — the
+    // message-quality failure the totality design deliberately moved away from.
+    let ops = [Op::Alloc { size: 32, align: 3 }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(expected = "op #0: align 9223372036854775808 is not a usable Layout alignment")]
+fn overflowing_align_is_rejected_not_clamped_into_a_panic() {
+    // 1 << 63 (9223372036854775808): without the guard,
+    // `(isize::MAX as usize / align) * align` evaluates to 0, so
+    // `size.clamp(1, 0)` trips `Ord::clamp`'s min <= max assertion — an
+    // internal arithmetic panic with no op index and no explanation.
+    let ops = [Op::Alloc {
+        size: 32,
+        align: 1 << 63,
+    }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(expected = "op #0: align 0 is not a usable Layout alignment")]
+fn zero_align_alloc_zeroed_is_rejected_not_divided_by() {
+    // The alloc_zeroed arm's own `validate_align` call site — a separate
+    // invocation from the alloc arm's, with its own deletion risk.
+    let ops = [Op::AllocZeroed { size: 32, align: 0 }];
+    drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}

@@ -46,7 +46,7 @@ use std::alloc::Layout;
 use std::cell::RefCell;
 
 use arbitrary::Unstructured;
-use globalalloc_model::{drive, Config, OpStream, RawAllocator};
+use globalalloc_model::{drive, Config, DoubleFreeOk, OpStream, RawAllocator};
 use libfuzzer_sys::fuzz_target;
 use sefer_alloc::AllocCore;
 
@@ -99,7 +99,9 @@ fn fuzz_config() -> Config {
     Config {
         large_max: 2 * 1024 * 1024,
         max_align: 2 * 1024 * 1024,
-        double_free: true,
+        // SAFETY: `AllocCore` documents a redundant `dealloc` as a safe
+        // no-op (M2), which is exactly `DoubleFreeOk::new`'s contract.
+        double_free: Some(unsafe { DoubleFreeOk::new() }),
         ..Config::default()
     }
 }

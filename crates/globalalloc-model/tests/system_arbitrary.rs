@@ -24,7 +24,9 @@ use globalalloc_model::{drive, Config, Op, OpStream};
 /// reduction. The seed sweep and byte buffers stay IDENTICAL either way:
 /// `Config` shapes sizes/aligns, not the decoded variant mix, so the
 /// per-variant non-vacuity asserts below see the same op stream under both
-/// configurations.
+/// configurations. Since the P3-3 generator fix every seed produces a
+/// non-empty stream, so the sweep's miri cost is roughly double its pre-fix
+/// size — the `cfg!(miri)` shrink above already bounds that.
 #[test]
 fn system_matches_arbitrary_stream() {
     let config = if cfg!(miri) {
@@ -41,11 +43,23 @@ fn system_matches_arbitrary_stream() {
     let mut total_ops = 0usize;
     let mut seen = [0usize; 4];
     for seed in 0u8..32 {
-        let bytes: Vec<u8> = (0u16..512)
+        let mut bytes: Vec<u8> = (0u16..512)
             .map(|i| (i as u8).wrapping_add(seed).wrapping_mul(31))
             .collect();
+        // Review run 7, P3-3: `arbitrary`'s iterator reads its continue-bit
+        // from bytes[0]'s LOW bit (`bool::arbitrary` = `u8::arbitrary(u)? & 1
+        // == 1`, front byte first), and 31 is odd — so the low bit used to
+        // equal the seed's parity and every EVEN seed decoded to an empty
+        // stream, silently halving this sweep. Force bytes[0] odd for every
+        // seed; the per-seed assert below keeps it that way.
+        bytes[0] |= 1;
         let mut u = Unstructured::new(&bytes);
         let stream = OpStream::arbitrary_with_config(&mut u, config).expect("decode op stream");
+        assert!(
+            !stream.ops.is_empty(),
+            "seed {seed} decoded to an empty stream (arbitrary's continue-bit is the \
+             low bit of bytes[0]; keep it odd for every seed)"
+        );
         total_ops += stream.ops.len();
         for op in &stream.ops {
             let idx = match op {

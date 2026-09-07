@@ -1,5 +1,7 @@
 //! Size-distribution knobs for the op-stream generators.
 
+use crate::double_free_ok::DoubleFreeOk;
+
 /// Size-distribution knobs for the op-stream generators.
 ///
 /// Field consumers, exactly: `drive` reads only `double_free`; the proptest
@@ -18,9 +20,10 @@
 /// dedicated-large path).
 ///
 /// Exhaustiveness note: `Config` (like `Op`) is deliberately an exhaustive
-/// public type with public fields so `Config { double_free: true,
-/// ..Config::default() }` stays ergonomic; adding a field or variant is
-/// therefore a breaking change and bumps the minor version under 0.x.
+/// public type with public fields so `Config { double_free: Some(unsafe {
+/// DoubleFreeOk::new() }), ..Config::default() }` stays ergonomic; adding a
+/// field or variant is therefore a breaking change and bumps the minor
+/// version under 0.x.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
     /// Upper bound (inclusive) of the small size arm.
@@ -77,14 +80,20 @@ pub struct Config {
     /// Whether to exercise the **M2 double-free-is-no-op oracle**: after each
     /// `Dealloc`, free the SAME pointer a second time.
     ///
-    /// This is a *stronger-than-`GlobalAlloc`* guarantee — a real system malloc
-    /// treats a double-free as undefined behaviour (heap corruption), so this is
-    /// **off by default**. Turn it ON only for an allocator whose contract is
-    /// that a redundant `dealloc` of an already-freed pointer is a safe no-op
-    /// (e.g. sefer's `AllocCore`). The oracle cannot itself observe "no-op"
-    /// directly; its guard is that the allocator must not corrupt — a later
-    /// op/teardown that would then touch corrupted state is what catches it.
-    pub double_free: bool,
+    /// `Some(token)` turns the oracle ON; [`None`] (the default) leaves it
+    /// off. The token is unforgeable in safe code — its only constructor,
+    /// [`DoubleFreeOk::new`](crate::DoubleFreeOk::new), is a `const unsafe
+    /// fn` — because this is a *stronger-than-`GlobalAlloc`* guarantee: a
+    /// real system malloc treats a double-free as undefined behaviour (heap
+    /// corruption). Construct the token, inside an `unsafe` block, only for
+    /// an allocator whose documented contract is that a redundant `dealloc`
+    /// of an already-freed pointer is a safe no-op (e.g. sefer's
+    /// `AllocCore`) — never for `System` or any allocator reached through
+    /// the blanket `GlobalAlloc` impl. The oracle cannot itself observe
+    /// "no-op" directly; its guard is that the allocator must not corrupt —
+    /// a later op/teardown that would then touch corrupted state is what
+    /// catches it.
+    pub double_free: Option<DoubleFreeOk>,
 }
 
 impl Config {
@@ -146,14 +155,15 @@ impl Default for Config {
         // Matches the historical `heap_differential` shape: 9:1 small:large,
         // small <= 4 KiB, large capped at 128 KiB, aligns up to 4096. The M2
         // double-free is OFF by default (unsafe against a real malloc); consumers
-        // whose allocator tolerates it opt in via `double_free`.
+        // whose allocator tolerates it opt in via
+        // `double_free: Some(unsafe { DoubleFreeOk::new() })`.
         Config {
             small_max: 4096,
             large_max: 128 * 1024,
             small_weight: 9,
             large_weight: 1,
             max_align: 4096,
-            double_free: false,
+            double_free: None,
         }
     }
 }
