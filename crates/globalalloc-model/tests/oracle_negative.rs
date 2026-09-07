@@ -3,7 +3,14 @@
 //! This crate's product is *detection*: each test here proves the matching
 //! oracle in `drive` actually fires, and pins the exact failure-message prefix
 //! as behaviour. Every case is counterfactual — deleting the corresponding
-//! assert in `drive` must fail the matching test (verified during development).
+//! assert in `drive` must fail the matching test (verified during
+//! development). One check genuinely has no in-op counterfactual and is
+//! pinned at its next observable read instead: the M1 fill read-back's
+//! op-time check cannot be broken by any sound sequential fault (no
+//! allocator call can intervene between `fill_block` and `verify_block`),
+//! so the fill-persistence tests below corrupt the block AFTER its
+//! read-back passed and pin the run-end sweep — the next read of the
+//! block, and the check a lost write would otherwise escape through.
 //!
 //! The fake arena owns its memory through raw pointers only (no `Vec`/references
 //! into it), so all writes through the pointers `drive` hands around are sound
@@ -143,12 +150,57 @@ enum Fault {
     /// `realloc` hands out a fresh honest block WITHOUT copying (loses the
     /// prefix).
     ReallocNoCopy,
+    /// Every `alloc` call after the first behaves honestly for ITS OWN
+    /// block, but silently scribbles the FIRST block the arena ever handed
+    /// out with a foreign byte (0xCC). The returned pointer is honest and
+    /// model-disjoint, so `drive`'s INCREMENTAL overlap check passes at
+    /// insertion; only the run-end M3 sweep ever re-reads the clobbered
+    /// block's bytes. This is the counterfactual for the run-end sweep.
+    ClobberOnLaterAlloc,
+    /// Every `alloc`/`alloc_zeroed` call after the first silently re-zeroes
+    /// the FIRST block the arena ever handed out: whatever `drive` wrote
+    /// there "does not stick". Honest at hand-out, invisible to the
+    /// incremental overlap check; the run-end M3 sweep is the next read of
+    /// the lost block, so this is the counterfactual for fill persistence.
+    WritesDoNotStick,
+    /// `realloc` returns null (the documented realloc-failure signal). Used
+    /// by a POSITIVE test: the run must complete with the old blocks still
+    /// live and verifying, proving the null-realloc `continue` skip keeps
+    /// the bookkeeping coherent instead of skipping it.
+    NullRealloc,
 }
 
 /// A bump-arena allocator with one injected fault.
 struct Faulty {
     arena: Arena,
     fault: Fault,
+    /// Offset and size of the FIRST block the arena handed out — the
+    /// corruption target of `ClobberOnLaterAlloc` and `WritesDoNotStick`.
+    first_block: Cell<Option<(usize, usize)>>,
+}
+
+impl Faulty {
+    /// Shared bookkeeping for the honest hand-out paths of `alloc` and
+    /// `alloc_zeroed`: remember the first handed-out block, and — for the
+    /// two corruption faults — silently corrupt it on every LATER hand-out.
+    /// The block being handed out by THIS call is always honest.
+    fn fault_touch_first_block(&self, new_off: usize, new_size: usize) {
+        match (self.first_block.get(), self.fault) {
+            (Some((off, len)), Fault::ClobberOnLaterAlloc) => {
+                // SAFETY: `off..off+len` is inside the arena (it was handed
+                // out length-checked through `at_len`).
+                unsafe { ptr::write_bytes(self.arena.base.add(off), 0xCC, len) };
+            }
+            (Some((off, len)), Fault::WritesDoNotStick) => {
+                // The earlier block's writes are "lost": the fake re-zeroes
+                // its whole extent before handing out the new block.
+                // SAFETY: same bounds argument as the arm above.
+                unsafe { ptr::write_bytes(self.arena.base.add(off), 0x00, len) };
+            }
+            (None, _) => self.first_block.set(Some((new_off, new_size))),
+            _ => {}
+        }
+    }
 }
 
 // SAFETY: within the arena's bounds every returned pointer is valid for the
@@ -177,6 +229,7 @@ unsafe impl RawAllocator for Faulty {
             }
             _ => {
                 let p = self.arena.bump_aligned(size, layout.align());
+                self.fault_touch_first_block(p, size);
                 self.arena.at_len(p, size)
             }
         }
@@ -197,6 +250,7 @@ unsafe impl RawAllocator for Faulty {
             // SAFETY: `ptr` is valid for `size` bytes inside the arena.
             unsafe { ptr::write_bytes(ptr, 0, size) };
         }
+        self.fault_touch_first_block(p, size);
         ptr
     }
 
@@ -220,6 +274,7 @@ unsafe impl RawAllocator for Faulty {
                 let p = self.arena.bump_aligned(new_size, old_layout.align());
                 self.arena.at_len(p, new_size)
             }
+            Fault::NullRealloc => ptr::null_mut(),
             _ => {
                 // Honest: a fresh aligned block with the prefix copied.
                 let p = self.arena.bump_aligned(new_size, old_layout.align());
@@ -237,6 +292,7 @@ fn faulty(cap: usize, fault: Fault) -> Faulty {
     Faulty {
         arena: Arena::new(cap),
         fault,
+        first_block: Cell::new(None),
     }
 }
 
@@ -370,4 +426,81 @@ fn oversized_size_is_clamped_not_rejected() {
         align: 8,
     }];
     drive(&faulty(4096, Fault::Honest), Config::default(), &ops);
+}
+
+#[test]
+#[should_panic(expected = "M3: step #0 run-end sweep: live block clobbered")]
+fn clobbered_by_later_alloc_reaches_run_end_sweep() {
+    // Counterfactual for `drive`'s RUN-END M3 sweep: the second alloc's
+    // returned pointer is honest and model-disjoint, so the INCREMENTAL
+    // overlap check passes at op 1; the 0xCC scribble over block 0 is
+    // invisible until the run-end sweep reads block 0's fill back. Deleting
+    // the run-end sweep from `drive` lets this test pass spuriously —
+    // nothing else ever re-reads block 0's bytes.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Alloc { size: 32, align: 8 },
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberOnLaterAlloc),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #0 run-end sweep: live block clobbered")]
+fn alloc_fill_that_does_not_stick_is_caught_at_run_end() {
+    // Counterfactual for FILL PERSISTENCE behind the M1 write-read-back:
+    // the fake re-zeroes block 0 during op 1, so op 0's fill is lost after
+    // op 0's own read-back has already passed (see the module doc for why
+    // the op-time read-back itself is unpinnable by a sequential fault).
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Alloc { size: 32, align: 8 },
+    ];
+    drive(
+        &faulty(4096, Fault::WritesDoNotStick),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #0 run-end sweep: live block clobbered")]
+fn alloc_zeroed_fill_that_does_not_stick_is_caught_at_run_end() {
+    // The same lost-write fault through the alloc_zeroed arm (whose fill
+    // read-back is the check review run 3's P3-1 added): op 0's zero-check
+    // passes, its fill read-back passes, and the re-zero at op 1 destroys
+    // the fill — caught by the run-end sweep, never tolerated.
+    let ops = [
+        Op::AllocZeroed { size: 64, align: 8 },
+        Op::AllocZeroed { size: 32, align: 8 },
+    ];
+    drive(
+        &faulty(4096, Fault::WritesDoNotStick),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+fn null_realloc_completes_with_old_block_intact() {
+    // Counterfactual for the SOUNDNESS-CRITICAL null-realloc skip
+    // (`if new_ptr.is_null() { continue; }` in drive's Realloc arm): with
+    // the skip deleted, drive falls through to `verify_prefix_block(null,
+    // keep, ...)` and DEREFERENCES NULL. This test must complete cleanly
+    // instead: both reallocs return null, both old blocks stay live with
+    // their fills intact, and the run-end sweep plus teardown prove the
+    // skip left the bookkeeping coherent rather than skipping it.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },
+        Op::Realloc {
+            i: 0,
+            new_size: 128,
+        }, // null: skipped, block 0 stays live
+        Op::Alloc { size: 32, align: 8 },
+        Op::Realloc { i: 1, new_size: 16 }, // null again, on the second block
+    ];
+    drive(&faulty(4096, Fault::NullRealloc), Config::default(), &ops);
 }

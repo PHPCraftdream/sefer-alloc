@@ -241,16 +241,24 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 // the allocator's contract (the "total over every
                 // hand-built `Op`" promise).
                 validate_align(align, op_idx);
+                let original_size = size;
                 let size = size.clamp(1, (isize::MAX as usize / align) * align);
                 // Infallible after the two steps above.
                 let layout = layout_for(size, align, op_idx);
                 // SAFETY: `layout` is valid; the returned pointer is checked for
                 // null and used only for `size` bytes, as the contract permits.
                 let ptr = unsafe { alloc.alloc(layout) };
-                assert!(
-                    !ptr.is_null(),
-                    "M1: op #{op_idx} alloc(size={size}, align={align}) returned null"
-                );
+                if ptr.is_null() {
+                    if size != original_size {
+                        panic!(
+                            "M1: op #{op_idx} alloc(size={size} [clamped from {original_size}], \
+                             align={align}) returned null — note: the harness does not model \
+                             OOM, so a hand-built size beyond the allocator's real capacity \
+                             reports here"
+                        );
+                    }
+                    panic!("M1: op #{op_idx} alloc(size={size}, align={align}) returned null");
+                }
                 assert_eq!(
                     ptr.addr() % align,
                     0,
@@ -275,16 +283,26 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
             Op::AllocZeroed { size, align } => {
                 // Same two-step clamp as the `Alloc` arm.
                 validate_align(align, op_idx);
+                let original_size = size;
                 let size = size.clamp(1, (isize::MAX as usize / align) * align);
                 // Infallible after the two steps above.
                 let layout = layout_for(size, align, op_idx);
                 // SAFETY: `layout` valid; pointer checked for null, used only for
                 // `size` bytes.
                 let ptr = unsafe { alloc.alloc_zeroed(layout) };
-                assert!(
-                    !ptr.is_null(),
-                    "M1: op #{op_idx} alloc_zeroed(size={size}, align={align}) returned null"
-                );
+                if ptr.is_null() {
+                    if size != original_size {
+                        panic!(
+                            "M1: op #{op_idx} alloc_zeroed(size={size} [clamped from {original_size}], \
+                             align={align}) returned null — note: the harness does not model \
+                             OOM, so a hand-built size beyond the allocator's real capacity \
+                             reports here"
+                        );
+                    }
+                    panic!(
+                        "M1: op #{op_idx} alloc_zeroed(size={size}, align={align}) returned null"
+                    );
+                }
                 assert_eq!(
                     ptr.addr() % align,
                     0,
@@ -296,8 +314,15 @@ pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
                 unsafe { verify_zeroed_block(ptr, size, op_idx) };
                 let fill = next_fill(&mut cycle);
                 // SAFETY: `ptr` valid for `size` bytes; re-fill so later M3
-                // contamination checks have a marker.
-                unsafe { fill_block(ptr, size, fill) };
+                // contamination checks have a marker, then read the fill back
+                // — the same M1 write-read-back the `alloc` arm does (review
+                // run 3, P3-1: the zero-check alone proves readability and the
+                // fill proves writability; only the read-back proves the write
+                // persisted).
+                unsafe {
+                    fill_block(ptr, size, fill);
+                    verify_block(ptr, size, fill, "M1", op_idx, "alloc_zeroed");
+                }
                 live.push(Live {
                     ptr,
                     size,

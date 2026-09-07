@@ -82,23 +82,45 @@ unsafe impl RawAllocator for CoreUnderTest {
 // `max_align` at 2 MiB restore the historical bounds (sizes 1..=2 MiB,
 // aligns 2^0..=2^21) while keeping the small-heavy weighting that
 // concentrates the budget on allocator state space.
-fuzz_target!(|data: &[u8]| {
+//
+// Review run 3, P3-9: the explicit Config initially forced the raw
+// `|data: &[u8]|` form, which lost libFuzzer's structured crash rendering
+// (`RUST_LIBFUZZER_DEBUG_PATH` / `cargo fuzz fmt`) — a crash report was raw
+// hex bytes to decode by hand. `ConfiguredOpStream` keeps BOTH: the typed
+// target renders decoded ops on a crash, and its `Arbitrary` impl delegates
+// to the same config-aware constructor. Corpus compatibility is unchanged:
+// only `arbitrary` is defined, so `arbitrary_take_rest`'s default impl
+// forwards to it, exactly as for the pre-centralization `OpStream` target.
+
+/// The fuzz target's own `Config`: restores this target's historical 2 MiB
+/// size / 2^21 align reach over the centralized front-end and opts into
+/// `AllocCore`'s M2 double-free-is-no-op contract.
+fn fuzz_config() -> Config {
+    Config {
+        large_max: 2 * 1024 * 1024,
+        max_align: 2 * 1024 * 1024,
+        double_free: true,
+        ..Config::default()
+    }
+}
+
+/// Structured libFuzzer input: decoded through
+/// [`OpStream::arbitrary_with_config`] with [`fuzz_config`], wrapped in a
+/// newtype so the derived `Debug` gives libFuzzer's crash reports the decoded
+/// op stream instead of raw bytes.
+#[derive(Debug)]
+struct ConfiguredOpStream(OpStream);
+
+impl<'a> arbitrary::Arbitrary<'a> for ConfiguredOpStream {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        OpStream::arbitrary_with_config(u, fuzz_config()).map(Self)
+    }
+}
+
+fuzz_target!(|stream: ConfiguredOpStream| {
     let alloc = match AllocCore::new() {
         Some(a) => CoreUnderTest(RefCell::new(a)),
         None => return, // primordial bootstrap failed (OS refused mmap); skip.
     };
-    let config = Config {
-        large_max: 2 * 1024 * 1024,
-        max_align: 2 * 1024 * 1024,
-        // `AllocCore`'s M2 contract is that a redundant free of an
-        // already-freed pointer is a safe no-op.
-        double_free: true,
-        ..Config::default()
-    };
-    let mut u = Unstructured::new(data);
-    // Undecodable input (too short for even one op): nothing to drive.
-    let Ok(stream) = OpStream::arbitrary_with_config(&mut u, config) else {
-        return;
-    };
-    drive(&alloc, config, &stream.ops);
+    drive(&alloc, fuzz_config(), &stream.0.ops);
 });
