@@ -53,6 +53,80 @@ fixes in three explicitly created, detached Git worktrees. Their patches must
 be inspected and integrated before final tests and the second self-review.
 No publication or push is part of this task.
 
-## Acceptance
+## Acceptance and second self-review
 
-Pending: integrated code review, regression and package checks, final P0-P3 audit.
+Completed 2026-09-07, approximately 09:01 +02:00. Verdict: **GO** for the
+inspected working tree; remaining findings: **P0=0, P1=0, P2=0, P3=0**.
+This verdict includes the implementation changes in the working tree; it does
+not describe the unchanged baseline commit alone.
+
+All seven initial findings are closed. The main reviewer inspected all worker
+diffs, integrated them using patches, and re-read the resulting contracts,
+generator branches, lifecycle checks and CI. Further acceptance refinements:
+
+- Zero-weight proptest arms are structurally absent, including during shrinking.
+- The i686 CI job now runs every test target; it no longer excludes the
+  negative-oracle target that contained the former 64-bit literal.
+- `RawAllocator` expressly requires valid provenance, a single allocated
+  object for each extent, initialized byte lifetime and no racing accesses.
+- `drive`'s own rustdoc now matches the README's UB, reentrancy and panic-leak
+  limitations; no native UB detection guarantee remains.
+- The arena fault implementation checks the entire returned realloc extent,
+  rather than merely the copied prefix.
+
+### Verified behavior
+
+| Requirement | Evidence |
+| --- | --- |
+| Weighted arms and full-width size reach | Deterministic arbitrary tests exercise both endpoints, zero/max weights, >u32 sizes without allocating them, all variants and the 2048-op cap |
+| Stable shrinking constraints | `disabled_small_arm_stays_disabled_while_shrinking` walks the value tree and rejects sizes from a disabled arm |
+| Reproducible property tests | Ordinary tests honor `PROPTEST_RNG_SEED=42`; only the entropy configuration test explicitly chooses random seeding |
+| Detection before destructive operations | Three arena-backed tests catch corruption before dealloc, before shrink, and between teardown frees; all three failed against the old driver in the worker's negative control |
+| Pointer safety | All six integration targets passed strict-provenance Miri; only the intentional no-op-deallocation fixture uses `-Zmiri-ignore-leaks` |
+| 32-bit portability | Full all-feature suite executed on `i686-pc-windows-msvc`: 50 tests; bounds and panic operands use target width |
+| Feature isolation | Default, proptest-only, arbitrary-only and all-feature tests passed; all-feature debug/release suites have 51 tests on x64 |
+| Declared MSRV | All-feature library check passed on Rust 1.85 |
+| no_std | Bare-metal `thumbv7em-none-eabi` proptest-feature build passed; existing CI retains default and proptest bare-metal builds |
+| Packaged consumer | Cargo packaged and verified 22 files; externally extracted default/all-feature tests, Clippy and rustdoc passed; a separate consumer ran with default and all features |
+| Actual final package bytes | After the final arena-bound refinement, the extracted all-feature suite was rebuilt in a fresh target directory and all 51 tests passed |
+| docs.rs configuration | Nightly documentation with `RUSTDOCFLAGS="--cfg docsrs -D warnings"` passed |
+| CI syntax and formatting | `actionlint .github/workflows/globalalloc-model.yml`, crate fmt and `git diff --check` passed |
+
+The local final archive is `target/package/globalalloc-model-0.1.0.crate`,
+SHA-256 `3af8a2c43948535725d4c9a974a179befa1ae41c54d2f9ebdfc1f9c486b4942b`.
+It was produced with `--allow-dirty` to verify the prepared, uncommitted changes.
+This is a local package validation, not a registry publication receipt.
+
+The new workflow provides Windows/Linux feature matrices, full Linux i686
+execution, extracted-package tests and an external consumer, MSRV and docs.rs
+checks. Existing broad CI supplies Miri, no_std and release coverage. The new
+remote workflow has not been pushed or executed during this task; local Windows
+i686 execution is not being reported as a Linux run.
+
+### Unsafe review notes
+
+- `src/raw_allocator.rs`: the unsafe trait and blanket forwarding impl now
+  share caller preconditions, including initialized old realloc prefix. Every
+  forwarding block has a local safety explanation.
+- `src/drive.rs`: raw writes/reads stay within accepted extents; overlap and
+  alignment checks precede accesses to new results. Added pre-free/pre-realloc
+  reads use still-live, previously filled blocks. Teardown rechecks each block
+  before freeing it. Miri confirms the exercised paths.
+- `src/double_free_ok.rs`: constructing double-free consent remains unsafe;
+  the API and prohibition on using it with blanket GlobalAlloc impls are retained.
+- The test arena owns its backing allocation and reclaims it on unwind;
+  injected corruption changes initialized bytes inside that allocation.
+
+### Deliberate limits
+
+Invalid extent/provenance/initialization from an allocator is outside the safe
+oracle domain. Transient corruption repaired between observations and equal
+fill-byte collisions can escape detection. Oracle panics may leak tested
+allocations, so repeated failing runs need arena/process-level reclamation.
+These limits are stated in public docs, not counted as newly discovered defects.
+
+Fuzz bytes are not a stable serialized format; the new decoder may reinterpret
+an existing corpus. The public `Op` sequence remains available for exact replay.
+No performance improvement is claimed. No versions were changed, and the main
+agent created no commits or pushes for the implementation. Three accepted
+auxiliary worktrees were removed after their changes were integrated.
