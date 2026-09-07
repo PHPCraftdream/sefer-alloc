@@ -60,21 +60,54 @@
 //!
 //! Each block's expected contents are a position-dependent pattern derived from
 //! a fill identifier that cycles through `1..=255`. Byte 0 of every block
-//! carries the raw identifier — mutually unique across all 255 identifiers, and
-//! never zero — and every later byte carries a mixed (non-additive) hash of the
-//! identifier and the offset. A realloc's preserved prefix is never empty, so
-//! the offset-0 marker is always checked: a wrong-source copy from a live block
-//! carrying a different identifier is caught no matter how short the prefix.
-//! The specific correlations that let earlier wrong-source realloc copies slip
-//! through every check — a fixed phase shift between adjacent identifiers, and
-//! short fixed-offset collisions between unrelated identifiers — are closed;
-//! the exact scheme and its residual limits are documented on the driver's
-//! internal `pattern_byte` helper. Residual collisions remain possible in
-//! general, and once more than 255 fill assignments are represented among live
-//! blocks two can share an identifier, so corruption from one such block into
-//! the other may still go undetected. Direct extent-overlap checks still run
-//! when each block is created. Corruption that occurs and is restored between
-//! observation points is also invisible.
+//! carries the raw identifier — mutually unique across all 255 identifiers,
+//! and never zero — and every later byte carries a mixed (non-additive) hash
+//! of the identifier and the offset, computed on the fly; no second copy of a
+//! block's expected contents is stored. This is the canonical description of
+//! the scheme and its residual limits: the driver's internal pattern helper
+//! is private and has no page in the rendered documentation, so the exact
+//! statement lives here.
+//!
+//! The offset-0 marker is always checked: every size is clamped to `>= 1`
+//! before the allocator is reached, so a realloc's preserved prefix length
+//! `min(old, new)` is never zero. What that marker guarantees, precisely: an
+//! unshifted copy — taken from the START of a foreign live block carrying a
+//! DIFFERENT identifier — is always caught at offset 0, no matter how short
+//! the preserved prefix, because byte 0 is the identifier verbatim and the
+//! identifiers are mutually distinct; the marker byte can likewise never be
+//! confused with zeroed or unwritten memory. A shifted copy is NOT covered
+//! by that guarantee: the hash tail can coincide with another identifier's
+//! marker byte. Concrete counterexample, writing the scheme's expected byte
+//! as `pattern(fill, offset)`: `pattern(1, 1)` and `pattern(202, 0)` are
+//! both `0xca`, so a one-byte copy from offset 1 of a block carrying
+//! identifier 1, landing at offset 0 of a block whose expected identifier is
+//! 202, still matches. The scheme closes the specific correlations that let
+//! earlier wrong-source realloc copies slip through every check — a fixed
+//! phase shift between adjacent identifiers, and short fixed-offset
+//! collisions between unrelated identifiers — not shifted copies in general.
+//!
+//! The period claim, stated precisely: the tail's offset enters the mix
+//! truncated to `u32`, so the positive-offset tail (offsets >= 1 ONLY)
+//! repeats with period 2^32 on 64-bit platforms — `pattern(1, 1)` and
+//! `pattern(1, 1 + 2^32)` are both `0xca`, a genuine tail-period
+//! coincidence. Offset 0 is special-cased on the literal value zero, not on
+//! `offset mod 2^32`, so the whole sequence including the first byte has no
+//! such period: `pattern(1, 0)` is `0x01` while `pattern(1, 2^32)` is
+//! `0xb7`. (And it is not a period of 256, either — that was the rejected
+//! additive scheme's artifact.) A single allocation spanning 2^32 offsets is
+//! outside any realistic test's reach; on 32-bit platforms the offset enters
+//! the mix losslessly and the tail period does not exist. Offsets >= 1 still
+//! produce an 8-bit value: by pigeonhole, collisions between different
+//! `(fill, offset)` pairs remain possible in general — what is covered is
+//! the specific classes named above, not the absence of all collisions.
+//!
+//! Marker reuse after 255 fill assignments is unchanged: once more than 255
+//! fill assignments are represented among live blocks two can share an
+//! identifier, and blocks sharing an identifier are indistinguishable to
+//! this scheme, so corruption from one such block into the other may still
+//! go undetected. Direct extent-overlap checks still run when each block is
+//! created. Corruption that occurs and is restored between observation
+//! points is also invisible.
 //!
 //! On normal return, every surviving modeled block is deallocated. An oracle
 //! panic may intentionally leak tracked and candidate allocations: after an

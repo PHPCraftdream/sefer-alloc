@@ -149,12 +149,17 @@ Oracle checks are observations rather than continuous monitoring. Transient
 corruption restored between checks is invisible. Each block's byte 0 carries
 its fill identifier verbatim and its later bytes a mixed (non-additive)
 function of the identifier and the offset — not a simple additive scheme, so
-distinct identifiers' patterns are not fixed shifts of one another, and a
-wrong-source copy from a live block carrying a different identifier is
-caught at offset 0 regardless of prefix length. Collisions remain possible
-in general (the driver's internal `pattern_byte` documentation lists the
-exact residual limits), and fill identifiers cycle after 255 assignments, so
-two live blocks can still share a marker. More fundamentally,
+distinct identifiers' patterns are not fixed shifts of one another, and an
+unshifted copy taken from the start of a live block carrying a different
+identifier is caught at offset 0 regardless of prefix length. A shifted
+copy is not covered by that guarantee (a shifted one-byte copy can still
+coincide with the destination's marker byte), and the pattern's 2^32 period
+on 64-bit platforms belongs to the positive-offset hash tail, not to the
+sequence including the special-cased offset 0. Collisions remain possible
+in general (the crate documentation's `Safety and oracle limits` section
+lists the exact residual limits and counterexamples), and fill identifiers
+cycle after 255 assignments, so two live blocks can still share a marker.
+More fundamentally,
 an invalid extent or genuinely uninitialized byte violates `RawAllocator`'s
 safety contract: accessing it is undefined behavior natively and under Miri,
 not a reliably reportable oracle failure. If an oracle panics, allocations may

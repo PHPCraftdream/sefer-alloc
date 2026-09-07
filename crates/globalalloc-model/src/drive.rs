@@ -51,50 +51,33 @@ fn next_fill(cycle: &mut u8) -> u8 {
     current
 }
 
-/// The per-byte expected value for a block carrying fill identifier `fill`.
-/// Two-part scheme: offset 0 is the RAW fill identifier itself, and every
-/// offset >= 1 is a hash-mixed (integer-finalizer, similar in spirit to
-/// FxHash / Murmur3's finalizer) position-dependent function of `(fill,
-/// offset)`, computed on the fly; no second copy of a block's expected
-/// contents is stored.
+/// The per-byte expected value for a block carrying fill identifier `fill`:
+/// offset 0 is the raw identifier itself, and every offset >= 1 is a
+/// hash-mixed (integer-finalizer, similar in spirit to FxHash / Murmur3's
+/// finalizer) position-dependent function of `(fill, offset)`, computed on
+/// the fly; no second copy of a block's expected contents is stored.
 ///
-/// Offset 0 must be raw because it is ALWAYS verified: `drive` clamps every
-/// size to `>= 1` before the allocator is reached, so a realloc's preserved
-/// prefix length `keep = min(old, new)` is always `>= 1` and the prefix
-/// check never skips offset 0. `next_fill` only produces identifiers in
-/// `1..=255`, so the raw marker byte is mutually unique across ALL 255
-/// identifiers simultaneously and can never be confused with zeroed or
-/// unwritten memory — any realloc that copies the preserved prefix from a
-/// live block carrying a DIFFERENT fill identifier is therefore caught at
-/// offset 0 no matter how short the prefix.
+/// This helper is private and has no page in the rendered public rustdoc, so
+/// the CANONICAL description of the scheme — the precise wrong-source
+/// guarantee and its shifted-copy residual, and the 2^32 period of the
+/// positive-offset hash tail — lives in the `Safety and oracle limits`
+/// section of the crate-level documentation in `src/lib.rs`. Keep that
+/// section and this formula in sync.
 ///
-/// The mix closes two concrete hole classes, each with a regression test in
-/// tests/oracle_negative.rs. Review run 3, P3-1: the previous formula
-/// `fill.wrapping_add(offset as u8)` satisfied `pattern(1, o + 1) ==
+/// Implementation constraints that belong next to the formula: offset 0 must
+/// stay the raw identifier (it is the one byte every oracle pass verifies),
+/// and the mix must stay non-additive. The earlier
+/// `fill.wrapping_add(offset as u8)` formula satisfied `pattern(1, o + 1) ==
 /// pattern(2, o)` for EVERY `o` — adjacent fill identifiers were fixed
 /// one-byte phase shifts of each other, so a defective realloc copying from
 /// a foreign block one byte in reproduced the real source's entire expected
-/// pattern. Do not reintroduce an additive/offset scheme here. Review run 4,
-/// P3-1: the u8 truncation of the then-uniform hash did not preserve
-/// injectivity by identifier at a fixed offset — `pattern_byte(5, 0) ==
-/// pattern_byte(30, 0)`, and even the first TWO bytes of identifiers 60 and
-/// 92 agreed — so a 1-2-byte wrong-source prefix from a different live block
-/// could coincide; the raw offset-0 marker closes that class.
-///
-/// Residual limits, stated honestly. Offsets >= 1 produce an 8-bit value: by
-/// pigeonhole, collisions between different `(fill, offset)` pairs remain
-/// possible in general — what is covered is the specific classes named
-/// above (fixed shifts, permutations, repeated single bytes, wrong-source
-/// copies from a differently-identified block), not the absence of all
-/// collisions. The offset enters the mix truncated to `u32`, so the
-/// pattern's guaranteed period in the offset is 2^32 on 64-bit platforms
-/// (`pattern_byte(f, o + 2^32) == pattern_byte(f, o)`; NOT 256 — e.g.
-/// `pattern_byte(1, 0) = 0x01` while `pattern_byte(1, 256) = 0xd0`), and a
-/// single allocation spanning 2^32 offsets is outside any realistic test's
-/// reach; on 32-bit platforms `offset as u32` is lossless and that period
-/// does not exist. Marker reuse after 255 fill assignments (see the
-/// crate-level limits section) is unchanged: two live blocks sharing an
-/// identifier are indistinguishable to this scheme.
+/// pattern (review run 3, P3-1). The u8 truncation of the then-uniform hash
+/// that followed was not injective by identifier at a fixed offset —
+/// `pattern_byte(5, 0) == pattern_byte(30, 0)`, and even the first TWO bytes
+/// of identifiers 60 and 92 agreed (review run 4, P3-1); the raw offset-0
+/// marker closes that class. Both hole classes have regression tests in
+/// tests/oracle_negative.rs. Do not reintroduce an additive/truncating
+/// scheme here.
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
     if offset == 0 {
         return fill;
@@ -298,6 +281,20 @@ unsafe fn verify_prefix_block(
 /// from inside an allocation hook can recurse or deadlock; invoke it from
 /// ordinary test code and use a separate global allocator for bookkeeping
 /// when isolation is needed.
+///
+/// # Cost
+///
+/// One `drive` call costs O(M + M*K + B), worst case O(M^2 + B), where M is
+/// the op count, K the peak number of simultaneously-live blocks, and B the
+/// total oracle byte work (the fill and verify passes over block contents).
+/// The superlinear term is the M3 overlap oracle: each block-creating op is
+/// compared against every currently-live block, so a stream that keeps many
+/// blocks live at once pays M*K overlap comparisons and reserves O(K) model
+/// memory. The generated front-ends bound their streams (the `arbitrary`
+/// decoder caps one `OpStream`'s op count; `op_strategy` draws its length
+/// from the caller's `len_range`), but a hand-built `ops` slice, a long
+/// `len_range`, or a `Config` that makes the large arm frequent can reach a
+/// far higher K — size long streams accordingly.
 ///
 /// After an oracle panic, outstanding tested allocations are not freed by
 /// this driver: invalid or overlapping allocator results cannot be reclaimed

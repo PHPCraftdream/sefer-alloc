@@ -5,6 +5,20 @@
 //! a structural fix, per this project's measurement-before-restructuring
 //! discipline. Requires `--features proptest` for the P4-5 section.
 //!
+//! Scope of the overlap-scan verdict: it is a NO-GO for the regimes actually
+//! measured below — K=2048 (the `arbitrary` front-end's per-`OpStream`
+//! decode-attempt ceiling) and K~200 (the native integration tests' own
+//! stream length) — NOT a claim that those K values bound the crate. The
+//! driver's real cost is O(M + M*K + B), worst case O(M^2 + B), where M is
+//! the op count, K the peak live count, and B the total oracle byte work
+//! (fill + verify passes over block contents): every block-creating op is
+//! compared against every currently-live block. `op_strategy`'s `len_range`
+//! is caller-supplied and `Config` permits a frequent (not merely rare)
+//! large arm, so a hand-built or long generated stream can reach a far
+//! larger peak live count than either measured regime; the linear scan
+//! stays because no measured regime approached a cost that would pay for an
+//! ordered interval index.
+//!
 //! `pattern_byte` is duplicated here verbatim from `src/drive.rs` (it is
 //! private) — same "independent copy" rationale `tests/oracle_negative.rs`
 //! already uses.
@@ -115,8 +129,13 @@ fn main() {
             elapsed.as_secs_f64() * 1e9 / total_bytes as f64
         );
 
-        // Regime B: overlap-scan-heavy — many tiny blocks, high live count,
-        // matching the crate's own OpStream bounded-decoder ceiling (2048).
+        // Regime B: overlap-scan-heavy — many tiny blocks, high live count.
+        // K=2048 is the `arbitrary` front-end's per-`OpStream`
+        // decode-attempt ceiling (`MAX_OPS` in src/arbitrary_stream.rs), NOT
+        // a limit on the public driver or on `op_strategy` (whose
+        // `len_range` is caller-supplied): a hand-built or long generated
+        // stream can reach a far larger peak live count, so this is one
+        // measured regime, not the crate's most adversarial reachable case.
         let small_ops: Vec<Op> = (0..2048).map(|_| Op::Alloc { size: 8, align: 8 }).collect();
         let start = Instant::now();
         drive(&System, Config::default(), &small_ops);
@@ -126,7 +145,9 @@ fn main() {
             elapsed.as_secs_f64() * 1e9 / 2048.0
         );
 
-        // Regime B at the crate's typical native default MAX_LEN (200).
+        // Regime B at the native integration tests' own stream length
+        // (tests/system_proptest.rs MAX_LEN, default 200) — a test-suite
+        // constant, not a Config or driver limit.
         let small_ops_200: Vec<Op> = (0..200).map(|_| Op::Alloc { size: 8, align: 8 }).collect();
         let start = Instant::now();
         drive(&System, Config::default(), &small_ops_200);

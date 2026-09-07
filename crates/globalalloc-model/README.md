@@ -186,17 +186,26 @@ a fill identifier in `1..=255`: byte 0 carries the raw identifier (mutually
 unique across all 255 identifiers, and never zero) and every later byte
 carries a mixed (non-additive) hash of the identifier and the offset. A
 realloc's preserved prefix is never empty, so the offset-0 marker is always
-checked: a wrong-source copy from a live block carrying a different
-identifier is caught no matter how short the prefix, and neither a repeated
-single byte, a shifted copy, nor a permuted prefix reads back as a whole
-block's expectation. The exact scheme and its residual limits — including
-the pattern's true period of 2^32 offsets on 64-bit platforms — are
-documented on the driver's internal `pattern_byte` helper. Residual
-collisions remain possible in general, and after 255 fill assignments two
-live blocks can share an identifier, so corruption from one such block into
-the other can still go undetected. Direct extent-overlap checks still run
-when a block is created. Any corruption that is restored between observation
-points is also undetectable.
+checked. What it guarantees, precisely: an unshifted copy taken from the
+start of a live block carrying a different identifier is always caught at
+offset 0, no matter how short the prefix, and neither a repeated single
+byte, a whole-block phase shift between adjacent identifiers, nor a permuted
+prefix reads back as a whole block's expectation. A shifted copy is NOT
+covered by that guarantee: the hash tail can coincide with another
+identifier's marker byte (concretely, the byte at offset 1 of a fill-1
+block and the offset-0 marker of a fill-202 block are both `0xca`, so a
+one-byte shifted copy still matches). The pattern's 2^32 period on 64-bit
+platforms belongs to the positive-offset hash tail only: offset 0 is
+special-cased on the literal zero, not on `offset mod 2^32`, so the
+sequence including the first byte has no such period. The canonical
+description of the scheme and its residual limits, with the exact
+counterexamples, is the `Safety and oracle limits` section of the crate
+documentation (the pattern helper is private and has no docs.rs page of its
+own). Residual collisions remain possible in general, and after 255 fill
+assignments two live blocks can share an identifier, so corruption from one
+such block into the other can still go undetected. Direct extent-overlap
+checks still run when a block is created. Any corruption that is restored
+between observation points is also undetectable.
 
 On normal return, every surviving modeled block is deallocated. On an oracle
 panic, allocations may be leaked deliberately. Generic cleanup is not safe
