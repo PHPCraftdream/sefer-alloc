@@ -115,8 +115,12 @@ A negative-oracle test suite exists in this crate's own `tests/`
 pinning each failure message as behaviour.
 
 Oracle checks are observations rather than continuous monitoring. Transient
-corruption restored between checks is invisible, and fill bytes cycle after
-255 assignments, so two live blocks can share a marker. More fundamentally,
+corruption restored between checks is invisible. Each block's per-identifier
+byte pattern is a mixed (non-additive) function of the fill identifier and the
+byte offset, not a simple additive scheme — distinct identifiers' patterns are
+not fixed shifts of one another — but the pattern has period 256 in the offset
+and fill identifiers cycle after 255 assignments, so two live blocks can still
+share a marker. More fundamentally,
 an invalid extent or genuinely uninitialized byte violates `RawAllocator`'s
 safety contract: accessing it is undefined behavior natively and under Miri,
 not a reliably reportable oracle failure. If an oracle panics, allocations may

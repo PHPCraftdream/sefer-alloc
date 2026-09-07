@@ -59,10 +59,14 @@
 //! oracle failure.
 //!
 //! Each block's expected contents are a position-dependent pattern derived
-//! from a fill identifier that cycles through `1..=255` (byte at offset `o` of
-//! a block carrying identifier `f` is `f + o`, wrapping). A repeated single
-//! byte, a shifted copy, or a permuted prefix therefore no longer reads back
-//! as a whole block's expectation. Residual collisions remain: the pattern has
+//! from a fill identifier that cycles through `1..=255`: the per-byte
+//! expectation is a mixed (non-additive) function of the identifier and the
+//! byte offset, so changing the identifier does not produce a fixed phase
+//! shift of another identifier's sequence — the specific additive correlation
+//! that let a wrong-source realloc copy slip through every check (Sol-codex
+//! review run 3, P3-1) is closed. A repeated single byte, a shifted copy, or
+//! a permuted prefix therefore no longer reads back as a whole block's
+//! expectation. Residual collisions remain: the pattern has
 //! period 256 in the offset, and once more than 255 fill assignments are
 //! represented among live blocks two can share an identifier, so corruption
 //! aligned to that period (or from one such block into the other) may still
@@ -168,11 +172,17 @@ pub use config::Config;
 pub use double_free_ok::DoubleFreeOk;
 pub use drive::drive;
 pub use op::Op;
-// Test-only export (established pattern, see e.g. the root crate's
-// `alloc_core` module doc): `peak_live_count` is `drive`'s own internal
-// capacity pre-pass, not stable public API. It is `pub` solely so
-// `tests/peak_live_count.rs` (a separate integration-test crate) can reach
-// and test it directly; `#[doc(hidden)]` keeps it out of the rendered docs.
+// Test-only export, gated behind the `internals` feature (the root crate's
+// `alloc_core` module is the established pattern): `peak_live_count` is
+// `drive`'s own internal capacity pre-pass, not stable public API. It is
+// `pub` solely so `tests/peak_live_count.rs` (a separate integration-test
+// crate) can reach and test it directly. The cfg gate — not just
+// `#[doc(hidden)]` — is what keeps it out of a normal build: with
+// `internals` off (the default) the symbol is absent from the crate's
+// public surface entirely, not merely undocumented (`#[doc(hidden)]` only
+// hides an item from rustdoc's output; it does not restrict reachability —
+// the same lesson as the root crate's R34-3/task #522 finding B1).
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub use peak_live_count::peak_live_count;
 pub use raw_allocator::RawAllocator;

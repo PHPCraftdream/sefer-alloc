@@ -48,6 +48,16 @@ fn op_size(op: &Op) -> Option<usize> {
     }
 }
 
+/// The op's own alignment (`Alloc`/`AllocZeroed` only): `Realloc` is
+/// size-bearing but borrows the old block's alignment, and `Dealloc` has
+/// neither.
+fn op_align(op: &Op) -> Option<usize> {
+    match op {
+        Op::Alloc { align, .. } | Op::AllocZeroed { align, .. } => Some(*align),
+        Op::Realloc { .. } | Op::Dealloc(_) => None,
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: CASES, failure_persistence: None, ..ProptestConfig::default() })]
     // `failure_persistence: None` keeps runs hermetic (same rationale as the
@@ -263,10 +273,10 @@ fn align_strategy_yields_exactly_the_powers_of_two_up_to_max_align() {
 fn align_strategy_shrinks_toward_one() {
     // The old `sample::select` over an ascending list shrank toward its
     // FIRST element (align 1); the exponent range must keep that direction:
-    // a fully simplified stream has every size-bearing op at align 1.
+    // a fully simplified stream has every align-bearing op at align 1.
     // Shorter stream under miri for the same reason as the sweep test
     // above: the walk's cost is (simplify steps) x (stream clone). The
-    // property needs only at least one size-bearing op through the full
+    // property needs only at least one align-bearing op through the full
     // walk; the full 12-op walk stays native.
     let len = if cfg!(miri) { 6..7 } else { 12..13 };
     let strategy = op_strategy(
@@ -284,20 +294,13 @@ fn align_strategy_shrinks_toward_one() {
         }
     }
     let ops = tree.current();
+    let aligns: Vec<usize> = ops.iter().filter_map(op_align).collect();
     assert!(
-        ops.iter().any(|op| op_size(op).is_some()),
-        "fully simplified stream had no size-bearing op"
+        !aligns.is_empty(),
+        "fully simplified stream had no align-bearing op"
     );
-    for op in &ops {
-        if op_size(op).is_some() {
-            let align = match op {
-                Op::Alloc { align, .. } | Op::AllocZeroed { align, .. } => align,
-                Op::Realloc { .. } | Op::Dealloc(_) => {
-                    unreachable!("op_size said size-bearing")
-                }
-            };
-            assert_eq!(*align, 1, "fully simplified op kept align {align}");
-        }
+    for align in aligns {
+        assert_eq!(align, 1, "fully simplified op kept align {align}");
     }
 }
 
@@ -315,4 +318,46 @@ fn align_strategy_exponent_is_width_correct_at_the_isize_ceiling() {
     assert_eq!(1usize << largest.trailing_zeros(), largest);
     // And the default config's exponent is far from the width.
     assert_eq!(Config::default().max_align.trailing_zeros(), 12);
+
+    // Production-mapping proof: drive the REAL generator at that ceiling and
+    // confirm it actually reaches `largest` without overflowing/panicking —
+    // the arithmetic above proves the shift is safe in isolation; this
+    // confirms `op_strategy` really exercises it (review run 3, P4-2: this
+    // test used to prove NOTHING about op_strategy/align_strategy
+    // themselves).
+    let config = Config {
+        max_align: largest,
+        ..Config::default()
+    };
+    let strategy = op_strategy(config, 8..9);
+    let mut seen_ceiling = false;
+    // The ceiling exponent is 1 of `usize::BITS - 1` exponents and ops are
+    // only half align-bearing (32 single-op seeds measurably miss it), so
+    // the sweep uses a fixed-length stream and enough fixed-seed draws to
+    // reach the ceiling deterministically; same Fixed-seed approach as
+    // `align_strategy_yields_exactly_the_powers_of_two_up_to_max_align`.
+    for seed in 0..32u64 {
+        let ops = strategy
+            .new_tree(&mut TestRunner::new(ProptestConfig {
+                rng_seed: RngSeed::Fixed(seed),
+                ..ProptestConfig::default()
+            }))
+            .expect("ceiling sweep: generate a stream")
+            .current();
+        for op in ops {
+            if let Op::Alloc { align, .. } | Op::AllocZeroed { align, .. } = op {
+                assert!(
+                    align.is_power_of_two() && align <= largest,
+                    "generated align {align} outside 1..={largest} powers of two"
+                );
+                if align == largest {
+                    seen_ceiling = true;
+                }
+            }
+        }
+    }
+    assert!(
+        seen_ceiling,
+        "ceiling sweep never generated the maximal align {largest}"
+    );
 }

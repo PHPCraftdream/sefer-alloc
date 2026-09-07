@@ -164,7 +164,7 @@ enum Fault {
     /// an isolation argument: if the overlap check were deleted, the ZERO
     /// check would fire immediately — `drive` filled block 0 (fill 1) at
     /// op 0, so the overlapping block's first byte reads
-    /// `pattern_byte(1, 16)` = 0x11, not 0, and
+    /// the nonzero `pattern_byte(1, 16)`, not 0, and
     /// the panic message becomes `alloc_zeroed:` instead of `M3: op #`.
     /// That message change is exactly what the `#[should_panic]` pin needs:
     /// the test still fails without the overlap assert, just via the other
@@ -203,6 +203,14 @@ enum Fault {
     /// permutation rather than a shift. A uniform block is invariant under any
     /// permutation; the pattern is not.
     ReallocPermute,
+    /// `realloc` ignores its real source pointer and instead copies from ONE BYTE
+    /// PAST the start of the FIRST block the arena ever handed out — the
+    /// review-run-3 P3-1 counterexample: under the OLD additive pattern, a
+    /// foreign block one fill-id below the real source, read from offset 1,
+    /// reproduced the real source's entire expected pattern. Requires the first
+    /// handed-out block to still be live and at least `keep + 1` bytes long; the
+    /// test using this fault arranges exactly that shape.
+    ReallocFromForeignBlockPlusOne,
     /// Every `alloc`/`alloc_zeroed` call after the first behaves honestly for ITS OWN
     /// block, but silently scribbles the FIRST block the arena ever handed
     /// out with a foreign byte (0xCC). The returned pointer is honest and
@@ -237,7 +245,8 @@ struct Faulty {
     fault: Fault,
     /// Offset and size of the FIRST block the arena handed out — the
     /// corruption target of `ClobberOnLaterAlloc`,
-    /// `ClobberSuffixOnLaterAlloc`, and `WritesDoNotStick`.
+    /// `ClobberSuffixOnLaterAlloc`, and `WritesDoNotStick`, and the copy
+    /// SOURCE of `ReallocFromForeignBlockPlusOne`.
     first_block: Cell<Option<(usize, usize)>>,
 }
 
@@ -431,6 +440,20 @@ unsafe impl RawAllocator for Faulty {
                 }
                 dst
             }
+            Fault::ReallocFromForeignBlockPlusOne => {
+                let (foreign_off, foreign_len) = self
+                    .first_block
+                    .get()
+                    .expect("fault requires a first block to already exist");
+                let p = self.arena.bump_aligned(new_size, old_layout.align());
+                let dst = self.arena.at_len(p, new_size);
+                let src = self.arena.at_len(foreign_off + 1, foreign_len - 1);
+                // SAFETY: `src` is valid for `keep` reads (the test arranges the first
+                // block to be at least `keep + 1` bytes, all initialized by `drive`'s
+                // fill); `dst` is valid for `new_size` writes inside the arena.
+                unsafe { ptr::copy(src, dst, keep) };
+                dst
+            }
             Fault::NullRealloc => ptr::null_mut(),
             _ => {
                 // Honest: a fresh aligned block with the prefix copied.
@@ -459,7 +482,12 @@ fn faulty(cap: usize, fault: Fault) -> Faulty {
 /// formula changes shape, every exact byte pin below fails and forces a
 /// conscious re-derivation instead of silently tracking the new scheme.
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
-    fill.wrapping_add(offset as u8)
+    let mut x = (fill as u32) ^ (offset as u32).wrapping_mul(0x9E37_79B1);
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    x = x.wrapping_mul(0xC2B2_AE35);
+    x ^= x >> 16;
+    x as u8
 }
 
 #[test]
@@ -780,15 +808,16 @@ fn realloc_without_copy_loses_prefix() {
 
 #[test]
 #[should_panic(
-    expected = "lost prefix byte 1 (preserved 64 of old 64 -> new 128): read 0x01, \
-                expected 0x02 (pattern fill 0x01 + offset 1)"
+    expected = "lost prefix byte 1 (preserved 64 of old 64 -> new 128): read 0xb7, \
+                expected 0xca (pattern fill 0x01, offset 1)"
 )]
 fn realloc_repeat_first_byte_is_caught_by_pattern() {
     // The review-run-2 P3-1 counterexample: the new range is filled with
     // old[0] instead of copying. Under the old uniform fill every checked
     // byte read back the expected constant and this allocator PASSED; the
-    // pattern check fires at byte 1 (read 0x01 = old[0], expected
-    // 0x02 = pattern_byte(1, 1)).
+    // pattern check fires at byte 1 — byte 0 still happens to match
+    // (pattern_byte(1, 0) = the copied old[0]) — with read 0xb7 = old[0]
+    // where pattern_byte(1, 1) = 0xca is expected.
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -805,15 +834,16 @@ fn realloc_repeat_first_byte_is_caught_by_pattern() {
 
 #[test]
 #[should_panic(
-    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0x02, \
-                expected 0x01 (pattern fill 0x01 + offset 0)"
+    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0xca, \
+                expected 0xb7 (pattern fill 0x01, offset 0)"
 )]
 fn realloc_shifted_copy_is_caught_by_pattern() {
     // The prefix lands shifted left by one (tail patched so no read leaves
     // the initialized range). A uniform block is invariant under this fault
     // — under the old fill every byte still read back the one expected
     // constant — so only the position-dependent pattern sees it: byte 0
-    // reads 0x02 (= old[1]) where pattern_byte(1, 0) = 0x01 is expected.
+    // reads 0xca (= pattern_byte(1, 1) = old[1]) where pattern_byte(1, 0)
+    // = 0xb7 is expected.
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -830,14 +860,15 @@ fn realloc_shifted_copy_is_caught_by_pattern() {
 
 #[test]
 #[should_panic(
-    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0x40, \
-                expected 0x01 (pattern fill 0x01 + offset 0)"
+    expected = "lost prefix byte 0 (preserved 64 of old 64 -> new 128): read 0xfc, \
+                expected 0xb7 (pattern fill 0x01, offset 0)"
 )]
 fn realloc_permuted_copy_is_caught_by_pattern() {
     // The prefix is copied REVERSED — a permutation. Any permutation of a
     // uniform block is indistinguishable from the original, so the old fill
     // could not see this fault; the pattern fires at byte 0 (read
-    // 0x40 = pattern_byte(1, 63) = the reversed-in old[63], expected 0x01).
+    // 0xfc = pattern_byte(1, 63) = the reversed-in old[63], where
+    // pattern_byte(1, 0) = 0xb7 is expected).
     let ops = [
         Op::Alloc { size: 64, align: 8 },
         Op::Realloc {
@@ -847,6 +878,27 @@ fn realloc_permuted_copy_is_caught_by_pattern() {
     ];
     drive(
         &faulty(4096, Fault::ReallocPermute),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "lost prefix byte")]
+fn realloc_from_other_block_shifted_is_caught_by_pattern() {
+    // Review run 3, P3-1: under the OLD `fill.wrapping_add(offset as u8)`
+    // pattern, `pattern(1, o+1) == pattern(2, o)` for EVERY `o` — a defective
+    // realloc that copies from a FOREIGN block (A, fill 1) one byte past its
+    // start, instead of from the real source block (B, fill 2), reproduced
+    // B's entire expected pattern and passed undetected. The mixed-hash
+    // pattern must catch this.
+    let ops = [
+        Op::Alloc { size: 65, align: 8 },   // A: op #0, fill 1
+        Op::Alloc { size: 64, align: 8 },   // B: op #1, fill 2
+        Op::Realloc { i: 1, new_size: 64 }, // targets B (live = [A, B], 1 % 2 == 1)
+    ];
+    drive(
+        &faulty(4096, Fault::ReallocFromForeignBlockPlusOne),
         Config::default(),
         &ops,
     );
@@ -1090,6 +1142,56 @@ fn clobbered_by_later_alloc_reaches_run_end_sweep() {
     ];
     drive(
         &faulty(4096, Fault::ClobberOnLaterAlloc),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #1 run-end sweep: live block clobbered")]
+fn fill_op_survives_swap_remove_reindexing() {
+    // Review run 3, P4-3: after `Dealloc(0)` removes A via `swap_remove`, B
+    // (allocated at op #1) is swapped into `live[0]`. A regression that
+    // reported the SURVIVOR'S POSITION instead of its stored `fill_op` would
+    // misname this failure "step #0" (A's original op index, now B's stale
+    // position) instead of the correct "step #1" (the op that actually
+    // allocated B). `ClobberAtOnDealloc(64)` corrupts the byte at absolute
+    // arena offset 64 (B's first byte: A occupies [0..64), align 8, so B
+    // lands at exactly offset 64) as a side effect of ANY dealloc call —
+    // here, freeing A at op #2.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 }, // A: op #0, fill 1
+        Op::Alloc { size: 32, align: 8 }, // B: op #1, fill 2, arena[64..96)
+        Op::Dealloc(0),                   // frees A (index 0); corrupts B's byte 0
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberAtOnDealloc(64)),
+        Config::default(),
+        &ops,
+    );
+}
+
+#[test]
+#[should_panic(expected = "M3: step #2 run-end sweep: live block clobbered")]
+fn fill_op_is_updated_by_realloc_not_left_at_the_original_alloc() {
+    // Review run 3, P4-3's second requested case: `fill_op` must track the
+    // MOST RECENT op that (re)filled a block, not just its original
+    // allocation. After the realloc at op #2, block A' (position 0 in
+    // `live`) carries fill_op 2, distinct from its position 0. To ALSO rule
+    // out position tracking surviving a LATER reindex, the stream adds a
+    // second block C and deallocs it at op #3, forcing a `swap_remove` that
+    // does not touch A' itself. `ClobberAtOnDealloc` corrupts A' at its real
+    // post-realloc arena offset (72: A at [0..64), C at [64..72), the
+    // realloc's fresh honest bump starts from cursor 72) as a side effect of
+    // freeing C.
+    let ops = [
+        Op::Alloc { size: 64, align: 8 },   // A: op #0, fill 1, arena[0..64)
+        Op::Alloc { size: 8, align: 8 },    // C: op #1, fill 2, arena[64..72)
+        Op::Realloc { i: 0, new_size: 64 }, // op #2: reallocs A -> A', fill 3, fill_op 2, arena[72..136)
+        Op::Dealloc(1),                     // frees C (1 % 2 == 1); corrupts A' byte 0
+    ];
+    drive(
+        &faulty(4096, Fault::ClobberAtOnDealloc(72)),
         Config::default(),
         &ops,
     );

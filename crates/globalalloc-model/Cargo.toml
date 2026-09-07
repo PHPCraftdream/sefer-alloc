@@ -19,8 +19,11 @@ categories = ["memory-management", "development-tools::testing", "no-std"]
 
 # Without this, docs.rs builds with `default = []` (empty) and the published
 # render would show neither `op_strategy` nor `OpStream` — both optional
-# features, together, exactly equal `--all-features` for this crate (there
-# are no others), so this is docs.rs's full API surface, not a subset.
+# features, together, exactly equal `--all-features` for this crate's
+# PUBLIC-API surface (the third feature, `internals`, is deliberately
+# excluded: its only export stays `#[doc(hidden)]` even when enabled, so
+# the rendered API is unchanged either way), so this is docs.rs's full
+# public API surface, not a subset.
 [package.metadata.docs.rs]
 features = ["proptest", "arbitrary"]
 rustdoc-args = ["--cfg", "docsrs"]
@@ -40,6 +43,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 proptest = ["dep:proptest"]
 arbitrary = ["dep:arbitrary"]
+# Gates `peak_live_count`, `drive`'s own internal capacity-reservation
+# pre-pass, which is `pub` (doc-hidden) ONLY so tests/peak_live_count.rs (a
+# separate integration-test crate) can reach it directly. Off by default so a
+# normal build (and `cargo package`'s published crate) exposes no such symbol
+# at all — `#[doc(hidden)]` alone only hides an item from rustdoc, it does not
+# restrict reachability (see the root sefer-alloc crate's R34-3/task #522
+# finding B1 for the same lesson learned one crate over). Deliberately NOT
+# listed in [package.metadata.docs.rs] above, so the published docs.rs render
+# never shows it either.
+internals = []
 
 [dependencies]
 proptest = { version = "1", optional = true, default-features = false, features = ["alloc", "no_std"] }

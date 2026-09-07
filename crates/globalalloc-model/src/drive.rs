@@ -52,12 +52,24 @@ fn next_fill(cycle: &mut u8) -> u8 {
 }
 
 /// The per-byte expected value for a block carrying fill identifier `fill`:
-/// `fill.wrapping_add(offset as u8)` — position-dependent, so a wrong copy
-/// algorithm can no longer reproduce a whole block by repeating one byte
-/// (an adversarial `realloc` that fills the new range with `old[0]`, or that
-/// shifts or permutes the copied prefix, now reads back wrong at almost every
-/// offset). The value is computed on the fly from `(fill, offset)` alone; no
-/// second copy of a block's expected contents is stored.
+/// a position-dependent pattern computed from `(fill, offset)` by an
+/// integer-hash mixing finalizer (similar in spirit to FxHash / Murmur3's
+/// finalizer), computed on the fly; no second copy of a block's expected
+/// contents is stored. The position-dependence keeps a repeated single byte,
+/// a shifted copy, or a permuted prefix from reading back as a whole block's
+/// expectation.
+///
+/// The mix closes the review-run-3 P3-1 hole in the previous formula
+/// `fill.wrapping_add(offset as u8)`, which satisfied `pattern(1, o + 1) ==
+/// pattern(2, o)` for EVERY `o` — adjacent fill identifiers were fixed
+/// one-byte phase shifts of each other, so a defective `realloc` that copied
+/// from a FOREIGN block (fill 1) starting at its second byte, instead of
+/// from the real source (fill 2), reproduced the real source's entire
+/// expected pattern. Do not reintroduce an additive/offset scheme here.
+///
+/// As a design goal, NOT a proof: with an 8-bit output space, pigeonhole
+/// guarantees some collisions exist; the goal is only that no FIXED shift
+/// between two DIFFERENT fill identifiers reproduces a whole block.
 ///
 /// Residual limitation, stated honestly: the pattern has period 256 in the
 /// offset (`offset as u8` truncates), so a corruption that shifts or permutes
@@ -65,7 +77,12 @@ fn next_fill(cycle: &mut u8) -> u8 {
 /// expected values, and marker reuse after 255 fill assignments (see the
 /// crate-level limits section) still applies — the scheme is not airtight.
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
-    fill.wrapping_add(offset as u8)
+    let mut x = (fill as u32) ^ (offset as u32).wrapping_mul(0x9E37_79B1);
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    x = x.wrapping_mul(0xC2B2_AE35);
+    x ^= x >> 16;
+    x as u8
 }
 
 /// Build the `Layout` for an op's size/align pair, naming the op index if the
@@ -156,7 +173,7 @@ unsafe fn verify_block(ptr: *mut u8, size: usize, fill: u8, oracle: &str, step: 
         assert!(
             read == expected,
             "{oracle}: step #{step} {what}: {ptr:p} (size {size}): byte {off} read \
-             {read:#04x}, expected {expected:#04x} (pattern fill {fill:#04x} + offset {off})"
+             {read:#04x}, expected {expected:#04x} (pattern fill {fill:#04x}, offset {off})"
         );
     }
 }
@@ -227,7 +244,7 @@ unsafe fn verify_prefix_block(
             read == expected,
             "realloc: op #{op_idx}: {ptr:p} lost prefix byte {b} (preserved {len} of old \
              {old_size} -> new {new_size}): read {read:#04x}, expected {expected:#04x} \
-             (pattern fill {fill:#04x} + offset {b})"
+             (pattern fill {fill:#04x}, offset {b})"
         );
     }
 }

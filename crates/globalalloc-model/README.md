@@ -180,10 +180,12 @@ undefined behavior both natively and under Miri; neither environment is
 promised to turn that contract violation into a reliable oracle report.
 
 Each block's expected contents are a position-dependent pattern derived from a
-fill identifier in `1..=255` (the byte at offset `o` of a block carrying
-identifier `f` is `f + o`, wrapping), so a repeated single byte, a shifted
-copy, or a permuted prefix no longer reads back as a whole block's
-expectation. Residual collisions remain: the pattern has period 256 in the
+fill identifier in `1..=255`: the per-byte expectation is a mixed
+(non-additive) function of the identifier and the byte offset, so one
+identifier's byte sequence is never a fixed phase shift of another's. A
+repeated single byte, a shifted copy, or a permuted prefix no longer reads
+back as a whole block's expectation. Residual collisions remain: the pattern
+has period 256 in the
 offset, and after 255 fill assignments two live blocks can share an
 identifier, so corruption aligned to that period (or from one such block into
 the other) can still collide with the expected values. Direct extent-overlap

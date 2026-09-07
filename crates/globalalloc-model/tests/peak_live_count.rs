@@ -2,6 +2,10 @@
 //! The counter must equal the TRUE maximum liveness — faithful to the real
 //! up/down dynamics — not the history length.
 
+// Nothing here compiles without the `internals` feature: the entire subject
+// is the gated export.
+#![cfg(feature = "internals")]
+
 use globalalloc_model::{peak_live_count, Op};
 
 #[test]
