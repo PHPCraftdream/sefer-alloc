@@ -254,7 +254,15 @@ mod platform {
     }
 
     extern "C" {
-        fn mach_task_self() -> u32;
+        // `mach_task_self()` is NOT a C function: the public Mach API defines
+        // it as a macro over this cached global — `#define mach_task_self()
+        // mach_task_self_` (Apple libsyscall, libsyscall/mach/mach/mach_init.h,
+        // which declares only `extern mach_port_t mach_task_self_`) — so there
+        // is no `_mach_task_self` function symbol to link against. Bind the
+        // data symbol itself, the same shape rust-lang/libc uses
+        // (`pub static mut mach_task_self_: mach_port_t` in
+        // src/unix/bsd/apple/mod.rs; `mach_port_t` = `c_uint` = u32).
+        static mut mach_task_self_: u32;
         fn task_info(
             target_task: u32,
             flavor: u32,
@@ -263,14 +271,32 @@ mod platform {
         ) -> i32;
     }
 
+    /// The calling task's own task-port name — the value the public
+    /// `mach_task_self()` C macro expands to (a variable read, not a call;
+    /// see the extern block above). The name refers to a cached reference to
+    /// the caller's OWN task held by libSystem, not a newly acquired send
+    /// right, so it must never be `mach_port_deallocate`d.
+    fn mach_task_self() -> u32 {
+        // SAFETY: `mach_task_self_` is a `mach_port_t` global exported by
+        // libSystem (which std links on macOS), written only by
+        // `mach_init_doit()` (`mach_task_self_ = task_self_trap()`,
+        // libsyscall/Mach-side mach_init.c) during `libSystem_initializer` —
+        // before any user code runs in the process image — so this read can
+        // neither race with a write nor observe uninitialised memory. It is a
+        // plain `u32` load of a port NAME copied by value: it acquires no Mach
+        // right and transfers no ownership.
+        unsafe { mach_task_self_ }
+    }
+
     pub(super) fn snapshot() -> MemStat {
         const COUNT: u32 =
             (core::mem::size_of::<MachTaskBasicInfo>() / core::mem::size_of::<i32>()) as u32;
         // SAFETY: `info` is a valid, mutable out-parameter of exactly `COUNT`
         // `i32` units; `count` is initialised to that capacity as `task_info`
-        // requires. `mach_task_self` returns the caller's task port (no
-        // ownership transfer / no deallocation needed here). On any non-zero
-        // (error) return we ignore the untouched `info`.
+        // requires. The `target_task` argument is the bare self-port name from
+        // `mach_task_self` (see the helper above) — `task_info` consumes no
+        // Mach right, so nothing needs deallocating afterwards. On any
+        // non-zero (error) return we ignore the untouched `info`.
         unsafe {
             let mut info: MachTaskBasicInfo = core::mem::zeroed();
             let mut count: u32 = COUNT;
