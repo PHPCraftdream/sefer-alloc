@@ -12,7 +12,13 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 6.
+**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145 — of which 69 and 143
+are CLOSED pointers into RESOLVED.md, and 14's own flake is closed while the
+registry behaviour it exposed continues as 145). Verify, never hand-count:
+
+```text
+grep -cE "^[0-9]+\. \*\*" docs/correctness-open-items/TRACKED_test_flakiness.md
+```
 
 **Why split by theme, not by item-number range (task #1222, 2026-08-20):**
 task #1221 (same day) split the former single `TRACKED.md` into four
@@ -186,6 +192,51 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     pre-existing, isolated-run-clean" instead of re-diagnosing from
     scratch.
 
+    **UPDATE 2026-09-08 (task #1933) — the flake did NOT reproduce, and
+    looking for it found something worse.** First, the reproduction claim
+    above no longer holds on this host: 20 in-file runs under `production
+    internals` and 8 under `--all-features` all passed, with the test file
+    functionally unchanged since this card was filed (`git log` shows only
+    R34-3's `internals` cfg-gate edit and its rustfmt follow-up). Whatever
+    made it fail 5/5 in August is not reproducible here, so the card's
+    "reproducible on demand" property is withdrawn.
+
+    Instead of stopping there, the `delta 0` failure shape was attacked
+    directly: the message blames the mitigation for over-rejecting, but a
+    delta of 0 has a second possible cause the test never excluded — the
+    free not being cross-thread at all. Adding that missing
+    path-activation oracle (`assert_ne!(remote_heap, owner_heap)`, the
+    owner's address carried into the spawned thread as a `usize` since
+    `*mut HeapCore` is not `Send`) showed the premise is violated
+    SYSTEMATICALLY: `HeapRegistry::claim()` in the spawned thread returned
+    the OWNER's own heap in **20 of 20 runs**. Every "cross-thread" free in
+    this file was an ordinary own-thread free.
+
+    The consequence differs per test and is worse for three of them. The
+    two `is_reclaimed` tests passed for a reason other than the path they
+    name. The three `is_dropped` tests — which assert `delta == 0` — were
+    **vacuous**: a free that never enters the deferred path satisfies
+    "delta == 0" no matter what `large_layout_consistent` decides, so they
+    could not have failed even with the mitigation removed.
+
+    **Fixed** by `claim_remote_distinct_from`, applied at all five spawn
+    sites: claim until the returned heap is not the owner's. A colliding
+    claim is deliberately never recycled — the registry only offered the
+    owner's slot because that slot was on the free list while the owner was
+    still using it, so re-claiming takes it back out of circulation;
+    recycling it instead puts the owner's live heap back in the pool, which
+    (measured during this task) drains the owner's deferred frees and makes
+    `xthread_large_free_mismatched_layout_is_dropped` fail with
+    `delta 1 != 0` for reasons unrelated to the mitigation. **Non-vacuity
+    re-established by a run, not by argument:** with the remote free
+    switched from `wrong_layout` to `real_layout`, that same test now FAILS
+    with `delta 1 != 0` — the assertion is sensitive to the mitigation's
+    decision again. All 5 tests pass 25/25 runs afterwards.
+
+    **Status:** the flake itself is CLOSED-as-not-reproducible with the
+    tests' real coverage restored; the registry behaviour it exposed is
+    NOT closed and is filed separately as item 145 below.
+
 _(item 35 (renumbered from a collision, task #623/M2 — see that item's own
 history for the prior "15"/"16" mislabel), the F-2 provenance-asymmetry
 hypothesis, was resolved-negative by R34-5 (task #524) — see "Recently
@@ -256,3 +307,48 @@ resolved" in RESOLVED.md.)_
     this card's own remaining-work paragraph specified, plus serializing the
     file's two full-ceiling fills. See "Recently resolved" in RESOLVED.md for
     the full investigation and closure narrative.
+
+145. **[T, filed 2026-09-08, task #1933] `HeapRegistry::claim()` can hand a
+    spawned thread the heap another live thread is already using — observed
+    20/20, mechanism NOT established.** Found while adding a path-activation
+    oracle to `tests/regression_xthread_large_free_layout_mismatch.rs` (item
+    14 above). The main test thread calls `HeapRegistry::claim()` and never
+    recycles; a spawned thread then calls `claim()` and receives the SAME
+    `*mut HeapCore` — byte-identical pointer, therefore the same slot.
+    **Evidence:** oracle assert firing with `left: 2130866086736, right:
+    2130866086736` (`0x1f021840010` on both sides), reproducing in 20 of 20
+    runs of that file under `production internals`; and, separately, that
+    recycling such a colliding claim measurably drains the owner's deferred
+    frees (`DBG_LARGE_XTHREAD_RECLAIMED` +1), which is only possible if the
+    two really are one slot.
+
+    **What is established:** the pointers are equal, systematically, and the
+    consequence for the tests was real (see item 14 — three assertions were
+    vacuous because of it).
+
+    **What is NOT established, and must not be assumed by whoever picks this
+    up:** *why*. `claim()` (`src/registry/heap_registry.rs:131`) takes a slot
+    only via `pick_slot()` → CAS `STATE_FREE`→`STATE_LIVE`, so a second
+    claimer can only obtain a slot that is FREE — meaning the owner's slot
+    was on the free list while the owner still held it. Something recycled
+    it. One hypothesis worth checking FIRST, because it is cheap to confirm
+    or kill: `recycle()` (`:355`) locates the slot by `heap.id()` and CASes
+    `LIVE`→`FREE` with **no generation check**, while `claim()` does bump
+    `slot.generation`. A recycler holding a pointer whose claim has since
+    been superseded would therefore free a slot it no longer owns, and the
+    LIVE→FREE CAS would SUCCEED (the existing defensive branch only catches
+    the already-FREE case, i.e. plain double-recycle). Whether any live code
+    path — as opposed to this test file's unusual manual claim/recycle usage
+    — can actually get into that state is exactly the open question. **Do not
+    file this as a production bug until that is shown**; equally, do not
+    close it as test-only until it is shown it cannot happen via the TLS
+    thread-exit recycle path (`src/global/sefer_alloc.rs:185`, "thread exit
+    recycles the slot").
+
+    **Next trigger:** any further test that needs two genuinely distinct
+    heaps in one process, or any investigation of item 12 (the sibling
+    reclaim-count race in `regression_xthread_large_free_no_leak.rs`, which
+    shares this claim/recycle idiom and may share this cause).
+    **Workaround in place meanwhile:** `claim_remote_distinct_from` in
+    `tests/regression_xthread_large_free_layout_mismatch.rs` — claims until
+    distinct and never recycles a colliding claim.

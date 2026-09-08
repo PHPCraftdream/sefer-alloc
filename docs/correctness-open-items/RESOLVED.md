@@ -252,6 +252,21 @@ full closure trail".
   right now, so the counter, not the lock, is what closes the item; the lock
   removes a real but insufficient contributor.
 
+  **What the refusing constraint actually is on this host (2026-09-08).** The
+  card above reasons about a system-wide commit budget fluctuating with other
+  processes, which is what the original 1092/1188/2125/2127/2171 spread looked
+  like. On the host where the fix was verified the operative constraint is
+  narrower and deliberate: the session runs under an explicitly imposed
+  per-agent memory quota, so other agents keep their own quotas. Six
+  consecutive post-fix runs stopped at 2129 (×4), 2133 and 2134 — a spread of
+  5 objects, versus ~1000 historically. That tightness is the signature of a
+  fixed cap, not of ambient pressure. `ERROR_COMMITMENT_LIMIT` is what a job
+  object's memory limit surfaces as too, so the error code alone does not
+  distinguish the two. Recorded here because the distinction changes what a
+  future reader should do: under a quota there is nothing to diagnose and
+  nothing to free — the environment-limited branch is the correct and final
+  outcome, not a symptom to chase.
+
   **Counterfactual run, not asserted:** forcing the observed delta to 0 (so
   the environment-limited branch cannot trigger) makes the test FAIL with
   "expected exactly MAX_SEGMENTS-1 (4095) ... got 2133 with 0 OS

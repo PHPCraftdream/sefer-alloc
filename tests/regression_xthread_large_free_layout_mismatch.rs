@@ -50,7 +50,7 @@ use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use sefer_alloc::registry::{bootstrap, HeapRegistry, DBG_LARGE_XTHREAD_RECLAIMED};
+use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry, DBG_LARGE_XTHREAD_RECLAIMED};
 
 // Serialise all tests in this file against the shared
 // `DBG_LARGE_XTHREAD_RECLAIMED` global counter (same discipline as
@@ -72,6 +72,50 @@ impl SerialGuard {
 impl Drop for SerialGuard {
     fn drop(&mut self) {
         SERIAL.store(false, Ordering::Release);
+    }
+}
+
+/// Claims a heap for the CURRENT (remote) thread that is guaranteed not to be
+/// the owner's.
+///
+/// **Why this exists (task #1933, `docs/CORRECTNESS_OPEN_ITEMS.md` item 14).**
+/// Every test in this file spawns a thread, has it `HeapRegistry::claim()` a
+/// heap, and frees the owner's blocks through it — the premise being that
+/// those frees travel the CROSS-THREAD deferred path. Nothing checked the
+/// premise. Measured 2026-09-08: a bare `claim()` in the spawned thread
+/// returned the OWNER's own heap in 20 of 20 runs, making every such free an
+/// ordinary own-thread free. The tests passed anyway — the two `is_reclaimed`
+/// ones for a reason other than the path they name, and the three
+/// `is_dropped` ones VACUOUSLY, since a free that never enters the deferred
+/// path trivially satisfies "delta == 0" no matter what the
+/// `large_layout_consistent` mitigation does.
+///
+/// A claim that came back EQUAL to the owner's heap is deliberately NEVER
+/// recycled — it is left LIVE for the rest of the process. That is not
+/// tidiness lost, it is the correct action: the registry only handed this
+/// thread the owner's slot because the slot was on the free list while the
+/// owner was still using it, so re-claiming it takes it back OUT of that list
+/// and stops it being handed to anyone else. Recycling it would put the
+/// owner's live heap back into circulation — which, measured during this
+/// task, drains the owner's deferred frees and inflates
+/// `DBG_LARGE_XTHREAD_RECLAIMED` by one, making
+/// `xthread_large_free_mismatched_layout_is_dropped` fail with `delta 1 != 0`
+/// for a reason that has nothing to do with the mitigation under test.
+fn claim_remote_distinct_from(owner_addr: usize) -> *mut HeapCore {
+    let mut collisions = 0usize;
+    loop {
+        let h = HeapRegistry::claim();
+        assert!(!h.is_null(), "remote HeapRegistry::claim failed");
+        if h as usize != owner_addr {
+            return h;
+        }
+        collisions += 1;
+        assert!(
+            collisions < 64,
+            "registry kept handing out the OWNER's heap ({owner_addr:#x}) across \
+             {collisions} distinct claims — cannot establish the cross-thread \
+             precondition these tests require (docs/CORRECTNESS_OPEN_ITEMS.md item 14)"
+        );
     }
 }
 
@@ -113,11 +157,16 @@ fn xthread_large_free_mismatched_layout_is_dropped() {
 
     // Remote thread frees with the WRONG layout size — must be a no-op (not
     // even QUEUED, let alone reclaimed).
+    let owner_addr = heap as usize;
     thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        // Item 14: without this the free below can be own-thread, which would
+        // satisfy the `delta == 0` assertion VACUOUSLY — see
+        // `claim_remote_distinct_from`.
+        let remote_heap = claim_remote_distinct_from(owner_addr);
         unsafe { (*remote_heap).dealloc(addr as *mut u8, wrong_layout) };
+        // SAFETY: returned by `claim_remote_distinct_from` on this thread,
+        // recycled exactly once here.
         unsafe { HeapRegistry::recycle(remote_heap) };
     })
     .join()
@@ -215,13 +264,17 @@ fn xthread_large_free_consistent_layout_is_reclaimed() {
     }
 
     let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    let owner_addr = heap as usize;
     thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        // Item 14: see `claim_remote_distinct_from` — a bare `claim()` here
+        // can return the owner's own heap, making these frees own-thread.
+        let remote_heap = claim_remote_distinct_from(owner_addr);
         for addr in addrs {
             unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
         }
+        // SAFETY: returned by `claim_remote_distinct_from` on this thread,
+        // recycled exactly once here.
         unsafe { HeapRegistry::recycle(remote_heap) };
     })
     .join()
@@ -313,14 +366,31 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
     // Remote thread frees each block with the SAME (original) layout — the
     // legitimate cross-thread free A1 exists to reclaim.
     let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
-    thread::spawn(move || {
+    // Item 14 (`docs/CORRECTNESS_OPEN_ITEMS.md`): the owner heap's identity
+    // has to cross into the spawned thread as a plain address — `*mut
+    // HeapCore` is not `Send` — so that the cross-thread precondition can be
+    // CHECKED there rather than assumed. See the oracle assert below.
+    let owner_addr = heap as usize;
+    let remote_addr = thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        // PATH-ACTIVATION ORACLE (item 14). This test's whole premise is that
+        // these frees travel the CROSS-THREAD deferred path. Measured
+        // 2026-09-08 (task #1933): `HeapRegistry::claim()` here returns the
+        // OWNER's heap in 20 of 20 runs — the owner claimed a slot that was
+        // then handed out again, so every `dealloc` below was an ordinary
+        // own-thread free. The test nevertheless passed 20/20, so its
+        // `reclaimed > 0` assertion was being satisfied without the path it
+        // names ever running. See docs/CORRECTNESS_OPEN_ITEMS.md item 14.
+        //
+        let remote_heap = claim_remote_distinct_from(owner_addr);
         for addr in addrs {
             unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
         }
+        let remote_addr = remote_heap as usize;
+        // SAFETY: returned by `claim_remote_distinct_from` on this thread,
+        // recycled exactly once here.
         unsafe { HeapRegistry::recycle(remote_heap) };
+        remote_addr
     })
     .join()
     .unwrap();
@@ -339,7 +409,13 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
         "a legitimate tiny-size/huge-align cross-thread free was NOT \
          reclaimed (delta 0) — the mitigation compared the caller's raw \
          layout.size() against the header's MIN_BLOCK-clamped large_size \
-         and over-rejected it (permanent segment leak)"
+         and over-rejected it (permanent segment leak). Diagnostic context \
+         (item 14): {N} block(s) freed from remote heap {remote_addr:#x} to \
+         owner heap {owner_addr:#x} — proven distinct by the oracle assert in \
+         the freeing thread — with baseline reclaim counter {baseline} and {N} \
+         round-2 allocations performed to force the drain. The cross-thread \
+         precondition therefore held, so a delta of 0 here IS the mitigation \
+         over-rejecting, not a mis-set-up test."
     );
 
     for &p in &ptrs2 {
@@ -393,11 +469,15 @@ fn xthread_large_free_same_size_wrong_align_is_dropped() {
 
     // Remote thread frees with the WRONG align (same size) — must be a
     // no-op (not even QUEUED, let alone reclaimed).
+    let owner_addr = heap as usize;
     thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        // Item 14: without this the free below can be own-thread, which would
+        // satisfy the `delta == 0` assertion VACUOUSLY.
+        let remote_heap = claim_remote_distinct_from(owner_addr);
         unsafe { (*remote_heap).dealloc(addr as *mut u8, wrong_align_layout) };
+        // SAFETY: returned by `claim_remote_distinct_from` on this thread,
+        // recycled exactly once here.
         unsafe { HeapRegistry::recycle(remote_heap) };
     })
     .join()
@@ -526,11 +606,15 @@ fn xthread_large_free_stale_align_after_cache_hit_reuse_is_dropped() {
     // size, but align 8 instead of B's actual 4096) — this must be dropped:
     // a size-only check would have let it through (size still matches), but
     // the align now describes A's history, not B's current occupancy.
+    let owner_addr = heap as usize;
     thread::spawn(move || {
         let _ = bootstrap::ensure();
-        let remote_heap = HeapRegistry::claim();
-        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        // Item 14: without this the free below can be own-thread, which would
+        // satisfy the `delta == 0` assertion VACUOUSLY.
+        let remote_heap = claim_remote_distinct_from(owner_addr);
         unsafe { (*remote_heap).dealloc(addr_a as *mut u8, layout_a) };
+        // SAFETY: returned by `claim_remote_distinct_from` on this thread,
+        // recycled exactly once here.
         unsafe { HeapRegistry::recycle(remote_heap) };
     })
     .join()
