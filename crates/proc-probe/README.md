@@ -2,12 +2,12 @@
 
 The one-dependency toolkit a **fresh-process measurement probe** needs: emit
 the `RESULT key=value` stdout protocol a per-sample runner greps, plus a
-re-export of [`proc-memstat`](../proc-memstat)'s same-instant RSS +
+re-export of [`proc-memstat`](../proc-memstat)'s single-read RSS +
 **commit charge** + peak-RSS `snapshot()`. *Measure your process, report it in
 one line.*
 
 ```rust
-let m = proc_probe::snapshot();                 // measure (bytes, same instant)
+let m = proc_probe::snapshot();                 // measure (bytes, one read)
 proc_probe::emit_u64("rss_kib", m.rss / 1024);  // report
 proc_probe::emit_ns("elapsed_ns", t0.elapsed().as_nanos());
 // stdout:

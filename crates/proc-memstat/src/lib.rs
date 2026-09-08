@@ -1,7 +1,7 @@
-//! `proc-memstat` — same-instant self-probe of a process's own memory.
+//! `proc-memstat` — single-read self-probe of a process's own memory.
 //!
 //! One call — [`snapshot`] — returns a [`MemStat`] carrying four memory
-//! figures read as close to the same instant as the OS permits:
+//! figures gathered from ONE source in one go:
 //!
 //! - **`rss`** — resident set size: the physical memory currently backing the
 //!   process's pages (what "top" shows as RES / working set).
@@ -69,12 +69,27 @@
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 
-/// A same-instant snapshot of the calling process's own memory usage, in
+/// A best-effort observation of the calling process's own memory usage, in
 /// **bytes**.
 ///
-/// Produced by [`snapshot`]. The fields are read from one OS query (on Linux,
-/// one `/proc/self/status` read), so they describe as close to one moment as
-/// the platform allows.
+/// Produced by [`snapshot`] from one source — on Linux, one
+/// `/proc/self/status` read. That narrows the window between the figures; it
+/// does NOT make them atomic, and this type does not claim it does (review
+/// P3-1). The kernel documents RSS accounting as asynchronous and possibly
+/// inexact, and `task_mem` — the procfs code producing these very lines —
+/// reads the anon/file/shmem totals and `total_vm` in separate operations,
+/// with its own comment permitting inconsistent snapshots. At the `std` level
+/// a file read is not one syscall either.
+///
+/// So: comparing two fields of one `MemStat` is far better than two separate
+/// `snapshot()` calls, and is the intended use — but a comparison that would
+/// be WRONG if the fields were microseconds apart needs a stronger mechanism
+/// than this crate offers.
+///
+/// One relation that looks like same-instant evidence but is not: on current
+/// Linux `peak_rss >= rss` holds because both derive from a shared
+/// `total_rss`. That is correct, and it is not proof the other fields belong
+/// to the same moment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemStat {
     /// Resident set size in bytes — physical memory currently backing the

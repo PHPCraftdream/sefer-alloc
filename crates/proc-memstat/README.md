@@ -1,6 +1,6 @@
 # proc-memstat
 
-Same-instant self-probe of a process's **own** memory: RSS + **commit charge**
+Single-read self-probe of a process's **own** memory: RSS + **commit charge**
 + virtual size + peak RSS, in bytes, from one call. Zero dependencies, 100%
 Rust (no `sysinfo`, no C libraries).
 
@@ -13,8 +13,15 @@ println!(
 ```
 
 `snapshot() -> MemStat { rss: u64, virtual_size: Option<u64>, commit_charge:
-Option<u64>, peak_rss: Option<u64> }` — all fields in **bytes**, read from one
-OS query.
+Option<u64>, peak_rss: Option<u64> }` — all fields in **bytes**, gathered from
+one source in one go.
+
+That is a best-effort observation, not an atomic one, and the crate does not
+claim otherwise: the kernel documents RSS accounting as asynchronous, procfs
+assembles these lines with separate reads, and a `std` file read is not a
+single syscall. Reading the fields from one `MemStat` beats two `snapshot()`
+calls, which is the point — but a comparison that would be wrong if the
+figures were microseconds apart needs a stronger mechanism than this.
 
 ## `commit_charge` and `virtual_size` are different things
 

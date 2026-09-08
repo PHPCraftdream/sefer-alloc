@@ -1,5 +1,5 @@
 //! `proc-probe` — the `RESULT key=value` stdout protocol every fresh-process
-//! judge shares, plus a re-export of [`proc_memstat`]'s same-instant memory
+//! judge shares, plus a re-export of [`proc_memstat`]'s single-read memory
 //! [`snapshot`].
 //!
 //! # The protocol
@@ -26,7 +26,7 @@
 //! so a probe binary depends on **one** crate for both halves:
 //!
 //! ```text
-//! let m = proc_probe::snapshot();          // measure (bytes, same instant)
+//! let m = proc_probe::snapshot();          // measure (bytes, one read)
 //! proc_probe::emit_u64("rss_kib", m.rss / 1024);        // report
 //! // Name the metric you actually read. `commit_charge` and `virtual_size`
 //! // are different quantities and only one of them exists on a given OS —
@@ -62,7 +62,7 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-/// Re-export of the same-instant memory snapshot from [`proc_memstat`] — a
+/// Re-export of the single-read memory snapshot from [`proc_memstat`] — a
 /// probe gets "measure + report" from this one crate.
 pub use proc_memstat::{snapshot, MemStat};
 
