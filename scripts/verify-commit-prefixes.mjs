@@ -563,6 +563,28 @@ const GRANDFATHERED = new Map([
       'taxonomy. Durable record: docs/correctness-open-items/' +
       'TRACKED_process_record.md item 78, sub-card 15.',
   ],
+  [
+    '775c8ea',
+    'NOT a genuine mis-slot -- the SAME recurring Cargo.toml `description` ' +
+      'false-positive class as e25ec74/eaa3310/abf2061/08d8260/ab6a2ed ' +
+      '(sub-cards 7/8/9/12/13), this time on proc-memstat AND proc-probe ' +
+      'together (the proc-memstat Sol-codex round-1 P3-1 fix, task #1942). ' +
+      'The commit withdraws a "same-instant" snapshot claim the mechanism ' +
+      'cannot keep, and it withdraws it in every place the claim was ' +
+      'written: two `description = "..."` metadata strings and doc comments ' +
+      'in both crates\' src/lib.rs. The four flagged paths verify as ' +
+      'comment-or-metadata-only: `git show 775c8ea -- ' +
+      'crates/proc-memstat/src/lib.rs | grep -E "^[+-]" | grep -vE ' +
+      '"^(\\+\\+\\+|---)" | grep -vE "^[+-]\\s*(//|$)"` is EMPTY, the same ' +
+      'holds for crates/proc-probe/src/lib.rs, and each Cargo.toml diff is ' +
+      'a single `description =` line. So `docs(proc-memstat):` was the ' +
+      'honest prefix and the guard is reporting its known metadata-string ' +
+      'blind spot, not a real shipping change. PUSHED (it reached ' +
+      'origin/main in the 63b042f..6898053 range), hence recorded rather ' +
+      'than amended, per R30-12\'s non-retroactive posture. Durable record: ' +
+      'docs/correctness-open-items/TRACKED_process_record.md item 78, ' +
+      'sub-card 16.',
+  ],
 ]);
 
 // A local run with no explicit range and no configured upstream falls back
