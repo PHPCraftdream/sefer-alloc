@@ -1,0 +1,52 @@
+# proc-memstat review round 1, P4-2 — three-scan vs one-scan /proc/self/status
+# reader cost, and the saving expressed over one whole snapshot() call.
+#
+# Measured on GitHub Actions ubuntu-latest (the `measure — three-scan vs
+# one-scan /proc/self/status cost (P4-2)` step of the `proc-memstat gates
+# (ubuntu-latest)` job). This box is Windows and has no /proc at all, and it
+# runs agents under a 5% CPU cap, so a local run measures scheduling, not the
+# reader.
+#
+# Reproduce:
+#   cargo run --release -p proc-memstat --example status_scan_cost
+#
+# TRUNCATED — the surrounding job log (checkout, toolchain, fmt, clippy, test,
+# rustdoc, link-smoke, package steps) is omitted; only the measurement step's
+# own stdout is kept. Full job logs are reproducible from the run IDs cited
+# below until GitHub expires them (90 days), and from the command above
+# indefinitely.
+
+=== RUN 2 (commit 3119719, run 34249822373, job 102141100998, 2026-09-08T16:14:52Z) ===
+# The run that added the whole-snapshot() denominator. This is the run the
+# verdict rests on.
+
+proc-memstat P4-2: cost of three scans vs one fused scan
+(three_scans = today's backend; one_scan = read_kib_fields)
+
+groups=0                     bytes=271     three_scans=    302.4 ns  one_scan=    138.9 ns  ratio=2.18x  saved=   163.4 ns
+groups=64                    bytes=591     three_scans=    757.4 ns  one_scan=    248.7 ns  ratio=3.05x  saved=   508.7 ns
+groups=512                   bytes=2831    three_scans=   3823.3 ns  one_scan=    863.3 ns  ratio=4.43x  saved=  2960.0 ns
+groups=4096                  bytes=20751   three_scans=  28298.1 ns  one_scan=   5780.3 ns  ratio=4.90x  saved= 22517.8 ns
+REAL /proc/self/status       bytes=1510    three_scans=    543.2 ns  one_scan=    207.5 ns  ratio=2.62x  saved=   335.8 ns
+
+proc-memstat P4-2: the saving OVER THE WHOLE CALL
+  whole snapshot() ......... 17125.3 ns/call  (open+read+close of /proc/self/status, plus the parse)
+  parse, three scans ....... 543.2 ns  (today's backend)
+  parse, one fused scan .... 207.5 ns  (read_kib_fields)
+  saving ................... 335.8 ns = 2.0% of one snapshot() (335.8 ns saved / 17125.3 ns per call)
+
+=== RUN 1 (commit 4297f18, run 34244081677, job 102121434862, 2026-09-08T15:22:38Z) ===
+# Parse-side only — this run predates the denominator. Kept because the
+# cross-run spread on the parse arms is itself part of the evidence: the same
+# real-file ratio read 1.95x here and 2.62x in run 2, so the parse figures
+# carry visible CI noise. The verdict is robust to it — the saving is 1.1% of
+# run 2's 17125.3 ns denominator here versus 2.0% there, both negligible.
+
+proc-memstat P4-2: cost of three scans vs one fused scan
+(three_scans = today's backend; one_scan = read_kib_fields)
+
+groups=0                     bytes=271     three_scans=    221.6 ns  one_scan=    140.4 ns  ratio=1.58x  saved=    81.2 ns
+groups=64                    bytes=591     three_scans=    506.2 ns  one_scan=    230.5 ns  ratio=2.20x  saved=   275.8 ns
+groups=512                   bytes=2831    three_scans=   2374.1 ns  one_scan=    886.8 ns  ratio=2.68x  saved=  1487.3 ns
+groups=4096                  bytes=20751   three_scans=  17044.9 ns  one_scan=   5766.9 ns  ratio=2.96x  saved= 11278.0 ns
+REAL /proc/self/status       bytes=1510    three_scans=    403.2 ns  one_scan=    207.1 ns  ratio=1.95x  saved=   196.0 ns

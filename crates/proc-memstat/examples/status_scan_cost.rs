@@ -16,6 +16,40 @@
 //!
 //! The parser module is pulled in with `#[path]`, the same sanctioned pattern
 //! `tests/status_parse.rs` uses, so measuring it needs no public API.
+//!
+//! # What the numbers said — VERDICT: NO-GO, do not adopt the fused reader
+//!
+//! Measured on GitHub Actions ubuntu-latest, commit `3119719`, run
+//! `34249822373`, job `102141100998`. Raw output and the earlier run:
+//! `docs/perf/_raw_proc_memstat_p4_2_scan_cost.log`; machine-readable
+//! companion: `docs/perf/PROC_MEMSTAT_P4_2_SCAN_COST_summary.csv`.
+//!
+//! The finding's own shape claim holds: on the real 1510-byte
+//! `/proc/self/status`, three scans cost 543.2 ns against 207.5 ns fused —
+//! a 2.62x ratio, growing slowly with L (2.18x at 271 bytes, 4.90x at
+//! 20 751 bytes), which is O(L) three times, not O(L²).
+//!
+//! Taken alone that ratio argues for the fix. It is the wrong figure to
+//! decide on. One whole `snapshot()` costs 17 125.3 ns, because the
+//! open/read/close round trip — and the kernel formatting the file's text on
+//! demand — dominates a parse measured in hundreds of nanoseconds. The
+//! saving is 335.8 ns out of 17 125.3 ns per call, i.e. 2.0%. The earlier run
+//! (`4297f18`, run `34244081677`) measured the same real-file arm at a 1.95x
+//! ratio and 196.0 ns saved, 1.1% of the same denominator; the parse arms
+//! carry visible cross-run CI noise, and the verdict is unchanged across it
+//! because both figures are negligible against the syscall.
+//!
+//! So the backend keeps its three `read_kib_field` calls. Fusing them would
+//! buy 2% of a call that a probe makes a handful of times per process, in
+//! exchange for a reader whose correctness has to be kept in step with the
+//! per-field one.
+//!
+//! **What this measurement does NOT establish.** The large synthetic arms are
+//! parse-only: no real `/proc/self/status` of 20 751 bytes was read, so their
+//! ratios cannot be turned into a percentage of a call, and this verdict does
+//! not cover a process with enough supplementary groups to reach that size.
+//! Establishing that would need the read cost measured at the same length,
+//! which this example does not do.
 
 #[path = "../src/status_parse.rs"]
 mod status_parse;

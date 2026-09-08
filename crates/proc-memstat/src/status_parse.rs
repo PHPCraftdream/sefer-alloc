@@ -59,6 +59,14 @@ pub(crate) fn read_kib_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
 /// fusing them is unmeasured. `examples/status_scan_cost.rs` measures both
 /// against each other; see that file for what the numbers actually said.
 ///
+/// **The answer was NO-GO, and this function is deliberately NOT wired into
+/// the backend.** It is 2.62x faster than three separate scans on a real
+/// `/proc/self/status`, and that saving is 2.0% of one whole `snapshot()`
+/// call, which the open/read/close round trip dominates. It stays in the tree
+/// as the measurement's reproduction subject — the comparison cannot be
+/// re-run without both arms — not as a pending optimization someone should
+/// finish wiring up.
+///
 /// Deliberately still a full scan: the review rules out reading only the
 /// first 4/8 KiB, because a long field such as `Groups` can precede the
 /// memory fields, and a truncated read would silently lose them.
