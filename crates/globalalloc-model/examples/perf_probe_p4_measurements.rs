@@ -58,7 +58,20 @@
 //!   `config.rs:573-579`) resolves the `u32::MAX` sentinel at
 //!   `config.rs:177` to `cases * 4` = 256 * 4 = 1024 at default cases; at
 //!   1024 evaluations a 200-op stream's walk is cut off before its natural
-//!   end (~15.5k evaluations) and the complicate backoff would never fire.
+//!   end (~15.5k evaluations) and the complicate backoff would never
+//!   fire. The runner also pins `max_shrink_time = 0`,
+//!   `rng_algorithm = ChaCha` and `verbose = 0` explicitly (P4-1,
+//!   Sol-codex round 8): proptest's std `Config::default()` returns the
+//!   environment-merged `DEFAULT_CONFIG` (`config.rs:591-595` ->
+//!   `:190-195`), so a field-record update from it inherits every ambient
+//!   `PROPTEST_*` value; an inherited non-zero `PROPTEST_MAX_SHRINK_TIME`
+//!   could stop the walk early in a way the `cap_truncated` column could
+//!   not observe, and `TestError::Fail` (`errors.rs:110`) carries no
+//!   stop-reason, so the two were indistinguishable from outside the
+//!   runner. With `max_shrink_time = 0` the time check (`runner.rs:791`,
+//!   guarded by `> 0`) cannot fire, the iteration cap is the runner's
+//!   only early stop, and the printed cap-truncated count becomes a
+//!   complete natural-vs-early discriminator.
 //!   The per-step materialization is a substantial part of the Vec<Op>
 //!   alloc+copy cost of real shrinking, so S3 runs on fewer seeds (8 vs 64).
 //!
@@ -75,7 +88,11 @@
 //! every SUCCESSFUL call — a successful realloc counts the full new request,
 //! not the growth delta. Every measurement window reports its
 //! `REALLOC_CALLS` delta so a reader can tell whether the window could have
-//! been affected by the pre-fix accounting bug.
+//! been affected by the pre-fix accounting bug. The self-check asserts
+//! these exact cumulative increments (+64 / +192 / +224 on the
+//! 64 -> 128 -> 32 request sequence) so a regression removing a
+//! successful arm's `TOTAL_BYTES.fetch_add` fails at process start
+//! instead of passing silently (P4-2, Sol-codex round 8).
 //!
 //! # Marginal allocs/op numerator convention (review P4-2)
 //!
@@ -276,11 +293,33 @@ unsafe impl GlobalAlloc for RefuseMarked {
 //
 // Failing steps (P2-1 fix) mark a small valid request and let the backend
 // refuse it deterministically — see `RefuseMarked` above.
+//
+// P4-2 (Sol-codex round 8): the same steps hard-assert the cumulative
+// TOTAL_BYTES increments derived from the full-request convention
+// (+64 after the alloc, +192 after the grow, +224 after the shrink;
+// nothing on the refusals or the dealloc), so deleting the successful
+// realloc arm's `TOTAL_BYTES.fetch_add` now FAILS the check instead of
+// passing vacuously.
 fn count_alloc_self_check() {
     fn live() -> usize {
         LIVE_BYTES.load(Ordering::Relaxed)
     }
+    fn total() -> usize {
+        TOTAL_BYTES.load(Ordering::Relaxed)
+    }
     let baseline = live();
+    // P4-2 (Sol-codex round 8): TOTAL_BYTES gets the same direct
+    // positive-increment control as LIVE_BYTES. Expectations are DERIVED
+    // below from the documented convention (file header, "Counter
+    // accounting convention"; the CountingAlloc comment on the successful
+    // realloc arm): TOTAL_BYTES counts the cumulative FULL requested size
+    // of every SUCCESSFUL call — a successful realloc counts the full new
+    // request, not the growth delta — and dealloc and null results never
+    // touch it. The request sequence of this check is alloc 64 B, grow
+    // 64 -> 128 B, shrink 128 -> 32 B, so the expected cumulative totals
+    // are 64, then 64 + 128, then 64 + 128 + 32, all above
+    // `baseline_total`.
+    let baseline_total = total();
 
     // One counting instance over the refusing backend: every step flows
     // through the SAME counters and the same forwarding/accounting code as
@@ -292,28 +331,58 @@ fn count_alloc_self_check() {
         },
     };
 
-    // Grow: alloc 64 B, then realloc to 128 B — live must REPLACE, not add.
     let layout64 = Layout::from_size_align(64, 8).unwrap();
+    let layout128 = Layout::from_size_align(128, 8).unwrap();
+    let layout32 = Layout::from_size_align(32, 8).unwrap();
+    // The full-request increments of the successful calls below, derived
+    // from the same expressions the calls use: the alloc's requested size;
+    // each successful realloc's full new request, which here is the next
+    // layout's size — the size the block ends up dealloc'd with.
+    let total_after_alloc = baseline_total + layout64.size();
+    let total_after_grow = total_after_alloc + layout128.size();
+    let total_after_shrink = total_after_grow + layout32.size();
+
+    // Grow: alloc 64 B, then realloc to 128 B — live must REPLACE, not add.
     let p64 = unsafe { ca.alloc(layout64) };
     assert!(!p64.is_null(), "self-check alloc failed");
     assert_eq!(live(), baseline + 64, "alloc did not add exactly 64");
-    let p128 = unsafe { ca.realloc(p64, layout64, 128) };
+    assert_eq!(
+        total(),
+        total_after_alloc,
+        "alloc did not add its full requested size ({} B) to TOTAL_BYTES",
+        layout64.size()
+    );
+    let p128 = unsafe { ca.realloc(p64, layout64, layout128.size()) };
     assert!(!p128.is_null(), "self-check grow realloc failed");
     assert_eq!(
         live(),
         baseline + 128,
         "grow realloc did not replace 64 with 128"
     );
+    assert_eq!(
+        total(),
+        total_after_grow,
+        "successful grow realloc did not add its FULL new request ({} B) to TOTAL_BYTES — expected cumulative {} (= baseline_total {} + 64 + 128)",
+        layout128.size(),
+        total_after_grow,
+        baseline_total
+    );
 
     // Shrink: 128 -> 32 B.
-    let layout128 = Layout::from_size_align(128, 8).unwrap();
-    let layout32 = Layout::from_size_align(32, 8).unwrap();
-    let p32 = unsafe { ca.realloc(p128, layout128, 32) };
+    let p32 = unsafe { ca.realloc(p128, layout128, layout32.size()) };
     assert!(!p32.is_null(), "self-check shrink realloc failed");
     assert_eq!(
         live(),
         baseline + 32,
         "shrink realloc did not replace 128 with 32"
+    );
+    assert_eq!(
+        total(),
+        total_after_shrink,
+        "successful shrink realloc did not add its FULL new request ({} B) to TOTAL_BYTES — expected cumulative {} (= baseline_total {} + 64 + 128 + 32)",
+        layout32.size(),
+        total_after_shrink,
+        baseline_total
     );
 
     // Failing alloc (P2-1 fix): a SMALL, VALID request the backend refuses
@@ -363,16 +432,27 @@ fn count_alloc_self_check() {
     // Prove the old block is really still valid: write to it.
     unsafe { core::ptr::write_bytes(p32, 0, 32) };
 
-    // Free: exactly back to the starting baseline.
+    // Free: exactly back to the starting baseline — live AND total
+    // (dealloc never touches TOTAL_BYTES; P4-2).
     unsafe { ca.dealloc(p32, layout32) };
     assert_eq!(live(), baseline, "dealloc did not return live to baseline");
+    assert_eq!(
+        total(),
+        before_total,
+        "dealloc changed TOTAL_BYTES (dealloc must not touch total bytes)"
+    );
 
     // The grow step must have raised the process peak at least once.
     assert!(
         PEAK_LIVE.load(Ordering::Relaxed) >= baseline + 128,
         "PEAK_LIVE never observed the grown live value"
     );
-    println!("counter self-check: grow/shrink/refused-alloc/refused-realloc/free OK — live returned to baseline (P3-1 fix + P2-1 controlled-failure fixture verified)");
+    println!(
+        "counter self-check: grow/shrink/refused-alloc/refused-realloc/free OK — live returned to baseline; TOTAL_BYTES cumulative increments +{}/+{}/+{} verified against the full-request convention (P3-1 fix + P2-1 controlled-failure fixture + P4-2 positive-total-bytes control)",
+        layout64.size(),
+        total_after_grow - baseline_total,
+        total_after_shrink - baseline_total,
+    );
 }
 
 // --- P4-3: dependency versions from the nearest Cargo.lock — a RUNTIME
@@ -617,7 +697,7 @@ mod p4_paired_ab {
     use proptest::prelude::ProptestConfig;
     use proptest::strategy::{BoxedStrategy, Strategy, ValueTree};
     use proptest::test_runner::{
-        FileFailurePersistence, RngSeed, TestCaseError, TestError, TestRunner,
+        FileFailurePersistence, RngAlgorithm, RngSeed, TestCaseError, TestError, TestRunner,
     };
     use std::sync::atomic::Ordering;
     use std::time::Instant;
@@ -789,6 +869,9 @@ mod p4_paired_ab {
         complicate_attempts: usize,
         // S3: whether the walk hit the CUSTOM iteration budget instead of
         // ending naturally (the runner then unwinds to the last failure).
+        // P4-1: with max_shrink_time pinned to 0, this is the runner's
+        // only possible early stop, so a false value here IS the
+        // natural-finish evidence.
         cap_truncated: bool,
         reallocs: usize,
     }
@@ -806,16 +889,54 @@ mod p4_paired_ab {
     // for comparison.
     const S3_MAX_SHRINK_ITERS: u32 = 65_536;
 
-    /// S3's runner: identical to `runner()` except for the explicitly
-    /// CUSTOM `max_shrink_iters` (see `S3_MAX_SHRINK_ITERS`). Same seed =>
-    /// same drawn tree: `new_tree` does not read `max_shrink_iters`.
-    fn runner_s3(seed: u64) -> TestRunner {
-        TestRunner::new(ProptestConfig {
+    /// S3's ProptestConfig: the single source of the runner's pinned
+    /// measurement settings AND of the printed config-evidence line in
+    /// `run()`, so the two cannot drift apart.
+    ///
+    /// P4-1 (Sol-codex review round 8): with the `std` feature on,
+    /// `Config::default()` returns the environment-merged `DEFAULT_CONFIG`
+    /// (resolved proptest 1.11.0, `config.rs:591-595` <- `:190-195`), so a
+    /// field-record update from `..ProptestConfig::default()` inherits every
+    /// ambient `PROPTEST_*` value (variable names at `config.rs:26-42`; the
+    /// `PROPTEST_MAX_SHRINK_TIME` parse at `config.rs:109-115`). The
+    /// hard-coded plain default `max_shrink_time: 0` (`config.rs:176`) is
+    /// only the pre-merge value. The runner therefore pins explicitly:
+    ///
+    /// - `max_shrink_time: 0` — proptest's shrink loop checks the time
+    ///   budget ONLY `if self.config.max_shrink_time > 0`
+    ///   (`runner.rs:791-800`), so 0 removes the time-based stop entirely.
+    ///   The remaining stops are the iteration cap (`runner.rs:802`) —
+    ///   observed per-seed by `cap_truncated` in `scenario_metrics` — and
+    ///   the natural ends (`runner.rs:787`, `:871`, `:883`). After this pin
+    ///   a zero cap-truncated count PROVES a natural finish; before it, a
+    ///   `TestError::Fail(Reason, T)` (`errors.rs:110`), which carries no
+    ///   stop-reason, made a time-budget stop externally indistinguishable
+    ///   from a natural one.
+    /// - `rng_algorithm: RngAlgorithm::ChaCha` — the RNG stream no longer
+    ///   depends on `PROPTEST_RNG_ALGORITHM` (`config.rs:132-138`); ChaCha
+    ///   is `RngAlgorithm::default()` (`rng.rs:66-69`) and proptest's
+    ///   documented default since 0.9.1. `TestRunner::new` builds the RNG
+    ///   from exactly this field (`runner.rs:316-320`), so the same seed +
+    ///   pinned algorithm give the same drawn tree and the same walk on
+    ///   every platform.
+    /// - `verbose: 0` — keeps measurement-time stderr logging out
+    ///   regardless of `PROPTEST_VERBOSE` (`config.rs:130-131`).
+    fn s3_proptest_config(seed: u64) -> ProptestConfig {
+        ProptestConfig {
             rng_seed: RngSeed::Fixed(seed),
             failure_persistence: None,
             max_shrink_iters: S3_MAX_SHRINK_ITERS,
+            max_shrink_time: 0,
+            rng_algorithm: RngAlgorithm::ChaCha,
+            verbose: 0,
             ..ProptestConfig::default()
-        })
+        }
+    }
+
+    /// S3's runner: `s3_proptest_config` above. Same seed => same drawn
+    /// tree: `new_tree` does not read `max_shrink_iters`/`max_shrink_time`.
+    fn runner_s3(seed: u64) -> TestRunner {
+        TestRunner::new(s3_proptest_config(seed))
     }
 
     /// The S3 "property under test": a stream FAILS the property (candidate
@@ -990,6 +1111,11 @@ mod p4_paired_ab {
                 // iterations reach the limit (runner.rs:802); with the
                 // initial evaluation counted too, a cap-truncated walk
                 // ends at exactly S3_MAX_SHRINK_ITERS + 1 predicate calls.
+                // P4-1: with max_shrink_time pinned to 0 the runner's time
+                // check (runner.rs:791, guarded by `max_shrink_time > 0`)
+                // can never fire, so this flag observes the runner's ONLY
+                // remaining early-stop vector — false now proves the walk
+                // ended naturally.
                 cap_truncated = steps > S3_MAX_SHRINK_ITERS as usize;
             }
         }
@@ -1105,8 +1231,18 @@ mod p4_paired_ab {
                 ),
             };
             let tail = if matches!(scenario, Scenario::ShrinkProtocol) {
+                // P4-1: with max_shrink_time pinned to 0 (see
+                // `s3_proptest_config`), the iteration cap is the runner's
+                // only possible early stop, so this verdict is COMPLETE:
+                // 0 cap-truncated seeds means every walk ended by natural
+                // exhaustion, not merely "didn't hit the iteration count".
+                let stop_verdict = if cap_truncated_count == 0 {
+                    "every walk ended by natural exhaustion".to_string()
+                } else {
+                    "walk(s) STOPPED EARLY at the iteration cap".to_string()
+                };
                 format!(
-                    ", evals avg {:.1} (predicate calls; each materializes one candidate Vec<Op>), accepts avg {:.1}, complicate attempts avg {:.1}, cap-truncated seeds {cap_truncated_count}/{seeds}",
+                    ", evals avg {:.1} (predicate calls; each materializes one candidate Vec<Op>), accepts avg {:.1}, complicate attempts avg {:.1}, cap-truncated seeds {cap_truncated_count}/{seeds} — {stop_verdict}",
                     steps_sum as f64 / n,
                     accepts_sum as f64 / n,
                     attempts_sum as f64 / n,
@@ -1137,22 +1273,29 @@ mod p4_paired_ab {
         println!("\n=== P4-5: paired A/B, enum SizeStrategy vs faithful boxed counterpart ===");
         println!("  (S1/S2: {SEEDS} seeds per arm; S3: {SHRINK_SEEDS} seeds per arm — the real TestRunner::run_one shrink under a CUSTOM {S3_MAX_SHRINK_ITERS}-iteration budget; per-evaluation current() materialization makes it the expensive scenario; one {STREAM}-op stream draw per seed; paired identity asserted per seed)");
         // S3 config evidence (requested vs resolved, not just the label):
-        // the CUSTOM limit this probe pins, and what the DEFAULT runner
-        // would resolve in this very environment (both env-overridable via
+        // the settings this probe pins, and what the DEFAULT runner would
+        // resolve in this very environment (both env-overridable via
         // PROPTEST_* variables — the default line reads the AMBIENT
-        // default, it is not a hardcoded 1024).
-        let s3_config = ProptestConfig {
-            rng_seed: RngSeed::Fixed(0),
-            failure_persistence: None,
-            max_shrink_iters: S3_MAX_SHRINK_ITERS,
-            ..ProptestConfig::default()
-        };
+        // default, it is not a hardcoded 1024). P4-1: `Config::default()`
+        // merges the environment (config.rs:190-195), so the ambient
+        // column doubles as evidence of what the runner would have
+        // inherited had the pins in `s3_proptest_config` been absent.
+        let s3_config = s3_proptest_config(0);
         let default_config = ProptestConfig::default();
         println!(
             "  S3 config evidence: CUSTOM max_shrink_iters = {} (resolved read-back via Config::max_shrink_iters()); the DEFAULT runner would resolve {} from cases = {} (u32::MAX sentinel -> cases * 4)",
             s3_config.max_shrink_iters(),
             default_config.max_shrink_iters(),
             default_config.cases,
+        );
+        println!(
+            "  S3 P4-1 pinning evidence (read back from the actual S3 config; the ambient values are what an unpinned runner would inherit here): max_shrink_time = {} ms pinned (ambient {}), verbose = {} (ambient {}), rng_algorithm = {:?} (ambient {:?}); max_shrink_time = 0 disables the runner's time-based shrink stop (runner.rs:791 checks it only when > 0), so the iteration cap is the runner's ONLY early stop and the cap-truncated count in each S3 line is a complete natural-vs-early discriminator",
+            s3_config.max_shrink_time,
+            default_config.max_shrink_time,
+            s3_config.verbose,
+            default_config.verbose,
+            s3_config.rng_algorithm,
+            default_config.rng_algorithm,
         );
 
         // Counter accounting legend (P3-1). Attempted vs successful calls;
