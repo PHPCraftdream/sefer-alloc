@@ -19,8 +19,16 @@
 //! - **`peak_rss`** — the high-water mark of RSS, where the OS exposes it
 //!   (`Some`), or `None` where it does not.
 //!
-//! **All fields are in bytes.** (Note: the Linux `/proc` and the KiB-oriented
-//! callers should convert at the boundary — this crate deals only in bytes.)
+//! **All fields are in bytes.** Linux's `/proc/self/status` reports kB and the
+//! backend scales at the parse boundary, so nothing above it ever sees a KiB
+//! figure — this crate deals only in bytes.
+//!
+//! [`snapshot`] is best-effort: it returns an all-zero [`MemStat`] when no
+//! reading is available. That fallback cannot be told apart from a genuinely
+//! tiny process, so a before/after pair whose SECOND read failed reads as a
+//! complete release of memory. [`try_snapshot`] returns a
+//! [`Result`]`<`[`MemStat`]`, `[`SnapshotError`]`>` and says which happened —
+//! use it when a wrong conclusion from a missing reading would matter.
 //!
 //! # Why not `sysinfo`?
 //!
