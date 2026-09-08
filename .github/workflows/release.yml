@@ -55,6 +55,18 @@ name: Release
 #   `cargo publish -p sefer-alloc` will fail to resolve until all three are
 #   on crates.io.
 #
+# - `proc-memstat` MUST be published BEFORE `proc-probe`. This is a real
+#   dependency requirement, not process convention: `proc-probe`'s
+#   `[dependencies]` carries `proc-memstat = { path = "../proc-memstat",
+#   version = "0.1" }`, and `cargo publish` keeps the version requirement while
+#   dropping the path, so `cargo publish -p proc-probe` cannot resolve until
+#   `proc-memstat 0.1` is on crates.io. Neither of the two blocks
+#   `sefer-alloc`'s own publish: the root `Cargo.toml` declares both as
+#   path-only `[dev-dependencies]` (they exist so the process-probe examples
+#   have ONE "measure + report" dependency), and `cargo publish` strips
+#   path-only dev-dependencies from the published manifest — the same reason
+#   `globalalloc-model` does not block it either.
+#
 # - `globalalloc-model` is a LEAF crate (`[dependencies]` is only the
 #   optional, crates.io-hosted `proptest`/`arbitrary` -- no workspace path
 #   dependency either way), used only as a `[dev-dependencies]` path dep by
@@ -79,6 +91,8 @@ on:
       - 'once-ptr-cell-v*'
       - 'size-classes-v*'
       - 'tagged-index-stack-v*'
+      - 'proc-memstat-v*'
+      - 'proc-probe-v*'
       - 'globalalloc-model-v*'
       - 'sefer-alloc-v*'
   workflow_dispatch:
@@ -95,6 +109,8 @@ on:
           - once-ptr-cell
           - size-classes
           - tagged-index-stack
+          - proc-memstat
+          - proc-probe
           - globalalloc-model
           - sefer-alloc
       dry-run:
