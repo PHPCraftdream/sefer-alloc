@@ -1042,6 +1042,122 @@ jobs:
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
 
+  proc-memstat-gates:
+    # Sol-codex proc-memstat review round 1, P3-4: NOTHING in this workflow
+    # ran this crate. There was no `-p proc-memstat` invocation anywhere, and
+    # the `test-workspace` job lists its packages explicitly. The workspace is
+    # non-virtual with no `default-members`, so a root-scoped `cargo test`
+    # does NOT run this member's integration tests, and compiling it as a
+    # dependency of an example is not a substitute for its own test target.
+    #
+    # The macOS row is the one that matters most and is the reason this job
+    # is a three-OS matrix rather than an ubuntu-only package gate like the
+    # once-ptr-cell/size-classes jobs above. This crate hand-declares its Mach
+    # FFI, and review finding P2-1 was a binding that asked the linker for a
+    # FUNCTION symbol (`_mach_task_self`) where the SDK only exports a DATA
+    # symbol (`_mach_task_self_`). `cargo check` and rlib builds do not
+    # resolve extern symbols, so that class of defect is invisible to them —
+    # only something that LINKS catches it. Both steps below do: the test
+    # binaries link, and the standalone consumer links too.
+    name: proc-memstat gates (${{ matrix.os }})
+    strategy:
+      # Independent OS rows: a Linux-only or macOS-only failure must be
+      # visible on its own, not hidden by whichever row fails first.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: fmt
+        run: cargo fmt -p proc-memstat -- --check
+
+      - name: clippy (all targets, warnings as errors)
+        run: cargo clippy -p proc-memstat --all-targets -- -D warnings
+
+      # Runs the crate's OWN integration tests — `tests/monotonicity.rs`
+      # (which re-executes itself per scenario in a fresh process),
+      # `tests/platform_contract.rs` (the per-platform counter-availability
+      # and kB-vs-bytes oracles) and `tests/status_parse.rs` (the byte-level
+      # /proc parser). On the ubuntu row this is the first time the Linux
+      # shape assertions and the real `/proc/self/status` read are exercised
+      # anywhere in CI; on the macOS row, linking these binaries is itself
+      # the P2-1 smoke.
+      - name: test
+        run: cargo test -p proc-memstat --all-targets
+
+      - name: rustdoc (warnings as errors)
+        run: cargo doc -p proc-memstat --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      # A real consumer OUTSIDE the workspace: its own `[workspace]` table
+      # detaches it, so it resolves proc-memstat the way a crates.io consumer
+      # would rather than inheriting workspace lints/deps. It LINKS and CALLS
+      # `snapshot()`, then asserts the result is not the all-zero stub — which
+      # on a supported OS can only mean the backend failed. `cargo test`
+      # above already links; this additionally proves a plain downstream
+      # binary does, through the manifest a real user sees.
+      - name: link smoke — downstream binary that calls snapshot()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pm-consumer/src"
+          cat > "$RUNNER_TEMP/pm-consumer/Cargo.toml" <<'TOML'
+          [workspace]
+
+          [package]
+          name = "pm-consumer"
+          version = "0.0.0"
+          edition = "2021"
+
+          [dependencies]
+          proc-memstat = { path = "PM_PATH" }
+          TOML
+          # Absolute path substituted rather than written literally: the
+          # consumer lives in RUNNER_TEMP, not next to the repo.
+          python3 - "$RUNNER_TEMP/pm-consumer/Cargo.toml" "$GITHUB_WORKSPACE/crates/proc-memstat" <<'PY'
+          import sys, pathlib
+          manifest = pathlib.Path(sys.argv[1])
+          manifest.write_text(manifest.read_text().replace("PM_PATH", sys.argv[2].replace("\\", "/")))
+          PY
+          cat > "$RUNNER_TEMP/pm-consumer/src/main.rs" <<'RS'
+          fn main() {
+              let m = proc_memstat::snapshot();
+              println!(
+                  "rss={} virtual_size={:?} commit_charge={:?} peak_rss={:?}",
+                  m.rss, m.virtual_size, m.commit_charge, m.peak_rss
+              );
+              // On every OS this job runs, the backend is a real one, so the
+              // all-zero stub shape means the platform read failed rather
+              // than that the platform is unsupported.
+              assert!(m.rss > 0, "a linked consumer must observe a non-zero rss");
+              assert!(
+                  m.peak_rss.is_some(),
+                  "every OS in this matrix exposes a peak-RSS counter"
+              );
+              assert!(
+                  m.virtual_size.is_some() || m.commit_charge.is_some(),
+                  "each supported OS provides exactly one of virtual_size / commit_charge"
+              );
+          }
+          RS
+          cd "$RUNNER_TEMP/pm-consumer"
+          cargo run --quiet
+
+      # Packaging verification, matching the convention the once-ptr-cell and
+      # size-classes jobs above state: confirms the crate packages and that
+      # the packaged tarball builds in isolation against its published
+      # manifest. Ubuntu-only — packaging is OS-independent and there is no
+      # reason to pay for it three times.
+      - name: package (dry-run publish)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo publish --dry-run -p proc-memstat
+
   clippy:
     # R30-5 (task #454): this job's 6 clippy rows (default / experimental /
     # --all-features / hardened medium-classes / production / production
