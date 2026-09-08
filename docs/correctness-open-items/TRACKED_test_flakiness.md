@@ -12,9 +12,9 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145). Only **96** and
-**145** are OPEN; 12, 14, 63, 69 and 143 are CLOSED pointers whose full
-narratives live in RESOLVED.md. Verify, never hand-count:
+**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145). Only **145** is
+OPEN; 12, 14, 63, 69, 96 and 143 are CLOSED pointers whose full narratives
+live in RESOLVED.md. Verify, never hand-count:
 
 ```text
 grep -cE "^[0-9]+\. \*\*" docs/correctness-open-items/TRACKED_test_flakiness.md
@@ -108,58 +108,11 @@ resolved" in RESOLVED.md.)_
 
 69. **CLOSED** by task #1063 (added the missing `serial_guard()` call to `windows_virtualfree_release_failures_accessor_exists`). See "Recently resolved" in RESOLVED.md for the full closure narrative.
 
-96. **[T, filed 2026-08-23, task #1247, mitigated 2026-08-30] `wasted_dirty_drains_stays_low_under_class_aware_routing`
-    (`tests/class_aware_dirty_routing.rs`, around lines 680-709) failed once in CI on the F1-F4
-    push (commit `7037a4c`), not reproduced on immediate rerun.** Failure:
-    `assertion failed: ratio < 0.20` with the observed ratio at 26.7%
-    (`ratio = wasted / drained` from `run_round(8)`) — the test's own threshold comment
-    (lines ~695-701) already documents this as an accepted risk: "20% is a generous
-    ceiling... tolerating real-world scheduler jitter and the rare cross-class same-segment
-    carve." Confirmed transient, not a regression introduced by the F1-F4 push: the push's
-    diff (tasks #1240/#1242/#1244/#1246, range `a1554aa..7037a4c`) never touches
-    `tests/class_aware_dirty_routing.rs` or any file `class_aware_dirty_routing`'s own
-    module doc names as production dependencies; `gh run rerun <run-id> --failed` on the
-    same landing SHA came back 100% green across all 40 non-skipped jobs, including the one
-    that had failed. Filed per this file's own convention (see item 12's identical shape —
-    one CI-observed failure, confirmed non-reproducible, recorded as a data point) so a
-    repeat occurrence has this one on record rather than being independently re-diagnosed
-    from scratch. Not investigated further here — the test's own threshold already accepts
-    this failure class; tightening it or replacing the ratio-threshold approach entirely is
-    out of scope for a filing task.
-
-    **Second occurrence (2026-08-30, `test (feature isolation)` job, commit `296628a`):**
-    same test, same shape — `ratio < 0.20` tripped at 26.7% again, not reproduced on an
-    immediate `gh run rerun --failed` of the same commit (100% green, including Kani).
-    Unrelated to the landing commit's actual diff (`crates/tagged-index-stack/**` +
-    two new CI steps in `.github/workflows/ci.yml`, neither touching this test or its
-    production dependencies) — confirmed by reading the test's own code before accepting
-    the rerun-green signal at face value, not just trusting the precedent. **Mitigated**
-    (not fully eliminated — a true 30%+ CI-jitter spike remains theoretically possible)
-    by owner request: the assertion now uses a **dual threshold** — `0.30` when the
-    standard `CI` environment variable is set (GitHub Actions, and effectively every other
-    CI provider, sets `CI=true`), `0.20` otherwise, so a local `cargo test` run keeps the
-    original tighter bound while CI gets more headroom against exactly the shared-runner
-    jitter both occurrences exhibited. See the commit that added this for the exact diff.
-
-    **Third occurrence (2026-09-03, `test (feature isolation)` job, commit `0310fdb`):**
-    same test, now tripping the WIDENED 30% CI ceiling itself — observed ratio 33.3%
-    (`drained=15, wasted=5`). Unrelated to the landing commit's diff (a checkpoint-doc-only
-    commit on top of `crates/tagged-index-stack/**` + doc-comment-only changes in
-    `src/registry/heap_registry.rs`/`bootstrap.rs`/`src/lib.rs`, none touching
-    `class_aware_dirty` machinery — confirmed by reading `git log`/`git diff` over the
-    relevant range before accepting this as transient). Rather than widening the threshold a
-    third time (masking the same single-sample noise floor, not addressing it), fixed the
-    real mechanism: a single `run_round(8)` has a small denominator (~15 drains), so one
-    scheduler-jitter-induced extra wasted drain moves the ratio by ~6.7 points — exactly the
-    granularity both prior occurrences and this one show. The test now runs 5 independent
-    rounds and asserts the threshold against the AGGREGATE ratio (same accepted 0.20/0.30
-    thresholds, unchanged, now applied to a ~5x larger and materially less noisy
-    denominator) — this can only reduce the false-positive flake rate, never raise it, since
-    a real regression to ~95% waste would read ~95% in every round and therefore in the
-    aggregate too. Verified locally: 4 consecutive runs of the fixed test all read 0.0%
-    (drained_total in the 48-92 range across runs). Left as **[T]**, not closed — a
-    structural fix, but CI has not yet re-observed this test post-fix across enough runs to
-    call the flake class eliminated.
+96. **CLOSED** by task #1935 (2026-09-08) — the aggregate-over-5-rounds fix
+    (`2b7cb87`) held: 17 of the 25 most recent `CI` runs are descendants of it
+    and none shows this test failing, and 12 local runs read a 0.0-4.4% waste
+    ratio against a 20% local / 30% CI threshold. See "Recently resolved" in
+    RESOLVED.md for the full three-occurrence history and the closing evidence.
 
 143. **CLOSED** by task #1925 (2026-09-08) — `tests/r14_7_max_segments_ceiling.rs`'s
     two ceiling tests failed non-deterministically on a memory-pressured host
