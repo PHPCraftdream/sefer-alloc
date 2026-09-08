@@ -40,25 +40,79 @@ pub(crate) fn read_kib_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
         let Some(rest) = line.strip_prefix(prefix) else {
             continue;
         };
-        // "VmRSS:\t   1234 kB" — skip the run of ASCII whitespace between the
-        // prefix and the number, then take the digits that follow.
-        let digits_start = rest.iter().position(|b| b.is_ascii_digit())?;
-        // Anything non-whitespace before the first digit means this is not the
-        // simple `<prefix><ws><digits>` shape, so refuse rather than guess.
-        if rest[..digits_start]
-            .iter()
-            .any(|b| !b.is_ascii_whitespace())
-        {
-            return None;
-        }
-        let digits_end = digits_start
-            + rest[digits_start..]
-                .iter()
-                .position(|b| !b.is_ascii_digit())
-                .unwrap_or(rest.len() - digits_start);
-        return parse_ascii_u64(&rest[digits_start..digits_end]);
+        // "VmRSS:	   1234 kB" — the shared tail below skips the ASCII
+        // whitespace between the prefix and the number, then takes the digits.
+        return field_value(rest);
     }
     None
+}
+
+/// Read SEVERAL fields in ONE pass over `status`, in the order `prefixes`
+/// gives them.
+///
+/// Same per-field semantics as [`read_kib_field`] — this only changes how
+/// many times the buffer is walked, from once per field to once in total.
+///
+/// Exists to answer review P4-2 with a measurement rather than an assumption:
+/// the finding notes that three lookups rescan the buffer from the start each
+/// time, which is O(L) done three times, NOT O(L²), and that the gain from
+/// fusing them is unmeasured. `examples/status_scan_cost.rs` measures both
+/// against each other; see that file for what the numbers actually said.
+///
+/// Deliberately still a full scan: the review rules out reading only the
+/// first 4/8 KiB, because a long field such as `Groups` can precede the
+/// memory fields, and a truncated read would silently lose them.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn read_kib_fields<const N: usize>(
+    status: &[u8],
+    prefixes: [&[u8]; N],
+) -> [Option<u64>; N] {
+    let mut out = [None; N];
+    // Tracked separately from `out`: a field can be SEEN yet parse to `None`
+    // (a malformed value), and that must count as resolved — otherwise a
+    // second line with the same prefix would be consulted, which
+    // `read_kib_field` never does, and the two readers would disagree.
+    // Relying on procfs keys being unique instead would make correctness here
+    // depend on an external file's shape.
+    let mut seen = [false; N];
+    let mut remaining = N;
+    for line in status.split(|&b| b == b'\n') {
+        if remaining == 0 {
+            break;
+        }
+        for i in 0..N {
+            if seen[i] {
+                continue;
+            }
+            let Some(rest) = line.strip_prefix(prefixes[i]) else {
+                continue;
+            };
+            out[i] = field_value(rest);
+            seen[i] = true;
+            remaining -= 1;
+            // A line matches at most one prefix, so stop comparing this line.
+            break;
+        }
+    }
+    out
+}
+
+/// Shared tail of both readers: given everything after the prefix on a
+/// matching line, return its numeric value.
+fn field_value(rest: &[u8]) -> Option<u64> {
+    let digits_start = rest.iter().position(|b| b.is_ascii_digit())?;
+    if rest[..digits_start]
+        .iter()
+        .any(|b| !b.is_ascii_whitespace())
+    {
+        return None;
+    }
+    let digits_end = digits_start
+        + rest[digits_start..]
+            .iter()
+            .position(|b| !b.is_ascii_digit())
+            .unwrap_or(rest.len() - digits_start);
+    parse_ascii_u64(&rest[digits_start..digits_end])
 }
 
 /// Parse a non-empty run of ASCII digits, returning `None` on overflow.

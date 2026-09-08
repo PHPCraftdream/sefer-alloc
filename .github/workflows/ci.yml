@@ -1149,6 +1149,27 @@ jobs:
           cd "$RUNNER_TEMP/pm-consumer"
           cargo run --quiet
 
+      # Review P4-2 asks for a MEASUREMENT before deciding whether the
+      # three-scan Linux reader is worth fusing into one pass. Linux-only
+      # (that is the backend in question) and reported into the job summary
+      # so the numbers land somewhere durable rather than scrolling past in a
+      # log. Not a gate: it has no pass/fail threshold, because the finding
+      # asks what the cost IS, not that it stay under a bound.
+      - name: measure — three-scan vs one-scan /proc/self/status cost (P4-2)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(cargo run --release -q -p proc-memstat --example status_scan_cost)
+          echo "$out"
+          {
+            echo "### proc-memstat P4-2 — scan-cost measurement"
+            echo
+            echo '```text'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Packaging verification, matching the convention the once-ptr-cell and
       # size-classes jobs above state: confirms the crate packages and that
       # the packaged tarball builds in isolation against its published

@@ -115,3 +115,40 @@ fn an_overflowing_value_is_none_rather_than_a_wrapped_number() {
 fn zero_is_a_real_value_and_not_confused_with_absence() {
     assert_eq!(read_kib_field(b"VmRSS:\t 0 kB\n", b"VmRSS:"), Some(0));
 }
+
+// ---------------------------------------------------------------------------
+// The fused reader must agree with the per-field one, field for field.
+// ---------------------------------------------------------------------------
+
+use status_parse::read_kib_fields;
+
+/// `read_kib_fields` is only allowed to change HOW MANY passes are made, not
+/// what is read. If the two ever disagree, the P4-2 measurement comparing
+/// them is meaningless and any switch between them is a silent behaviour
+/// change.
+#[test]
+fn the_fused_reader_agrees_with_the_per_field_reader() {
+    let cases: [&[u8]; 5] = [
+        NON_UTF8_NAME,
+        b"VmPeak:\t 9999 kB\nVmSize:\t 1111 kB\nVmRSS:\t 2222 kB\nVmHWM:\t 3333 kB\n",
+        // Absent fields.
+        b"VmSize:\t 1111 kB\n",
+        // Malformed value, and a later duplicate line that must NOT be used
+        // as a second chance by either reader.
+        b"VmRSS:\tx 12 kB\nVmRSS:\t 77 kB\n",
+        // No trailing newline.
+        b"VmRSS:\t 64 kB",
+    ];
+    let prefixes: [&[u8]; 3] = [b"VmRSS:", b"VmSize:", b"VmHWM:"];
+    for (i, status) in cases.iter().enumerate() {
+        let fused = read_kib_fields(status, prefixes);
+        for (j, prefix) in prefixes.iter().enumerate() {
+            assert_eq!(
+                fused[j],
+                read_kib_field(status, prefix),
+                "case {i}, field {}: fused and per-field readers disagree",
+                String::from_utf8_lossy(prefix)
+            );
+        }
+    }
+}
