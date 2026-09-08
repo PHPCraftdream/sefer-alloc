@@ -62,7 +62,13 @@ pub(crate) fn read_kib_field(status: &[u8], prefix: &[u8]) -> Option<u64> {
 /// Deliberately still a full scan: the review rules out reading only the
 /// first 4/8 KiB, because a long field such as `Groups` can precede the
 /// memory fields, and a truncated read would silently lose them.
-#[cfg_attr(not(test), allow(dead_code))]
+// Unconditionally allowed, not `cfg_attr(not(test), ...)`: the only users are
+// `examples/status_scan_cost.rs` and `tests/status_parse.rs`, both of which
+// pull this file in with `#[path]` and are therefore invisible to the library
+// AND to the other `#[path]` includer (`tests/platform_contract.rs`), which
+// compiles the same module without touching this function. A `test`-scoped
+// allow leaves those two compilations red.
+#[allow(dead_code)]
 pub(crate) fn read_kib_fields<const N: usize>(
     status: &[u8],
     prefixes: [&[u8]; N],
