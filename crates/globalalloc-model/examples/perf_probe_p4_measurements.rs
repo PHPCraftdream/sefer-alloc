@@ -97,19 +97,27 @@ use globalalloc_model::{drive, Config, Op};
 //   TOTAL_BYTES counts the cumulative FULL requested size of every
 //   successful call; a successful realloc counts the full new request, not
 //   the growth delta.
-struct CountingAlloc;
+struct CountingAlloc<B = System> {
+    // Backend the counting wrapper forwards to: `System` for the
+    // `#[global_allocator]` instance below; the self-check substitutes a
+    // deterministic-refusal backend (`RefuseMarked`) so its failing steps
+    // do not depend on host memory state. B = System monomorphizes to the
+    // same forwarding code the non-generic version had.
+    inner: B,
+}
 static ALLOC_CALLS: AtomicUsize = AtomicUsize::new(0);
 static REALLOC_CALLS: AtomicUsize = AtomicUsize::new(0);
 static TOTAL_BYTES: AtomicUsize = AtomicUsize::new(0);
 static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
 static PEAK_LIVE: AtomicUsize = AtomicUsize::new(0);
 
-unsafe impl GlobalAlloc for CountingAlloc {
+unsafe impl<B: GlobalAlloc> GlobalAlloc for CountingAlloc<B> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
         // Forward FIRST; count bytes only on success.
-        // SAFETY: forwarding to the System allocator, as before.
-        let ptr = unsafe { System.alloc(layout) };
+        // SAFETY: forwarding to the inner backend (`System` for the global
+        // instance), as before.
+        let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
             TOTAL_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
             let live = LIVE_BYTES.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
@@ -120,16 +128,18 @@ unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         // dealloc is infallible: accounting before the forward is fine.
         LIVE_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
-        // SAFETY: forwarding to the System allocator, as before.
-        unsafe { System.dealloc(ptr, layout) }
+        // SAFETY: forwarding to the inner backend (`System` for the global
+        // instance), as before.
+        unsafe { self.inner.dealloc(ptr, layout) }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         // Attempted-call counter, like ALLOC_CALLS above.
         REALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
         // Forward FIRST; per the GlobalAlloc contract a null result leaves
         // the old allocation intact, so live/total/peak must not move.
-        // SAFETY: forwarding to the System allocator, as before.
-        let out = unsafe { System.realloc(ptr, layout, new_size) };
+        // SAFETY: forwarding to the inner backend (`System` for the global
+        // instance), as before.
+        let out = unsafe { self.inner.realloc(ptr, layout, new_size) };
         if !out.is_null() {
             // Full-new-request convention, documented above and in the
             // printed legend.
@@ -158,7 +168,63 @@ unsafe impl GlobalAlloc for CountingAlloc {
 }
 
 #[global_allocator]
-static GLOBAL: CountingAlloc = CountingAlloc;
+static GLOBAL: CountingAlloc = CountingAlloc { inner: System };
+
+// --- P2-1 fix: a controlled-failure backend for the self-check's failing
+// steps ---
+//
+// The old failing steps requested near-`isize::MAX`: the realloc one was
+// flatly invalid (isize::MAX rounded up to `layout32`'s align 8 is
+// MAX + 1, violating `GlobalAlloc::realloc`'s round-up-to-align <= isize::MAX
+// unsafe precondition — not an OOM condition), and the alloc one was valid
+// only at align 1 but leaned on real OOM, which is not a portable fixture:
+// on 32-bit targets isize::MAX ~ 2 GiB sits inside realistically
+// satisfiable virtual memory, so "huge must fail" can legitimately succeed
+// there (and on any target the failure depends on host memory pressure).
+//
+// `RefuseMarked` instead refuses exactly one SMALL, VALID request size —
+// one any healthy allocator satisfies — so a null result proves the
+// controlled refusal, not memory state, on every target. The refusal fires
+// INSIDE the backend `CountingAlloc` forwards to, so the null flows
+// through its own null-accounting path (attempted-call counters move,
+// byte counters must not).
+struct RefuseMarked {
+    refused_size: usize,
+}
+
+// Deliberately small (4 KiB) and distinct from every other size used by
+// the self-check (64/128/32), so no non-failing step can hit the mark.
+const REFUSED_SIZE: usize = 4096;
+
+unsafe impl GlobalAlloc for RefuseMarked {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.size() == self.refused_size {
+            return core::ptr::null_mut();
+        }
+        // SAFETY: forwarding to the System allocator, as before.
+        unsafe { System.alloc(layout) }
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: forwarding to the System allocator, as before.
+        unsafe { System.dealloc(ptr, layout) }
+    }
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // Refuse here rather than leaning on the trait's DEFAULT `realloc`.
+        // Checked against the toolchain source (core/src/alloc/global.rs):
+        // the default allocates the new block FIRST and deallocates the old
+        // one only `if !new_ptr.is_null()`, so routing the refusal through
+        // it would in fact also leave the old block intact — the override is
+        // for directness, not because the default would destroy it. Refusing
+        // explicitly keeps this backend's behaviour independent of the
+        // default's internals, which the self-check's
+        // old-block-survives assertion would otherwise silently depend on.
+        if new_size == self.refused_size {
+            return core::ptr::null_mut();
+        }
+        // SAFETY: forwarding to the System allocator, as before.
+        unsafe { System.realloc(ptr, layout, new_size) }
+    }
+}
 
 // --- P3-1 self-check: exercised unconditionally at process start ---
 //
@@ -167,18 +233,31 @@ static GLOBAL: CountingAlloc = CountingAlloc;
 // wiring. Each step hard-asserts the EXACT expected stored LIVE_BYTES; the
 // process is single-threaded at this point, so no concurrent counter updates
 // can race the asserts.
+//
+// Failing steps (P2-1 fix) mark a small valid request and let the backend
+// refuse it deterministically — see `RefuseMarked` above.
 fn count_alloc_self_check() {
     fn live() -> usize {
         LIVE_BYTES.load(Ordering::Relaxed)
     }
     let baseline = live();
 
+    // One counting instance over the refusing backend: every step flows
+    // through the SAME counters and the same forwarding/accounting code as
+    // the `#[global_allocator]` instance (B = System); only the backend
+    // differs, and it differs only on the marked request size.
+    let ca = CountingAlloc {
+        inner: RefuseMarked {
+            refused_size: REFUSED_SIZE,
+        },
+    };
+
     // Grow: alloc 64 B, then realloc to 128 B — live must REPLACE, not add.
     let layout64 = Layout::from_size_align(64, 8).unwrap();
-    let p64 = unsafe { CountingAlloc.alloc(layout64) };
+    let p64 = unsafe { ca.alloc(layout64) };
     assert!(!p64.is_null(), "self-check alloc failed");
     assert_eq!(live(), baseline + 64, "alloc did not add exactly 64");
-    let p128 = unsafe { CountingAlloc.realloc(p64, layout64, 128) };
+    let p128 = unsafe { ca.realloc(p64, layout64, 128) };
     assert!(!p128.is_null(), "self-check grow realloc failed");
     assert_eq!(
         live(),
@@ -189,7 +268,7 @@ fn count_alloc_self_check() {
     // Shrink: 128 -> 32 B.
     let layout128 = Layout::from_size_align(128, 8).unwrap();
     let layout32 = Layout::from_size_align(32, 8).unwrap();
-    let p32 = unsafe { CountingAlloc.realloc(p128, layout128, 32) };
+    let p32 = unsafe { ca.realloc(p128, layout128, 32) };
     assert!(!p32.is_null(), "self-check shrink realloc failed");
     assert_eq!(
         live(),
@@ -197,25 +276,55 @@ fn count_alloc_self_check() {
         "shrink realloc did not replace 128 with 32"
     );
 
-    // Failing alloc: a valid Layout System cannot satisfy. Byte accounting
-    // must not move.
-    let huge = Layout::from_size_align(isize::MAX as usize, 1).unwrap();
-    let null = unsafe { CountingAlloc.alloc(huge) };
-    assert!(null.is_null(), "self-check expected the huge alloc to fail");
-    assert_eq!(live(), baseline + 32, "failed alloc changed live bytes");
-
-    // Failing realloc: the old 32 B block must remain intact and live.
-    let null = unsafe { CountingAlloc.realloc(p32, layout32, isize::MAX as usize) };
+    // Failing alloc (P2-1 fix): a SMALL, VALID request the backend refuses
+    // deterministically — not a near-isize::MAX request. Byte accounting
+    // must not move: ALLOC_CALLS counted the ATTEMPT, but LIVE_BYTES /
+    // TOTAL_BYTES / PEAK_LIVE update only on success.
+    let before_total = TOTAL_BYTES.load(Ordering::Relaxed);
+    let before_peak = PEAK_LIVE.load(Ordering::Relaxed);
+    let refused_layout = Layout::from_size_align(REFUSED_SIZE, 8).unwrap();
+    let null = unsafe { ca.alloc(refused_layout) };
     assert!(
         null.is_null(),
-        "self-check expected the huge realloc to fail"
+        "self-check expected the refused alloc to fail"
+    );
+    assert_eq!(live(), baseline + 32, "failed alloc changed live bytes");
+    assert_eq!(
+        TOTAL_BYTES.load(Ordering::Relaxed),
+        before_total,
+        "failed alloc changed total bytes"
+    );
+    assert_eq!(
+        PEAK_LIVE.load(Ordering::Relaxed),
+        before_peak,
+        "failed alloc changed peak live"
+    );
+
+    // Failing realloc (P2-1 fix): same controlled-failure backend; the
+    // refused new_size (4096 B) would succeed on any healthy allocator, so
+    // null proves the refusal, not memory pressure. The old 32 B block
+    // must remain intact and live; live/total/peak must not move.
+    let null = unsafe { ca.realloc(p32, layout32, REFUSED_SIZE) };
+    assert!(
+        null.is_null(),
+        "self-check expected the refused realloc to fail"
     );
     assert_eq!(live(), baseline + 32, "failed realloc changed live bytes");
+    assert_eq!(
+        TOTAL_BYTES.load(Ordering::Relaxed),
+        before_total,
+        "failed realloc changed total bytes"
+    );
+    assert_eq!(
+        PEAK_LIVE.load(Ordering::Relaxed),
+        before_peak,
+        "failed realloc changed peak live"
+    );
     // Prove the old block is really still valid: write to it.
     unsafe { core::ptr::write_bytes(p32, 0, 32) };
 
     // Free: exactly back to the starting baseline.
-    unsafe { CountingAlloc.dealloc(p32, layout32) };
+    unsafe { ca.dealloc(p32, layout32) };
     assert_eq!(live(), baseline, "dealloc did not return live to baseline");
 
     // The grow step must have raised the process peak at least once.
@@ -223,7 +332,7 @@ fn count_alloc_self_check() {
         PEAK_LIVE.load(Ordering::Relaxed) >= baseline + 128,
         "PEAK_LIVE never observed the grown live value"
     );
-    println!("counter self-check: grow/shrink/null-alloc/null-realloc/free OK — live returned to baseline (P3-1 fix verified)");
+    println!("counter self-check: grow/shrink/refused-alloc/refused-realloc/free OK — live returned to baseline (P3-1 fix + P2-1 controlled-failure fixture verified)");
 }
 
 // --- P4-3: resolved dependency versions from the nearest Cargo.lock ---
