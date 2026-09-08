@@ -157,6 +157,28 @@ fn scenario_committing_without_touching() {
     // assertion below fail, the whole scenario PROCESS dies and Windows
     // reclaims the committed region with it — nothing leaks into sibling
     // tests.
+    /// Owns the committed region: releases it on drop, so an assertion
+    /// failure between the alloc and the release cannot leak it (review
+    /// P4-3). The scenario process dying would also reclaim the region, but
+    /// that makes the cleanup a property of process teardown rather than of
+    /// this code — a guard says it locally and keeps holding if the body is
+    /// ever reused somewhere that does not exit.
+    struct CommittedRegion(*mut core::ffi::c_void);
+    impl Drop for CommittedRegion {
+        fn drop(&mut self) {
+            // SAFETY: `self.0` came from the `VirtualAlloc` below and is
+            // released exactly once, here. Size 0 is the documented
+            // MEM_RELEASE contract.
+            let freed = unsafe { VirtualFree(self.0, 0, MEM_RELEASE) };
+            // Deliberately not a panic: on the unwind path a panicking Drop
+            // aborts the process and would replace the real assertion message
+            // with a far less useful one.
+            if freed == 0 {
+                eprintln!("warning: VirtualFree(MEM_RELEASE) failed during cleanup");
+            }
+        }
+    }
+
     unsafe {
         let p = VirtualAlloc(
             core::ptr::null_mut(),
@@ -165,6 +187,8 @@ fn scenario_committing_without_touching() {
             PAGE_READWRITE,
         );
         assert!(!p.is_null(), "VirtualAlloc(MEM_COMMIT) failed");
+        // From here on the region is owned; every exit path releases it.
+        let region = CommittedRegion(p);
 
         let after = snapshot();
 
@@ -194,7 +218,11 @@ fn scenario_committing_without_touching() {
             after.rss
         );
 
-        let freed = VirtualFree(p, 0, MEM_RELEASE);
+        // Explicit, checked release on the happy path — a failure here is a
+        // real defect and must be loud, unlike the Drop fallback above.
+        let raw = region.0;
+        core::mem::forget(region);
+        let freed = VirtualFree(raw, 0, MEM_RELEASE);
         assert!(freed != 0, "VirtualFree(MEM_RELEASE) failed");
     }
 }

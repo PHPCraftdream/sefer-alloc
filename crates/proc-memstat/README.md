@@ -2,7 +2,9 @@
 
 Single-read self-probe of a process's **own** memory: RSS + **commit charge**
 + virtual size + peak RSS, in bytes, from one call. Zero dependencies, 100%
-Rust (no `sysinfo`, no C libraries).
+Rust with **zero crate dependencies** — no `sysinfo`, no `libc`. (Not "no C
+libraries": the Windows and macOS backends call native OS APIs through
+locally-declared FFI. What this crate has none of is *crate* dependencies.)
 
 ```rust
 let m = proc_memstat::snapshot();

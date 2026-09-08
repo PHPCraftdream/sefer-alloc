@@ -146,15 +146,71 @@ impl MemStat {
     }
 }
 
+/// Why a [`try_snapshot`] call could not produce a reading.
+///
+/// Exists because a failed read and a genuinely tiny process are otherwise
+/// indistinguishable through [`snapshot`], which reports zeros either way
+/// (review P4-1): a before/after pair whose second read failed looks exactly
+/// like a complete release of memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SnapshotError {
+    /// This target has no self-memory source this crate can read — the
+    /// `other` row of the platform matrix, and every target under miri.
+    ///
+    /// Not a failure of anything: it will not start working on a retry, so
+    /// callers should treat it as "this measurement is unavailable here",
+    /// not as an error to report.
+    Unsupported,
+    /// The platform query itself failed: `/proc/self/status` could not be
+    /// read, or `K32GetProcessMemoryInfo` / `task_info` returned an error.
+    Os,
+    /// The source was read, but a required field was absent or not a plain
+    /// ASCII integer — a `/proc/self/status` without `VmRSS`, for instance.
+    ///
+    /// Distinguished from [`Os`](Self::Os) because it points at the CONTENT
+    /// rather than at the access: a caller that sees this is looking at a
+    /// procfs whose shape this crate does not understand.
+    Malformed,
+}
+
+impl core::fmt::Display for SnapshotError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::Unsupported => "no self-memory source on this target",
+            Self::Os => "the platform memory query failed",
+            Self::Malformed => "the platform reported memory data in an unexpected shape",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::error::Error for SnapshotError {}
+
+/// Read the calling process's current memory counters as one [`MemStat`]
+/// (bytes), reporting WHY on failure.
+///
+/// Prefer this over [`snapshot`] whenever the difference between "memory was
+/// released" and "the reading failed" matters — comparing a before/after pair
+/// is exactly that case. Returning an error does not panic and does not stop
+/// the measured process; it just declines to invent a number.
+pub fn try_snapshot() -> Result<MemStat, SnapshotError> {
+    platform::try_snapshot()
+}
+
 /// Read the calling process's current memory counters as one [`MemStat`]
 /// (bytes), from a single OS query.
 ///
-/// On any read failure, or on an unknown target, the affected field falls back
-/// to `0` (or `peak_rss` to `None`) rather than panicking — a probe must never
-/// take the process down.
+/// Best-effort: on any read failure, or on an unknown target, the whole
+/// reading falls back to [`MemStat::default`] — `rss: 0` and `None` for the
+/// optional fields — rather than panicking, because a probe must never take
+/// the process down.
+///
+/// **That fallback is indistinguishable from a genuinely near-zero process.**
+/// Use [`try_snapshot`] when that distinction matters.
 #[must_use]
 pub fn snapshot() -> MemStat {
-    platform::snapshot()
+    try_snapshot().unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -169,20 +225,23 @@ mod status_parse;
 #[cfg(all(target_os = "linux", not(miri)))]
 mod platform {
     use super::status_parse::read_kib_field;
-    use super::MemStat;
+    use super::{MemStat, SnapshotError};
 
-    pub(super) fn snapshot() -> MemStat {
+    pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
         // `read` (bytes), NOT `read_to_string`: a non-UTF-8 task name must not
         // be able to zero out the numeric fields — see `status_parse`.
-        let status = std::fs::read("/proc/self/status").unwrap_or_default();
-        MemStat {
-            rss: read_kib_field(&status, b"VmRSS:").unwrap_or(0) * 1024,
+        let status = std::fs::read("/proc/self/status").map_err(|_| SnapshotError::Os)?;
+        // VmRSS is the one field with no `Option` to express absence, so a
+        // procfs without it is Malformed rather than a silent zero.
+        let rss = read_kib_field(&status, b"VmRSS:").ok_or(SnapshotError::Malformed)?;
+        Ok(MemStat {
+            rss: rss * 1024,
             virtual_size: read_kib_field(&status, b"VmSize:").map(|kib| kib * 1024),
             // `/proc/self/status` exposes no commit-charge counter; `VmSize`
             // above is address space, a different quantity (see `MemStat`).
             commit_charge: None,
             peak_rss: read_kib_field(&status, b"VmHWM:").map(|kib| kib * 1024),
-        }
+        })
     }
 }
 
@@ -191,7 +250,7 @@ mod platform {
 // ---------------------------------------------------------------------------
 #[cfg(all(windows, not(miri)))]
 mod platform {
-    use super::MemStat;
+    use super::{MemStat, SnapshotError};
 
     /// `PROCESS_MEMORY_COUNTERS` (the base, non-`_EX` variant). Declared
     /// locally so this crate needs no `windows-sys`/`winapi` dependency; `std`
@@ -220,7 +279,7 @@ mod platform {
         ) -> i32;
     }
 
-    pub(super) fn snapshot() -> MemStat {
+    pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
         // SAFETY: `counters` is a valid, sufficiently-sized, mutable
         // out-parameter zero-initialised with its `cb` field set to the
         // struct size, exactly as `GetProcessMemoryInfo` documents;
@@ -231,16 +290,16 @@ mod platform {
             counters.cb = core::mem::size_of::<ProcessMemoryCounters>() as u32;
             let ok = K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb);
             if ok == 0 {
-                MemStat::default()
+                Err(SnapshotError::Os)
             } else {
-                MemStat {
+                Ok(MemStat {
                     rss: counters.working_set_size as u64,
                     // `PROCESS_MEMORY_COUNTERS` has no virtual-size field;
                     // obtaining one needs a different API entirely.
                     virtual_size: None,
                     commit_charge: Some(counters.pagefile_usage as u64),
                     peak_rss: Some(counters.peak_working_set_size as u64),
-                }
+                })
             }
         }
     }
@@ -251,7 +310,7 @@ mod platform {
 // ---------------------------------------------------------------------------
 #[cfg(all(target_os = "macos", not(miri)))]
 mod platform {
-    use super::MemStat;
+    use super::{MemStat, SnapshotError};
 
     // `mach_task_basic_info` (flavor `MACH_TASK_BASIC_INFO`). The count is
     // expressed in `natural_t` (u32) units of the struct.
@@ -303,7 +362,7 @@ mod platform {
         unsafe { mach_task_self_ }
     }
 
-    pub(super) fn snapshot() -> MemStat {
+    pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
         const COUNT: u32 =
             (core::mem::size_of::<MachTaskBasicInfo>() / core::mem::size_of::<i32>()) as u32;
         // SAFETY: `info` is a valid, mutable out-parameter of exactly `COUNT`
@@ -322,9 +381,9 @@ mod platform {
                 &mut count,
             );
             if kr != 0 {
-                MemStat::default()
+                Err(SnapshotError::Os)
             } else {
-                MemStat {
+                Ok(MemStat {
                     rss: info.resident_size,
                     virtual_size: Some(info.virtual_size),
                     // Apple names this flavor's field "virtual memory size";
@@ -332,7 +391,7 @@ mod platform {
                     // exposes no commit-charge counter at all.
                     commit_charge: None,
                     peak_rss: Some(info.resident_size_max),
-                }
+                })
             }
         }
     }
@@ -343,12 +402,14 @@ mod platform {
 // ---------------------------------------------------------------------------
 #[cfg(any(miri, not(any(target_os = "linux", windows, target_os = "macos"))))]
 mod platform {
-    use super::MemStat;
+    use super::{MemStat, SnapshotError};
 
-    pub(super) fn snapshot() -> MemStat {
+    pub(super) fn try_snapshot() -> Result<MemStat, SnapshotError> {
         // No cheap, dependency-free self-memory read on this target (or under
-        // miri, which has no real OS memory accounting). Report honest zeros /
-        // `None` rather than a fabricated figure.
-        MemStat::default()
+        // miri, which has no real OS memory accounting). Say so, rather than
+        // returning a fabricated figure a caller cannot tell apart from a real
+        // near-zero reading. `snapshot()` still maps this to honest zeros for
+        // callers that want the best-effort shape.
+        Err(SnapshotError::Unsupported)
     }
 }
