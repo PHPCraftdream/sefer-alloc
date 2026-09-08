@@ -74,3 +74,11 @@
 /.claude/
 # /wrush task worktrees — always created here, in-tree (see .claude/skills/wrush).
 /worktrees/
+
+# Unattributed working-tree edit preserved as evidence (task #1923, commit
+# 8874ce5, which records its sha256 and why it is deliberately NOT committed).
+# Ignored rather than merely untracked because a plain `git add -A docs` swept
+# it into two separate commits before this line existed; the file stays on
+# disk, and this entry — not a transient `??` in `git status` — is now the
+# durable record that it is there on purpose.
+/docs/artifacts/

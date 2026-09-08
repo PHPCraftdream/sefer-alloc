@@ -12,9 +12,9 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145 — of which 69 and 143
-are CLOSED pointers into RESOLVED.md, and 14's own flake is closed while the
-registry behaviour it exposed continues as 145). Verify, never hand-count:
+**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145). Only **96** and
+**145** are OPEN; 12, 14, 63, 69 and 143 are CLOSED pointers whose full
+narratives live in RESOLVED.md. Verify, never hand-count:
 
 ```text
 grep -cE "^[0-9]+\. \*\*" docs/correctness-open-items/TRACKED_test_flakiness.md
@@ -83,159 +83,21 @@ assertion proving no double-release but not no leak, was resolved by R28-2
 
 ---
 
-12. **[T, filed 2026-08-02, task #498] `xthread_large_double_free_no_double_reclaim`
-    (`tests/regression_xthread_large_free_no_leak.rs`) failed once during a
-    full `cargo test --features production` run, not reproduced on 7
-    subsequent runs.** One full-suite run (during task #498's own
-    verification pass) reported: `assertion `left == right` failed:
-    expected exactly 50 reclaims (one per distinct double-freed segment),
-    got 42` — a plausible cross-thread reclaim-counting race under system
-    load (this test spawns real OS threads and races a remote double-free
-    against the owner's deferred-free drain; see the test file's own module
-    doc for the exact shape). NOT reproduced on: 5 consecutive isolated
-    `--test regression_xthread_large_free_no_leak -- --test-threads=1` runs,
-    1 full-suite re-run of the exact same tree that produced the original
-    failure, and 1 full-suite run of the PRE-task-#498 base commit
-    (`2dfeaa3`) in an isolated worktree (also clean) — i.e. this is not
-    caused by task #498's diff (the base commit, entirely unmodified, was
-    tested clean in the same session) and is not reliably reproducible
-    on-demand, consistent with a genuine low-probability timing flake in
-    the test's own concurrency shape rather than a real bug. Not
-    investigated further here (out of task #498's scope; the task's own
-    diff does not touch `heap_core.rs`'s deferred-free stack or
-    `reclaim_large_segment`'s deposit/release logic — only the header
-    WRITE inside the already-registered-or-not-yet-registered window, which
-    this specific test's counter never observes). Filed per this file's own
-    convention so a future round can watch for a repeat and, if one occurs,
-    has this occurrence on record as the first data point.
+12. **CLOSED** by task #605/K10 (2026-08-06) — the reclaim-count
+    undercount (50 expected, 42 observed) was the large-cache HIT arm
+    failing to reset `deferred_next`, fixed by R34-14/task #533 commit
+    `7ef5a46` for a differently-described symptom. Re-verified closed
+    2026-09-08 (task #1934). See "Recently resolved" in RESOLVED.md for
+    the full investigation trail.
 
-    **Status: RESOLVED (2026-08-06, task #605/K10).** The above paragraph's
-    own "the counter never observes this window" reasoning was wrong — not
-    about THIS test's immediate window, but about state carried forward
-    from an EARLIER test in the same process via the large-cache. Root
-    cause identified with full confidence, not merely hypothesized: task
-    #498's own commit `eb2463a` ("large-cache HIT arm writes 4 SegmentHeader
-    fields instead of the whole 144-byte struct") replaced a full-struct
-    header rewrite on large-cache reuse with 4 targeted field writes
-    (magic/large_size/large_align/bump), silently dropping the implicit
-    reset of `owner_state`/`owner_thread_free`/`deferred_next` the old
-    full-struct write used to perform. A segment that had gone through the
-    cross-thread deferred-free path (as several do in this file's OTHER
-    tests, `xthread_large_free_reclaims_segments_no_leak` in particular,
-    which runs earlier in the same serialized test binary) retains a
-    non-`ABANDONED_TAIL` `deferred_next` link value; when the large-cache
-    later hands that same segment back out as a "fresh" allocation (a cache
-    hit) for THIS test's first loop, and the remote thread subsequently
-    frees it, `push_large_deferred_free`'s double-push claim CAS (which
-    requires the link word to read `ABANDONED_TAIL`) fails on the FIRST
-    free attempt — not the second, deliberate double-free — silently
-    dropping that segment from the deferred-free stack entirely. Each
-    dropped segment is one fewer reclaim than expected: exactly the
-    "got 42, not 50" undercount symptom, for however many of the 50
-    allocations happened to land on a stale cache hit in that run.
-
-    This defect was independently found and fixed two days later by an
-    unrelated task — R34-14/task #533, commit `7ef5a465cc23e20c518f9163520640aebc7a7ee0`
-    ("reset owner/deferred fields on large-cache hit") — whose own commit
-    body describes the identical mechanism verbatim ("a segment that went
-    through the deferred-large-free path retains a non-`ABANDONED_TAIL`
-    link value ... push_large_deferred_free's CAS from `ABANDONED_TAIL`
-    FAILS") and ships a dedicated counterfactual regression test,
-    `tests/r34_14_deferred_next_reset_on_cache_hit.rs`, that reproduces
-    the silent-drop with the reset removed and passes with it restored.
-    Nobody connected that fix to closing THIS item at the time — R34-14 was
-    framed entirely around its own symptom (a permanent leak), not this
-    flake.
-
-    Verified, not merely inferred: (1) `git merge-base --is-ancestor
-    7ef5a46 HEAD` confirms the fix is an ancestor of current `HEAD`; (2)
-    `cargo test --release --test regression_xthread_large_free_no_leak
-    --features "production internals" -- --test-threads=1
-    xthread_large_double_free_no_double_reclaim` run 5 consecutive times,
-    all green; (3) `cargo test --release --test
-    r34_14_deferred_next_reset_on_cache_hit --features "production
-    internals"` — the dedicated counterfactual — passes on current `HEAD`.
-    No further action needed; this item required no NEW fix, only
-    identifying that an already-landed one (for a differently-described
-    symptom) already closed it.
-
-14. **[T, filed 2026-08-02, task #499] Flaky (pre-existing, NOT caused by
-    task #499's changes) —
-    `tests/regression_xthread_large_free_layout_mismatch.rs`'s
-    `xthread_large_free_tiny_size_huge_align_is_reclaimed` fails when run as
-    part of its own 5-test file (`cargo test --test
-    regression_xthread_large_free_layout_mismatch`, default parallel test
-    threads) but passes reliably when run in isolation
-    (`... xthread_large_free_tiny_size_huge_align_is_reclaimed`, single
-    test). Failure shape: `a legitimate tiny-size/huge-align cross-thread
-    free was NOT reclaimed (delta 0)` — `DBG_LARGE_XTHREAD_RECLAIMED` did
-    not advance the expected amount, at `tests/regression_xthread_large_free_layout_mismatch.rs:334`.
-    **Confirmed pre-existing and unrelated to task #499's `maybe_decay_large_cache`
-    stride-throttle change:** reproduced identically (same failure, same
-    line) on a clean `git worktree add` at commit `48fed64355f03181c6a89f42cab636b800994c7f`
-    (the commit immediately BEFORE task #499's changes) with its own
-    isolated `CARGO_TARGET_DIR`, ruling out both task #499's own diff and
-    cross-contamination from other agents' concurrent builds in this shared
-    workspace as the cause. The test uses `SerialGuard::acquire()` (a
-    `TEST_LOCK`-style serialization primitive, per this file's own item-13
-    citation of the same pattern) but the failure's within-file-only
-    reproduction (5/5 runs failed when run with its siblings; 3/3 runs
-    passed in isolation, `cargo test ... regression_xthread_large_free_layout_mismatch`
-    invoked 3 times back-to-back) points at test-order or shared
-    process-wide-counter (`DBG_LARGE_XTHREAD_RECLAIMED` is itself a
-    process-wide static, per the test's own imports) interaction with a
-    sibling test in the same binary, not a genuine reclaim-logic regression.
-    **Not root-caused further** (which sibling test's ordering/timing
-    causes the interaction, and whether `SerialGuard` has a gap) — filed
-    here so a future round investigating cross-thread reclaim correctness
-    or CI flakiness in this file starts from "already reproduced as
-    pre-existing, isolated-run-clean" instead of re-diagnosing from
-    scratch.
-
-    **UPDATE 2026-09-08 (task #1933) — the flake did NOT reproduce, and
-    looking for it found something worse.** First, the reproduction claim
-    above no longer holds on this host: 20 in-file runs under `production
-    internals` and 8 under `--all-features` all passed, with the test file
-    functionally unchanged since this card was filed (`git log` shows only
-    R34-3's `internals` cfg-gate edit and its rustfmt follow-up). Whatever
-    made it fail 5/5 in August is not reproducible here, so the card's
-    "reproducible on demand" property is withdrawn.
-
-    Instead of stopping there, the `delta 0` failure shape was attacked
-    directly: the message blames the mitigation for over-rejecting, but a
-    delta of 0 has a second possible cause the test never excluded — the
-    free not being cross-thread at all. Adding that missing
-    path-activation oracle (`assert_ne!(remote_heap, owner_heap)`, the
-    owner's address carried into the spawned thread as a `usize` since
-    `*mut HeapCore` is not `Send`) showed the premise is violated
-    SYSTEMATICALLY: `HeapRegistry::claim()` in the spawned thread returned
-    the OWNER's own heap in **20 of 20 runs**. Every "cross-thread" free in
-    this file was an ordinary own-thread free.
-
-    The consequence differs per test and is worse for three of them. The
-    two `is_reclaimed` tests passed for a reason other than the path they
-    name. The three `is_dropped` tests — which assert `delta == 0` — were
-    **vacuous**: a free that never enters the deferred path satisfies
-    "delta == 0" no matter what `large_layout_consistent` decides, so they
-    could not have failed even with the mitigation removed.
-
-    **Fixed** by `claim_remote_distinct_from`, applied at all five spawn
-    sites: claim until the returned heap is not the owner's. A colliding
-    claim is deliberately never recycled — the registry only offered the
-    owner's slot because that slot was on the free list while the owner was
-    still using it, so re-claiming takes it back out of circulation;
-    recycling it instead puts the owner's live heap back in the pool, which
-    (measured during this task) drains the owner's deferred frees and makes
-    `xthread_large_free_mismatched_layout_is_dropped` fail with
-    `delta 1 != 0` for reasons unrelated to the mitigation. **Non-vacuity
-    re-established by a run, not by argument:** with the remote free
-    switched from `wrong_layout` to `real_layout`, that same test now FAILS
-    with `delta 1 != 0` — the assertion is sensitive to the mitigation's
-    decision again. All 5 tests pass 25/25 runs afterwards.
-
-    **Status:** the flake itself is CLOSED-as-not-reproducible with the
-    tests' real coverage restored; the registry behaviour it exposed is
-    NOT closed and is filed separately as item 145 below.
+14. **CLOSED** by task #1933 (2026-09-08) — the flake did not reproduce
+    (20 in-file runs + 8 under `--all-features`, all green), and the
+    investigation instead found the file's cross-thread premise violated
+    20/20: `HeapRegistry::claim()` handed the spawned thread the OWNER's
+    heap, making three `is_dropped` assertions vacuous. Fixed by
+    `claim_remote_distinct_from` at all five spawn sites. The registry
+    behaviour it exposed continues as item 145 below. See "Recently
+    resolved" in RESOLVED.md for the full narrative.
 
 _(item 35 (renumbered from a collision, task #623/M2 — see that item's own
 history for the prior "15"/"16" mislabel), the F-2 provenance-asymmetry
