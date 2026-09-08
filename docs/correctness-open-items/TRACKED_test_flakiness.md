@@ -12,9 +12,9 @@ the tier.
 
 **Criterion for this file:** A card belongs here if it documents a test that fails intermittently because of timing, thread ordering, or shared process-wide state -- an actually-observed nondeterministic failure, not a coverage gap (no test exists) or a platform gap (no runner exists).
 
-**Card count:** 7 (items 12, 14, 63, 69, 96, 143, 145). Only **145** is
-OPEN; 12, 14, 63, 69, 96 and 143 are CLOSED pointers whose full narratives
-live in RESOLVED.md. Verify, never hand-count:
+**Card count:** 8 (items 12, 14, 63, 69, 96, 143, 145, 146). Only **145**
+and **146** are OPEN; 12, 14, 63, 69, 96 and 143 are CLOSED pointers whose
+full narratives live in RESOLVED.md. Verify, never hand-count:
 
 ```text
 grep -cE "^[0-9]+\. \*\*" docs/correctness-open-items/TRACKED_test_flakiness.md
@@ -167,3 +167,59 @@ resolved" in RESOLVED.md.)_
     **Workaround in place meanwhile:** `claim_remote_distinct_from` in
     `tests/regression_xthread_large_free_layout_mismatch.rs` — claims until
     distinct and never recycles a colliding claim.
+
+146. **[T, filed 2026-09-08, task #1936] `best_fit_picks_tightest_slot_across_base_extension_boundary`
+    (`tests/large_cache_extended_mixed_size_best_fit_fifo.rs`) intermittently
+    fails on a 331,350,016-byte (~316 MiB) filler allocation; mechanism only
+    PARTLY established.** Previously untracked — observed during an unrelated
+    full-suite run and carried as a loose note until this task.
+
+    **What IS established.** The failing size is structural, not accidental:
+    the test needs eight mutually non-overlapping cache sizes (each more than
+    `LARGE_CACHE_SIZE_FACTOR` = 2x the previous, so none falls inside
+    another's best-fit band) starting at the Large floor, so the ladder spans
+    2^7 = 128x and its top rung lands in the hundreds of MiB. Reproduced
+    deterministically at one point in this session: `alloc of 331350016 bytes
+    failed unexpectedly`, the 7th filler. The test only runs under
+    `large-cache-extended`, which is NOT in `production`, so the standard
+    `cargo test --features "production internals"` row never builds it — it is
+    reached via `--all-features` (and thus by `npm run check` and CI's
+    all-features row).
+
+    **What is NOT established, and is the reason this card exists.** The same
+    request returns null under at least TWO different conditions, and only one
+    of them is explained:
+    - WITH a counted OS reservation refusal (`AllocCore::dbg_segments_reserve_failed_total`
+      delta = 1) — the environment declining to back the mapping, the same
+      class as item 143.
+    - WITH ZERO counted refusals — observed on a later run of the identical
+      binary. Every `os::Segment` constructor and both `numa.rs` reservation
+      sites bump that counter (task #1925), so a null with no refusal means
+      the allocation failed BEFORE or OUTSIDE any OS reservation attempt.
+      `AllocCore::alloc_large`'s own null paths that fit that description
+      include `self.table.register(base)` returning `None`
+      (`src/alloc_core/alloc_core_large.rs`, the "segment table full" arm,
+      which releases the reservation it already made and returns null) and the
+      earlier returns around lines 155/515. **Which one fires here has not
+      been determined** — a probe attempt in this task did not land a
+      reproduction while it was instrumented, because by then the same
+      allocation had started succeeding again (0 failures in 8 consecutive
+      runs with the environment-skip branch disabled, then 0 in 6 with it
+      restored).
+
+    **Mitigation in place, deliberately partial.** The filler loop now reads
+    the reserve-failure counter's delta: a null WITH a refusal reports an
+    environment limit and returns without asserting (same discrimination as
+    item 143); a null with ZERO refusals still FAILS the test, with a message
+    that explicitly says the cause is not established and points here, rather
+    than claiming the machine had room. That asymmetry is intentional — the
+    unexplained case must stay loud.
+
+    **Next trigger:** the next observed failure. Whoever sees it should first
+    read the refusal count printed in the message: non-zero is the known,
+    handled environment case; zero is the open question above, and the useful
+    next step is a probe on `dbg_table_count()` / the reserved/released
+    counters at the moment of the null, which is exactly what this task could
+    not land while the failure was reproducible. **Evidence:** the two
+    observed failure messages (with and without a counted refusal) and the
+    0/8 + 0/6 run series, all 2026-09-08, recorded in this task's commit body.

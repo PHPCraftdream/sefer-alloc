@@ -133,10 +133,54 @@ fn best_fit_picks_tightest_slot_across_base_extension_boundary() {
     }
 
     // Deposit the 7 fillers + `small` (8 deposits — fills the base exactly).
+    //
+    // The filler ladder is inherently large: eight mutually non-overlapping
+    // sizes, each more than 2x the previous (so none falls in another's
+    // best-fit band), starting at the Large floor, span 2^7 = 128x — which
+    // puts the top filler in the hundreds of MiB. That is a property of what
+    // this test is probing, not an oversight, but it means the run can be
+    // stopped by the MACHINE rather than by anything about best-fit: an OS
+    // that declines to back a ~316 MiB mapping returns exactly the same null
+    // as a genuine allocator failure would.
+    //
+    // `dbg_segments_reserve_failed_total`'s delta separates the two, the same
+    // way `tests/r14_7_max_segments_ceiling.rs` does for the segment-table
+    // ceiling (docs/CORRECTNESS_OPEN_ITEMS.md item 143). Zero refusals means
+    // the null came from the allocator and is a real failure; non-zero means
+    // this machine could not host the ladder and the run proves nothing about
+    // best-fit either way.
+    let refused_before = AllocCore::dbg_segments_reserve_failed_total();
     for &bytes in fillers.iter().chain(std::iter::once(&small)) {
         let l = layout(bytes);
         let p = ac.alloc(l);
-        assert!(!p.is_null(), "alloc of {bytes} bytes failed unexpectedly");
+        if p.is_null() && AllocCore::dbg_segments_reserve_failed_total() > refused_before {
+            eprintln!(
+                "best_fit_picks_tightest_slot_across_base_extension_boundary: the OS \
+                 refused the {bytes}-byte filler reservation ({} refusal(s) during this \
+                 ladder), so the 8-deposit base could not be built on this machine. The \
+                 best-fit assertion below is NOT exercised — a refused reservation is \
+                 the environment declining, not an allocator regression. See \
+                 docs/CORRECTNESS_OPEN_ITEMS.md item 146.",
+                AllocCore::dbg_segments_reserve_failed_total() - refused_before
+            );
+            return;
+        }
+        // A null with ZERO refused reservations is deliberately still a
+        // FAILURE, not a second skip: nothing has shown it to be benign.
+        // What it is NOT, on today's evidence, is proof that the machine had
+        // room — the same 331,350,016-byte filler has been observed
+        // returning null BOTH with a counted refusal and with none, and
+        // succeeding on other runs minutes apart (item 146). Do not read
+        // this message as "the environment is innocent"; read it as "the
+        // reserve-failure counter did not see it", which is a narrower and
+        // currently unexplained statement.
+        assert!(
+            !p.is_null(),
+            "alloc of {bytes} bytes failed with 0 OS reservation(s) refused — the \
+             reserve-failure counter attributes this to no OS refusal, and the cause \
+             is NOT established (docs/CORRECTNESS_OPEN_ITEMS.md item 146). Do not \
+             assume an allocator regression without checking that card first."
+        );
         // SAFETY (R6-MS-1/2): pointer from the alloc immediately above, live,
         // freed exactly once here.
         unsafe { ac.dealloc(p, l) };
