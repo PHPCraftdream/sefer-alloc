@@ -50,7 +50,9 @@ fn synthetic_status(groups_len: usize) -> Vec<u8> {
     s
 }
 
-fn bench(label: &str, status: &[u8], iters: u32) {
+/// Returns `(three_scans_ns, one_scan_ns)` per call so the caller can put the
+/// saving over a denominator instead of reporting it bare.
+fn bench(label: &str, status: &[u8], iters: u32) -> (f64, f64) {
     // Three separate scans — what the backend does today.
     let t0 = Instant::now();
     let mut sink = 0u64;
@@ -85,6 +87,29 @@ fn bench(label: &str, status: &[u8], iters: u32) {
         status.len(),
         three_ns - one_ns
     );
+    (three_ns, one_ns)
+}
+
+/// Measure what one whole `snapshot()` costs, so the parse-side saving above
+/// has a DENOMINATOR.
+///
+/// Without this, `saved=196.0 ns` is a numerator with nothing under it, and
+/// the same figure argues for opposite decisions depending on the total it is
+/// a fraction of: meaningful against a ~400 ns call, noise against a ~5 us
+/// one. On Linux `snapshot()` reads `/proc/self/status` through
+/// `std::fs::read` — an open/read/close round trip plus the kernel formatting
+/// the file's text on demand — so the parse is only ever part of the cost.
+///
+/// Returns ns per call.
+fn snapshot_cost_ns(iters: u32) -> f64 {
+    for _ in 0..1_000 {
+        std::hint::black_box(proc_memstat::snapshot());
+    }
+    let t = Instant::now();
+    for _ in 0..iters {
+        std::hint::black_box(proc_memstat::snapshot());
+    }
+    t.elapsed().as_nanos() as f64 / f64::from(iters)
 }
 
 fn main() {
@@ -113,8 +138,43 @@ fn main() {
 
     // And the real thing, where available — the synthetic buffer is a model,
     // and a model's numbers should be checked against the article itself.
-    match std::fs::read("/proc/self/status") {
-        Ok(real) => bench("REAL /proc/self/status", &real, 200_000),
-        Err(e) => println!("(no /proc/self/status on this host: {e})"),
-    }
+    let real_arms = match std::fs::read("/proc/self/status") {
+        Ok(real) => Some(bench("REAL /proc/self/status", &real, 200_000)),
+        Err(e) => {
+            println!("(no /proc/self/status on this host: {e})");
+            None
+        }
+    };
+
+    // The decision figure. A bare "saved N ns" is a numerator with no
+    // denominator, and the same N argues both ways depending on what it is a
+    // fraction OF — so state both, and state which is which.
+    let Some((three_ns, one_ns)) = real_arms else {
+        println!("\n(no whole-snapshot() comparison: this host has no /proc/self/status)");
+        return;
+    };
+    // Fewer iterations than the parse arms: each one is a real open/read/close
+    // round trip, not an in-memory scan.
+    let snap_ns = snapshot_cost_ns(20_000);
+    let saved_ns = three_ns - one_ns;
+    let pct = 100.0 * saved_ns / snap_ns;
+    // Assert the printed arithmetic rather than trusting the format string —
+    // a headline number a human retyped is exactly the class of error this
+    // repo's reporting rules exist to foreclose.
+    assert!(
+        (pct - (100.0 * (three_ns - one_ns) / snap_ns)).abs() < 1e-9,
+        "the printed percentage must be the quotient it claims to be"
+    );
+    println!();
+    println!("proc-memstat P4-2: the saving OVER THE WHOLE CALL");
+    println!(
+        "  whole snapshot() ......... {snap_ns:.1} ns/call  (open+read+close of \
+         /proc/self/status, plus the parse)"
+    );
+    println!("  parse, three scans ....... {three_ns:.1} ns  (today's backend)");
+    println!("  parse, one fused scan .... {one_ns:.1} ns  (read_kib_fields)");
+    println!(
+        "  saving ................... {saved_ns:.1} ns = {pct:.1}% of one snapshot() \
+         ({saved_ns:.1} ns saved / {snap_ns:.1} ns per call)"
+    );
 }
