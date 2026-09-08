@@ -146,21 +146,30 @@ re-confirmed by the corrected run and specific to this target/toolchain
 (x86_64-windows, proptest 1.11.0), not portable contracts of the types. The
 corrected probe (review findings P3-1/P3-2/P4-3: realloc-honest byte
 counters; three separately-labeled scenarios instead of one mislabeled
-"draw"; every measurement window reports its realloc count) reports, per
+"draw"; every measurement window reports its realloc count; review
+rounds 6-7 follow-ups P3-1/P4-4/P4-3: S3 now runs proptest's REAL
+`TestRunner::run_one` protocol under an explicitly CUSTOM
+65,536-iteration budget, S1 gained a `current()` timing column whose
+disjoint columns sum to the whole case, and the dependency-version line
+is labeled a runtime lockfile snapshot, not build identity) reports, per
 200-op stream draw, totals/peaks in heap bytes for enum vs boxed. Default
 `Config`: S1 (successful draw, `new_tree` -> `current` -> drop, no
 shrinking, n=64) 860,316/854,268 vs 639,120/633,072 — boxed SMALLER by
 221,196 B on both axes; S2 (simplify-only walk, n=64) 848,124/848,124 vs
 915,594/915,594 — enum smaller by 67,470 B on both axes, 0.0 reallocs per
-window; S3 (full shrink protocol: simplify plus per-step `current()` and
-accept/complicate backoff; n=8, ~15,493 steps/draw) 189,749,448/860,412 vs
-189,811,176/922,140 — enum smaller by 61,728 B on both axes (S3 totals are
-dominated by ~15.5k per-step `Vec<Op>` materializations; 92,963.2
-reallocs/window). Single `Config` (large_weight 0): S1 860,316/854,268 vs
+window; S3 (REAL `TestRunner::run_one` shrink protocol — proptest's own
+accept/reject/complicate walk — under an explicitly CUSTOM
+65,536-iteration budget, NOT the default runner's resolved cases*4 =
+1024; n=8, 15,547.0 evals/draw, 1.5 complicate attempts, 0 seeds
+cap-truncated) 190,409,340/854,268 vs 190,471,788/916,716 — enum smaller
+by 62,448 B on both axes (S3 totals are dominated by ~15.5k per-eval
+`Vec<Op>` materializations; 93,288.0 reallocs/window). Single `Config`
+(large_weight 0): S1 860,316/854,268 vs
 470,307/464,259 (boxed smaller by 390,009 B); S2 848,124/848,124 vs
 464,204/464,204 (enum smaller by 383,920 B, 0.0 reallocs); S3 (n=8,
-~15,767 steps) 193,091,580/860,412 vs 192,707,730/476,562 (enum smaller by
-383,850 B, 94,608.0 reallocs/window). The previously published figures
+15,886.6 evals/draw, 1.6 complicate attempts) 194,550,048/854,268 vs
+194,166,234/470,454 (boxed smaller by 383,814 B, 95,325.8
+reallocs/window). The previously published figures
 (848,124 vs 915,594 default; 848,124 vs 464,204 single) reproduce EXACTLY
 as S2 totals under the corrected counter, and S2 windows contain 0.0
 reallocs — so the old counter bug (which only fired on realloc) did not
@@ -172,7 +181,7 @@ materializes the boxed arms' extra size-Boxes while simplifying; the
 enum's inline stride is paid from construction — "the enum uses less
 memory" is true only in the shrink/simplify regimes. The enum's total/peak
 bytes are byte-identical across default and single configs in every
-scenario (860,316/854,268 in S1, 848,124 in S2, 860,412 peak in S3) — the
+scenario (860,316/854,268 in S1, 848,124 in S2, 854,268 peak in S3) — the
 `Weighted` slot dominates regardless of config — while the boxed
 counterpart varies by config. Kept: bounded per drawn case, wins
 allocations at every config, and boxing only the weighted arm would

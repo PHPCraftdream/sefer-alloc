@@ -44,12 +44,23 @@
 //!   TupleUnion's lazy-branch materialization mechanics; at 64 seeds it is
 //!   the apples-to-apples corrected number for the old (mislabeled)
 //!   protocol.
-//! - `S3 shrink-protocol (simplify; current() per step; accept/reject with
-//!   complicate backoff)` — a faithful mirror of `TestRunner::shrink`'s
-//!   accept/reject loop, which the old loop omitted entirely (no per-step
-//!   `current()` materialization, no `complicate`). The per-step
-//!   materialization is a substantial part of the Vec<Op> alloc+copy cost of
-//!   real shrinking, so S3 runs on fewer seeds (8 vs 64).
+//! - `S3 shrink-protocol (REAL TestRunner::run_one walk; CUSTOM iteration
+//!   budget)` — the shrink scenario itself, driven by proptest's own
+//!   `TestRunner::run_one` under an explicitly constructed `Config`
+//!   (review P3-1 fix: the earlier hand-rolled loop diverged from the real
+//!   runner in three ways — it began every iteration with an unconditional
+//!   simplify instead of re-evaluating the restored candidate after a
+//!   successful complicate, it did not end the search when complicate
+//!   returned false, and it retained the last accepted `Vec<Op>` across the
+//!   next candidate's construction, an extra live buffer the real runner
+//!   never holds). Its `max_shrink_iters` is an explicitly CUSTOM 65,536 —
+//!   NOT proptest's default, which (resolved proptest 1.11.0,
+//!   `config.rs:573-579`) resolves the `u32::MAX` sentinel at
+//!   `config.rs:177` to `cases * 4` = 256 * 4 = 1024 at default cases; at
+//!   1024 evaluations a 200-op stream's walk is cut off before its natural
+//!   end (~15.5k evaluations) and the complicate backoff would never fire.
+//!   The per-step materialization is a substantial part of the Vec<Op>
+//!   alloc+copy cost of real shrinking, so S3 runs on fewer seeds (8 vs 64).
 //!
 //! # Counter accounting convention (P3-1)
 //!
@@ -72,8 +83,17 @@
 //! binary: `cfg!(debug_assertions) == false` does not prove an optimized
 //! profile, and the example runs fine without `--release`. The header prints
 //! the `debug_assertions` state as the build claim plus the verbatim
-//! canonical command (whose arguments are the invoker's business) and the
-//! resolved dependency versions read from the nearest `Cargo.lock`.
+//! canonical command (whose arguments are the invoker's business). The
+//! dependency-version line is labeled a RUNTIME Cargo.lock snapshot, NOT
+//! build identity: it reads whatever lockfile is reachable from the
+//! process's cwd, which can be a different project, or a different lockfile
+//! state, than the one this binary was built from (the crate's own
+//! `env!("CARGO_PKG_VERSION")` IS build identity). A candidate lockfile is
+//! accepted only if it supplies BOTH wanted packages — versions are never
+//! merged across files. (True build identity for dependency versions would
+//! require binding the resolved graph to the artifact at build time, e.g. a
+//! build script emitting the versions into `env!`-read constants; this
+//! example deliberately has no build script.)
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -335,17 +355,29 @@ fn count_alloc_self_check() {
     println!("counter self-check: grow/shrink/refused-alloc/refused-realloc/free OK — live returned to baseline (P3-1 fix + P2-1 controlled-failure fixture verified)");
 }
 
-// --- P4-3: resolved dependency versions from the nearest Cargo.lock ---
+// --- P4-3: dependency versions from the nearest Cargo.lock — a RUNTIME
+// snapshot, NOT build identity ---
 //
 // The example's cwd depends on the invoker (crate dir, workspace root, ...),
-// so candidate lockfile paths are tried outward. Minimal text scan of
-// `[[package]]` / `name = "X"` / `version = "Y"` records; graceful fallback
-// when no lockfile is reachable.
+// so candidate lockfile paths are tried outward. Whatever this finds is a
+// property of the RUNTIME environment, not of this binary: a compiled
+// example can be launched from a different project, or from this project
+// after its lockfile changed, and the versions it was actually built
+// against are not re-checked at run time. The printed line therefore says
+// "runtime lockfile snapshot, NOT build identity". Binding the resolved
+// graph to the artifact AT BUILD TIME would require a build script emitting
+// the versions into `env!`-read constants; this example deliberately has no
+// build script, so the snapshot label is the honest one.
+//
+// Merge rule (review P4-3 fix): the per-file scan state is reset for EVERY
+// candidate and a file is accepted only if it supplies BOTH wanted
+// packages — a proptest version found in one lockfile can never be paired
+// with an arbitrary version from another under one file's name.
+// Minimal text scan of `[[package]]` / `name = "X"` / `version = "Y"`
+// records; graceful fallback when no lockfile is reachable.
 fn resolved_front_ends_line() -> String {
     const WANTED: [&str; 2] = ["proptest", "arbitrary"];
-    let mut found: [(Option<String>, Option<String>); 2] = [(None, None), (None, None)];
-    let mut source: Option<&'static str> = None;
-    'candidates: for (depth, path) in [
+    for (depth, path) in [
         "Cargo.lock",
         "../Cargo.lock",
         "../../Cargo.lock",
@@ -357,6 +389,9 @@ fn resolved_front_ends_line() -> String {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
+        // Fresh per-file state: never merged across candidate files.
+        let mut found: [(Option<String>, Option<String>); 2] =
+            core::array::from_fn(|_| (None, None));
         let mut in_package = false;
         let mut name: Option<String> = None;
         let mut version: Option<String> = None;
@@ -387,27 +422,26 @@ fn resolved_front_ends_line() -> String {
                 found[slot] = (Some(n.to_string()), Some(v.to_string()));
             }
         }
+        // Accept ONLY a file that supplies BOTH wanted packages.
         if found.iter().all(|(_, v)| v.is_some()) {
-            source = Some(match depth {
+            let source = match depth {
                 0 => "Cargo.lock (cwd)",
                 1 => "../Cargo.lock",
                 2 => "../../Cargo.lock",
                 _ => "../../../Cargo.lock",
-            });
-            break 'candidates;
+            };
+            // globalalloc-model's own version IS build identity
+            // (compile-time `env!`); the two dependency versions are the
+            // runtime snapshot the label names.
+            return format!(
+                "runtime Cargo.lock snapshot, NOT build identity (read from {source}, relative to this process's cwd): proptest {}, arbitrary {}, globalalloc-model {} (the crate version IS this binary's build identity)",
+                found[0].1.as_deref().unwrap_or("?"),
+                found[1].1.as_deref().unwrap_or("?"),
+                env!("CARGO_PKG_VERSION"),
+            );
         }
     }
-    if let Some(source) = source {
-        format!(
-            "resolved front-ends: proptest {}, arbitrary {}, globalalloc-model {} ({})",
-            found[0].1.as_deref().unwrap_or("?"),
-            found[1].1.as_deref().unwrap_or("?"),
-            env!("CARGO_PKG_VERSION"),
-            source
-        )
-    } else {
-        "resolved front-ends: proptest ?, arbitrary ? (Cargo.lock not found from cwd — record versions from the invoking environment)".to_string()
-    }
+    "runtime Cargo.lock snapshot, NOT build identity: no reachable Cargo.lock supplies both proptest and arbitrary (record versions from the invoking environment)".to_string()
 }
 
 fn pattern_byte(fill: u8, offset: usize) -> u8 {
@@ -562,7 +596,9 @@ mod p4_paired_ab {
     use globalalloc_model::{op_strategy, Config, Op};
     use proptest::prelude::ProptestConfig;
     use proptest::strategy::{BoxedStrategy, Strategy, ValueTree};
-    use proptest::test_runner::{FileFailurePersistence, RngSeed, TestRunner};
+    use proptest::test_runner::{
+        FileFailurePersistence, RngSeed, TestCaseError, TestError, TestRunner,
+    };
     use std::sync::atomic::Ordering;
     use std::time::Instant;
 
@@ -671,7 +707,7 @@ mod p4_paired_ab {
                     "S2 simplify-only walk (while simplify(); no per-step current(), no complicate)"
                 }
                 Scenario::ShrinkProtocol => {
-                    "S3 shrink-protocol (simplify; current() per step; accept/reject with complicate backoff)"
+                    "S3 shrink-protocol (REAL TestRunner::run_one accept/reject/complicate walk; CUSTOM iteration budget — not the default runner)"
                 }
             }
         }
@@ -683,19 +719,56 @@ mod p4_paired_ab {
         peak_post_construct: usize,
         peak_traj: usize,
         new_ns: f64,
+        // P4-4: S1's `current()` materialization, timed as its own column
+        // (it used to fall outside every timing column). 0.0 for S2/S3.
+        current_ns: f64,
+        // S1/S2: the walk (empty for S1). S3: the whole
+        // `TestRunner::run_one` shrink call — the per-evaluation
+        // current()+predicate work, every transition, the runner's final
+        // minimal-value materialization AND the tree drop happen inside it.
         walk_ns: f64,
         drop_ns: f64,
+        // new_ns + current_ns + walk_ns + drop_ns: the whole-case total the
+        // disjoint columns above sum to (P4-4).
+        total_ns: f64,
+        // S2: simplify steps. S3: predicate evaluations (the runner's
+        // shrink iterations + the initial evaluation).
         steps: usize,
         accepts: usize,
-        complicates: usize,
+        // S3: PASS evaluations; the real runner makes exactly one
+        // complicate attempt after each (runner.rs:870-879) and attempt
+        // success is not externally observable, hence "attempts".
+        complicate_attempts: usize,
+        // S3: whether the walk hit the CUSTOM iteration budget instead of
+        // ending naturally (the runner then unwinds to the last failure).
+        cap_truncated: bool,
         reallocs: usize,
     }
 
-    // proptest's default max_shrink_iters.
-    const MAX_SHRINK_STEPS: usize = 16_384;
-    // Guard against accept/complicate ping-pong; stricter than the real
-    // runner (which has no such consecutive-reject bound).
-    const MAX_CONSECUTIVE_REJECTS: usize = 16;
+    // S3's shrink budget: a CUSTOM choice for this probe, NOT proptest's
+    // default. In resolved proptest 1.11.0 the raw default is a u32::MAX
+    // sentinel (config.rs:177) that `Config::max_shrink_iters()` resolves
+    // to `cases * 4` — 256 * 4 = 1024 at default cases (config.rs:573-579);
+    // the previous version of this probe mislabeled its 16,384 as that
+    // default. At 1024 evaluations a 200-op stream's walk is cut off long
+    // before its natural end (~15.5k evaluations), which would leave the
+    // complicate backoff unexercised, so S3 pins this explicitly CUSTOM,
+    // larger budget; every output line and published claim labels it as
+    // custom, and the probe prints the default's RESOLVED value alongside
+    // for comparison.
+    const S3_MAX_SHRINK_ITERS: u32 = 65_536;
+
+    /// S3's runner: identical to `runner()` except for the explicitly
+    /// CUSTOM `max_shrink_iters` (see `S3_MAX_SHRINK_ITERS`). Same seed =>
+    /// same drawn tree: `new_tree` does not read `max_shrink_iters`.
+    fn runner_s3(seed: u64) -> TestRunner {
+        TestRunner::new(ProptestConfig {
+            rng_seed: RngSeed::Fixed(seed),
+            failure_persistence: None,
+            max_shrink_iters: S3_MAX_SHRINK_ITERS,
+            ..ProptestConfig::default()
+        })
+    }
 
     /// The S3 "property under test": a stream FAILS the property (candidate
     /// accepted) while any op still carries a parameter above its minimum
@@ -707,10 +780,10 @@ mod p4_paired_ab {
     /// earlier length-based predicates (non-empty, `> KEEP_OPS`) could never
     /// cross their boundary and left `complicates` at 0, a mechanism-dead
     /// scenario. As the element walk exhausts toward full minimality, the
-    /// predicate flips and the `complicate` backoff genuinely fires; the
-    /// printed accepts/complicates counts are the mechanism-activation
-    /// evidence. `Op::Dealloc`'s index is ignored (shrinking it to 0 does
-    /// not make a stream "pass").
+    /// predicate flips and the real runner's `complicate` backoff
+    /// genuinely fires; the printed accepts / complicate-attempts counts
+    /// are the mechanism-activation evidence. `Op::Dealloc`'s index is
+    /// ignored (shrinking it to 0 does not make a stream "pass").
     fn property_fails(ops: &[Op]) -> bool {
         ops.iter().any(|op| match op {
             Op::Alloc { size, align } | Op::AllocZeroed { size, align } => *size > 1 || *align > 1,
@@ -724,7 +797,13 @@ mod p4_paired_ab {
         seed: u64,
         scenario: Scenario,
     ) -> ScenarioMetrics {
-        let mut runner = runner(seed, None);
+        // S3 runs under the CUSTOM-limit runner (same seed => same drawn
+        // tree); S1/S2 keep the default-config runner, unchanged.
+        let mut runner = if matches!(scenario, Scenario::ShrinkProtocol) {
+            runner_s3(seed)
+        } else {
+            runner(seed, None)
+        };
         let before_total = TOTAL_BYTES.load(Ordering::Relaxed);
         let start_live = LIVE_BYTES.load(Ordering::Relaxed);
         // Re-base the window-local peak so constant pre-window offsets
@@ -737,20 +816,40 @@ mod p4_paired_ab {
         let new_ns = t.elapsed().as_nanos() as f64;
 
         // Post-construction boundary. S1's "construction" is new_tree +
-        // current(): the successful case materializes its value.
+        // current(): the successful case materializes its value. P4-4: the
+        // materialization is timed as its OWN column — it used to sit
+        // between the new_tree and walk timers and never landed in any
+        // timing column, so the columns could not be summed into the cost
+        // of a full successful case.
+        let current_t = Instant::now();
         if matches!(scenario, Scenario::SuccessfulDraw) {
             std::hint::black_box(tree.current());
         }
+        let current_ns = if matches!(scenario, Scenario::SuccessfulDraw) {
+            current_t.elapsed().as_nanos() as f64
+        } else {
+            0.0
+        };
         let total_b_post_construct = TOTAL_BYTES.load(Ordering::Relaxed) - before_total;
         let peak_post_construct = PEAK_LIVE.load(Ordering::Relaxed) - start_live;
 
         let mut steps = 0usize;
         let mut accepts = 0usize;
-        let mut complicates = 0usize;
+        let mut complicate_attempts = 0usize;
+        let mut cap_truncated = false;
         let walk_t = Instant::now();
+        let walk_ns;
+        let drop_ns;
         match scenario {
             Scenario::SuccessfulDraw => {
-                // Body intentionally empty: no shrinking.
+                // Body intentionally empty: no shrinking. The walk column is
+                // EXACTLY 0 — there is no walk to time, so none is measured
+                // (P4-4: the printed columns must sum to the printed total
+                // with no hidden remainder, not even timer overhead).
+                walk_ns = 0.0;
+                let t = Instant::now();
+                drop(tree);
+                drop_ns = t.elapsed().as_nanos() as f64;
             }
             Scenario::SimplifyOnly => {
                 // Isolates TupleUnion's lazy-branch materialization
@@ -758,62 +857,94 @@ mod p4_paired_ab {
                 while tree.simplify() {
                     steps += 1;
                 }
+                walk_ns = walk_t.elapsed().as_nanos() as f64;
+                let t = Instant::now();
+                drop(tree);
+                drop_ns = t.elapsed().as_nanos() as f64;
             }
             Scenario::ShrinkProtocol => {
-                // Faithful mirror of TestRunner::shrink's accept/reject
-                // protocol — the piece the old loop never had: per-step
-                // current() materialization and complicate backoff.
-                // Predicate (see `property_fails`): a stream fails the
-                // property while any op still has a non-minimal parameter;
-                // only the fully-minimal stream passes. The element-value
-                // shrink walk crosses this boundary in its tail, so the
-                // complicate backoff genuinely fires (length-based
-                // predicates never could — candidate length is pinned at
-                // STREAM by `vec(op, STREAM..STREAM + 1)`).
-                // accepts/complicates are the per-window mechanism-
-                // activation evidence (this repo's rule: a scenario must
-                // prove it exercised its claimed mechanism).
-                let mut result = tree.current(); // initial materialization
-                accepts = 1; // the initial case "fails" the property
-                let mut consecutive_rejects = 0usize;
-                while steps < MAX_SHRINK_STEPS {
-                    if !tree.simplify() {
-                        break;
-                    }
-                    steps += 1;
-                    // Per-step materialization: the Vec<Op> alloc+copy cost
-                    // the old loop skipped.
-                    let candidate = tree.current();
-                    if property_fails(&candidate) {
-                        // property FAILS (a non-minimal parameter remains)
-                        // -> candidate accepted, keep shrinking from here
-                        result = candidate;
-                        accepts += 1;
-                        consecutive_rejects = 0;
+                // P3-1 fix: the REAL shrink protocol. `TestRunner::run_one`
+                // (proptest 1.11.0, src/test_runner/runner.rs:700 ->
+                // run_one_with_replay:720 -> shrink:761) drives the
+                // candidate: the initial evaluation, the accept/reject
+                // transitions, the complicate backoff, the iteration cap
+                // and the value lifetimes are proptest's own. The previous
+                // hand-rolled loop diverged from the real runner in exactly
+                // the three ways the review named: it began every iteration
+                // with an unconditional simplify (the real runner
+                // evaluates case.current() at the TOP of every loop
+                // iteration — runner.rs:856-864 — so after a PASS and a
+                // successful complicate the RESTORED candidate is
+                // re-evaluated before the next transition), it did not end
+                // the search when complicate returned false
+                // (runner.rs:870-879: `if !case.complicate() { break }`),
+                // and it retained the last accepted Vec<Op> in `result`
+                // across the next candidate's construction — the real
+                // runner holds only the tree and the failure Reason
+                // (runner.rs:782 `last_failure`); every candidate value is
+                // handed to the predicate BY VALUE (runner.rs:856-864 via
+                // call_test:202 `test(case)`).
+                //
+                // CUSTOM limit: this runner's max_shrink_iters is
+                // S3_MAX_SHRINK_ITERS, not the default runner's (the
+                // default resolves cases * 4 = 1024; see the constant).
+                //
+                // Counters observable from OUTSIDE the runner: every
+                // predicate invocation = one evaluation = one Vec<Op>
+                // materialized from case.current(); a FAIL evaluation is
+                // an accepted candidate; every PASS evaluation is followed
+                // by exactly one runner-internal complicate attempt
+                // (runner.rs:870-879), whose success is not externally
+                // observable — hence "attempts".
+                let evals = core::cell::Cell::new(0usize);
+                let fails = core::cell::Cell::new(0usize);
+                let passes = core::cell::Cell::new(0usize);
+                let test = |ops: Vec<Op>| {
+                    evals.set(evals.get() + 1);
+                    std::hint::black_box(&ops);
+                    if property_fails(&ops) {
+                        fails.set(fails.get() + 1);
+                        Err(TestCaseError::fail(
+                            "S3 probe: a non-minimal parameter remains",
+                        ))
                     } else {
-                        // property PASSES (fully minimal stream) ->
-                        // reject; back off via complicate. This fires in
-                        // the tail of the walk as full minimality is
-                        // approached.
-                        consecutive_rejects += 1;
-                        if consecutive_rejects > MAX_CONSECUTIVE_REJECTS {
-                            break;
-                        }
-                        if tree.complicate() {
-                            complicates += 1;
-                        }
-                        // If complicate() returns false the tree stays at
-                        // the simplified position — same as the real runner.
+                        passes.set(passes.get() + 1);
+                        Ok(())
+                    }
+                };
+                // Mechanism evidence: the initial candidate must reproduce
+                // the failure (else no shrink ran at all), and the runner
+                // must return the shrunk minimal value —
+                // Err(TestError::Fail) carries it, materialized by the
+                // runner's own final case.current() (runner.rs:752).
+                match runner.run_one(tree, test) {
+                    Err(TestError::Fail(_, minimal)) => {
+                        std::hint::black_box(&minimal);
+                    }
+                    Err(TestError::Abort(reason)) => {
+                        panic!("S3: run_one aborted unexpectedly: {reason}");
+                    }
+                    Ok(_) => {
+                        panic!(
+                            "S3: the initial candidate passed the property; the shrink protocol was not exercised"
+                        );
                     }
                 }
-                std::hint::black_box(&result);
+                walk_ns = walk_t.elapsed().as_nanos() as f64;
+                // The tree was consumed by run_one and is dropped INSIDE
+                // it (as is the final-value materialization), so there is
+                // no separate drop column for S3.
+                drop_ns = 0.0;
+                steps = evals.get();
+                accepts = fails.get();
+                complicate_attempts = passes.get();
+                // The runner's cap check fires when its shrink-loop
+                // iterations reach the limit (runner.rs:802); with the
+                // initial evaluation counted too, a cap-truncated walk
+                // ends at exactly S3_MAX_SHRINK_ITERS + 1 predicate calls.
+                cap_truncated = steps > S3_MAX_SHRINK_ITERS as usize;
             }
         }
-        let walk_ns = walk_t.elapsed().as_nanos() as f64;
-
-        let t = Instant::now();
-        drop(tree);
-        let drop_ns = t.elapsed().as_nanos() as f64;
 
         ScenarioMetrics {
             total_b: TOTAL_BYTES.load(Ordering::Relaxed) - before_total,
@@ -821,11 +952,14 @@ mod p4_paired_ab {
             peak_post_construct,
             peak_traj: PEAK_LIVE.load(Ordering::Relaxed) - start_live,
             new_ns,
+            current_ns,
             walk_ns,
             drop_ns,
+            total_ns: new_ns + current_ns + walk_ns + drop_ns,
             steps,
             accepts,
-            complicates,
+            complicate_attempts,
+            cap_truncated,
             reallocs: REALLOC_CALLS.load(Ordering::Relaxed) - before_reallocs,
         }
     }
@@ -867,11 +1001,14 @@ mod p4_paired_ab {
             let mut peak_traj = 0u64;
             let mut peak_traj_max = 0usize;
             let mut new_ns = 0f64;
+            let mut current_ns = 0f64;
             let mut walk_ns = 0f64;
             let mut drop_ns = 0f64;
+            let mut total_ns = 0f64;
             let mut steps_sum = 0u64;
             let mut accepts_sum = 0u64;
-            let mut complicates_sum = 0u64;
+            let mut attempts_sum = 0u64;
+            let mut cap_truncated_count = 0usize;
             let mut reallocs_sum = 0u64;
             for seed in 0..seeds {
                 let m = scenario_metrics(strat, seed, scenario);
@@ -881,35 +1018,61 @@ mod p4_paired_ab {
                 peak_traj += m.peak_traj as u64;
                 peak_traj_max = peak_traj_max.max(m.peak_traj);
                 new_ns += m.new_ns;
+                current_ns += m.current_ns;
                 walk_ns += m.walk_ns;
                 drop_ns += m.drop_ns;
+                total_ns += m.total_ns;
                 steps_sum += m.steps as u64;
                 accepts_sum += m.accepts as u64;
-                complicates_sum += m.complicates as u64;
+                attempts_sum += m.complicate_attempts as u64;
+                cap_truncated_count += usize::from(m.cap_truncated);
                 reallocs_sum += m.reallocs as u64;
             }
             let n = seeds as f64;
             let reallocs = reallocs_sum as f64 / n;
+            // P4-4: per-scenario timing line. The listed columns are
+            // DISJOINT (no work is timed twice) and sum to the whole-case
+            // total; S1's current() materialization now has its own column
+            // instead of falling between the new_tree and walk timers.
+            let timing_line = match scenario {
+                Scenario::SuccessfulDraw => format!(
+                    "ns/case: new_tree {:.0} + current {:.0} + drop {:.0} = {:.0} (disjoint columns; they sum to the whole successful case)",
+                    new_ns / n,
+                    current_ns / n,
+                    drop_ns / n,
+                    total_ns / n
+                ),
+                Scenario::SimplifyOnly => format!(
+                    "ns/draw: new_tree {:.0} + walk {:.0} + drop {:.0} = {:.0} (disjoint columns; they sum to the whole case)",
+                    new_ns / n,
+                    walk_ns / n,
+                    drop_ns / n,
+                    total_ns / n
+                ),
+                Scenario::ShrinkProtocol => format!(
+                    "ns/draw: new_tree {:.0} + shrink run_one {:.0} = {:.0} (disjoint columns; per-evaluation current()+predicate work, every transition, the final minimal-value materialization and the tree drop all happen INSIDE run_one — there is no separate drop column)",
+                    new_ns / n,
+                    walk_ns / n,
+                    total_ns / n
+                ),
+            };
+            let tail = if matches!(scenario, Scenario::ShrinkProtocol) {
+                format!(
+                    ", evals avg {:.1} (predicate calls; each materializes one candidate Vec<Op>), accepts avg {:.1}, complicate attempts avg {:.1}, cap-truncated seeds {cap_truncated_count}/{seeds}",
+                    steps_sum as f64 / n,
+                    accepts_sum as f64 / n,
+                    attempts_sum as f64 / n,
+                )
+            } else {
+                format!(", steps avg {:.1}", steps_sum as f64 / n)
+            };
             println!(
-                "  {name:14} {}: n={seeds} draws | total {:.0} B (post-construct {:.0} B) | peak post-construct {:.0} B, trajectory {:.0} B (max {peak_traj_max} B) | reallocs in window {reallocs:.1} | ns/draw: new_tree {:.0}, walk {:.0}, drop {:.0} | steps avg {:.1}{}",
+                "  {name:14} {}: n={seeds} draws | total {:.0} B (post-construct {:.0} B) | peak post-construct {:.0} B, trajectory {:.0} B (max {peak_traj_max} B) | reallocs in window {reallocs:.1} | {timing_line}{tail}",
                 scenario.label(),
                 total as f64 / n,
                 total_post as f64 / n,
                 peak_post as f64 / n,
                 peak_traj as f64 / n,
-                new_ns / n,
-                walk_ns / n,
-                drop_ns / n,
-                steps_sum as f64 / n,
-                if matches!(scenario, Scenario::ShrinkProtocol) {
-                    format!(
-                        ", accepts avg {:.1}, complicates avg {:.1}",
-                        accepts_sum as f64 / n,
-                        complicates_sum as f64 / n
-                    )
-                } else {
-                    String::new()
-                },
             );
             means[index] = (total as f64 / n, peak_traj as f64 / n);
         }
@@ -924,7 +1087,25 @@ mod p4_paired_ab {
         const STREAM: usize = 200;
 
         println!("\n=== P4-5: paired A/B, enum SizeStrategy vs faithful boxed counterpart ===");
-        println!("  (S1/S2: {SEEDS} seeds per arm; S3: {SHRINK_SEEDS} seeds per arm — per-step current() materialization makes it the expensive scenario; one {STREAM}-op stream draw per seed; paired identity asserted per seed)");
+        println!("  (S1/S2: {SEEDS} seeds per arm; S3: {SHRINK_SEEDS} seeds per arm — the real TestRunner::run_one shrink under a CUSTOM {S3_MAX_SHRINK_ITERS}-iteration budget; per-evaluation current() materialization makes it the expensive scenario; one {STREAM}-op stream draw per seed; paired identity asserted per seed)");
+        // S3 config evidence (requested vs resolved, not just the label):
+        // the CUSTOM limit this probe pins, and what the DEFAULT runner
+        // would resolve in this very environment (both env-overridable via
+        // PROPTEST_* variables — the default line reads the AMBIENT
+        // default, it is not a hardcoded 1024).
+        let s3_config = ProptestConfig {
+            rng_seed: RngSeed::Fixed(0),
+            failure_persistence: None,
+            max_shrink_iters: S3_MAX_SHRINK_ITERS,
+            ..ProptestConfig::default()
+        };
+        let default_config = ProptestConfig::default();
+        println!(
+            "  S3 config evidence: CUSTOM max_shrink_iters = {} (resolved read-back via Config::max_shrink_iters()); the DEFAULT runner would resolve {} from cases = {} (u32::MAX sentinel -> cases * 4)",
+            s3_config.max_shrink_iters(),
+            default_config.max_shrink_iters(),
+            default_config.cases,
+        );
 
         // Counter accounting legend (P3-1). Attempted vs successful calls;
         // realloc replace semantics; full-new-request TOTAL_BYTES

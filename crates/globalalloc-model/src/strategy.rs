@@ -44,7 +44,7 @@ type WeightedSizeTree = <WeightedSizeStrategy as Strategy>::Tree;
 /// still measures +67,470 B total/peak per 200-op draw at the default
 /// `Config`, but at a plain successful draw the BOXED form uses LESS memory
 /// (-221,196 B at default, -390,009 B at single), and the shrink-protocol
-/// regime is +61,728 B enum-side at default. The earlier "~2x
+/// regime is +62,448 B enum-side at default. The earlier "~2x
 /// generation-time overhead" claim was retracted: that measurement compared
 /// against a differently-shaped baseline (confounded). Wall-time in the
 /// paired run is NOT consistent across configs on this loaded host: at the
@@ -90,8 +90,10 @@ enum SizeStrategy {
 /// boxed counterpart, 200-op stream draws; the probe's three scenarios:
 /// S1 = a successful draw from `new_tree` through `current()` to drop with
 /// NO shrinking, S2 = a full simplify-only shrink walk without per-step
-/// `current()`, S3 = the full shrink protocol — simplify plus per-step
-/// `current()` and accept/complicate backoff; "peak" = trajectory
+/// `current()`, S3 = the REAL shrink protocol — proptest's own
+/// `TestRunner::run_one` accept/reject/complicate walk under an
+/// explicitly CUSTOM 65,536-iteration budget (NOT the default runner,
+/// whose resolved limit is cases * 4 = 1024); "peak" = trajectory
 /// peak-live; per-window realloc counts from the corrected realloc-honest
 /// counters) — BOTH config rows reported, totals/peaks in heap bytes:
 ///
@@ -103,13 +105,15 @@ enum SizeStrategy {
 ///   delta +67,470 on both; 0.0 reallocs/window (boxed post-construct
 ///   626,928 B, window max 951,036 B). S2, single: enum 848,124/848,124;
 ///   boxed 464,204/464,204; delta -383,920 on both; 0.0 reallocs/window.
-/// - S3, default (n=8 draws; ~15,493 steps/draw; 15,492.6 accepts, 1.2
-///   complicates): enum 189,749,448 total/860,412 peak (dominated by
-///   ~15.5k per-step `Vec<Op>` materializations); boxed 189,811,176/
-///   922,140; delta +61,728 on both; 92,963.2 reallocs/window. S3,
-///   single (~15,767 steps; 1.4 complicates): enum 193,091,580/860,412;
-///   boxed 192,707,730/476,562; delta -383,850 on both; 94,608.0
-///   reallocs/window.
+/// - S3, default (n=8 draws; REAL `TestRunner::run_one` walk under the
+///   CUSTOM 65,536-iteration budget, 0 seeds cap-truncated; 15,547.0
+///   evals/draw, 15,545.5 accepts, 1.5 complicate attempts): enum
+///   190,409,340 total/854,268 peak (dominated by ~15.5k per-eval
+///   `Vec<Op>` materializations); boxed 190,471,788/916,716; delta
+///   (boxed - enum) +62,448 on both — enum smaller; 93,288.0
+///   reallocs/window. S3, single (15,886.6 evals/draw; 1.6 complicate
+///   attempts): enum 194,550,048/854,268; boxed 194,166,234/470,454;
+///   delta -383,814 on both — boxed smaller; 95,325.8 reallocs/window.
 ///
 /// Three findings follow. (1) The previously published figures (848,124
 /// vs 915,594 default; 848,124 vs 464,204 single) reproduce EXACTLY as
@@ -124,7 +128,7 @@ enum SizeStrategy {
 /// "the enum uses less memory" is true ONLY in the shrink/simplify
 /// regimes (S2, and S3 peak). (3) The enum's total/peak bytes are
 /// byte-identical across default and single configs in EVERY scenario
-/// (860,316/854,268 in S1, 848,124 in S2, 860,412 peak in S3) — the
+/// (860,316/854,268 in S1, 848,124 in S2, 854,268 peak in S3) — the
 /// `Weighted` slot dominates regardless of config — while the boxed
 /// counterpart varies by config.
 ///
