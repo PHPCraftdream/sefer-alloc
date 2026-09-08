@@ -285,7 +285,7 @@ fn run_child() -> ChildOutcome {
     // workload materialisation").
     let before = proc_probe::snapshot();
     let rss_before_kib = before.rss / 1024;
-    let commit_before_kib = before.commit / 1024;
+    let commit_before_kib = before.charged_or_reserved_bytes() / 1024;
 
     let mut handles = Vec::with_capacity(thread_count);
     for i in 0..thread_count {
@@ -355,7 +355,7 @@ fn run_child() -> ChildOutcome {
     while t0.elapsed() < RSS_RUN_DURATION {
         let snap = proc_probe::snapshot();
         peak_rss_kib = peak_rss_kib.max(snap.rss / 1024);
-        peak_commit_kib = peak_commit_kib.max(snap.commit / 1024);
+        peak_commit_kib = peak_commit_kib.max(snap.charged_or_reserved_bytes() / 1024);
         thread::sleep(RSS_POLL_INTERVAL);
     }
 

@@ -70,7 +70,7 @@ fn rss_kib() -> u64 {
 }
 
 fn commit_kib() -> u64 {
-    proc_probe::snapshot().commit / 1024
+    proc_probe::snapshot().charged_or_reserved_bytes() / 1024
 }
 
 /// 24 distinct Large sizes spanning the CURRENT build's actual Small/Large

@@ -85,7 +85,7 @@ fn rss_kib() -> u64 {
 
 /// Commit charge in KiB (bytes / 1024 from `proc_probe::snapshot`).
 fn commit_kib() -> u64 {
-    proc_probe::snapshot().commit / 1024
+    proc_probe::snapshot().charged_or_reserved_bytes() / 1024
 }
 
 /// Same sizes `benches/global_alloc.rs::SIZES` sweeps.

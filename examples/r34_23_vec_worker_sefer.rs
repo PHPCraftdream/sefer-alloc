@@ -28,7 +28,7 @@ fn main() {
     proc_probe::emit_u64("iterations", iterations as u64);
     let mem = proc_probe::snapshot();
     proc_probe::emit_u64("rss_bytes", mem.rss);
-    proc_probe::emit_u64("commit_bytes", mem.commit);
+    proc_probe::emit_u64("commit_bytes", mem.charged_or_reserved_bytes());
     run_all_shapes(iterations);
     // SeferAlloc sanity: segments must have been reserved.
     let stats = GLOBAL.stats();

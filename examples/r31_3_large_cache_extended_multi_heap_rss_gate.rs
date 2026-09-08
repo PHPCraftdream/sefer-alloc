@@ -135,7 +135,7 @@ fn teardown_large_objects(heap: &mut HeapCore, live: &[(*mut u8, Layout)]) {
 
 fn snapshot_kib() -> (u64, u64) {
     let m = proc_probe::snapshot();
-    (m.rss / 1024, m.commit / 1024)
+    (m.rss / 1024, m.charged_or_reserved_bytes() / 1024)
 }
 
 fn parse_env_usize(name: &str) -> usize {

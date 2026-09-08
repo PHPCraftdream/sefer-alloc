@@ -86,7 +86,9 @@ fn main() {
         let after = snapshot();
 
         let rss_delta = after.rss.saturating_sub(before.rss);
-        let commit_delta = after.commit.saturating_sub(before.commit);
+        let commit_delta = after
+            .charged_or_reserved_bytes()
+            .saturating_sub(before.charged_or_reserved_bytes());
         let amplif = rss_delta as f64 / size as f64;
 
         println!(

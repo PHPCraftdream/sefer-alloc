@@ -176,5 +176,5 @@ fn run_arm(
     proc_probe::emit_u64("decommit_calls_total", stats.decommit_calls);
     proc_probe::emit_u64("large_cache_hits", stats.large_cache_hits);
     proc_probe::emit_u64("rss_after_kib", snap.rss / 1024);
-    proc_probe::emit_u64("commit_after_kib", snap.commit / 1024);
+    proc_probe::emit_u64("commit_after_kib", snap.charged_or_reserved_bytes() / 1024);
 }

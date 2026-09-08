@@ -309,7 +309,7 @@ fn run_arm(threshold_kib: usize, diverted: bool, label: &str) {
     println!("RESULT {label}_segments_reserved_delta={segs_reserved}");
 
     let rss = proc_probe::snapshot().rss / 1024;
-    let commit = proc_probe::snapshot().commit / 1024;
+    let commit = proc_probe::snapshot().charged_or_reserved_bytes() / 1024;
     println!("RESULT {label}_rss_after_kib={rss}");
     println!("RESULT {label}_commit_after_kib={commit}");
 }

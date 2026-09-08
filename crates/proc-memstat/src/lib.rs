@@ -1,16 +1,21 @@
 //! `proc-memstat` — same-instant self-probe of a process's own memory.
 //!
-//! One call — [`snapshot`] — returns a [`MemStat`] carrying three memory
+//! One call — [`snapshot`] — returns a [`MemStat`] carrying four memory
 //! figures read as close to the same instant as the OS permits:
 //!
 //! - **`rss`** — resident set size: the physical memory currently backing the
 //!   process's pages (what "top" shows as RES / working set).
-//! - **`commit`** — commit charge: memory *charged against the system commit
-//!   limit*, whether or not it has been faulted in yet. This is a **separate
-//!   axis** from RSS — a `VirtualAlloc(MEM_COMMIT)` (or an over-committing
-//!   reservation) shows up here even while it is demand-zero and therefore
-//!   invisible to RSS. Commit charge is rarely surfaced by existing Rust
-//!   crates, and it is the metric that catches commit-heavy designs RSS hides.
+//! - **`commit_charge`** — memory *charged against the system commit limit*,
+//!   whether or not it has been faulted in yet. This is a **separate axis**
+//!   from RSS — a `VirtualAlloc(MEM_COMMIT)` shows up here even while it is
+//!   demand-zero and therefore invisible to RSS. `None` where the platform
+//!   API used here does not expose this counter.
+//! - **`virtual_size`** — the size of the process's virtual ADDRESS SPACE.
+//!   Deliberately a different field from `commit_charge`, not a synonym: a
+//!   large read-only file mapping raises `virtual_size` while costing nothing
+//!   in Linux overcommit accounting, and reserved-but-uncommitted address
+//!   space likewise is not memory anything has been charged for. `None` where
+//!   the platform API used here does not expose it.
 //! - **`peak_rss`** — the high-water mark of RSS, where the OS exposes it
 //!   (`Some`), or `None` where it does not.
 //!
@@ -20,22 +25,34 @@
 //! # Why not `sysinfo`?
 //!
 //! `sysinfo` is a heavy, whole-system crate with many dependencies. This crate
-//! does one narrow thing — *my own* process, three counters, one struct, zero
-//! dependencies — and it surfaces **commit charge**, which the whole-system
-//! crates almost never do.
+//! does one narrow thing — *my own* process, a handful of counters, one
+//! struct, zero dependencies — and it surfaces **commit charge**, which the
+//! whole-system crates almost never do.
 //!
 //! # Platform matrix
 //!
-//! | Platform | `rss` | `commit` | `peak_rss` |
-//! |----------|-------|----------|------------|
-//! | Linux    | `/proc/self/status` `VmRSS` | `/proc/self/status` `VmSize` (total VM) | `/proc/self/status` `VmHWM` (`Some`) |
-//! | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `PagefileUsage` | `PeakWorkingSetSize` (`Some`) |
-//! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` | `resident_size_max` (`Some`) |
-//! | other    | `0` | `0` | `None` |
+//! | Platform | `rss` | `virtual_size` | `commit_charge` | `peak_rss` |
+//! |----------|-------|----------------|-----------------|------------|
+//! | Linux    | `/proc/self/status` `VmRSS` | `VmSize` (`Some`) | `None` | `VmHWM` (`Some`) |
+//! | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `None` | `PagefileUsage` (`Some`) | `PeakWorkingSetSize` (`Some`) |
+//! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` (`Some`) | `None` | `resident_size_max` (`Some`) |
+//! | other    | `0` | `None` | `None` | `None` |
 //!
-//! Linux's overcommit accounting is not identical to Windows' commit-charge
-//! model; `commit` there is "total program size" (virtual memory), the nearest
-//! Linux analogue. All three Linux fields come from `/proc/self/status`, whose
+//! **Why the `commit_charge` column is `None` on two of the three platforms.**
+//! Windows `PagefileUsage` is documented commit charge. Linux `VmSize` and
+//! macOS `virtual_size` are the size of the virtual address space — Apple's
+//! `task_info.h` names that field "virtual memory size" outright — and Linux
+//! overcharges nothing for a read-only file mapping that nonetheless inflates
+//! `VmSize`. Reporting either under the name "commit charge" would invert the
+//! meaning of a reserve/commit/decommit measurement: retained address space
+//! would read as retained commit. A shared unit (bytes) is not a shared
+//! measured quantity, so this crate reports each counter under its own name
+//! and leaves the other absent rather than substituting a "nearest analogue".
+//! Neither `PROCESS_MEMORY_COUNTERS` (the Windows struct read here) nor this
+//! Mach flavor's counterpart carries the other platform's field, which is why
+//! the absences are structural rather than merely unimplemented.
+//!
+//! All three Linux fields come from `/proc/self/status`, whose
 //! values are reported in kB regardless of the kernel's base page size — unlike
 //! `/proc/self/statm` (expressed in pages), this needs no page-size query and
 //! stays correct on 16 KiB/64 KiB-page kernels (aarch64, ppc64, etc.). On
@@ -55,29 +72,67 @@
 /// A same-instant snapshot of the calling process's own memory usage, in
 /// **bytes**.
 ///
-/// Produced by [`snapshot`]. The three fields are read from one OS query (on
-/// Linux, one `/proc/self/status` read) so that comparing `commit` against
-/// `rss` is apples-to-apples: both describe the same moment.
+/// Produced by [`snapshot`]. The fields are read from one OS query (on Linux,
+/// one `/proc/self/status` read), so they describe as close to one moment as
+/// the platform allows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemStat {
     /// Resident set size in bytes — physical memory currently backing the
-    /// process (Windows `WorkingSetSize`, Linux `statm` resident, macOS
-    /// `resident_size`). `0` on unknown platforms.
+    /// process (Windows `WorkingSetSize`, Linux `/proc/self/status` `VmRSS`,
+    /// macOS `resident_size`). `0` on unknown platforms.
     pub rss: u64,
-    /// Commit charge in bytes — memory charged against the system commit
-    /// limit, whether or not faulted in yet (Windows `PagefileUsage`, Linux
-    /// `statm` total program size, macOS `virtual_size`). A **separate axis**
-    /// from `rss`. `0` on unknown platforms.
-    pub commit: u64,
+    /// Size of the process's virtual ADDRESS SPACE in bytes (Linux
+    /// `/proc/self/status` `VmSize`, macOS `virtual_size`); `None` where the
+    /// API this crate uses does not expose it, which includes Windows —
+    /// `PROCESS_MEMORY_COUNTERS` carries no virtual-size field.
+    ///
+    /// This is **not** commit charge and must not be read as one: address
+    /// space can be mapped without anything being charged for it (a
+    /// read-only file mapping is the standard example), and it can be
+    /// reserved without being committed at all.
+    pub virtual_size: Option<u64>,
+    /// Memory charged against the system commit limit, in bytes, whether or
+    /// not it has been faulted in yet (Windows `PagefileUsage`); `None` where
+    /// the API this crate uses does not expose it, which is both Linux and
+    /// macOS — neither `/proc/self/status` nor `MACH_TASK_BASIC_INFO` carries
+    /// a commit-charge counter, and [`virtual_size`](Self::virtual_size) is a
+    /// different quantity, not a stand-in for this one.
+    ///
+    /// A **separate axis** from `rss`: committed-but-untouched memory appears
+    /// here and not in `rss`.
+    pub commit_charge: Option<u64>,
     /// Peak (high-water) resident set size in bytes, where the OS exposes it
     /// (Windows `PeakWorkingSetSize`, Linux `/proc/self/status` `VmHWM`, macOS
     /// `resident_size_max`); `None` on platforms without a peak-RSS counter.
     pub peak_rss: Option<u64>,
 }
 
+impl MemStat {
+    /// [`commit_charge`](Self::commit_charge) where the platform provides it,
+    /// otherwise [`virtual_size`](Self::virtual_size), otherwise `0` — that
+    /// is, the single figure this crate reported under the name `commit`
+    /// before those two were split into separate fields.
+    ///
+    /// **The two are not the same quantity.** Read the field docs above: one
+    /// is memory charged against the commit limit, the other is address
+    /// space, and on any given platform this returns whichever of them that
+    /// OS happens to expose. It is therefore a PLATFORM-DEPENDENT reading,
+    /// and a caller that publishes the number owes its readers the platform
+    /// alongside it — otherwise a Linux `virtual_size` and a Windows
+    /// `commit_charge` end up compared as if they measured the same thing,
+    /// which is exactly the confusion the split exists to prevent.
+    ///
+    /// Provided so existing measurement harnesses keep producing byte-
+    /// identical numbers across the split. New code should read the fields
+    /// directly and say which one it read.
+    #[must_use]
+    pub fn charged_or_reserved_bytes(&self) -> u64 {
+        self.commit_charge.or(self.virtual_size).unwrap_or(0)
+    }
+}
+
 /// Read the calling process's current memory counters as one [`MemStat`]
-/// (bytes), from a single OS query so `rss` and `commit` describe the same
-/// instant.
+/// (bytes), from a single OS query.
 ///
 /// On any read failure, or on an unknown target, the affected field falls back
 /// to `0` (or `peak_rss` to `None`) rather than panicking — a probe must never
@@ -98,7 +153,10 @@ mod platform {
         let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
         MemStat {
             rss: read_kib_field(&status, "VmRSS:").unwrap_or(0) * 1024,
-            commit: read_kib_field(&status, "VmSize:").unwrap_or(0) * 1024,
+            virtual_size: read_kib_field(&status, "VmSize:").map(|kib| kib * 1024),
+            // `/proc/self/status` exposes no commit-charge counter; `VmSize`
+            // above is address space, a different quantity (see `MemStat`).
+            commit_charge: None,
             peak_rss: read_kib_field(&status, "VmHWM:").map(|kib| kib * 1024),
         }
     }
@@ -169,7 +227,10 @@ mod platform {
             } else {
                 MemStat {
                     rss: counters.working_set_size as u64,
-                    commit: counters.pagefile_usage as u64,
+                    // `PROCESS_MEMORY_COUNTERS` has no virtual-size field;
+                    // obtaining one needs a different API entirely.
+                    virtual_size: None,
+                    commit_charge: Some(counters.pagefile_usage as u64),
                     peak_rss: Some(counters.peak_working_set_size as u64),
                 }
             }
@@ -231,10 +292,11 @@ mod platform {
             } else {
                 MemStat {
                     rss: info.resident_size,
-                    // `virtual_size` is the honest macOS analogue of commit
-                    // charge (total mapped virtual memory); macOS has no
-                    // Windows-style separate commit-charge counter.
-                    commit: info.virtual_size,
+                    virtual_size: Some(info.virtual_size),
+                    // Apple names this flavor's field "virtual memory size";
+                    // it is address space, not commit charge, and this flavor
+                    // exposes no commit-charge counter at all.
+                    commit_charge: None,
                     peak_rss: Some(info.resident_size_max),
                 }
             }

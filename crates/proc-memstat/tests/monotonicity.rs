@@ -143,11 +143,18 @@ fn committing_without_touching_grows_commit_not_rss() {
         let after = snapshot();
 
         // Commit charge grew by ~N (allow slack for concurrent activity).
+        // Windows is the one platform where `commit_charge` is `Some`; a
+        // `None` here would mean the backend stopped reporting the counter,
+        // which is a failure, not a skip.
+        let before_commit = before
+            .commit_charge
+            .expect("Windows must report commit_charge (PagefileUsage)");
+        let after_commit = after
+            .commit_charge
+            .expect("Windows must report commit_charge (PagefileUsage)");
         assert!(
-            after.commit >= before.commit + (N as u64) / 2,
-            "commit must grow by ~{N} after MEM_COMMIT: before={} after={}",
-            before.commit,
-            after.commit
+            after_commit >= before_commit + (N as u64) / 2,
+            "commit_charge must grow by ~{N} after MEM_COMMIT: before={before_commit}              after={after_commit}"
         );
         // RSS did NOT grow by anything like N — the pages were never touched,
         // so at most incidental noise moved it. Assert it did not grow by even

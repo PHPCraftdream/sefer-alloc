@@ -28,7 +28,16 @@
 //! ```text
 //! let m = proc_probe::snapshot();          // measure (bytes, same instant)
 //! proc_probe::emit_u64("rss_kib", m.rss / 1024);        // report
-//! proc_probe::emit_u64("commit_kib", m.commit / 1024);
+//! // Name the metric you actually read. `commit_charge` and `virtual_size`
+//! // are different quantities and only one of them exists on a given OS —
+//! // see `proc_memstat::MemStat`. Emitting one under the other's name is
+//! // how a retained address space gets reported as retained commit.
+//! if let Some(kib) = m.commit_charge.map(|b| b / 1024) {
+//!     proc_probe::emit_u64("commit_charge_kib", kib);
+//! }
+//! if let Some(kib) = m.virtual_size.map(|b| b / 1024) {
+//!     proc_probe::emit_u64("virtual_size_kib", kib);
+//! }
 //! ```
 //!
 //! (Runnable form of the examples lives in `tests/protocol.rs` — this crate

@@ -168,6 +168,6 @@ fn main() {
     proc_probe::emit_ns("elapsed_ns", elapsed_ns);
     proc_probe::emit_u64("segments_reserved_total", stats.segments_reserved_total);
     proc_probe::emit_u64("rss_after_kib", snap.rss / 1024);
-    proc_probe::emit_u64("commit_after_kib", snap.commit / 1024);
+    proc_probe::emit_u64("commit_after_kib", snap.charged_or_reserved_bytes() / 1024);
     proc_probe::emit_u64("decommit_calls_total", stats.decommit_calls);
 }

@@ -434,7 +434,7 @@ fn measure_rss_axis(pool_segments: usize, n_threads: usize) -> RssResult {
 
     let before = proc_probe::snapshot();
     let rss_before_kib = before.rss / 1024;
-    let commit_before_kib = before.commit / 1024;
+    let commit_before_kib = before.charged_or_reserved_bytes() / 1024;
 
     let mut handles = Vec::with_capacity(n_threads);
     for _ in 0..n_threads {
@@ -470,7 +470,7 @@ fn measure_rss_axis(pool_segments: usize, n_threads: usize) -> RssResult {
     while t0.elapsed() < RSS_RUN_DURATION {
         let snap = proc_probe::snapshot();
         peak_rss_kib = peak_rss_kib.max(snap.rss / 1024);
-        peak_commit_kib = peak_commit_kib.max(snap.commit / 1024);
+        peak_commit_kib = peak_commit_kib.max(snap.charged_or_reserved_bytes() / 1024);
         thread::sleep(RSS_POLL_INTERVAL);
     }
 
@@ -489,8 +489,8 @@ fn measure_rss_axis(pool_segments: usize, n_threads: usize) -> RssResult {
         peak_rss_kib: peak_rss_kib.max(after.rss / 1024),
         rss_after_kib: after.rss / 1024,
         commit_before_kib,
-        peak_commit_kib: peak_commit_kib.max(after.commit / 1024),
-        commit_after_kib: after.commit / 1024,
+        peak_commit_kib: peak_commit_kib.max(after.charged_or_reserved_bytes() / 1024),
+        commit_after_kib: after.charged_or_reserved_bytes() / 1024,
     }
 }
 

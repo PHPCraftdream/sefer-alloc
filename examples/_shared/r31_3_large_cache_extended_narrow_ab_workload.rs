@@ -135,7 +135,7 @@ fn rss_kib() -> u64 {
 }
 
 fn commit_kib() -> u64 {
-    proc_probe::snapshot().commit / 1024
+    proc_probe::snapshot().charged_or_reserved_bytes() / 1024
 }
 
 /// 9 distinct, pairwise->2x-apart Large sizes — identical derivation to

@@ -396,7 +396,7 @@ fn run_cell(
         println!(
             "SAMPLE,{pattern},{payload},{s},{ns},{rss},{commit}",
             rss = mem_before.rss,
-            commit = mem_before.commit,
+            commit = mem_before.charged_or_reserved_bytes(),
         );
     }
 
@@ -412,9 +412,9 @@ fn run_cell(
         is_d = is_after - is_before,
         dec_d = dec_after - dec_before,
         rss_b = mem_before.rss,
-        commit_b = mem_before.commit,
+        commit_b = mem_before.charged_or_reserved_bytes(),
         rss_a = mem_after.rss,
-        commit_a = mem_after.commit,
+        commit_a = mem_after.charged_or_reserved_bytes(),
     );
 }
 

@@ -153,7 +153,7 @@ fn run_arm(mode: &str) {
     println!("RESULT {mode}_ns_per_growth_seq={}", total_ns / ops as u128);
 
     let rss = proc_probe::snapshot().rss / 1024;
-    let commit = proc_probe::snapshot().commit / 1024;
+    let commit = proc_probe::snapshot().charged_or_reserved_bytes() / 1024;
     println!("RESULT {mode}_rss_after_kib={rss}");
     println!("RESULT {mode}_commit_after_kib={commit}");
 
